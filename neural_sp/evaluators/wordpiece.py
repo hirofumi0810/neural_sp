@@ -66,15 +66,15 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
-            best_hyps, _, perm_idx = model.decode(batch['xs'], decode_params,
-                                                  exclude_eos=True,
-                                                  idx2token=dataset.idx2wp,
-                                                  refs=batch['ys'])
-            ys = [batch['text'][i] for i in perm_idx]
+            best_hyps, _, perm_id = model.decode(batch['xs'], decode_params,
+                                                 exclude_eos=True,
+                                                 id2token=dataset.id2wp,
+                                                 refs=batch['ys'])
+            ys = [batch['text'][i] for i in perm_id]
 
             for b in six.moves.range(len(batch['xs'])):
                 ref = ys[b]
-                hyp = dataset.idx2wp(best_hyps[b])
+                hyp = dataset.id2wp(best_hyps[b])
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])

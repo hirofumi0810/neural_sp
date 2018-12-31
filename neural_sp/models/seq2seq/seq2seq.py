@@ -82,6 +82,10 @@ class Seq2seq(ModelBase):
         self.sub2_weight = args.sub2_weight
         self.mtl_per_batch = args.mtl_per_batch
 
+        if not hasattr(args, 'char_pred'):
+            args.char_pred = False
+        self.char_pred = args.char_pred
+
         # Setting for the CNN encoder
         if args.conv_poolings:
             conv_channels = [int(c) for c in args.conv_channels.split('_')] if len(args.conv_channels) > 0 else []
@@ -205,7 +209,9 @@ class Seq2seq(ModelBase):
                 lmobj_weight=args.lmobj_weight,
                 share_lm_softmax=args.share_lm_softmax,
                 global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
-                mtl_per_batch=args.mtl_per_batch)
+                mtl_per_batch=args.mtl_per_batch,
+                char_pred=args.char_pred,
+                vocab_char=args.vocab_sub1)
             setattr(self, 'dec_' + dir, dec)
 
         # sub task (only for fwd)
@@ -223,8 +229,8 @@ class Seq2seq(ModelBase):
                     attn_sigmoid_smoothing=args.attn_sigmoid,
                     attn_conv_out_channels=args.attn_conv_nchannels,
                     attn_conv_kernel_size=args.attn_conv_width,
-                    attn_nheads=getattr(args, 'attn_nheads_' + sub),
-                    dropout_attn=args.dropout_attn,
+                    attn_nheads=1,
+                    dropout_att=args.dropout_att,
                     rnn_type=args.dec_type,
                     nunits=args.dec_nunits,
                     nlayers=args.dec_nlayers,
@@ -326,14 +332,14 @@ class Seq2seq(ModelBase):
         if self.input_type == 'speech':
             if self.mtl_per_batch:
                 if 'bwd' in task:
-                    enc_out, perm_idx = self.encode(batch['xs'], 'ys', flip=True)
+                    enc_out, perm_ids = self.encode(batch['xs'], 'ys', flip=True)
                 else:
-                    enc_out, perm_idx = self.encode(batch['xs'], task, flip=False)
+                    enc_out, perm_ids = self.encode(batch['xs'], task, flip=False)
             else:
                 flip = True if self.bwd_weight == 1 else False
-                enc_out, perm_idx = self.encode(batch['xs'], 'all', flip=flip)
+                enc_out, perm_ids = self.encode(batch['xs'], 'all', flip=flip)
         else:
-            enc_out, perm_idx = self.encode(batch['ys_sub1'])
+            enc_out, perm_ids = self.encode(batch['ys_sub1'])
 
         observation = {}
         if task == 'all':
@@ -345,17 +351,24 @@ class Seq2seq(ModelBase):
 
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0 and task in ['all', 'ys']:
-            ys = [batch['ys'][i] for i in perm_idx]
-            loss_fwd, obs_fwd = self.dec_fwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys)
+            ys = [batch['ys'][i] for i in perm_ids]
+            if self.char_pred > 0:
+                ys_char = [batch['ys_sub1'][i] for i in perm_ids]
+            else:
+                ys_char = None
+            loss_fwd, obs_fwd = self.dec_fwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys, ys_char)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
             observation['loss.lm'] = obs_fwd['loss_lm']
             observation['acc.main'] = obs_fwd['acc']
+            if self.char_pred > 0:
+                observation['loss.char'] = obs_fwd['loss_char']
+                observation['acc.char'] = obs_fwd['acc_char']
 
         # Compute XE loss for the backward decoder
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
-            ys = [batch['ys'][i] for i in perm_idx]
+            ys = [batch['ys'][i] for i in perm_ids]
             loss_bwd, obs_bwd = self.dec_bwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys)
             loss += loss_bwd
             observation['loss.att-bwd'] = obs_bwd['loss_att']
@@ -366,7 +379,7 @@ class Seq2seq(ModelBase):
         # only fwd for sub tasks
         for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0 and task in ['all', 'ys_' + sub]:
-                ys_sub = [batch['ys_' + sub][i] for i in perm_idx]
+                ys_sub = [batch['ys_' + sub][i] for i in perm_ids]
                 loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
                     enc_out['ys_' + sub]['xs'], enc_out['ys_' + sub]['x_lens'], ys_sub)
                 loss += loss_sub
@@ -386,13 +399,13 @@ class Seq2seq(ModelBase):
             flip (bool): if True, flip acoustic features in the time-dimension
         Returns:
             enc_out (dict):
-            perm_idx ():
+            perm_ids ():
 
         """
         # Sort by lenghts in the descending order
-        perm_idx = sorted(list(six.moves.range(0, len(xs), 1)),
+        perm_ids = sorted(list(six.moves.range(0, len(xs), 1)),
                           key=lambda i: len(xs[i]), reverse=True)
-        xs = [xs[i] for i in perm_idx]
+        xs = [xs[i] for i in perm_ids]
         # NOTE: must be descending order for pack_padded_sequence
 
         if self.input_type == 'speech':
@@ -432,12 +445,12 @@ class Seq2seq(ModelBase):
         if self.sub2_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer)and (task in ['all', 'ys_sub2']):
             enc_out['ys_sub2']['xs'] = self.bridge_sub2(enc_out['ys_sub2']['xs'])
 
-        return enc_out, perm_idx
+        return enc_out, perm_ids
 
     def get_ctc_posteriors(self, xs, task='ys', temperature=1, topk=None):
         self.eval()
         with torch.no_grad():
-            enc_out, perm_idx = self.encode(xs, task)
+            enc_out, perm_ids = self.encode(xs, task)
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
             if task == 'ys_sub1':
                 dir += '_sub1'
@@ -455,7 +468,7 @@ class Seq2seq(ModelBase):
             return ctc_probs, indices_topk, enc_out[task]['x_lens']
 
     def decode(self, xs, decode_params, nbest=1, exclude_eos=False,
-               idx2token=None, refs=None, ctc=False, task='ys'):
+               id2token=None, refs=None, ctc=False, task='ys'):
         """Decoding in the inference stage.
 
         Args:
@@ -472,19 +485,19 @@ class Seq2seq(ModelBase):
                 fwd_bwd_attention (bool):
             nbest (int):
             exclude_eos (bool): exclude <eos> from best_hyps
-            idx2token (): converter from index to token
+            id2token (): converter from index to token
             refs (list): gold transcriptions to compute log likelihood
             ctc (bool):
             task (str): ys or ys_sub1 or ys_sub2
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
-            perm_idx (list): A list of length `[B]`
+            perm_ids (list): A list of length `[B]`
 
         """
         self.eval()
         with torch.no_grad():
-            enc_out, perm_idx = self.encode(xs, task)
+            enc_out, perm_ids = self.encode(xs, task)
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
             if task == 'ys_sub1':
                 dir += '_sub1'
@@ -502,7 +515,7 @@ class Seq2seq(ModelBase):
                 best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_out[task]['xs'], enc_out[task]['x_lens'],
                     decode_params['beam_width'], rnnlm)
-                return best_hyps, None, perm_idx
+                return best_hyps, None, perm_ids
             else:
                 if decode_params['beam_width'] == 1 and not decode_params['fwd_bwd_attention']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
@@ -514,16 +527,16 @@ class Seq2seq(ModelBase):
                         nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                             enc_out[task]['xs'], enc_out[task]['x_lens'],
                             decode_params, rnnlm_fwd,
-                            decode_params['beam_width'], False, idx2token, refs)
+                            decode_params['beam_width'], False, id2token, refs)
 
                         rnnlm_bwd = None
                         nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
                             enc_out[task]['xs'], enc_out[task]['x_lens'],
                             decode_params, rnnlm_bwd,
-                            decode_params['beam_width'], False, idx2token, refs)
+                            decode_params['beam_width'], False, id2token, refs)
                         best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                                                       nbest_hyps_bwd, aws_bwd, scores_bwd,
-                                                      idx2token, refs)
+                                                      id2token, refs)
                         aws = None
                     else:
                         # Set RNNLM
@@ -535,21 +548,21 @@ class Seq2seq(ModelBase):
                         nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
                             enc_out[task]['xs'], enc_out[task]['x_lens'],
                             decode_params, rnnlm,
-                            nbest, exclude_eos, idx2token, refs)
+                            nbest, exclude_eos, id2token, refs)
 
                         if nbest == 1:
                             best_hyps = [hyp[0] for hyp in nbest_hyps]
                             aws = [aw[0] for aw in aws]
                         else:
-                            return nbest_hyps, aws, scores, perm_idx
+                            return nbest_hyps, aws, scores, perm_ids
                         # NOTE: nbest >= 2 is used for MWER training only
 
-                return best_hyps, aws, perm_idx
+                return best_hyps, aws, perm_ids
 
 
 def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                       nbest_hyps_bwd, aws_bwd, scores_bwd,
-                      idx2token=None, refs=None):
+                      id2token=None, refs=None):
     """Forward-backward joint decoding.
     Args:
         nbest_hyps_fwd (list): A list of length `[B]`, which contains list of n hypotheses
@@ -558,7 +571,7 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
         nbest_hyps_bwd (list):
         aws_bwd (list):
         scores_bwd (list):
-        idx2token (): converter from index to token
+        id2token (): converter from index to token
         refs ():
     Returns:
 
@@ -617,12 +630,12 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                             merged.append({'hyp': new_hyp, 'score': new_score})
 
                             logger.info('time matching')
-                            if idx2token is not None:
+                            if id2token is not None:
                                 if refs is not None:
                                     logger.info('Ref: %s' % refs[b].lower())
-                                logger.info('hyp (fwd): %s' % idx2token(nbest_hyps_fwd[b][n_f]))
-                                logger.info('hyp (bwd): %s' % idx2token(nbest_hyps_bwd[b][n_b]))
-                                logger.info('hyp (fwd-bwd): %s' % idx2token(new_hyp))
+                                logger.info('hyp (fwd): %s' % id2token(nbest_hyps_fwd[b][n_f]))
+                                logger.info('hyp (bwd): %s' % id2token(nbest_hyps_bwd[b][n_b]))
+                                logger.info('hyp (fwd-bwd): %s' % id2token(new_hyp))
                             logger.info('log prob (fwd): %.3f' % scores_fwd[b][n_f][-1])
                             logger.info('log prob (bwd): %.3f' % scores_bwd[b][n_b][0])
                             logger.info('log prob (fwd-bwd): %.3f' % new_score)

@@ -21,7 +21,7 @@ logger = logging.getLogger("decoding").getChild('character')
 
 
 def eval_char(models, dataset, decode_params, epoch,
-              decode_dir=None, progressbar=False, task_idx=0):
+              decode_dir=None, progressbar=False, task_id=0):
     """Evaluate the character-level model by WER & CER.
 
     Args:
@@ -31,7 +31,7 @@ def eval_char(models, dataset, decode_params, epoch,
         epoch (int):
         decode_dir (str):
         progressbar (bool): if True, visualize the progressbar
-        task_idx (int): the index of the target task in interest
+        task_id (int): the index of the target task in interest
             0: main task
             1: sub task
             2: sub sub task
@@ -71,23 +71,23 @@ def eval_char(models, dataset, decode_params, epoch,
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
-    if task_idx == 0:
+    if task_id == 0:
         task = 'ys'
-    elif task_idx == 1:
+    elif task_id == 1:
         task = 'ys_sub1'
-    elif task_idx == 2:
+    elif task_id == 2:
         task = 'ys_sub2'
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
-            best_hyps, _, perm_idx = model.decode(batch['xs'], decode_params,
+            best_hyps, _, perm_ids = model.decode(batch['xs'], decode_params,
                                                   exclude_eos=True, task=task)
-            ys = [batch['text'][i] for i in perm_idx]
+            ys = [batch['text'][i] for i in perm_ids]
 
             for b in six.moves.range(len(batch['xs'])):
                 ref = ys[b]
-                hyp = dataset.idx2char(best_hyps[b])
+                hyp = dataset.id2char(best_hyps[b])
 
                 # Write to trn
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
@@ -101,7 +101,7 @@ def eval_char(models, dataset, decode_params, epoch,
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 50)
 
-                if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub == 'char'):
+                if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_id > 0 and dataset.unit_sub1 == 'char'):
                     # Compute WER
                     wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
                                                              hyp=hyp.split(' '),
@@ -136,7 +136,7 @@ def eval_char(models, dataset, decode_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub == 'char'):
+    if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_id > 0 and dataset.unit_sub1 == 'char'):
         wer /= nword
         nsub_w /= nword
         nins_w /= nword

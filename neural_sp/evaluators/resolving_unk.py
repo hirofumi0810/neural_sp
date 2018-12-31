@@ -14,19 +14,19 @@ import numpy as np
 import six
 
 
-def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, idx2char, diff_time_resolution=1):
+def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, id2char, diff_time_resolution=1):
     """
     Args:
         str_hyp:
         best_hyps_sub:
         aw:
         aw_sub:
-        idx2char:
+        id2char:
         diff_time_resolution:
 
     """
     oov_info = []
-    # [[idx_oov_0, t_sub_0], ...]
+    # [[id_oov_0, t_sub_0], ...]
 
     if diff_time_resolution > 1:
         assert diff_time_resolution == 2
@@ -37,9 +37,9 @@ def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, idx2char, diff_time_resoluti
         aw_sub = (aw_sub_1 + aw_sub_2) / 2
 
     # Store places for <unk>
-    for idx_oov, w in enumerate(str_hyp.split('_')):
+    for id_oov, w in enumerate(str_hyp.split('_')):
         if w == '<unk>':
-            oov_info.append([idx_oov, -1])
+            oov_info.append([id_oov, -1])
 
     # Point to characters
     for i in six.moves.range(len(oov_info)):
@@ -48,7 +48,7 @@ def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, idx2char, diff_time_resoluti
             # print(np.sum(aw[oov_info[i][0]] * aw_sub[t_sub]))
             if np.sum(aw[oov_info[i][0]] * aw_sub[t_sub]) > max_attention_overlap:
                 # Check if the correcsponding character is space
-                max_char = idx2char(best_hyps_sub[t_sub: t_sub + 1])
+                max_char = id2char(best_hyps_sub[t_sub: t_sub + 1])
                 if max_char == '_':
                     continue
 
@@ -58,18 +58,18 @@ def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, idx2char, diff_time_resoluti
 
     str_hyp_no_unk = ''
     oov_count = 0
-    for idx_oov, w in enumerate(str_hyp.split('_')):
+    for id_oov, w in enumerate(str_hyp.split('_')):
         if w == '<unk>':
             t_sub = oov_info[oov_count][1]
-            covered_word = idx2char(best_hyps_sub[t_sub: t_sub + 1])
+            covered_word = id2char(best_hyps_sub[t_sub: t_sub + 1])
 
             # Search until space (forward pass)
             fwd = 1
             while True:
                 if t_sub - fwd < 0:
                     break
-                elif idx2char(best_hyps_sub[t_sub - fwd: t_sub - fwd + 1]) not in ['_', '>']:
-                    covered_word = idx2char(best_hyps_sub[t_sub - fwd: t_sub - fwd + 1]) + covered_word
+                elif id2char(best_hyps_sub[t_sub - fwd: t_sub - fwd + 1]) not in ['_', '>']:
+                    covered_word = id2char(best_hyps_sub[t_sub - fwd: t_sub - fwd + 1]) + covered_word
                     fwd += 1
                 else:
                     break
@@ -79,8 +79,8 @@ def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, idx2char, diff_time_resoluti
             while True:
                 if t_sub + bwd > len(best_hyps_sub) - 1:
                     break
-                elif idx2char(best_hyps_sub[t_sub + bwd: t_sub + bwd + 1]) not in ['_', '>']:
-                    covered_word += idx2char(best_hyps_sub[t_sub + bwd: t_sub + bwd + 1])
+                elif id2char(best_hyps_sub[t_sub + bwd: t_sub + bwd + 1]) not in ['_', '>']:
+                    covered_word += id2char(best_hyps_sub[t_sub + bwd: t_sub + bwd + 1])
                     bwd += 1
                 else:
                     break

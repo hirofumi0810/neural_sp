@@ -13,7 +13,7 @@ from __future__ import print_function
 import codecs
 
 
-class Char2idx(object):
+class Char2id(object):
     """Class for converting character sequence into indices.
 
     Args:
@@ -65,7 +65,7 @@ class Char2idx(object):
         return token_ids
 
 
-class Idx2char(object):
+class Id2char(object):
     """Class for converting indices into character sequence.
 
     Args:

@@ -13,7 +13,7 @@ from __future__ import print_function
 import codecs
 
 
-class Word2idx(object):
+class Word2id(object):
     """Class for converting word sequence into indices.
 
     Args:
@@ -26,11 +26,11 @@ class Word2idx(object):
         self.word_char_mix = word_char_mix
 
         # Load a dictionary file
-        self.word2idx = {}
+        self.token2id = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 w, id = line.strip().encode('utf_8').split(' ')
-                self.word2idx[w] = int(id)
+                self.token2id[w] = int(id)
 
     def __call__(self, text):
         """Convert word sequence into indices.
@@ -44,22 +44,22 @@ class Word2idx(object):
         word_list = text.split(' ')
         token_ids = []
         for w in word_list:
-            if w in self.word2idx.keys():
-                token_ids.append(self.word2idx[w])
+            if w in self.token2id.keys():
+                token_ids.append(self.token2id[w])
             else:
                 # Replace with <unk>
                 if self.word_char_mix:
                     for c in list(w):
-                        if c in self.word2idx.keys():
-                            token_ids.append(self.word2idx[c])
+                        if c in self.token2id.keys():
+                            token_ids.append(self.token2id[c])
                         else:
-                            token_ids.append(self.word2idx['<unk>'])
+                            token_ids.append(self.token2id['<unk>'])
                 else:
-                    token_ids.append(self.word2idx['<unk>'])
+                    token_ids.append(self.token2id['<unk>'])
         return token_ids
 
 
-class Idx2word(object):
+class Id2word(object):
     """Class for converting indices into word sequence.
 
     Args:
@@ -69,11 +69,11 @@ class Idx2word(object):
 
     def __init__(self, dict_path):
         # Load a dictionary file
-        self.idx2word = {}
+        self.id2token = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 w, id = line.strip().encode('utf_8').split(' ')
-                self.idx2word[int(id)] = w
+                self.id2token[int(id)] = w
 
     def __call__(self, token_ids, return_list=False):
         """Convert indices into word sequence.
@@ -87,7 +87,7 @@ class Idx2word(object):
             word_list (list): list of words
 
         """
-        word_list = list(map(lambda w: self.idx2word[w], token_ids))
+        word_list = list(map(lambda w: self.id2token[w], token_ids))
         if return_list:
             return word_list
         return ' '.join(word_list)
@@ -104,18 +104,18 @@ class Char2word(object):
 
     def __init__(self, dict_path_word, dict_path_char):
         # Load a word dictionary file
-        self.word2idx = {}
+        self.word2id = {}
         with codecs.open(dict_path_word, 'r', 'utf-8') as f:
             for line in f:
                 w, id = line.strip().encode('utf_8').split(' ')
-                self.word2idx[w] = int(id)
+                self.word2id[w] = int(id)
 
         # Load a character dictionary file
-        self.idx2char = {}
+        self.id2char = {}
         with codecs.open(dict_path_char, 'r', 'utf-8') as f:
             for line in f:
                 c, id = line.strip().encode('utf_8').split(' ')
-                self.idx2char[int(id)] = c
+                self.id2char[int(id)] = c
 
     def __call__(self, char_ids):
         """Convert character indices into the single word index.
@@ -127,13 +127,13 @@ class Char2word(object):
 
         """
         # char ids -> text
-        str_single_word = ''.join(list(map(lambda i: self.idx2char[i], char_ids)))
+        str_single_word = ''.join(list(map(lambda i: self.id2char[i], char_ids)))
 
         # text -> word id
-        if str_single_word in self.word2idx.keys():
-            word_id = self.word2idx[str_single_word]
+        if str_single_word in self.word2id.keys():
+            word_id = self.word2id[str_single_word]
         else:
-            word_id = self.word2idx['<unk>']
+            word_id = self.word2id['<unk>']
         return word_id
 
 
@@ -148,18 +148,18 @@ class Word2char(object):
 
     def __init__(self, dict_path_word, dict_path_char):
         # Load a word dictionary file
-        self.idx2word = {}
+        self.id2word = {}
         with codecs.open(dict_path_word, 'r', 'utf-8') as f:
             for line in f:
                 w, id = line.strip().encode('utf_8').split(' ')
-                self.idx2word[int(id)] = w
+                self.id2word[int(id)] = w
 
         # Load a character dictionary file
-        self.char2idx = {}
+        self.char2id = {}
         with codecs.open(dict_path_char, 'r', 'utf-8') as f:
             for line in f:
                 c, id = line.strip().encode('utf_8').split(' ')
-                self.char2idx[c] = int(id)
+                self.char2id[c] = int(id)
 
     def __call__(self, word_id):
         """Convert a word index into character indices.
@@ -171,8 +171,8 @@ class Word2char(object):
 
         """
         # word id -> text
-        str_single_word = self.idx2word[word_id]
+        str_single_word = self.id2word[word_id]
 
         # text -> char ids
-        char_indices = list(map(lambda c: self.char2idx[c], list(str_single_word)))
+        char_indices = list(map(lambda c: self.char2id[c], list(str_single_word)))
         return char_indices

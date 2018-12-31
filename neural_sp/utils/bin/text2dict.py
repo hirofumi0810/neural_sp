@@ -78,10 +78,13 @@ def main():
                     else:
                         word_dict[w] += 1
 
+                if args.unit in ['char', 'word_char']:
+                    token_set |= set(list(text))
+
             elif args.unit == 'wp':
                 token_set |= set(sp.EncodeAsPieces(text))
 
-            elif args.unit in ['char', 'word_char']:
+            elif args.unit == 'char':
                 # Remove whitespaces
                 if args.remove_word_boundary:
                     text = text.replace(' ', '')
@@ -104,7 +107,7 @@ def main():
         word_char_list = sorted(list(word_dict.keys()),
                                 key=lambda x: word_dict[x],
                                 reverse=True)[:args.vocab_size]
-        word_char_list += sorted(list(token_set))
+        word_char_list += list(token_set)
         token_list = sorted(nlsyms) + sorted(list(set(word_char_list)))
 
     elif args.unit == 'wp':

@@ -14,7 +14,7 @@ import codecs
 import sentencepiece as spm
 
 
-class Wp2idx(object):
+class Wp2id(object):
     """Class for converting word-piece sequence into indices.
 
     Args:
@@ -24,11 +24,11 @@ class Wp2idx(object):
 
     def __init__(self, dict_path, wp_model):
         # Load a dictionary file
-        self.wp2idx = {}
+        self.token2id = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 wp, id = line.strip().encode('utf_8').split(' ')
-                self.wp2idx[wp] = int(id)
+                self.token2id[wp] = int(id)
 
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)
@@ -45,15 +45,15 @@ class Wp2idx(object):
         wp_list = self.sp.EncodeAsPieces(text)
         token_ids = []
         for wp in wp_list:
-            if wp in self.wp2idx.keys():
-                token_ids.append(self.wp2idx[wp])
+            if wp in self.token2id.keys():
+                token_ids.append(self.token2id[wp])
             else:
                 # Replace with <unk>
-                token_ids.append(self.wp2idx['<unk>'])
+                token_ids.append(self.token2id['<unk>'])
         return token_ids
 
 
-class Idx2wp(object):
+class Id2wp(object):
     """Class for converting indices into word-piece sequence.
 
     Args:
@@ -63,11 +63,11 @@ class Idx2wp(object):
 
     def __init__(self, dict_path, wp_model):
         # Load a dictionary file
-        self.idx2wp = {}
+        self.id2token = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 wp, id = line.strip().encode('utf_8').split(' ')
-                self.idx2wp[int(id)] = wp
+                self.id2token[int(id)] = wp
 
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)
@@ -84,7 +84,7 @@ class Idx2wp(object):
             wp_list (list): list of words
 
         """
-        wp_list = list(map(lambda wp: self.idx2wp[wp], token_ids))
+        wp_list = list(map(lambda wp: self.id2token[wp], token_ids))
         if return_list:
             return wp_list
         return self.sp.DecodePieces(wp_list)

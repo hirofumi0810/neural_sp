@@ -69,13 +69,13 @@ def eval_word(models, dataset, decode_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(decode_params['batch_size'])
-            best_hyps, aws, perm_idx = model.decode(batch['xs'], decode_params,
+            best_hyps, aws, perm_ids = model.decode(batch['xs'], decode_params,
                                                     exclude_eos=True)
-            ys = [batch['text'][i] for i in perm_idx]
+            ys = [batch['text'][i] for i in perm_ids]
 
             for b in six.moves.range(len(batch['xs'])):
                 ref = ys[b]
-                hyp = dataset.idx2word(best_hyps[b])
+                hyp = dataset.id2word(best_hyps[b])
 
                 noov_total += hyp.count('<unk>')
 
@@ -86,7 +86,7 @@ def eval_word(models, dataset, decode_params, epoch,
                     # task_index=1
 
                     hyp = resolve_unk(
-                        hyp, best_hyps_sub[0], aws[b], aw_sub[0], dataset.idx2char,
+                        hyp, best_hyps_sub[0], aws[b], aw_sub[0], dataset.id2char,
                         diff_time_resolution=2 ** sum(model.subsample) // 2 ** sum(model.subsample[:model.enc_nlayers_sub - 1]))
                     hyp = hyp.replace('*', '')
 

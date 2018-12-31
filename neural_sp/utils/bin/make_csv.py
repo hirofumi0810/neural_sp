@@ -37,7 +37,7 @@ parser.add_argument('--unk', type=str, default='<unk>',
 parser.add_argument('--space', type=str, default='<space>',
                     help='<space> token')
 parser.add_argument('--nlsyms', type=str, default='', nargs='?',
-                    help='path to non-linguistic symbols, e.g., <NOISE> etc.')
+                    help='path to non-linguistic symbols, e.g., [noise] etc.')
 parser.add_argument('--wp_model', type=str, default=False, nargs='?',
                     help='prefix of the wordpiece model')
 args = parser.parse_args()

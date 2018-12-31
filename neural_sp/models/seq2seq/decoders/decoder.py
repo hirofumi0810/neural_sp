@@ -126,7 +126,9 @@ class Decoder(nn.Module):
                  lm_type='lower_layer',  # or null_context
                  share_lm_softmax=False,
                  global_weight=1.0,
-                 mtl_per_batch=False):
+                 mtl_per_batch=False,
+                 char_pred=0,
+                 vocab_char=None):
 
         super(Decoder, self).__init__()
 
@@ -234,7 +236,6 @@ class Decoder(nn.Module):
             else:
                 self.rnn += [rnn_cell(emb_dim + enc_nunits, nunits)]
             self.dropout += [nn.Dropout(p=dropout)]
-
             for l in range(1, nlayers):
                 self.rnn += [rnn_cell(nunits, nunits)]
                 self.dropout += [nn.Dropout(p=dropout)]
@@ -265,7 +266,40 @@ class Decoder(nn.Module):
                                    dropout=dropout_emb,
                                    ignore_index=pad)
 
-    def forward(self, enc_out, enc_lens, ys, task='all'):
+            self.char_pred = char_pred
+            if char_pred > 0:
+                self.score_char = AttentionMechanism(
+                    enc_nunits=nunits,
+                    dec_nunits=nunits,
+                    attn_type=attn_type,
+                    attn_dim=attn_dim,
+                    sharpening_factor=attn_sharpening_factor,
+                    sigmoid_smoothing=attn_sigmoid_smoothing,
+                    conv_out_channels=attn_conv_out_channels,
+                    conv_kernel_size=attn_conv_kernel_size,
+                    dropout=dropout_att)
+
+                self.rnn_char = torch.nn.ModuleList()
+                self.dropout_char = torch.nn.ModuleList()
+                if rnn_type == 'lstm':
+                    rnn_cell = nn.LSTMCell
+                elif rnn_type == 'gru':
+                    rnn_cell = nn.GRUCell
+                self.rnn_char += [rnn_cell(emb_dim + nunits, nunits)]
+                self.dropout_char += [nn.Dropout(p=dropout)]
+
+                for l in range(1, nlayers):
+                    self.rnn_char += [rnn_cell(nunits, nunits)]
+                    self.dropout_char += [nn.Dropout(p=dropout)]
+
+                self.output_bn_char = LinearND(nunits + nunits, nunits)
+                self.output_char = LinearND(nunits, vocab_char)
+                self.embed_char = Embedding(vocab=vocab_char,
+                                            emb_dim=emb_dim,
+                                            dropout=dropout_emb,
+                                            ignore_index=pad)
+
+    def forward(self, enc_out, enc_lens, ys, ys_sub=None, task='all'):
         """Compute XE loss.
 
         Args:
@@ -354,6 +388,7 @@ class Decoder(nn.Module):
             # ys_lm_emb = torch.cat(ys_lm_emb, dim=1)
 
         logits_att, logits_lmobj = [], []
+        dec_outs = []
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
             is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
@@ -365,6 +400,8 @@ class Decoder(nn.Module):
             # Recurrency
             dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
                 y_emb, context, dec_state, _dec_state)
+            if self.char_pred > 0:
+                dec_outs.append(dec_out)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -417,7 +454,7 @@ class Decoder(nn.Module):
             loss_att = F.cross_entropy(
                 logits_att.view((-1, logits_att.size(2))),
                 ys_out_pad.view(-1),  # long
-                ignore_index=-1, size_average=False) / len(enc_out)
+                ignore_index=-1, size_average=False) / bs
 
         # Focal loss
         if self.focal_loss_weight > 0:
@@ -452,11 +489,78 @@ class Decoder(nn.Module):
         denominator = torch.sum(mask)
         acc = float(numerator) * 100 / float(denominator)
 
+        if self.char_pred > 0:
+            dec_outs = torch.cat(dec_outs, dim=1)
+
+            ys_sub = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys_sub]
+            ys_sub_in = [torch.cat([sos, y], dim=0) for y in ys_sub]
+            ys_sub_out = [torch.cat([y, eos], dim=0) for y in ys_sub]
+            ys_sub_in_pad = pad_list(ys_sub_in, self.pad)
+            ys_sub_out_pad = pad_list(ys_sub_out, -1)
+            dec_lens = [y.size(0) for y in ys_sub_out]
+
+            # Initialization
+            dec_out, dec_state = self.init_dec_state(enc_out, dec_lens, self.nlayers)
+            context = enc_out.new_zeros(bs, 1, self.nunits)
+            self.score_char.reset()
+            aw = None
+
+            # Pre-computation of embedding
+            ys_emb = self.embed_char(ys_sub_in_pad)
+
+            logits_char = []
+            for t in range(ys_sub_in_pad.size(1)):
+                y_emb = ys_emb[:, t:t + 1]
+
+                # Recurrency
+                hx_list, cx_list = dec_state
+                y_emb = y_emb.squeeze(1)
+                context = context.squeeze(1)
+                hx_list[0], cx_list[0] = self.rnn_char[0](torch.cat([y_emb, context], dim=-1), (hx_list[0], cx_list[0]))
+                for l in range(1, self.nlayers):
+                    hx_lower = self.dropout_char[l - 1](hx_list[l - 1])
+                    hx_list[l], cx_list[l] = self.rnn_char[l](hx_lower, (hx_list[l], cx_list[l]))
+                dec_out = self.dropout_char[-1](hx_list[-1]).unsqueeze(1)
+
+                # Score
+                context, aw = self.score_char(dec_outs, dec_lens, dec_out, aw)
+
+                # Generate
+                logits_char_t = self.output_bn_char(torch.cat([dec_out, context], dim=-1))
+                logits_char_t = self.output_char(logits_char_t)
+                logits_char.append(logits_char_t)
+            logits_char = torch.cat(logits_char, dim=1) / self.logits_temp
+
+            # Compute XE sequence loss
+            if self.lsm_prob > 0:
+                # Label smoothing
+                loss_char = cross_entropy_lsm(
+                    logits_char, ys=ys_sub_out_pad, y_lens=dec_lens,
+                    lsm_prob=self.lsm_prob, size_average=True)
+            else:
+                loss_char = F.cross_entropy(
+                    logits_char.view((-1, logits_char.size(2))),
+                    ys_sub_out_pad.view(-1),  # long
+                    ignore_index=-1, size_average=False) / bs
+            loss += loss_char * self.char_pred
+
+            # Compute token-level accuracy in teacher-forcing
+            pad_pred = logits_char.view(ys_sub_out_pad.size(0), ys_sub_out_pad.size(1), logits_char.size(-1)).argmax(2)
+            mask = ys_sub_out_pad != -1
+            numerator = torch.sum(pad_pred.masked_select(mask) == ys_sub_out_pad.masked_select(mask))
+            denominator = torch.sum(mask)
+            acc_char = float(numerator) * 100 / float(denominator)
+        else:
+            loss_char = enc_out.new_zeros(1)
+            acc_char = 0
+
         obserbation = {'loss': loss.item(),
                        'loss_att': loss_att.item(),
                        'loss_ctc': loss_ctc.item(),
                        'loss_lm': loss_lm.item(),
-                       'acc': acc}
+                       'acc': acc,
+                       'loss_char': loss_char.item(),
+                       'acc_char': acc_char}
         return loss, obserbation
 
     def init_dec_state(self, enc_out, enc_lens, nlayers):
@@ -694,7 +798,7 @@ class Decoder(nn.Module):
         return best_hyps, aws
 
     def beam_search(self, enc_out, enc_lens, params, rnnlm, nbest=1,
-                    exclude_eos=False, idx2token=None, refs=None):
+                    exclude_eos=False, id2token=None, refs=None):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -711,7 +815,7 @@ class Decoder(nn.Module):
             rnnlm (torch.nn.Module):
             nbest (int):
             exclude_eos (bool):
-            idx2token (): converter from index to token
+            id2token (): converter from index to token
             refs ():
         Returns:
             nbest_hyps (list): A list of length `[B]`, which contains list of n hypotheses
@@ -905,11 +1009,11 @@ class Decoder(nn.Module):
             eos_flag = [True if complete[n]['hyp'][-1] == eos else False for n in range(nbest)]
             eos_flags.append(eos_flag)
 
-            if idx2token is not None:
+            if id2token is not None:
                 if refs is not None:
                     logger.info('Ref: %s' % refs[b].lower())
                 for n in range(nbest):
-                    logger.info('Hyp: %s' % idx2token(nbest_hyps[0][n]))
+                    logger.info('Hyp: %s' % id2token(nbest_hyps[0][n]))
             if refs is not None:
                 logger.info('log prob (ref): ')
             for n in range(nbest):
@@ -942,7 +1046,6 @@ class Decoder(nn.Module):
             rnnlm ():
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-            perm_idx (list): A list of length `[B]`
 
         """
         logits_ctc = self.output_ctc(enc_out)

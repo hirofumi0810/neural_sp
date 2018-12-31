@@ -13,7 +13,7 @@ from __future__ import print_function
 import codecs
 
 
-class Phone2idx(object):
+class Phone2id(object):
     """Class for converting phone sequence to indices.
 
     Args:
@@ -46,7 +46,7 @@ class Phone2idx(object):
         return token_ids
 
 
-class Idx2phone(object):
+class Id2phone(object):
     """Class for converting indices to phone sequence.
 
     Args:

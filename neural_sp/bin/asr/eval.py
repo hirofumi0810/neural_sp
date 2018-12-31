@@ -67,7 +67,7 @@ parser.add_argument('--fwd_bwd_attention', type=strtobool, default=False,
                     help='Forward-backward attention decoding.')
 # MTL
 parser.add_argument('--recog_unit', type=str, default=False, nargs='?',
-                    choices=['word', 'wp', 'char', 'word_char'],
+                    choices=['word', 'wp', 'char', 'phone', 'word_char'],
                     help='')
 args = parser.parse_args()
 
@@ -94,17 +94,20 @@ def main():
         # Load dataset
         eval_set = Dataset(csv_path=set,
                            dict_path=os.path.join(args.model, 'dict.txt'),
-                           dict_path_sub=os.path.join(args.model, 'dict_sub.txt') if os.path.isfile(
-                               os.path.join(args.model, 'dict_sub.txt')) else None,
+                           dict_path_sub1=os.path.join(args.model, 'dict_sub1.txt') if os.path.isfile(
+                               os.path.join(args.model, 'dict_sub1.txt')) else None,
+                           dict_path_sub2=os.path.join(args.model, 'dict_sub2.txt') if os.path.isfile(
+                               os.path.join(args.model, 'dict_sub2.txt')) else None,
                            wp_model=os.path.join(args.model, 'wp.model'),
                            unit=args.unit,
-                           unit_sub=args.unit_sub,
+                           unit_sub1=args.unit_sub1,
+                           unit_sub2=args.unit_sub2,
                            batch_size=args.batch_size,
                            is_test=True)
 
         if i == 0:
             args.vocab = eval_set.vocab
-            args.vocab_sub = eval_set.vocab_sub
+            args.vocab_sub1 = eval_set.vocab_sub1
             args.input_dim = eval_set.input_dim
 
             # For cold fusion
@@ -169,7 +172,7 @@ def main():
 
         start_time = time.time()
 
-        if args.unit == 'word' and not args.recog_unit:
+        if args.unit in ['word', 'word_char'] and not args.recog_unit:
             wer, nsub, nins, ndel, noov_total = eval_word(
                 [model], eval_set, decode_params,
                 epoch=epoch - 1,
@@ -196,7 +199,7 @@ def main():
                 epoch=epoch - 1,
                 decode_dir=args.decode_dir,
                 progressbar=True,
-                task_idx=1 if 'char' in args.recog_unit else 0)
+                task_id=1 if args.recog_unit and 'char' in args.recog_unit else 0)
             wer_mean += wer
             cer_mean += cer
             logger.info('WER / CER (%s): %.3f / %.3f %%' % (eval_set.set, wer, cer))
