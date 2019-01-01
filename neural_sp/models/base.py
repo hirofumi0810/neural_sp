@@ -212,11 +212,11 @@ class ModelBase(nn.Module):
         elif optimizer == 'adadelta':
             self.optimizer = torch.optim.Adadelta(
                 parameters,
-                # rho=0.9,  # default
-                rho=0.95,
-                # eps=1e-6,  # default
-                eps=1e-8,
-                lr=learning_rate_init,
+                # rho=0.9,  # pytorch default
+                rho=0.95,  # chainer default
+                # eps=1e-8,  # pytorch default
+                # eps=1e-6,  # chainer default
+                eps=learning_rate_init,
                 weight_decay=weight_decay)
 
         else:
