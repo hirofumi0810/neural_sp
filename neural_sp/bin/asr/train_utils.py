@@ -20,6 +20,8 @@ import seaborn as sns
 from tensorboardX import SummaryWriter
 import yaml
 
+import torch
+
 plt.style.use('ggplot')
 blue = '#4682B4'
 orange = '#D2691E'
@@ -111,7 +113,7 @@ class Reporter(object):
             plt.clf()
             upper = 0
             i = 0
-            for name, v in self.obs_train[category].items():
+            for name, v in sorted(self.obs_train[category].items()):
                 # skip non-observed values
                 if np.mean(self.obs_train[category][name]) == 0:
                     continue
@@ -151,7 +153,7 @@ class Controller(object):
 
     Args:
         learning_rate_init (float): the initial learning rate
-        decay_type (str): per_epoch or compare_metric
+        decay_type (str): epoch or metric
         decay_start_epoch (int): the epoch to start decay
         decay_rate (float): the rate to decay the current learning rate
         decay_patient_epoch (int): decay learning rate if results have not been
@@ -177,7 +179,6 @@ class Controller(object):
         self.not_improved_epoch = 0
         self.lower_better = lower_better
         self.best_value = best_value
-        assert decay_type in ['per_epoch', 'compare_metric', 'warmup']
 
         # for warmup
         self.model_size = model_size
@@ -185,7 +186,7 @@ class Controller(object):
         self.factor = factor
 
     def decay_lr(self, optimizer, learning_rate, epoch, value):
-        """Decay learning rate per EPOCH.
+        """Decay learning rate per epoch.
 
         Args:
             optimizer:
@@ -201,13 +202,13 @@ class Controller(object):
             value *= -1
 
         if epoch < self.decay_start_epoch:
-            if self.decay_type == 'compare_metric':
+            if self.decay_type == 'metric':
                 if value < self.best_value:
                     # Update the best value
                     self.best_value = value
                     # NOTE: not update learning rate here
         else:
-            if self.decay_type == 'compare_metric':
+            if self.decay_type == 'metric':
                 if value < self.best_value:
                     # Improved
                     self.best_value = value
@@ -222,19 +223,25 @@ class Controller(object):
 
                     # Update optimizer
                     for param_group in optimizer.param_groups:
-                        param_group['lr'] = learning_rate
+                        if isinstance(optimizer, torch.optim.Adadelta):
+                            param_group['eps'] = learning_rate
+                        else:
+                            param_group['lr'] = learning_rate
 
-            elif self.decay_type == 'per_epoch':
+            elif self.decay_type == 'epoch':
                 learning_rate = learning_rate * self.decay_rate
 
                 # Update optimizer
                 for param_group in optimizer.param_groups:
-                    param_group['lr'] = learning_rate
+                    if isinstance(optimizer, torch.optim.Adadelta):
+                        param_group['eps'] = learning_rate
+                    else:
+                        param_group['lr'] = learning_rate
 
         return optimizer, learning_rate
 
     def warmup_lr(self, optimizer, learning_rate, step):
-        """Warm up learning rate per STEP.
+        """Warm up learning rate per step.
 
         Args:
             optimizer:

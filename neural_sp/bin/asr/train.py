@@ -197,8 +197,8 @@ parser.add_argument('--print_step', type=int, default=200,
 parser.add_argument('--metric', type=str, default='edit_distance',
                     choices=['edit_distance', 'loss', 'acc', 'ppl', 'bleu'],
                     help='')
-parser.add_argument('--decay_type', type=str, default='per_epoch',
-                    choices=['per_epoch', 'compare_metric', 'warmup'],
+parser.add_argument('--decay_type', type=str, default='epoch',
+                    choices=['epoch', 'metric', 'warmup'],
                     help='')
 parser.add_argument('--decay_start_epoch', type=int, default=10,
                     help='')
