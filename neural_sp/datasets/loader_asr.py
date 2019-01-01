@@ -42,11 +42,11 @@ class Dataset(Base):
                  shuffle=False, sort_by_input_length=False,
                  short2long=False, sort_stop_epoch=None,
                  nques=None, dynamic_batching=False,
-                 ctc=False, subsample_factor=1,
-                 skip_speech=False, wp_model=None,
-                 csv_path_sub1=None, dict_path_sub1=None, unit_sub1=None,
+                 ctc=False, subsample_factor=1, skip_speech=False,
+                 wp_model=False, wp_model_sub1=False, wp_model_sub2=False,
+                 csv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
                  ctc_sub1=False, subsample_factor_sub1=1,
-                 csv_path_sub2=None, dict_path_sub2=None, unit_sub2=None,
+                 csv_path_sub2=False, dict_path_sub2=False, unit_sub2=False,
                  ctc_sub2=False, subsample_factor_sub2=1):
         """A class for loading dataset.
 
@@ -106,14 +106,14 @@ class Dataset(Base):
         else:
             raise ValueError(unit)
 
-        if dict_path_sub1 is not None:
+        if dict_path_sub1:
             self.vocab_sub1 = self.count_vocab_size(dict_path_sub1)
 
             # Set index converter
-            if unit_sub1 is not None:
+            if unit_sub1:
                 if unit_sub1 == 'wp':
-                    self.id2word = Id2word(dict_path_sub1)
-                    self.word2id = Word2id(dict_path_sub1)
+                    self.id2wp = Id2wp(dict_path_sub1, wp_model_sub1)
+                    self.wp2id = Wp2id(dict_path_sub1, wp_model_sub1)
                 elif unit_sub1 == 'char':
                     self.id2char = Id2char(dict_path_sub1)
                     self.char2id = Char2id(dict_path_sub1)
@@ -125,14 +125,14 @@ class Dataset(Base):
         else:
             self.vocab_sub1 = -1
 
-        if dict_path_sub2 is not None:
+        if dict_path_sub2:
             self.vocab_sub2 = self.count_vocab_size(dict_path_sub2)
 
             # Set index converter
-            if unit_sub2 is not None:
+            if unit_sub2:
                 if unit_sub2 == 'wp':
-                    self.id2word = Id2word(dict_path_sub2)
-                    self.word2id = Word2id(dict_path_sub2)
+                    self.id2wp = Id2wp(dict_path_sub2, wp_model_sub2)
+                    self.wp2id = Wp2id(dict_path_sub2, wp_model_sub2)
                 elif unit_sub2 == 'char':
                     self.id2char = Id2char(dict_path_sub2)
                     self.char2id = Char2id(dict_path_sub2)
@@ -147,50 +147,50 @@ class Dataset(Base):
         # Load dataset csv file
         df = pd.read_csv(csv_path, encoding='utf-8', delimiter=',')
         df = df.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
-        if csv_path_sub1 is not None:
+        if csv_path_sub1:
             df_sub1 = pd.read_csv(csv_path_sub1, encoding='utf-8', delimiter=',')
             df_sub1 = df_sub1.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
         else:
-            df_sub1 = None
-        if csv_path_sub2 is not None:
+            df_sub1 = False
+        if csv_path_sub2:
             df_sub2 = pd.read_csv(csv_path_sub2, encoding='utf-8', delimiter=',')
             df_sub2 = df_sub2.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
         else:
-            df_sub2 = None
+            df_sub2 = False
 
         # Remove inappropriate utteraces
         if not self.is_test:
-            logger.info('Original utterance num: %d' % len(df))
+            print('Original utterance num: %d' % len(df))
             num_utt_org = len(df)
 
             # Remove by threshold
             df = df[df.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
-            logger.info('Removed %d utterances (threshold)' % (num_utt_org - len(df)))
+            print('Removed %d utterances (threshold)' % (num_utt_org - len(df)))
 
             # Rempve for CTC loss calculatioon
             if ctc and subsample_factor > 1:
-                logger.info('Checking utterances for CTC...')
-                logger.info('Original utterance num: %d' % len(df))
+                print('Checking utterances for CTC...')
+                print('Original utterance num: %d' % len(df))
                 num_utt_org = len(df)
                 df = df[df.apply(lambda x: x['y_len'] <= x['x_len'] // subsample_factor, axis=1)]
-                logger.info('Removed %d utterances (for CTC)' % (num_utt_org - len(df)))
+                print('Removed %d utterances (for CTC)' % (num_utt_org - len(df)))
 
-            if df_sub1 is not None:
-                logger.info('Original utterance num (sub1): %d' % len(df_sub1))
+            if df_sub1:
+                print('Original utterance num (sub1): %d' % len(df_sub1))
                 num_utt_org = len(df_sub1)
 
                 # Remove by threshold
                 df_sub1 = df_sub1[df_sub1.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
-                logger.info('Removed %d utterances (threshold, sub1)' % (num_utt_org - len(df_sub1)))
+                print('Removed %d utterances (threshold, sub1)' % (num_utt_org - len(df_sub1)))
 
                 # Rempve for CTC loss calculatioon
                 if ctc_sub1 and subsample_factor_sub1 > 1:
-                    logger.info('Checking utterances for CTC...')
-                    logger.info('Original utterance num (sub1): %d' % len(df_sub1))
+                    print('Checking utterances for CTC...')
+                    print('Original utterance num (sub1): %d' % len(df_sub1))
                     num_utt_org = len(df_sub1)
                     df_sub1 = df_sub1[df_sub1.apply(lambda x: x['y_len'] <= x['x_len'] //
                                                     subsample_factor_sub1, axis=1)]
-                    logger.info('Removed %d utterances (for CTC, sub1)' % (num_utt_org - len(df_sub1)))
+                    print('Removed %d utterances (for CTC, sub1)' % (num_utt_org - len(df_sub1)))
 
                 # Make up the number
                 if len(df) != len(df_sub1):
@@ -247,7 +247,7 @@ class Dataset(Base):
         y_lens = [self.df['y_len'][i] for i in utt_indices]
         text = [self.df['text'][i].encode('utf-8') for i in utt_indices]
 
-        if self.df_sub1 is not None:
+        if self.df_sub1:
             if self.is_test:
                 ys_sub1 = [self.df_sub1['text'][i].encode('utf-8') for i in utt_indices]
             else:
@@ -256,7 +256,7 @@ class Dataset(Base):
         else:
             ys_sub1, y_lens_sub1 = [], []
 
-        if self.df_sub2 is not None:
+        if self.df_sub2:
             if self.is_test:
                 ys_sub2 = [self.df_sub2['text'][i].encode('utf-8') for i in utt_indices]
             else:
