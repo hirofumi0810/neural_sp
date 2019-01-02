@@ -273,8 +273,6 @@ parser.add_argument('--mtl_per_batch', type=bool, default=False, nargs='?',
                     help='If True, change mini-batch per task')
 parser.add_argument('--task_specific_layer', type=bool, default=False, nargs='?',
                     help='If True, insert a task-specific encoder layer per task')
-parser.add_argument('--char_pred', type=float, default=0.0,
-                    help='')
 # foroward-backward
 parser.add_argument('--bwd_weight', type=float, default=0.0,
                     help='')
@@ -538,8 +536,6 @@ def main():
                             str(args.sub2_weight - args.ctc_weight_sub2)
         if args.task_specific_layer:
             dir_name += '_tsl'
-        if args.char_pred > 0:
-            dir_name += '_char' + str(args.char_pred)
         # Pre-training
         if args.pretrained_model and os.path.isdir(args.pretrained_model):
             # Load a config file

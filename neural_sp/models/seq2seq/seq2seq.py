@@ -82,10 +82,6 @@ class Seq2seq(ModelBase):
         self.sub2_weight = args.sub2_weight
         self.mtl_per_batch = args.mtl_per_batch
 
-        if not hasattr(args, 'char_pred'):
-            args.char_pred = False
-        self.char_pred = args.char_pred
-
         # Setting for the CNN encoder
         if args.conv_poolings:
             conv_channels = [int(c) for c in args.conv_channels.split('_')] if len(args.conv_channels) > 0 else []
@@ -210,13 +206,12 @@ class Seq2seq(ModelBase):
                 share_lm_softmax=args.share_lm_softmax,
                 global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                 mtl_per_batch=args.mtl_per_batch,
-                char_pred=args.char_pred,
                 vocab_char=args.vocab_sub1)
             setattr(self, 'dec_' + dir, dec)
 
         # sub task (only for fwd)
         for sub in ['sub1', 'sub2']:
-            if getattr(self, sub + '_weight') > 0 or (args.mtl_per_batch and (args, 'dict_' + sub)):
+            if getattr(self, sub + '_weight') > 0:
                 # Decoder
                 dec_fwd_sub = Decoder(
                     sos=self.sos,
@@ -352,19 +347,12 @@ class Seq2seq(ModelBase):
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0 and task in ['all', 'ys']:
             ys = [batch['ys'][i] for i in perm_ids]
-            if self.char_pred > 0:
-                ys_char = [batch['ys_sub1'][i] for i in perm_ids]
-            else:
-                ys_char = None
-            loss_fwd, obs_fwd = self.dec_fwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys, ys_char)
+            loss_fwd, obs_fwd = self.dec_fwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
             observation['loss.lm'] = obs_fwd['loss_lm']
             observation['acc.main'] = obs_fwd['acc']
-            if self.char_pred > 0:
-                observation['loss.char'] = obs_fwd['loss_char']
-                observation['acc.char'] = obs_fwd['acc_char']
 
         # Compute XE loss for the backward decoder
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:

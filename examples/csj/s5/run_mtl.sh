@@ -40,6 +40,7 @@ subsample_type=drop
 attn_type=location
 attn_dim=320
 attn_nheads=1
+attn_sigmoid=
 dec_type=lstm
 dec_nunits=320
 dec_nprojs=0
@@ -224,8 +225,6 @@ if [ ${stage} -le 4 ]; then
   echo "                       ASR Training stage (stage:4)                        "
   echo ============================================================================
 
-  echo "Start ASR training..."
-
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.csv \
@@ -256,6 +255,7 @@ if [ ${stage} -le 4 ]; then
     --attn_type ${attn_type} \
     --attn_dim ${attn_dim} \
     --attn_nheads ${attn_nheads} \
+    --attn_sigmoid ${attn_sigmoid} \
     --dec_type ${dec_type} \
     --dec_nunits ${dec_nunits} \
     --dec_nprojs ${dec_nprojs} \

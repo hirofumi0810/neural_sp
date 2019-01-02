@@ -14,8 +14,8 @@ gpu=
 export data=/n/sd8/inaguma/corpus/swbd
 
 ### vocabulary
-unit=word        # or wp or word_char
-vocab_size=12500
+unit=wp          # or word or char or word_char
+vocab_size=10000
 wp_type=unigram  # or bpe (for wordpiece)
 unit_sub1=char
 
@@ -81,6 +81,7 @@ weight_decay=1e-6
 ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
+focal_loss=0.0
 ### MTL
 ctc_weight=0.0
 ctc_weight_sub1=0.0
@@ -281,6 +282,7 @@ if [ ${stage} -le 4 ]; then
     --ss_prob ${ss_prob} \
     --ss_type ${ss_type} \
     --lsm_prob ${lsm_prob} \
+    --focal_loss_weight ${focal_loss} \
     --ctc_weight ${ctc_weight} \
     --ctc_weight_sub1 ${ctc_weight_sub1} \
     --bwd_weight ${bwd_weight} \
