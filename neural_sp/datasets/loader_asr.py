@@ -151,53 +151,53 @@ class Dataset(Base):
             df_sub1 = pd.read_csv(csv_path_sub1, encoding='utf-8', delimiter=',')
             df_sub1 = df_sub1.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
         else:
-            df_sub1 = False
+            df_sub1 = None
         if csv_path_sub2:
             df_sub2 = pd.read_csv(csv_path_sub2, encoding='utf-8', delimiter=',')
             df_sub2 = df_sub2.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
         else:
-            df_sub2 = False
+            df_sub2 = None
 
         # Remove inappropriate utteraces
         if not self.is_test:
             print('Original utterance num: %d' % len(df))
-            num_utt_org = len(df)
+            nutts_org = len(df)
 
             # Remove by threshold
             df = df[df.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
-            print('Removed %d utterances (threshold)' % (num_utt_org - len(df)))
+            print('Removed %d utterances (threshold)' % (nutts_org - len(df)))
 
             # Rempve for CTC loss calculatioon
             if ctc and subsample_factor > 1:
                 print('Checking utterances for CTC...')
                 print('Original utterance num: %d' % len(df))
-                num_utt_org = len(df)
+                nutts_org = len(df)
                 df = df[df.apply(lambda x: x['y_len'] <= x['x_len'] // subsample_factor, axis=1)]
-                print('Removed %d utterances (for CTC)' % (num_utt_org - len(df)))
+                print('Removed %d utterances (for CTC)' % (nutts_org - len(df)))
 
-            if df_sub1:
+            if df_sub1 is not None:
                 print('Original utterance num (sub1): %d' % len(df_sub1))
-                num_utt_org = len(df_sub1)
+                nutts_org = len(df_sub1)
 
                 # Remove by threshold
                 df_sub1 = df_sub1[df_sub1.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
-                print('Removed %d utterances (threshold, sub1)' % (num_utt_org - len(df_sub1)))
+                print('Removed %d utterances (threshold, sub1)' % (nutts_org - len(df_sub1)))
 
                 # Rempve for CTC loss calculatioon
                 if ctc_sub1 and subsample_factor_sub1 > 1:
                     print('Checking utterances for CTC...')
                     print('Original utterance num (sub1): %d' % len(df_sub1))
-                    num_utt_org = len(df_sub1)
+                    nutts_org = len(df_sub1)
                     df_sub1 = df_sub1[df_sub1.apply(lambda x: x['y_len'] <= x['x_len'] //
                                                     subsample_factor_sub1, axis=1)]
-                    print('Removed %d utterances (for CTC, sub1)' % (num_utt_org - len(df_sub1)))
+                    print('Removed %d utterances (for CTC, sub1)' % (nutts_org - len(df_sub1)))
 
                 # Make up the number
                 if len(df) != len(df_sub1):
                     df = df.drop(df.index.difference(df_sub1.index))
                     df_sub1 = df_sub1.drop(df_sub1.index.difference(df.index))
 
-                # TODO(hirofumi): add df_sub2
+            # TODO(hirofumi): add df_sub2
 
         # Sort csv records
         if sort_by_input_length:
@@ -247,7 +247,7 @@ class Dataset(Base):
         y_lens = [self.df['y_len'][i] for i in utt_indices]
         text = [self.df['text'][i].encode('utf-8') for i in utt_indices]
 
-        if self.df_sub1:
+        if self.df_sub1 is not None:
             if self.is_test:
                 ys_sub1 = [self.df_sub1['text'][i].encode('utf-8') for i in utt_indices]
             else:
@@ -256,7 +256,7 @@ class Dataset(Base):
         else:
             ys_sub1, y_lens_sub1 = [], []
 
-        if self.df_sub2:
+        if self.df_sub2 is not None:
             if self.is_test:
                 ys_sub2 = [self.df_sub2['text'][i].encode('utf-8') for i in utt_indices]
             else:
