@@ -265,12 +265,12 @@ class Decoder(nn.Module):
                                    dropout=dropout_emb,
                                    ignore_index=pad)
 
-    def forward(self, enc_out, enc_lens, ys, task='all'):
+    def forward(self, eouts, elens, ys, task='all'):
         """Compute XE loss.
 
         Args:
-            enc_out (FloatTensor): `[B, T, dec_units]`
-            enc_lens (list): A list of length `[B]`
+            eouts (FloatTensor): `[B, T, dec_units]`
+            elens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             task (str): all or att or ctc or lmobj
         Returns:
@@ -279,12 +279,12 @@ class Decoder(nn.Module):
             logits_lmobj (FloatTensor): `[B, L, vocab]`
 
         """
-        device_id = enc_out.get_device()
-        bs, _, enc_nunits = enc_out.size()
+        device_id = eouts.get_device()
+        bs, _, enc_nunits = eouts.size()
 
         # Compute the auxiliary CTC loss
         if self.ctc_weight > 0 and not self.backward:
-            enc_lens_ctc = np2var(np.fromiter(enc_lens, dtype=np.int32), -1).int()
+            enc_lens_ctc = np2var(np.fromiter(elens, dtype=np.int32), -1).int()
             ys_ctc = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]  # always fwd
             y_lens = np2var(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int32), -1).int()
             # NOTE: do not copy to GPUs here
@@ -293,7 +293,7 @@ class Decoder(nn.Module):
             ys_ctc = torch.cat(ys_ctc, dim=0).int()
 
             # Compute CTC loss
-            logits_ctc = self.output_ctc(enc_out)
+            logits_ctc = self.output_ctc(eouts)
             loss_ctc = self.warpctc_loss(logits_ctc.transpose(0, 1).cpu(),  # time-major
                                          ys_ctc.cpu(), enc_lens_ctc, y_lens)
             # NOTE: ctc loss has already been normalized by bs
@@ -309,11 +309,11 @@ class Decoder(nn.Module):
             # Label smoothing
             # if self.lsm_prob > 0:
             #     loss_ctc = loss_ctc * (1 - self.lsm_prob) + kldiv_lsm_ctc(
-            #         logits_ctc, y_lens=enc_lens,
+            #         logits_ctc, y_lens=elens,
             #         lsm_prob=self.lsm_prob, size_average=True) * self.lsm_prob
         else:
-            loss_ctc = enc_out.new_zeros(1)
-            loss = enc_out.new_zeros(1)
+            loss_ctc = eouts.new_zeros(1)
+            loss = eouts.new_zeros(1)
 
         if self.ctc_weight >= self.global_weight:
             obserbation = {'loss': loss.item(),
@@ -324,8 +324,8 @@ class Decoder(nn.Module):
             return loss, obserbation
 
         # Append <sos> and <eos>
-        sos = enc_out.new_zeros(1).fill_(self.sos).long()
-        eos = enc_out.new_zeros(1).fill_(self.eos).long()
+        sos = eouts.new_zeros(1).fill_(self.sos).long()
+        eos = eouts.new_zeros(1).fill_(self.eos).long()
         if self.backward:
             ys = [np2var(np.fromiter(y[::-1], dtype=np.int64), device_id).long() for y in ys]
             ys_in = [torch.cat([eos, y], dim=0) for y in ys]
@@ -338,9 +338,9 @@ class Decoder(nn.Module):
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.nlayers)
-        _dec_out, _dec_state = self.init_dec_state(enc_out, enc_lens, 1)  # for internal LM
-        context = enc_out.new_zeros(bs, 1, enc_nunits)
+        dout, dstate = self.init_dec_state(eouts, elens, self.nlayers)
+        _dout, _dstate = self.init_dec_state(eouts, elens, 1)  # for internal LM
+        context = eouts.new_zeros(bs, 1, enc_nunits)
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -363,8 +363,8 @@ class Decoder(nn.Module):
                 y_emb = ys_emb[:, t:t + 1]
 
             # Recurrency
-            dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
-                y_emb, context, dec_state, _dec_state)
+            dout, dstate, _dout, _dstate = self.recurrency(
+                y_emb, context, dstate, _dstate)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -377,14 +377,14 @@ class Decoder(nn.Module):
                 logits_rnnlm_t, rnnlm_out = None, None
 
             # Score
-            context, aw = self.score(enc_out, enc_lens, dec_out, aw)
+            context, aw = self.score(eouts, elens, dout, aw)
 
             # Generate
-            logits_att_t = self.generate(context, dec_out, logits_rnnlm_t, rnnlm_out)
+            logits_att_t = self.generate(context, dout, logits_rnnlm_t, rnnlm_out)
 
             # Residual connection
             if self.rnnlm_init and self.internal_lm:
-                logits_att_t += _dec_out
+                logits_att_t += _dout
 
             logits_att_t = self.output(logits_att_t)
             logits_att.append(logits_att_t)
@@ -392,13 +392,13 @@ class Decoder(nn.Module):
             if self.lmobj_weight > 0:
                 if self.lm_type == 'lower_layer':
                     if self.share_lm_softmax:
-                        logits_lmobj_t = self.output(_dec_out)
+                        logits_lmobj_t = self.output(_dout)
                     else:
-                        logits_lmobj_t = self.output_rnnlm(_dec_out)
+                        logits_lmobj_t = self.output_rnnlm(_dout)
                 elif self.lm_type == 'null_context':
                     # Generate
-                    null_context = enc_out.new_zeros(bs, 1, enc_nunits)
-                    logits_lmobj_t = self.generate(null_context, dec_out, None, None)
+                    null_context = eouts.new_zeros(bs, 1, enc_nunits)
+                    logits_lmobj_t = self.generate(null_context, dout, None, None)
                     raise NotImplementedError()
                 else:
                     raise NotImplementedError()
@@ -443,7 +443,7 @@ class Decoder(nn.Module):
             else:
                 loss += loss_lm * self.lmobj_weight
         else:
-            loss_lm = enc_out.new_zeros(1)
+            loss_lm = eouts.new_zeros(1)
 
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits_att.view(ys_out_pad.size(0), ys_out_pad.size(1), logits_att.size(-1)).argmax(2)
@@ -459,70 +459,70 @@ class Decoder(nn.Module):
                        'acc': acc}
         return loss, obserbation
 
-    def init_dec_state(self, enc_out, enc_lens, nlayers):
+    def init_dec_state(self, eouts, elens, nlayers):
         """Initialize decoder state.
 
         Args:
-            enc_out (FloatTensor): `[B, T, dec_units]`
-            enc_lens (list): A list of length `[B]`
+            eouts (FloatTensor): `[B, T, dec_units]`
+            elens (list): A list of length `[B]`
             nlayers (int):
         Returns:
-            dec_out (FloatTensor): `[B, 1, dec_units]`
-            dec_state (tuple): A tuple of (hx_list, cx_list)
+            dout (FloatTensor): `[B, 1, dec_units]`
+            dstate (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of FloatTensor):
                 cx_list (list of FloatTensor):
 
         """
-        bs = enc_out.size(0)
+        bs = eouts.size(0)
 
         if self.init_with_enc:
-            if enc_out.size(-1) == self.nunits:
+            if eouts.size(-1) == self.nunits:
                 # unidirectinal encoder
-                dec_out = torch.cat([enc_out[b:b + 1, enc_lens[b] - 1:enc_lens[b]]
-                                     for b in range(len(enc_lens))], dim=0)
+                dout = torch.cat([eouts[b:b + 1, elens[b] - 1:elens[b]]
+                                  for b in range(len(elens))], dim=0)
             else:
                 raise NotImplementedError()
                 # TODO(hirofumi): add bridge layer
                 # bidirectional encoder
-                dec_out = torch.cat([enc_out[b:b + 1, 0:1, self.nunits:]
-                                     for b in range(len(enc_lens))], dim=0)
+                dout = torch.cat([eouts[b:b + 1, 0:1, self.nunits:]
+                                  for b in range(len(elens))], dim=0)
                 # NOTE: initialize with reverse direction
-            dec_out = torch.tanh(dec_out)
-            hx_list = [dec_out.clone().squeeze(1)] * self.nlayers
-            cx_list = [dec_out.clone().squeeze(1)] * self.nlayers if self.rnn_type == 'lstm' else None
+            dout = torch.tanh(dout)
+            hx_list = [dout.clone().squeeze(1)] * self.nlayers
+            cx_list = [dout.clone().squeeze(1)] * self.nlayers if self.rnn_type == 'lstm' else None
         else:
-            dec_out = enc_out.new_zeros(bs, 1, self.nunits)
-            zero_state = enc_out.new_zeros(bs, self.nunits)
+            dout = eouts.new_zeros(bs, 1, self.nunits)
+            zero_state = eouts.new_zeros(bs, self.nunits)
             hx_list = [zero_state] * self.nlayers
             cx_list = [zero_state] * self.nlayers if self.rnn_type == 'lstm' else None
 
-        return dec_out, (hx_list, cx_list)
+        return dout, (hx_list, cx_list)
 
-    def recurrency(self, y_emb, context, dec_state, _dec_state):
+    def recurrency(self, y_emb, context, dstate, _dstate):
         """Recurrency function.
 
         Args:
             y_emb (FloatTensor): `[B, 1, emb_dim]`
             context (FloatTensor): `[B, 1, enc_nunits]`
-            dec_state (tuple): A tuple of (hx_list, cx_list)
+            dstate (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of FloatTensor):
                 cx_list (list of FloatTensor):
-            _dec_state (tuple): A tuple of (hx_list, cx_list)
+            _dstate (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of FloatTensor):
                 cx_list (list of FloatTensor):
         Returns:
-            dec_out (FloatTensor): `[B, 1, nunits]`
-            dec_state (tuple): A tuple of (hx_list, cx_list)
+            dout (FloatTensor): `[B, 1, nunits]`
+            dstate (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of FloatTensor):
                 cx_list (list of FloatTensor):
-            _dec_out (FloatTensor): `[B, 1, nunits]`
-            _dec_state (tuple): A tuple of (hx_list, cx_list)
+            _dout (FloatTensor): `[B, 1, nunits]`
+            _dstate (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of FloatTensor):
                 cx_list (list of FloatTensor):
 
         """
-        hx_list, cx_list = dec_state
-        hx_lm, cx_lm = _dec_state
+        hx_list, cx_list = dstate
+        hx_lm, cx_lm = _dstate
         y_emb = y_emb.squeeze(1)
         context = context.squeeze(1)
 
@@ -535,13 +535,13 @@ class Decoder(nn.Module):
                 hx_lm = self.rnn_inlm(y_emb, hx_lm)
                 _h_lm = torch.cat([self.dropout_inlm(hx_lm), context], dim=-1)
                 hx_list[0] = self.rnn[0](_h_lm, hx_list[0])
-            _dec_out = self.dropout[0](hx_lm[0]).unsqueeze(1)
+            _dout = self.dropout[0](hx_lm[0]).unsqueeze(1)
         else:
             if self.rnn_type == 'lstm':
                 hx_list[0], cx_list[0] = self.rnn[0](torch.cat([y_emb, context], dim=-1), (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
                 hx_list[0] = self.rnn[0](torch.cat([y_emb, context], dim=-1), hx_list[0])
-            _dec_out = None
+            _dout = None
 
         for l in range(1, self.nlayers):
             hx_lower = self.dropout[l - 1](hx_list[l - 1])
@@ -554,15 +554,15 @@ class Decoder(nn.Module):
             if self.residual:
                 hx_list[l] += hx_lower
 
-        dec_out = self.dropout[-1](hx_list[-1]).unsqueeze(1)
-        return dec_out, (hx_list, cx_list), _dec_out, (hx_lm, cx_lm)
+        dout = self.dropout[-1](hx_list[-1]).unsqueeze(1)
+        return dout, (hx_list, cx_list), _dout, (hx_lm, cx_lm)
 
-    def generate(self, context, dec_out, logits_rnnlm_t, rnnlm_out):
+    def generate(self, context, dout, logits_rnnlm_t, rnnlm_out):
         """Generate function.
 
         Args:
             context (FloatTensor): `[B, 1, enc_nunits]`
-            dec_out (FloatTensor): `[B, 1, dec_units]`
+            dout (FloatTensor): `[B, 1, dec_units]`
             logits_rnnlm_t (FloatTensor): `[B, 1, vocab]`
             rnnlm_out (FloatTensor): `[B, 1, lm_nunits]`
         Returns:
@@ -575,20 +575,20 @@ class Decoder(nn.Module):
                 lm_feat = self.cf_linear_lm_feat(rnnlm_out)
             elif self.cold_fusion == 'prob':
                 lm_feat = self.cf_linear_lm_feat(logits_rnnlm_t)
-            dec_feat = self.cf_linear_dec_feat(torch.cat([dec_out, context], dim=-1))
+            dec_feat = self.cf_linear_dec_feat(torch.cat([dout, context], dim=-1))
             gate = F.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
             logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
-            logits_t = self.output_bn(torch.cat([dec_out, context], dim=-1))
+            logits_t = self.output_bn(torch.cat([dout, context], dim=-1))
         return torch.tanh(logits_t)
 
-    def greedy(self, enc_out, enc_lens, max_len_ratio, exclude_eos=False):
+    def greedy(self, eouts, elens, max_len_ratio, exclude_eos=False):
         """Greedy decoding in the inference stage.
 
         Args:
-            enc_out (FloatTensor): `[B, T, enc_units]`
-            enc_lens (list): A list of length `[B]`
+            eouts (FloatTensor): `[B, T, enc_units]`
+            elens (list): A list of length `[B]`
             max_len_ratio (int): the maximum sequence length of tokens
             exclude_eos (bool):
         Returns:
@@ -596,12 +596,12 @@ class Decoder(nn.Module):
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
 
         """
-        bs, enc_time, enc_nunits = enc_out.size()
+        bs, enc_time, enc_nunits = eouts.size()
 
         # Initialization
-        dec_out, dec_state = self.init_dec_state(enc_out, enc_lens, self.nlayers)
-        _dec_out, _dec_state = self.init_dec_state(enc_out, enc_lens, 1)
-        context = enc_out.new_zeros(bs, 1, enc_nunits)
+        dout, dstate = self.init_dec_state(eouts, elens, self.nlayers)
+        _dout, _dstate = self.init_dec_state(eouts, elens, 1)
+        context = eouts.new_zeros(bs, 1, enc_nunits)
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -612,7 +612,7 @@ class Decoder(nn.Module):
             sos, eos = self.sos, self.eos
 
         # Start from <sos> (<eos> in case of the backward decoder)
-        y = enc_out.new_zeros(bs, 1).fill_(sos).long()
+        y = eouts.new_zeros(bs, 1).fill_(sos).long()
 
         best_hyps_tmp, aws_tmp = [], []
         y_lens = np.zeros((bs,), dtype=np.int32)
@@ -620,8 +620,8 @@ class Decoder(nn.Module):
         for t in range(int(math.floor(enc_time * max_len_ratio)) + 1):
             # Recurrency
             y_emb = self.embed(y)
-            dec_out, dec_state, _dec_out, _dec_state = self.recurrency(
-                y_emb, context, dec_state, _dec_state)
+            dout, dstate, _dout, _dstate = self.recurrency(
+                y_emb, context, dstate, _dstate)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -631,14 +631,14 @@ class Decoder(nn.Module):
                 logits_rnnlm_t, rnnlm_out = None, None
 
             # Score
-            context, aw = self.score(enc_out, enc_lens, dec_out, aw)
+            context, aw = self.score(eouts, elens, dout, aw)
 
             # Generate
-            logits_t = self.generate(context, dec_out, logits_rnnlm_t, rnnlm_out)
+            logits_t = self.generate(context, dout, logits_rnnlm_t, rnnlm_out)
 
             # Residual connection
             if self.rnnlm_init and self.internal_lm:
-                logits_t += _dec_out
+                logits_t += _dout
 
             if self.share_lm_softmax or self.rnnlm_init:
                 logits_t = self.output_bn(logits_t)
@@ -693,13 +693,13 @@ class Decoder(nn.Module):
 
         return best_hyps, aws
 
-    def beam_search(self, enc_out, enc_lens, params, rnnlm, nbest=1,
+    def beam_search(self, eouts, elens, params, rnnlm, nbest=1,
                     exclude_eos=False, id2token=None, refs=None):
         """Beam search decoding in the inference stage.
 
         Args:
-            enc_out (FloatTensor): `[B, T, dec_units]`
-            enc_lens (list): A list of length `[B]`
+            eouts (FloatTensor): `[B, T, dec_units]`
+            elens (list): A list of length `[B]`
             params (dict):
                 beam_width (int): the size of beam
                 max_len_ratio (int): the maximum sequence length of tokens
@@ -719,7 +719,7 @@ class Decoder(nn.Module):
             scores (list):
 
         """
-        bs, _, enc_nunits = enc_out.size()
+        bs, _, enc_nunits = eouts.size()
 
         # For cold fusion
         if params['rnnlm_weight'] > 0 and not self.cold_fusion:
@@ -739,9 +739,9 @@ class Decoder(nn.Module):
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
-            dec_out, (hx_list, cx_list) = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], self.nlayers)
-            _dec_out, _dec_state = self.init_dec_state(enc_out[b:b + 1], enc_lens[b:b + 1], 1)
-            context = enc_out.new_zeros(1, 1, enc_nunits)
+            dout, (hx_list, cx_list) = self.init_dec_state(eouts[b:b + 1], elens[b:b + 1], self.nlayers)
+            _dout, _dstate = self.init_dec_state(eouts[b:b + 1], elens[b:b + 1], 1)
+            context = eouts.new_zeros(1, 1, enc_nunits)
             self.score.reset()
 
             complete = []
@@ -749,7 +749,7 @@ class Decoder(nn.Module):
                      'score': 0,
                      'scores': [0],
                      'score_raw': 0,
-                     'dec_out': dec_out,
+                     'dout': dout,
                      'hx_list': hx_list,
                      'cx_list': cx_list,
                      'context': context,
@@ -757,34 +757,34 @@ class Decoder(nn.Module):
                      'rnnlm_hx_list': None,
                      'rnnlm_cx_list': None,
                      'prev_cov': 0,
-                     '_dec_out': _dec_out,
-                     '_dec_state': _dec_state}]
-            for t in range(int(math.floor(enc_lens[b] * params['max_len_ratio'])) + 1):
+                     '_dout': _dout,
+                     '_dstate': _dstate}]
+            for t in range(int(math.floor(elens[b] * params['max_len_ratio'])) + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     # Recurrency
-                    y = enc_out.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
+                    y = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                     y_emb = self.embed(y)
-                    dec_out, (hx_list, cx_list), _dec_out, _dec_state = self.recurrency(
+                    dout, (hx_list, cx_list), _dout, _dstate = self.recurrency(
                         y_emb, beam[i_beam]['context'],
                         (beam[i_beam]['hx_list'], beam[i_beam]['cx_list']),
-                        beam[i_beam]['_dec_state'])
+                        beam[i_beam]['_dstate'])
 
                     # Score
-                    context, aw = self.score(enc_out[b:b + 1, :enc_lens[b]],
-                                             enc_lens[b:b + 1],
-                                             dec_out,
+                    context, aw = self.score(eouts[b:b + 1, :elens[b]],
+                                             elens[b:b + 1],
+                                             dout,
                                              beam[i_beam]['aws'][-1])
 
                     if self.rnnlm_cf:
                         # Update RNNLM states for cold fusion
-                        y_lm = enc_out.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
+                        y_lm = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                         y_lm_emb = self.rnnlm_cf.embed(y_lm).squeeze(1)
                         logits_rnnlm_t, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
                     elif rnnlm is not None:
                         # Update RNNLM states for shallow fusion
-                        y_lm = enc_out.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
+                        y_lm = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                         y_lm_emb = rnnlm.embed(y_lm).squeeze(1)
                         logits_rnnlm_t, rnnlm_out, rnnlm_state = rnnlm.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
@@ -792,11 +792,11 @@ class Decoder(nn.Module):
                         logits_rnnlm_t, rnnlm_out, rnnlm_state = None, None, None
 
                     # Generate
-                    logits_t = self.generate(context, dec_out, logits_rnnlm_t, rnnlm_out)
+                    logits_t = self.generate(context, dout, logits_rnnlm_t, rnnlm_out)
 
                     # Residual connection
                     if self.rnnlm_init and self.internal_lm:
-                        logits_t += _dec_out
+                        logits_t += _dout
 
                     if self.share_lm_softmax or self.rnnlm_init:
                         logits_t = self.output_bn(logits_t)
@@ -813,7 +813,7 @@ class Decoder(nn.Module):
 
                     for k in range(params['beam_width']):
                         # Exclude short hypotheses
-                        if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) < enc_lens[b] * params['min_len_ratio']:
+                        if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) < elens[b] * params['min_len_ratio']:
                             continue
 
                         # Add length penalty
@@ -851,14 +851,14 @@ class Decoder(nn.Module):
                              'score_cp': 0,  # TODO(hirofumi):
                              'hx_list': hx_list[:],
                              'cx_list': cx_list[:] if cx_list is not None else None,
-                             'dec_out': dec_out,
+                             'dout': dout,
                              'context': context,
                              'aws': beam[i_beam]['aws'] + [aw],
                              'rnnlm_hx_list': rnnlm_state[0][:] if rnnlm_state is not None else None,
                              'rnnlm_cx_list': rnnlm_state[1][:] if rnnlm_state is not None else None,
                              'prev_cov': cov_sum,
-                             '_dec_out': _dec_out,
-                             '_dec_state': _dec_state[:]})
+                             '_dout': _dout,
+                             '_dstate': _dstate[:]})
 
                 new_beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
 
@@ -932,19 +932,19 @@ class Decoder(nn.Module):
 
         return nbest_hyps, aws, scores
 
-    def decode_ctc(self, enc_out, x_lens, beam_width=1, rnnlm=None):
+    def decode_ctc(self, eouts, x_lens, beam_width=1, rnnlm=None):
         """Decoding by the CTC layer in the inference stage.
 
             This is only used for Joint CTC-Attention model.
         Args:
-            enc_out (FloatTensor): `[B, T, enc_units]`
+            eouts (FloatTensor): `[B, T, enc_units]`
             beam_width (int): the size of beam
             rnnlm ():
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
 
         """
-        logits_ctc = self.output_ctc(enc_out)
+        logits_ctc = self.output_ctc(eouts)
         if beam_width == 1:
             best_hyps = self.decode_ctc_greedy(var2np(logits_ctc), x_lens)
         else:
@@ -954,9 +954,9 @@ class Decoder(nn.Module):
 
         return best_hyps
 
-    def ctc_posteriors(self, enc_out, x_lens, temperature, topk):
+    def ctc_posteriors(self, eouts, x_lens, temperature, topk):
         # Path through the softmax layer
-        logits_ctc = self.output_ctc(enc_out)
+        logits_ctc = self.output_ctc(eouts)
         ctc_probs = F.softmax(logits_ctc / temperature, dim=-1)
         if topk is None:
             topk = ctc_probs.size(-1)

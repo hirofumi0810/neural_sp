@@ -188,13 +188,13 @@ class RNNEncoder(nn.Module):
 
                 for l in range(nlayers):
                     if l == 0:
-                        enc_in_dim = input_dim
+                        enc_idim = input_dim
                     elif nin > 0:
-                        enc_in_dim = nin
+                        enc_idim = nin
                     elif self.nprojs > 0:
-                        enc_in_dim = self.nprojs
+                        enc_idim = nprojs
                     else:
-                        enc_in_dim = nunits * self.ndirs
+                        enc_idim = nunits * self.ndirs
 
                     if 'lstm' in rnn_type:
                         rnn_i = nn.LSTM
@@ -203,28 +203,28 @@ class RNNEncoder(nn.Module):
                     else:
                         raise ValueError('rnn_type must be "lstm" or "gru".')
 
-                    self.rnn += [rnn_i(enc_in_dim, nunits, 1,
+                    self.rnn += [rnn_i(enc_idim, nunits, 1,
                                        bias=True,
                                        batch_first=True,
                                        dropout=0,
                                        bidirectional=self.bidirectional)]
                     self.dropout += [nn.Dropout(p=dropout)]
-                    enc_out_dim = nunits * self.ndirs
+                    enc_odim = nunits * self.ndirs
 
-                    if l != self.nlayers - 1 and self.nprojs > 0:
-                        self.proj += [LinearND(nunits * self.ndirs, self.nprojs)]
-                        enc_out_dim = self.nprojs
+                    if l != nlayers - 1 and nprojs > 0:
+                        self.proj += [LinearND(nunits * self.ndirs, nprojs)]
+                        enc_odim = nprojs
 
                     # insert task specific layer
                     if l == nlayers_sub1 - 1 and task_specific_layer:
-                        self.rnn_sub1_top = rnn_i(enc_out_dim, nunits, 1,
+                        self.rnn_sub1_top = rnn_i(enc_odim, nunits, 1,
                                                   bias=True,
                                                   batch_first=True,
                                                   dropout=0,
                                                   bidirectional=self.bidirectional)
                         self.dropout_sub1_top = nn.Dropout(p=dropout)
                     if l == nlayers_sub2 - 1 and task_specific_layer:
-                        self.rnn_sub2_top = rnn_i(enc_out_dim, nunits, 1,
+                        self.rnn_sub2_top = rnn_i(enc_odim, nunits, 1,
                                                   bias=True,
                                                   batch_first=True,
                                                   dropout=0,
@@ -234,7 +234,7 @@ class RNNEncoder(nn.Module):
                     # Network in network (1*1 conv)
                     if nin > 0:
                         setattr(self, 'nin_l' + str(l),
-                                nn.Conv1d(in_channels=enc_out_dim,
+                                nn.Conv1d(in_channels=enc_odim,
                                           out_channels=nin,
                                           kernel_size=1,
                                           stride=1,
@@ -244,61 +244,61 @@ class RNNEncoder(nn.Module):
                         # Batch normalization
                         if conv_batch_norm:
                             if nin:
-                                setattr(self, 'bn_0_l' + str(l), nn.BatchNorm1d(enc_out_dim))
+                                setattr(self, 'bn_0_l' + str(l), nn.BatchNorm1d(enc_odim))
                                 setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(nin))
                             else:
-                                setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(enc_out_dim))
+                                setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(enc_odim))
                         # NOTE* BN in RNN models is applied only after NiN
 
-    def forward(self, xs, x_lens, task):
+    def forward(self, xs, xlens, task):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
-            x_lens (list): `[B]`
+            xlens (list): `[B]`
             task (str): all or ys or ys_sub1 or ys_sub2
         Returns:
-            output (dict):
+            eouts (dict):
                 xs (FloatTensor): `[B, T // prod(subsample), nunits (* ndirs)]`
-                x_lens (list): `[B]`
+                xlens (list): `[B]`
                 xs_sub1 (FloatTensor): `[B, T // prod(subsample), nunits (* ndirs)]`
-                x_lens_sub1 (list): `[B]`
+                xlens_sub1 (list): `[B]`
                 xs_sub2 (FloatTensor): `[B, T // prod(subsample), nunits (* ndirs)]`
-                x_lens_sub2 (list): `[B]`
+                xlens_sub2 (list): `[B]`
 
         """
         # Dropout for inputs-hidden connection
         xs = self.dropout_in(xs)
 
-        output = {'ys': {'xs': None, 'x_lens': None},
-                  'ys_sub1': {'xs': None, 'x_lens': None},
-                  'ys_sub2': {'xs': None, 'x_lens': None}}
+        eouts = {'ys': {'xs': None, 'xlens': None},
+                 'ys_sub1': {'xs': None, 'xlens': None},
+                 'ys_sub2': {'xs': None, 'xlens': None}}
 
         # Path through CNN layers before RNN layers
         if self.conv is not None:
-            xs, x_lens = self.conv(xs, x_lens)
+            xs, xlens = self.conv(xs, xlens)
             if self.rnn_type == 'cnn':
-                output['ys']['xs'] = xs
-                output['ys']['x_lens'] = x_lens
-                return output
+                eouts['ys']['xs'] = xs
+                eouts['ys']['xlens'] = xlens
+                return eouts
 
         if self.fast_impl:
             self.rnn.flatten_parameters()
             # NOTE: this is necessary for multi-GPUs setting
 
             # Path through RNN
-            xs = pack_padded_sequence(xs, x_lens, batch_first=True)
+            xs = pack_padded_sequence(xs, xlens, batch_first=True)
             xs, _ = self.rnn(xs, hx=None)
             xs = pad_packed_sequence(xs, batch_first=True)[0]
             xs = self.dropout_top(xs)
         else:
-            res_outputs = []
+            xs_lower = None
             for l in range(self.nlayers):
                 self.rnn[l].flatten_parameters()
                 # NOTE: this is necessary for multi-GPUs setting
 
                 # Path through RNN
-                xs = pack_padded_sequence(xs, x_lens, batch_first=True)
+                xs = pack_padded_sequence(xs, xlens, batch_first=True)
                 xs, _ = self.rnn[l](xs, hx=None)
                 xs = pad_packed_sequence(xs, batch_first=True)[0]
                 xs = self.dropout[l](xs)
@@ -307,36 +307,36 @@ class RNNEncoder(nn.Module):
                 if l == self.nlayers_sub1 - 1:
                     if self.task_specific_layer:
                         self.rnn_sub1_top.flatten_parameters()
-                        xs_sub1 = pack_padded_sequence(xs, x_lens, batch_first=True)
+                        xs_sub1 = pack_padded_sequence(xs, xlens, batch_first=True)
                         xs_sub1, _ = self.rnn_sub1_top(xs_sub1, hx=None)
                         xs_sub1 = pad_packed_sequence(xs_sub1, batch_first=True)[0]
                         xs_sub1 = self.dropout_sub1_top(xs_sub1)
                     else:
                         xs_sub1 = xs.clone()
-                    x_lens_sub1 = copy.deepcopy(x_lens)
+                    xlens_sub1 = copy.deepcopy(xlens)
 
                     if task == 'ys_sub1':
-                        output = {'ys': {'xs': None, 'x_lens': None},
-                                  'ys_sub1': {'xs': xs_sub1, 'x_lens': x_lens_sub1},
-                                  'ys_sub2': {'xs': None, 'x_lens': None}}
-                        return output
+                        eouts = {'ys': {'xs': None, 'xlens': None},
+                                 'ys_sub1': {'xs': xs_sub1, 'xlens': xlens_sub1},
+                                 'ys_sub2': {'xs': None, 'xlens': None}}
+                        return eouts
 
                 if l == self.nlayers_sub2 - 1:
                     if self.task_specific_layer:
                         self.rnn_sub2_top.flatten_parameters()
-                        xs_sub2 = pack_padded_sequence(xs, x_lens, batch_first=True)
+                        xs_sub2 = pack_padded_sequence(xs, xlens, batch_first=True)
                         xs_sub2, _ = self.rnn_sub2_top(xs_sub2, hx=None)
                         xs_sub2 = pad_packed_sequence(xs_sub2, batch_first=True)[0]
                         xs_sub2 = self.dropout_sub2_top(xs_sub2)
                     else:
                         xs_sub2 = xs.clone()
-                    x_lens_sub2 = copy.deepcopy(x_lens)
+                    xlens_sub2 = copy.deepcopy(xlens)
 
                     if task == 'ys_sub2':
-                        output = {'ys': {'xs': None, 'x_lens': x_lens},
-                                  'ys_sub1': {'xs': None, 'x_lens': None},
-                                  'ys_sub2': {'xs': xs_sub2, 'x_lens': x_lens_sub2}}
-                        return output
+                        eouts = {'ys': {'xs': None, 'xlens': xlens},
+                                 'ys_sub1': {'xs': None, 'xlens': None},
+                                 'ys_sub2': {'xs': xs_sub2, 'xlens': xlens_sub2}}
+                        return eouts
 
                 # NOTE: Exclude the last layer
                 if l != self.nlayers - 1:
@@ -344,7 +344,7 @@ class RNNEncoder(nn.Module):
                     if self.subsample[l] > 1:
                         if self.subsample_type == 'drop':
                             xs = xs[:, 1::self.subsample[l], :]
-                            # NOTE: Pick up features at EVEN time step
+                            # NOTE: Pick up features at even time step
                         elif self.subsample_type == 'concat':
                             # Concatenate the successive frames
                             xs = xs.transpose(0, 1).contiguous()
@@ -359,8 +359,8 @@ class RNNEncoder(nn.Module):
                                   for t in range(xs.size(0)) if (t + 1) % self.subsample[l] == 0]
                             xs = torch.cat(xs, dim=0).transpose(0, 1)
 
-                        # Update x_lens
-                        x_lens = [x.size(0) for x in xs]
+                        # Update xlens
+                        xlens = [x.size(0) for x in xs]
 
                     # Projection layer
                     if self.nprojs > 0:
@@ -384,23 +384,21 @@ class RNNEncoder(nn.Module):
                     # Residual connection
                     if (not self.subsample[l]) and self.residual:
                         if l >= self.residual_start_layer - 1:
-                            for xs_lower in res_outputs:
-                                xs = xs + xs_lower
-                            if self.residual:
-                                res_outputs = [xs]
+                            xs = xs + xs_lower
+                            xs_lower = xs
                     # NOTE: Exclude residual connection from the raw inputs
 
         if task in ['all', 'ys']:
-            output['ys']['xs'] = xs
-            output['ys']['x_lens'] = x_lens
+            eouts['ys']['xs'] = xs
+            eouts['ys']['xlens'] = xlens
         if self.nlayers_sub1 >= 1 and task in ['all', 'ys_sub1']:
-            output['ys_sub1']['xs'] = xs_sub1
-            output['ys_sub1']['x_lens'] = x_lens_sub1
+            eouts['ys_sub1']['xs'] = xs_sub1
+            eouts['ys_sub1']['xlens'] = xlens_sub1
         if self.nlayers_sub2 >= 1 and task in ['all', 'ys_sub2']:
-            output['ys_sub2']['xs'] = xs_sub2
-            output['ys_sub2']['x_lens'] = x_lens_sub2
+            eouts['ys_sub2']['xs'] = xs_sub2
+            eouts['ys_sub2']['xlens'] = xlens_sub2
 
-        return output
+        return eouts
 
 
 def to2d(xs, size):

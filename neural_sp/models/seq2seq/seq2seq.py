@@ -327,27 +327,27 @@ class Seq2seq(ModelBase):
         if self.input_type == 'speech':
             if self.mtl_per_batch:
                 if 'bwd' in task:
-                    enc_out, perm_ids = self.encode(batch['xs'], 'ys', flip=True)
+                    enc_outs, perm_ids = self.encode(batch['xs'], 'ys', flip=True)
                 else:
-                    enc_out, perm_ids = self.encode(batch['xs'], task, flip=False)
+                    enc_outs, perm_ids = self.encode(batch['xs'], task, flip=False)
             else:
                 flip = True if self.bwd_weight == 1 else False
-                enc_out, perm_ids = self.encode(batch['xs'], 'all', flip=flip)
+                enc_outs, perm_ids = self.encode(batch['xs'], 'all', flip=flip)
         else:
-            enc_out, perm_ids = self.encode(batch['ys_sub1'])
+            enc_outs, perm_ids = self.encode(batch['ys_sub1'])
 
         observation = {}
         if task == 'all':
-            loss = enc_out['ys']['xs'].new_zeros(1)
+            loss = enc_outs['ys']['xs'].new_zeros(1)
         elif task == 'ys.bwd':
-            loss = enc_out['ys']['xs'].new_zeros(1)
+            loss = enc_outs['ys']['xs'].new_zeros(1)
         else:
-            loss = enc_out[task]['xs'].new_zeros(1)
+            loss = enc_outs[task]['xs'].new_zeros(1)
 
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0 and task in ['all', 'ys']:
             ys = [batch['ys'][i] for i in perm_ids]
-            loss_fwd, obs_fwd = self.dec_fwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys)
+            loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
@@ -357,7 +357,7 @@ class Seq2seq(ModelBase):
         # Compute XE loss for the backward decoder
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
             ys = [batch['ys'][i] for i in perm_ids]
-            loss_bwd, obs_bwd = self.dec_bwd(enc_out['ys']['xs'], enc_out['ys']['x_lens'], ys)
+            loss_bwd, obs_bwd = self.dec_bwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys)
             loss += loss_bwd
             observation['loss.att-bwd'] = obs_bwd['loss_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
@@ -369,7 +369,7 @@ class Seq2seq(ModelBase):
             if getattr(self, sub + '_weight') > 0 and task in ['all', 'ys_' + sub]:
                 ys_sub = [batch['ys_' + sub][i] for i in perm_ids]
                 loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
-                    enc_out['ys_' + sub]['xs'], enc_out['ys_' + sub]['x_lens'], ys_sub)
+                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub)
                 loss += loss_sub
                 observation['loss.att-' + sub] = obs_sub['loss_att']
                 observation['loss.ctc-' + sub] = obs_sub['loss_ctc']
@@ -386,7 +386,7 @@ class Seq2seq(ModelBase):
             task (str): all or ys or ys_sub*
             flip (bool): if True, flip acoustic features in the time-dimension
         Returns:
-            enc_out (dict):
+            enc_outs (dict):
             perm_ids ():
 
         """
@@ -405,7 +405,8 @@ class Seq2seq(ModelBase):
             if self.nsplices > 1:
                 xs = [splice(x, self.nsplices, self.nstacks) for x in xs]
 
-            x_lens = [len(x) for x in xs]
+            xlens = [len(x) for x in xs]
+            # Flip acoustic features in the reverse order
             if flip:
                 xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
             else:
@@ -413,32 +414,32 @@ class Seq2seq(ModelBase):
             xs = pad_list(xs)
 
         elif self.input_type == 'text':
-            x_lens = [len(x) for x in xs]
+            xlens = [len(x) for x in xs]
             xs = [np2var(np.fromiter(x, dtype=np.int64), self.device_id).long() for x in xs]
             xs = pad_list(xs, self.pad)
             xs = self.embed_in(xs)
 
-        enc_out = self.enc(xs, x_lens, task)
+        enc_outs = self.enc(xs, xlens, task)
 
         if self.main_weight < 1 and self.enc_type == 'cnn':
             for sub in ['sub1', 'sub2']:
-                enc_out['ys_' + sub]['xs'] = enc_out['ys']['xs'].clone()
-                enc_out['ys_' + sub]['x_lens'] = copy.deepcopy(enc_out['ys']['x_lens'])
+                enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
+                enc_outs['ys_' + sub]['xlens'] = copy.deepcopy(enc_outs['ys']['xlens'])
 
         # Bridge between the encoder and decoder
         if self.main_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys']):
-            enc_out['ys']['xs'] = self.bridge(enc_out['ys']['xs'])
+            enc_outs['ys']['xs'] = self.bridge(enc_outs['ys']['xs'])
         if self.sub1_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys_sub1']):
-            enc_out['ys_sub1']['xs'] = self.bridge_sub1(enc_out['ys_sub1']['xs'])
+            enc_outs['ys_sub1']['xs'] = self.bridge_sub1(enc_outs['ys_sub1']['xs'])
         if self.sub2_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer)and (task in ['all', 'ys_sub2']):
-            enc_out['ys_sub2']['xs'] = self.bridge_sub2(enc_out['ys_sub2']['xs'])
+            enc_outs['ys_sub2']['xs'] = self.bridge_sub2(enc_outs['ys_sub2']['xs'])
 
-        return enc_out, perm_ids
+        return enc_outs, perm_ids
 
     def get_ctc_posteriors(self, xs, task='ys', temperature=1, topk=None):
         self.eval()
         with torch.no_grad():
-            enc_out, perm_ids = self.encode(xs, task)
+            enc_outs, perm_ids = self.encode(xs, task)
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
             if task == 'ys_sub1':
                 dir += '_sub1'
@@ -452,8 +453,8 @@ class Seq2seq(ModelBase):
             elif task == 'ys_sub2':
                 assert self.ctc_weight_sub2 > 0
             ctc_probs, indices_topk = getattr(self, 'dec_' + dir).ctc_posteriors(
-                enc_out[task]['xs'], enc_out[task]['x_lens'], temperature, topk)
-            return ctc_probs, indices_topk, enc_out[task]['x_lens']
+                enc_outs[task]['xs'], enc_outs[task]['xlens'], temperature, topk)
+            return ctc_probs, indices_topk, enc_outs[task]['xlens']
 
     def decode(self, xs, decode_params, nbest=1, exclude_eos=False,
                id2token=None, refs=None, ctc=False, task='ys'):
@@ -485,7 +486,7 @@ class Seq2seq(ModelBase):
         """
         self.eval()
         with torch.no_grad():
-            enc_out, perm_ids = self.encode(xs, task)
+            enc_outs, perm_ids = self.encode(xs, task)
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
             if task == 'ys_sub1':
                 dir += '_sub1'
@@ -501,25 +502,25 @@ class Seq2seq(ModelBase):
                     rnnlm = None
 
                 best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
-                    enc_out[task]['xs'], enc_out[task]['x_lens'],
+                    enc_outs[task]['xs'], enc_outs[task]['xlens'],
                     decode_params['beam_width'], rnnlm)
                 return best_hyps, None, perm_ids
             else:
                 if decode_params['beam_width'] == 1 and not decode_params['fwd_bwd_attention']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
-                        enc_out[task]['xs'], enc_out[task]['x_lens'],
+                        enc_outs[task]['xs'], enc_outs[task]['xlens'],
                         decode_params['max_len_ratio'], exclude_eos)
                 else:
                     if decode_params['fwd_bwd_attention']:
                         rnnlm_fwd = None
                         nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
-                            enc_out[task]['xs'], enc_out[task]['x_lens'],
+                            enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             decode_params, rnnlm_fwd,
                             decode_params['beam_width'], False, id2token, refs)
 
                         rnnlm_bwd = None
                         nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
-                            enc_out[task]['xs'], enc_out[task]['x_lens'],
+                            enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             decode_params, rnnlm_bwd,
                             decode_params['beam_width'], False, id2token, refs)
                         best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
@@ -534,7 +535,7 @@ class Seq2seq(ModelBase):
                         else:
                             rnnlm = None
                         nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
-                            enc_out[task]['xs'], enc_out[task]['x_lens'],
+                            enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             decode_params, rnnlm,
                             nbest, exclude_eos, id2token, refs)
 

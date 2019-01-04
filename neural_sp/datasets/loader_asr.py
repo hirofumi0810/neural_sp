@@ -31,8 +31,6 @@ from neural_sp.datasets.token_converter.wordpiece import Wp2id
 
 np.random.seed(1)
 
-logger = logging.getLogger('training')
-
 
 class Dataset(Base):
 
@@ -222,29 +220,29 @@ class Dataset(Base):
         Returns:
             batch (dict):
                 xs (list): input data of size `[B, T, input_dim]`
-                x_lens (list):
+                xlens (list):
                 ys (list): target labels in the main task of size `[B, L]`
-                y_lens (list):
+                ylens (list):
                 ys_sub1 (list): target labels in the 1st sub task of size `[B, L_sub1]`
-                y_lens_sub1 (list):
+                ylens_sub1 (list):
                 ys_sub2 (list): target labels in the 2nd sub task of size `[B, L_sub2]`
-                y_lens_sub2 (list):
+                ylens_sub2 (list):
                 utt_ids (list): file names of input data of size `[B]`
 
         """
         # input
         if not self.skip_speech:
             xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in utt_indices]
-            x_lens = [self.df['x_len'][i] for i in utt_indices]
+            xlens = [self.df['x_len'][i] for i in utt_indices]
         else:
-            xs, x_lens = [], []
+            xs, xlens = [], []
 
         # output
         if self.is_test:
             ys = [self.df['text'][i].encode('utf-8') for i in utt_indices]
         else:
             ys = [list(map(int, self.df['token_id'][i].split())) for i in utt_indices]
-        y_lens = [self.df['y_len'][i] for i in utt_indices]
+        ylens = [self.df['y_len'][i] for i in utt_indices]
         text = [self.df['text'][i].encode('utf-8') for i in utt_indices]
 
         if self.df_sub1 is not None:
@@ -252,24 +250,24 @@ class Dataset(Base):
                 ys_sub1 = [self.df_sub1['text'][i].encode('utf-8') for i in utt_indices]
             else:
                 ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in utt_indices]
-            y_lens_sub1 = [self.df_sub1['y_len'][i] for i in utt_indices]
+            ylens_sub1 = [self.df_sub1['y_len'][i] for i in utt_indices]
         else:
-            ys_sub1, y_lens_sub1 = [], []
+            ys_sub1, ylens_sub1 = [], []
 
         if self.df_sub2 is not None:
             if self.is_test:
                 ys_sub2 = [self.df_sub2['text'][i].encode('utf-8') for i in utt_indices]
             else:
                 ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in utt_indices]
-            y_lens_sub2 = [self.df_sub2['y_len'][i] for i in utt_indices]
+            ylens_sub2 = [self.df_sub2['y_len'][i] for i in utt_indices]
         else:
-            ys_sub2, y_lens_sub2 = [], []
+            ys_sub2, ylens_sub2 = [], []
 
         utt_ids = [self.df['utt_id'][i].encode('utf-8') for i in utt_indices]
 
-        return {'xs': xs, 'x_lens': x_lens,
-                'ys': ys, 'y_lens': y_lens,
-                'ys_sub1': ys_sub1, 'y_lens_sub1': y_lens_sub1,
-                'ys_sub2': ys_sub2, 'y_lens_sub2': y_lens_sub2,
+        return {'xs': xs, 'xlens': xlens,
+                'ys': ys, 'ylens': ylens,
+                'ys_sub1': ys_sub1, 'ylens_sub1': ylens_sub1,
+                'ys_sub2': ys_sub2, 'ylens_sub2': ylens_sub2,
                 'utt_ids':  utt_ids, 'text': text,
                 'feat_path': [self.df['feat_path'][i] for i in utt_indices]}
