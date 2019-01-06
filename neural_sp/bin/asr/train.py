@@ -170,7 +170,9 @@ parser.add_argument('--init_with_enc', type=bool, default=False,
                     help='')
 parser.add_argument('--emb_dim', type=int, default=320,
                     help='')
-parser.add_argument('--input_feeding', type=bool, default=False,
+parser.add_argument('--tie_embedding', type=bool, default=False, nargs='?',
+                    help='If True, tie weights between an embedding matrix and a linear layer before the softmax layer.')
+parser.add_argument('--input_feeding', type=bool, default=False, nargs='?',
                     help='')
 parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
                     help='')
@@ -281,23 +283,23 @@ parser.add_argument('--bwd_weight_sub1', type=float, default=0.0,
 parser.add_argument('--bwd_weight_sub2', type=float, default=0.0,
                     help='')
 # cold fusion
-parser.add_argument('--cold_fusion', type=str, default='hidden',
+parser.add_argument('--cold_fusion', type=str, default='hidden', nargs='?',
                     choices=['hidden', 'prob'],
                     help='')
-parser.add_argument('--rnnlm_cold_fusion', type=str, default=False,
+parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',
                     help='RNNLM parameters for cold fusion.')
 # RNNLM initialization, objective
-parser.add_argument('--internal_lm', type=bool, default=False,
+parser.add_argument('--internal_lm', type=bool, default=False, nargs='?',
                     help='')
-parser.add_argument('--rnnlm_init', type=str, default=False,
+parser.add_argument('--rnnlm_init', type=str, default=False, nargs='?',
                     help='')
-parser.add_argument('--lmobj_weight', type=float, default=0.0,
+parser.add_argument('--lmobj_weight', type=float, default=0.0, nargs='?',
                     help='')
-parser.add_argument('--lmobj_weight_sub1', type=float, default=0.0,
+parser.add_argument('--lmobj_weight_sub1', type=float, default=0.0, nargs='?',
                     help='')
-parser.add_argument('--lmobj_weight_sub2', type=float, default=0.0,
+parser.add_argument('--lmobj_weight_sub2', type=float, default=0.0, nargs='?',
                     help='')
-parser.add_argument('--share_lm_softmax', type=bool, default=False,
+parser.add_argument('--share_lm_softmax', type=bool, default=False, nargs='?',
                     help='')
 # transformer
 parser.add_argument('--transformer', type=bool, default=False,
@@ -475,9 +477,13 @@ def main():
         dir_name += str(args.enc_nlayers) + 'L'
         dir_name += '_' + args.subsample_type + str(subsample_factor)
         dir_name += '_' + args.dec_type
+        if args.internal_lm > 0:
+            dir_name += 'LM'
         dir_name += str(args.dec_nunits) + 'H'
         # dir_name += str(args.dec_nprojs) + 'P'
         dir_name += str(args.dec_nlayers) + 'L'
+        if args.tie_embedding:
+            dir_name += '_tie'
         dir_name += '_' + args.attn_type
         if args.attn_nheads > 1:
             dir_name += '_head' + str(args.attn_nheads)
@@ -488,17 +494,19 @@ def main():
         dir_name += '_bs' + str(args.batch_size)
         dir_name += '_ss' + str(args.ss_prob)
         dir_name += '_ls' + str(args.lsm_prob)
-        if args.layer_norm:
-            dir_name += '_layernorm'
         if args.focal_loss_weight > 0:
             dir_name += '_fl' + str(args.focal_loss_weight)
-        if args.ctc_weight > 0:
-            dir_name += '_ctc' + str(args.ctc_weight)
-        if args.bwd_weight > 0:
-            dir_name += '_bwd' + str(args.bwd_weight)
+        if args.layer_norm:
+            dir_name += '_layernorm'
         # MTL
         if args.mtl_per_batch:
             dir_name += '_mtlperbatch'
+            if args.ctc_weight > 0:
+                dir_name += '_' + args.unit + 'ctc'
+            if args.bwd_weight > 0:
+                dir_name += '_' + args.unit + 'bwd'
+            if args.lmobj_weight > 0:
+                dir_name += '_' + args.unit + 'lmobj'
             if args.train_set_sub1:
                 dir_name += '_' + args.unit_sub1
                 if args.ctc_weight_sub1 == 0:
@@ -516,8 +524,13 @@ def main():
                 else:
                     dir_name += 'attctc'
         else:
+            if args.ctc_weight > 0:
+                dir_name += '_ctc' + str(args.ctc_weight)
+            if args.bwd_weight > 0:
+                dir_name += '_bwd' + str(args.bwd_weight)
+            if args.lmobj_weight > 0:
+                dir_name += '_lmobj' + str(args.lmobj_weight)
             if args.sub1_weight > 0:
-                dir_name += '_main' + str(args.sub1_weight)
                 if args.ctc_weight_sub1 == args.sub1_weight:
                     dir_name += '_ctcsub1' + str(args.ctc_weight_sub1)
                 elif args.ctc_weight_sub1 == 0:
@@ -526,7 +539,6 @@ def main():
                     dir_name += '_ctcsub1' + str(args.ctc_weight_sub1) + 'attsub1' + \
                         str(args.sub1_weight - args.ctc_weight_sub1)
                 if args.sub2_weight > 0:
-                    dir_name += '_main' + str(args.sub2_weight)
                     if args.ctc_weight_sub2 == args.sub2_weight:
                         dir_name += '_ctcsub2' + str(args.ctc_weight_sub2)
                     elif args.ctc_weight_sub2 == 0:
@@ -694,14 +706,22 @@ def main():
     if args.mtl_per_batch:
         # NOTE: from easier to harder tasks
         tasks = ['ys']
+        if 0 < args.ctc_weight < 1:
+            tasks = ['ys.ctc'] + tasks
         if 0 < args.bwd_weight < 1:
             tasks = ['ys.bwd'] + tasks
-        # if 0 < args.ctc_weight < 1:
-        #     tasks = ['ys.ctc'] + tasks
+        if 0 < args.lmobj_weight < 1:
+            tasks = ['ys.lmobj'] + tasks
         if args.train_set_sub1:
-            tasks = ['ys_sub1'] + tasks
+            if args.ctc_weight_sub1 > 0:
+                tasks = ['ys_sub1.ctc'] + tasks
+            else:
+                tasks = ['ys_sub1'] + tasks
         if args.train_set_sub2:
-            tasks = ['ys_sub2'] + tasks
+            if args.ctc_weight_sub2 > 0:
+                tasks = ['ys_sub2.ctc'] + tasks
+            else:
+                tasks = ['ys_sub2'] + tasks
     else:
         tasks = ['all']
 

@@ -20,7 +20,7 @@ import torch.nn.functional as F
 from neural_sp.models.base import ModelBase
 from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
-from neural_sp.models.torch_utils import np2var
+from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
@@ -154,9 +154,9 @@ class SeqRNNLM(ModelBase):
 
     def _forward(self, ys):
         if self.backward:
-            ys = [np2var(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
+            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
         else:
-            ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
+            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
 
         ys = pad_list(ys, self.pad)
         ys_in = ys[:, :-1]
@@ -195,8 +195,8 @@ class SeqRNNLM(ModelBase):
         denominator = torch.sum(mask)
         acc = float(numerator) * 100 / float(denominator)
 
-        observation = {'loss.rnnlm': loss.item(),
-                       'acc.rnnlm': acc,
+        observation = {'loss': loss.item(),
+                       'acc': acc,
                        'ppl': math.exp(loss.item())}
 
         return loss, observation

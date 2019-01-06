@@ -51,6 +51,7 @@ dec_nprojs=0
 dec_nlayers=1
 dec_residual=
 emb_dim=320
+tie_embedding=
 ctc_fc_list="320"
 ### optimization
 batch_size=50
@@ -62,6 +63,7 @@ print_step=200
 decay_start_epoch=10
 decay_rate=0.9
 decay_patient_epoch=0
+decay_type=epoch
 not_improved_patient_epoch=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
@@ -86,6 +88,15 @@ focal_loss=0.0
 ### MTL
 ctc_weight=0.0
 bwd_weight=0.0
+mtl_per_batch=
+task_specific_layer=
+### LM integration
+cold_fusion=
+rnnlm_cold_fusion=
+internal_lm=
+rnnlm_init=
+lmobj_weight=
+share_lm_softmax=
 
 #########################
 # RNNLM configuration
@@ -303,13 +314,15 @@ if [ ${stage} -le 3 ]; then
   echo "                      RNNLM Training stage (stage:3)                       "
   echo ============================================================================
 
-  echo "Start RNNLM training..."
+  mkdir -p ${data}/lm_data
+  cut -f 2- -d " " ${data}/${train_set}/text > ${data}/lm_data/train.txt
+  cut -f 2- -d " " ${data}/${dev_set}/text > ${data}/lm_data/dev.txt
 
   # NOTE: support only a single GPU for RNNLM training
   CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
     --ngpus 1 \
-    --train_text ${data}/${train_set}/text \
-    --dev_text ${data}/${dev_set}/text \
+    --train_text ${data}/lm_data/train.txt \
+    --dev_text ${data}/lm_data/dev.txt \
     --dict ${dict} \
     --wp_model ${wp_model}.model \
     --model ${model}/rnnlm \
@@ -352,8 +365,6 @@ if [ ${stage} -le 4 ]; then
   echo "                       ASR Training stage (stage:4)                        "
   echo ============================================================================
 
-  echo "Start ASR training..."
-
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.csv \
@@ -386,6 +397,7 @@ if [ ${stage} -le 4 ]; then
     --dec_nlayers ${dec_nlayers} \
     --dec_residual ${dec_residual} \
     --emb_dim ${emb_dim} \
+    --tie_embedding ${tie_embedding} \
     --ctc_fc_list ${ctc_fc_list} \
     --batch_size ${batch_size} \
     --optimizer ${optimizer} \
@@ -395,7 +407,7 @@ if [ ${stage} -le 4 ]; then
     --print_step ${print_step} \
     --decay_start_epoch ${decay_start_epoch} \
     --decay_rate ${decay_rate} \
-    --decay_patient_epoch ${decay_patient_epoch} \
+    --decay_type ${decay_type} \
     --not_improved_patient_epoch ${not_improved_patient_epoch} \
     --eval_start_epoch ${eval_start_epoch} \
     --warmup_start_learning_rate ${warmup_start_learning_rate} \
@@ -416,7 +428,15 @@ if [ ${stage} -le 4 ]; then
     --lsm_prob ${lsm_prob} \
     --focal_loss_weight ${focal_loss} \
     --ctc_weight ${ctc_weight} \
-    --bwd_weight ${bwd_weight} || exit 1;
+    --bwd_weight ${bwd_weight} \
+    --mtl_per_batch ${mtl_per_batch} \
+    --task_specific_layer ${task_specific_layer} \
+    --cold_fusion ${cold_fusion} \
+    --rnnlm_cold_fusion =${rnnlm_cold_fusion} \
+    --internal_lm ${internal_lm} \
+    --rnnlm_init ${rnnlm_init} \
+    --lmobj_weight ${lmobj_weight} \
+    --share_lm_softmax ${share_lm_softmax} || exit 1;
     # --resume ${resume} || exit 1;
 
   echo "Finish model training (stage: 4)."

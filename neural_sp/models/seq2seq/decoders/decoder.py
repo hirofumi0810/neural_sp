@@ -32,9 +32,9 @@ from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_greedy_decoder import GreedyDecoder
 from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
-from neural_sp.models.torch_utils import np2var
+from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import var2np
+from neural_sp.models.torch_utils import tensor2np
 
 random.seed(1)
 
@@ -63,6 +63,7 @@ class Decoder(nn.Module):
         nlayers (int): the number of RNN layers
         residual (bool):
         emb_dim (int): the dimension of the embedding in target spaces.
+        tie_embedding (bool):
         vocab (int): the number of nodes in softmax layer
         logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
         dropout (float): the probability to drop nodes in the RNN layer
@@ -104,6 +105,7 @@ class Decoder(nn.Module):
                  nlayers,
                  residual,
                  emb_dim,
+                 tie_embedding,
                  vocab,
                  logits_temp,
                  dropout,
@@ -111,8 +113,8 @@ class Decoder(nn.Module):
                  ss_prob,
                  lsm_prob,
                  layer_norm,
-                 focal_loss_weight,
-                 focal_loss_gamma,
+                 fl_weight,
+                 fl_gamma,
                  init_with_enc=False,
                  ctc_weight=0.,
                  ctc_fc_list=[],
@@ -123,7 +125,6 @@ class Decoder(nn.Module):
                  internal_lm=False,
                  rnnlm_init=False,
                  lmobj_weight=0.,
-                 lm_type='lower_layer',  # or null_context
                  share_lm_softmax=False,
                  global_weight=1.0,
                  mtl_per_batch=False,
@@ -146,8 +147,8 @@ class Decoder(nn.Module):
         self.ss_prob = ss_prob
         self.lsm_prob = lsm_prob
         self.layer_norm = layer_norm
-        self.focal_loss_weight = focal_loss_weight
-        self.focal_loss_gamma = focal_loss_gamma
+        self.fl_weight = fl_weight
+        self.fl_gamma = fl_gamma
         self.init_with_enc = init_with_enc
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
@@ -157,7 +158,6 @@ class Decoder(nn.Module):
         self.internal_lm = internal_lm
         self.rnnlm_init = rnnlm_init
         self.lmobj_weight = lmobj_weight
-        self.lm_type = lm_type
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
@@ -212,14 +212,8 @@ class Decoder(nn.Module):
 
             # for MTL with RNNLM objective
             if lmobj_weight > 0:
-                if lm_type == 'lower_layer':
-                    assert internal_lm
-                    if not share_lm_softmax:
-                        self.output_rnnlm = LinearND(nunits, vocab)
-                elif lm_type == 'null_context':
-                    pass
-                else:
-                    raise NotImplementedError()
+                if internal_lm and not share_lm_softmax:
+                    self.output_lmobj = LinearND(nunits, vocab)
 
             # Decoder
             self.rnn = torch.nn.ModuleList()
@@ -229,6 +223,7 @@ class Decoder(nn.Module):
             elif rnn_type == 'gru':
                 rnn_cell = nn.GRUCell
             if internal_lm:
+                assert nlayers >= 2
                 self.rnn_inlm = rnn_cell(emb_dim, nunits)
                 self.dropout_inlm = nn.Dropout(p=dropout)
                 self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
@@ -265,81 +260,212 @@ class Decoder(nn.Module):
                                    dropout=dropout_emb,
                                    ignore_index=pad)
 
-    def forward(self, eouts, elens, ys, task='all'):
-        """Compute XE loss.
+            # Optionally tie weights as in:
+            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
+            # https://arxiv.org/abs/1608.05859
+            # and
+            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
+            # https://arxiv.org/abs/1611.01462
+            if tie_embedding:
+                if nunits != emb_dim:
+                    raise ValueError('When using the tied flag, nunits must be equal to emb_dim.')
+                self.output.fc.weight = self.embed.embed.weight
+
+    def forward(self, eouts, elens, ys, device_id, task='all'):
+        """Forward computation.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_units]`
             elens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            task (str): all or att or ctc or lmobj
+            task (str): all or ys or ys_sub*
         Returns:
-            logits (FloatTensor): `[B, L, vocab]`
-            aw (FloatTensor): `[B, L, T]` or `[nheads, B, L, T]`
-            logits_lmobj (FloatTensor): `[B, L, vocab]`
+            loss (FloatTensor): `[1]`
+            observation (dict):
 
         """
-        device_id = eouts.get_device()
-        bs, _, enc_nunits = eouts.size()
+        obserbation = {'loss': 0,
+                       'loss_att': 0, 'loss_ctc': 0, 'loss_lmobj': 0,
+                       'acc_att': 0, 'acc_lmobj': 0,
+                       'ppl_att': 0, 'ppl_lmobj': 0}
+        loss = torch.zeros((1,), dtype=torch.float32).cuda()
+
+        # CTC loss
+        if self.ctc_weight > 0 and (not self.mtl_per_batch or (self.mtl_per_batch and 'ctc' in task)):
+            loss_ctc = self.forward_ctc(eouts, elens, ys, device_id)
+            obserbation['loss_ctc'] = loss_ctc.item()
+            if self.mtl_per_batch:
+                loss += loss_ctc
+            else:
+                loss += loss_ctc * self.ctc_weight
+
+        # LM objective
+        if self.lmobj_weight > 0 and 'lmobj' in task:
+            loss_lmobj, acc_lmobj, ppl_lmobj = self.forward_lmobj(ys, device_id)
+            obserbation['loss_lmobj'] = loss_lmobj.item()
+            obserbation['acc_lmobj'] = acc_lmobj
+            obserbation['ppl_lmobj'] = ppl_lmobj
+            if self.mtl_per_batch:
+                loss += loss_lmobj
+            else:
+                loss += loss_lmobj * self.lmobj_weight
+
+        # XE loss
+        if self.global_weight - self.ctc_weight > 0 and 'ctc' not in task and 'lmobj' not in task:
+            loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys, device_id)
+            obserbation['loss_att'] = loss_att.item()
+            obserbation['acc_att'] = acc_att
+            obserbation['ppl_att'] = ppl_att
+            if self.mtl_per_batch:
+                loss += loss_att
+            else:
+                loss += loss_att * (self.global_weight - self.ctc_weight)
+
+        obserbation['loss'] = loss.item()
+        return loss, obserbation
+
+    def forward_ctc(self, eouts, elens, ys, device_id):
+        """Compute CTC loss.
+
+        Args:
+            eouts (FloatTensor): `[B, T, dec_units]`
+            elens (list): A list of length `[B]`
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            device_id (int):
+        Returns:
+            loss (FloatTensor): `[B, L, vocab]`
+
+        """
+        logits = self.output_ctc(eouts).transpose(0, 1).cpu()  # time-major
 
         # Compute the auxiliary CTC loss
-        if self.ctc_weight > 0 and not self.backward:
-            enc_lens_ctc = np2var(np.fromiter(elens, dtype=np.int32), -1).int()
-            ys_ctc = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]  # always fwd
-            y_lens = np2var(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int32), -1).int()
-            # NOTE: do not copy to GPUs here
+        assert not self.backward
+        enc_lens_ctc = np2tensor(np.fromiter(elens, dtype=np.int32), -1).int()
+        ys_ctc = [np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys]  # always fwd
+        y_lens = np2tensor(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int32), -1).int()
+        ys_ctc = torch.cat(ys_ctc, dim=0).int()
+        # NOTE: Concatenate all elements in ys for warpctc_pytorch
+        # NOTE: do not copy to GPUs here
 
-            # Concatenate all elements in ys for warpctc_pytorch
-            ys_ctc = torch.cat(ys_ctc, dim=0).int()
+        # Compute CTC loss
+        loss = self.warpctc_loss(logits, ys_ctc, enc_lens_ctc, y_lens)
+        # NOTE: ctc loss has already been normalized by bs
+        # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
-            # Compute CTC loss
-            logits_ctc = self.output_ctc(eouts)
-            loss_ctc = self.warpctc_loss(logits_ctc.transpose(0, 1).cpu(),  # time-major
-                                         ys_ctc.cpu(), enc_lens_ctc, y_lens)
-            # NOTE: ctc loss has already been normalized by bs
-            # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        if device_id >= 0:
+            loss = loss.cuda(device_id)
 
-            if device_id >= 0:
-                loss_ctc = loss_ctc.cuda(device_id)
-            if self.mtl_per_batch:
-                loss = loss_ctc
-            else:
-                loss = loss_ctc * self.ctc_weight
+        # Label smoothing for CTC
+        if self.lsm_prob > 0 and self.ctc_weight == 1:
+            loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(
+                logits, y_lens=elens,
+                lsm_prob=self.lsm_prob, size_average=True) * self.lsm_prob
 
-            # Label smoothing
-            # if self.lsm_prob > 0:
-            #     loss_ctc = loss_ctc * (1 - self.lsm_prob) + kldiv_lsm_ctc(
-            #         logits_ctc, y_lens=elens,
-            #         lsm_prob=self.lsm_prob, size_average=True) * self.lsm_prob
-        else:
-            loss_ctc = eouts.new_zeros(1)
-            loss = eouts.new_zeros(1)
+        return loss
 
-        if self.ctc_weight >= self.global_weight:
-            obserbation = {'loss': loss.item(),
-                           'loss_att': 0,
-                           'loss_ctc': loss_ctc.item(),
-                           'loss_lm': 0,
-                           'acc': 0}
-            return loss, obserbation
+    def forward_lmobj(self, ys, device_id):
+        """Compute XE loss for LM objective.
+
+        Args:
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            device_id (int):
+        Returns:
+            loss (FloatTensor): `[1]`
+            acc (float):
+            ppl (float):
+
+        """
+        bs = len(ys)
 
         # Append <sos> and <eos>
-        sos = eouts.new_zeros(1).fill_(self.sos).long()
-        eos = eouts.new_zeros(1).fill_(self.eos).long()
+        sos = torch.zeros((1,)).fill_(self.sos).long().cuda(device_id)
+        eos = torch.zeros((1,)).fill_(self.eos).long().cuda(device_id)
         if self.backward:
-            ys = [np2var(np.fromiter(y[::-1], dtype=np.int64), device_id).long() for y in ys]
+            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), device_id).long() for y in ys]
             ys_in = [torch.cat([eos, y], dim=0) for y in ys]
             ys_out = [torch.cat([y, sos], dim=0) for y in ys]
         else:
-            ys = [np2var(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]
+            ys = [np2tensor(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]
             ys_in = [torch.cat([sos, y], dim=0) for y in ys]
             ys_out = [torch.cat([y, eos], dim=0) for y in ys]
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dout, dstate = self.init_dec_state(eouts, elens, self.nlayers)
-        _dout, _dstate = self.init_dec_state(eouts, elens, 1)  # for internal LM
+        dout, dstate = self.init_dec_state(bs, self.nlayers, device_id)
+        _dout, _dstate = self.init_dec_state(bs, 1, device_id)  # for internal LM
+        context = torch.zeros((bs, 1, self.enc_nunits), dtype=torch.float32).cuda(device_id)
+
+        # Pre-computation of embedding
+        ys_emb = self.embed(ys_in_pad)
+
+        logits = []
+        for t in range(ys_in_pad.size(1)):
+            y_emb = ys_emb[:, t:t + 1]
+
+            # Recurrency
+            dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
+
+            # Generate
+            if self.internal_lm:
+                if self.share_lm_softmax:
+                    logits_t = self.output(_dout)
+                else:
+                    logits_t = self.output_lmobj(_dout)
+            else:
+                attentional_t = self.generate(context, dout)
+                logits_t = self.output(attentional_t)
+            logits.append(logits_t)
+
+        # Compute XE loss for RNNLM objective
+        logits = torch.cat(logits, dim=1) / self.logits_temp
+        loss = F.cross_entropy(logits.view((-1, logits.size(2))),
+                               ys_out_pad.view(-1),
+                               ignore_index=-1, size_average=False) / bs
+        ppl = math.exp(loss.item())
+
+        # Compute token-level accuracy in teacher-forcing
+        pad_pred = logits.view(ys_out_pad.size(0), ys_out_pad.size(1), logits.size(-1)).argmax(2)
+        mask = ys_out_pad != -1
+        numerator = torch.sum(pad_pred.masked_select(mask) == ys_out_pad.masked_select(mask))
+        denominator = torch.sum(mask)
+        acc = float(numerator) * 100 / float(denominator)
+
+        return loss, acc, ppl
+
+    def forward_att(self, eouts, elens, ys, device_id):
+        """Compute XE loss for the sequence-to-sequence model.
+
+        Args:
+            eouts (FloatTensor): `[B, T, dec_units]`
+            elens (list): A list of length `[B]`
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            device_id (int):
+        Returns:
+            loss (FloatTensor): `[B, L, vocab]`
+            acc (float):
+            ppl (float):
+
+        """
+        bs, _, enc_nunits = eouts.size()
+
+        # Append <sos> and <eos>
+        sos = eouts.new_zeros(1).fill_(self.sos).long()
+        eos = eouts.new_zeros(1).fill_(self.eos).long()
+        if self.backward:
+            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), device_id).long() for y in ys]
+            ys_in = [torch.cat([eos, y], dim=0) for y in ys]
+            ys_out = [torch.cat([y, sos], dim=0) for y in ys]
+        else:
+            ys = [np2tensor(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]
+            ys_in = [torch.cat([sos, y], dim=0) for y in ys]
+            ys_out = [torch.cat([y, eos], dim=0) for y in ys]
+        ys_in_pad = pad_list(ys_in, self.pad)
+        ys_out_pad = pad_list(ys_out, -1)
+
+        # Initialization
+        dout, dstate = self.init_dec_state(bs, self.nlayers, device_id, eouts, elens)
+        _dout, _dstate = self.init_dec_state(bs, 1, device_id, eouts, elens)  # for internal LM
         context = eouts.new_zeros(bs, 1, enc_nunits)
         self.score.reset()
         aw = None
@@ -353,113 +479,70 @@ class Decoder(nn.Module):
             #              for t in range(ys_in_pad.size(1))]
             # ys_lm_emb = torch.cat(ys_lm_emb, dim=1)
 
-        logits_att, logits_lmobj = [], []
+        logits = []
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
             is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
             if is_sample:
-                y_emb = self.embed(torch.argmax(logits_att[-1].detach(), dim=-1))
+                y_emb = self.embed(torch.argmax(logits[-1].detach(), dim=-1))
             else:
                 y_emb = ys_emb[:, t:t + 1]
 
             # Recurrency
-            dout, dstate, _dout, _dstate = self.recurrency(
-                y_emb, context, dstate, _dstate)
+            dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
                 if is_sample:
-                    y_lm_emb = self.rnnlm_cf.embed(np.argmax(logits_att[-1].detach(), axis=2).cuda(device_id))
+                    y_lm_emb = self.rnnlm_cf.embed(np.argmax(logits[-1].detach(), axis=2).cuda(device_id))
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
-                logits_rnnlm_t, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
+                logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
             else:
-                logits_rnnlm_t, rnnlm_out = None, None
+                logits_lm_t, lm_out = None, None
 
             # Score
             context, aw = self.score(eouts, elens, dout, aw)
 
             # Generate
-            logits_att_t = self.generate(context, dout, logits_rnnlm_t, rnnlm_out)
-
-            # Residual connection
+            attentional_t = self.generate(context, dout, logits_lm_t, lm_out)
             if self.rnnlm_init and self.internal_lm:
-                logits_att_t += _dout
-
-            logits_att_t = self.output(logits_att_t)
-            logits_att.append(logits_att_t)
-
-            if self.lmobj_weight > 0:
-                if self.lm_type == 'lower_layer':
-                    if self.share_lm_softmax:
-                        logits_lmobj_t = self.output(_dout)
-                    else:
-                        logits_lmobj_t = self.output_rnnlm(_dout)
-                elif self.lm_type == 'null_context':
-                    # Generate
-                    null_context = eouts.new_zeros(bs, 1, enc_nunits)
-                    logits_lmobj_t = self.generate(null_context, dout, None, None)
-                    raise NotImplementedError()
-                else:
-                    raise NotImplementedError()
-                logits_lmobj.append(logits_lmobj_t)
-
-        logits_att = torch.cat(logits_att, dim=1) / self.logits_temp
+                # Residual connection
+                attentional_t += _dout
+            logits.append(self.output(attentional_t))
 
         # Compute XE sequence loss
+        logits = torch.cat(logits, dim=1) / self.logits_temp
         if self.lsm_prob > 0:
             # Label smoothing
             y_lens = [y.size(0) for y in ys_out]
-            loss_att = cross_entropy_lsm(
-                logits_att, ys=ys_out_pad, y_lens=y_lens,
+            loss = cross_entropy_lsm(
+                logits, ys=ys_out_pad, y_lens=y_lens,
                 lsm_prob=self.lsm_prob, size_average=True)
         else:
-            loss_att = F.cross_entropy(
-                logits_att.view((-1, logits_att.size(2))),
+            loss = F.cross_entropy(
+                logits.view((-1, logits.size(2))),
                 ys_out_pad.view(-1),  # long
                 ignore_index=-1, size_average=False) / bs
+        ppl = math.exp(loss.item())
 
         # Focal loss
-        if self.focal_loss_weight > 0:
+        if self.fl_weight > 0:
             y_lens = [y.size(0) for y in ys_out]
-            fl = focal_loss(logits_att, ys=ys_out_pad, y_lens=y_lens,
-                            gamma=self.focal_loss_gamma, size_average=True)
-            loss_att = loss_att * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
-
-        if self.mtl_per_batch:
-            loss += loss_att
-        else:
-            loss += loss_att * (self.global_weight - self.ctc_weight)
-
-        # Compute XE loss for RNNLM objective
-        if self.lmobj_weight > 0:
-            logits_lmobj = torch.cat(logits_lmobj, dim=1)
-            loss_lm = F.cross_entropy(
-                logits_lmobj.view((-1, logits_lmobj.size(2))),
-                ys_out_pad[:, 1:].contiguous().view(-1),
-                ignore_index=-1, size_average=True)
-            if self.mtl_per_batch:
-                loss += loss_lm
-            else:
-                loss += loss_lm * self.lmobj_weight
-        else:
-            loss_lm = eouts.new_zeros(1)
+            fl = focal_loss(logits, ys=ys_out_pad, y_lens=y_lens,
+                            gamma=self.fl_gamma, size_average=True)
+            loss = loss * (1 - self.fl_weight) + fl * self.fl_weight
 
         # Compute token-level accuracy in teacher-forcing
-        pad_pred = logits_att.view(ys_out_pad.size(0), ys_out_pad.size(1), logits_att.size(-1)).argmax(2)
+        pad_pred = logits.view(ys_out_pad.size(0), ys_out_pad.size(1), logits.size(-1)).argmax(2)
         mask = ys_out_pad != -1
         numerator = torch.sum(pad_pred.masked_select(mask) == ys_out_pad.masked_select(mask))
         denominator = torch.sum(mask)
         acc = float(numerator) * 100 / float(denominator)
 
-        obserbation = {'loss': loss.item(),
-                       'loss_att': loss_att.item(),
-                       'loss_ctc': loss_ctc.item(),
-                       'loss_lm': loss_lm.item(),
-                       'acc': acc}
-        return loss, obserbation
+        return loss, acc, ppl
 
-    def init_dec_state(self, eouts, elens, nlayers):
+    def init_dec_state(self, batch_size, nlayers, device_id, eouts=None, elens=None):
         """Initialize decoder state.
 
         Args:
@@ -473,8 +556,6 @@ class Decoder(nn.Module):
                 cx_list (list of FloatTensor):
 
         """
-        bs = eouts.size(0)
-
         if self.init_with_enc:
             if eouts.size(-1) == self.nunits:
                 # unidirectinal encoder
@@ -491,14 +572,14 @@ class Decoder(nn.Module):
             hx_list = [dout.clone().squeeze(1)] * self.nlayers
             cx_list = [dout.clone().squeeze(1)] * self.nlayers if self.rnn_type == 'lstm' else None
         else:
-            dout = eouts.new_zeros(bs, 1, self.nunits)
-            zero_state = eouts.new_zeros(bs, self.nunits)
+            dout = torch.zeros((batch_size, 1, self.nunits), dtype=torch.float32).cuda(device_id)
+            zero_state = torch.zeros((batch_size, self.nunits), dtype=torch.float32).cuda(device_id)
             hx_list = [zero_state] * self.nlayers
             cx_list = [zero_state] * self.nlayers if self.rnn_type == 'lstm' else None
 
         return dout, (hx_list, cx_list)
 
-    def recurrency(self, y_emb, context, dstate, _dstate):
+    def recurrency(self, y_emb, context, dstate, _dstate=None):
         """Recurrency function.
 
         Args:
@@ -522,11 +603,11 @@ class Decoder(nn.Module):
 
         """
         hx_list, cx_list = dstate
-        hx_lm, cx_lm = _dstate
         y_emb = y_emb.squeeze(1)
         context = context.squeeze(1)
 
         if self.internal_lm:
+            hx_lm, cx_lm = _dstate
             if self.rnn_type == 'lstm':
                 hx_lm[0], cx_lm[0] = self.rnn_inlm(y_emb, (hx_lm[0], cx_lm[0]))
                 _h_lm = torch.cat([self.dropout_inlm(hx_lm[0]), context], dim=-1)
@@ -536,6 +617,7 @@ class Decoder(nn.Module):
                 _h_lm = torch.cat([self.dropout_inlm(hx_lm), context], dim=-1)
                 hx_list[0] = self.rnn[0](_h_lm, hx_list[0])
             _dout = self.dropout[0](hx_lm[0]).unsqueeze(1)
+            _dstate = (hx_lm, cx_lm)
         else:
             if self.rnn_type == 'lstm':
                 hx_list[0], cx_list[0] = self.rnn[0](torch.cat([y_emb, context], dim=-1), (hx_list[0], cx_list[0]))
@@ -555,16 +637,16 @@ class Decoder(nn.Module):
                 hx_list[l] += hx_lower
 
         dout = self.dropout[-1](hx_list[-1]).unsqueeze(1)
-        return dout, (hx_list, cx_list), _dout, (hx_lm, cx_lm)
+        return dout, (hx_list, cx_list), _dout, _dstate
 
-    def generate(self, context, dout, logits_rnnlm_t, rnnlm_out):
+    def generate(self, context, dout, logits_lm_t=None, lm_out=None):
         """Generate function.
 
         Args:
             context (FloatTensor): `[B, 1, enc_nunits]`
             dout (FloatTensor): `[B, 1, dec_units]`
-            logits_rnnlm_t (FloatTensor): `[B, 1, vocab]`
-            rnnlm_out (FloatTensor): `[B, 1, lm_nunits]`
+            logits_lm_t (FloatTensor): `[B, 1, vocab]`
+            lm_out (FloatTensor): `[B, 1, lm_nunits]`
         Returns:
             logits_t (FloatTensor): `[B, 1, vocab]`
 
@@ -572,9 +654,9 @@ class Decoder(nn.Module):
         if self.rnnlm_cf:
             # cold fusion
             if self.cold_fusion == 'hidden':
-                lm_feat = self.cf_linear_lm_feat(rnnlm_out)
+                lm_feat = self.cf_linear_lm_feat(lm_out)
             elif self.cold_fusion == 'prob':
-                lm_feat = self.cf_linear_lm_feat(logits_rnnlm_t)
+                lm_feat = self.cf_linear_lm_feat(logits_lm_t)
             dec_feat = self.cf_linear_dec_feat(torch.cat([dout, context], dim=-1))
             gate = F.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
@@ -597,10 +679,11 @@ class Decoder(nn.Module):
 
         """
         bs, enc_time, enc_nunits = eouts.size()
+        device_id = eouts.get_device()
 
         # Initialization
-        dout, dstate = self.init_dec_state(eouts, elens, self.nlayers)
-        _dout, _dstate = self.init_dec_state(eouts, elens, 1)
+        dout, dstate = self.init_dec_state(bs, self.nlayers, device_id, eouts, elens)
+        _dout, _dstate = self.init_dec_state(bs, 1, device_id, eouts, elens)
         context = eouts.new_zeros(bs, 1, enc_nunits)
         self.score.reset()
         aw = None
@@ -620,29 +703,24 @@ class Decoder(nn.Module):
         for t in range(int(math.floor(enc_time * max_len_ratio)) + 1):
             # Recurrency
             y_emb = self.embed(y)
-            dout, dstate, _dout, _dstate = self.recurrency(
-                y_emb, context, dstate, _dstate)
+            dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
                 y_lm = self.rnnlm_cf.embed(y)
-                logits_rnnlm_t, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm, rnnlm_state)
+                logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm, rnnlm_state)
             else:
-                logits_rnnlm_t, rnnlm_out = None, None
+                logits_lm_t, lm_out = None, None
 
             # Score
             context, aw = self.score(eouts, elens, dout, aw)
 
             # Generate
-            logits_t = self.generate(context, dout, logits_rnnlm_t, rnnlm_out)
-
-            # Residual connection
+            attentional_t = self.generate(context, dout, logits_lm_t, lm_out)
             if self.rnnlm_init and self.internal_lm:
-                logits_t += _dout
-
-            if self.share_lm_softmax or self.rnnlm_init:
-                logits_t = self.output_bn(logits_t)
-            logits_t = self.output(logits_t)
+                # Residual connection
+                attentional_t += _dout
+            logits_t = self.output(attentional_t)
 
             # Pick up 1-best
             device_id = logits_t.get_device()
@@ -670,8 +748,8 @@ class Decoder(nn.Module):
         aws_tmp = torch.stack(aws_tmp, dim=1)
 
         # Convert to numpy
-        best_hyps_tmp = var2np(best_hyps_tmp)
-        aws_tmp = var2np(aws_tmp)
+        best_hyps_tmp = tensor2np(best_hyps_tmp)
+        aws_tmp = tensor2np(aws_tmp)
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.backward:
@@ -720,6 +798,7 @@ class Decoder(nn.Module):
 
         """
         bs, _, enc_nunits = eouts.size()
+        device_id = eouts.get_device()
 
         # For cold fusion
         if params['rnnlm_weight'] > 0 and not self.cold_fusion:
@@ -739,8 +818,8 @@ class Decoder(nn.Module):
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
-            dout, (hx_list, cx_list) = self.init_dec_state(eouts[b:b + 1], elens[b:b + 1], self.nlayers)
-            _dout, _dstate = self.init_dec_state(eouts[b:b + 1], elens[b:b + 1], 1)
+            dout, (hx_list, cx_list) = self.init_dec_state(1, self.nlayers, device_id, eouts[b:b + 1], elens[b:b + 1])
+            _dout, _dstate = self.init_dec_state(1, 1, device_id, eouts[b:b + 1], elens[b:b + 1])
             context = eouts.new_zeros(1, 1, enc_nunits)
             self.score.reset()
 
@@ -780,27 +859,23 @@ class Decoder(nn.Module):
                         # Update RNNLM states for cold fusion
                         y_lm = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                         y_lm_emb = self.rnnlm_cf.embed(y_lm).squeeze(1)
-                        logits_rnnlm_t, rnnlm_out, rnnlm_state = self.rnnlm_cf.predict(
+                        logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
                     elif rnnlm is not None:
                         # Update RNNLM states for shallow fusion
                         y_lm = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                         y_lm_emb = rnnlm.embed(y_lm).squeeze(1)
-                        logits_rnnlm_t, rnnlm_out, rnnlm_state = rnnlm.predict(
+                        logits_lm_t, lm_out, rnnlm_state = rnnlm.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
                     else:
-                        logits_rnnlm_t, rnnlm_out, rnnlm_state = None, None, None
+                        logits_lm_t, lm_out, rnnlm_state = None, None, None
 
                     # Generate
-                    logits_t = self.generate(context, dout, logits_rnnlm_t, rnnlm_out)
-
-                    # Residual connection
+                    attentional_t = self.generate(context, dout, logits_lm_t, lm_out)
                     if self.rnnlm_init and self.internal_lm:
-                        logits_t += _dout
-
-                    if self.share_lm_softmax or self.rnnlm_init:
-                        logits_t = self.output_bn(logits_t)
-                    logits_t = self.output(logits_t)
+                        # Residual connection
+                        attentional_t += _dout
+                    logits_t = self.output(attentional_t)
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits_t.squeeze(1), dim=1)  # log-prob-level
@@ -837,7 +912,7 @@ class Decoder(nn.Module):
 
                         # Add RNNLM score
                         if params['rnnlm_weight'] > 0:
-                            lm_log_probs = F.log_softmax(logits_rnnlm_t.squeeze(1), dim=1)
+                            lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
                             assert log_probs.size() == lm_log_probs.size()
                             score += lm_log_probs[0, indices_topk[0, k].item()].item() * params['rnnlm_weight']
 
@@ -919,7 +994,7 @@ class Decoder(nn.Module):
         # Concatenate in L dimension
         for b in range(len(aws)):
             for n in range(nbest):
-                aws[b][n] = var2np(torch.stack(aws[b][n], dim=1).squeeze(0))
+                aws[b][n] = tensor2np(torch.stack(aws[b][n], dim=1).squeeze(0))
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
@@ -946,7 +1021,7 @@ class Decoder(nn.Module):
         """
         logits_ctc = self.output_ctc(eouts)
         if beam_width == 1:
-            best_hyps = self.decode_ctc_greedy(var2np(logits_ctc), x_lens)
+            best_hyps = self.decode_ctc_greedy(tensor2np(logits_ctc), x_lens)
         else:
             best_hyps = self.decode_ctc_beam(F.log_softmax(logits_ctc, dim=-1),
                                              x_lens, beam_width, rnnlm)
@@ -961,4 +1036,4 @@ class Decoder(nn.Module):
         if topk is None:
             topk = ctc_probs.size(-1)
         _, indices_topk = torch.topk(ctc_probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
-        return var2np(ctc_probs), var2np(indices_topk)
+        return tensor2np(ctc_probs), tensor2np(indices_topk)

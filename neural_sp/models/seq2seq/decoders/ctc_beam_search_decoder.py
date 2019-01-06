@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from neural_sp.models.torch_utils import var2np
+from neural_sp.models.torch_utils import tensor2np
 
 LOG_0 = -float("inf")
 LOG_1 = 0
@@ -71,7 +71,7 @@ class BeamSearchDecoder(object):
                 log_probs_topk, indices_topk = torch.topk(
                     log_probs[:, t, :], k=beam_width, dim=-1, largest=True, sorted=True)
 
-                for c in var2np(indices_topk)[b]:
+                for c in tensor2np(indices_topk)[b]:
                     p_t = log_probs[b, t, c].item()
 
                     # The variables p_blank and p_nonblank are respectively the

@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from neural_sp.models.base import ModelBase
 from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
-from neural_sp.models.torch_utils import np2var
+from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
@@ -162,7 +162,7 @@ class RNNLM(ModelBase):
             raise NotImplementedError()
             # TODO(hirofumi): reverse the order out of the model
         else:
-            ys = [np2var(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
+            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
             ys = pad_list(ys, self.pad)
 
             ys_in = ys[:, :-1]  # B*1
@@ -179,8 +179,7 @@ class RNNLM(ModelBase):
         # Path through RNN
         if self.fast_impl:
             if self.rnn_type == 'lstm':
-                hx_list[-1], cx_list[-1] = self.rnn(
-                    ys_in, (hx_list[0], cx_list[0]))
+                hx_list[-1], cx_list[-1] = self.rnn(ys_in, (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
                 hx_list[-1] = self.rnn(ys_in, hx_list[0])
             hx_list[-1] = self.dropout_top(hx_list[-1])
@@ -189,11 +188,9 @@ class RNNLM(ModelBase):
             for l in range(self.nlayers):
                 if self.rnn_type == 'lstm':
                     if l == 0:
-                        hx_list[0], cx_list[0] = self.rnn[l](
-                            ys_in, (hx_list[0], cx_list[0]))
+                        hx_list[0], cx_list[0] = self.rnn[l](ys_in, (hx_list[0], cx_list[0]))
                     else:
-                        hx_list[l], cx_list[l] = self.rnn[l](
-                            hx_list[l - 1], (hx_list[l], cx_list[l]))
+                        hx_list[l], cx_list[l] = self.rnn[l](hx_list[l - 1], (hx_list[l], cx_list[l]))
                 elif self.rnn_type == 'gru':
                     if l == 0:
                         hx_list[0] = self.rnn[l](ys_in, hx_list[0])
@@ -220,8 +217,8 @@ class RNNLM(ModelBase):
         denominator = torch.sum(mask)
         acc = float(numerator) * 100 / float(denominator)
 
-        observation = {'loss.rnnlm': loss.item(),
-                       'acc.rnnlm': acc,
+        observation = {'loss': loss.item(),
+                       'acc': acc,
                        'ppl': math.exp(loss.item())}
 
         return loss, (hx_list, cx_list), observation

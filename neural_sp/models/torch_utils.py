@@ -25,7 +25,7 @@ def tensor2np(x):
     return x.cpu().numpy()
 
 
-def np2var(array, device_id=-1):
+def np2tensor(array, device_id=-1):
     """Convert form np.ndarray to Variable.
 
     Args:
@@ -42,18 +42,6 @@ def np2var(array, device_id=-1):
         return var
     # return var.cuda(device_id, async=True)
     return var.cuda(device_id)
-
-
-def var2np(var):
-    """Convert form Variable to np.ndarray.
-
-    Args:
-        var (Tensor):
-    Returns:
-        np.ndarray
-
-    """
-    return var.data.cpu().numpy()
 
 
 def pad_list(xs, pad_value=float("nan")):

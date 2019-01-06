@@ -13,7 +13,6 @@ from __future__ import print_function
 import copy
 import logging
 import numpy as np
-import six
 import torch
 
 from neural_sp.models.base import ModelBase
@@ -24,7 +23,7 @@ from neural_sp.models.seq2seq.decoders.decoder import Decoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
 from neural_sp.models.seq2seq.encoders.splicing import splice
-from neural_sp.models.torch_utils import np2var
+from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 logger = logging.getLogger("training")
@@ -81,6 +80,7 @@ class Seq2seq(ModelBase):
         self.sub1_weight = args.sub1_weight
         self.sub2_weight = args.sub2_weight
         self.mtl_per_batch = args.mtl_per_batch
+        self.task_specific_layer = args.task_specific_layer
 
         # Setting for the CNN encoder
         if args.conv_poolings:
@@ -121,7 +121,9 @@ class Seq2seq(ModelBase):
             residual=args.enc_residual,
             nin=0,
             layer_norm=args.layer_norm,
-            task_specific_layer=args.task_specific_layer)
+            task_specific_layer=args.task_specific_layer and args.ctc_weight > 0,
+            task_specific_layer_sub1=args.task_specific_layer,
+            task_specific_layer_sub2=args.task_specific_layer)
 
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
@@ -164,6 +166,8 @@ class Seq2seq(ModelBase):
             if not hasattr(args, 'focal_loss_weight'):
                 args.focal_loss_weight = 0.0
                 args.focal_loss_gamma = 2.0
+            if not hasattr(args, 'tie_embedding'):
+                args.tie_embedding = False
 
             # Decoder
             dec = Decoder(
@@ -184,6 +188,7 @@ class Seq2seq(ModelBase):
                 nlayers=args.dec_nlayers,
                 residual=args.dec_residual,
                 emb_dim=args.emb_dim,
+                tie_embedding=args.tie_embedding,
                 vocab=self.vocab,
                 logits_temp=args.logits_temp,
                 dropout=args.dropout_dec,
@@ -191,8 +196,8 @@ class Seq2seq(ModelBase):
                 ss_prob=args.ss_prob,
                 lsm_prob=args.lsm_prob,
                 layer_norm=args.layer_norm,
-                focal_loss_weight=args.focal_loss_weight,
-                focal_loss_gamma=args.focal_loss_gamma,
+                fl_weight=args.focal_loss_weight,
+                fl_gamma=args.focal_loss_gamma,
                 init_with_enc=args.init_with_enc,
                 ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
                 ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split('_')] if len(args.ctc_fc_list) > 0 else [],
@@ -231,6 +236,7 @@ class Seq2seq(ModelBase):
                     nlayers=args.dec_nlayers,
                     residual=args.dec_residual,
                     emb_dim=args.emb_dim,
+                    tie_embedding=args.tie_embedding,
                     vocab=getattr(self, 'vocab_' + sub),
                     logits_temp=args.logits_temp,
                     dropout=args.dropout_dec,
@@ -238,8 +244,8 @@ class Seq2seq(ModelBase):
                     ss_prob=args.ss_prob,
                     lsm_prob=args.lsm_prob,
                     layer_norm=args.layer_norm,
-                    focal_loss_weight=args.focal_loss_weight,
-                    focal_loss_gamma=args.focal_loss_gamma,
+                    fl_weight=args.focal_loss_weight,
+                    fl_gamma=args.focal_loss_gamma,
                     init_with_enc=args.init_with_enc,
                     ctc_weight=getattr(self, 'ctc_weight_' + sub),
                     ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
@@ -326,10 +332,8 @@ class Seq2seq(ModelBase):
         # Encode input features
         if self.input_type == 'speech':
             if self.mtl_per_batch:
-                if 'bwd' in task:
-                    enc_outs, perm_ids = self.encode(batch['xs'], 'ys', flip=True)
-                else:
-                    enc_outs, perm_ids = self.encode(batch['xs'], task, flip=False)
+                flip = True if 'bwd' in task else False
+                enc_outs, perm_ids = self.encode(batch['xs'], task, flip=flip)
             else:
                 flip = True if self.bwd_weight == 1 else False
                 enc_outs, perm_ids = self.encode(batch['xs'], 'all', flip=flip)
@@ -337,44 +341,66 @@ class Seq2seq(ModelBase):
             enc_outs, perm_ids = self.encode(batch['ys_sub1'])
 
         observation = {}
-        if task == 'all':
-            loss = enc_outs['ys']['xs'].new_zeros(1)
-        elif task == 'ys.bwd':
-            loss = enc_outs['ys']['xs'].new_zeros(1)
-        else:
-            loss = enc_outs[task]['xs'].new_zeros(1)
+        loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
 
         # Compute XE loss for the forward decoder
-        if self.fwd_weight > 0 and task in ['all', 'ys']:
-            ys = [batch['ys'][i] for i in perm_ids]
-            loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys)
+        if self.fwd_weight > 0 and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
+            if perm_ids is None:
+                ys = batch['ys']
+            else:
+                ys = [batch['ys'][i] for i in perm_ids]
+            if task == 'ys.ctc' and self.task_specific_layer:
+                loss_fwd, obs_fwd = self.dec_fwd(
+                    enc_outs['ys.ctc']['xs'], enc_outs['ys']['xlens'],
+                    ys, self.device_id, task)
+            else:
+                loss_fwd, obs_fwd = self.dec_fwd(
+                    enc_outs['ys']['xs'], enc_outs['ys']['xlens'],
+                    ys, self.device_id, task)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
-            observation['loss.lm'] = obs_fwd['loss_lm']
-            observation['acc.main'] = obs_fwd['acc']
+            observation['loss.lmobj'] = obs_fwd['loss_lmobj']
+            observation['acc.main'] = obs_fwd['acc_att']
+            observation['acc.lmobj'] = obs_fwd['acc_lmobj']
+            observation['ppl.main'] = obs_fwd['ppl_att']
+            observation['ppl.lmobj'] = obs_fwd['ppl_lmobj']
 
         # Compute XE loss for the backward decoder
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
             ys = [batch['ys'][i] for i in perm_ids]
-            loss_bwd, obs_bwd = self.dec_bwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys)
+            loss_bwd, obs_bwd = self.dec_bwd(
+                enc_outs['ys']['xs'], enc_outs['ys']['xlens'],
+                ys, self.device_id, task)
             loss += loss_bwd
             observation['loss.att-bwd'] = obs_bwd['loss_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
-            observation['loss.lm-bwd'] = obs_bwd['loss_lm']
-            observation['acc.bwd'] = obs_bwd['acc']
+            observation['loss.lmobj-bwd'] = obs_bwd['loss_lmobj']
+            observation['acc.bwd'] = obs_bwd['acc_att']
+            observation['acc.lmobj-bwd'] = obs_bwd['acc_lmobj']
+            observation['ppl.bwd'] = obs_bwd['ppl_att']
+            observation['ppl.lmobj-bwd'] = obs_bwd['ppl_lmobj']
 
         # only fwd for sub tasks
         for sub in ['sub1', 'sub2']:
-            if getattr(self, sub + '_weight') > 0 and task in ['all', 'ys_' + sub]:
+            if getattr(self, sub + '_weight') > 0 and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc']:
                 ys_sub = [batch['ys_' + sub][i] for i in perm_ids]
-                loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
-                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub)
+                if task == 'ys_' + sub + '.ctc' and self.task_specific_layer:
+                    loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
+                        enc_outs['ys_' + sub + '.ctc']['xs'], enc_outs['ys_' + sub + '.ctc']['xlens'],
+                        ys_sub, self.device_id, task)
+                else:
+                    loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
+                        enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'],
+                        ys_sub, self.device_id, task)
                 loss += loss_sub
                 observation['loss.att-' + sub] = obs_sub['loss_att']
                 observation['loss.ctc-' + sub] = obs_sub['loss_ctc']
-                observation['loss.lm-' + sub] = obs_sub['loss_lm']
-                observation['acc.' + sub] = obs_sub['acc']
+                observation['loss.lmobj-' + sub] = obs_sub['loss_lmobj']
+                observation['acc.' + sub] = obs_sub['acc_att']
+                observation['acc.lmobj-' + sub] = obs_sub['acc_lmobj']
+                observation['ppl.' + sub] = obs_sub['ppl_att']
+                observation['ppl.lmobj-' + sub] = obs_sub['ppl_lmobj']
 
         return loss, observation
 
@@ -390,51 +416,60 @@ class Seq2seq(ModelBase):
             perm_ids ():
 
         """
-        # Sort by lenghts in the descending order
-        perm_ids = sorted(list(six.moves.range(0, len(xs), 1)),
-                          key=lambda i: len(xs[i]), reverse=True)
-        xs = [xs[i] for i in perm_ids]
-        # NOTE: must be descending order for pack_padded_sequence
+        if 'lmobj' in task:
+            eouts = {'ys': {'xs': None, 'xlens': None},
+                     'ys.ctc': {'xs': None, 'xlens': None},
+                     'ys_sub1': {'xs': None, 'xlens': None},
+                     'ys_sub1.ctc': {'xs': None, 'xlens': None},
+                     'ys_sub2': {'xs': None, 'xlens': None},
+                     'ys_sub2.ctc': {'xs': None, 'xlens': None}}
+            return eouts, None
+        else:
+            # Sort by lenghts in the descending order
+            perm_ids = sorted(list(range(0, len(xs), 1)),
+                              key=lambda i: len(xs[i]), reverse=True)
+            xs = [xs[i] for i in perm_ids]
+            # NOTE: must be descending order for pack_padded_sequence
 
-        if self.input_type == 'speech':
-            # Frame stacking
-            if self.nstacks > 1:
-                xs = [stack_frame(x, self.nstacks, self.nskips)for x in xs]
+            if self.input_type == 'speech':
+                # Frame stacking
+                if self.nstacks > 1:
+                    xs = [stack_frame(x, self.nstacks, self.nskips)for x in xs]
 
-            # Splicing
-            if self.nsplices > 1:
-                xs = [splice(x, self.nsplices, self.nstacks) for x in xs]
+                # Splicing
+                if self.nsplices > 1:
+                    xs = [splice(x, self.nsplices, self.nstacks) for x in xs]
 
-            xlens = [len(x) for x in xs]
-            # Flip acoustic features in the reverse order
-            if flip:
-                xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
-            else:
-                xs = [np2var(x, self.device_id).float() for x in xs]
-            xs = pad_list(xs)
+                xlens = [len(x) for x in xs]
+                # Flip acoustic features in the reverse order
+                if flip:
+                    xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
+                else:
+                    xs = [np2tensor(x, self.device_id).float() for x in xs]
+                xs = pad_list(xs)
 
-        elif self.input_type == 'text':
-            xlens = [len(x) for x in xs]
-            xs = [np2var(np.fromiter(x, dtype=np.int64), self.device_id).long() for x in xs]
-            xs = pad_list(xs, self.pad)
-            xs = self.embed_in(xs)
+            elif self.input_type == 'text':
+                xlens = [len(x) for x in xs]
+                xs = [np2tensor(np.fromiter(x, dtype=np.int64), self.device_id).long() for x in xs]
+                xs = pad_list(xs, self.pad)
+                xs = self.embed_in(xs)
 
-        enc_outs = self.enc(xs, xlens, task)
+            enc_outs = self.enc(xs, xlens, task)
 
-        if self.main_weight < 1 and self.enc_type == 'cnn':
-            for sub in ['sub1', 'sub2']:
-                enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
-                enc_outs['ys_' + sub]['xlens'] = copy.deepcopy(enc_outs['ys']['xlens'])
+            if self.main_weight < 1 and self.enc_type == 'cnn':
+                for sub in ['sub1', 'sub2']:
+                    enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
+                    enc_outs['ys_' + sub]['xlens'] = copy.deepcopy(enc_outs['ys']['xlens'])
 
-        # Bridge between the encoder and decoder
-        if self.main_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys']):
-            enc_outs['ys']['xs'] = self.bridge(enc_outs['ys']['xs'])
-        if self.sub1_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys_sub1']):
-            enc_outs['ys_sub1']['xs'] = self.bridge_sub1(enc_outs['ys_sub1']['xs'])
-        if self.sub2_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer)and (task in ['all', 'ys_sub2']):
-            enc_outs['ys_sub2']['xs'] = self.bridge_sub2(enc_outs['ys_sub2']['xs'])
+            # Bridge between the encoder and decoder
+            if self.main_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys']):
+                enc_outs['ys']['xs'] = self.bridge(enc_outs['ys']['xs'])
+            if self.sub1_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys_sub1']):
+                enc_outs['ys_sub1']['xs'] = self.bridge_sub1(enc_outs['ys_sub1']['xs'])
+            if self.sub2_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer)and (task in ['all', 'ys_sub2']):
+                enc_outs['ys_sub2']['xs'] = self.bridge_sub2(enc_outs['ys_sub2']['xs'])
 
-        return enc_outs, perm_ids
+            return enc_outs, perm_ids
 
     def get_ctc_posteriors(self, xs, task='ys', temperature=1, topk=None):
         self.eval()
