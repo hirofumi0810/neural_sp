@@ -278,7 +278,11 @@ class Decoder(nn.Module):
                     raise ValueError('When using the tied flag, nunits must be equal to emb_dim.')
                 self.output.fc.weight = self.embed.embed.weight
 
-    def forward(self, eouts, elens, ys, device_id, task='all'):
+    @property
+    def device_id(self):
+        return torch.cuda.device_of(next(self.parameters()).data).idx
+
+    def forward(self, eouts, elens, ys, task='all'):
         """Forward computation.
 
         Args:
@@ -299,7 +303,7 @@ class Decoder(nn.Module):
 
         # CTC loss
         if self.ctc_weight > 0 and (not self.mtl_per_batch or (self.mtl_per_batch and 'ctc' in task)):
-            loss_ctc = self.forward_ctc(eouts, elens, ys, device_id)
+            loss_ctc = self.forward_ctc(eouts, elens, ys)
             obserbation['loss_ctc'] = loss_ctc.item()
             if self.mtl_per_batch:
                 loss += loss_ctc
@@ -308,7 +312,7 @@ class Decoder(nn.Module):
 
         # LM objective
         if self.lmobj_weight > 0 and 'lmobj' in task:
-            loss_lmobj, acc_lmobj, ppl_lmobj = self.forward_lmobj(ys, device_id)
+            loss_lmobj, acc_lmobj, ppl_lmobj = self.forward_lmobj(ys)
             obserbation['loss_lmobj'] = loss_lmobj.item()
             obserbation['acc_lmobj'] = acc_lmobj
             obserbation['ppl_lmobj'] = ppl_lmobj
@@ -319,7 +323,7 @@ class Decoder(nn.Module):
 
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and 'ctc' not in task and 'lmobj' not in task:
-            loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys, device_id)
+            loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys)
             obserbation['loss_att'] = loss_att.item()
             obserbation['acc_att'] = acc_att
             obserbation['ppl_att'] = ppl_att
@@ -331,14 +335,13 @@ class Decoder(nn.Module):
         obserbation['loss'] = loss.item()
         return loss, obserbation
 
-    def forward_ctc(self, eouts, elens, ys, device_id):
+    def forward_ctc(self, eouts, elens, ys):
         """Compute CTC loss.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_units]`
             elens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            device_id (int):
         Returns:
             loss (FloatTensor): `[B, L, vocab]`
 
@@ -359,8 +362,8 @@ class Decoder(nn.Module):
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
-        if device_id >= 0:
-            loss = loss.cuda(device_id)
+        if self.device_id >= 0:
+            loss = loss.cuda(self.device_id)
 
         # Label smoothing for CTC
         if self.lsm_prob > 0 and self.ctc_weight == 1:
@@ -370,12 +373,11 @@ class Decoder(nn.Module):
 
         return loss
 
-    def forward_lmobj(self, ys, device_id):
+    def forward_lmobj(self, ys):
         """Compute XE loss for LM objective.
 
         Args:
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            device_id (int):
         Returns:
             loss (FloatTensor): `[1]`
             acc (float):
@@ -385,24 +387,24 @@ class Decoder(nn.Module):
         bs = len(ys)
 
         # Append <sos> and <eos>
-        sos = torch.zeros((1,)).fill_(self.sos).long().cuda(device_id)
-        eos = torch.zeros((1,)).fill_(self.eos).long().cuda(device_id)
+        sos = torch.zeros((1,)).fill_(self.sos).long().cuda(self.device_id)
+        eos = torch.zeros((1,)).fill_(self.eos).long().cuda(self.device_id)
         if self.backward:
-            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), device_id).long() for y in ys]
+            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
             ys_in = [torch.cat([eos, y], dim=0) for y in ys]
             ys_out = [torch.cat([y, sos], dim=0) for y in ys]
         else:
-            ys = [np2tensor(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]
+            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
             ys_in = [torch.cat([sos, y], dim=0) for y in ys]
             ys_out = [torch.cat([y, eos], dim=0) for y in ys]
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dout, dstate = self.init_dec_state(bs, self.nlayers, device_id)
-        _dout, _dstate = self.init_dec_state(bs, 1, device_id)  # for internal LM
-        context = torch.zeros((bs, 1, self.enc_nunits), dtype=torch.float32).cuda(device_id)
-        attentional = torch.zeros((bs, 1, self.dec_nunits), dtype=torch.float32).cuda(device_id)
+        dout, dstate = self.init_dec_state(bs, self.nlayers)
+        _dout, _dstate = self.init_dec_state(bs, 1)  # for internal LM
+        context = torch.zeros((bs, 1, self.enc_nunits), dtype=torch.float32).cuda(self.device_id)
+        attentional = torch.zeros((bs, 1, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
@@ -444,14 +446,13 @@ class Decoder(nn.Module):
 
         return loss, acc, ppl
 
-    def forward_att(self, eouts, elens, ys, device_id):
+    def forward_att(self, eouts, elens, ys):
         """Compute XE loss for the sequence-to-sequence model.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_units]`
             elens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            device_id (int):
         Returns:
             loss (FloatTensor): `[B, L, vocab]`
             acc (float):
@@ -464,19 +465,19 @@ class Decoder(nn.Module):
         sos = eouts.new_zeros(1).fill_(self.sos).long()
         eos = eouts.new_zeros(1).fill_(self.eos).long()
         if self.backward:
-            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), device_id).long() for y in ys]
+            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
             ys_in = [torch.cat([eos, y], dim=0) for y in ys]
             ys_out = [torch.cat([y, sos], dim=0) for y in ys]
         else:
-            ys = [np2tensor(np.fromiter(y, dtype=np.int64), device_id).long() for y in ys]
+            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
             ys_in = [torch.cat([sos, y], dim=0) for y in ys]
             ys_out = [torch.cat([y, eos], dim=0) for y in ys]
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dout, dstate = self.init_dec_state(bs, self.nlayers, device_id, eouts, elens)
-        _dout, _dstate = self.init_dec_state(bs, 1, device_id, eouts, elens)  # for internal LM
+        dout, dstate = self.init_dec_state(bs, self.nlayers, eouts, elens)
+        _dout, _dstate = self.init_dec_state(bs, 1, eouts, elens)  # for internal LM
         context = eouts.new_zeros(bs, 1, self.enc_nunits)
         attentional = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
@@ -509,7 +510,7 @@ class Decoder(nn.Module):
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
                 if is_sample:
-                    y_lm_emb = self.rnnlm_cf.embed(np.argmax(logits[-1].detach(), axis=2).cuda(device_id))
+                    y_lm_emb = self.rnnlm_cf.embed(np.argmax(logits[-1].detach(), axis=2).cuda(self.device_id))
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
                 logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
@@ -557,7 +558,7 @@ class Decoder(nn.Module):
 
         return loss, acc, ppl
 
-    def init_dec_state(self, batch_size, nlayers, device_id, eouts=None, elens=None):
+    def init_dec_state(self, batch_size, nlayers, eouts=None, elens=None):
         """Initialize decoder state.
 
         Args:
@@ -587,8 +588,8 @@ class Decoder(nn.Module):
             hx_list = [dout.clone().squeeze(1)] * self.nlayers
             cx_list = [dout.clone().squeeze(1)] * self.nlayers if self.rnn_type == 'lstm' else None
         else:
-            dout = torch.zeros((batch_size, 1, self.dec_nunits), dtype=torch.float32).cuda(device_id)
-            zero_state = torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(device_id)
+            dout = torch.zeros((batch_size, 1, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+            zero_state = torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
             hx_list = [zero_state] * self.nlayers
             cx_list = [zero_state] * self.nlayers if self.rnn_type == 'lstm' else None
 
@@ -694,11 +695,10 @@ class Decoder(nn.Module):
 
         """
         bs, enc_time, enc_nunits = eouts.size()
-        device_id = eouts.get_device()
 
         # Initialization
-        dout, dstate = self.init_dec_state(bs, self.nlayers, device_id, eouts, elens)
-        _dout, _dstate = self.init_dec_state(bs, 1, device_id, eouts, elens)
+        dout, dstate = self.init_dec_state(bs, self.nlayers, eouts, elens)
+        _dout, _dstate = self.init_dec_state(bs, 1, eouts, elens)
         context = eouts.new_zeros(bs, 1, self.enc_nunits)
         attentional = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
@@ -742,8 +742,7 @@ class Decoder(nn.Module):
             logits_t = self.output(attentional)
 
             # Pick up 1-best
-            device_id = logits_t.get_device()
-            y = np.argmax(logits_t.squeeze(1).detach(), axis=1).cuda(device_id).unsqueeze(1)
+            y = np.argmax(logits_t.squeeze(1).detach(), axis=1).cuda(self.device_id).unsqueeze(1)
             best_hyps_tmp += [y]
             if self.score.nheads > 1:
                 aws_tmp += [aw[0]]
@@ -817,7 +816,6 @@ class Decoder(nn.Module):
 
         """
         bs, _, enc_nunits = eouts.size()
-        device_id = eouts.get_device()
 
         # For cold fusion
         if params['rnnlm_weight'] > 0 and not self.cold_fusion:
@@ -837,8 +835,8 @@ class Decoder(nn.Module):
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
-            dout, (hx_list, cx_list) = self.init_dec_state(1, self.nlayers, device_id, eouts[b:b + 1], elens[b:b + 1])
-            _dout, _dstate = self.init_dec_state(1, 1, device_id, eouts[b:b + 1], elens[b:b + 1])
+            dout, (hx_list, cx_list) = self.init_dec_state(1, self.nlayers, eouts[b:b + 1], elens[b:b + 1])
+            _dout, _dstate = self.init_dec_state(1, 1, eouts[b:b + 1], elens[b:b + 1])
             if self.input_feeding:
                 context = eouts.new_zeros(1, 1, self.dec_nunits)
                 # NOTE: this is equivalent to attentional

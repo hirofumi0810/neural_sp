@@ -351,12 +351,10 @@ class Seq2seq(ModelBase):
                 ys = [batch['ys'][i] for i in perm_ids]
             if task == 'ys.ctc' and self.task_specific_layer:
                 loss_fwd, obs_fwd = self.dec_fwd(
-                    enc_outs['ys.ctc']['xs'], enc_outs['ys']['xlens'],
-                    ys, self.device_id, task)
+                    enc_outs['ys.ctc']['xs'], enc_outs['ys']['xlens'], ys, task)
             else:
                 loss_fwd, obs_fwd = self.dec_fwd(
-                    enc_outs['ys']['xs'], enc_outs['ys']['xlens'],
-                    ys, self.device_id, task)
+                    enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
@@ -370,8 +368,7 @@ class Seq2seq(ModelBase):
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
             ys = [batch['ys'][i] for i in perm_ids]
             loss_bwd, obs_bwd = self.dec_bwd(
-                enc_outs['ys']['xs'], enc_outs['ys']['xlens'],
-                ys, self.device_id, task)
+                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
             loss += loss_bwd
             observation['loss.att-bwd'] = obs_bwd['loss_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
@@ -387,12 +384,14 @@ class Seq2seq(ModelBase):
                 ys_sub = [batch['ys_' + sub][i] for i in perm_ids]
                 if task == 'ys_' + sub + '.ctc' and self.task_specific_layer:
                     loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
-                        enc_outs['ys_' + sub + '.ctc']['xs'], enc_outs['ys_' + sub + '.ctc']['xlens'],
-                        ys_sub, self.device_id, task)
+                        enc_outs['ys_' + sub + '.ctc']['xs'],
+                        enc_outs['ys_' + sub + '.ctc']['xlens'],
+                        ys_sub, task)
                 else:
                     loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
-                        enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'],
-                        ys_sub, self.device_id, task)
+                        enc_outs['ys_' + sub]['xs'],
+                        enc_outs['ys_' + sub]['xlens'],
+                        ys_sub, task)
                 loss += loss_sub
                 observation['loss.att-' + sub] = obs_sub['loss_att']
                 observation['loss.ctc-' + sub] = obs_sub['loss_ctc']
@@ -588,6 +587,7 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                       nbest_hyps_bwd, aws_bwd, scores_bwd,
                       id2token=None, refs=None):
     """Forward-backward joint decoding.
+
     Args:
         nbest_hyps_fwd (list): A list of length `[B]`, which contains list of n hypotheses
         aws_fwd (list): A list of length `[B]`, which contains arrays of size `[L, T]`
