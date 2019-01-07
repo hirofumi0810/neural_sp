@@ -166,14 +166,14 @@ parser.add_argument('--dec_nlayers_sub2', type=int, default=1,
                     help='')
 parser.add_argument('--dec_residual', type=bool, default=False, nargs='?',
                     help='')
-parser.add_argument('--init_with_enc', type=bool, default=False,
+parser.add_argument('--init_with_enc', type=bool, default=False, nargs='?',
+                    help='')
+parser.add_argument('--input_feeding', type=bool, default=False, nargs='?',
                     help='')
 parser.add_argument('--emb_dim', type=int, default=320,
                     help='')
 parser.add_argument('--tie_embedding', type=bool, default=False, nargs='?',
                     help='If True, tie weights between an embedding matrix and a linear layer before the softmax layer.')
-parser.add_argument('--input_feeding', type=bool, default=False, nargs='?',
-                    help='')
 parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
                     help='')
 parser.add_argument('--ctc_fc_list_sub1', type=str, default="", nargs='?',
@@ -482,6 +482,8 @@ def main():
         dir_name += str(args.dec_nunits) + 'H'
         # dir_name += str(args.dec_nprojs) + 'P'
         dir_name += str(args.dec_nlayers) + 'L'
+        if args.input_feeding:
+            dir_name += '_inputfeed'
         if args.tie_embedding:
             dir_name += '_tie'
         dir_name += '_' + args.attn_type

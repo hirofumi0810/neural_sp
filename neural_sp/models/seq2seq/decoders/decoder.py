@@ -138,7 +138,7 @@ class Decoder(nn.Module):
         self.rnn_type = rnn_type
         assert rnn_type in ['lstm', 'gru']
         self.enc_nunits = enc_nunits
-        self.nunits = nunits
+        self.dec_nunits = nunits
         self.nlayers = nlayers
         self.residual = residual
         self.logits_temp = logits_temp
@@ -152,6 +152,7 @@ class Decoder(nn.Module):
         self.init_with_enc = init_with_enc
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
+        self.input_feeding = input_feeding
         self.backward = backward
         self.rnnlm_cf = rnnlm_cold_fusion
         self.cold_fusion = cold_fusion
@@ -226,9 +227,15 @@ class Decoder(nn.Module):
                 assert nlayers >= 2
                 self.rnn_inlm = rnn_cell(emb_dim, nunits)
                 self.dropout_inlm = nn.Dropout(p=dropout)
-                self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
+                if input_feeding:
+                    self.rnn += [rnn_cell(nunits + nunits, nunits)]
+                else:
+                    self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
             else:
-                self.rnn += [rnn_cell(emb_dim + enc_nunits, nunits)]
+                if input_feeding:
+                    self.rnn += [rnn_cell(emb_dim + nunits, nunits)]
+                else:
+                    self.rnn += [rnn_cell(emb_dim + enc_nunits, nunits)]
             self.dropout += [nn.Dropout(p=dropout)]
             for l in range(1, nlayers):
                 self.rnn += [rnn_cell(nunits, nunits)]
@@ -395,6 +402,7 @@ class Decoder(nn.Module):
         dout, dstate = self.init_dec_state(bs, self.nlayers, device_id)
         _dout, _dstate = self.init_dec_state(bs, 1, device_id)  # for internal LM
         context = torch.zeros((bs, 1, self.enc_nunits), dtype=torch.float32).cuda(device_id)
+        attentional = torch.zeros((bs, 1, self.dec_nunits), dtype=torch.float32).cuda(device_id)
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
@@ -404,7 +412,10 @@ class Decoder(nn.Module):
             y_emb = ys_emb[:, t:t + 1]
 
             # Recurrency
-            dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
+            if self.input_feeding:
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attentional, dstate, _dstate)
+            else:
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
 
             # Generate
             if self.internal_lm:
@@ -413,8 +424,8 @@ class Decoder(nn.Module):
                 else:
                     logits_t = self.output_lmobj(_dout)
             else:
-                attentional_t = self.generate(context, dout)
-                logits_t = self.output(attentional_t)
+                attentional = self.generate(context, dout)
+                logits_t = self.output(attentional)
             logits.append(logits_t)
 
         # Compute XE loss for RNNLM objective
@@ -447,7 +458,7 @@ class Decoder(nn.Module):
             ppl (float):
 
         """
-        bs, _, enc_nunits = eouts.size()
+        bs = eouts.size(0)
 
         # Append <sos> and <eos>
         sos = eouts.new_zeros(1).fill_(self.sos).long()
@@ -466,7 +477,8 @@ class Decoder(nn.Module):
         # Initialization
         dout, dstate = self.init_dec_state(bs, self.nlayers, device_id, eouts, elens)
         _dout, _dstate = self.init_dec_state(bs, 1, device_id, eouts, elens)  # for internal LM
-        context = eouts.new_zeros(bs, 1, enc_nunits)
+        context = eouts.new_zeros(bs, 1, self.enc_nunits)
+        attentional = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -489,7 +501,10 @@ class Decoder(nn.Module):
                 y_emb = ys_emb[:, t:t + 1]
 
             # Recurrency
-            dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
+            if self.input_feeding:
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attentional, dstate, _dstate)
+            else:
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -505,11 +520,11 @@ class Decoder(nn.Module):
             context, aw = self.score(eouts, elens, dout, aw)
 
             # Generate
-            attentional_t = self.generate(context, dout, logits_lm_t, lm_out)
+            attentional = self.generate(context, dout, logits_lm_t, lm_out)
             if self.rnnlm_init and self.internal_lm:
                 # Residual connection
-                attentional_t += _dout
-            logits.append(self.output(attentional_t))
+                attentional += _dout
+            logits.append(self.output(attentional))
 
         # Compute XE sequence loss
         logits = torch.cat(logits, dim=1) / self.logits_temp
@@ -557,7 +572,7 @@ class Decoder(nn.Module):
 
         """
         if self.init_with_enc:
-            if eouts.size(-1) == self.nunits:
+            if eouts.size(-1) == self.dec_nunits:
                 # unidirectinal encoder
                 dout = torch.cat([eouts[b:b + 1, elens[b] - 1:elens[b]]
                                   for b in range(len(elens))], dim=0)
@@ -565,15 +580,15 @@ class Decoder(nn.Module):
                 raise NotImplementedError()
                 # TODO(hirofumi): add bridge layer
                 # bidirectional encoder
-                dout = torch.cat([eouts[b:b + 1, 0:1, self.nunits:]
+                dout = torch.cat([eouts[b:b + 1, 0:1, self.dec_nunits:]
                                   for b in range(len(elens))], dim=0)
                 # NOTE: initialize with reverse direction
             dout = torch.tanh(dout)
             hx_list = [dout.clone().squeeze(1)] * self.nlayers
             cx_list = [dout.clone().squeeze(1)] * self.nlayers if self.rnn_type == 'lstm' else None
         else:
-            dout = torch.zeros((batch_size, 1, self.nunits), dtype=torch.float32).cuda(device_id)
-            zero_state = torch.zeros((batch_size, self.nunits), dtype=torch.float32).cuda(device_id)
+            dout = torch.zeros((batch_size, 1, self.dec_nunits), dtype=torch.float32).cuda(device_id)
+            zero_state = torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(device_id)
             hx_list = [zero_state] * self.nlayers
             cx_list = [zero_state] * self.nlayers if self.rnn_type == 'lstm' else None
 
@@ -684,7 +699,8 @@ class Decoder(nn.Module):
         # Initialization
         dout, dstate = self.init_dec_state(bs, self.nlayers, device_id, eouts, elens)
         _dout, _dstate = self.init_dec_state(bs, 1, device_id, eouts, elens)
-        context = eouts.new_zeros(bs, 1, enc_nunits)
+        context = eouts.new_zeros(bs, 1, self.enc_nunits)
+        attentional = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -703,7 +719,10 @@ class Decoder(nn.Module):
         for t in range(int(math.floor(enc_time * max_len_ratio)) + 1):
             # Recurrency
             y_emb = self.embed(y)
-            dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
+            if self.input_feeding:
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attentional, dstate, _dstate)
+            else:
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -716,11 +735,11 @@ class Decoder(nn.Module):
             context, aw = self.score(eouts, elens, dout, aw)
 
             # Generate
-            attentional_t = self.generate(context, dout, logits_lm_t, lm_out)
+            attentional = self.generate(context, dout, logits_lm_t, lm_out)
             if self.rnnlm_init and self.internal_lm:
                 # Residual connection
-                attentional_t += _dout
-            logits_t = self.output(attentional_t)
+                attentional += _dout
+            logits_t = self.output(attentional)
 
             # Pick up 1-best
             device_id = logits_t.get_device()
@@ -820,7 +839,11 @@ class Decoder(nn.Module):
             # Initialization per utterance
             dout, (hx_list, cx_list) = self.init_dec_state(1, self.nlayers, device_id, eouts[b:b + 1], elens[b:b + 1])
             _dout, _dstate = self.init_dec_state(1, 1, device_id, eouts[b:b + 1], elens[b:b + 1])
-            context = eouts.new_zeros(1, 1, enc_nunits)
+            if self.input_feeding:
+                context = eouts.new_zeros(1, 1, self.dec_nunits)
+                # NOTE: this is equivalent to attentional
+            else:
+                context = eouts.new_zeros(1, 1, self.enc_nunits)
             self.score.reset()
 
             complete = []
@@ -871,11 +894,11 @@ class Decoder(nn.Module):
                         logits_lm_t, lm_out, rnnlm_state = None, None, None
 
                     # Generate
-                    attentional_t = self.generate(context, dout, logits_lm_t, lm_out)
+                    attentional = self.generate(context, dout, logits_lm_t, lm_out)
                     if self.rnnlm_init and self.internal_lm:
                         # Residual connection
-                        attentional_t += _dout
-                    logits_t = self.output(attentional_t)
+                        attentional += _dout
+                    logits_t = self.output(attentional)
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits_t.squeeze(1), dim=1)  # log-prob-level
@@ -927,7 +950,7 @@ class Decoder(nn.Module):
                              'hx_list': hx_list[:],
                              'cx_list': cx_list[:] if cx_list is not None else None,
                              'dout': dout,
-                             'context': context,
+                             'context': attentional if self.input_feeding else context,
                              'aws': beam[i_beam]['aws'] + [aw],
                              'rnnlm_hx_list': rnnlm_state[0][:] if rnnlm_state is not None else None,
                              'rnnlm_cx_list': rnnlm_state[1][:] if rnnlm_state is not None else None,
