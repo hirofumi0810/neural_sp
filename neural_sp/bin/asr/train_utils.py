@@ -60,6 +60,8 @@ class Reporter(object):
 
         """
         for k, v in observation.items():
+            if v is None:
+                continue
             category, name = k.split('.')
             # NOTE: category: loss, acc, ppl
 
@@ -76,14 +78,12 @@ class Reporter(object):
                     self.obs_train[category][name] = []
                 self.obs_train[category][name].append(
                     np.mean(self.obs_train_local[category][name]))
-                if v != 0:
-                    logger.info('%s (train, mean): %.3f' % (k, np.mean(self.obs_train_local[category][name])))
+                logger.info('%s (train, mean): %.3f' % (k, np.mean(self.obs_train_local[category][name])))
 
                 if name not in self.obs_dev[category].keys():
                     self.obs_dev[category][name] = []
                 self.obs_dev[category][name].append(v)
-                if v != 0:
-                    logger.info('%s (dev): %.3f' % (k, v))
+                logger.info('%s (dev): %.3f' % (k, v))
 
                 # Logging by tensorboard
                 if self.tensorboard:
@@ -106,9 +106,7 @@ class Reporter(object):
             self.obs_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
 
     def snapshot(self):
-
         linestyles = ['solid', 'dashed', 'dotted', 'dashdotted']
-
         for category in self.obs_train.keys():
             plt.clf()
             upper = 0

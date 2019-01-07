@@ -284,10 +284,10 @@ class Decoder(nn.Module):
             observation (dict):
 
         """
-        obserbation = {'loss': 0,
-                       'loss_att': 0, 'loss_ctc': 0, 'loss_lmobj': 0,
-                       'acc_att': 0, 'acc_lmobj': 0,
-                       'ppl_att': 0, 'ppl_lmobj': 0}
+        obserbation = {'loss': None,
+                       'loss_att': None, 'loss_ctc': None, 'loss_lmobj': None,
+                       'acc_att': None, 'acc_lmobj': None,
+                       'ppl_att': None, 'ppl_lmobj': None}
         loss = torch.zeros((1,), dtype=torch.float32).cuda()
 
         # CTC loss

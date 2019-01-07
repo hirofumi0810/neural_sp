@@ -361,9 +361,9 @@ class Seq2seq(ModelBase):
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
             observation['loss.lmobj'] = obs_fwd['loss_lmobj']
-            observation['acc.main'] = obs_fwd['acc_att']
+            observation['acc.att'] = obs_fwd['acc_att']
             observation['acc.lmobj'] = obs_fwd['acc_lmobj']
-            observation['ppl.main'] = obs_fwd['ppl_att']
+            observation['ppl.att'] = obs_fwd['ppl_att']
             observation['ppl.lmobj'] = obs_fwd['ppl_lmobj']
 
         # Compute XE loss for the backward decoder
@@ -376,9 +376,9 @@ class Seq2seq(ModelBase):
             observation['loss.att-bwd'] = obs_bwd['loss_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
             observation['loss.lmobj-bwd'] = obs_bwd['loss_lmobj']
-            observation['acc.bwd'] = obs_bwd['acc_att']
+            observation['acc.att-bwd'] = obs_bwd['acc_att']
             observation['acc.lmobj-bwd'] = obs_bwd['acc_lmobj']
-            observation['ppl.bwd'] = obs_bwd['ppl_att']
+            observation['ppl.att-bwd'] = obs_bwd['ppl_att']
             observation['ppl.lmobj-bwd'] = obs_bwd['ppl_lmobj']
 
         # only fwd for sub tasks
@@ -397,9 +397,9 @@ class Seq2seq(ModelBase):
                 observation['loss.att-' + sub] = obs_sub['loss_att']
                 observation['loss.ctc-' + sub] = obs_sub['loss_ctc']
                 observation['loss.lmobj-' + sub] = obs_sub['loss_lmobj']
-                observation['acc.' + sub] = obs_sub['acc_att']
+                observation['acc.att-' + sub] = obs_sub['acc_att']
                 observation['acc.lmobj-' + sub] = obs_sub['acc_lmobj']
-                observation['ppl.' + sub] = obs_sub['ppl_att']
+                observation['ppl.att-' + sub] = obs_sub['ppl_att']
                 observation['ppl.lmobj-' + sub] = obs_sub['ppl_lmobj']
 
         return loss, observation
