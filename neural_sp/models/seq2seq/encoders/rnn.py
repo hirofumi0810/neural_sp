@@ -132,14 +132,28 @@ class RNNEncoder(nn.Module):
         self.dropout_in = nn.Dropout(p=dropout_in)
 
         # Setting for CNNs before RNNs
-        if len(conv_channels) > 0 and len(conv_channels) == len(conv_kernel_sizes) and len(conv_kernel_sizes) == len(conv_strides):
+        if conv_poolings:
+            channels = [int(c) for c in conv_channels.split('_')] if len(conv_channels) > 0 else []
+            kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                            for c in conv_kernel_sizes.split('_')] if len(conv_kernel_sizes) > 0 else []
+            strides = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                       for c in conv_strides.split('_')] if len(conv_strides) > 0 else []
+            poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                        for c in conv_poolings.split('_')] if len(conv_poolings) > 0 else []
+        else:
+            channels = []
+            kernel_sizes = []
+            strides = []
+            poolings = []
+
+        if len(channels) > 0 and len(channels) == len(kernel_sizes) and len(kernel_sizes) == len(strides):
             assert nstacks == 1 and nsplices == 1
             self.conv = CNNEncoder(input_dim,
                                    in_channel=conv_in_channel,
-                                   channels=conv_channels,
-                                   kernel_sizes=conv_kernel_sizes,
-                                   strides=conv_strides,
-                                   poolings=conv_poolings,
+                                   channels=channels,
+                                   kernel_sizes=kernel_sizes,
+                                   strides=strides,
+                                   poolings=poolings,
                                    dropout=dropout,
                                    activation='relu',
                                    batch_norm=conv_batch_norm)

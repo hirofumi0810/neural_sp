@@ -82,21 +82,6 @@ class Seq2seq(ModelBase):
         self.mtl_per_batch = args.mtl_per_batch
         self.task_specific_layer = args.task_specific_layer
 
-        # Setting for the CNN encoder
-        if args.conv_poolings:
-            conv_channels = [int(c) for c in args.conv_channels.split('_')] if len(args.conv_channels) > 0 else []
-            conv_kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                                 for c in args.conv_kernel_sizes.split('_')] if len(args.conv_kernel_sizes) > 0 else []
-            conv_strides = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                            for c in args.conv_strides.split('_')] if len(args.conv_strides) > 0 else []
-            conv_poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                             for c in args.conv_poolings.split('_')] if len(args.conv_poolings) > 0 else []
-        else:
-            conv_channels = []
-            conv_kernel_sizes = []
-            conv_strides = []
-            conv_poolings = []
-
         # Encoder
         self.enc = RNNEncoder(
             input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
@@ -113,10 +98,10 @@ class Seq2seq(ModelBase):
             nstacks=args.nstacks,
             nsplices=args.nsplices,
             conv_in_channel=args.conv_in_channel,
-            conv_channels=conv_channels,
-            conv_kernel_sizes=conv_kernel_sizes,
-            conv_strides=conv_strides,
-            conv_poolings=conv_poolings,
+            conv_channels=args.conv_channels,
+            conv_kernel_sizes=args.conv_kernel_sizes,
+            conv_strides=args.conv_strides,
+            conv_poolings=args.conv_poolings,
             conv_batch_norm=args.conv_batch_norm,
             residual=args.enc_residual,
             nin=0,
