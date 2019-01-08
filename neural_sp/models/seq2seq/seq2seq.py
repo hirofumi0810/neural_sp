@@ -200,7 +200,8 @@ class Seq2seq(ModelBase):
                 fl_gamma=args.focal_loss_gamma,
                 init_with_enc=args.init_with_enc,
                 ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
-                ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split('_')] if len(args.ctc_fc_list) > 0 else [],
+                ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
+                    '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                 input_feeding=args.input_feeding,
                 backward=(dir == 'bwd'),
                 rnnlm_cold_fusion=args.rnnlm_cold_fusion,
@@ -249,7 +250,7 @@ class Seq2seq(ModelBase):
                     init_with_enc=args.init_with_enc,
                     ctc_weight=getattr(self, 'ctc_weight_' + sub),
                     ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
-                                 ] if len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
+                                 ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
                     input_feeding=args.input_feeding,
                     internal_lm=args.internal_lm,
                     lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
@@ -272,7 +273,7 @@ class Seq2seq(ModelBase):
         self.init_weights(args.param_init, dist=args.param_init_dist, ignore_keys=['bias'])
 
         # Initialize CNN layers like chainer
-        self.init_weights(args.param_init, dist='lecun', keys=['conv'], ignore_keys=['score'])
+        # self.init_weights(args.param_init, dist='lecun', keys=['conv'], ignore_keys=['score'])
 
         # Initialize all biases with 0
         self.init_weights(0, dist='constant', keys=['bias'])

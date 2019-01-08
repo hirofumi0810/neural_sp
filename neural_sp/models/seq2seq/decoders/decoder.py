@@ -352,13 +352,13 @@ class Decoder(nn.Module):
         assert not self.backward
         enc_lens_ctc = np2tensor(np.fromiter(elens, dtype=np.int32), -1).int()
         ys_ctc = [np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys]  # always fwd
-        y_lens = np2tensor(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int32), -1).int()
+        ylens = np2tensor(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int32), -1).int()
         ys_ctc = torch.cat(ys_ctc, dim=0).int()
         # NOTE: Concatenate all elements in ys for warpctc_pytorch
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
-        loss = self.warpctc_loss(logits, ys_ctc, enc_lens_ctc, y_lens)
+        loss = self.warpctc_loss(logits, ys_ctc, enc_lens_ctc, ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
@@ -368,7 +368,7 @@ class Decoder(nn.Module):
         # Label smoothing for CTC
         if self.lsm_prob > 0 and self.ctc_weight == 1:
             loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(
-                logits, y_lens=elens,
+                logits, ylens=elens,
                 lsm_prob=self.lsm_prob, size_average=True) * self.lsm_prob
 
         return loss
@@ -531,9 +531,9 @@ class Decoder(nn.Module):
         logits = torch.cat(logits, dim=1) / self.logits_temp
         if self.lsm_prob > 0:
             # Label smoothing
-            y_lens = [y.size(0) for y in ys_out]
+            ylens = [y.size(0) for y in ys_out]
             loss = cross_entropy_lsm(
-                logits, ys=ys_out_pad, y_lens=y_lens,
+                logits, ys=ys_out_pad, ylens=ylens,
                 lsm_prob=self.lsm_prob, size_average=True)
         else:
             loss = F.cross_entropy(
@@ -544,8 +544,8 @@ class Decoder(nn.Module):
 
         # Focal loss
         if self.fl_weight > 0:
-            y_lens = [y.size(0) for y in ys_out]
-            fl = focal_loss(logits, ys=ys_out_pad, y_lens=y_lens,
+            ylens = [y.size(0) for y in ys_out]
+            fl = focal_loss(logits, ys=ys_out_pad, ylens=ylens,
                             gamma=self.fl_gamma, size_average=True)
             loss = loss * (1 - self.fl_weight) + fl * self.fl_weight
 
@@ -714,7 +714,7 @@ class Decoder(nn.Module):
         y = eouts.new_zeros(bs, 1).fill_(sos).long()
 
         best_hyps_tmp, aws_tmp = [], []
-        y_lens = np.zeros((bs,), dtype=np.int32)
+        ylens = np.zeros((bs,), dtype=np.int32)
         eos_flags = [False] * bs
         for t in range(int(math.floor(enc_time * max_len_ratio)) + 1):
             # Recurrency
@@ -754,7 +754,7 @@ class Decoder(nn.Module):
                 if not eos_flags[b]:
                     if y[b].item() == eos:
                         eos_flags[b] = True
-                    y_lens[b] += 1
+                    ylens[b] += 1
                     # NOTE: include <eos>
 
             # Break if <eos> is outputed in all mini-bs
@@ -772,11 +772,11 @@ class Decoder(nn.Module):
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.backward:
             # Reverse the order
-            best_hyps = [best_hyps_tmp[b, :y_lens[b]][::-1] for b in range(bs)]
-            aws = [aws_tmp[b, :y_lens[b]][::-1] for b in range(bs)]
+            best_hyps = [best_hyps_tmp[b, :ylens[b]][::-1] for b in range(bs)]
+            aws = [aws_tmp[b, :ylens[b]][::-1] for b in range(bs)]
         else:
-            best_hyps = [best_hyps_tmp[b, :y_lens[b]] for b in range(bs)]
-            aws = [aws_tmp[b, :y_lens[b]] for b in range(bs)]
+            best_hyps = [best_hyps_tmp[b, :ylens[b]] for b in range(bs)]
+            aws = [aws_tmp[b, :ylens[b]] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:

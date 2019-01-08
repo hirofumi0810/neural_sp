@@ -37,7 +37,6 @@ class RNNEncoder(nn.Module):
             ex.) [False, True, True, False] means that subsample is conducted in the 2nd and 3rd layers.
         subsample_type (str): drop or concat or max_pool
         nstacks (int): the number of frames to stack
-        nskips (int): the number of frames to skip
         nsplices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): the number of channels of input features
         conv_channels (int): the number of channles in the CNN layers

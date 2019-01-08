@@ -17,13 +17,13 @@ import torch
 import torch.nn.functional as F
 
 
-def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, size_average=False):
+def cross_entropy_lsm(logits, ys, ylens, lsm_prob, size_average=False):
     """Compute cross entropy loss for label smoothing of sequence-to-sequence models.
 
     Args:
         logits (FloatTensor): `[B, T, vocab]`
         ys (LongTensor): Indices of labels. `[B, L]`.
-        y_lens (list): A list of length `[B]`
+        ylens (list): A list of length `[B]`
         lsm_prob (float):
         size_average (bool):
     Returns:
@@ -36,24 +36,24 @@ def cross_entropy_lsm(logits, ys, y_lens, lsm_prob, size_average=False):
     # Create one-hot vector
     ys_lsm = torch.zeros_like(logits).fill_(fill_val)
     for b in range(bs):
-        for t in range(y_lens[b]):
+        for t in range(ylens[b]):
             ys_lsm[b, t, ys[b, t]] = 1 - lsm_prob
 
     # Compute XE for label smoothing
     log_probs = F.log_softmax(logits, dim=-1)
-    loss = np.sum([(- ys_lsm[b, :y_lens[b]] * log_probs[b, :y_lens[b]]).sum()
+    loss = np.sum([(- ys_lsm[b, :ylens[b]] * log_probs[b, :ylens[b]]).sum()
                    for b in range(bs)])
     if size_average:
         loss /= bs
     return loss
 
 
-def kldiv_lsm_ctc(logits, y_lens, lsm_prob, size_average=False):
+def kldiv_lsm_ctc(logits, ylens, lsm_prob, size_average=False):
     """Compute KL divergence loss for label smoothing of CTC models.
 
     Args:
         logits (FloatTensor): `[B, T, vocab]`
-        y_lens (list): A list of length `[B]`
+        ylens (list): A list of length `[B]`
         lsm_prob (float):
         size_average (bool):
     Returns:
@@ -69,19 +69,19 @@ def kldiv_lsm_ctc(logits, y_lens, lsm_prob, size_average=False):
     probs = F.softmax(logits, dim=-1)
     log_probs = F.log_softmax(logits, dim=-1)
     kl_div = torch.mul(probs, log_probs) - torch.mul(probs, log_uniform)
-    loss = np.sum([kl_div[b, :y_lens[b]].sum() for b in range(bs)])
+    loss = np.sum([kl_div[b, :ylens[b]].sum() for b in range(bs)])
     if size_average:
         loss /= bs
     return loss
 
 
-def focal_loss(logits, ys, y_lens, gamma, size_average=False):
+def focal_loss(logits, ys, ylens, gamma, size_average=False):
     """Compute focal loss.
 
     Args:
         logits (FloatTensor): `[B, T, vocab]`
         ys (LongTensor): Indices of labels. `[B, L]`.
-        y_lens (list): A list of length `[B]`
+        ylens (list): A list of length `[B]`
         gamma (float):
         size_average (bool):
     Returns:
@@ -93,14 +93,14 @@ def focal_loss(logits, ys, y_lens, gamma, size_average=False):
     # Create one-hot vector
     ys_onehot = torch.zeros_like(logits)
     for b in range(bs):
-        for t in range(y_lens[b]):
+        for t in range(ylens[b]):
             ys_onehot[b, t, ys[b, t]] = 1
 
     # Compute focal loss
     log_probs = F.log_softmax(logits, dim=-1)
     probs = F.softmax(logits, dim=-1)
     ones = torch.ones_like(log_probs)
-    loss = np.sum([(- ys_onehot[b, :y_lens[b]] * log_probs[b, :y_lens[b]] * torch.pow(ones[b, :y_lens[b]] - probs[b, :y_lens[b]], gamma)).sum()
+    loss = np.sum([(- ys_onehot[b, :ylens[b]] * log_probs[b, :ylens[b]] * torch.pow(ones[b, :ylens[b]] - probs[b, :ylens[b]], gamma)).sum()
                    for b in range(bs)])
     if size_average:
         loss /= bs

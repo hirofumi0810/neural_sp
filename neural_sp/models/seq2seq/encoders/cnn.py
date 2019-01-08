@@ -12,10 +12,7 @@ from __future__ import print_function
 
 from collections import OrderedDict
 import math
-import numpy as np
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.seq2seq.encoders.cnn_utils import ConvOutSize
 from neural_sp.models.seq2seq.encoders.cnn_utils import Maxout
@@ -83,7 +80,7 @@ class CNNEncoder(nn.Module):
             elif activation == 'hard_tanh':
                 act = nn.Hardtanh(min_val=0, max_val=20, inplace=True)
             elif activation == 'maxout':
-                raise NotImplementedError()
+                raise NotImplementedError(activation)
                 act = Maxout(1, 1, 2)
             else:
                 raise NotImplementedError(activation)
@@ -124,24 +121,25 @@ class CNNEncoder(nn.Module):
         self.get_conv_out_size = ConvOutSize(self.layers)
         self.output_dim = int(in_ch * in_freq)
 
-    def forward(self, xs, x_lens):
+    def forward(self, xs, xlens):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
-            x_lens (list): A list of length `[B]`
+            xlens (list): A list of length `[B]`
         Returns:
             xs (FloatTensor): `[B, T', feature_dim]`
-            x_lens (list): A list of length `[B]`
+            xlens (list): A list of length `[B]`
 
         """
-        batch_size, max_time, input_dim = xs.size()
+        bs, max_time, input_dim = xs.size()
         # assert input_dim == self.input_freq * self.in_channel
 
         # Reshape to 4D tensor `[B, in_ch, max_time, freq // in_ch]`
-        # xs = xs.view(batch_size, max_time, self.in_channel, input_dim // self.in_channel)
+        # xs = xs.view(bs, max_time, self.in_channel, input_dim // self.in_channel)
         # xs = xs.transpose(1, 2).contiguous()
-        xs = xs.view(batch_size, max_time, input_dim // self.in_channel, self.in_channel)
+
+        xs = xs.view(bs, max_time, input_dim // self.in_channel, self.in_channel)
         xs = xs.transpose(2, 3).contiguous()
         xs = xs.transpose(1, 2).contiguous()
 
@@ -149,12 +147,12 @@ class CNNEncoder(nn.Module):
         # NOTE: xs: `[B, out_ch, new_time, new_freq]`
 
         # Collapse feature dimension
-        out_ch, time, freq = xs.size()[1:]
+        bs, out_ch, time, freq = xs.size()
         xs = xs.transpose(1, 2).contiguous()
-        xs = xs.view(batch_size, time, freq * out_ch)
+        xs = xs.view(bs, time, freq * out_ch)
         # NOTE: xs: `[B, new_time, new_freq * out_ch]`
 
-        # Update x_lens
-        x_lens = [self.get_conv_out_size(x_len, 1) for x_len in x_lens]
+        # Update xlens
+        xlens = [self.get_conv_out_size(x_len, 1) for x_len in xlens]
 
-        return xs, x_lens
+        return xs, xlens
