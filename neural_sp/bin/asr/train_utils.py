@@ -106,7 +106,8 @@ class Reporter(object):
             self.obs_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
 
     def snapshot(self):
-        linestyles = ['solid', 'dashed', 'dotted', 'dashdotted']
+        # linestyles = ['solid', 'dashed', 'dotted', 'dashdotdotted']
+        linestyles = ['-', '--', '-.', ':']
         for category in self.obs_train.keys():
             plt.clf()
             upper = 0
