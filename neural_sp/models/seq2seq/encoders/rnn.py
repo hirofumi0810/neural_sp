@@ -292,15 +292,15 @@ class RNNEncoder(nn.Module):
                 xlens_sub2 (list): `[B]`
 
         """
-        # Dropout for inputs-hidden connection
-        xs = self.dropout_in(xs)
-
         eouts = {'ys': {'xs': None, 'xlens': None},
                  'ys.ctc': {'xs': None, 'xlens': None},
                  'ys_sub1': {'xs': None, 'xlens': None},
                  'ys_sub1.ctc': {'xs': None, 'xlens': None},
                  'ys_sub2': {'xs': None, 'xlens': None},
                  'ys_sub2.ctc': {'xs': None, 'xlens': None}}
+
+        # Dropout for inputs-hidden connection
+        xs = self.dropout_in(xs)
 
         # Path through CNN layers before RNN layers
         if self.conv is not None:

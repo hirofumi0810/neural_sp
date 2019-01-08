@@ -506,7 +506,11 @@ class Seq2seq(ModelBase):
         """
         self.eval()
         with torch.no_grad():
-            enc_outs, perm_ids = self.encode(xs, task)
+            if self.input_type == 'speech' and self.bwd_weight == 1:
+                enc_outs, perm_ids = self.encode(xs, task, flip=True)
+            else:
+                enc_outs, perm_ids = self.encode(xs, 'all', flip=False)
+
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
             if task == 'ys_sub1':
                 dir += '_sub1'
@@ -538,14 +542,21 @@ class Seq2seq(ModelBase):
                             decode_params, rnnlm_fwd,
                             decode_params['beam_width'], False, id2token, refs)
 
+                        flip = False
+                        if self.input_type == 'speech' and self.mtl_per_batch:
+                            flip = True
+                            enc_outs_bwd, perm_ids = self.encode(xs, task, flip=True)
+                        else:
+                            enc_outs_bwd = enc_outs
+
                         rnnlm_bwd = None
                         nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
-                            enc_outs[task]['xs'], enc_outs[task]['xlens'],
+                            enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             decode_params, rnnlm_bwd,
                             decode_params['beam_width'], False, id2token, refs)
                         best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                                                       nbest_hyps_bwd, aws_bwd, scores_bwd,
-                                                      id2token, refs)
+                                                      flip, self.eos, id2token, refs)
                         aws = None
                     else:
                         # Set RNNLM
@@ -571,7 +582,7 @@ class Seq2seq(ModelBase):
 
 def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                       nbest_hyps_bwd, aws_bwd, scores_bwd,
-                      id2token=None, refs=None):
+                      flip, eos, id2token=None, refs=None):
     """Forward-backward joint decoding.
 
     Args:
@@ -581,18 +592,21 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
         nbest_hyps_bwd (list):
         aws_bwd (list):
         scores_bwd (list):
+        flip (bool):
+        eos (int):
         id2token (): converter from index to token
         refs ():
     Returns:
 
     """
     logger = logging.getLogger("decoding")
-    batch_size = len(nbest_hyps_fwd)
+    bs = len(nbest_hyps_fwd)
     nbest = len(nbest_hyps_fwd[0])
-    eos = 2
 
     best_hyps = []
-    for b in range(batch_size):
+    for b in range(bs):
+        max_time = len(aws_fwd[b][0])
+
         merged = []
         for n in range(nbest):
             # forward
@@ -625,9 +639,14 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
             for n_b in range(nbest):
                 for i_f in range(len(aws_fwd[b][n_f]) - 1):
                     for i_b in range(len(aws_bwd[b][n_b]) - 1):
-                        t_prev = aws_bwd[b][n_b][i_b + 1].argmax(-1).item()
-                        t_curr = aws_fwd[b][n_f][i_f].argmax(-1).item()
-                        t_next = aws_bwd[b][n_b][i_b - 1].argmax(-1).item()
+                        if flip:
+                            t_prev = max_time - aws_bwd[b][n_b][i_b + 1].argmax(-1).item()
+                            t_curr = aws_fwd[b][n_f][i_f].argmax(-1).item()
+                            t_next = max_time - aws_bwd[b][n_b][i_b - 1].argmax(-1).item()
+                        else:
+                            t_prev = aws_bwd[b][n_b][i_b + 1].argmax(-1).item()
+                            t_curr = aws_fwd[b][n_f][i_f].argmax(-1).item()
+                            t_next = aws_bwd[b][n_b][i_b - 1].argmax(-1).item()
 
                         # the same token at the same time
                         if t_curr >= t_prev and t_curr <= t_next and nbest_hyps_fwd[b][n_f][i_f] == nbest_hyps_bwd[b][n_b][i_b]:
