@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import six
 from tqdm import tqdm
 
 from neural_sp.evaluators.edit_distance import compute_wer
@@ -70,7 +69,7 @@ def eval_phone(models, dataset, decode_params, epoch,
                                                   exclude_eos=True)
             ys = [batch['text'][i] for i in perm_ids]
 
-            for b in six.moves.range(len(batch['xs'])):
+            for b in range(len(batch['xs'])):
                 ref = ys[b]
                 hyp = dataset.id2phone(best_hyps[b])
 

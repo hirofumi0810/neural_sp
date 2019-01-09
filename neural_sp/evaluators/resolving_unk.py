@@ -11,13 +11,12 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import six
 
 
-def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, id2char, diff_time_resolution=1):
+def resolve_unk(hyp, best_hyps_sub, aw, aw_sub, id2char, diff_time_resolution=1):
     """
     Args:
-        str_hyp:
+        hyp:
         best_hyps_sub:
         aw:
         aw_sub:
@@ -37,28 +36,28 @@ def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, id2char, diff_time_resolutio
         aw_sub = (aw_sub_1 + aw_sub_2) / 2
 
     # Store places for <unk>
-    for id_oov, w in enumerate(str_hyp.split('_')):
+    for id_oov, w in enumerate(hyp.split('_')):
         if w == '<unk>':
             oov_info.append([id_oov, -1])
 
     # Point to characters
-    for i in six.moves.range(len(oov_info)):
-        max_attention_overlap = 0
-        for t_sub in six.moves.range(len(aw_sub)):
+    for i in range(len(oov_info)):
+        max_attn_overlap = 0
+        for t_sub in range(len(aw_sub)):
             # print(np.sum(aw[oov_info[i][0]] * aw_sub[t_sub]))
-            if np.sum(aw[oov_info[i][0]] * aw_sub[t_sub]) > max_attention_overlap:
+            if np.sum(aw[oov_info[i][0]] * aw_sub[t_sub]) > max_attn_overlap:
                 # Check if the correcsponding character is space
                 max_char = id2char(best_hyps_sub[t_sub: t_sub + 1])
                 if max_char == '_':
                     continue
 
-                max_attention_overlap = np.sum(
+                max_attn_overlap = np.sum(
                     aw[oov_info[i][0]] * aw_sub[t_sub])
                 oov_info[i][1] = t_sub
 
-    str_hyp_no_unk = ''
+    hyp_no_unk = ''
     oov_count = 0
-    for id_oov, w in enumerate(str_hyp.split('_')):
+    for id_oov, w in enumerate(hyp.split('_')):
         if w == '<unk>':
             t_sub = oov_info[oov_count][1]
             covered_word = id2char(best_hyps_sub[t_sub: t_sub + 1])
@@ -85,12 +84,12 @@ def resolve_unk(str_hyp, best_hyps_sub, aw, aw_sub, id2char, diff_time_resolutio
                 else:
                     break
 
-            str_hyp_no_unk += '_**' + covered_word + '**'
+            hyp_no_unk += '_**' + covered_word + '**'
             oov_count += 1
         else:
-            str_hyp_no_unk += '_' + w
+            hyp_no_unk += '_' + w
 
-    if str_hyp_no_unk[0] == '_':
-        str_hyp_no_unk = str_hyp_no_unk[1:]
+    if hyp_no_unk[0] == '_':
+        hyp_no_unk = hyp_no_unk[1:]
 
-    return str_hyp_no_unk
+    return hyp_no_unk

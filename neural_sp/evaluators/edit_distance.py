@@ -12,7 +12,6 @@ from __future__ import print_function
 
 # import Levenshtein as lev  # TODO(hirofumi): install
 import numpy as np
-import six
 
 
 def compute_per(ref, hyp, normalize=False):
@@ -28,7 +27,7 @@ def compute_per(ref, hyp, normalize=False):
     """
     # Build mapping of phone to index
     phone_set = set(ref + hyp)
-    phone2char = dict(zip(phone_set, six.moves.range(len(phone_set))))
+    phone2char = dict(zip(phone_set, range(len(phone_set))))
 
     # Map phones to a single char array
     # NOTE: Levenshtein packages only accepts strings
@@ -77,16 +76,16 @@ def compute_wer(ref, hyp, normalize=False):
     # Initialisation
     d = np.zeros((len(ref) + 1) * (len(hyp) + 1), dtype=np.uint16)
     d = d.reshape((len(ref) + 1, len(hyp) + 1))
-    for i in six.moves.range(len(ref) + 1):
-        for j in six.moves.range(len(hyp) + 1):
+    for i in range(len(ref) + 1):
+        for j in range(len(hyp) + 1):
             if i == 0:
                 d[0][j] = j
             elif j == 0:
                 d[i][0] = i
 
     # Computation
-    for i in six.moves.range(1, len(ref) + 1):
-        for j in six.moves.range(1, len(hyp) + 1):
+    for i in range(1, len(ref) + 1):
+        for j in range(1, len(hyp) + 1):
             if ref[i - 1] == hyp[j - 1]:
                 d[i][j] = d[i - 1][j - 1]
             else:
@@ -172,14 +171,14 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
     # Build the matrix
     d = np.zeros((len(ref) + 1) * (len(hyp) + 1),
                  dtype=np.uint8).reshape((len(ref) + 1, len(hyp) + 1))
-    for i in six.moves.range(len(ref) + 1):
-        for j in six.moves.range(len(hyp) + 1):
+    for i in range(len(ref) + 1):
+        for j in range(len(hyp) + 1):
             if i == 0:
                 d[0][j] = j
             elif j == 0:
                 d[i][0] = i
-    for i in six.moves.range(1, len(ref) + 1):
-        for j in six.moves.range(1, len(hyp) + 1):
+    for i in range(1, len(ref) + 1):
+        for j in range(1, len(hyp) + 1):
             if ref[i - 1] == hyp[j - 1]:
                 d[i][j] = d[i - 1][j - 1]
             else:
@@ -228,22 +227,22 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
 
     # Print the result in aligned way
     print("REF: ", end='')
-    for i in six.moves.range(len(error_list)):
+    for i in range(len(error_list)):
         if error_list[i] == "I":
             count = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "D":
                     count += 1
             index = i - count
             print(space_char * (len(hyp[index])), end=' ')
         elif error_list[i] == "S":
             count1 = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "I":
                     count1 += 1
             index1 = i - count1
             count2 = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "D":
                     count2 += 1
             index2 = i - count2
@@ -254,29 +253,29 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
                 print(ref[index1], end=' ')
         else:
             count = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "I":
                     count += 1
             index = i - count
             print(ref[index], end=' ')
 
     print("\nHYP: ", end='')
-    for i in six.moves.range(len(error_list)):
+    for i in range(len(error_list)):
         if error_list[i] == "D":
             count = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "I":
                     count += 1
             index = i - count
             print(space_char * (len(ref[index])), end=' ')
         elif error_list[i] == "S":
             count1 = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "I":
                     count1 += 1
             index1 = i - count1
             count2 = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "D":
                     count2 += 1
             index2 = i - count2
@@ -287,36 +286,36 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
                 print(hyp[index2], end=' ')
         else:
             count = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "D":
                     count += 1
             index = i - count
             print(hyp[index], end=' ')
 
     print("\nEVA: ", end='')
-    for i in six.moves.range(len(error_list)):
+    for i in range(len(error_list)):
         if error_list[i] == "D":
             count = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "I":
                     count += 1
             index = i - count
             print(d_char + space_char * (len(ref[index]) - 1), end=' ')
         elif error_list[i] == "I":
             count = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "D":
                     count += 1
             index = i - count
             print(i_char + space_char * (len(hyp[index]) - 1), end=' ')
         elif error_list[i] == "S":
             count1 = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "I":
                     count1 += 1
             index1 = i - count1
             count2 = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "D":
                     count2 += 1
             index2 = i - count2
@@ -326,7 +325,7 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
                 print(s_char + space_char * (len(hyp[index2]) - 1), end=' ')
         else:
             count = 0
-            for j in six.moves.range(i):
+            for j in range(i):
                 if error_list[j] == "I":
                     count += 1
             index = i - count

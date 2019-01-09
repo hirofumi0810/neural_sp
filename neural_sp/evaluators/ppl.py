@@ -12,7 +12,6 @@ from __future__ import print_function
 
 import math
 import numpy as np
-import six
 from tqdm import tqdm
 
 
@@ -43,7 +42,7 @@ def eval_ppl(models, dataset, bptt, progressbar=False):
         ys, is_new_epoch = dataset.next()
         batch_size = len(ys)
 
-        for t in six.moves.range(len(ys[0]) - 1):
+        for t in range(len(ys[0]) - 1):
             total_loss += model(ys[:][t:t + 2], is_eval=True)[0].item() * batch_size
             num_tokens += batch_size
 
