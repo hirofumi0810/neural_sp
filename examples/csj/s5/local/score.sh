@@ -22,7 +22,7 @@ rnnlm=
 rnnlm_bwd=
 rnnlm_weight=0.0
 resolving_unk=0
-fwd_bwd_attention=0
+fwd_bwd_attention=false
 recog_unit=
 
 . ./cmd.sh
@@ -44,6 +44,9 @@ for set in eval1 eval2 eval3; do
   decode_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
   if [ ! -z ${recog_unit} ]; then
       decode_dir=${decode_dir}_${recog_unit}
+  fi
+  if ${fwd_bwd_attention}; then
+    decode_dir=${decode_dir}_fwdbwd
   fi
   mkdir -p ${decode_dir}
 

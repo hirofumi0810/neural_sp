@@ -15,24 +15,22 @@ export data=/n/sd8/inaguma/corpus/csj
 
 ### vocabulary
 unit=word        # or wp or char or word_char
-vocab_size=12500
-wp_type=unigram  # or bpe (for wordpiece)
+vocab_size=10000
+wp_type=bpe  # or unigram (for wordpiece)
 
 #########################
 # ASR configuration
 #########################
 ### topology
-# conv_channels="64_64_128_128"
-# conv_kernel_sizes="(3,3)_(3,3)_(3,3)_(3,3)"
-# conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
-# conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
-# conv_batch_norm=
-
 conv_in_channel=1
 conv_channels=
 conv_kernel_sizes=
 conv_strides=
 conv_poolings=
+# conv_channels="64_64_128_128"
+# conv_kernel_sizes="(3,3)_(3,3)_(3,3)_(3,3)"
+# conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
+# conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 conv_batch_norm=
 enc_type=blstm
 enc_nunits=320
@@ -50,6 +48,7 @@ dec_nunits=320
 dec_nprojs=0
 dec_nlayers=1
 dec_residual=
+input_feeding=
 emb_dim=320
 tie_embedding=
 ctc_fc_list="320"
@@ -88,7 +87,8 @@ focal_loss=0.0
 ### MTL
 ctc_weight=0.0
 bwd_weight=0.0
-mtl_per_batch=
+twin_net_weight=0.0
+mtl_per_batch=true
 task_specific_layer=
 ### LM integration
 cold_fusion=
@@ -192,8 +192,7 @@ if [ ${unit} != wp ]; then
   wp_type=
 fi
 
-
-if [ ${stage} -le 0 ] && [ ! -e .done_stage_0_${data_size} ]; then
+if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
   echo ============================================================================
   echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
@@ -211,16 +210,16 @@ if [ ${stage} -le 0 ] && [ ! -e .done_stage_0_${data_size} ]; then
     mv ${data}/${x}/text.tmp ${data}/${x}/text
   done
 
-  touch .done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
+  touch ${data}/.done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e .done_stage_1_${data_size} ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
 
   for x in ${train_set} ${test_set}; do
-    steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
+    steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
       ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
   done
 
@@ -239,21 +238,21 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1_${data_size} ]; then
   # Apply global CMVN & dump features
   for x in ${train_set} ${dev_set}; do
     dump_dir=${data}/dump/${x}
-    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+    dump_feat.sh --cmd "$train_cmd" --nj 32 --add_deltadelta true \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
   for x in ${test_set}; do
     dump_dir=${data}/dump/${x}_${data_size}
-    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+    dump_feat.sh --cmd "$train_cmd" --nj 32 --add_deltadelta true \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
 
-  touch .done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
+  touch ${data}/.done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
 fi
 
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
@@ -305,7 +304,7 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${data_size}_${unit}${wp_type}${vo
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
 
-  touch .done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
+  touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
 fi
 
 mkdir -p ${model}
@@ -396,6 +395,7 @@ if [ ${stage} -le 4 ]; then
     --dec_nprojs ${dec_nprojs} \
     --dec_nlayers ${dec_nlayers} \
     --dec_residual ${dec_residual} \
+    --input_feeding ${input_feeding} \
     --emb_dim ${emb_dim} \
     --tie_embedding ${tie_embedding} \
     --ctc_fc_list ${ctc_fc_list} \
@@ -408,6 +408,7 @@ if [ ${stage} -le 4 ]; then
     --decay_start_epoch ${decay_start_epoch} \
     --decay_rate ${decay_rate} \
     --decay_type ${decay_type} \
+    --decay_patient_epoch ${decay_patient_epoch} \
     --not_improved_patient_epoch ${not_improved_patient_epoch} \
     --eval_start_epoch ${eval_start_epoch} \
     --warmup_start_learning_rate ${warmup_start_learning_rate} \
@@ -429,6 +430,7 @@ if [ ${stage} -le 4 ]; then
     --focal_loss_weight ${focal_loss} \
     --ctc_weight ${ctc_weight} \
     --bwd_weight ${bwd_weight} \
+    --twin_net_weight ${twin_net_weight} \
     --mtl_per_batch ${mtl_per_batch} \
     --task_specific_layer ${task_specific_layer} \
     --cold_fusion ${cold_fusion} \
