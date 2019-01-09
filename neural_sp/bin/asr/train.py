@@ -22,8 +22,8 @@ from tqdm import tqdm
 
 from neural_sp.bin.asr.args import parse
 from neural_sp.bin.asr.train_utils import Controller
-from neural_sp.bin.asr.train_utils import Reporter
 from neural_sp.bin.asr.train_utils import load_config
+from neural_sp.bin.asr.train_utils import Reporter
 from neural_sp.bin.asr.train_utils import save_config
 from neural_sp.bin.asr.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
@@ -235,7 +235,7 @@ def main():
             if args.lmobj_weight > 0:
                 dir_name += '_' + args.unit + 'lmobj'
             if args.train_set_sub1:
-                dir_name += '_' + args.unit_sub1
+                dir_name += '_' + args.unit_sub1 + str(args.vocab_sub1)
                 if args.ctc_weight_sub1 == 0:
                     dir_name += 'att'
                 elif args.ctc_weight_sub1 == args.sub1_weight:
@@ -243,7 +243,7 @@ def main():
                 else:
                     dir_name += 'attctc'
             if args.train_set_sub2:
-                dir_name += '_' + args.unit_sub2
+                dir_name += '_' + args.unit_sub2 + str(args.vocab_sub2)
                 if args.ctc_weight_sub2 == 0:
                     dir_name += 'att'
                 elif args.ctc_weight_sub2 == args.sub2_weight:
@@ -259,20 +259,20 @@ def main():
                 dir_name += '_lmobj' + str(args.lmobj_weight)
             if args.sub1_weight > 0:
                 if args.ctc_weight_sub1 == args.sub1_weight:
-                    dir_name += '_ctcsub1' + str(args.ctc_weight_sub1)
+                    dir_name += '_' + str(args.unit_sub1) + str(args.vocab_sub1) + 'ctc' + str(args.ctc_weight_sub1)
                 elif args.ctc_weight_sub1 == 0:
-                    dir_name += '_attsub1' + str(args.sub1_weight)
+                    dir_name += '_' + str(args.unit_sub1) + str(args.vocab_sub1) + 'att' + str(args.sub1_weight)
                 else:
-                    dir_name += '_ctcsub1' + str(args.ctc_weight_sub1) + 'attsub1' + \
-                        str(args.sub1_weight - args.ctc_weight_sub1)
+                    dir_name += '_' + str(args.unit_sub1) + str(args.vocab_sub1) + 'ctc' + str(args.ctc_weight_sub1) + str(
+                        args.unit_sub1) + str(args.vocab_sub1) + 'att' + str(args.sub1_weight - args.ctc_weight_sub1)
                 if args.sub2_weight > 0:
                     if args.ctc_weight_sub2 == args.sub2_weight:
-                        dir_name += '_ctcsub2' + str(args.ctc_weight_sub2)
+                        dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'ctc' + str(args.ctc_weight_sub2)
                     elif args.ctc_weight_sub2 == 0:
-                        dir_name += '_attsub2' + str(args.sub2_weight)
+                        dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'att' + str(args.sub2_weight)
                     else:
-                        dir_name += '_ctcsub2' + str(args.ctc_weight_sub2) + 'attsub2' + \
-                            str(args.sub2_weight - args.ctc_weight_sub2)
+                        dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'ctc' + str(args.ctc_weight_sub2) + str(
+                            args.unit_sub2) + str(args.vocab_sub2) + 'att' + str(args.sub2_weight - args.ctc_weight_sub2)
         if args.task_specific_layer:
             dir_name += '_tsl'
         # Pre-training
@@ -316,6 +316,10 @@ def main():
             shutil.copy(args.dict_sub2, os.path.join(model.save_path, 'dict_sub2.txt'))
         if args.unit == 'wp':
             shutil.copy(args.wp_model, os.path.join(model.save_path, 'wp.model'))
+        if args.unit_sub1 == 'wp':
+            shutil.copy(args.wp_model_sub1, os.path.join(model.save_path, 'wp_sub1.model'))
+        if args.unit_sub2 == 'wp':
+            shutil.copy(args.wp_model_sub2, os.path.join(model.save_path, 'wp_sub2.model'))
 
         # Setting for logging
         logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')

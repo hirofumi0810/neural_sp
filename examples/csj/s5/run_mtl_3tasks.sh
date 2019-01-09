@@ -92,8 +92,8 @@ lsm_prob=0.1
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
-ctc_weight_sub1=0.0
-ctc_weight_sub2=0.0
+ctc_weight_sub1=0.2
+ctc_weight_sub2=0.2
 bwd_weight=0.0
 twin_net_weight=0.0
 sub1_weight=0.2
@@ -222,7 +222,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
 fi
 
 # main
-dict=${data}/dict/${train_set}_${unit}${vocab_size}.txt
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
 # sub1
 dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt

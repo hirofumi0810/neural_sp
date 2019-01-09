@@ -110,14 +110,14 @@ class Dataset(Base):
             # Set index converter
             if unit_sub1:
                 if unit_sub1 == 'wp':
-                    self.id2wp = Id2wp(dict_path_sub1, wp_model_sub1)
-                    self.wp2id = Wp2id(dict_path_sub1, wp_model_sub1)
+                    self.id2wp_sub1 = Id2wp(dict_path_sub1, wp_model_sub1)
+                    self.wp2id_sub1 = Wp2id(dict_path_sub1, wp_model_sub1)
                 elif unit_sub1 == 'char':
-                    self.id2char = Id2char(dict_path_sub1)
-                    self.char2id = Char2id(dict_path_sub1)
+                    self.id2char_sub1 = Id2char(dict_path_sub1)
+                    self.char2id_sub1 = Char2id(dict_path_sub1)
                 elif 'phone' in unit_sub1:
-                    self.id2phone = Id2phone(dict_path_sub1)
-                    self.phone2id = Phone2id(dict_path_sub1)
+                    self.id2phone_sub1 = Id2phone(dict_path_sub1)
+                    self.phone2id_sub1 = Phone2id(dict_path_sub1)
                 else:
                     raise ValueError(unit_sub1)
         else:
@@ -129,14 +129,14 @@ class Dataset(Base):
             # Set index converter
             if unit_sub2:
                 if unit_sub2 == 'wp':
-                    self.id2wp = Id2wp(dict_path_sub2, wp_model_sub2)
-                    self.wp2id = Wp2id(dict_path_sub2, wp_model_sub2)
+                    self.id2wp_sub2 = Id2wp(dict_path_sub2, wp_model_sub2)
+                    self.wp2id_sub2 = Wp2id(dict_path_sub2, wp_model_sub2)
                 elif unit_sub2 == 'char':
-                    self.id2char = Id2char(dict_path_sub2)
-                    self.char2id = Char2id(dict_path_sub2)
+                    self.id2char_sub2 = Id2char(dict_path_sub2)
+                    self.char2id_sub2 = Char2id(dict_path_sub2)
                 elif 'phone' in unit_sub2:
-                    self.id2phone = Id2phone(dict_path_sub2)
-                    self.phone2id = Phone2id(dict_path_sub2)
+                    self.id2phone_sub2 = Id2phone(dict_path_sub2)
+                    self.phone2id_sub2 = Phone2id(dict_path_sub2)
                 else:
                     raise ValueError(unit_sub2)
         else:
