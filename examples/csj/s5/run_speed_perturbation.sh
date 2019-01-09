@@ -27,10 +27,6 @@ conv_channels=
 conv_kernel_sizes=
 conv_strides=
 conv_poolings=
-# conv_channels="64_64_128_128"
-# conv_kernel_sizes="(3,3)_(3,3)_(3,3)_(3,3)"
-# conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
-# conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 conv_batch_norm=
 enc_type=blstm
 enc_nunits=320
@@ -56,11 +52,11 @@ ctc_fc_list="320"
 batch_size=50
 optimizer=adam
 learning_rate=1e-3
-nepochs=25
-convert_to_sgd_epoch=20
+nepochs=15
+convert_to_sgd_epoch=10
 print_step=200
-decay_start_epoch=10
-decay_rate=0.9
+decay_start_epoch=5
+decay_rate=0.8
 decay_patient_epoch=0
 decay_type=epoch
 not_improved_patient_epoch=5
@@ -97,42 +93,6 @@ internal_lm=
 rnnlm_init=
 lmobj_weight=
 share_lm_softmax=
-
-#########################
-# RNNLM configuration
-#########################
-# topology
-lm_rnn_type=lstm
-lm_nunits=1024
-lm_nprojs=0
-lm_nlayers=2
-lm_emb_dim=1024
-lm_tie_weights=true
-lm_residual=true
-# optimization
-lm_batch_size=256
-lm_bptt=100
-lm_optimizer=adam
-lm_learning_rate=1e-3
-lm_nepochs=50
-lm_convert_to_sgd_epoch=50
-lm_print_step=20
-lm_decay_start_epoch=10
-lm_decay_rate=0.9
-lm_decay_patient_epoch=0
-lm_not_improved_patient_epoch=10
-lm_eval_start_epoch=1
-# initialization
-lm_param_init=0.1
-lm_param_init_dist=uniform
-lm_pretrained_model=
-# regularization
-lm_clip_grad_norm=5.0
-lm_dropout_hidden=0.5
-lm_dropout_out=0.0
-lm_dropout_emb=0.2
-lm_weight_decay=1e-6
-# lm_backward=
 
 ### path to save the model
 model=/n/sd8/inaguma/result/csj
@@ -181,8 +141,8 @@ fi
 ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
 rnnlm_gpu=`echo ${gpu} | cut -d "," -f 1`
 
-train_set=train_${data_size}
-dev_set=dev_${data_size}
+train_set=train_${data_size}_sp
+dev_set=dev_${data_size}_sp
 test_set="eval1 eval2 eval3"
 
 if [ ${unit} = char ]; then
@@ -213,152 +173,83 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
   touch ${data}/.done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
 
-  for x in ${train_set} ${test_set}; do
-    steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
-      ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-  done
+  # speed-perturbed
+  utils/perturb_data_dir_speed.sh 0.9 ${data}/train_${data_size} ${data}/temp1
+  utils/perturb_data_dir_speed.sh 1.0 ${data}/train_${data_size} ${data}/temp2
+  utils/perturb_data_dir_speed.sh 1.1 ${data}/train_${data_size} ${data}/temp3
+  utils/combine_data.sh --extra-files utt2uniq ${data}/${train_set} ${data}/temp1 ${data}/temp2 ${data}/temp3
+  rm -r ${data}/temp1 ${data}/temp2 ${data}/temp3
+  steps/make_fbank.sh --cmd "$train_cmd" --nj 16 --write_utt2num_frames true \
+    ${data}/${train_set} ${data}/log/make_fbank/${train_set} ${data}/fbank
+  cat ${data}/train_${data_size}/utt2spk | awk -v p="sp0.9-" '{printf("%s %s%s\n", $1, p, $1);}' > ${data}/${train_set}/utt_map
+  utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/train_${data_size}/text >${data}/${train_set}/text
+  cat ${data}/train_${data_size}/utt2spk | awk -v p="sp1.0-" '{printf("%s %s%s\n", $1, p, $1);}' > ${data}/${train_set}/utt_map
+  utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/train_${data_size}/text >>${data}/${train_set}/text
+  cat ${data}/train_${data_size}/utt2spk | awk -v p="sp1.1-" '{printf("%s %s%s\n", $1, p, $1);}' > ${data}/${train_set}/utt_map
+  utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/train_${data_size}/text >>${data}/${train_set}/text
 
-  # Use the first 4k sentences from training data as dev set. (39 speakers.)
-  utils/subset_data_dir.sh --first ${data}/${train_set} 4000 ${data}/${dev_set} || exit 1;  # 6hr 31min
-  n=$[`cat ${data}/${train_set}/segments | wc -l` - 4000]
-  utils/subset_data_dir.sh --last ${data}/${train_set} ${n} ${data}/${train_set}.tmp || exit 1;
-
-  # Finally, the full training set:
-  utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/${train_set} || exit 1;  # 233hr 36min
-  rm -rf ${data}/*.tmp
+  utils/fix_data_dir.sh ${data}/${train_set}
 
   # Compute global CMVN
   compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
   # Apply global CMVN & dump features
-  for x in ${train_set} ${dev_set}; do
+  for x in ${train_set}; do
     dump_dir=${data}/dump/${x}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
-  for x in ${test_set}; do
-    dump_dir=${data}/dump/${x}_${data_size}
+  for x in ${dev_set}; do
+    dump_dir=${data}/dump/${x}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
-      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
+      ${data}/dev_${data_size}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+  done
+  for x in ${test_set}; do
+    dump_dir=${data}/dump/${x}_${data_size}_sp
+    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
 
-  touch ${data}/.done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
+  touch ${data}/.done_stage_1_${data_size}_sp && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
+dict=${data}/dict/train_${data_size}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
+wp_model=${data}/dict/train_${data_size}_${wp_type}${vocab_size}
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
 
-  # Make a dictionary
-  echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
-  echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
-  echo "<pad> 3" >> ${dict}
-  if [ ${unit} = char ]; then
-    echo "<space> 4" >> ${dict}
-  fi
-  offset=`cat ${dict} | wc -l`
-  echo "Making a dictionary..."
-  if [ ${unit} = wp ]; then
-    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-    spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
-    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
-  else
-    text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
-      --wp_type ${wp_type} --wp_model ${wp_model} | \
-      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
-  fi
-  echo "vocab size:" `cat ${dict} | wc -l`
-
-  # Compute OOV rate
-  if [ ${unit} = word ]; then
-    mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
-    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
-    for x in ${train_set} ${dev_set} ${test_set}; do
-      cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-        > ${data}/dict/word_count/${x}_${data_size}.txt || exit 1;
-      compute_oov_rate.py ${data}/dict/word_count/${x}_${data_size}.txt ${dict} ${x} \
-        >> ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt || exit 1;
-    done
-    cat ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
-  fi
-
   # Make datset csv files
   mkdir -p ${data}/dataset
-  for x in ${train_set} ${dev_set}; do
+  for x in ${train_set}; do
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
+  for x in ${dev_set}; do
+    echo "Making a csv file for ${x}..."
+    dump_dir=${data}/dump/${x}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+      ${data}/dev_${data_size} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+  done
   for x in ${test_set}; do
-    dump_dir=${data}/dump/${x}_${data_size}
+    echo "Making a csv file for ${x}..."
+    dump_dir=${data}/dump/${x}_${data_size}_sp
     make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_sp_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
 
-  touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
+  touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp && echo "Finish creating dataset (stage: 2)."
 fi
 
 mkdir -p ${model}
-if [ ${stage} -le 3 ]; then
-  echo ============================================================================
-  echo "                      RNNLM Training stage (stage:3)                       "
-  echo ============================================================================
-
-  mkdir -p ${data}/lm_data
-  cut -f 2- -d " " ${data}/${train_set}/text > ${data}/lm_data/train.txt
-  cut -f 2- -d " " ${data}/${dev_set}/text > ${data}/lm_data/dev.txt
-
-  # NOTE: support only a single GPU for RNNLM training
-  CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
-    --ngpus 1 \
-    --train_text ${data}/lm_data/train.txt \
-    --dev_text ${data}/lm_data/dev.txt \
-    --dict ${dict} \
-    --wp_model ${wp_model}.model \
-    --model ${model}/rnnlm \
-    --unit ${unit} \
-    --rnn_type ${lm_rnn_type} \
-    --nunits ${lm_nunits} \
-    --nprojs ${lm_nprojs} \
-    --nlayers ${lm_nlayers} \
-    --emb_dim ${lm_emb_dim} \
-    --tie_weights ${lm_tie_weights} \
-    --residual ${lm_residual} \
-    --batch_size ${lm_batch_size} \
-    --bptt ${lm_bptt} \
-    --optimizer ${lm_optimizer} \
-    --learning_rate ${lm_learning_rate} \
-    --nepochs ${lm_nepochs} \
-    --convert_to_sgd_epoch ${lm_convert_to_sgd_epoch} \
-    --print_step ${lm_print_step} \
-    --decay_start_epoch ${lm_decay_start_epoch} \
-    --decay_rate ${lm_decay_rate} \
-    --decay_patient_epoch ${lm_decay_patient_epoch} \
-    --not_improved_patient_epoch ${lm_not_improved_patient_epoch} \
-    --eval_start_epoch ${lm_eval_start_epoch} \
-    --param_init ${lm_param_init} \
-    --param_init_dist ${lm_param_init_dist} \
-    --pretrained_model ${lm_pretrained_model} \
-    --clip_grad_norm ${lm_clip_grad_norm} \
-    --dropout_hidden ${lm_dropout_hidden} \
-    --dropout_out ${lm_dropout_out} \
-    --dropout_emb ${lm_dropout_emb} \
-    --weight_decay ${lm_weight_decay} || exit 1;
-    # --backward
-    # --resume ${rnnlm_resume} || exit 1;
-
-  echo "Finish RNNLM training (stage: 3)."
-fi
-
 if [ ${stage} -le 4 ]; then
   echo ============================================================================
   echo "                       ASR Training stage (stage:4)                        "
@@ -368,7 +259,7 @@ if [ ${stage} -le 4 ]; then
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.csv \
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
-    --eval_sets ${data}/dataset/eval1_${data_size}_${unit}${wp_type}${vocab_size}.csv \
+    --eval_sets ${data}/dataset/eval1_${data_size}_sp_${unit}${wp_type}${vocab_size}.csv \
     --dict ${dict} \
     --wp_model ${wp_model}.model \
     --model ${model}/asr \
