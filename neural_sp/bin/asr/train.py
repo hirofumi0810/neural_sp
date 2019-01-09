@@ -43,7 +43,7 @@ torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
 
 decode_params = {
-    'batch_size': 1,
+    'recog_batch_size': 1,
     'beam_width': 1,
     'min_len_ratio': 0.0,
     'max_len_ratio': 1.0,
@@ -202,11 +202,11 @@ def main():
         dir_name += str(args.enc_nlayers) + 'L'
         dir_name += '_' + args.subsample_type + str(subsample_factor)
         dir_name += '_' + args.dec_type
-        if args.internal_lm > 0:
-            dir_name += 'LM'
         dir_name += str(args.dec_nunits) + 'H'
         # dir_name += str(args.dec_nprojs) + 'P'
         dir_name += str(args.dec_nlayers) + 'L'
+        if args.conditional_decoder > 0:
+            dir_name += '_cond'
         if args.input_feeding:
             dir_name += '_inputfeed'
         if args.tie_embedding:

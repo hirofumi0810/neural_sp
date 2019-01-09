@@ -35,17 +35,17 @@ def eval_loss(models, dataset, decode_params, progressbar=False):
     if progressbar:
         pbar = tqdm(total=len(dataset))
     while True:
-        batch, is_new_epoch = dataset.next(decode_params['batch_size'])
-        batch_size = len(batch['utt_ids'])
+        batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
+        bs = len(batch['utt_ids'])
 
         assert not dataset.is_test
         loss, loss_acc_fwd, loss_acc_bwd, loss_acc_sub = model(
             batch['xs'], batch['ys'], batch['ys_sub'], is_eval=True)
 
-        total_loss += loss.item() * batch_size
+        total_loss += loss.item() * bs
 
         if progressbar:
-            pbar.update(batch_size)
+            pbar.update(bs)
 
         if is_new_epoch:
             break

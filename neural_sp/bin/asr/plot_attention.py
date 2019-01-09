@@ -11,85 +11,64 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-from distutils.util import strtobool
 import os
 import shutil
 
+from neural_sp.bin.asr.args import parse
 from neural_sp.bin.asr.plot_utils import plot_attention_weights
+from neural_sp.bin.asr.train_utils import load_config
+from neural_sp.bin.asr.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
-from neural_sp.utils.config import load_config
 from neural_sp.utils.general import mkdir_join
-from neural_sp.utils.general import set_logger
-
-parser = argparse.ArgumentParser()
-# general
-parser.add_argument('--model', type=str,
-                    help='path to the model to evaluate')
-parser.add_argument('--epoch', type=int, default=-1,
-                    help='the epoch to restore')
-parser.add_argument('--plot_dir', type=str,
-                    help='directory to save figures')
-# dataset
-parser.add_argument('--eval_sets', type=str, nargs='+',
-                    help='path to csv files for the evaluation sets')
-# decoding paramter
-parser.add_argument('--batch_size', type=int, default=1,
-                    help='the size of mini-batch in evaluation')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='the size of beam')
-parser.add_argument('--max_len_ratio', type=float, default=1,
-                    help='')
-parser.add_argument('--min_len_ratio', type=float, default=0.0,
-                    help='')
-parser.add_argument('--length_penalty', type=float, default=0.0,
-                    help='length penalty')
-parser.add_argument('--coverage_penalty', type=float, default=0.0,
-                    help='coverage penalty')
-parser.add_argument('--coverage_threshold', type=float, default=0.0,
-                    help='coverage threshold')
-parser.add_argument('--rnnlm_weight', type=float, default=0.0,
-                    help='the weight of RNNLM score')
-parser.add_argument('--rnnlm', type=str, default=None, nargs='?',
-                    help='path to the RMMLM')
-parser.add_argument('--resolving_unk', type=strtobool, default=False,
-                    help='')
-args = parser.parse_args()
 
 
 def main():
 
-    # Load a config file
-    config = load_config(os.path.join(args.model, 'config.yml'))
+    args = parse()
 
+    # Load a config file
+    config = load_config(os.path.join(args.recog_model, 'config.yml'))
+
+    # Overwrite config
+    for k, v in config.items():
+        setattr(args, k, v)
     decode_params = vars(args)
 
-    # Merge config with args
-    for k, v in config.items():
-        if not hasattr(args, k):
-            setattr(args, k, v)
-
     # Setting for logging
+    if os.path.isfile(os.path.join(args.plot_dir, 'plot.log')):
+        os.remove(os.path.join(args.plot_dir, 'plot.log'))
     logger = set_logger(os.path.join(args.plot_dir, 'plot.log'), key='decoding')
 
     for i, set in enumerate(args.eval_sets):
+        subsample_factor = 1
+        subsample_factor_sub1 = 1
+        subsample = [int(s) for s in args.subsample.split('_')]
+        if args.conv_poolings:
+            for p in args.conv_poolings.split('_'):
+                p = int(p.split(',')[0].replace('(', ''))
+                if p > 1:
+                    subsample_factor *= p
+        if args.train_set_sub1 is not None:
+            subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub1 - 1])
+        subsample_factor *= np.prod(subsample)
         # Load dataset
-        eval_set = Dataset(csv_path=set,
-                           dict_path=os.path.join(args.model, 'dict.txt'),
-                           dict_path_sub=os.path.join(args.model, 'dict_sub.txt') if os.path.isfile(
-                               os.path.join(args.model, 'dict_sub.txt')) else None,
-                           wp_model=os.path.join(args.model, 'wp.model'),
-                           unit=args.unit,
-                           batch_size=args.batch_size,
-                           max_num_frames=args.max_num_frames,
-                           min_num_frames=args.min_num_frames,
-                           is_test=True)
+        dataset = Dataset(csv_path=set,
+                          dict_path=os.path.join(args.recog_model, 'dict.txt'),
+                          dict_path_sub1=os.path.join(args.recog_model, 'dict_sub1.txt') if os.path.isfile(
+                              os.path.join(args.recog_model, 'dict_sub1.txt')) else None,
+                          wp_model=os.path.join(args.recog_model, 'wp.model'),
+                          unit=args.unit,
+                          unit_sub1=args.unit_sub1,
+                          batch_size=args.recog_batch_size,
+                          is_test=True)
 
         if i == 0:
-            args.vocab = eval_set.vocab
-            args.vocab_sub = eval_set.vocab_sub
-            args.input_dim = eval_set.input_dim
+            args.vocab = dataset.vocab
+            args.vocab_sub1 = dataset.vocab_sub1
+            args.input_dim = dataset.input_dim
 
             # TODO(hirofumi): For cold fusion
             args.rnnlm_cold_fusion = None
@@ -97,12 +76,12 @@ def main():
 
             # Load the ASR model
             model = Seq2seq(args)
-            epoch, _, _, _ = model.load_checkpoint(args.model, epoch=args.epoch)
+            epoch, _, _, _ = model.load_checkpoint(args.recog_model, epoch=args.recog_epoch)
 
-            model.save_path = args.model
+            model.save_path = args.recog_model
 
             # For shallow fusion
-            if args.rnnlm_cold_fusion is None and args.rnnlm is not None and args.rnnlm_weight > 0:
+            if (not args.rnnlm_cold_fusion) and args.rnnlm is not None and args.rnnlm_weight > 0:
                 # Load a RNNLM config file
                 config_rnnlm = load_config(os.path.join(args.rnnlm, 'config.yml'))
 
@@ -112,15 +91,20 @@ def main():
                     setattr(args_rnnlm, k, v)
 
                 assert args.unit == args_rnnlm.unit
-                args_rnnlm.vocab = eval_set.vocab
+                args_rnnlm.vocab = dataset.vocab
 
                 # Load the pre-trianed RNNLM
+                seq_rnnlm = SeqRNNLM(args_rnnlm)
+                seq_rnnlm.load_checkpoint(args.rnnlm, epoch=-1)
+
+                # Copy parameters
                 rnnlm = RNNLM(args_rnnlm)
-                rnnlm.load_checkpoint(args.rnnlm, epoch=-1)
+                rnnlm.copy_from_seqrnnlm(seq_rnnlm)
+
                 if args_rnnlm.backward:
-                    model.rnnlm_bwd_0 = rnnlm
+                    model.rnnlm_bwd = rnnlm
                 else:
-                    model.rnnlm_fwd_0 = rnnlm
+                    model.rnnlm_fwd = rnnlm
 
                 logger.info('RNNLM path: %s' % args.rnnlm)
                 logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
@@ -129,6 +113,7 @@ def main():
             # GPU setting
             model.cuda()
 
+            logger.info('batch size: %d' % args.recog_batch_size)
             logger.info('beam width: %d' % args.beam_width)
             logger.info('length penalty: %.3f' % args.length_penalty)
             logger.info('coverage penalty: %.3f' % args.coverage_penalty)
@@ -143,7 +128,7 @@ def main():
             os.mkdir(save_path)
 
         while True:
-            batch, is_new_epoch = eval_set.next(decode_params['batch_size'])
+            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
             best_hyps, aws, perm_idx = model.decode(batch['xs'], decode_params,
                                                     exclude_eos=False)
             ys = [batch['ys'][i] for i in perm_idx]
@@ -155,25 +140,22 @@ def main():
 
             for b in range(len(batch['xs'])):
                 if args.unit == 'word':
-                    token_list = eval_set.idx2word(best_hyps[b], return_list=True)
-                if args.unit == 'wp':
-                    token_list = eval_set.idx2wp(best_hyps[b], return_list=True)
+                    token_list = dataset.idx2word(best_hyps[b], return_list=True)
+                elif args.unit == 'wp':
+                    token_list = dataset.idx2wp(best_hyps[b], return_list=True)
                 elif args.unit == 'char':
-                    token_list = eval_set.idx2char(best_hyps[b], return_list=True)
+                    token_list = dataset.idx2char(best_hyps[b], return_list=True)
                 elif args.unit == 'phone':
-                    token_list = eval_set.idx2phone(best_hyps[b], return_list=True)
+                    token_list = dataset.idx2phone(best_hyps[b], return_list=True)
                 else:
                     raise NotImplementedError(args.unit)
                 token_list = [unicode(t, 'utf-8') for t in token_list]
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
 
-                # error check
-                assert len(batch['xs'][b]) <= 2000
-
                 plot_attention_weights(aws[b][:len(token_list)],
                                        label_list=token_list,
                                        spectrogram=batch['xs'][b][:,
-                                                                  :eval_set.input_dim] if args.input_type == 'speech' else None,
+                                                                  :dataset.input_dim] if args.input_type == 'speech' else None,
                                        save_path=mkdir_join(save_path, speaker, batch['utt_ids'][b] + '.png'),
                                        figsize=(20, 8))
 

@@ -64,7 +64,7 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
-            batch, is_new_epoch = dataset.next(decode_params['batch_size'])
+            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
             best_hyps, _, perm_id = model.decode(batch['xs'], decode_params,
                                                  exclude_eos=True,
                                                  id2token=dataset.id2wp,

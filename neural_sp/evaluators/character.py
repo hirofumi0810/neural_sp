@@ -79,7 +79,7 @@ def eval_char(models, dataset, decode_params, epoch,
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
-            batch, is_new_epoch = dataset.next(decode_params['batch_size'])
+            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
             best_hyps, _, perm_ids = model.decode(batch['xs'], decode_params,
                                                   exclude_eos=True, task=task)
             ys = [batch['text'][i] for i in perm_ids]

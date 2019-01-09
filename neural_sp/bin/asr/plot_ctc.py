@@ -10,12 +10,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import argparse
-from distutils.util import strtobool
 import numpy as np
 import os
 import shutil
 
+from neural_sp.bin.asr.args import parse
 from neural_sp.bin.asr.plot_utils import plot_ctc_probs
 from neural_sp.bin.asr.train_utils import load_config
 from neural_sp.bin.asr.train_utils import set_logger
@@ -24,52 +23,18 @@ from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.utils.general import mkdir_join
 
-parser = argparse.ArgumentParser()
-# general
-parser.add_argument('--model', type=str,
-                    help='path to the model to evaluate')
-parser.add_argument('--epoch', type=int, default=-1,
-                    help='the epoch to restore')
-parser.add_argument('--plot_dir', type=str,
-                    help='directory to save figures')
-# dataset
-parser.add_argument('--eval_sets', type=str, nargs='+',
-                    help='path to csv files for the evaluation sets')
-# decoding paramter
-parser.add_argument('--batch_size', type=int, default=1,
-                    help='the size of mini-batch in evaluation')
-parser.add_argument('--beam_width', type=int, default=1,
-                    help='the size of beam')
-parser.add_argument('--max_len_ratio', type=float, default=1,
-                    help='')
-parser.add_argument('--min_len_ratio', type=float, default=0.0,
-                    help='')
-parser.add_argument('--length_penalty', type=float, default=0.0,
-                    help='length penalty')
-parser.add_argument('--coverage_penalty', type=float, default=0.0,
-                    help='coverage penalty')
-parser.add_argument('--coverage_threshold', type=float, default=0.0,
-                    help='coverage threshold')
-parser.add_argument('--rnnlm_weight', type=float, default=0.0,
-                    help='the weight of RNNLM score')
-parser.add_argument('--rnnlm', type=str, default=None, nargs='?',
-                    help='path to the RMMLM')
-parser.add_argument('--resolving_unk', type=strtobool, default=False,
-                    help='')
-args = parser.parse_args()
-
 
 def main():
 
+    args = parse()
+
     # Load a config file
-    config = load_config(os.path.join(args.model, 'config.yml'))
+    config = load_config(os.path.join(args.recog_model, 'config.yml'))
 
-    decode_params = vars(args)
-
-    # Merge config with args
+    # Overwrite config
     for k, v in config.items():
-        if not hasattr(args, k):
-            setattr(args, k, v)
+        setattr(args, k, v)
+    decode_params = vars(args)
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.plot_dir, 'plot.log')):
@@ -91,13 +56,13 @@ def main():
 
         # Load dataset
         dataset = Dataset(csv_path=set,
-                          dict_path=os.path.join(args.model, 'dict.txt'),
-                          dict_path_sub1=os.path.join(args.model, 'dict_sub.txt') if os.path.isfile(
-                              os.path.join(args.model, 'dict_sub.txt')) else None,
-                          wp_model=os.path.join(args.model, 'wp.model'),
+                          dict_path=os.path.join(args.recog_model, 'dict.txt'),
+                          dict_path_sub1=os.path.join(args.recog_model, 'dict_sub1.txt') if os.path.isfile(
+                              os.path.join(args.recog_model, 'dict_sub1.txt')) else None,
+                          wp_model=os.path.join(args.recog_model, 'wp.model'),
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
-                          batch_size=args.batch_size,
+                          batch_size=args.recog_batch_size,
                           is_test=True)
 
         if i == 0:
@@ -111,9 +76,9 @@ def main():
 
             # Load the ASR model
             model = Seq2seq(args)
-            epoch, _, _, _ = model.load_checkpoint(args.model, epoch=args.epoch)
+            epoch, _, _, _ = model.load_checkpoint(args.recog_model, epoch=args.recog_epoch)
 
-            model.save_path = args.model
+            model.save_path = args.recog_model
 
             # GPU setting
             model.cuda()
@@ -128,13 +93,13 @@ def main():
             os.mkdir(save_path)
 
         while True:
-            batch, is_new_epoch = dataset.next(decode_params['batch_size'])
+            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
             best_hyps, aws, perm_idx = model.decode(batch['xs'], decode_params,
                                                     exclude_eos=False)
             ys = [batch['ys'][i] for i in perm_idx]
 
             # Get CTC probs
-            ctc_probs, indices_topk, x_lens = model.get_ctc_posteriors(
+            ctc_probs, indices_topk, xlens = model.get_ctc_posteriors(
                 batch['xs'], temperature=1, topk=min(100, model.vocab))
             # NOTE: ctc_probs: '[B, T, topk]'
 
@@ -153,9 +118,9 @@ def main():
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
 
                 plot_ctc_probs(
-                    ctc_probs[b, :x_lens[b]],
+                    ctc_probs[b, :xlens[b]],
                     indices_topk[b],
-                    nframes=x_lens[b],
+                    nframes=xlens[b],
                     subsample_factor=subsample_factor,
                     spectrogram=batch['xs'][b][:, :dataset.input_dim],
                     save_path=mkdir_join(save_path, speaker, batch['utt_ids'][b] + '.png'),

@@ -14,7 +14,8 @@ import numpy as np
 
 
 def resolve_unk(hyp, best_hyps_sub, aw, aw_sub, id2char, diff_time_resolution=1):
-    """
+    """Revolving UNK.
+
     Args:
         hyp:
         best_hyps_sub:

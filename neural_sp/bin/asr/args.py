@@ -7,6 +7,7 @@
 """Args option."""
 
 import argparse
+from distutils.util import strtobool
 
 
 def parse():
@@ -268,7 +269,7 @@ def parse():
     parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',
                         help='RNNLM parameters for cold fusion.')
     # RNNLM initialization, objective
-    parser.add_argument('--internal_lm', type=bool, default=False, nargs='?',
+    parser.add_argument('--conditional_decoder', type=bool, default=False, nargs='?',
                         help='')
     parser.add_argument('--rnnlm_init', type=str, default=False, nargs='?',
                         help='')
@@ -293,6 +294,44 @@ def parse():
                         help='')
     parser.add_argument('--share_embedding', type=bool, default=True,
                         help='')
+    # decoding parameters
+    parser.add_argument('--recog_model', type=str,
+                        help='path to the model')
+    parser.add_argument('--recog_model_bwd', type=str, default=None, nargs='?',
+                        help='path to the model in the reverse direction')
+    parser.add_argument('--recog_epoch', type=int, default=-1,
+                        help='the epoch to restore')
+    parser.add_argument('--decode_dir', type=str,
+                        help='directory to save decoding results')
+    parser.add_argument('--recog_unit', type=str, default=False, nargs='?',
+                        choices=['word', 'wp', 'char', 'phone', 'word_char'],
+                        help='')
+    parser.add_argument('--recog_batch_size', type=int, default=1,
+                        help='the size of mini-batch in evaluation')
+    parser.add_argument('--beam_width', type=int, default=1,
+                        help='the size of beam')
+    parser.add_argument('--max_len_ratio', type=float, default=1,
+                        help='')
+    parser.add_argument('--min_len_ratio', type=float, default=0.0,
+                        help='')
+    parser.add_argument('--length_penalty', type=float, default=0.0,
+                        help='length penalty')
+    parser.add_argument('--coverage_penalty', type=float, default=0.0,
+                        help='coverage penalty')
+    parser.add_argument('--coverage_threshold', type=float, default=0.0,
+                        help='coverage threshold')
+    parser.add_argument('--rnnlm_weight', type=float, default=0.0,
+                        help='the weight of RNNLM score')
+    parser.add_argument('--rnnlm', type=str, default=None, nargs='?',
+                        help='path to the RMMLM')
+    parser.add_argument('--rnnlm_bwd', type=str, default=None, nargs='?',
+                        help='path to the RMMLM in the reverse direction')
+    parser.add_argument('--resolving_unk', type=strtobool, default=False,
+                        help='Resolving UNK for the word-based model.')
+    parser.add_argument('--fwd_bwd_attention', type=strtobool, default=False,
+                        help='Forward-backward attention decoding.')
+    parser.add_argument('--joint_ctc_attention', type=strtobool, default=False,
+                        help='Forward-backward attention decoding.')
 
     args = parser.parse_args()
     return args

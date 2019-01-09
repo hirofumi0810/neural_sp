@@ -40,11 +40,11 @@ def eval_ppl(models, dataset, bptt, progressbar=False):
         pbar = tqdm(total=len(dataset))
     while True:
         ys, is_new_epoch = dataset.next()
-        batch_size = len(ys)
+        bs = len(ys)
 
         for t in range(len(ys[0]) - 1):
-            total_loss += model(ys[:][t:t + 2], is_eval=True)[0].item() * batch_size
-            num_tokens += batch_size
+            total_loss += model(ys[:][t:t + 2], is_eval=True)[0].item() * bs
+            num_tokens += bs
 
         if progressbar:
             pbar.update(np.sum([len(y) for y in ys]))
