@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/csj
 
 ### vocabulary
-unit=word        # or wp or word_char
+unit=wp        # or word or word_char
 vocab_size=10000
 wp_type=bpe  # or unigram (for wordpiece)
 unit_sub1=char
@@ -52,7 +52,6 @@ emb_dim=320
 tie_embedding=
 ctc_fc_list="320"
 ctc_fc_list_sub1="320"
-
 ### optimization
 batch_size=50
 optimizer=adam
@@ -208,7 +207,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
   for x in ${test_set}; do
     dump_dir=${data}/dump/${x}_${data_size}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
-      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
   done
 
   touch ${data}/.done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
