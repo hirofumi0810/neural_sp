@@ -29,12 +29,16 @@ gpu=`echo ${gpu} | cut -d "," -f 1`
 
 for set in eval1 eval2 eval3; do
   plot_dir=${model}/plot_${set}_ep${epoch}
+  if [ ! -z ${recog_unit} ]; then
+      plot_dir=${plot_dir}_${recog_unit}
+  fi
   mkdir -p ${plot_dir}
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/plot_ctc.py \
-    --eval_sets ${data}/dataset/${set}_aps_other_word12500.csv \
-    --model ${model} \
-    --epoch ${epoch} \
-    --batch_size ${batch_size} \
+    --recog_sets ${data}/dataset/${set}_aps_other_word12500.csv \
+    --recog_model ${model} \
+    --recog_epoch ${epoch} \
+    --recog_batch_size ${batch_size} \
+    --recog_unit ${recog_unit} \
     --plot_dir ${plot_dir} || exit 1;
 done
