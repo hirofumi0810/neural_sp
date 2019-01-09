@@ -411,8 +411,8 @@ class Decoder(nn.Module):
         # Initialization
         dout, dstate = self.init_dec_state(bs, self.nlayers)
         _dout, _dstate = self.init_dec_state(bs, 1)  # for internal LM
-        context = torch.zeros((bs, 1, self.enc_nunits), dtype=torch.float32).cuda(self.device_id)
-        attentional = torch.zeros((bs, 1, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+        con_vec = torch.zeros((bs, 1, self.enc_nunits), dtype=torch.float32).cuda(self.device_id)
+        attn_vec = torch.zeros((bs, 1, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
@@ -423,9 +423,9 @@ class Decoder(nn.Module):
 
             # Recurrency
             if self.input_feeding:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attentional, dstate, _dstate)
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attn_vec, dstate, _dstate)
             else:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, con_vec, dstate, _dstate)
 
             # Generate
             if self.internal_lm:
@@ -434,8 +434,8 @@ class Decoder(nn.Module):
                 else:
                     logits_t = self.output_lmobj(_dout)
             else:
-                attentional = self.generate(context, dout)
-                logits_t = self.output(attentional)
+                attn_vec = self.generate(con_vec, dout)
+                logits_t = self.output(attn_vec)
             logits.append(logits_t)
 
         # Compute XE loss for RNNLM objective
@@ -487,8 +487,8 @@ class Decoder(nn.Module):
         # Initialization
         dout, dstate = self.init_dec_state(bs, self.nlayers, eouts, elens)
         _dout, _dstate = self.init_dec_state(bs, 1, eouts, elens)  # for internal LM
-        context = eouts.new_zeros(bs, 1, self.enc_nunits)
-        attentional = eouts.new_zeros(bs, 1, self.dec_nunits)
+        con_vec = eouts.new_zeros(bs, 1, self.enc_nunits)
+        attn_vec = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -513,9 +513,9 @@ class Decoder(nn.Module):
 
             # Recurrency
             if self.input_feeding:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attentional, dstate, _dstate)
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attn_vec, dstate, _dstate)
             else:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, con_vec, dstate, _dstate)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -528,14 +528,14 @@ class Decoder(nn.Module):
                 logits_lm_t, lm_out = None, None
 
             # Score
-            context, aw = self.score(eouts, elens, dout, aw)
+            con_vec, aw = self.score(eouts, elens, dout, aw)
 
             # Generate
-            attentional = self.generate(context, dout, logits_lm_t, lm_out)
+            attn_vec = self.generate(con_vec, dout, logits_lm_t, lm_out)
             if self.rnnlm_init and self.internal_lm:
                 # Residual connection
-                attentional += _dout
-            logits.append(self.output(attentional))
+                attn_vec += _dout
+            logits.append(self.output(attn_vec))
 
             if extract_states or (self.twin_net_weight > 0 and not self.backward):
                 douts.append(dout)
@@ -626,12 +626,12 @@ class Decoder(nn.Module):
 
         return dout, (hx_list, cx_list)
 
-    def recurrency(self, y_emb, context, dstate, _dstate=None):
+    def recurrency(self, y_emb, con_vec, dstate, _dstate=None):
         """Recurrency function.
 
         Args:
             y_emb (FloatTensor): `[B, 1, emb_dim]`
-            context (FloatTensor): `[B, 1, enc_nunits]`
+            con_vec (FloatTensor): `[B, 1, enc_nunits]`
             dstate (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of FloatTensor):
                 cx_list (list of FloatTensor):
@@ -651,25 +651,25 @@ class Decoder(nn.Module):
         """
         hx_list, cx_list = dstate
         y_emb = y_emb.squeeze(1)
-        context = context.squeeze(1)
+        con_vec = con_vec.squeeze(1)
 
         if self.internal_lm:
             hx_lm, cx_lm = _dstate
             if self.rnn_type == 'lstm':
                 hx_lm[0], cx_lm[0] = self.rnn_inlm(y_emb, (hx_lm[0], cx_lm[0]))
-                _h_lm = torch.cat([self.dropout_inlm(hx_lm[0]), context], dim=-1)
+                _h_lm = torch.cat([self.dropout_inlm(hx_lm[0]), con_vec], dim=-1)
                 hx_list[0], cx_list[0] = self.rnn[0](_h_lm, (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
                 hx_lm = self.rnn_inlm(y_emb, hx_lm)
-                _h_lm = torch.cat([self.dropout_inlm(hx_lm), context], dim=-1)
+                _h_lm = torch.cat([self.dropout_inlm(hx_lm), con_vec], dim=-1)
                 hx_list[0] = self.rnn[0](_h_lm, hx_list[0])
             _dout = self.dropout[0](hx_lm[0]).unsqueeze(1)
             _dstate = (hx_lm, cx_lm)
         else:
             if self.rnn_type == 'lstm':
-                hx_list[0], cx_list[0] = self.rnn[0](torch.cat([y_emb, context], dim=-1), (hx_list[0], cx_list[0]))
+                hx_list[0], cx_list[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), (hx_list[0], cx_list[0]))
             elif self.rnn_type == 'gru':
-                hx_list[0] = self.rnn[0](torch.cat([y_emb, context], dim=-1), hx_list[0])
+                hx_list[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), hx_list[0])
             _dout = None
 
         for l in range(1, self.nlayers):
@@ -686,11 +686,11 @@ class Decoder(nn.Module):
         dout = self.dropout[-1](hx_list[-1]).unsqueeze(1)
         return dout, (hx_list, cx_list), _dout, _dstate
 
-    def generate(self, context, dout, logits_lm_t=None, lm_out=None):
+    def generate(self, con_vec, dout, logits_lm_t=None, lm_out=None):
         """Generate function.
 
         Args:
-            context (FloatTensor): `[B, 1, enc_nunits]`
+            con_vec (FloatTensor): `[B, 1, enc_nunits]`
             dout (FloatTensor): `[B, 1, dec_units]`
             logits_lm_t (FloatTensor): `[B, 1, vocab]`
             lm_out (FloatTensor): `[B, 1, lm_nunits]`
@@ -704,12 +704,12 @@ class Decoder(nn.Module):
                 lm_feat = self.cf_linear_lm_feat(lm_out)
             elif self.cold_fusion == 'prob':
                 lm_feat = self.cf_linear_lm_feat(logits_lm_t)
-            dec_feat = self.cf_linear_dec_feat(torch.cat([dout, context], dim=-1))
+            dec_feat = self.cf_linear_dec_feat(torch.cat([dout, con_vec], dim=-1))
             gate = F.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
             logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
-            logits_t = self.output_bn(torch.cat([dout, context], dim=-1))
+            logits_t = self.output_bn(torch.cat([dout, con_vec], dim=-1))
         return torch.tanh(logits_t)
 
     def greedy(self, eouts, elens, max_len_ratio, exclude_eos=False):
@@ -730,8 +730,8 @@ class Decoder(nn.Module):
         # Initialization
         dout, dstate = self.init_dec_state(bs, self.nlayers, eouts, elens)
         _dout, _dstate = self.init_dec_state(bs, 1, eouts, elens)
-        context = eouts.new_zeros(bs, 1, self.enc_nunits)
-        attentional = eouts.new_zeros(bs, 1, self.dec_nunits)
+        con_vec = eouts.new_zeros(bs, 1, self.enc_nunits)
+        attn_vec = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -751,9 +751,9 @@ class Decoder(nn.Module):
             # Recurrency
             y_emb = self.embed(y)
             if self.input_feeding:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attentional, dstate, _dstate)
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attn_vec, dstate, _dstate)
             else:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, context, dstate, _dstate)
+                dout, dstate, _dout, _dstate = self.recurrency(y_emb, con_vec, dstate, _dstate)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -763,14 +763,14 @@ class Decoder(nn.Module):
                 logits_lm_t, lm_out = None, None
 
             # Score
-            context, aw = self.score(eouts, elens, dout, aw)
+            con_vec, aw = self.score(eouts, elens, dout, aw)
 
             # Generate
-            attentional = self.generate(context, dout, logits_lm_t, lm_out)
+            attn_vec = self.generate(con_vec, dout, logits_lm_t, lm_out)
             if self.rnnlm_init and self.internal_lm:
                 # Residual connection
-                attentional += _dout
-            logits_t = self.output(attentional)
+                attn_vec += _dout
+            logits_t = self.output(attn_vec)
 
             # Pick up 1-best
             y = np.argmax(logits_t.squeeze(1).detach(), axis=1).cuda(self.device_id).unsqueeze(1)
@@ -869,10 +869,10 @@ class Decoder(nn.Module):
             dout, (hx_list, cx_list) = self.init_dec_state(1, self.nlayers, eouts[b:b + 1], elens[b:b + 1])
             _dout, _dstate = self.init_dec_state(1, 1, eouts[b:b + 1], elens[b:b + 1])
             if self.input_feeding:
-                context = eouts.new_zeros(1, 1, self.dec_nunits)
-                # NOTE: this is equivalent to attentional
+                con_vec = eouts.new_zeros(1, 1, self.dec_nunits)
+                # NOTE: this is equivalent to attn_vec
             else:
-                context = eouts.new_zeros(1, 1, self.enc_nunits)
+                con_vec = eouts.new_zeros(1, 1, self.enc_nunits)
             self.score.reset()
 
             complete = []
@@ -883,7 +883,7 @@ class Decoder(nn.Module):
                      'dout': dout,
                      'hx_list': hx_list,
                      'cx_list': cx_list,
-                     'context': context,
+                     'con_vec': con_vec,
                      'aws': [None],
                      'rnnlm_hx_list': None,
                      'rnnlm_cx_list': None,
@@ -897,12 +897,12 @@ class Decoder(nn.Module):
                     y = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                     y_emb = self.embed(y)
                     dout, (hx_list, cx_list), _dout, _dstate = self.recurrency(
-                        y_emb, beam[i_beam]['context'],
+                        y_emb, beam[i_beam]['con_vec'],
                         (beam[i_beam]['hx_list'], beam[i_beam]['cx_list']),
                         beam[i_beam]['_dstate'])
 
                     # Score
-                    context, aw = self.score(eouts[b:b + 1, :elens[b]],
+                    con_vec, aw = self.score(eouts[b:b + 1, :elens[b]],
                                              elens[b:b + 1],
                                              dout,
                                              beam[i_beam]['aws'][-1])
@@ -923,11 +923,11 @@ class Decoder(nn.Module):
                         logits_lm_t, lm_out, rnnlm_state = None, None, None
 
                     # Generate
-                    attentional = self.generate(context, dout, logits_lm_t, lm_out)
+                    attn_vec = self.generate(con_vec, dout, logits_lm_t, lm_out)
                     if self.rnnlm_init and self.internal_lm:
                         # Residual connection
-                        attentional += _dout
-                    logits_t = self.output(attentional)
+                        attn_vec += _dout
+                    logits_t = self.output(attn_vec)
 
                     # Path through the softmax layer & convert to log-scale
                     log_probs = F.log_softmax(logits_t.squeeze(1), dim=1)  # log-prob-level
@@ -979,7 +979,7 @@ class Decoder(nn.Module):
                              'hx_list': hx_list[:],
                              'cx_list': cx_list[:] if cx_list is not None else None,
                              'dout': dout,
-                             'context': attentional if self.input_feeding else context,
+                             'con_vec': attn_vec if self.input_feeding else con_vec,
                              'aws': beam[i_beam]['aws'] + [aw],
                              'rnnlm_hx_list': rnnlm_state[0][:] if rnnlm_state is not None else None,
                              'rnnlm_cx_list': rnnlm_state[1][:] if rnnlm_state is not None else None,
