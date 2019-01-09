@@ -12,7 +12,7 @@ import argparse
 def parse():
     parser = argparse.ArgumentParser()
     # general
-    parser.add_argument('--ngpus', type=int, default=0,
+    parser.add_argument('--ngpus', type=int, default=1,
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--model', type=str, default=False,
                         help='directory to save a model')
@@ -255,6 +255,12 @@ def parse():
                         help='')
     parser.add_argument('--bwd_weight_sub2', type=float, default=0.0,
                         help='')
+    parser.add_argument('--twin_net_weight', type=float, default=0.0,
+                        help='1.5 is recommended in the orignial paper.')
+    parser.add_argument('--twin_net_weight_sub1', type=float, default=0.0,
+                        help='1.5 is recommended in the orignial paper.')
+    parser.add_argument('--twin_net_weight_sub2', type=float, default=0.0,
+                        help='1.5 is recommended in the orignial paper.')
     # cold fusion
     parser.add_argument('--cold_fusion', type=str, default='hidden', nargs='?',
                         choices=['hidden', 'prob'],

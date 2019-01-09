@@ -36,6 +36,15 @@ class Seq2seq(ModelBase):
 
         super(ModelBase, self).__init__()
 
+        # TODO(hirofumi): remove later
+        if not hasattr(args, 'focal_loss_weight'):
+            args.focal_loss_weight = 0.0
+            args.focal_loss_gamma = 2.0
+        if not hasattr(args, 'tie_embedding'):
+            args.tie_embedding = False
+        if not hasattr(args, 'twin_net_weight'):
+            args.twin_net_weight = False
+
         # for encoder
         self.input_type = args.input_type
         self.input_dim = args.input_dim
@@ -74,6 +83,11 @@ class Seq2seq(ModelBase):
         self.bwd_weight = args.bwd_weight
         self.bwd_weight_sub1 = args.bwd_weight_sub1
         self.bwd_weight_sub2 = args.bwd_weight_sub2
+        self.twin_net_weight = args.twin_net_weight
+        if args.twin_net_weight > 0:
+            assert 0 < self.fwd_weight < 1
+            assert 0 < self.bwd_weight < 1
+            assert args.mtl_per_batch
 
         # for the sub tasks
         self.main_weight = 1 - args.sub1_weight - args.sub2_weight
@@ -147,13 +161,6 @@ class Seq2seq(ModelBase):
             else:
                 args.rnnlm_cold_fusion = False
 
-            # TODO(hirofumi): remove later
-            if not hasattr(args, 'focal_loss_weight'):
-                args.focal_loss_weight = 0.0
-                args.focal_loss_gamma = 2.0
-            if not hasattr(args, 'tie_embedding'):
-                args.tie_embedding = False
-
             # Decoder
             dec = Decoder(
                 sos=self.sos,
@@ -189,6 +196,7 @@ class Seq2seq(ModelBase):
                     '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                 input_feeding=args.input_feeding,
                 backward=(dir == 'bwd'),
+                twin_net_weight=args.twin_net_weight,
                 rnnlm_cold_fusion=args.rnnlm_cold_fusion,
                 cold_fusion=args.cold_fusion,
                 internal_lm=args.internal_lm,
@@ -332,19 +340,24 @@ class Seq2seq(ModelBase):
         # Compute XE loss for the forward decoder
         if self.fwd_weight > 0 and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
             if perm_ids is None:
-                ys = batch['ys']
+                ys = batch['ys']  # for lmobj
             else:
                 ys = [batch['ys'][i] for i in perm_ids]
+            if task == 'ys' and self.twin_net_weight > 0:
+                reverse_dec = self.dec_bwd
+            else:
+                reverse_dec = None
             if task == 'ys.ctc' and self.task_specific_layer:
                 loss_fwd, obs_fwd = self.dec_fwd(
                     enc_outs['ys.ctc']['xs'], enc_outs['ys']['xlens'], ys, task)
             else:
                 loss_fwd, obs_fwd = self.dec_fwd(
-                    enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
+                    enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, reverse_dec)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
             observation['loss.lmobj'] = obs_fwd['loss_lmobj']
+            observation['loss.twinnet'] = obs_fwd['loss_twin']
             observation['acc.att'] = obs_fwd['acc_att']
             observation['acc.lmobj'] = obs_fwd['acc_lmobj']
             observation['ppl.att'] = obs_fwd['ppl_att']

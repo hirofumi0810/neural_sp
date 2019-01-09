@@ -280,6 +280,8 @@ def main():
             # Load a config file
             config_pre = load_config(os.path.join(args.pretrained_model, 'config.yml'))
             dir_name += '_' + config_pre['unit'] + 'pt'
+        if args.twin_net_weight > 0:
+            dir_name += '_twin' + str(args.twin_net_weight)
 
     if not args.resume:
         # Load pre-trained RNNLM
