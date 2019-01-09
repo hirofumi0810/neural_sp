@@ -227,7 +227,6 @@ class Decoder(nn.Module):
             elif rnn_type == 'gru':
                 rnn_cell = nn.GRUCell
             if internal_lm:
-                assert nlayers >= 2
                 self.rnn_inlm = rnn_cell(emb_dim, nunits)
                 self.dropout_inlm = nn.Dropout(p=dropout)
                 if input_feeding:
@@ -409,8 +408,7 @@ class Decoder(nn.Module):
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dout, dstate = self.init_dec_state(bs, self.nlayers)
-        _dout, _dstate = self.init_dec_state(bs, 1)  # for internal LM
+        dstates = self.init_dec_state(bs, self.nlayers)
         con_vec = torch.zeros((bs, 1, self.enc_nunits), dtype=torch.float32).cuda(self.device_id)
         attn_vec = torch.zeros((bs, 1, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
 
@@ -423,18 +421,18 @@ class Decoder(nn.Module):
 
             # Recurrency
             if self.input_feeding:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attn_vec, dstate, _dstate)
+                dstates = self.recurrency(y_emb, attn_vec, dstates)
             else:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, con_vec, dstate, _dstate)
+                dstates = self.recurrency(y_emb, con_vec, dstates)
 
             # Generate
             if self.internal_lm:
                 if self.share_lm_softmax:
-                    logits_t = self.output(_dout)
+                    logits_t = self.output(dstates['_dout'])
                 else:
-                    logits_t = self.output_lmobj(_dout)
+                    logits_t = self.output_lmobj(dstates['_dout'])
             else:
-                attn_vec = self.generate(con_vec, dout)
+                attn_vec = self.generate(con_vec, dstates['dout_generate'])
                 logits_t = self.output(attn_vec)
             logits.append(logits_t)
 
@@ -485,8 +483,7 @@ class Decoder(nn.Module):
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dout, dstate = self.init_dec_state(bs, self.nlayers, eouts, elens)
-        _dout, _dstate = self.init_dec_state(bs, 1, eouts, elens)  # for internal LM
+        dstates = self.init_dec_state(bs, self.nlayers, eouts, elens)
         con_vec = eouts.new_zeros(bs, 1, self.enc_nunits)
         attn_vec = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
@@ -513,9 +510,9 @@ class Decoder(nn.Module):
 
             # Recurrency
             if self.input_feeding:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attn_vec, dstate, _dstate)
+                dstates = self.recurrency(y_emb, attn_vec, dstates)
             else:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, con_vec, dstate, _dstate)
+                dstates = self.recurrency(y_emb, con_vec, dstates)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -528,17 +525,17 @@ class Decoder(nn.Module):
                 logits_lm_t, lm_out = None, None
 
             # Score
-            con_vec, aw = self.score(eouts, elens, dout, aw)
+            con_vec, aw = self.score(eouts, elens, dstates['dout_score'], aw)
 
             # Generate
-            attn_vec = self.generate(con_vec, dout, logits_lm_t, lm_out)
+            attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
             if self.rnnlm_init and self.internal_lm:
                 # Residual connection
-                attn_vec += _dout
+                attn_vec += dstates['_dout']
             logits.append(self.output(attn_vec))
 
             if extract_states or (self.twin_net_weight > 0 and not self.backward):
-                douts.append(dout)
+                douts.append(dstates['dout_generate'])
 
         if extract_states:
             douts = torch.cat(douts[::-1], dim=1)
@@ -597,94 +594,110 @@ class Decoder(nn.Module):
             elens (list): A list of length `[B]`
             nlayers (int):
         Returns:
-            dout (FloatTensor): `[B, 1, dec_units]`
-            dstate (tuple): A tuple of (hx_list, cx_list)
-                hx_list (list of FloatTensor):
-                cx_list (list of FloatTensor):
+            dstates (dict):
+                dout (FloatTensor): `[B, 1, dec_units]`
+                dstate (tuple): A tuple of (hxs, cxs)
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
 
         """
-        if self.init_with_enc:
-            if eouts.size(-1) == self.dec_nunits:
-                # unidirectinal encoder
-                dout = torch.cat([eouts[b:b + 1, elens[b] - 1:elens[b]]
-                                  for b in range(len(elens))], dim=0)
-            else:
-                raise NotImplementedError()
-                # TODO(hirofumi): add bridge layer
-                # bidirectional encoder
-                dout = torch.cat([eouts[b:b + 1, 0:1, self.dec_nunits:]
-                                  for b in range(len(elens))], dim=0)
-                # NOTE: initialize with reverse direction
-            dout = torch.tanh(dout)
-            hx_list = [dout.clone().squeeze(1)] * self.nlayers
-            cx_list = [dout.clone().squeeze(1)] * self.nlayers if self.rnn_type == 'lstm' else None
-        else:
-            dout = torch.zeros((batch_size, 1, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
-            zero_state = torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
-            hx_list = [zero_state] * self.nlayers
-            cx_list = [zero_state] * self.nlayers if self.rnn_type == 'lstm' else None
+        dstates = {'dout_score': None,  # for attention score
+                   'dout_generate': None,  # for token generation
+                   'dstate': None,
+                   '_dout': None,
+                   '_dstate': None}
+        dstates['dout_score'] = torch.zeros((batch_size, 1, self.dec_nunits),
+                                            dtype=torch.float32).cuda(self.device_id)
+        dstates['dout_generate'] = torch.zeros((batch_size, 1, self.dec_nunits),
+                                               dtype=torch.float32).cuda(self.device_id)
+        hxs = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+               for l in range(self.nlayers)]
+        cxs = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+               for l in range(self.nlayers)] if self.rnn_type == 'lstm' else None
+        dstates['dstate'] = (hxs, cxs)
+        if self.internal_lm:
+            dstates['_dout'] = torch.zeros((batch_size, 1, self.dec_nunits),
+                                           dtype=torch.float32).cuda(self.device_id)
+            hxs_lm = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)]
+            cxs_lm = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(
+                self.device_id)] if self.rnn_type == 'lstm' else None
+            dstates['_dstate'] = (hxs_lm, cxs_lm)
+        return dstates
 
-        return dout, (hx_list, cx_list)
-
-    def recurrency(self, y_emb, con_vec, dstate, _dstate=None):
+    def recurrency(self, y_emb, con_vec, dstates):
         """Recurrency function.
 
         Args:
             y_emb (FloatTensor): `[B, 1, emb_dim]`
             con_vec (FloatTensor): `[B, 1, enc_nunits]`
-            dstate (tuple): A tuple of (hx_list, cx_list)
-                hx_list (list of FloatTensor):
-                cx_list (list of FloatTensor):
-            _dstate (tuple): A tuple of (hx_list, cx_list)
-                hx_list (list of FloatTensor):
-                cx_list (list of FloatTensor):
+            dstates (dict):
+                dout (FloatTensor): `[B, 1, nunits]`
+                dstate (tuple): A tuple of (hxs, cxs)
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
+                _dout (FloatTensor): `[B, 1, nunits]`
+                _dstate (tuple): A tuple of (hxs, cxs)
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
         Returns:
-            dout (FloatTensor): `[B, 1, nunits]`
-            dstate (tuple): A tuple of (hx_list, cx_list)
-                hx_list (list of FloatTensor):
-                cx_list (list of FloatTensor):
-            _dout (FloatTensor): `[B, 1, nunits]`
-            _dstate (tuple): A tuple of (hx_list, cx_list)
-                hx_list (list of FloatTensor):
-                cx_list (list of FloatTensor):
+            dstates_new (dict):
+                dout (FloatTensor): `[B, 1, nunits]`
+                dstate (tuple): A tuple of (hxs, cxs)
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
+                _dout (FloatTensor): `[B, 1, nunits]`
+                _dstate (tuple): A tuple of (hxs, cxs)
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
 
         """
-        hx_list, cx_list = dstate
+        hxs, cxs = dstates['dstate']
         y_emb = y_emb.squeeze(1)
         con_vec = con_vec.squeeze(1)
 
+        dstates_new = {'dout_score': None,  # for attention score
+                       'dout_generate': None,  # for token generation
+                       'dstate': None,
+                       '_dout': None,
+                       '_dstate': None}
         if self.internal_lm:
-            hx_lm, cx_lm = _dstate
+            hxs_lm, cxs_lm = dstates['_dstate']
             if self.rnn_type == 'lstm':
-                hx_lm[0], cx_lm[0] = self.rnn_inlm(y_emb, (hx_lm[0], cx_lm[0]))
-                _h_lm = torch.cat([self.dropout_inlm(hx_lm[0]), con_vec], dim=-1)
-                hx_list[0], cx_list[0] = self.rnn[0](_h_lm, (hx_list[0], cx_list[0]))
+                hxs_lm[0], cxs_lm[0] = self.rnn_inlm(y_emb, (hxs_lm[0], cxs_lm[0]))
+                hxs[0], cxs[0] = self.rnn[0](
+                    torch.cat([self.dropout_inlm(hxs_lm[0]), con_vec], dim=-1), (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
-                hx_lm = self.rnn_inlm(y_emb, hx_lm)
-                _h_lm = torch.cat([self.dropout_inlm(hx_lm), con_vec], dim=-1)
-                hx_list[0] = self.rnn[0](_h_lm, hx_list[0])
-            _dout = self.dropout[0](hx_lm[0]).unsqueeze(1)
-            _dstate = (hx_lm, cx_lm)
+                hxs_lm = self.rnn_inlm(y_emb, hxs_lm)
+                hxs[0] = self.rnn[0](
+                    torch.cat([self.dropout_inlm(hxs_lm), con_vec], dim=-1), hxs[0])
+            dstates_new['_dout'] = self.dropout[0](hxs_lm[0]).unsqueeze(1)
+            dstates_new['_dstate'] = (hxs_lm, cxs_lm)
         else:
             if self.rnn_type == 'lstm':
-                hx_list[0], cx_list[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), (hx_list[0], cx_list[0]))
+                hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
-                hx_list[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), hx_list[0])
-            _dout = None
+                hxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), hxs[0])
 
         for l in range(1, self.nlayers):
-            hx_lower = self.dropout[l - 1](hx_list[l - 1])
+            hx_lower = self.dropout[l - 1](hxs[l - 1])
             if self.rnn_type == 'lstm':
-                hx_list[l], cx_list[l] = self.rnn[l](hx_lower, (hx_list[l], cx_list[l]))
+                hxs[l], cxs[l] = self.rnn[l](hx_lower, (hxs[l], cxs[l]))
             elif self.rnn_type == 'gru':
-                hx_list[l] = self.rnn[l](hx_lower, hx_list[l])
+                hxs[l] = self.rnn[l](hx_lower, hxs[l])
 
             # Residual connection
             if self.residual:
-                hx_list[l] += hx_lower
+                hxs[l] += hx_lower
 
-        dout = self.dropout[-1](hx_list[-1]).unsqueeze(1)
-        return dout, (hx_list, cx_list), _dout, _dstate
+        # the top layer
+        dstates_new['dout_generate'] = self.dropout[-1](hxs[-1]).unsqueeze(1)
+        if self.nlayers > 1:
+            # the bottom layer
+            dstates_new['dout_score'] = self.dropout[0](hxs[0]).unsqueeze(1)
+        else:
+            dstates_new['dout_score'] = dstates_new['dout_generate'].clone()
+        dstates_new['dstate'] = (hxs, cxs)
+        return dstates_new
 
     def generate(self, con_vec, dout, logits_lm_t=None, lm_out=None):
         """Generate function.
@@ -728,8 +741,7 @@ class Decoder(nn.Module):
         bs, enc_time, enc_nunits = eouts.size()
 
         # Initialization
-        dout, dstate = self.init_dec_state(bs, self.nlayers, eouts, elens)
-        _dout, _dstate = self.init_dec_state(bs, 1, eouts, elens)
+        dstates = self.init_dec_state(bs, self.nlayers, eouts, elens)
         con_vec = eouts.new_zeros(bs, 1, self.enc_nunits)
         attn_vec = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
@@ -751,9 +763,9 @@ class Decoder(nn.Module):
             # Recurrency
             y_emb = self.embed(y)
             if self.input_feeding:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, attn_vec, dstate, _dstate)
+                dstates = self.recurrency(y_emb, attn_vec, dstates)
             else:
-                dout, dstate, _dout, _dstate = self.recurrency(y_emb, con_vec, dstate, _dstate)
+                dstates = self.recurrency(y_emb, con_vec, dstates)
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -763,13 +775,13 @@ class Decoder(nn.Module):
                 logits_lm_t, lm_out = None, None
 
             # Score
-            con_vec, aw = self.score(eouts, elens, dout, aw)
+            con_vec, aw = self.score(eouts, elens, dstates['dout_score'], aw)
 
             # Generate
-            attn_vec = self.generate(con_vec, dout, logits_lm_t, lm_out)
+            attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
             if self.rnnlm_init and self.internal_lm:
                 # Residual connection
-                attn_vec += _dout
+                attn_vec += dstates['_dout']
             logits_t = self.output(attn_vec)
 
             # Pick up 1-best
@@ -866,8 +878,7 @@ class Decoder(nn.Module):
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
-            dout, (hx_list, cx_list) = self.init_dec_state(1, self.nlayers, eouts[b:b + 1], elens[b:b + 1])
-            _dout, _dstate = self.init_dec_state(1, 1, eouts[b:b + 1], elens[b:b + 1])
+            dstates = self.init_dec_state(1, self.nlayers, eouts[b:b + 1], elens[b:b + 1])
             if self.input_feeding:
                 con_vec = eouts.new_zeros(1, 1, self.dec_nunits)
                 # NOTE: this is equivalent to attn_vec
@@ -880,31 +891,24 @@ class Decoder(nn.Module):
                      'score': 0,
                      'scores': [0],
                      'score_raw': 0,
-                     'dout': dout,
-                     'hx_list': hx_list,
-                     'cx_list': cx_list,
+                     'dstates': dstates,
                      'con_vec': con_vec,
                      'aws': [None],
-                     'rnnlm_hx_list': None,
-                     'rnnlm_cx_list': None,
-                     'prev_cov': 0,
-                     '_dout': _dout,
-                     '_dstate': _dstate}]
+                     'rnnlm_hxs': None,
+                     'rnnlm_cxs': None,
+                     'prev_cov': 0}]
             for t in range(int(math.floor(elens[b] * params['max_len_ratio'])) + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     # Recurrency
                     y = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                     y_emb = self.embed(y)
-                    dout, (hx_list, cx_list), _dout, _dstate = self.recurrency(
-                        y_emb, beam[i_beam]['con_vec'],
-                        (beam[i_beam]['hx_list'], beam[i_beam]['cx_list']),
-                        beam[i_beam]['_dstate'])
+                    dstates = self.recurrency(y_emb, beam[i_beam]['con_vec'], beam[i_beam]['dstates'])
 
                     # Score
                     con_vec, aw = self.score(eouts[b:b + 1, :elens[b]],
                                              elens[b:b + 1],
-                                             dout,
+                                             dstates['dout_score'],
                                              beam[i_beam]['aws'][-1])
 
                     if self.rnnlm_cf:
@@ -912,21 +916,21 @@ class Decoder(nn.Module):
                         y_lm = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                         y_lm_emb = self.rnnlm_cf.embed(y_lm).squeeze(1)
                         logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(
-                            y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
+                            y_lm_emb, (beam[i_beam]['rnnlm_hxs'], beam[i_beam]['rnnlm_cxs']))
                     elif rnnlm is not None:
                         # Update RNNLM states for shallow fusion
                         y_lm = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                         y_lm_emb = rnnlm.embed(y_lm).squeeze(1)
                         logits_lm_t, lm_out, rnnlm_state = rnnlm.predict(
-                            y_lm_emb, (beam[i_beam]['rnnlm_hx_list'], beam[i_beam]['rnnlm_cx_list']))
+                            y_lm_emb, (beam[i_beam]['rnnlm_hxs'], beam[i_beam]['rnnlm_cxs']))
                     else:
                         logits_lm_t, lm_out, rnnlm_state = None, None, None
 
                     # Generate
-                    attn_vec = self.generate(con_vec, dout, logits_lm_t, lm_out)
+                    attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
                     if self.rnnlm_init and self.internal_lm:
                         # Residual connection
-                        attn_vec += _dout
+                        attn_vec += dstates['_dout']
                     logits_t = self.output(attn_vec)
 
                     # Path through the softmax layer & convert to log-scale
@@ -976,16 +980,12 @@ class Decoder(nn.Module):
                              'score_lm': 0,  # TODO(hirofumi):
                              'score_lp': 0,  # TODO(hirofumi):
                              'score_cp': 0,  # TODO(hirofumi):
-                             'hx_list': hx_list[:],
-                             'cx_list': cx_list[:] if cx_list is not None else None,
-                             'dout': dout,
+                             'dstates': dstates,
                              'con_vec': attn_vec if self.input_feeding else con_vec,
                              'aws': beam[i_beam]['aws'] + [aw],
-                             'rnnlm_hx_list': rnnlm_state[0][:] if rnnlm_state is not None else None,
-                             'rnnlm_cx_list': rnnlm_state[1][:] if rnnlm_state is not None else None,
-                             'prev_cov': cov_sum,
-                             '_dout': _dout,
-                             '_dstate': _dstate[:]})
+                             'rnnlm_hxs': rnnlm_state[0][:] if rnnlm_state is not None else None,
+                             'rnnlm_cxs': rnnlm_state[1][:] if rnnlm_state is not None else None,
+                             'prev_cov': cov_sum})
 
                 new_beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
 
