@@ -4,7 +4,7 @@
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 echo ============================================================================
-echo "                              Switchboard                                 "
+echo "                              Switchboard                                  "
 echo ============================================================================
 
 stage=0
@@ -16,7 +16,7 @@ export data=/n/sd8/inaguma/corpus/swbd
 ### vocabulary
 unit=wp          # or word or char or word_char
 vocab_size=10000
-wp_type=unigram  # or bpe (for wordpiece)
+wp_type=bpe  # or unigram (for wordpiece)
 
 #########################
 # ASR configuration
@@ -44,7 +44,9 @@ dec_nunits=320
 dec_nprojs=0
 dec_nlayers=1
 dec_residual=
+input_feeding=
 emb_dim=320
+tie_embedding=
 ctc_fc_list="320"
 ### optimization
 batch_size=50
@@ -56,6 +58,7 @@ print_step=200
 decay_start_epoch=10
 decay_rate=0.9
 decay_patient_epoch=0
+decay_type=epoch
 not_improved_patient_epoch=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
@@ -80,6 +83,16 @@ focal_loss=0.0
 ### MTL
 ctc_weight=0.2
 bwd_weight=0.0
+twin_net_weight=0.0
+mtl_per_batch=
+task_specific_layer=
+### LM integration
+cold_fusion=
+rnnlm_cold_fusion=
+internal_lm=
+rnnlm_init=
+lmobj_weight=
+share_lm_softmax=
 
 #########################
 # RNNLM configuration
@@ -158,8 +171,7 @@ if [ ${unit} != wp ]; then
   wp_type=
 fi
 
-
-if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
   echo ============================================================================
   echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
@@ -186,10 +198,10 @@ if [ ${stage} -le 0 ] && [ ! -e .done_stage_0 ]; then
   #   done
   # fi
 
-  touch .done_stage_0 && echo "Finish data preparation (stage: 0)."
+  touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
@@ -218,13 +230,13 @@ if [ ${stage} -le 1 ] && [ ! -e .done_stage_1 ]; then
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
 
-  touch .done_stage_1 && echo "Finish feature extranction (stage: 1)."
+  touch ${data}/.done_stage_1 && echo "Finish feature extranction (stage: 1)."
 fi
 
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
 nlsyms=${data}/dict/non_linguistic_symbols.txt
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_type}${vocab_size} ]; then
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
@@ -299,7 +311,7 @@ if [ ${stage} -le 2 ] && [ ! -e .done_stage_2_${unit}${wp_type}${vocab_size} ]; 
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
 
-  touch .done_stage_2_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
+  touch ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
 fi
 
 mkdir -p ${model}
@@ -307,8 +319,6 @@ if [ ${stage} -le 3 ]; then
   echo ============================================================================
   echo "                      RNNLM Training stage (stage:3)                       "
   echo ============================================================================
-
-  echo "Start RNNLM training..."
 
   # NOTE: support only a single GPU for RNNLM training
   CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
@@ -388,7 +398,9 @@ if [ ${stage} -le 4 ]; then
     --dec_nprojs ${dec_nprojs} \
     --dec_nlayers ${dec_nlayers} \
     --dec_residual ${dec_residual} \
+    --input_feeding ${input_feeding} \
     --emb_dim ${emb_dim} \
+    --tie_embedding ${tie_embedding} \
     --ctc_fc_list ${ctc_fc_list} \
     --batch_size ${batch_size} \
     --optimizer ${optimizer} \
@@ -398,6 +410,7 @@ if [ ${stage} -le 4 ]; then
     --print_step ${print_step} \
     --decay_start_epoch ${decay_start_epoch} \
     --decay_rate ${decay_rate} \
+    --decay_type ${decay_type} \
     --decay_patient_epoch ${decay_patient_epoch} \
     --not_improved_patient_epoch ${not_improved_patient_epoch} \
     --eval_start_epoch ${eval_start_epoch} \
@@ -419,7 +432,16 @@ if [ ${stage} -le 4 ]; then
     --lsm_prob ${lsm_prob} \
     --focal_loss_weight ${focal_loss} \
     --ctc_weight ${ctc_weight} \
-    --bwd_weight ${bwd_weight} || exit 1;
+    --bwd_weight ${bwd_weight} \
+    --twin_net_weight ${twin_net_weight} \
+    --mtl_per_batch ${mtl_per_batch} \
+    --task_specific_layer ${task_specific_layer} \
+    --cold_fusion ${cold_fusion} \
+    --rnnlm_cold_fusion =${rnnlm_cold_fusion} \
+    --internal_lm ${internal_lm} \
+    --rnnlm_init ${rnnlm_init} \
+    --lmobj_weight ${lmobj_weight} \
+    --share_lm_softmax ${share_lm_softmax} || exit 1;
     # --resume ${resume} || exit 1;
 
   echo "Finish model training (stage: 4)."
