@@ -22,7 +22,7 @@ rnnlm=
 rnnlm_bwd=
 rnnlm_weight=0.0
 resolving_unk=0
-fwd_bwd_attention=0
+fwd_bwd_attention=false
 recog_unit=
 
 . ./cmd.sh
@@ -52,11 +52,11 @@ for set in eval2000; do
   mkdir -p ${decode_dir}
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
-    --eval_sets ${data}/dataset/${set}_wpunigram1000.csv \
-    --model ${model} \
-    --model_bwd ${model_bwd} \
-    --epoch ${epoch} \
-    --batch_size ${batch_size} \
+    --recog_sets ${data}/dataset/${set}_wpunigram1000.csv \
+    --recog_model ${model} \
+    --recog_model_bwd ${model_bwd} \
+    --recog_epoch ${epoch} \
+    --recog_batch_size ${batch_size} \
     --beam_width ${beam_width} \
     --max_len_ratio ${max_len_ratio} \
     --min_len_ratio ${min_len_ratio} \

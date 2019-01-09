@@ -38,10 +38,10 @@ for set in dev test; do
   mkdir -p ${decode_dir}
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
-    --eval_sets ${data}/dataset/${set}.csv \
-    --model ${model} \
-    --epoch ${epoch} \
-    --batch_size ${batch_size} \
+    --recog_sets ${data}/dataset/${set}.csv \
+    --recog_model ${model} \
+    --recog_epoch ${epoch} \
+    --recog_batch_size ${batch_size} \
     --beam_width ${beam_width} \
     --max_len_ratio ${max_len_ratio} \
     --min_len_ratio ${min_len_ratio} \

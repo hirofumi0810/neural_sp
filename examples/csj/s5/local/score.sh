@@ -51,11 +51,11 @@ for set in eval1 eval2 eval3; do
   mkdir -p ${decode_dir}
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
-    --eval_sets ${data}/dataset/${set}_aps_other_word12500.csv \
-    --model ${model} \
-    --model_bwd ${model_bwd} \
-    --epoch ${epoch} \
-    --batch_size ${batch_size} \
+    --recog_sets ${data}/dataset/${set}_aps_other_word12500.csv \
+    --recog_model ${model} \
+    --recog_model_bwd ${model_bwd} \
+    --recog_epoch ${epoch} \
+    --recog_batch_size ${batch_size} \
     --beam_width ${beam_width} \
     --max_len_ratio ${max_len_ratio} \
     --min_len_ratio ${min_len_ratio} \
