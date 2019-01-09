@@ -618,10 +618,10 @@ class Decoder(nn.Module):
         if self.internal_lm:
             dstates['_dout'] = torch.zeros((batch_size, 1, self.dec_nunits),
                                            dtype=torch.float32).cuda(self.device_id)
-            hxs_lm = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)]
-            cxs_lm = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(
+            hxs_inlm = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)]
+            cxs_inlm = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(
                 self.device_id)] if self.rnn_type == 'lstm' else None
-            dstates['_dstate'] = (hxs_lm, cxs_lm)
+            dstates['_dstate'] = (hxs_inlm, cxs_inlm)
         return dstates
 
     def recurrency(self, y_emb, con_vec, dstates):
@@ -661,17 +661,17 @@ class Decoder(nn.Module):
                        '_dout': None,
                        '_dstate': None}
         if self.internal_lm:
-            hxs_lm, cxs_lm = dstates['_dstate']
+            hxs_inlm, cxs_inlm = dstates['_dstate']
             if self.rnn_type == 'lstm':
-                hxs_lm[0], cxs_lm[0] = self.rnn_inlm(y_emb, (hxs_lm[0], cxs_lm[0]))
+                hxs_inlm[0], cxs_inlm[0] = self.rnn_inlm(y_emb, (hxs_inlm[0], cxs_inlm[0]))
                 hxs[0], cxs[0] = self.rnn[0](
-                    torch.cat([self.dropout_inlm(hxs_lm[0]), con_vec], dim=-1), (hxs[0], cxs[0]))
+                    torch.cat([self.dropout_inlm(hxs_inlm[0]), con_vec], dim=-1), (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
-                hxs_lm = self.rnn_inlm(y_emb, hxs_lm)
+                hxs_inlm = self.rnn_inlm(y_emb, hxs_inlm)
                 hxs[0] = self.rnn[0](
-                    torch.cat([self.dropout_inlm(hxs_lm), con_vec], dim=-1), hxs[0])
-            dstates_new['_dout'] = self.dropout[0](hxs_lm[0]).unsqueeze(1)
-            dstates_new['_dstate'] = (hxs_lm, cxs_lm)
+                    torch.cat([self.dropout_inlm(hxs_inlm), con_vec], dim=-1), hxs[0])
+            dstates_new['_dout'] = self.dropout[0](hxs_inlm[0]).unsqueeze(1)
+            dstates_new['_dstate'] = (hxs_inlm, cxs_inlm)
         else:
             if self.rnn_type == 'lstm':
                 hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), (hxs[0], cxs[0]))
