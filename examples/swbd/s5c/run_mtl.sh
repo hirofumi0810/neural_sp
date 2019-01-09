@@ -47,6 +47,7 @@ dec_nprojs=0
 dec_nlayers=1
 dec_nlayers_sub1=1
 dec_residual=
+input_feeding=
 emb_dim=320
 tie_embedding=
 ctc_fc_list="320"

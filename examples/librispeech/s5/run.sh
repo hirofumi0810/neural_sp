@@ -84,7 +84,7 @@ focal_loss=0.0
 ctc_weight=0.2
 bwd_weight=0.0
 twin_net_weight=0.0
-mtl_per_batch=
+mtl_per_batch=true
 task_specific_layer=
 ### LM integration
 cold_fusion=
