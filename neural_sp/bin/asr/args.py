@@ -295,6 +295,8 @@ def parse():
     parser.add_argument('--share_embedding', type=bool, default=True,
                         help='')
     # decoding parameters
+    parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
+                        help='path to csv files for the evaluation sets')
     parser.add_argument('--recog_model', type=str,
                         help='path to the model')
     parser.add_argument('--recog_model_bwd', type=str, default=None, nargs='?',

@@ -42,7 +42,7 @@ def main():
         os.remove(os.path.join(args.plot_dir, 'plot.log'))
     logger = set_logger(os.path.join(args.plot_dir, 'plot.log'), key='decoding')
 
-    for i, set in enumerate(args.eval_sets):
+    for i, set in enumerate(args.recog_sets):
         subsample_factor = 1
         subsample_factor_sub1 = 1
         subsample = [int(s) for s in args.subsample.split('_')]

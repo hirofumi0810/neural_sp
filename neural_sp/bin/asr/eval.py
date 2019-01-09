@@ -46,7 +46,7 @@ def main():
     logger = set_logger(os.path.join(args.decode_dir, 'decode.log'), key='decoding')
 
     wer_mean, cer_mean, per_mean = 0, 0, 0
-    for i, set in enumerate(args.eval_sets):
+    for i, set in enumerate(args.recog_sets):
         # Load dataset
         dataset = Dataset(csv_path=set,
                           dict_path=os.path.join(args.recog_model, 'dict.txt'),
@@ -178,14 +178,14 @@ def main():
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
     if args.unit == 'word':
-        logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.eval_sets)))
+        logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.recog_sets)))
     if args.unit == 'wp':
-        logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.eval_sets)))
+        logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.recog_sets)))
     elif 'char' in args.unit:
         logger.info('WER / CER (mean): %.3f / %.3f %%\n' %
-                    (wer_mean / len(args.eval_sets), cer_mean / len(args.eval_sets)))
+                    (wer_mean / len(args.recog_sets), cer_mean / len(args.recog_sets)))
     elif 'phone' in args.unit:
-        logger.info('PER (mean): %.3f %%\n' % (per_mean / len(args.eval_sets)))
+        logger.info('PER (mean): %.3f %%\n' % (per_mean / len(args.recog_sets)))
 
 
 if __name__ == '__main__':
