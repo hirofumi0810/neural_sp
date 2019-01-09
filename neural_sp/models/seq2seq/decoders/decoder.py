@@ -81,7 +81,7 @@ class Decoder(nn.Module):
         cold_fusion (str): the type of cold fusion
             prob: probability from RNNLM
             hidden: hidden states of RNNLM
-        internal_lm (bool):
+        conditional (bool):
         rnnlm_init ():
         lmobj_weight (float):
         share_lm_softmax (bool):
@@ -124,7 +124,7 @@ class Decoder(nn.Module):
                  twin_net_weight=0.0,
                  rnnlm_cold_fusion=False,
                  cold_fusion='hidden',
-                 internal_lm=False,
+                 conditional=False,
                  rnnlm_init=False,
                  lmobj_weight=0.,
                  share_lm_softmax=False,
@@ -159,7 +159,7 @@ class Decoder(nn.Module):
         self.twin_net_weight = twin_net_weight
         self.rnnlm_cf = rnnlm_cold_fusion
         self.cold_fusion = cold_fusion
-        self.internal_lm = internal_lm
+        self.conditional = conditional
         self.rnnlm_init = rnnlm_init
         self.lmobj_weight = lmobj_weight
         self.share_lm_softmax = share_lm_softmax
@@ -209,14 +209,14 @@ class Decoder(nn.Module):
 
             # for decoder initialization with pre-trained RNNLM
             if rnnlm_init:
-                assert internal_lm
+                assert conditional
                 assert rnnlm_init.predictor.vocab == vocab
                 assert rnnlm_init.predictor.nunits == nunits
                 assert rnnlm_init.predictor.nlayers == 1  # TODO(hirofumi): on-the-fly
 
             # for MTL with RNNLM objective
             if lmobj_weight > 0:
-                if internal_lm and not share_lm_softmax:
+                if conditional and not share_lm_softmax:
                     self.output_lmobj = LinearND(nunits, vocab)
 
             # Decoder
@@ -226,9 +226,9 @@ class Decoder(nn.Module):
                 rnn_cell = nn.LSTMCell
             elif rnn_type == 'gru':
                 rnn_cell = nn.GRUCell
-            if internal_lm:
-                self.rnn_inlm = rnn_cell(emb_dim, nunits)
-                self.dropout_inlm = nn.Dropout(p=dropout)
+            if conditional:
+                self.rnn_cond = rnn_cell(emb_dim, nunits)
+                self.dropout_cond = nn.Dropout(p=dropout)
                 if input_feeding:
                     self.rnn += [rnn_cell(nunits + nunits, nunits)]
                 else:
@@ -426,7 +426,7 @@ class Decoder(nn.Module):
                 dstates = self.recurrency(y_emb, con_vec, dstates)
 
             # Generate
-            if self.internal_lm:
+            if self.conditional:
                 if self.share_lm_softmax:
                     logits_t = self.output(dstates['_dout'])
                 else:
@@ -529,7 +529,7 @@ class Decoder(nn.Module):
 
             # Generate
             attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
-            if self.rnnlm_init and self.internal_lm:
+            if self.rnnlm_init and self.conditional:
                 # Residual connection
                 attn_vec += dstates['_dout']
             logits.append(self.output(attn_vec))
@@ -615,13 +615,13 @@ class Decoder(nn.Module):
         cxs = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
                for l in range(self.nlayers)] if self.rnn_type == 'lstm' else None
         dstates['dstate'] = (hxs, cxs)
-        if self.internal_lm:
+        if self.conditional:
             dstates['_dout'] = torch.zeros((batch_size, 1, self.dec_nunits),
                                            dtype=torch.float32).cuda(self.device_id)
-            hxs_inlm = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)]
-            cxs_inlm = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(
+            hxs_cond = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)]
+            cxs_cond = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(
                 self.device_id)] if self.rnn_type == 'lstm' else None
-            dstates['_dstate'] = (hxs_inlm, cxs_inlm)
+            dstates['_dstate'] = (hxs_cond, cxs_cond)
         return dstates
 
     def recurrency(self, y_emb, con_vec, dstates):
@@ -660,18 +660,18 @@ class Decoder(nn.Module):
                        'dstate': None,
                        '_dout': None,
                        '_dstate': None}
-        if self.internal_lm:
-            hxs_inlm, cxs_inlm = dstates['_dstate']
+        if self.conditional:
+            hxs_cond, cxs_cond = dstates['_dstate']
             if self.rnn_type == 'lstm':
-                hxs_inlm[0], cxs_inlm[0] = self.rnn_inlm(y_emb, (hxs_inlm[0], cxs_inlm[0]))
+                hxs_cond[0], cxs_cond[0] = self.rnn_cond(y_emb, (hxs_cond[0], cxs_cond[0]))
                 hxs[0], cxs[0] = self.rnn[0](
-                    torch.cat([self.dropout_inlm(hxs_inlm[0]), con_vec], dim=-1), (hxs[0], cxs[0]))
+                    torch.cat([self.dropout_cond(hxs_cond[0]), con_vec], dim=-1), (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
-                hxs_inlm = self.rnn_inlm(y_emb, hxs_inlm)
+                hxs_cond = self.rnn_cond(y_emb, hxs_cond)
                 hxs[0] = self.rnn[0](
-                    torch.cat([self.dropout_inlm(hxs_inlm), con_vec], dim=-1), hxs[0])
-            dstates_new['_dout'] = self.dropout[0](hxs_inlm[0]).unsqueeze(1)
-            dstates_new['_dstate'] = (hxs_inlm, cxs_inlm)
+                    torch.cat([self.dropout_cond(hxs_cond), con_vec], dim=-1), hxs[0])
+            dstates_new['_dout'] = self.dropout[0](hxs_cond[0]).unsqueeze(1)
+            dstates_new['_dstate'] = (hxs_cond, cxs_cond)
         else:
             if self.rnn_type == 'lstm':
                 hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), (hxs[0], cxs[0]))
@@ -779,7 +779,7 @@ class Decoder(nn.Module):
 
             # Generate
             attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
-            if self.rnnlm_init and self.internal_lm:
+            if self.rnnlm_init and self.conditional:
                 # Residual connection
                 attn_vec += dstates['_dout']
             logits_t = self.output(attn_vec)
@@ -928,7 +928,7 @@ class Decoder(nn.Module):
 
                     # Generate
                     attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
-                    if self.rnnlm_init and self.internal_lm:
+                    if self.rnnlm_init and self.conditional:
                         # Residual connection
                         attn_vec += dstates['_dout']
                     logits_t = self.output(attn_vec)

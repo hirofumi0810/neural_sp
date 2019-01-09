@@ -199,7 +199,7 @@ class Seq2seq(ModelBase):
                 twin_net_weight=args.twin_net_weight,
                 rnnlm_cold_fusion=args.rnnlm_cold_fusion,
                 cold_fusion=args.cold_fusion,
-                internal_lm=args.internal_lm,
+                conditional=args.conditional_decoder,
                 rnnlm_init=args.rnnlm_init,
                 lmobj_weight=args.lmobj_weight,
                 share_lm_softmax=args.share_lm_softmax,
@@ -245,7 +245,7 @@ class Seq2seq(ModelBase):
                     ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
                                  ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
                     input_feeding=args.input_feeding,
-                    internal_lm=args.internal_lm,
+                    conditional=args.conditional_decoder,
                     lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
                     share_lm_softmax=args.share_lm_softmax,
                     global_weight=getattr(self, sub + '_weight'),
