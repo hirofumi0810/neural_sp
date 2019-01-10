@@ -138,9 +138,10 @@ def parse():
                         help='')
     parser.add_argument('--dec_nlayers_sub2', type=int, default=1,
                         help='')
-    parser.add_argument('--dec_residual', type=bool, default=False, nargs='?',
+    parser.add_argument('--dec_loop_type', type=str, default='normal', nargs='?',
+                        choices=['normal', 'lmdecoder', 'conditional', 'rnmt'],
                         help='')
-    parser.add_argument('--init_with_enc', type=bool, default=False, nargs='?',
+    parser.add_argument('--dec_residual', type=bool, default=False, nargs='?',
                         help='')
     parser.add_argument('--input_feeding', type=bool, default=False, nargs='?',
                         help='')
@@ -269,6 +270,8 @@ def parse():
     parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',
                         help='RNNLM parameters for cold fusion.')
     # RNNLM initialization, objective
+    parser.add_argument('--internal_decoder', type=bool, default=False, nargs='?',
+                        help='')
     parser.add_argument('--conditional_decoder', type=bool, default=False, nargs='?',
                         help='')
     parser.add_argument('--rnnlm_init', type=str, default=False, nargs='?',

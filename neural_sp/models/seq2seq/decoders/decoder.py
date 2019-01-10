@@ -61,6 +61,7 @@ class Decoder(nn.Module):
         rnn_type (str): lstm or gru
         nunits (int): the number of units in each RNN layer
         nlayers (int): the number of RNN layers
+        loop_type (str): normal or lmdecoder or conditional or rnmt
         residual (bool):
         emb_dim (int): the dimension of the embedding in target spaces.
         tie_embedding (bool):
@@ -71,7 +72,6 @@ class Decoder(nn.Module):
         ss_prob (float): scheduled sampling probability
         lsm_prob (float): label smoothing probability
         layer_norm (bool): layer normalization
-        init_with_enc (bool):
         ctc_weight (float):
         ctc_fc_list (list):
         input_feeding (bool):
@@ -81,7 +81,6 @@ class Decoder(nn.Module):
         cold_fusion (str): the type of cold fusion
             prob: probability from RNNLM
             hidden: hidden states of RNNLM
-        conditional (bool):
         rnnlm_init ():
         lmobj_weight (float):
         share_lm_softmax (bool):
@@ -105,6 +104,7 @@ class Decoder(nn.Module):
                  nunits,
                  nlayers,
                  residual,
+                 loop_type,
                  emb_dim,
                  tie_embedding,
                  vocab,
@@ -116,7 +116,6 @@ class Decoder(nn.Module):
                  layer_norm,
                  fl_weight,
                  fl_gamma,
-                 init_with_enc=False,
                  ctc_weight=0.,
                  ctc_fc_list=[],
                  input_feeding=False,
@@ -124,7 +123,6 @@ class Decoder(nn.Module):
                  twin_net_weight=0.0,
                  rnnlm_cold_fusion=False,
                  cold_fusion='hidden',
-                 conditional=False,
                  rnnlm_init=False,
                  lmobj_weight=0.,
                  share_lm_softmax=False,
@@ -142,6 +140,9 @@ class Decoder(nn.Module):
         self.enc_nunits = enc_nunits
         self.dec_nunits = nunits
         self.nlayers = nlayers
+        self.loop_type = loop_type
+        if loop_type in ['conditional', 'lmdecoder', 'rnmt']:
+            assert nlayers >= 2
         self.residual = residual
         self.logits_temp = logits_temp
         self.dropout = dropout
@@ -151,17 +152,21 @@ class Decoder(nn.Module):
         self.layer_norm = layer_norm
         self.fl_weight = fl_weight
         self.fl_gamma = fl_gamma
-        self.init_with_enc = init_with_enc
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
         self.input_feeding = input_feeding
+        if input_feeding:
+            assert loop_type == 'normal'
         self.backward = backward
         self.twin_net_weight = twin_net_weight
         self.rnnlm_cf = rnnlm_cold_fusion
         self.cold_fusion = cold_fusion
-        self.conditional = conditional
         self.rnnlm_init = rnnlm_init
+        if rnnlm_init:
+            assert loop_type == 'lmdecoder'
         self.lmobj_weight = lmobj_weight
+        if lmobj_weight > 0:
+            assert loop_type in ['normal', 'lmdecoder']
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
@@ -209,14 +214,15 @@ class Decoder(nn.Module):
 
             # for decoder initialization with pre-trained RNNLM
             if rnnlm_init:
-                assert conditional
                 assert rnnlm_init.predictor.vocab == vocab
                 assert rnnlm_init.predictor.nunits == nunits
                 assert rnnlm_init.predictor.nlayers == 1  # TODO(hirofumi): on-the-fly
 
             # for MTL with RNNLM objective
-            if lmobj_weight > 0:
-                if conditional and not share_lm_softmax:
+            if lmobj_weight > 0 and loop_type == 'lmdecoder':
+                if share_lm_softmax:
+                    self.output_lmobj = self.output  # share paramters
+                else:
                     self.output_lmobj = LinearND(nunits, vocab)
 
             # Decoder
@@ -226,22 +232,36 @@ class Decoder(nn.Module):
                 rnn_cell = nn.LSTMCell
             elif rnn_type == 'gru':
                 rnn_cell = nn.GRUCell
-            if conditional:
-                self.rnn_cond = rnn_cell(emb_dim, nunits)
-                self.dropout_cond = nn.Dropout(p=dropout)
-                if input_feeding:
-                    self.rnn += [rnn_cell(nunits + nunits, nunits)]
-                else:
-                    self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
-            else:
-                if input_feeding:
-                    self.rnn += [rnn_cell(emb_dim + nunits, nunits)]
-                else:
-                    self.rnn += [rnn_cell(emb_dim + enc_nunits, nunits)]
-            self.dropout += [nn.Dropout(p=dropout)]
-            for l in range(1, nlayers):
-                self.rnn += [rnn_cell(nunits, nunits)]
+
+            if loop_type == 'normal':
+                dec_in_dim = nunits if input_feeding else enc_nunits
+                self.rnn += [rnn_cell(emb_dim + dec_in_dim, nunits)]
                 self.dropout += [nn.Dropout(p=dropout)]
+                for l in range(nlayers - 1):
+                    self.rnn += [rnn_cell(nunits, nunits)]
+                    self.dropout += [nn.Dropout(p=dropout)]
+            elif loop_type == 'lmdecoder':
+                self.rnn += [rnn_cell(emb_dim, nunits)]
+                self.dropout += [nn.Dropout(p=dropout)]
+                # TODO(hirofumi): support for multi-layer
+                self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
+                self.dropout += [nn.Dropout(p=dropout)]
+                for l in range(nlayers - 2):
+                    self.rnn += [rnn_cell(nunits, nunits)]
+                    self.dropout += [nn.Dropout(p=dropout)]
+            elif loop_type == 'conditional':
+                self.rnn += [rnn_cell(emb_dim, nunits)]
+                self.dropout += [nn.Dropout(p=dropout)]
+                # TODO(hirofumi): support for multi-layer
+                self.rnn += [rnn_cell(enc_nunits, nunits)]
+                self.dropout += [nn.Dropout(p=dropout)]
+                for l in range(nlayers - 2):
+                    self.rnn += [rnn_cell(nunits, nunits)]
+                    self.dropout += [nn.Dropout(p=dropout)]
+            elif loop_type == 'rnmt':
+                raise NotImplementedError()
+            else:
+                raise NotImplementedError(loop_type)
 
             # cold fusion
             if rnnlm_cold_fusion:
@@ -420,18 +440,12 @@ class Decoder(nn.Module):
             y_emb = ys_emb[:, t:t + 1]
 
             # Recurrency
-            if self.input_feeding:
-                dstates = self.recurrency(y_emb, attn_vec, dstates)
-            else:
-                dstates = self.recurrency(y_emb, con_vec, dstates)
+            dstates = self.recurrency(y_emb, con_vec, dstates['dstate'])
 
             # Generate
-            if self.conditional:
-                if self.share_lm_softmax:
-                    logits_t = self.output(dstates['_dout'])
-                else:
-                    logits_t = self.output_lmobj(dstates['_dout'])
-            else:
+            if self.loop_type == 'lmdecoder':
+                logits_t = self.output_lmobj(dstates['dout_lmdec'])
+            elif self.loop_type == 'normal':
                 attn_vec = self.generate(con_vec, dstates['dout_generate'])
                 logits_t = self.output(attn_vec)
             logits.append(logits_t)
@@ -487,19 +501,14 @@ class Decoder(nn.Module):
         con_vec = eouts.new_zeros(bs, 1, self.enc_nunits)
         attn_vec = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
-        aw = None
-        rnnlm_state = None
+        aw, rnnlm_state = None, None
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
         if self.rnnlm_cf:
             ys_lm_emb = self.rnnlm_cf.embed(ys_in_pad)
-            # ys_lm_emb = [self.rnnlm_cf.embed(ys_in_pad[:, t:t + 1])
-            #              for t in range(ys_in_pad.size(1))]
-            # ys_lm_emb = torch.cat(ys_lm_emb, dim=1)
 
-        logits = []
-        douts = []
+        logits, douts = [], []
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
             is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
@@ -508,11 +517,12 @@ class Decoder(nn.Module):
             else:
                 y_emb = ys_emb[:, t:t + 1]
 
-            # Recurrency
-            if self.input_feeding:
-                dstates = self.recurrency(y_emb, attn_vec, dstates)
-            else:
-                dstates = self.recurrency(y_emb, con_vec, dstates)
+            # Recurrency (1st)
+            dec_in = attn_vec if self.input_feeding else con_vec
+            if self.loop_type in ['conditional', 'rnmt']:
+                dstates = self.recurrency_step1(y_emb, dec_in, dstates)
+            elif self.loop_type in ['normal', 'lmdecoder']:
+                dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -527,11 +537,12 @@ class Decoder(nn.Module):
             # Score
             con_vec, aw = self.score(eouts, elens, dstates['dout_score'], aw)
 
+            # Recurrency (2nd, only for the internal decoder)
+            if self.loop_type in ['conditional', 'rnmt']:
+                dstates = self.recurrency_step2(con_vec, dstates)
+
             # Generate
             attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
-            if self.rnnlm_init and self.conditional:
-                # Residual connection
-                attn_vec += dstates['_dout']
             logits.append(self.output(attn_vec))
 
             if extract_states or (self.twin_net_weight > 0 and not self.backward):
@@ -586,7 +597,7 @@ class Decoder(nn.Module):
 
         return loss, acc, ppl, loss_twin
 
-    def init_dec_state(self, batch_size, nlayers, eouts=None, elens=None):
+    def init_dec_state(self, bs, nlayers, eouts=None, elens=None):
         """Initialize decoder state.
 
         Args:
@@ -604,99 +615,205 @@ class Decoder(nn.Module):
         dstates = {'dout_score': None,  # for attention score
                    'dout_generate': None,  # for token generation
                    'dstate': None,
-                   '_dout': None,
-                   '_dstate': None}
-        dstates['dout_score'] = torch.zeros((batch_size, 1, self.dec_nunits),
+                   'dstate1': None,
+                   'dstate2': None}
+        dstates['dout_score'] = torch.zeros((bs, 1, self.dec_nunits),
                                             dtype=torch.float32).cuda(self.device_id)
-        dstates['dout_generate'] = torch.zeros((batch_size, 1, self.dec_nunits),
+        dstates['dout_generate'] = torch.zeros((bs, 1, self.dec_nunits),
                                                dtype=torch.float32).cuda(self.device_id)
-        hxs = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
-               for l in range(self.nlayers)]
-        cxs = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
-               for l in range(self.nlayers)] if self.rnn_type == 'lstm' else None
-        dstates['dstate'] = (hxs, cxs)
-        if self.conditional:
-            dstates['_dout'] = torch.zeros((batch_size, 1, self.dec_nunits),
-                                           dtype=torch.float32).cuda(self.device_id)
-            hxs_cond = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)]
-            cxs_cond = [torch.zeros((batch_size, self.dec_nunits), dtype=torch.float32).cuda(
-                self.device_id)] if self.rnn_type == 'lstm' else None
-            dstates['_dstate'] = (hxs_cond, cxs_cond)
+        if self.loop_type == 'conditional':
+            hxs1 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+                    for l in range(self.nlayers)]
+            cxs1 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+                    for l in range(self.nlayers)] if self.rnn_type == 'lstm' else []
+            dstates['dstate1'] = (hxs1, cxs1)
+            hxs2 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+                    for l in range(self.nlayers)]
+            cxs2 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+                    for l in range(self.nlayers)] if self.rnn_type == 'lstm' else []
+            dstates['dstate2'] = (hxs2, cxs2)
+        else:
+            hxs = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+                   for l in range(self.nlayers)]
+            cxs = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+                   for l in range(self.nlayers)] if self.rnn_type == 'lstm' else []
+            dstates['dstate'] = (hxs, cxs)
         return dstates
 
-    def recurrency(self, y_emb, con_vec, dstates):
+    def recurrency(self, y_emb, con_vec, dstate):
         """Recurrency function.
 
         Args:
             y_emb (FloatTensor): `[B, 1, emb_dim]`
             con_vec (FloatTensor): `[B, 1, enc_nunits]`
-            dstates (dict):
-                dout (FloatTensor): `[B, 1, nunits]`
-                dstate (tuple): A tuple of (hxs, cxs)
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
-                _dout (FloatTensor): `[B, 1, nunits]`
-                _dstate (tuple): A tuple of (hxs, cxs)
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
+            dstate (tuple): A tuple of (hxs, cxs)
         Returns:
             dstates_new (dict):
-                dout (FloatTensor): `[B, 1, nunits]`
+                dout_score (FloatTensor): `[B, 1, nunits]`
+                dout_generate (FloatTensor): `[B, 1, nunits]`
                 dstate (tuple): A tuple of (hxs, cxs)
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
-                _dout (FloatTensor): `[B, 1, nunits]`
-                _dstate (tuple): A tuple of (hxs, cxs)
                     hxs (list of FloatTensor):
                     cxs (list of FloatTensor):
 
         """
-        hxs, cxs = dstates['dstate']
+        hxs, cxs = dstate
         y_emb = y_emb.squeeze(1)
         con_vec = con_vec.squeeze(1)
 
         dstates_new = {'dout_score': None,  # for attention score
                        'dout_generate': None,  # for token generation
-                       'dstate': None,
-                       '_dout': None,
-                       '_dstate': None}
-        if self.conditional:
-            hxs_cond, cxs_cond = dstates['_dstate']
+                       'dout_lmdec': None,
+                       'dstate': None}
+        if self.loop_type == 'lmdecoder':
             if self.rnn_type == 'lstm':
-                hxs_cond[0], cxs_cond[0] = self.rnn_cond(y_emb, (hxs_cond[0], cxs_cond[0]))
-                hxs[0], cxs[0] = self.rnn[0](
-                    torch.cat([self.dropout_cond(hxs_cond[0]), con_vec], dim=-1), (hxs[0], cxs[0]))
+                hxs[0], cxs[0] = self.rnn[0](y_emb, (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
-                hxs_cond = self.rnn_cond(y_emb, hxs_cond)
-                hxs[0] = self.rnn[0](
-                    torch.cat([self.dropout_cond(hxs_cond), con_vec], dim=-1), hxs[0])
-            dstates_new['_dout'] = self.dropout[0](hxs_cond[0]).unsqueeze(1)
-            dstates_new['_dstate'] = (hxs_cond, cxs_cond)
-        else:
+                hxs[0] = self.rnn[0](y_emb, hxs[0])
+        elif self.loop_type == 'normal':
             if self.rnn_type == 'lstm':
                 hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
                 hxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), hxs[0])
+        dout = self.dropout[0](hxs[0])
+
+        if self.loop_type == 'lmdecoder'and self.lmobj_weight > 0:
+            dstates_new['dout_lmdec'] = dout.unsqueeze(1)
+
+        if self.loop_type == 'normal':
+            # the bottom layer
+            dstates_new['dout_score'] = dout.unsqueeze(1)
 
         for l in range(1, self.nlayers):
-            hx_lower = self.dropout[l - 1](hxs[l - 1])
-            if self.rnn_type == 'lstm':
-                hxs[l], cxs[l] = self.rnn[l](hx_lower, (hxs[l], cxs[l]))
-            elif self.rnn_type == 'gru':
-                hxs[l] = self.rnn[l](hx_lower, hxs[l])
+            if self.loop_type == 'lmdecoder' and l == 1:
+                if self.rnn_type == 'lstm':
+                    hxs[l], cxs[l] = self.rnn[l](torch.cat([dout, con_vec], dim=-1), (hxs[l], cxs[l]))
+                elif self.rnn_type == 'gru':
+                    hxs[l] = self.rnn[l](torch.cat([dout, con_vec], dim=-1), hxs[l])
+            else:
+                if self.rnn_type == 'lstm':
+                    hxs[l], cxs[l] = self.rnn[l](dout, (hxs[l], cxs[l]))
+                elif self.rnn_type == 'gru':
+                    hxs[l] = self.rnn[l](dout, hxs[l])
+            dout_tmp = self.dropout[l](hxs[l])
+
+            if self.loop_type == 'lmdecoder' and l == 1:
+                # the bottom layer
+                dstates_new['dout_score'] = dout_tmp.unsqueeze(1)
+
+            if self.residual:
+                dout = dout_tmp + dout
+            else:
+                dout = dout_tmp
+
+        if self.nlayers > 1:
+            # the top layer
+            dstates_new['dout_generate'] = dout.unsqueeze(1)
+        else:
+            # the bottom layer
+            dstates_new['dout_generate'] = dstates_new['dout_score'].clone()
+        dstates_new['dstate'] = (hxs[:], cxs[:])
+        return dstates_new
+
+    def recurrency_step1(self, y_emb, con_vec, dstates):
+        """Recurrency function for the internal deocder (before attention scoring).
+
+        Args:
+            y_emb (FloatTensor): `[B, 1, emb_dim]`
+            con_vec (FloatTensor): `[B, 1, enc_nunits]`
+            dstates (dict):
+                dstates1 (tuple): A tuple of (hxs, cxs)
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
+                dstates2 (tuple): A tuple of (hxs, cxs)
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
+        Returns:
+            dstates_new (dict):
+                dout_score (FloatTensor): `[B, 1, nunits]`
+                dstate1 (tuple): A tuple of (hxs, cxs)
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
+                dstate2 (tuple): A tuple of (hxs, cxs)
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
+
+        """
+        if self.conditional:
+            hxs, cxs = dstates['dstate2']
+        else:
+            hxs, cxs = dstates['dstate1']
+        y_emb = y_emb.squeeze(1)
+        con_vec = con_vec.squeeze(1)
+
+        dstates_new = {'dout_score': None,  # for attention score
+                       'dstate1': None,
+                       'dstate2': dstates['dstate2']}
+        if self.rnn_type == 'lstm':
+            hxs[0], cxs[0] = self.rnn[0](y_emb, (hxs[0], cxs[0]))
+        elif self.rnn_type == 'gru':
+            hxs = self.rnn[0](y_emb, hxs)
+        # the bottom layer
+        dstates_new['dout_score'] = self.dropout[0](hxs[0]).unsqueeze(1)
+        dstates_new['dstate1'] = (hxs[:], cxs[:])
+        # TODO(hirofumi): Multi-layer
+        # TODO(hirofumi): residual
+        return dstates_new
+
+    def recurrency_step2(self, con_vec, dstates):
+        """Recurrency function for the internal deocder (after attention scoring).
+
+        Args:
+            con_vec (FloatTensor): `[B, 1, enc_nunits]`
+            dstates (dict):
+                dout_score (FloatTensor): `[B, 1, nunits]`
+                dstate1 (tuple): A tuple of (hxs, cxs),
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
+                dstate2 (tuple): A tuple of (hxs, cxs),
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
+        Returns:
+            dstates_new (dict):
+                dout_generate (FloatTensor): `[B, 1, nunits]`
+                dstate1 (tuple): A tuple of (hxs, cxs),
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
+                dstate2 (tuple): A tuple of (hxs, cxs),
+                    hxs (list of FloatTensor):
+                    cxs (list of FloatTensor):
+
+        """
+        hxs, cxs = dstates['dstate2']
+        con_vec = con_vec.squeeze(1)
+
+        dstates_new = {'dout_generate': None,  # for token generation
+                       'dstate1': dstates['dstate1'],
+                       'dstate2': None}
+
+        hx_lower = dstates['dout_score']
+        for l in range(self.nlayers - 1):
+            if self.conditional and l == 0:
+                if self.rnn_type == 'lstm':
+                    hxs[l], cxs[l] = self.rnn[l](
+                        hx_lower, (dstates['dstate1'][0][l], dstates['dstate1'][1][l]))
+                elif self.rnn_type == 'gru':
+                    hxs[l] = self.rnn[l](hx_lower, dstates['dstate1'][0][l])
+            else:
+                if self.rnn_type == 'lstm':
+                    hxs[l], cxs[l] = self.rnn[l](hx_lower, (hxs[l], cxs[l]))
+                elif self.rnn_type == 'gru':
+                    hxs[l] = self.rnn[l](hx_lower, hxs[l])
 
             # Residual connection
             if self.residual:
                 hxs[l] += hx_lower
 
+            if l < self.nlayers - 2:
+                hx_lower = self.dropout[l](hxs[l])
+
         # the top layer
         dstates_new['dout_generate'] = self.dropout[-1](hxs[-1]).unsqueeze(1)
-        if self.nlayers > 1:
-            # the bottom layer
-            dstates_new['dout_score'] = self.dropout[0](hxs[0]).unsqueeze(1)
-        else:
-            dstates_new['dout_score'] = dstates_new['dout_generate'].clone()
-        dstates_new['dstate'] = (hxs, cxs)
+        dstates_new['dstate2'] = (hxs[:], cxs[:])
         return dstates_new
 
     def generate(self, con_vec, dout, logits_lm_t=None, lm_out=None):
@@ -760,12 +877,13 @@ class Decoder(nn.Module):
         ylens = np.zeros((bs,), dtype=np.int32)
         eos_flags = [False] * bs
         for t in range(int(math.floor(enc_time * max_len_ratio)) + 1):
-            # Recurrency
+            # Recurrency (1st)
             y_emb = self.embed(y)
-            if self.input_feeding:
-                dstates = self.recurrency(y_emb, attn_vec, dstates)
-            else:
-                dstates = self.recurrency(y_emb, con_vec, dstates)
+            dec_in = attn_vec if self.input_feeding else con_vec
+            if self.loop_type in ['conditional', 'rnmt']:
+                dstates = self.recurrency_step1(y_emb, dec_in, dstates)
+            elif self.loop_type in ['normal', 'lmdecoder']:
+                dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
@@ -777,11 +895,12 @@ class Decoder(nn.Module):
             # Score
             con_vec, aw = self.score(eouts, elens, dstates['dout_score'], aw)
 
+            # Recurrency (2nd, only for the internal decoder)
+            if self.loop_type in ['conditional', 'rnmt']:
+                dstates = self.recurrency_step2(con_vec, dstates)
+
             # Generate
             attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
-            if self.rnnlm_init and self.conditional:
-                # Residual connection
-                attn_vec += dstates['_dout']
             logits_t = self.output(attn_vec)
 
             # Pick up 1-best
@@ -903,7 +1022,11 @@ class Decoder(nn.Module):
                     # Recurrency
                     y = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                     y_emb = self.embed(y)
-                    dstates = self.recurrency(y_emb, beam[i_beam]['con_vec'], beam[i_beam]['dstates'])
+                    if self.loop_type in ['conditional', 'rnmt']:
+                        raise ValueError()
+                        # dstates = self.recurrency_step1(y_emb, dec_in, dstates)
+                    elif self.loop_type in ['normal', 'lmdecoder']:
+                        dstates = self.recurrency(y_emb, beam[i_beam]['con_vec'], beam[i_beam]['dstates']['dstate'])
 
                     # Score
                     con_vec, aw = self.score(eouts[b:b + 1, :elens[b]],
@@ -928,9 +1051,6 @@ class Decoder(nn.Module):
 
                     # Generate
                     attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
-                    if self.rnnlm_init and self.conditional:
-                        # Residual connection
-                        attn_vec += dstates['_dout']
                     logits_t = self.output(attn_vec)
 
                     # Path through the softmax layer & convert to log-scale
@@ -1059,7 +1179,7 @@ class Decoder(nn.Module):
 
         return nbest_hyps, aws, scores
 
-    def decode_ctc(self, eouts, x_lens, beam_width=1, rnnlm=None):
+    def decode_ctc(self, eouts, xlens, beam_width=1, rnnlm=None):
         """Decoding by the CTC layer in the inference stage.
 
             This is only used for Joint CTC-Attention model.
@@ -1073,15 +1193,15 @@ class Decoder(nn.Module):
         """
         logits_ctc = self.output_ctc(eouts)
         if beam_width == 1:
-            best_hyps = self.decode_ctc_greedy(tensor2np(logits_ctc), x_lens)
+            best_hyps = self.decode_ctc_greedy(tensor2np(logits_ctc), xlens)
         else:
             best_hyps = self.decode_ctc_beam(F.log_softmax(logits_ctc, dim=-1),
-                                             x_lens, beam_width, rnnlm)
+                                             xlens, beam_width, rnnlm)
             # TODO(hirofumi): decoding paramters
 
         return best_hyps
 
-    def ctc_posteriors(self, eouts, x_lens, temperature, topk):
+    def ctc_posteriors(self, eouts, xlens, temperature, topk):
         # Path through the softmax layer
         logits_ctc = self.output_ctc(eouts)
         ctc_probs = F.softmax(logits_ctc / temperature, dim=-1)
