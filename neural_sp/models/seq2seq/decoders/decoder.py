@@ -167,6 +167,7 @@ class Decoder(nn.Module):
         self.lmobj_weight = lmobj_weight
         if lmobj_weight > 0:
             assert loop_type in ['normal', 'lmdecoder']
+            assert not input_feeding
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
@@ -243,7 +244,6 @@ class Decoder(nn.Module):
             elif loop_type == 'lmdecoder':
                 self.rnn += [rnn_cell(emb_dim, nunits)]
                 self.dropout += [nn.Dropout(p=dropout)]
-                # TODO(hirofumi): support for multi-layer
                 self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
                 self.dropout += [nn.Dropout(p=dropout)]
                 for l in range(nlayers - 2):
@@ -252,14 +252,18 @@ class Decoder(nn.Module):
             elif loop_type == 'conditional':
                 self.rnn += [rnn_cell(emb_dim, nunits)]
                 self.dropout += [nn.Dropout(p=dropout)]
-                # TODO(hirofumi): support for multi-layer
                 self.rnn += [rnn_cell(enc_nunits, nunits)]
                 self.dropout += [nn.Dropout(p=dropout)]
                 for l in range(nlayers - 2):
                     self.rnn += [rnn_cell(nunits, nunits)]
                     self.dropout += [nn.Dropout(p=dropout)]
             elif loop_type == 'rnmt':
-                raise NotImplementedError()
+                assert residual
+                self.rnn += [rnn_cell(emb_dim, nunits)]
+                self.dropout += [nn.Dropout(p=dropout)]
+                for l in range(nlayers - 1):
+                    self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
+                    self.dropout += [nn.Dropout(p=dropout)]
             else:
                 raise NotImplementedError(loop_type)
 
@@ -501,14 +505,16 @@ class Decoder(nn.Module):
         con_vec = eouts.new_zeros(bs, 1, self.enc_nunits)
         attn_vec = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
-        aw, rnnlm_state = None, None
+        aw = None
+        rnnlm_state = None
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
         if self.rnnlm_cf:
             ys_lm_emb = self.rnnlm_cf.embed(ys_in_pad)
 
-        logits, douts = [], []
+        logits = []
+        douts = []
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
             is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
@@ -621,16 +627,16 @@ class Decoder(nn.Module):
                                             dtype=torch.float32).cuda(self.device_id)
         dstates['dout_generate'] = torch.zeros((bs, 1, self.dec_nunits),
                                                dtype=torch.float32).cuda(self.device_id)
-        if self.loop_type == 'conditional':
+        if self.loop_type in ['conditional', 'rnmt']:
             hxs1 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
-                    for l in range(self.nlayers)]
+                    for l in range(1)]
             cxs1 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
-                    for l in range(self.nlayers)] if self.rnn_type == 'lstm' else []
+                    for l in range(1)] if self.rnn_type == 'lstm' else []
             dstates['dstate1'] = (hxs1, cxs1)
             hxs2 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
-                    for l in range(self.nlayers)]
+                    for l in range(self.nlayers - 1)]
             cxs2 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
-                    for l in range(self.nlayers)] if self.rnn_type == 'lstm' else []
+                    for l in range(self.nlayers - 1)] if self.rnn_type == 'lstm' else []
             dstates['dstate2'] = (hxs2, cxs2)
         else:
             hxs = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
@@ -676,7 +682,7 @@ class Decoder(nn.Module):
                 hxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), hxs[0])
         dout = self.dropout[0](hxs[0])
 
-        if self.loop_type == 'lmdecoder'and self.lmobj_weight > 0:
+        if self.loop_type == 'lmdecoder' and self.lmobj_weight > 0:
             dstates_new['dout_lmdec'] = dout.unsqueeze(1)
 
         if self.loop_type == 'normal':
@@ -709,8 +715,7 @@ class Decoder(nn.Module):
             # the top layer
             dstates_new['dout_generate'] = dout.unsqueeze(1)
         else:
-            # the bottom layer
-            dstates_new['dout_generate'] = dstates_new['dout_score'].clone()
+            dstates_new['dout_generate'] = dstates_new['dout_score']
         dstates_new['dstate'] = (hxs[:], cxs[:])
         return dstates_new
 
@@ -738,25 +743,28 @@ class Decoder(nn.Module):
                     cxs (list of FloatTensor):
 
         """
-        if self.conditional:
-            hxs, cxs = dstates['dstate2']
-        else:
-            hxs, cxs = dstates['dstate1']
+        hxs, cxs = dstates['dstate1']
         y_emb = y_emb.squeeze(1)
         con_vec = con_vec.squeeze(1)
 
         dstates_new = {'dout_score': None,  # for attention score
                        'dstate1': None,
                        'dstate2': dstates['dstate2']}
-        if self.rnn_type == 'lstm':
-            hxs[0], cxs[0] = self.rnn[0](y_emb, (hxs[0], cxs[0]))
-        elif self.rnn_type == 'gru':
-            hxs = self.rnn[0](y_emb, hxs)
+        if self.loop_type == 'conditional':
+            if self.rnn_type == 'lstm':
+                hxs[0], cxs[0] = self.rnn[0](y_emb, (hxs[0], cxs[0]))
+            elif self.rnn_type == 'gru':
+                hxs[0] = self.rnn[0](y_emb, hxs[0])
+        elif self.loop_type == 'rnmt':
+            if self.rnn_type == 'lstm':
+                hxs[0], cxs[0] = self.rnn[0](y_emb, (hxs[0], cxs[0]))
+            elif self.rnn_type == 'gru':
+                hxs[0] = self.rnn[0](y_emb, hxs[0])
+        dout = self.dropout[0](hxs[0])
+
         # the bottom layer
-        dstates_new['dout_score'] = self.dropout[0](hxs[0]).unsqueeze(1)
+        dstates_new['dout_score'] = dout.unsqueeze(1)
         dstates_new['dstate1'] = (hxs[:], cxs[:])
-        # TODO(hirofumi): Multi-layer
-        # TODO(hirofumi): residual
         return dstates_new
 
     def recurrency_step2(self, con_vec, dstates):
@@ -787,32 +795,43 @@ class Decoder(nn.Module):
         con_vec = con_vec.squeeze(1)
 
         dstates_new = {'dout_generate': None,  # for token generation
-                       'dstate1': dstates['dstate1'],
+                       'dstate1': None,
                        'dstate2': None}
 
-        hx_lower = dstates['dout_score']
-        for l in range(self.nlayers - 1):
-            if self.conditional and l == 0:
+        dout = dstates['dout_score'].squeeze(1)
+        for l in range(1, self.nlayers):
+            if self.loop_type == 'conditional':
+                if l == 1:
+                    if self.rnn_type == 'lstm':
+                        dstates['dstate1'][0][0], dstates['dstate1'][1][0] = self.rnn[l](
+                            dout, (dstates['dstate1'][0][0], dstates['dstate1'][1][0]))
+                    elif self.rnn_type == 'gru':
+                        dstates['dstate1'][0][0] = self.rnn[l](dout, dstates['dstate1'][0][0])
+                else:
+                    if self.rnn_type == 'lstm':
+                        hxs[l - 1], cxs[l - 1] = self.rnn[l](dout, (hxs[l - 1], cxs[l - 1]))
+                    elif self.rnn_type == 'gru':
+                        hxs[l - 1] = self.rnn[l](dout, hxs[l - 1])
+            elif self.loop_type == 'rnmt':
                 if self.rnn_type == 'lstm':
-                    hxs[l], cxs[l] = self.rnn[l](
-                        hx_lower, (dstates['dstate1'][0][l], dstates['dstate1'][1][l]))
+                    hxs[l - 1], cxs[l - 1] = self.rnn[l](torch.cat([dout, con_vec], dim=-1), (hxs[l - 1], cxs[l - 1]))
                 elif self.rnn_type == 'gru':
-                    hxs[l] = self.rnn[l](hx_lower, dstates['dstate1'][0][l])
+                    hxs[l - 1] = self.rnn[l](torch.cat([dout, con_vec], dim=-1), hxs[l - 1])
+
+            if self.loop_type == 'conditional' and l == 1:
+                if self.residual:
+                    dout = self.dropout[l](dstates['dstate1'][0][0]) + dout
+                else:
+                    dout = self.dropout[l](dstates['dstate1'][0][0])
             else:
-                if self.rnn_type == 'lstm':
-                    hxs[l], cxs[l] = self.rnn[l](hx_lower, (hxs[l], cxs[l]))
-                elif self.rnn_type == 'gru':
-                    hxs[l] = self.rnn[l](hx_lower, hxs[l])
-
-            # Residual connection
-            if self.residual:
-                hxs[l] += hx_lower
-
-            if l < self.nlayers - 2:
-                hx_lower = self.dropout[l](hxs[l])
+                if self.residual:
+                    dout = self.dropout[l](hxs[l - 1]) + dout
+                else:
+                    dout = self.dropout[l](hxs[l - 1])
 
         # the top layer
-        dstates_new['dout_generate'] = self.dropout[-1](hxs[-1]).unsqueeze(1)
+        dstates_new['dout_generate'] = dout.unsqueeze(1)
+        dstates_new['dstate1'] = (dstates['dstate1'][0][:], dstates['dstate1'][1][:])
         dstates_new['dstate2'] = (hxs[:], cxs[:])
         return dstates_new
 
@@ -1023,8 +1042,7 @@ class Decoder(nn.Module):
                     y = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                     y_emb = self.embed(y)
                     if self.loop_type in ['conditional', 'rnmt']:
-                        raise ValueError()
-                        # dstates = self.recurrency_step1(y_emb, dec_in, dstates)
+                        dstates = self.recurrency_step1(y_emb, beam[i_beam]['con_vec'], beam[i_beam]['dstates'])
                     elif self.loop_type in ['normal', 'lmdecoder']:
                         dstates = self.recurrency(y_emb, beam[i_beam]['con_vec'], beam[i_beam]['dstates']['dstate'])
 
@@ -1048,6 +1066,10 @@ class Decoder(nn.Module):
                             y_lm_emb, (beam[i_beam]['rnnlm_hxs'], beam[i_beam]['rnnlm_cxs']))
                     else:
                         logits_lm_t, lm_out, rnnlm_state = None, None, None
+
+                    # Recurrency (2nd, only for the internal decoder)
+                    if self.loop_type in ['conditional', 'rnmt']:
+                        dstates = self.recurrency_step2(con_vec, dstates)
 
                     # Generate
                     attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
