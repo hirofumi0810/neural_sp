@@ -77,9 +77,7 @@ class RNNEncoder(nn.Module):
                  nlayers_sub2=0,
                  nin=0,
                  layer_norm=False,
-                 task_specific_layer=False,
-                 task_specific_layer_sub1=False,
-                 task_specific_layer_sub2=False):
+                 task_specific_layer=False):
 
         super(RNNEncoder, self).__init__()
 
@@ -104,8 +102,6 @@ class RNNEncoder(nn.Module):
         self.nlayers_sub1 = nlayers_sub1
         self.nlayers_sub2 = nlayers_sub2
         self.task_specific_layer = task_specific_layer
-        self.task_specific_layer_sub1 = task_specific_layer_sub1
-        self.task_specific_layer_sub2 = task_specific_layer_sub2
 
         # Setting for subsampling
         if len(subsample) == 0:
@@ -233,22 +229,14 @@ class RNNEncoder(nn.Module):
                         enc_odim = nprojs
 
                     # insert task specific layer
-                    if l == nlayers - 1 and task_specific_layer:
-                        self.rnn_top_ctc = rnn_i(enc_odim, nunits, 1,
-                                                 bias=True,
-                                                 batch_first=True,
-                                                 dropout=0,
-                                                 bidirectional=self.bidirectional)
-                        self.dropout_top_ctc = nn.Dropout(p=dropout)
-
-                    if l == nlayers_sub1 - 1 and task_specific_layer_sub1:
+                    if l == nlayers_sub1 - 1 and task_specific_layer:
                         self.rnn_sub1_top = rnn_i(enc_odim, nunits, 1,
                                                   bias=True,
                                                   batch_first=True,
                                                   dropout=0,
                                                   bidirectional=self.bidirectional)
                         self.dropout_sub1_top = nn.Dropout(p=dropout)
-                    if l == nlayers_sub2 - 1 and task_specific_layer_sub2:
+                    if l == nlayers_sub2 - 1 and task_specific_layer:
                         self.rnn_sub2_top = rnn_i(enc_odim, nunits, 1,
                                                   bias=True,
                                                   batch_first=True,
@@ -293,11 +281,8 @@ class RNNEncoder(nn.Module):
 
         """
         eouts = {'ys': {'xs': None, 'xlens': None},
-                 'ys.ctc': {'xs': None, 'xlens': None},
                  'ys_sub1': {'xs': None, 'xlens': None},
-                 'ys_sub1.ctc': {'xs': None, 'xlens': None},
-                 'ys_sub2': {'xs': None, 'xlens': None},
-                 'ys_sub2.ctc': {'xs': None, 'xlens': None}}
+                 'ys_sub2': {'xs': None, 'xlens': None}}
 
         # Dropout for inputs-hidden connection
         xs = self.dropout_in(xs)
@@ -333,7 +318,7 @@ class RNNEncoder(nn.Module):
 
                 # Pick up outputs in the sub task before the projection layer
                 if l == self.nlayers_sub1 - 1:
-                    if self.task_specific_layer_sub1:
+                    if self.task_specific_layer:
                         self.rnn_sub1_top.flatten_parameters()
                         xs_sub1 = pack_padded_sequence(xs, xlens, batch_first=True)
                         xs_sub1, _ = self.rnn_sub1_top(xs_sub1, hx=None)
@@ -349,7 +334,7 @@ class RNNEncoder(nn.Module):
                         return eouts
 
                 if l == self.nlayers_sub2 - 1:
-                    if self.task_specific_layer_sub2:
+                    if self.task_specific_layer:
                         self.rnn_sub2_top.flatten_parameters()
                         xs_sub2 = pack_padded_sequence(xs, xlens, batch_first=True)
                         xs_sub2, _ = self.rnn_sub2_top(xs_sub2, hx=None)
@@ -414,32 +399,15 @@ class RNNEncoder(nn.Module):
                             xs_lower = xs
                     # NOTE: Exclude residual connection from the raw inputs
 
-        if task == 'ys.ctc' and self.task_specific_layer:
-            self.rnn_top_ctc.flatten_parameters()
-            xs_ctc = pack_padded_sequence(xs, xlens, batch_first=True)
-            xs_ctc, _ = self.rnn_top_ctc(xs_ctc, hx=None)
-            xs_ctc = pad_packed_sequence(xs_ctc, batch_first=True)[0]
-            xs_ctc = self.dropout_top_ctc(xs_ctc)
-        else:
-            xs_ctc = None
-
         if task in ['all', 'ys', 'ys.ctc', 'ys.bwd']:
             eouts['ys']['xs'] = xs
             eouts['ys']['xlens'] = xlens
-            eouts['ys.ctc']['xs'] = xs_ctc
-            eouts['ys.ctc']['xlens'] = xlens
-        if self.nlayers_sub1 >= 1 and task in ['all', 'ys_sub1']:
+        if self.nlayers_sub1 >= 1 and task in ['all', 'ys_sub1', 'ys_sub1.ctc', 'ys_sub1.bwd']:
             eouts['ys_sub1']['xs'] = xs_sub1
             eouts['ys_sub1']['xlens'] = xlens_sub1
-        if self.nlayers_sub1 >= 1 and task in ['all', 'ys_sub1.ctc']:
-            eouts['ys_sub1.ctc']['xs'] = xs_sub1
-            eouts['ys_sub1.ctc']['xlens'] = xlens_sub1
-        if self.nlayers_sub2 >= 1 and task in ['all', 'ys_sub2']:
+        if self.nlayers_sub2 >= 1 and task in ['all', 'ys_sub2', 'ys_sub2.ctc', 'ys_sub2.bwd']:
             eouts['ys_sub2']['xs'] = xs_sub2
             eouts['ys_sub2']['xlens'] = xlens_sub2
-        if self.nlayers_sub2 >= 1 and task in ['all', 'ys_sub2.ctc']:
-            eouts['ys_sub2.ctc']['xs'] = xs_sub2
-            eouts['ys_sub2.ctc']['xlens'] = xlens_sub2
 
         return eouts
 

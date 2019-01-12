@@ -120,9 +120,7 @@ class Seq2seq(ModelBase):
             residual=args.enc_residual,
             nin=0,
             layer_norm=args.layer_norm,
-            task_specific_layer=args.task_specific_layer and args.ctc_weight > 0,
-            task_specific_layer_sub1=args.task_specific_layer,
-            task_specific_layer_sub2=args.task_specific_layer)
+            task_specific_layer=args.task_specific_layer)
 
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
@@ -349,12 +347,8 @@ class Seq2seq(ModelBase):
                 reverse_dec = self.dec_bwd
             else:
                 reverse_dec = None
-            if task == 'ys.ctc' and self.task_specific_layer:
-                loss_fwd, obs_fwd = self.dec_fwd(
-                    enc_outs['ys.ctc']['xs'], enc_outs['ys']['xlens'], ys, task)
-            else:
-                loss_fwd, obs_fwd = self.dec_fwd(
-                    enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, reverse_dec)
+            loss_fwd, obs_fwd = self.dec_fwd(
+                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, reverse_dec)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
@@ -383,16 +377,8 @@ class Seq2seq(ModelBase):
         for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0 and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc']:
                 ys_sub = [batch['ys_' + sub][i] for i in perm_ids]
-                if task == 'ys_' + sub + '.ctc' and self.task_specific_layer:
-                    loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
-                        enc_outs['ys_' + sub + '.ctc']['xs'],
-                        enc_outs['ys_' + sub + '.ctc']['xlens'],
-                        ys_sub, task)
-                else:
-                    loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
-                        enc_outs['ys_' + sub]['xs'],
-                        enc_outs['ys_' + sub]['xlens'],
-                        ys_sub, task)
+                loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
+                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub, task)
                 loss += loss_sub
                 observation['loss.att-' + sub] = obs_sub['loss_att']
                 observation['loss.ctc-' + sub] = obs_sub['loss_ctc']
@@ -418,11 +404,8 @@ class Seq2seq(ModelBase):
         """
         if 'lmobj' in task:
             eouts = {'ys': {'xs': None, 'xlens': None},
-                     'ys.ctc': {'xs': None, 'xlens': None},
                      'ys_sub1': {'xs': None, 'xlens': None},
-                     'ys_sub1.ctc': {'xs': None, 'xlens': None},
-                     'ys_sub2': {'xs': None, 'xlens': None},
-                     'ys_sub2.ctc': {'xs': None, 'xlens': None}}
+                     'ys_sub2': {'xs': None, 'xlens': None}}
             return eouts, None
         else:
             # Sort by lenghts in the descending order
