@@ -270,10 +270,6 @@ def parse():
     parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',
                         help='RNNLM parameters for cold fusion.')
     # RNNLM initialization, objective
-    parser.add_argument('--internal_decoder', type=bool, default=False, nargs='?',
-                        help='')
-    parser.add_argument('--conditional_decoder', type=bool, default=False, nargs='?',
-                        help='')
     parser.add_argument('--rnnlm_init', type=str, default=False, nargs='?',
                         help='')
     parser.add_argument('--lmobj_weight', type=float, default=0.0, nargs='?',

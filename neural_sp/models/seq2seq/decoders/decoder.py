@@ -326,7 +326,7 @@ class Decoder(nn.Module):
 
         """
         obserbation = {'loss': None,
-                       'loss_att': None, 'loss_ctc': None, 'loss_lmobj': None,
+                       'loss_att': None, 'loss_ctc': None, 'loss_lmobj': None, 'loss_twin': None,
                        'acc_att': None, 'acc_lmobj': None,
                        'ppl_att': None, 'ppl_lmobj': None}
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
@@ -804,9 +804,9 @@ class Decoder(nn.Module):
                 if l == 1:
                     if self.rnn_type == 'lstm':
                         dstates['dstate1'][0][0], dstates['dstate1'][1][0] = self.rnn[l](
-                            dout, (dstates['dstate1'][0][0], dstates['dstate1'][1][0]))
+                            con_vec, (dstates['dstate1'][0][0], dstates['dstate1'][1][0]))
                     elif self.rnn_type == 'gru':
-                        dstates['dstate1'][0][0] = self.rnn[l](dout, dstates['dstate1'][0][0])
+                        dstates['dstate1'][0][0] = self.rnn[l](con_vec, dstates['dstate1'][0][0])
                 else:
                     if self.rnn_type == 'lstm':
                         hxs[l - 1], cxs[l - 1] = self.rnn[l](dout, (hxs[l - 1], cxs[l - 1]))
