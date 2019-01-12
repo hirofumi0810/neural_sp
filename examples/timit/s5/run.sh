@@ -40,6 +40,7 @@ dec_type=gru
 dec_nunits=256
 dec_nprojs=0
 dec_nlayers=1
+dec_loop_type=normal
 dec_residual=
 emb_dim=256
 ctc_fc_list=""
@@ -82,13 +83,6 @@ bwd_weight=0.0
 twin_net_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
-### LM integration
-cold_fusion=
-rnnlm_cold_fusion=
-internal_lm=
-rnnlm_init=
-lmobj_weight=
-share_lm_softmax=
 
 ### path to save the model
 model=/n/sd8/inaguma/result/timit
@@ -224,6 +218,7 @@ if [ ${stage} -le 4 ]; then
     --dec_nunits ${dec_nunits} \
     --dec_nprojs ${dec_nprojs} \
     --dec_nlayers ${dec_nlayers} \
+    --dec_loop_type ${dec_loop_type} \
     --dec_residual ${dec_residual} \
     --input_feeding ${input_feeding} \
     --emb_dim ${emb_dim} \
@@ -262,13 +257,7 @@ if [ ${stage} -le 4 ]; then
     --bwd_weight ${bwd_weight} \
     --twin_net_weight ${twin_net_weight} \
     --mtl_per_batch ${mtl_per_batch} \
-    --task_specific_layer ${task_specific_layer} \
-    --cold_fusion ${cold_fusion} \
-    --rnnlm_cold_fusion =${rnnlm_cold_fusion} \
-    --internal_lm ${internal_lm} \
-    --rnnlm_init ${rnnlm_init} \
-    --lmobj_weight ${lmobj_weight} \
-    --share_lm_softmax ${share_lm_softmax} || exit 1;
+    --task_specific_layer ${task_specific_layer} || exit 1;
     # --resume ${resume} || exit 1;
 
   echo "Finish model training (stage: 4)."

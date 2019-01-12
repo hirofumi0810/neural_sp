@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/librispeech
 
 ### vocabulary
-unit=wp          # or word or char or word_char
+unit=wp      # or word or word_char
 vocab_size=10000
 wp_type=bpe  # or unigram (for wordpiece)
 unit_sub1=char
@@ -46,6 +46,7 @@ dec_nunits=320
 dec_nprojs=0
 dec_nlayers=1
 dec_nlayers_sub1=1
+dec_loop_type=normal
 dec_residual=
 emb_dim=320
 tie_embedding=
@@ -95,7 +96,6 @@ task_specific_layer=true
 ### LM integration
 cold_fusion=
 rnnlm_cold_fusion=
-internal_lm=
 rnnlm_init=
 lmobj_weight=
 share_lm_softmax=
@@ -258,6 +258,7 @@ if [ ${stage} -le 4 ]; then
     --dec_nprojs ${dec_nprojs} \
     --dec_nlayers ${dec_nlayers} \
     --dec_nlayers_sub1 ${dec_nlayers_sub1} \
+    --dec_loop_type ${dec_loop_type} \
     --dec_residual ${dec_residual} \
     --input_feeding ${input_feeding} \
     --emb_dim ${emb_dim} \
@@ -302,7 +303,6 @@ if [ ${stage} -le 4 ]; then
     --task_specific_layer ${task_specific_layer} \
     --cold_fusion ${cold_fusion} \
     --rnnlm_cold_fusion =${rnnlm_cold_fusion} \
-    --internal_lm ${internal_lm} \
     --rnnlm_init ${rnnlm_init} \
     --lmobj_weight ${lmobj_weight} \
     --share_lm_softmax ${share_lm_softmax} || exit 1;

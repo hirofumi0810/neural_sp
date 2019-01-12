@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/librispeech
 
 ### vocabulary
-unit=wp          # or word or char or word_char
+unit=wp      # or word or char or word_char
 vocab_size=10000
 wp_type=bpe  # or unigram (for wordpiece)
 
@@ -43,6 +43,7 @@ dec_type=lstm
 dec_nunits=320
 dec_nprojs=0
 dec_nlayers=1
+dec_loop_type=normal
 dec_residual=
 input_feeding=
 emb_dim=320
@@ -89,7 +90,6 @@ task_specific_layer=
 ### LM integration
 cold_fusion=
 rnnlm_cold_fusion=
-internal_lm=
 rnnlm_init=
 lmobj_weight=
 share_lm_softmax=
@@ -237,7 +237,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
   touch ${data}/.done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}_${data_size}.txt; mkdir -p ${data}/dict
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
   echo ============================================================================
@@ -267,14 +267,14 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
   # Compute OOV rate
   if [ ${unit} = word ]; then
     mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
-    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}.txt
+    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
     for x in ${train_set} ${dev_set} ${test_set}; do
       cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-        > ${data}/dict/word_count/${x}.txt || exit 1;
-      compute_oov_rate.py ${data}/dict/word_count/${x}.txt ${dict} ${x} \
-        >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+        > ${data}/dict/word_count/${x}_${data_size}.txt || exit 1;
+      compute_oov_rate.py ${data}/dict/word_count/${x}_${data_size}.txt ${dict} ${x} \
+        >> ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt || exit 1;
     done
-    cat ${data}/dict/oov_rate/word_${vocab_size}.txt
+    cat ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
   fi
 
   # Make datset csv files
@@ -376,6 +376,7 @@ if [ ${stage} -le 4 ]; then
     --dec_nunits ${dec_nunits} \
     --dec_nprojs ${dec_nprojs} \
     --dec_nlayers ${dec_nlayers} \
+    --dec_loop_type ${dec_loop_type} \
     --dec_residual ${dec_residual} \
     --input_feeding ${input_feeding} \
     --emb_dim ${emb_dim} \
@@ -417,7 +418,6 @@ if [ ${stage} -le 4 ]; then
     --task_specific_layer ${task_specific_layer} \
     --cold_fusion ${cold_fusion} \
     --rnnlm_cold_fusion =${rnnlm_cold_fusion} \
-    --internal_lm ${internal_lm} \
     --rnnlm_init ${rnnlm_init} \
     --lmobj_weight ${lmobj_weight} \
     --share_lm_softmax ${share_lm_softmax} || exit 1;
