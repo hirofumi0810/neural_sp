@@ -447,22 +447,30 @@ def main():
     if args.mtl_per_batch:
         # NOTE: from easier to harder tasks
         tasks = ['ys']
-        if 0 < args.ctc_weight < 1:
-            tasks = ['ys.ctc'] + tasks
         if 0 < args.bwd_weight < 1:
             tasks = ['ys.bwd'] + tasks
+        if 0 < args.ctc_weight < 1:
+            tasks = ['ys.ctc'] + tasks
         if 0 < args.lmobj_weight < 1:
             tasks = ['ys.lmobj'] + tasks
         if args.train_set_sub1:
+            if args.sub1_weight - args.bwd_weight_sub1 - args.ctc_weight_sub1 > 0:
+                tasks = ['ys_sub1'] + tasks
+            if args.bwd_weight_sub1 > 0:
+                tasks = ['ys_sub1.bwd'] + tasks
             if args.ctc_weight_sub1 > 0:
                 tasks = ['ys_sub1.ctc'] + tasks
-            else:
-                tasks = ['ys_sub1'] + tasks
+            if args.lmobj_weight_sub1 > 0:
+                tasks = ['ys_sub1.lmobj'] + tasks
         if args.train_set_sub2:
+            if args.sub2_weight - args.bwd_weight_sub2 - args.ctc_weight_sub2 > 0:
+                tasks = ['ys_sub2'] + tasks
+            if args.bwd_weight_sub2 > 0:
+                tasks = ['ys_sub2.bwd'] + tasks
             if args.ctc_weight_sub2 > 0:
                 tasks = ['ys_sub2.ctc'] + tasks
-            else:
-                tasks = ['ys_sub2'] + tasks
+            if args.lmobj_weight_sub2 > 0:
+                tasks = ['ys_sub2.lmobj'] + tasks
     else:
         tasks = ['all']
 

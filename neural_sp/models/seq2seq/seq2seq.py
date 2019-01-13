@@ -71,30 +71,30 @@ class Seq2seq(ModelBase):
         self.pad = 3
         # NOTE: reserved in advance
 
-        # for CTC
-        self.ctc_weight = args.ctc_weight
-        self.ctc_weight_sub1 = args.ctc_weight_sub1
-        self.ctc_weight_sub2 = args.ctc_weight_sub2
-
-        # for backward decoder
-        self.fwd_weight = 1 - args.bwd_weight
-        self.fwd_weight_sub1 = 1 - args.bwd_weight_sub1
-        self.fwd_weight_sub2 = 1 - args.bwd_weight_sub2
-        self.bwd_weight = args.bwd_weight
-        self.bwd_weight_sub1 = args.bwd_weight_sub1
-        self.bwd_weight_sub2 = args.bwd_weight_sub2
-        self.twin_net_weight = args.twin_net_weight
-        if args.twin_net_weight > 0:
-            assert 0 < self.fwd_weight < 1
-            assert 0 < self.bwd_weight < 1
-            assert args.mtl_per_batch
-
         # for the sub tasks
         self.main_weight = 1 - args.sub1_weight - args.sub2_weight
         self.sub1_weight = args.sub1_weight
         self.sub2_weight = args.sub2_weight
         self.mtl_per_batch = args.mtl_per_batch
         self.task_specific_layer = args.task_specific_layer
+
+        # for CTC
+        self.ctc_weight = min(args.ctc_weight, self.main_weight)
+        self.ctc_weight_sub1 = min(args.ctc_weight_sub1, self.sub1_weight)
+        self.ctc_weight_sub2 = min(args.ctc_weight_sub2, self.sub2_weight)
+
+        # for backward decoder
+        self.bwd_weight = min(args.bwd_weight, self.main_weight)
+        self.bwd_weight_sub1 = min(args.bwd_weight_sub1, self.sub1_weight)
+        self.bwd_weight_sub2 = min(args.bwd_weight_sub2, self.sub2_weight)
+        self.fwd_weight = self.main_weight - self.bwd_weight
+        self.fwd_weight_sub1 = self.sub1_weight - self.bwd_weight_sub1
+        self.fwd_weight_sub2 = self.sub2_weight - self.bwd_weight_sub2
+        self.twin_net_weight = args.twin_net_weight
+        if args.twin_net_weight > 0:
+            assert 0 < self.fwd_weight < 1
+            assert 0 < self.bwd_weight < 1
+            assert args.mtl_per_batch
 
         # Encoder
         self.enc = RNNEncoder(
@@ -208,49 +208,56 @@ class Seq2seq(ModelBase):
         # sub task (only for fwd)
         for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0:
-                # Decoder
-                dec_fwd_sub = Decoder(
-                    sos=self.sos,
-                    eos=self.eos,
-                    pad=self.pad,
-                    enc_nunits=self.enc_nunits,
-                    attn_type=args.attn_type,
-                    attn_dim=args.attn_dim,
-                    attn_sharpening_factor=args.attn_sharpening,
-                    attn_sigmoid_smoothing=args.attn_sigmoid,
-                    attn_conv_out_channels=args.attn_conv_nchannels,
-                    attn_conv_kernel_size=args.attn_conv_width,
-                    attn_nheads=1,
-                    dropout_att=args.dropout_att,
-                    rnn_type=args.dec_type,
-                    nunits=args.dec_nunits,
-                    nlayers=args.dec_nlayers,
-                    loop_type=args.dec_loop_type,
-                    residual=args.dec_residual,
-                    emb_dim=args.emb_dim,
-                    tie_embedding=args.tie_embedding,
-                    vocab=getattr(self, 'vocab_' + sub),
-                    logits_temp=args.logits_temp,
-                    dropout=args.dropout_dec,
-                    dropout_emb=args.dropout_emb,
-                    ss_prob=args.ss_prob,
-                    lsm_prob=args.lsm_prob,
-                    layer_norm=args.layer_norm,
-                    fl_weight=args.focal_loss_weight,
-                    fl_gamma=args.focal_loss_gamma,
-                    ctc_weight=getattr(self, 'ctc_weight_' + sub),
-                    ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
-                                 ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
-                    input_feeding=args.input_feeding,
-                    # backward=(dir == 'bwd'),
-                    twin_net_weight=args.twin_net_weight,
-                    # rnnlm_cold_fusion=args.rnnlm_cold_fusion,
-                    # cold_fusion=args.cold_fusion,
-                    lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
-                    share_lm_softmax=args.share_lm_softmax,
-                    global_weight=getattr(self, sub + '_weight'),
-                    mtl_per_batch=args.mtl_per_batch)
-                setattr(self, 'dec_fwd_' + sub, dec_fwd_sub)
+                directions = []
+                if getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0:
+                    directions.append('fwd')
+                if getattr(self, 'bwd_weight_' + sub) > 0:
+                    directions.append('bwd')
+
+                for dir_sub in directions:
+                    dec_sub = Decoder(
+                        sos=self.sos,
+                        eos=self.eos,
+                        pad=self.pad,
+                        enc_nunits=self.enc_nunits,
+                        attn_type=args.attn_type,
+                        attn_dim=args.attn_dim,
+                        attn_sharpening_factor=args.attn_sharpening,
+                        attn_sigmoid_smoothing=args.attn_sigmoid,
+                        attn_conv_out_channels=args.attn_conv_nchannels,
+                        attn_conv_kernel_size=args.attn_conv_width,
+                        attn_nheads=1,
+                        dropout_att=args.dropout_att,
+                        rnn_type=args.dec_type,
+                        nunits=args.dec_nunits,
+                        nlayers=args.dec_nlayers,
+                        loop_type=args.dec_loop_type,
+                        residual=args.dec_residual,
+                        emb_dim=args.emb_dim,
+                        tie_embedding=args.tie_embedding,
+                        vocab=getattr(self, 'vocab_' + sub),
+                        logits_temp=args.logits_temp,
+                        dropout=args.dropout_dec,
+                        dropout_emb=args.dropout_emb,
+                        ss_prob=args.ss_prob,
+                        lsm_prob=args.lsm_prob,
+                        layer_norm=args.layer_norm,
+                        fl_weight=args.focal_loss_weight,
+                        fl_gamma=args.focal_loss_gamma,
+                        ctc_weight=getattr(self, 'ctc_weight_' + sub),
+                        ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
+                                     ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
+                        input_feeding=args.input_feeding,
+                        backward=(dir_sub == 'bwd'),
+                        twin_net_weight=args.twin_net_weight,
+                        # rnnlm_cold_fusion=args.rnnlm_cold_fusion,
+                        # cold_fusion=args.cold_fusion,
+                        lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
+                        share_lm_softmax=args.share_lm_softmax,
+                        global_weight=getattr(self, sub + '_weight'),
+                        mtl_per_batch=args.mtl_per_batch)
+                    setattr(self, 'dec_fwd_' + sub, dec_sub)
+                    # setattr(self, 'dec_' + sub + '_' + dir, dec_sub)
 
         if args.input_type == 'text':
             if args.vocab == args.vocab_sub1:
@@ -337,7 +344,7 @@ class Seq2seq(ModelBase):
         observation = {}
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
 
-        # Compute XE loss for the forward decoder
+        # for the forward decoder in the main task
         if self.fwd_weight > 0 and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
             if perm_ids is None:
                 ys = batch['ys']  # for lmobj
@@ -359,7 +366,7 @@ class Seq2seq(ModelBase):
             observation['ppl.att'] = obs_fwd['ppl_att']
             observation['ppl.lmobj'] = obs_fwd['ppl_lmobj']
 
-        # Compute XE loss for the backward decoder
+        # for the backward decoder in the main task
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
             ys = [batch['ys'][i] for i in perm_ids]
             loss_bwd, obs_bwd = self.dec_bwd(
@@ -375,18 +382,39 @@ class Seq2seq(ModelBase):
 
         # only fwd for sub tasks
         for sub in ['sub1', 'sub2']:
-            if getattr(self, sub + '_weight') > 0 and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc']:
-                ys_sub = [batch['ys_' + sub][i] for i in perm_ids]
-                loss_sub, obs_sub = getattr(self, 'dec_fwd_' + sub)(
+            # for the forward decoder in the sub tasks
+            if getattr(self, 'fwd_weight_' + sub) > 0 and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc', 'ys_' + sub + '.lmobj']:
+                if perm_ids is None:
+                    ys_sub = [batch['ys_' + sub][i] for i in perm_ids]  # for lmobj
+                else:
+                    ys_sub = batch['ys_' + sub]
+                loss_sub, obs_fwd_sub = getattr(self, 'dec_fwd_' + sub)(
                     enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub, task)
                 loss += loss_sub
-                observation['loss.att-' + sub] = obs_sub['loss_att']
-                observation['loss.ctc-' + sub] = obs_sub['loss_ctc']
-                observation['loss.lmobj-' + sub] = obs_sub['loss_lmobj']
-                observation['acc.att-' + sub] = obs_sub['acc_att']
-                observation['acc.lmobj-' + sub] = obs_sub['acc_lmobj']
-                observation['ppl.att-' + sub] = obs_sub['ppl_att']
-                observation['ppl.lmobj-' + sub] = obs_sub['ppl_lmobj']
+                observation['loss.att-' + sub] = obs_fwd_sub['loss_att']
+                observation['loss.ctc-' + sub] = obs_fwd_sub['loss_ctc']
+                observation['loss.lmobj-' + sub] = obs_fwd_sub['loss_lmobj']
+                observation['acc.att-' + sub] = obs_fwd_sub['acc_att']
+                observation['acc.lmobj-' + sub] = obs_fwd_sub['acc_lmobj']
+                observation['ppl.att-' + sub] = obs_fwd_sub['ppl_att']
+                observation['ppl.lmobj-' + sub] = obs_fwd_sub['ppl_lmobj']
+
+                # for the backward decoder in the sub tasks
+            if getattr(self, 'bwd_weight_' + sub) > 0 and task in ['all', 'ys_' + sub + '.bwd']:
+                if perm_ids is None:
+                    ys_sub = [batch['ys_' + sub][i] for i in perm_ids]  # for lmobj
+                else:
+                    ys_sub = batch['ys_' + sub]
+                loss_sub, obs_bwd_sub = getattr(self, 'dec_fwd_' + sub)(
+                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub, task)
+                loss += loss_sub
+                observation['loss.att-bwd-' + sub] = obs_bwd_sub['loss_att']
+                observation['loss.ctc-bwd-' + sub] = obs_bwd_sub['loss_ctc']
+                observation['loss.lmobj-bwd-' + sub] = obs_bwd_sub['loss_lmobj']
+                observation['acc.att-bwd-' + sub] = obs_bwd_sub['acc_att']
+                observation['acc.lmobj-bwd-' + sub] = obs_bwd_sub['acc_lmobj']
+                observation['ppl.att-bwd-' + sub] = obs_bwd_sub['ppl_att']
+                observation['ppl.lmobj-bwd-' + sub] = obs_bwd_sub['ppl_lmobj']
 
         return loss, observation
 
