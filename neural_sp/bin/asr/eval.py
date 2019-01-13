@@ -37,13 +37,14 @@ def main():
 
     # Overwrite config
     for k, v in config.items():
-        setattr(args, k, v)
+        if 'recog' not in k:
+            setattr(args, k, v)
     decode_params = vars(args)
 
     # Setting for logging
-    if os.path.isfile(os.path.join(args.decode_dir, 'decode.log')):
-        os.remove(os.path.join(args.decode_dir, 'decode.log'))
-    logger = set_logger(os.path.join(args.decode_dir, 'decode.log'), key='decoding')
+    if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):
+        os.remove(os.path.join(args.recog_dir, 'decode.log'))
+    logger = set_logger(os.path.join(args.recog_dir, 'decode.log'), key='decoding')
 
     wer_mean, cer_mean, per_mean = 0, 0, 0
     for i, set in enumerate(args.recog_sets):
@@ -54,18 +55,24 @@ def main():
                               os.path.join(args.recog_model, 'dict_sub1.txt')) else None,
                           dict_path_sub2=os.path.join(args.recog_model, 'dict_sub2.txt') if os.path.isfile(
                               os.path.join(args.recog_model, 'dict_sub2.txt')) else None,
+                          dict_path_sub3=os.path.join(args.recog_model, 'dict_sub3.txt') if os.path.isfile(
+                              os.path.join(args.recog_model, 'dict_sub3.txt')) else None,
                           wp_model=os.path.join(args.recog_model, 'wp.model'),
                           wp_model_sub1=os.path.join(args.recog_model, 'wp_sub1.model'),
                           wp_model_sub2=os.path.join(args.recog_model, 'wp_sub2.model'),
+                          wp_model_sub3=os.path.join(args.recog_model, 'wp_sub3.model'),
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
                           unit_sub2=args.unit_sub2,
+                          unit_sub3=args.unit_sub3,
                           batch_size=args.recog_batch_size,
                           is_test=True)
 
         if i == 0:
             args.vocab = dataset.vocab
             args.vocab_sub1 = dataset.vocab_sub1
+            args.vocab_sub2 = dataset.vocab_sub2
+            args.vocab_sub3 = dataset.vocab_sub3
             args.input_dim = dataset.input_dim
 
             # For cold fusion
@@ -135,7 +142,7 @@ def main():
             wer, nsub, nins, ndel, noov_total = eval_word(
                 [model], dataset, decode_params,
                 epoch=epoch - 1,
-                decode_dir=args.decode_dir,
+                decode_dir=args.recog_dir,
                 progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (dataset.set, wer))
@@ -146,7 +153,7 @@ def main():
             wer, nsub, nins, ndel = eval_wordpiece(
                 [model], dataset, decode_params,
                 epoch=epoch - 1,
-                decode_dir=args.decode_dir,
+                decode_dir=args.recog_dir,
                 progressbar=True)
             wer_mean += wer
             logger.info('WER (%s): %.3f %%' % (dataset.set, wer))
@@ -156,7 +163,7 @@ def main():
             (wer, nsub, nins, ndel), (cer, _, _, _) = eval_char(
                 [model], dataset, decode_params,
                 epoch=epoch - 1,
-                decode_dir=args.decode_dir,
+                decode_dir=args.recog_dir,
                 progressbar=True,
                 task_id=1 if args.recog_unit and 'char' in args.recog_unit else 0)
             wer_mean += wer
@@ -168,7 +175,7 @@ def main():
             per, nsub, nins, ndel = eval_phone(
                 [model], dataset, decode_params,
                 epoch=epoch - 1,
-                decode_dir=args.decode_dir,
+                decode_dir=args.recog_dir,
                 progressbar=True)
             per_mean += per
             logger.info('PER (%s): %.3f %%' % (dataset.set, per))

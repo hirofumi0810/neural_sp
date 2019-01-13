@@ -41,37 +41,37 @@ fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
 
 for set in eval1 eval2 eval3; do
-  decode_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
+  recog_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
   if [ ! -z ${recog_unit} ]; then
-      decode_dir=${decode_dir}_${recog_unit}
+      recog_dir=${recog_dir}_${recog_unit}
   fi
   if ${fwd_bwd_attention}; then
-    decode_dir=${decode_dir}_fwdbwd
+    recog_dir=${recog_dir}_fwdbwd
   fi
-  mkdir -p ${decode_dir}
+  mkdir -p ${recog_dir}
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
-    --recog_sets ${data}/dataset/${set}_aps_other_word12500.csv \
+    --recog_sets ${data}/dataset/${set}_aps_other_wpbpe10000.csv \
     --recog_model ${model} \
     --recog_model_bwd ${model_bwd} \
     --recog_epoch ${epoch} \
     --recog_batch_size ${batch_size} \
-    --beam_width ${beam_width} \
-    --max_len_ratio ${max_len_ratio} \
-    --min_len_ratio ${min_len_ratio} \
-    --length_penalty ${length_penalty} \
-    --coverage_penalty ${coverage_penalty} \
-    --coverage_threshold ${coverage_threshold} \
-    --rnnlm ${rnnlm} \
-    --rnnlm_bwd ${rnnlm_bwd} \
-    --rnnlm_weight ${rnnlm_weight} \
-    --resolving_unk ${resolving_unk} \
-    --fwd_bwd_attention ${fwd_bwd_attention} \
+    --recog_beam_width ${beam_width} \
+    --recog_max_len_ratio ${max_len_ratio} \
+    --recog_min_len_ratio ${min_len_ratio} \
+    --recog_length_penalty ${length_penalty} \
+    --recog_coverage_penalty ${coverage_penalty} \
+    --recog_coverage_threshold ${coverage_threshold} \
+    --recog_rnnlm ${rnnlm} \
+    --recog_rnnlm_bwd ${rnnlm_bwd} \
+    --recog_rnnlm_weight ${rnnlm_weight} \
+    --recog_resolving_unk ${resolving_unk} \
+    --recog_fwd_bwd_attention ${fwd_bwd_attention} \
     --recog_unit ${recog_unit} \
-    --decode_dir ${decode_dir} || exit 1;
+    --recog_dir ${recog_dir} || exit 1;
 
   echo ${set}
-  sclite -r ${decode_dir}/ref.trn trn -h ${decode_dir}/hyp.trn trn -i rm -o all stdout > ${decode_dir}/result.txt
-  grep -e Avg -e SPKR -m 2 ${decode_dir}/result.txt > ${decode_dir}/RESULTS
-  cat ${decode_dir}/RESULTS
+  sclite -r ${recog_dir}/ref.trn trn -h ${recog_dir}/hyp.trn trn -i rm -o all stdout > ${recog_dir}/result.txt
+  grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS
+  cat ${recog_dir}/RESULTS
 done
