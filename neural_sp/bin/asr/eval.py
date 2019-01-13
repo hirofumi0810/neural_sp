@@ -55,6 +55,8 @@ def main():
                           dict_path_sub2=os.path.join(args.recog_model, 'dict_sub2.txt') if os.path.isfile(
                               os.path.join(args.recog_model, 'dict_sub2.txt')) else None,
                           wp_model=os.path.join(args.recog_model, 'wp.model'),
+                          wp_model_sub1=os.path.join(args.recog_model, 'wp_sub1.model'),
+                          wp_model_sub2=os.path.join(args.recog_model, 'wp_sub2.model'),
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
                           unit_sub2=args.unit_sub2,
