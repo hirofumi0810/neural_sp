@@ -48,11 +48,11 @@ dec_nlayers=1
 dec_nlayers_sub1=1
 dec_loop_type=normal
 dec_residual=
+input_feeding=
 emb_dim=320
 tie_embedding=
 ctc_fc_list="320"
 ctc_fc_list_sub1=""
-
 ### optimization
 batch_size=50
 optimizer=adam
@@ -87,8 +87,9 @@ lsm_prob=0.1
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
-ctc_weight_sub1=0.0
+ctc_weight_sub1=0.2
 bwd_weight=0.0
+bwd_weight_sub1=0.0
 twin_net_weight=0.0
 sub1_weight=0.2
 mtl_per_batch=true
@@ -297,6 +298,7 @@ if [ ${stage} -le 4 ]; then
     --ctc_weight ${ctc_weight} \
     --ctc_weight_sub1 ${ctc_weight_sub1} \
     --bwd_weight ${bwd_weight} \
+    --bwd_weight_sub1 ${bwd_weight_sub1} \
     --twin_net_weight ${twin_net_weight} \
     --sub1_weight ${sub1_weight} \
     --mtl_per_batch ${mtl_per_batch} \
