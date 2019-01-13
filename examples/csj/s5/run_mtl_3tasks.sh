@@ -18,9 +18,11 @@ unit=wp      # or word or word_char
 vocab_size=10000
 wp_type=bpe  # or unigram (for wordpiece)
 unit_sub1=wp
-wp_type_sub1=unigram  # or bpe (for wordpiece)
+wp_type_sub1=bpe  # or unigram (for wordpiece)
 vocab_size_sub1=5000
 unit_sub2=char
+wp_type_sub2=bpe  # or unigram (for wordpiece)
+vocab_size_sub2=
 
 #########################
 # ASR configuration
@@ -161,8 +163,26 @@ train_set=train_${data_size}
 dev_set=dev_${data_size}
 test_set="eval1 eval2 eval3"
 
+# main
+if [ ${unit} = char ]; then
+  vocab_size=
+fi
 if [ ${unit} != wp ]; then
   wp_type=
+fi
+# sub1
+if [ ${unit_sub1} = char ]; then
+  vocab_size_sub1=
+fi
+if [ ${unit_sub1} != wp ]; then
+  wp_type_sub1=
+fi
+# sub2
+if [ ${unit_sub2} = char ]; then
+  vocab_size_sub2=
+fi
+if [ ${unit_sub2} != wp ]; then
+  wp_type_sub2=
 fi
 
 if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
@@ -230,7 +250,8 @@ wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
 dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
 wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}
 # sub2
-dict_sub2=${data}/dict/${train_set}_${unit_sub2}.txt
+dict_sub2=${data}/dict/${train_set}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.txt
+wp_model_sub2=${data}/dict/${train_set}_${wp_type_sub2}${vocab_size_sub2}
 
 if [ ! -f ${dict} ]; then
   echo "There is no file such as "${dict}
@@ -257,16 +278,17 @@ if [ ${stage} -le 4 ]; then
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.csv \
     --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv \
-    --train_set_sub2 ${data}/dataset/${train_set}_${unit_sub2}.csv \
+    --train_set_sub2 ${data}/dataset/${train_set}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.csv \
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
     --dev_set_sub1 ${data}/dataset/${dev_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv \
-    --dev_set_sub2 ${data}/dataset/${dev_set}_${unit_sub2}.csv \
+    --dev_set_sub2 ${data}/dataset/${dev_set}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.csv \
     --eval_sets ${data}/dataset/eval1_${data_size}_${unit}${wp_type}${vocab_size}.csv \
     --dict ${dict} \
     --dict_sub1 ${dict_sub1} \
     --dict_sub2 ${dict_sub2} \
     --wp_model ${wp_model}.model \
     --wp_model_sub1 ${wp_model_sub1}.model \
+    --wp_model_sub2 ${wp_model_sub2}.model \
     --model ${model}/asr \
     --unit ${unit} \
     --unit_sub1 ${unit_sub1} \

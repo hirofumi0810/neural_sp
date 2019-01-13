@@ -18,6 +18,8 @@ unit=wp      # or word or word_char
 vocab_size=10000
 wp_type=bpe  # or unigram (for wordpiece)
 unit_sub1=char
+wp_type_sub1=bpe  # or unigram (for wordpiece)
+vocab_size_sub1=
 
 #########################
 # ASR configuration
@@ -138,8 +140,19 @@ train_set=train_${data_size}
 dev_set=dev_${data_size}
 test_set="dev_clean dev_other test_clean test_other"
 
+# main
+if [ ${unit} = char ]; then
+  vocab_size=
+fi
 if [ ${unit} != wp ]; then
   wp_type=
+fi
+# sub1
+if [ ${unit_sub1} = char ]; then
+  vocab_size_sub1=
+fi
+if [ ${unit_sub1} != wp ]; then
+  wp_type_sub1=
 fi
 
 if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
@@ -204,9 +217,12 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
   touch ${data}/.done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
 fi
 
+# main
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt
-dict_sub1=${data}/dict/${train_set}_${unit_sub1}.txt
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+# sub1
+dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
+wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}
 
 if [ ! -f ${dict} ]; then
   echo "There is no file such as "${dict}
@@ -227,12 +243,13 @@ if [ ${stage} -le 4 ]; then
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.csv \
-    --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}.csv \
+    --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv \
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
-    --dev_set_sub1 ${data}/dataset/${dev_set}_${unit_sub1}.csv \
+    --dev_set_sub1 ${data}/dataset/${dev_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv \
     --dict ${dict} \
     --dict_sub1 ${dict_sub1} \
     --wp_model ${wp_model}.model \
+    --wp_model_sub1 ${wp_model_sub1}.model \
     --model ${model}/asr \
     --unit ${unit} \
     --unit_sub1 ${unit_sub1} \
