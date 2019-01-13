@@ -36,15 +36,6 @@ class Seq2seq(ModelBase):
 
         super(ModelBase, self).__init__()
 
-        # TODO(hirofumi): remove later
-        if not hasattr(args, 'focal_loss_weight'):
-            args.focal_loss_weight = 0.0
-            args.focal_loss_gamma = 2.0
-        if not hasattr(args, 'tie_embedding'):
-            args.tie_embedding = False
-        if not hasattr(args, 'twin_net_weight'):
-            args.twin_net_weight = False
-
         # for encoder
         self.input_type = args.input_type
         self.input_dim = args.input_dim
@@ -64,6 +55,7 @@ class Seq2seq(ModelBase):
         self.vocab = args.vocab
         self.vocab_sub1 = args.vocab_sub1
         self.vocab_sub2 = args.vocab_sub2
+        self.vocab_sub3 = args.vocab_sub3
         self.blank = 0
         self.unk = 1
         self.sos = 2  # NOTE: the same index as <eos>
@@ -75,6 +67,7 @@ class Seq2seq(ModelBase):
         self.main_weight = 1 - args.sub1_weight - args.sub2_weight
         self.sub1_weight = args.sub1_weight
         self.sub2_weight = args.sub2_weight
+        self.sub3_weight = args.sub3_weight
         self.mtl_per_batch = args.mtl_per_batch
         self.task_specific_layer = args.task_specific_layer
 
@@ -82,14 +75,17 @@ class Seq2seq(ModelBase):
         self.ctc_weight = min(args.ctc_weight, self.main_weight)
         self.ctc_weight_sub1 = min(args.ctc_weight_sub1, self.sub1_weight)
         self.ctc_weight_sub2 = min(args.ctc_weight_sub2, self.sub2_weight)
+        self.ctc_weight_sub3 = min(args.ctc_weight_sub3, self.sub3_weight)
 
         # for backward decoder
         self.bwd_weight = min(args.bwd_weight, self.main_weight)
         self.bwd_weight_sub1 = min(args.bwd_weight_sub1, self.sub1_weight)
         self.bwd_weight_sub2 = min(args.bwd_weight_sub2, self.sub2_weight)
+        self.bwd_weight_sub3 = min(args.bwd_weight_sub3, self.sub3_weight)
         self.fwd_weight = self.main_weight - self.bwd_weight
         self.fwd_weight_sub1 = self.sub1_weight - self.bwd_weight_sub1
         self.fwd_weight_sub2 = self.sub2_weight - self.bwd_weight_sub2
+        self.fwd_weight_sub3 = self.sub3_weight - self.bwd_weight_sub3
         self.twin_net_weight = args.twin_net_weight
         if args.twin_net_weight > 0:
             assert 0 < self.fwd_weight < 1
@@ -132,6 +128,9 @@ class Seq2seq(ModelBase):
             if self.sub2_weight > 0:
                 self.bridge_sub2 = LinearND(self.enc.conv.output_dim, args.dec_nunits,
                                             dropout=args.dropout_enc)
+            if self.sub3_weight > 0:
+                self.bridge_sub3 = LinearND(self.enc.conv.output_dim, args.dec_nunits,
+                                            dropout=args.dropout_enc)
             self.enc_nunits = args.dec_nunits
         elif args.bridge_layer:
             self.bridge = LinearND(self.enc_nunits, args.dec_nunits,
@@ -141,6 +140,9 @@ class Seq2seq(ModelBase):
                                             dropout=args.dropout_enc)
             if self.sub2_weight > 0:
                 self.bridge_sub2 = LinearND(self.enc_nunits, args.dec_nunits,
+                                            dropout=args.dropout_enc)
+            if self.sub3_weight > 0:
+                self.bridge_sub3 = LinearND(self.enc_nunits, args.dec_nunits,
                                             dropout=args.dropout_enc)
             self.enc_nunits = args.dec_nunits
 
@@ -206,7 +208,7 @@ class Seq2seq(ModelBase):
             setattr(self, 'dec_' + dir, dec)
 
         # sub task (only for fwd)
-        for sub in ['sub1', 'sub2']:
+        for sub in ['sub1', 'sub2', 'sub3']:
             if getattr(self, sub + '_weight') > 0:
                 directions = []
                 if getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0:
@@ -256,8 +258,7 @@ class Seq2seq(ModelBase):
                         share_lm_softmax=args.share_lm_softmax,
                         global_weight=getattr(self, sub + '_weight'),
                         mtl_per_batch=args.mtl_per_batch)
-                    setattr(self, 'dec_fwd_' + sub, dec_sub)
-                    # setattr(self, 'dec_' + sub + '_' + dir, dec_sub)
+                    setattr(self, 'dec_' + sub + '_' + dir, dec_sub)
 
         if args.input_type == 'text':
             if args.vocab == args.vocab_sub1:
@@ -307,7 +308,7 @@ class Seq2seq(ModelBase):
                 ys_sub2 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub2]`
                 ys_sub3 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub3]`
             reporter ():
-            task (str): all or ys or ys_sub1 or ys_sub2
+            task (str): all or ys* or ys_sub1* or ys_sub2* or ys_sub3*
             is_eval (bool): the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -381,7 +382,7 @@ class Seq2seq(ModelBase):
             observation['ppl.lmobj-bwd'] = obs_bwd['ppl_lmobj']
 
         # only fwd for sub tasks
-        for sub in ['sub1', 'sub2']:
+        for sub in ['sub1', 'sub2', 'sub3']:
             # for the forward decoder in the sub tasks
             if getattr(self, 'fwd_weight_' + sub) > 0 and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc', 'ys_' + sub + '.lmobj']:
                 if perm_ids is None:
@@ -423,7 +424,7 @@ class Seq2seq(ModelBase):
 
         Args:
             xs (list): A list of length `[B]`, which contains Tensor of size `[T, input_dim]`
-            task (str): all or ys or ys_sub*
+            task (str): all or ys* or ys_sub1* or ys_sub2* or ys_sub3*
             flip (bool): if True, flip acoustic features in the time-dimension
         Returns:
             enc_outs (dict):
@@ -433,7 +434,8 @@ class Seq2seq(ModelBase):
         if 'lmobj' in task:
             eouts = {'ys': {'xs': None, 'xlens': None},
                      'ys_sub1': {'xs': None, 'xlens': None},
-                     'ys_sub2': {'xs': None, 'xlens': None}}
+                     'ys_sub2': {'xs': None, 'xlens': None},
+                     'ys_sub3': {'xs': None, 'xlens': None}}
             return eouts, None
         else:
             # Sort by lenghts in the descending order
@@ -468,7 +470,7 @@ class Seq2seq(ModelBase):
             enc_outs = self.enc(xs, xlens, task)
 
             if self.main_weight < 1 and self.enc_type == 'cnn':
-                for sub in ['sub1', 'sub2']:
+                for sub in ['sub1', 'sub2', 'sub3']:
                     enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
                     enc_outs['ys_' + sub]['xlens'] = copy.deepcopy(enc_outs['ys']['xlens'])
 
@@ -479,6 +481,8 @@ class Seq2seq(ModelBase):
                 enc_outs['ys_sub1']['xs'] = self.bridge_sub1(enc_outs['ys_sub1']['xs'])
             if self.sub2_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer)and (task in ['all', 'ys_sub2']):
                 enc_outs['ys_sub2']['xs'] = self.bridge_sub2(enc_outs['ys_sub2']['xs'])
+            if self.sub3_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer)and (task in ['all', 'ys_sub3']):
+                enc_outs['ys_sub3']['xs'] = self.bridge_sub3(enc_outs['ys_sub3']['xs'])
 
             return enc_outs, perm_ids
 
@@ -498,6 +502,8 @@ class Seq2seq(ModelBase):
                 assert self.ctc_weight_sub1 > 0
             elif task == 'ys_sub2':
                 assert self.ctc_weight_sub2 > 0
+            elif task == 'ys_sub3':
+                assert self.ctc_weight_sub3 > 0
             ctc_probs, indices_topk = getattr(self, 'dec_' + dir).ctc_posteriors(
                 enc_outs[task]['xs'], enc_outs[task]['xlens'], temperature, topk)
             return ctc_probs, indices_topk, enc_outs[task]['xlens']
@@ -523,7 +529,7 @@ class Seq2seq(ModelBase):
             id2token (): converter from index to token
             refs (list): gold transcriptions to compute log likelihood
             ctc (bool):
-            task (str): ys or ys_sub1 or ys_sub2
+            task (str): ys* or ys_sub1* or ys_sub2* or ys_sub3*
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -537,11 +543,17 @@ class Seq2seq(ModelBase):
             else:
                 enc_outs, perm_ids = self.encode(xs, 'all', flip=False)
 
-            dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
-            if task == 'ys_sub1':
+            if task.split('.')[0] == 'ys':
+                dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
+            elif task.split('.')[0] == 'ys_sub1':
+                dir = 'fwd' if self.fwd_weight_sub1 >= self.bwd_weight_sub1 else 'bwd'
                 dir += '_sub1'
-            elif task == 'ys_sub2':
+            elif task.split('.')[0] == 'ys_sub2':
+                dir = 'fwd' if self.fwd_weight_sub2 >= self.bwd_weight_sub2 else 'bwd'
                 dir += '_sub2'
+            elif task.split('.')[0] == 'ys_sub3':
+                dir = 'fwd' if self.fwd_weight_sub3 >= self.bwd_weight_sub3 else 'bwd'
+                dir += '_sub3'
 
             if self.ctc_weight == 1 or (self.ctc_weight > 0 and ctc):
                 # Set RNNLM

@@ -75,6 +75,7 @@ def main():
     subsample_factor = 1
     subsample_factor_sub1 = 1
     subsample_factor_sub2 = 1
+    subsample_factor_sub3 = 1
     subsample = [int(s) for s in args.subsample.split('_')]
     if args.conv_poolings:
         for p in args.conv_poolings.split('_'):
@@ -85,21 +86,27 @@ def main():
         subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub1 - 1])
     if args.train_set_sub2:
         subsample_factor_sub2 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub2 - 1])
+    if args.train_set_sub3:
+        subsample_factor_sub3 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub3 - 1])
     subsample_factor *= np.prod(subsample)
 
     # Load dataset
     train_set = Dataset(csv_path=args.train_set,
                         csv_path_sub1=args.train_set_sub1,
                         csv_path_sub2=args.train_set_sub2,
+                        csv_path_sub3=args.train_set_sub3,
                         dict_path=args.dict,
                         dict_path_sub1=args.dict_sub1,
                         dict_path_sub2=args.dict_sub2,
+                        dict_path_sub3=args.dict_sub3,
                         unit=args.unit,
                         unit_sub1=args.unit_sub1,
                         unit_sub2=args.unit_sub2,
+                        unit_sub3=args.unit_sub3,
                         wp_model=args.wp_model,
                         wp_model_sub1=args.wp_model_sub1,
                         wp_model_sub2=args.wp_model_sub2,
+                        wp_model_sub3=args.wp_model_sub3,
                         batch_size=args.batch_size * args.ngpus,
                         nepochs=args.nepochs,
                         min_nframes=args.min_nframes,
@@ -111,22 +118,28 @@ def main():
                         ctc=args.ctc_weight > 0,
                         ctc_sub1=args.ctc_weight_sub1 > 0,
                         ctc_sub2=args.ctc_weight_sub2 > 0,
+                        ctc_sub3=args.ctc_weight_sub3 > 0,
                         subsample_factor=subsample_factor,
                         subsample_factor_sub1=subsample_factor_sub1,
                         subsample_factor_sub2=subsample_factor_sub2,
+                        subsample_factor_sub3=subsample_factor_sub3,
                         skip_speech=(args.input_type != 'speech'))
     dev_set = Dataset(csv_path=args.dev_set,
                       csv_path_sub1=args.dev_set_sub1,
                       csv_path_sub2=args.dev_set_sub2,
+                      csv_path_sub3=args.dev_set_sub3,
                       dict_path=args.dict,
                       dict_path_sub1=args.dict_sub1,
                       dict_path_sub2=args.dict_sub2,
+                      dict_path_sub3=args.dict_sub3,
                       unit=args.unit,
                       unit_sub1=args.unit_sub1,
                       unit_sub2=args.unit_sub2,
+                      unit_sub3=args.unit_sub3,
                       wp_model=args.wp_model,
                       wp_model_sub1=args.wp_model_sub1,
                       wp_model_sub2=args.wp_model_sub2,
+                      wp_model_sub3=args.wp_model_sub3,
                       batch_size=args.batch_size * args.ngpus,
                       min_nframes=args.min_nframes,
                       max_nframes=args.max_nframes,
@@ -134,9 +147,11 @@ def main():
                       ctc=args.ctc_weight > 0,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
                       ctc_sub2=args.ctc_weight_sub2 > 0,
+                      ctc_sub3=args.ctc_weight_sub3 > 0,
                       subsample_factor=subsample_factor,
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
+                      subsample_factor_sub3=subsample_factor_sub3,
                       skip_speech=(args.input_type != 'speech'))
     eval_sets = []
     for set in args.eval_sets:
@@ -258,6 +273,14 @@ def main():
                     dir_name += 'ctc'
                 else:
                     dir_name += 'attctc'
+            if args.train_set_sub3:
+                dir_name += '_' + args.unit_sub3 + str(args.vocab_sub3)
+                if args.ctc_weight_sub3 == 0:
+                    dir_name += 'att'
+                elif args.ctc_weight_sub3 == args.sub3_weight:
+                    dir_name += 'ctc'
+                else:
+                    dir_name += 'attctc'
         else:
             if args.ctc_weight > 0:
                 dir_name += '_ctc' + str(args.ctc_weight)
@@ -273,14 +296,22 @@ def main():
                 else:
                     dir_name += '_' + str(args.unit_sub1) + str(args.vocab_sub1) + 'ctc' + str(args.ctc_weight_sub1) + str(
                         args.unit_sub1) + str(args.vocab_sub1) + 'att' + str(args.sub1_weight - args.ctc_weight_sub1)
-                if args.sub2_weight > 0:
-                    if args.ctc_weight_sub2 == args.sub2_weight:
-                        dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'ctc' + str(args.ctc_weight_sub2)
-                    elif args.ctc_weight_sub2 == 0:
-                        dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'att' + str(args.sub2_weight)
-                    else:
-                        dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'ctc' + str(args.ctc_weight_sub2) + str(
-                            args.unit_sub2) + str(args.vocab_sub2) + 'att' + str(args.sub2_weight - args.ctc_weight_sub2)
+            if args.sub2_weight > 0:
+                if args.ctc_weight_sub2 == args.sub2_weight:
+                    dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'ctc' + str(args.ctc_weight_sub2)
+                elif args.ctc_weight_sub2 == 0:
+                    dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'att' + str(args.sub2_weight)
+                else:
+                    dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'ctc' + str(args.ctc_weight_sub2) + str(
+                        args.unit_sub2) + str(args.vocab_sub2) + 'att' + str(args.sub2_weight - args.ctc_weight_sub2)
+            if args.sub3_weight > 0:
+                if args.ctc_weight_sub3 == args.sub3_weight:
+                    dir_name += '_' + str(args.unit_sub3) + str(args.vocab_sub3) + 'ctc' + str(args.ctc_weight_sub3)
+                elif args.ctc_weight_sub3 == 0:
+                    dir_name += '_' + str(args.unit_sub3) + str(args.vocab_sub3) + 'att' + str(args.sub3_weight)
+                else:
+                    dir_name += '_' + str(args.unit_sub3) + str(args.vocab_sub3) + 'ctc' + str(args.ctc_weight_sub3) + str(
+                        args.unit_sub3) + str(args.vocab_sub3) + 'att' + str(args.sub3_weight - args.ctc_weight_sub3)
         if args.task_specific_layer:
             dir_name += '_tsl'
         # Pre-training
@@ -322,12 +353,16 @@ def main():
             shutil.copy(args.dict_sub1, os.path.join(model.save_path, 'dict_sub1.txt'))
         if args.dict_sub2:
             shutil.copy(args.dict_sub2, os.path.join(model.save_path, 'dict_sub2.txt'))
+        if args.dict_sub3:
+            shutil.copy(args.dict_sub3, os.path.join(model.save_path, 'dict_sub3.txt'))
         if args.unit == 'wp':
             shutil.copy(args.wp_model, os.path.join(model.save_path, 'wp.model'))
         if args.unit_sub1 == 'wp':
             shutil.copy(args.wp_model_sub1, os.path.join(model.save_path, 'wp_sub1.model'))
         if args.unit_sub2 == 'wp':
             shutil.copy(args.wp_model_sub2, os.path.join(model.save_path, 'wp_sub2.model'))
+        if args.unit_sub3 == 'wp':
+            shutil.copy(args.wp_model_sub3, os.path.join(model.save_path, 'wp_sub3.model'))
 
         # Setting for logging
         logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
@@ -470,6 +505,15 @@ def main():
             if args.ctc_weight_sub2 > 0:
                 tasks = ['ys_sub2.ctc'] + tasks
             if args.lmobj_weight_sub2 > 0:
+                tasks = ['ys_sub2.lmobj'] + tasks
+        if args.train_set_sub3:
+            if args.sub3_weight - args.bwd_weight_sub3 - args.ctc_weight_sub3 > 0:
+                tasks = ['ys_sub3'] + tasks
+            if args.bwd_weight_sub3 > 0:
+                tasks = ['ys_sub3.bwd'] + tasks
+            if args.ctc_weight_sub3 > 0:
+                tasks = ['ys_sub3.ctc'] + tasks
+            if args.lmobj_weight_sub3 > 0:
                 tasks = ['ys_sub2.lmobj'] + tasks
     else:
         tasks = ['all']

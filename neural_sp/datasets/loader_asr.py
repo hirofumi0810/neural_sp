@@ -41,11 +41,16 @@ class Dataset(Base):
                  short2long=False, sort_stop_epoch=None,
                  nques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1, skip_speech=False,
-                 wp_model=False, wp_model_sub1=False, wp_model_sub2=False,
+                 wp_model=False,
                  csv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
+                 wp_model_sub1=False,
                  ctc_sub1=False, subsample_factor_sub1=1,
+                 wp_model_sub2=False,
                  csv_path_sub2=False, dict_path_sub2=False, unit_sub2=False,
-                 ctc_sub2=False, subsample_factor_sub2=1):
+                 ctc_sub2=False, subsample_factor_sub2=1,
+                 wp_model_sub3=False,
+                 csv_path_sub3=False, dict_path_sub3=False, unit_sub3=False,
+                 ctc_sub3=False, subsample_factor_sub3=1):
         """A class for loading dataset.
 
         Args:
@@ -142,6 +147,25 @@ class Dataset(Base):
         else:
             self.vocab_sub2 = -1
 
+        if dict_path_sub3:
+            self.vocab_sub3 = self.count_vocab_size(dict_path_sub3)
+
+            # Set index converter
+            if unit_sub3:
+                if unit_sub3 == 'wp':
+                    self.id2wp_sub3 = Id2wp(dict_path_sub3, wp_model_sub3)
+                    self.wp2id_sub3 = Wp2id(dict_path_sub3, wp_model_sub3)
+                elif unit_sub3 == 'char':
+                    self.id2char_sub3 = Id2char(dict_path_sub3)
+                    self.char2id_sub3 = Char2id(dict_path_sub3)
+                elif 'phone' in unit_sub3:
+                    self.id2phone_sub3 = Id2phone(dict_path_sub3)
+                    self.phone2id_sub3 = Phone2id(dict_path_sub3)
+                else:
+                    raise ValueError(unit_sub3)
+        else:
+            self.vocab_sub3 = -1
+
         # Load dataset csv file
         df = pd.read_csv(csv_path, encoding='utf-8', delimiter=',')
         df = df.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
@@ -155,6 +179,11 @@ class Dataset(Base):
             df_sub2 = df_sub2.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
         else:
             df_sub2 = None
+        if csv_path_sub3:
+            df_sub3 = pd.read_csv(csv_path_sub3, encoding='utf-8', delimiter=',')
+            df_sub3 = df_sub3.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
+        else:
+            df_sub3 = None
 
         # Remove inappropriate utteraces
         if not self.is_test:
@@ -195,7 +224,7 @@ class Dataset(Base):
                     df = df.drop(df.index.difference(df_sub1.index))
                     df_sub1 = df_sub1.drop(df_sub1.index.difference(df.index))
 
-            # TODO(hirofumi): add df_sub2
+            # TODO(hirofumi): add df_sub2, df_sub3
 
         # Sort csv records
         if sort_by_input_length:
@@ -209,6 +238,7 @@ class Dataset(Base):
         self.df = df
         self.df_sub1 = df_sub1
         self.df_sub2 = df_sub2
+        self.df_sub3 = df_sub3
         self.rest = set(list(df.index))
         self.input_dim = kaldi_io.read_mat(self.df['feat_path'][0]).shape[-1]
 
@@ -223,10 +253,12 @@ class Dataset(Base):
                 xlens (list):
                 ys (list): target labels in the main task of size `[B, L]`
                 ylens (list):
-                ys_sub1 (list): target labels in the 1st sub task of size `[B, L_sub1]`
+                ys_sub1 (list): target labels in the 1st auxiliary task of size `[B, L_sub1]`
                 ylens_sub1 (list):
-                ys_sub2 (list): target labels in the 2nd sub task of size `[B, L_sub2]`
+                ys_sub2 (list): target labels in the 2nd auxiliary task of size `[B, L_sub2]`
                 ylens_sub2 (list):
+                ys_sub3 (list): target labels in the 3rd auxiliary task of size `[B, L_sub3]`
+                ylens_sub3 (list):
                 utt_ids (list): file names of input data of size `[B]`
 
         """
@@ -263,11 +295,21 @@ class Dataset(Base):
         else:
             ys_sub2, ylens_sub2 = [], []
 
+        if self.df_sub3 is not None:
+            if self.is_test:
+                ys_sub3 = [self.df_sub3['text'][i].encode('utf-8') for i in utt_indices]
+            else:
+                ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in utt_indices]
+            ylens_sub3 = [self.df_sub3['y_len'][i] for i in utt_indices]
+        else:
+            ys_sub3, ylens_sub3 = [], []
+
         utt_ids = [self.df['utt_id'][i].encode('utf-8') for i in utt_indices]
 
         return {'xs': xs, 'xlens': xlens,
                 'ys': ys, 'ylens': ylens,
                 'ys_sub1': ys_sub1, 'ylens_sub1': ylens_sub1,
                 'ys_sub2': ys_sub2, 'ylens_sub2': ylens_sub2,
+                'ys_sub3': ys_sub3, 'ylens_sub3': ylens_sub3,
                 'utt_ids':  utt_ids, 'text': text,
                 'feat_path': [self.df['feat_path'][i] for i in utt_indices]}
