@@ -485,11 +485,11 @@ def main():
         tasks = []
         if 1 - args.bwd_weight - args.ctc_weight - args.sub1_weight - args.sub2_weight - args.sub3_weight > 0:
             tasks += ['ys']
-        if 0 < args.bwd_weight < 1:
+        if args.bwd_weight > 0:
             tasks = ['ys.bwd'] + tasks
-        if 0 < args.ctc_weight < 1:
+        if args.ctc_weight > 0:
             tasks = ['ys.ctc'] + tasks
-        if 0 < args.lmobj_weight < 1:
+        if args.lmobj_weight > 0:
             tasks = ['ys.lmobj'] + tasks
         if args.train_set_sub1:
             if args.sub1_weight - args.bwd_weight_sub1 - args.ctc_weight_sub1 > 0:
