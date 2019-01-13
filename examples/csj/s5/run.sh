@@ -204,9 +204,9 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
     local/csj_eval_data_prep.sh ${data}/csj-data/eval ${x} || exit 1;
   done
 
-  # Remove <sp> and POS tag
+  # Remove <sp> and POS tag, and lowercase
   for x in ${train_set} ${test_set}; do
-    local/remove_pos.py ${data}/${x}/text > ${data}/${x}/text.tmp
+    local/remove_pos.py ${data}/${x}/text | nkf -Z > ${data}/${x}/text.tmp
     mv ${data}/${x}/text.tmp ${data}/${x}/text
   done
 
