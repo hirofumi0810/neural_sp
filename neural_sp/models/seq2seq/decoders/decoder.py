@@ -69,6 +69,7 @@ class Decoder(nn.Module):
         logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
         dropout (float): the probability to drop nodes in the RNN layer
         dropout_emb (float): the probability to drop nodes of the embedding layer
+        dropout_att (float):
         ss_prob (float): scheduled sampling probability
         lsm_prob (float): label smoothing probability
         layer_norm (bool): layer normalization
@@ -99,7 +100,6 @@ class Decoder(nn.Module):
                  attn_conv_out_channels,
                  attn_conv_kernel_size,
                  attn_nheads,
-                 dropout_att,
                  rnn_type,
                  nunits,
                  nlayers,
@@ -111,6 +111,7 @@ class Decoder(nn.Module):
                  logits_temp,
                  dropout,
                  dropout_emb,
+                 dropout_att,
                  ss_prob,
                  lsm_prob,
                  layer_norm,

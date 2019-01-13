@@ -166,6 +166,7 @@ def main():
     args.vocab = train_set.vocab
     args.vocab_sub1 = train_set.vocab_sub1
     args.vocab_sub2 = train_set.vocab_sub2
+    args.vocab_sub3 = train_set.vocab_sub3
     args.input_dim = train_set.input_dim
 
     # Load a RNNLM config file for cold fusion & RNNLM initialization
@@ -481,7 +482,9 @@ def main():
 
     if args.mtl_per_batch:
         # NOTE: from easier to harder tasks
-        tasks = ['ys']
+        tasks = []
+        if 1 - args.bwd_weight - args.ctc_weight - args.sub1_weight - args.sub2_weight - args.sub3_weight > 0:
+            tasks += ['ys']
         if 0 < args.bwd_weight < 1:
             tasks = ['ys.bwd'] + tasks
         if 0 < args.ctc_weight < 1:

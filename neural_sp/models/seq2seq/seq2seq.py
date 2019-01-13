@@ -64,7 +64,7 @@ class Seq2seq(ModelBase):
         # NOTE: reserved in advance
 
         # for the sub tasks
-        self.main_weight = 1 - args.sub1_weight - args.sub2_weight
+        self.main_weight = 1 - args.sub1_weight - args.sub2_weight - args.sub3_weight
         self.sub1_weight = args.sub1_weight
         self.sub2_weight = args.sub2_weight
         self.sub3_weight = args.sub3_weight
@@ -82,10 +82,10 @@ class Seq2seq(ModelBase):
         self.bwd_weight_sub1 = min(args.bwd_weight_sub1, self.sub1_weight)
         self.bwd_weight_sub2 = min(args.bwd_weight_sub2, self.sub2_weight)
         self.bwd_weight_sub3 = min(args.bwd_weight_sub3, self.sub3_weight)
-        self.fwd_weight = self.main_weight - self.bwd_weight
-        self.fwd_weight_sub1 = self.sub1_weight - self.bwd_weight_sub1
-        self.fwd_weight_sub2 = self.sub2_weight - self.bwd_weight_sub2
-        self.fwd_weight_sub3 = self.sub3_weight - self.bwd_weight_sub3
+        self.fwd_weight = self.main_weight - self.bwd_weight - self.ctc_weight
+        self.fwd_weight_sub1 = self.sub1_weight - self.bwd_weight_sub1 - self.ctc_weight_sub1
+        self.fwd_weight_sub2 = self.sub2_weight - self.bwd_weight_sub2 - self.ctc_weight_sub2
+        self.fwd_weight_sub3 = self.sub3_weight - self.bwd_weight_sub3 - self.ctc_weight_sub3
         self.twin_net_weight = args.twin_net_weight
         if args.twin_net_weight > 0:
             assert 0 < self.fwd_weight < 1
@@ -101,6 +101,7 @@ class Seq2seq(ModelBase):
             nlayers=args.enc_nlayers,
             nlayers_sub1=args.enc_nlayers_sub1,
             nlayers_sub2=args.enc_nlayers_sub2,
+            nlayers_sub3=args.enc_nlayers_sub3,
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
             subsample=[int(s) for s in args.subsample.split('_')],
@@ -174,7 +175,6 @@ class Seq2seq(ModelBase):
                 attn_conv_out_channels=args.attn_conv_nchannels,
                 attn_conv_kernel_size=args.attn_conv_width,
                 attn_nheads=args.attn_nheads,
-                dropout_att=args.dropout_att,
                 rnn_type=args.dec_type,
                 nunits=args.dec_nunits,
                 nlayers=args.dec_nlayers,
@@ -186,6 +186,7 @@ class Seq2seq(ModelBase):
                 logits_temp=args.logits_temp,
                 dropout=args.dropout_dec,
                 dropout_emb=args.dropout_emb,
+                dropout_att=args.dropout_att,
                 ss_prob=args.ss_prob,
                 lsm_prob=args.lsm_prob,
                 layer_norm=args.layer_norm,
@@ -229,7 +230,6 @@ class Seq2seq(ModelBase):
                         attn_conv_out_channels=args.attn_conv_nchannels,
                         attn_conv_kernel_size=args.attn_conv_width,
                         attn_nheads=1,
-                        dropout_att=args.dropout_att,
                         rnn_type=args.dec_type,
                         nunits=args.dec_nunits,
                         nlayers=args.dec_nlayers,
@@ -241,6 +241,7 @@ class Seq2seq(ModelBase):
                         logits_temp=args.logits_temp,
                         dropout=args.dropout_dec,
                         dropout_emb=args.dropout_emb,
+                        dropout_att=args.dropout_att,
                         ss_prob=args.ss_prob,
                         lsm_prob=args.lsm_prob,
                         layer_norm=args.layer_norm,
@@ -258,7 +259,7 @@ class Seq2seq(ModelBase):
                         share_lm_softmax=args.share_lm_softmax,
                         global_weight=getattr(self, sub + '_weight'),
                         mtl_per_batch=args.mtl_per_batch)
-                    setattr(self, 'dec_' + sub + '_' + dir, dec_sub)
+                    setattr(self, 'dec_' + dir_sub + '_' + sub, dec_sub)
 
         if args.input_type == 'text':
             if args.vocab == args.vocab_sub1:
@@ -346,7 +347,7 @@ class Seq2seq(ModelBase):
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
 
         # for the forward decoder in the main task
-        if self.fwd_weight > 0 and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
+        if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
             if perm_ids is None:
                 ys = batch['ys']  # for lmobj
             else:
@@ -384,7 +385,7 @@ class Seq2seq(ModelBase):
         # only fwd for sub tasks
         for sub in ['sub1', 'sub2', 'sub3']:
             # for the forward decoder in the sub tasks
-            if getattr(self, 'fwd_weight_' + sub) > 0 and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc', 'ys_' + sub + '.lmobj']:
+            if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc', 'ys_' + sub + '.lmobj']:
                 if perm_ids is None:
                     ys_sub = [batch['ys_' + sub][i] for i in perm_ids]  # for lmobj
                 else:
@@ -467,7 +468,7 @@ class Seq2seq(ModelBase):
                 xs = pad_list(xs, self.pad)
                 xs = self.embed_in(xs)
 
-            enc_outs = self.enc(xs, xlens, task)
+            enc_outs = self.enc(xs, xlens, task.split('.')[0])
 
             if self.main_weight < 1 and self.enc_type == 'cnn':
                 for sub in ['sub1', 'sub2', 'sub3']:

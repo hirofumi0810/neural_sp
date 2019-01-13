@@ -341,7 +341,7 @@ class RNNEncoder(nn.Module):
                         xs_sub1 = xs.clone()
                     xlens_sub1 = copy.deepcopy(xlens)
 
-                    if 'ys_sub1' in task:
+                    if task == 'ys_sub1':
                         eouts[task]['xs'] = xs_sub1
                         eouts[task]['xlens'] = xlens_sub1
                         return eouts
@@ -357,7 +357,7 @@ class RNNEncoder(nn.Module):
                         xs_sub2 = xs.clone()
                     xlens_sub2 = copy.deepcopy(xlens)
 
-                    if 'ys_sub2' in task:
+                    if task == 'ys_sub2':
                         eouts[task]['xs'] = xs_sub2
                         eouts[task]['xlens'] = xlens_sub2
                         return eouts
@@ -373,7 +373,7 @@ class RNNEncoder(nn.Module):
                         xs_sub3 = xs.clone()
                     xlens_sub3 = copy.deepcopy(xlens)
 
-                    if 'ys_sub3' in task:
+                    if task == 'ys_sub3':
                         eouts[task]['xs'] = xs_sub3
                         eouts[task]['xlens'] = xlens_sub3
                         return eouts
@@ -428,7 +428,7 @@ class RNNEncoder(nn.Module):
                             xs_lower = xs
                     # NOTE: Exclude residual connection from the raw inputs
 
-        if task in ['all', 'ys', 'ys.ctc', 'ys.bwd']:
+        if task in ['all', 'ys']:
             eouts['ys']['xs'] = xs
             eouts['ys']['xlens'] = xlens
         if self.nlayers_sub1 >= 1 and task == 'all':
