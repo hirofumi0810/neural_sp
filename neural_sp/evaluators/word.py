@@ -46,11 +46,11 @@ def eval_word(models, dataset, decode_params, epoch,
     # TODO(hirofumi): ensemble decoding
 
     if decode_dir is None:
-        decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['beam_width'])
-        decode_dir += '_lp' + str(decode_params['length_penalty'])
-        decode_dir += '_cp' + str(decode_params['coverage_penalty'])
-        decode_dir += '_' + str(decode_params['min_len_ratio']) + '_' + str(decode_params['max_len_ratio'])
-        decode_dir += '_rnnlm' + str(decode_params['rnnlm_weight'])
+        decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['recog_beam_width'])
+        decode_dir += '_lp' + str(decode_params['recog_length_penalty'])
+        decode_dir += '_cp' + str(decode_params['recog_coverage_penalty'])
+        decode_dir += '_' + str(decode_params['recog_min_len_ratio']) + '_' + str(decode_params['recog_max_len_ratio'])
+        decode_dir += '_rnnlm' + str(decode_params['recog_rnnlm_weight'])
 
         ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
         hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
@@ -79,7 +79,7 @@ def eval_word(models, dataset, decode_params, epoch,
                 noov_total += hyp.count('<unk>')
 
                 # Resolving UNK
-                if decode_params['resolving_unk'] and '<unk>' in hyp:
+                if decode_params['recog_resolving_unk'] and '<unk>' in hyp:
                     best_hyps_sub, aw_sub, _ = model.decode(
                         batch['xs'][b:b + 1], decode_params, exclude_eos=True)
                     # task_index=1

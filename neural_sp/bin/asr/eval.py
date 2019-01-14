@@ -97,9 +97,9 @@ def main():
             model.save_path = args.recog_model
 
             # For shallow fusion
-            if (not args.rnnlm_cold_fusion) and args.rnnlm is not None and args.rnnlm_weight > 0:
+            if (not args.rnnlm_cold_fusion) and args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
                 # Load a RNNLM config file
-                config_rnnlm = load_config(os.path.join(args.rnnlm, 'config.yml'))
+                config_rnnlm = load_config(os.path.join(args.recog_rnnlm, 'config.yml'))
 
                 # Merge config with args
                 args_rnnlm = argparse.Namespace()
@@ -111,7 +111,7 @@ def main():
 
                 # Load the pre-trianed RNNLM
                 seq_rnnlm = SeqRNNLM(args_rnnlm)
-                seq_rnnlm.load_checkpoint(args.rnnlm, epoch=-1)
+                seq_rnnlm.load_checkpoint(args.recog_rnnlm, epoch=-1)
 
                 # Copy parameters
                 rnnlm = RNNLM(args_rnnlm)
@@ -122,18 +122,18 @@ def main():
                 else:
                     model.rnnlm_fwd = rnnlm
 
-                logger.info('RNNLM path: %s' % args.rnnlm)
-                logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
+                logger.info('RNNLM path: %s' % args.recog_rnnlm)
+                logger.info('RNNLM weight: %.3f' % args.recog_rnnlm_weight)
                 logger.info('RNNLM backward: %s' % str(config_rnnlm['backward']))
 
             # GPU setting
             model.cuda()
 
             logger.info('batch size: %d' % args.recog_batch_size)
-            logger.info('beam width: %d' % args.beam_width)
-            logger.info('length penalty: %.3f' % args.length_penalty)
-            logger.info('coverage penalty: %.3f' % args.coverage_penalty)
-            logger.info('coverage threshold: %.3f' % args.coverage_threshold)
+            logger.info('beam width: %d' % args.recog_beam_width)
+            logger.info('length penalty: %.3f' % args.recog_length_penalty)
+            logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
+            logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
             logger.info('epoch: %d' % (epoch - 1))
 
         start_time = time.time()

@@ -44,15 +44,15 @@ torch.cuda.manual_seed_all(1)
 
 decode_params = {
     'recog_batch_size': 1,
-    'beam_width': 1,
-    'min_len_ratio': 0.0,
-    'max_len_ratio': 1.0,
-    'length_penalty': 0.0,
-    'coverage_penalty': 0.0,
-    'coverage_threshold': 0.0,
-    'rnnlm_weight': 0.0,
-    'resolving_unk': False,
-    'fwd_bwd_attention': False
+    'recog_beam_width': 1,
+    'recog_min_len_ratio': 0.0,
+    'recog_max_len_ratio': 1.0,
+    'recog_length_penalty': 0.0,
+    'recog_coverage_penalty': 0.0,
+    'recog_coverage_threshold': 0.0,
+    'recog_rnnlm_weight': 0.0,
+    'recog_resolving_unk': False,
+    'recog_fwd_bwd_attention': False
 }
 
 
@@ -260,28 +260,28 @@ def main():
                 dir_name += '_' + args.unit + 'lmobj'
             if args.train_set_sub1:
                 dir_name += '_' + args.unit_sub1 + str(args.vocab_sub1)
-                if args.ctc_weight_sub1 == 0:
-                    dir_name += 'att'
-                elif args.ctc_weight_sub1 == args.sub1_weight:
+                if args.ctc_weight_sub1 > 0:
                     dir_name += 'ctc'
-                else:
-                    dir_name += 'attctc'
+                if args.bwd_weight_sub1 > 0:
+                    dir_name += 'bwd'
+                if args.sub1_weight - args.ctc_weight_sub1 - args.bwd_weight_sub1 > 0:
+                    dir_name += 'fwd'
             if args.train_set_sub2:
                 dir_name += '_' + args.unit_sub2 + str(args.vocab_sub2)
-                if args.ctc_weight_sub2 == 0:
-                    dir_name += 'att'
-                elif args.ctc_weight_sub2 == args.sub2_weight:
+                if args.ctc_weight_sub2 > 0:
                     dir_name += 'ctc'
-                else:
-                    dir_name += 'attctc'
+                if args.bwd_weight_sub2 > 0:
+                    dir_name += 'bwd'
+                if args.sub2_weight - args.ctc_weight_sub2 - args.bwd_weight_sub2 > 0:
+                    dir_name += 'fwd'
             if args.train_set_sub3:
                 dir_name += '_' + args.unit_sub3 + str(args.vocab_sub3)
-                if args.ctc_weight_sub3 == 0:
-                    dir_name += 'att'
-                elif args.ctc_weight_sub3 == args.sub3_weight:
+                if args.ctc_weight_sub3 > 0:
                     dir_name += 'ctc'
-                else:
-                    dir_name += 'attctc'
+                if args.bwd_weight_sub3 > 0:
+                    dir_name += 'bwd'
+                if args.sub3_weight - args.ctc_weight_sub3 - args.bwd_weight_sub3 > 0:
+                    dir_name += 'fwd'
         else:
             if args.ctc_weight > 0:
                 dir_name += '_ctc' + str(args.ctc_weight)
@@ -290,29 +290,30 @@ def main():
             if args.lmobj_weight > 0:
                 dir_name += '_lmobj' + str(args.lmobj_weight)
             if args.sub1_weight > 0:
-                if args.ctc_weight_sub1 == args.sub1_weight:
-                    dir_name += '_' + str(args.unit_sub1) + str(args.vocab_sub1) + 'ctc' + str(args.ctc_weight_sub1)
-                elif args.ctc_weight_sub1 == 0:
-                    dir_name += '_' + str(args.unit_sub1) + str(args.vocab_sub1) + 'att' + str(args.sub1_weight)
-                else:
-                    dir_name += '_' + str(args.unit_sub1) + str(args.vocab_sub1) + 'ctc' + str(args.ctc_weight_sub1) + str(
-                        args.unit_sub1) + str(args.vocab_sub1) + 'att' + str(args.sub1_weight - args.ctc_weight_sub1)
+                dir_name += '_' + args.unit_sub1 + str(args.vocab_sub1)
+                if args.ctc_weight_sub1 > 0:
+                    dir_name += 'ctc' + str(args.ctc_weight_sub1)
+                if args.bwd_weight_sub1 > 0:
+                    dir_name += 'bwd' + str(args.bwd_weight_sub1)
+                if args.sub1_weight - args.ctc_weight_sub1 - args.bwd_weight_sub1 > 0:
+                    dir_name += 'fwd' + str(1 - args.sub1_weight - args.ctc_weight_sub1 - args.bwd_weight_sub1)
             if args.sub2_weight > 0:
-                if args.ctc_weight_sub2 == args.sub2_weight:
-                    dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'ctc' + str(args.ctc_weight_sub2)
-                elif args.ctc_weight_sub2 == 0:
-                    dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'att' + str(args.sub2_weight)
-                else:
-                    dir_name += '_' + str(args.unit_sub2) + str(args.vocab_sub2) + 'ctc' + str(args.ctc_weight_sub2) + str(
-                        args.unit_sub2) + str(args.vocab_sub2) + 'att' + str(args.sub2_weight - args.ctc_weight_sub2)
+                dir_name += '_' + args.unit_sub2 + str(args.vocab_sub2)
+                if args.ctc_weight_sub2 > 0:
+                    dir_name += 'ctc' + str(args.ctc_weight_sub2)
+                if args.bwd_weight_sub2 > 0:
+                    dir_name += 'bwd' + str(args.bwd_weight_sub2)
+                if args.sub2_weight - args.ctc_weight_sub2 - args.bwd_weight_sub2 > 0:
+                    dir_name += 'fwd' + str(1 - args.sub2_weight - args.ctc_weight_sub2 - args.bwd_weight_sub2)
             if args.sub3_weight > 0:
-                if args.ctc_weight_sub3 == args.sub3_weight:
-                    dir_name += '_' + str(args.unit_sub3) + str(args.vocab_sub3) + 'ctc' + str(args.ctc_weight_sub3)
-                elif args.ctc_weight_sub3 == 0:
-                    dir_name += '_' + str(args.unit_sub3) + str(args.vocab_sub3) + 'att' + str(args.sub3_weight)
-                else:
-                    dir_name += '_' + str(args.unit_sub3) + str(args.vocab_sub3) + 'ctc' + str(args.ctc_weight_sub3) + str(
-                        args.unit_sub3) + str(args.vocab_sub3) + 'att' + str(args.sub3_weight - args.ctc_weight_sub3)
+                dir_name += '_' + args.unit_sub3 + str(args.vocab_sub3)
+                if args.ctc_weight_sub3 > 0:
+                    dir_name += 'ctc' + str(args.ctc_weight_sub3)
+                if args.bwd_weight_sub3 > 0:
+                    dir_name += 'bwd' + str(args.bwd_weight_sub3)
+                if args.sub3_weight - args.ctc_weight_sub3 - args.bwd_weight_sub3 > 0:
+                    dir_name += 'fwd' + str(1 - args.sub3_weight - args.ctc_weight_sub3 - args.bwd_weight_sub3)
+
         if args.task_specific_layer:
             dir_name += '_tsl'
         # Pre-training

@@ -712,11 +712,8 @@ class Decoder(nn.Module):
             else:
                 dout = dout_tmp
 
-        if self.nlayers > 1:
-            # the top layer
-            dstates_new['dout_generate'] = dout.unsqueeze(1)
-        else:
-            dstates_new['dout_generate'] = dstates_new['dout_score']
+        # the top layer
+        dstates_new['dout_generate'] = dout.unsqueeze(1)
         dstates_new['dstate'] = (hxs[:], cxs[:])
         return dstates_new
 
@@ -1000,7 +997,7 @@ class Decoder(nn.Module):
         bs, _, enc_nunits = eouts.size()
 
         # For cold fusion
-        if params['rnnlm_weight'] > 0 and not self.cold_fusion:
+        if params['recog_rnnlm_weight'] > 0 and not self.cold_fusion:
             assert self.rnnlm_cf
             self.rnnlm_cf.eval()
 
@@ -1036,7 +1033,7 @@ class Decoder(nn.Module):
                      'rnnlm_hxs': None,
                      'rnnlm_cxs': None,
                      'prev_cov': 0}]
-            for t in range(int(math.floor(elens[b] * params['max_len_ratio'])) + 1):
+            for t in range(int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     # Recurrency
@@ -1083,37 +1080,37 @@ class Decoder(nn.Module):
 
                     # Pick up the top-k scores
                     log_probs_topk, indices_topk = torch.topk(
-                        log_probs, k=params['beam_width'], dim=1, largest=True, sorted=True)
+                        log_probs, k=params['recog_beam_width'], dim=1, largest=True, sorted=True)
 
-                    for k in range(params['beam_width']):
+                    for k in range(params['recog_beam_width']):
                         # Exclude short hypotheses
-                        if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) < elens[b] * params['min_len_ratio']:
+                        if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) < elens[b] * params['recog_min_len_ratio']:
                             continue
 
                         # Add length penalty
                         score_raw = beam[i_beam]['score_raw'] + log_probs_topk[0, k].item()
-                        score = score_raw + params['length_penalty']
+                        score = score_raw + params['recog_length_penalty']
 
                         # Add coverage penalty
-                        if params['coverage_penalty'] > 0:
+                        if params['recog_coverage_penalty'] > 0:
                             # Recompute converage penalty in each step
-                            score -= beam[i_beam]['prev_cov'] * params['coverage_penalty']
+                            score -= beam[i_beam]['prev_cov'] * params['recog_coverage_penalty']
                             aw_stack = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=-1)
                             cov_sum = aw_stack.detach().cpu().numpy()
-                            if params['coverage_threshold'] == 0:
+                            if params['recog_coverage_threshold'] == 0:
                                 cov_sum = np.sum(cov_sum) / self.score.nheads
                             else:
                                 cov_sum = np.sum(
-                                    cov_sum[np.where(cov_sum > params['coverage_threshold'])[0]]) / self.score.nheads
-                            score += cov_sum * params['coverage_penalty']
+                                    cov_sum[np.where(cov_sum > params['recog_coverage_threshold'])[0]]) / self.score.nheads
+                            score += cov_sum * params['recog_coverage_penalty']
                         else:
                             cov_sum = 0
 
                         # Add RNNLM score
-                        if params['rnnlm_weight'] > 0:
+                        if params['recog_rnnlm_weight'] > 0:
                             lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
                             assert log_probs.size() == lm_log_probs.size()
-                            score += lm_log_probs[0, indices_topk[0, k].item()].item() * params['rnnlm_weight']
+                            score += lm_log_probs[0, indices_topk[0, k].item()].item() * params['recog_rnnlm_weight']
 
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
@@ -1134,17 +1131,17 @@ class Decoder(nn.Module):
 
                 # Remove complete hypotheses
                 not_complete = []
-                for cand in new_beam[:params['beam_width']]:
+                for cand in new_beam[:params['recog_beam_width']]:
                     if cand['hyp'][-1] == eos:
                         complete += [cand]
                     else:
                         not_complete += [cand]
 
-                if len(complete) >= params['beam_width']:
-                    complete = complete[:params['beam_width']]
+                if len(complete) >= params['recog_beam_width']:
+                    complete = complete[:params['recog_beam_width']]
                     break
 
-                beam = not_complete[:params['beam_width']]
+                beam = not_complete[:params['recog_beam_width']]
 
             # Sort by score
             if len(complete) == 0:

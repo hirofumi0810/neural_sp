@@ -107,7 +107,7 @@ class Reporter(object):
 
     def snapshot(self):
         # linestyles = ['solid', 'dashed', 'dotted', 'dashdotdotted']
-        linestyles = ['-', '--', '-.', ':']
+        linestyles = ['-', '--', '-.', ':', ':', ':', ':', ':', ':', ':', ':', ':']
         for category in self.obs_train.keys():
             plt.clf()
             upper = 0

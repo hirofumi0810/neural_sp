@@ -349,9 +349,9 @@ class Seq2seq(ModelBase):
         # for the forward decoder in the main task
         if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
             if perm_ids is None:
-                ys = batch['ys']  # for lmobj
+                ys = batch['ys'][:]  # for lmobj
             else:
-                ys = [batch['ys'][i] for i in perm_ids]
+                ys = [batch['ys'][:][i] for i in perm_ids]
             if task == 'ys' and self.twin_net_weight > 0:
                 reverse_dec = self.dec_bwd
             else:
@@ -370,7 +370,7 @@ class Seq2seq(ModelBase):
 
         # for the backward decoder in the main task
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
-            ys = [batch['ys'][i] for i in perm_ids]
+            ys = [batch['ys'][:][i] for i in perm_ids]
             loss_bwd, obs_bwd = self.dec_bwd(
                 enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
             loss += loss_bwd
@@ -387,9 +387,9 @@ class Seq2seq(ModelBase):
             # for the forward decoder in the sub tasks
             if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc', 'ys_' + sub + '.lmobj']:
                 if perm_ids is None:
-                    ys_sub = [batch['ys_' + sub][i] for i in perm_ids]  # for lmobj
+                    ys_sub = [batch['ys_' + sub][:][i] for i in perm_ids]  # for lmobj
                 else:
-                    ys_sub = batch['ys_' + sub]
+                    ys_sub = batch['ys_' + sub][:]
                 loss_sub, obs_fwd_sub = getattr(self, 'dec_fwd_' + sub)(
                     enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub, task)
                 loss += loss_sub
@@ -404,9 +404,9 @@ class Seq2seq(ModelBase):
                 # for the backward decoder in the sub tasks
             if getattr(self, 'bwd_weight_' + sub) > 0 and task in ['all', 'ys_' + sub + '.bwd']:
                 if perm_ids is None:
-                    ys_sub = [batch['ys_' + sub][i] for i in perm_ids]  # for lmobj
+                    ys_sub = [batch['ys_' + sub][:][i] for i in perm_ids]  # for lmobj
                 else:
-                    ys_sub = batch['ys_' + sub]
+                    ys_sub = batch['ys_' + sub][:]
                 loss_sub, obs_bwd_sub = getattr(self, 'dec_fwd_' + sub)(
                     enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub, task)
                 loss += loss_sub
@@ -556,9 +556,9 @@ class Seq2seq(ModelBase):
                 dir = 'fwd' if self.fwd_weight_sub3 >= self.bwd_weight_sub3 else 'bwd'
                 dir += '_sub3'
 
-            if self.ctc_weight == 1 or (self.ctc_weight > 0 and ctc):
+            if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and ctc):
                 # Set RNNLM
-                if decode_params['rnnlm_weight'] > 0:
+                if decode_params['recog_rnnlm_weight'] > 0:
                     assert hasattr(self, 'rnnlm_' + dir)
                     rnnlm = getattr(self, 'rnnlm_' + dir)
                 else:
@@ -566,20 +566,20 @@ class Seq2seq(ModelBase):
 
                 best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                    decode_params['beam_width'], rnnlm)
+                    decode_params['recog_beam_width'], rnnlm)
                 return best_hyps, None, perm_ids
             else:
-                if decode_params['beam_width'] == 1 and not decode_params['fwd_bwd_attention']:
+                if decode_params['recog_beam_width'] == 1 and not decode_params['recog_fwd_bwd_attention']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                        decode_params['max_len_ratio'], exclude_eos)
+                        decode_params['recog_max_len_ratio'], exclude_eos)
                 else:
-                    if decode_params['fwd_bwd_attention']:
+                    if decode_params['recog_fwd_bwd_attention']:
                         rnnlm_fwd = None
                         nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             decode_params, rnnlm_fwd,
-                            decode_params['beam_width'], False, id2token, refs)
+                            decode_params['recog_beam_width'], False, id2token, refs)
 
                         flip = False
                         if self.input_type == 'speech' and self.mtl_per_batch:
@@ -592,14 +592,14 @@ class Seq2seq(ModelBase):
                         nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             decode_params, rnnlm_bwd,
-                            decode_params['beam_width'], False, id2token, refs)
+                            decode_params['recog_beam_width'], False, id2token, refs)
                         best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                                                       nbest_hyps_bwd, aws_bwd, scores_bwd,
                                                       flip, self.eos, id2token, refs)
                         aws = None
                     else:
                         # Set RNNLM
-                        if decode_params['rnnlm_weight'] > 0:
+                        if decode_params['recog_rnnlm_weight'] > 0:
                             assert hasattr(self, 'rnnlm_' + dir)
                             rnnlm = getattr(self, 'rnnlm_' + dir)
                         else:

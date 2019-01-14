@@ -51,11 +51,11 @@ def eval_char(models, dataset, decode_params, epoch,
     model = models[0]
 
     if decode_dir is None:
-        decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['beam_width'])
-        decode_dir += '_lp' + str(decode_params['length_penalty'])
-        decode_dir += '_cp' + str(decode_params['coverage_penalty'])
-        decode_dir += '_' + str(decode_params['min_len_ratio']) + '_' + str(decode_params['max_len_ratio'])
-        decode_dir += '_rnnlm' + str(decode_params['rnnlm_weight'])
+        decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['recog_beam_width'])
+        decode_dir += '_lp' + str(decode_params['recog_length_penalty'])
+        decode_dir += '_cp' + str(decode_params['recog_coverage_penalty'])
+        decode_dir += '_' + str(decode_params['recog_min_len_ratio']) + '_' + str(decode_params['recog_max_len_ratio'])
+        decode_dir += '_rnnlm' + str(decode_params['recog_rnnlm_weight'])
 
         ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
         hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
