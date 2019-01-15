@@ -71,6 +71,7 @@ class Decoder(nn.Module):
         dropout_emb (float): the probability to drop nodes of the embedding layer
         dropout_att (float):
         ss_prob (float): scheduled sampling probability
+        ss_type (str): constant or saturation
         lsm_prob (float): label smoothing probability
         layer_norm (bool): layer normalization
         ctc_weight (float):
@@ -113,6 +114,7 @@ class Decoder(nn.Module):
                  dropout_emb,
                  dropout_att,
                  ss_prob,
+                 ss_type,
                  lsm_prob,
                  layer_norm,
                  fl_weight,
@@ -149,6 +151,11 @@ class Decoder(nn.Module):
         self.dropout = dropout
         self.dropout_emb = dropout_emb
         self.ss_prob = ss_prob
+        self.ss_type = ss_type
+        if ss_type == 'constant':
+            self._ss_prob = ss_prob
+        elif ss_type == 'saturation':
+            self._ss_prob = 0  # start from 0
         self.lsm_prob = lsm_prob
         self.layer_norm = layer_norm
         self.fl_weight = fl_weight
@@ -312,6 +319,9 @@ class Decoder(nn.Module):
     @property
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
+
+    def start_scheduled_sampling(self):
+        self._ss_prob = self.ss_prob
 
     def forward(self, eouts, elens, ys, task='all', reverse_dec=None):
         """Forward computation.
@@ -518,7 +528,7 @@ class Decoder(nn.Module):
         douts = []
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
-            is_sample = t > 0 and self.ss_prob > 0 and random.random() < self.ss_prob
+            is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob
             if is_sample:
                 y_emb = self.embed(torch.argmax(logits[-1].detach(), dim=-1))
             else:

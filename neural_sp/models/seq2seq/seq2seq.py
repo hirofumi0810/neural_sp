@@ -147,7 +147,7 @@ class Seq2seq(ModelBase):
                                             dropout=args.dropout_enc)
             self.enc_nunits = args.dec_nunits
 
-        # MAIN TASK
+        # main task
         directions = []
         if self.fwd_weight > 0 or self.ctc_weight > 0:
             directions.append('fwd')
@@ -188,6 +188,7 @@ class Seq2seq(ModelBase):
                 dropout_emb=args.dropout_emb,
                 dropout_att=args.dropout_att,
                 ss_prob=args.ss_prob,
+                ss_type=args.ss_type,
                 lsm_prob=args.lsm_prob,
                 layer_norm=args.layer_norm,
                 fl_weight=args.focal_loss_weight,
@@ -208,7 +209,7 @@ class Seq2seq(ModelBase):
                 vocab_char=args.vocab_sub1)
             setattr(self, 'dec_' + dir, dec)
 
-        # sub task (only for fwd)
+        # sub task
         for sub in ['sub1', 'sub2', 'sub3']:
             if getattr(self, sub + '_weight') > 0:
                 directions = []
@@ -216,7 +217,6 @@ class Seq2seq(ModelBase):
                     directions.append('fwd')
                 if getattr(self, 'bwd_weight_' + sub) > 0:
                     directions.append('bwd')
-
                 for dir_sub in directions:
                     dec_sub = Decoder(
                         sos=self.sos,
@@ -243,6 +243,7 @@ class Seq2seq(ModelBase):
                         dropout_emb=args.dropout_emb,
                         dropout_att=args.dropout_att,
                         ss_prob=args.ss_prob,
+                        ss_type=args.ss_type,
                         lsm_prob=args.lsm_prob,
                         layer_norm=args.layer_norm,
                         fl_weight=args.focal_loss_weight,
@@ -297,6 +298,27 @@ class Seq2seq(ModelBase):
         # Initialize bias in gating with -1
         if args.rnnlm_cold_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
+
+    def scheduled_sampling_triger(self):
+        # main task
+        directions = []
+        if self.fwd_weight > 0 or self.ctc_weight > 0:
+            directions.append('fwd')
+        if self.bwd_weight > 0:
+            directions.append('bwd')
+        for dir in directions:
+            getattr(self, 'dec_' + dir).start_scheduled_sampling()
+
+        # sub task
+        for sub in ['sub1', 'sub2', 'sub3']:
+            if getattr(self, sub + '_weight') > 0:
+                directions = []
+                if getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0:
+                    directions.append('fwd')
+                if getattr(self, 'bwd_weight_' + sub) > 0:
+                    directions.append('bwd')
+                for dir_sub in directions:
+                    getattr(self, 'dec_' + dir_sub + '_' + sub).start_scheduled_sampling()
 
     def forward(self, batch, reporter=None, task='all', is_eval=False):
         """Forward computation.

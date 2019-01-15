@@ -565,7 +565,7 @@ def main():
                     metric_dev = eval_loss([model.module], dev_set, decode_params)
                     logger.info('Loss (%s): %.3f %%' % (dev_set.set, metric_dev))
                 else:
-                    raise NotImplementedError()
+                    raise NotImplementedError(args.metric)
 
                 # Update learning rate
                 if args.decay_type != 'warmup':
@@ -610,9 +610,12 @@ def main():
                             loss_test = eval_loss([model.module], eval_set, decode_params)
                             logger.info('Loss (%s): %.3f %%' % (eval_set.set, loss_test))
                         else:
-                            raise NotImplementedError()
+                            raise NotImplementedError(args.metric)
                 else:
                     not_improved_epoch += 1
+
+                    # start scheduled sampling
+                    model.module.scheduled_sampling_triger()
 
                 duration_eval = time.time() - start_time_eval
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
