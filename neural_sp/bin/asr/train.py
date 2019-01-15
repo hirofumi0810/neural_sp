@@ -258,30 +258,15 @@ def main():
                 dir_name += '_' + args.unit + 'bwd'
             if args.lmobj_weight > 0:
                 dir_name += '_' + args.unit + 'lmobj'
-            if args.train_set_sub1:
-                dir_name += '_' + args.unit_sub1 + str(args.vocab_sub1)
-                if args.ctc_weight_sub1 > 0:
-                    dir_name += 'ctc'
-                if args.bwd_weight_sub1 > 0:
-                    dir_name += 'bwd'
-                if args.sub1_weight - args.ctc_weight_sub1 - args.bwd_weight_sub1 > 0:
-                    dir_name += 'fwd'
-            if args.train_set_sub2:
-                dir_name += '_' + args.unit_sub2 + str(args.vocab_sub2)
-                if args.ctc_weight_sub2 > 0:
-                    dir_name += 'ctc'
-                if args.bwd_weight_sub2 > 0:
-                    dir_name += 'bwd'
-                if args.sub2_weight - args.ctc_weight_sub2 - args.bwd_weight_sub2 > 0:
-                    dir_name += 'fwd'
-            if args.train_set_sub3:
-                dir_name += '_' + args.unit_sub3 + str(args.vocab_sub3)
-                if args.ctc_weight_sub3 > 0:
-                    dir_name += 'ctc'
-                if args.bwd_weight_sub3 > 0:
-                    dir_name += 'bwd'
-                if args.sub3_weight - args.ctc_weight_sub3 - args.bwd_weight_sub3 > 0:
-                    dir_name += 'fwd'
+            for sub in ['sub1', 'sub2', 'sub3']:
+                if getattr(args, 'train_set_' + sub):
+                    dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
+                    if getattr(args, 'ctc_weight_' + sub) > 0:
+                        dir_name += 'ctc'
+                    if getattr(args, 'bwd_weight_' + sub) > 0:
+                        dir_name += 'bwd'
+                    if getattr(args, 'sub1_we' + sub) - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
+                        dir_name += 'fwd'
         else:
             if args.ctc_weight > 0:
                 dir_name += '_ctc' + str(args.ctc_weight)
@@ -289,31 +274,16 @@ def main():
                 dir_name += '_bwd' + str(args.bwd_weight)
             if args.lmobj_weight > 0:
                 dir_name += '_lmobj' + str(args.lmobj_weight)
-            if args.sub1_weight > 0:
-                dir_name += '_' + args.unit_sub1 + str(args.vocab_sub1)
-                if args.ctc_weight_sub1 > 0:
-                    dir_name += 'ctc' + str(args.ctc_weight_sub1)
-                if args.bwd_weight_sub1 > 0:
-                    dir_name += 'bwd' + str(args.bwd_weight_sub1)
-                if args.sub1_weight - args.ctc_weight_sub1 - args.bwd_weight_sub1 > 0:
-                    dir_name += 'fwd' + str(1 - args.sub1_weight - args.ctc_weight_sub1 - args.bwd_weight_sub1)
-            if args.sub2_weight > 0:
-                dir_name += '_' + args.unit_sub2 + str(args.vocab_sub2)
-                if args.ctc_weight_sub2 > 0:
-                    dir_name += 'ctc' + str(args.ctc_weight_sub2)
-                if args.bwd_weight_sub2 > 0:
-                    dir_name += 'bwd' + str(args.bwd_weight_sub2)
-                if args.sub2_weight - args.ctc_weight_sub2 - args.bwd_weight_sub2 > 0:
-                    dir_name += 'fwd' + str(1 - args.sub2_weight - args.ctc_weight_sub2 - args.bwd_weight_sub2)
-            if args.sub3_weight > 0:
-                dir_name += '_' + args.unit_sub3 + str(args.vocab_sub3)
-                if args.ctc_weight_sub3 > 0:
-                    dir_name += 'ctc' + str(args.ctc_weight_sub3)
-                if args.bwd_weight_sub3 > 0:
-                    dir_name += 'bwd' + str(args.bwd_weight_sub3)
-                if args.sub3_weight - args.ctc_weight_sub3 - args.bwd_weight_sub3 > 0:
-                    dir_name += 'fwd' + str(1 - args.sub3_weight - args.ctc_weight_sub3 - args.bwd_weight_sub3)
-
+            for sub in ['sub1', 'sub2', 'sub3']:
+                if getattr(args, 'sub1_we' + sub) > 0:
+                    dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
+                    if getattr(args, 'ctc_weight_' + sub) > 0:
+                        dir_name += 'ctc' + str(getattr(args, 'ctc_weight_' + sub))
+                    if getattr(args, 'bwd_weight_' + sub) > 0:
+                        dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
+                    if getattr(args, 'sub1_we' + sub) - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
+                        dir_name += 'fwd' + str(1 - getattr(args, 'sub1_we' + sub) -
+                                                getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
         if args.task_specific_layer:
             dir_name += '_tsl'
         # Pre-training
@@ -351,20 +321,13 @@ def main():
 
         # Save the dictionary & wp_model
         shutil.copy(args.dict, os.path.join(model.save_path, 'dict.txt'))
-        if args.dict_sub1:
-            shutil.copy(args.dict_sub1, os.path.join(model.save_path, 'dict_sub1.txt'))
-        if args.dict_sub2:
-            shutil.copy(args.dict_sub2, os.path.join(model.save_path, 'dict_sub2.txt'))
-        if args.dict_sub3:
-            shutil.copy(args.dict_sub3, os.path.join(model.save_path, 'dict_sub3.txt'))
         if args.unit == 'wp':
             shutil.copy(args.wp_model, os.path.join(model.save_path, 'wp.model'))
-        if args.unit_sub1 == 'wp':
-            shutil.copy(args.wp_model_sub1, os.path.join(model.save_path, 'wp_sub1.model'))
-        if args.unit_sub2 == 'wp':
-            shutil.copy(args.wp_model_sub2, os.path.join(model.save_path, 'wp_sub2.model'))
-        if args.unit_sub3 == 'wp':
-            shutil.copy(args.wp_model_sub3, os.path.join(model.save_path, 'wp_sub3.model'))
+        for sub in ['sub1', 'sub2', 'sub3']:
+            if getattr(args, 'dict_' + sub):
+                shutil.copy(getattr(args, 'dict_' + sub), os.path.join(model.save_path, 'dict_' + sub + '.txt'))
+            if getattr(args, 'unit_sub1') == 'wp':
+                shutil.copy(getattr(args, 'wp_model_' + sub), os.path.join(model.save_path, 'wp_' + sub + '.model'))
 
         # Setting for logging
         logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
@@ -492,33 +455,16 @@ def main():
             tasks = ['ys.ctc'] + tasks
         if args.lmobj_weight > 0:
             tasks = ['ys.lmobj'] + tasks
-        if args.train_set_sub1:
-            if args.sub1_weight - args.bwd_weight_sub1 - args.ctc_weight_sub1 > 0:
-                tasks = ['ys_sub1'] + tasks
-            if args.bwd_weight_sub1 > 0:
-                tasks = ['ys_sub1.bwd'] + tasks
-            if args.ctc_weight_sub1 > 0:
-                tasks = ['ys_sub1.ctc'] + tasks
-            if args.lmobj_weight_sub1 > 0:
-                tasks = ['ys_sub1.lmobj'] + tasks
-        if args.train_set_sub2:
-            if args.sub2_weight - args.bwd_weight_sub2 - args.ctc_weight_sub2 > 0:
-                tasks = ['ys_sub2'] + tasks
-            if args.bwd_weight_sub2 > 0:
-                tasks = ['ys_sub2.bwd'] + tasks
-            if args.ctc_weight_sub2 > 0:
-                tasks = ['ys_sub2.ctc'] + tasks
-            if args.lmobj_weight_sub2 > 0:
-                tasks = ['ys_sub2.lmobj'] + tasks
-        if args.train_set_sub3:
-            if args.sub3_weight - args.bwd_weight_sub3 - args.ctc_weight_sub3 > 0:
-                tasks = ['ys_sub3'] + tasks
-            if args.bwd_weight_sub3 > 0:
-                tasks = ['ys_sub3.bwd'] + tasks
-            if args.ctc_weight_sub3 > 0:
-                tasks = ['ys_sub3.ctc'] + tasks
-            if args.lmobj_weight_sub3 > 0:
-                tasks = ['ys_sub2.lmobj'] + tasks
+        for sub in ['sub1', 'sub2', 'sub3']:
+            if getattr(args, 'train_set_' + sub):
+                if getattr(args, 'sub1_we' + sub) - getattr(args, 'bwd_weight_' + sub) - getattr(args, 'ctc_weight_' + sub) > 0:
+                    tasks = ['ys_' + sub] + tasks
+                if getattr(args, 'bwd_weight_' + sub) > 0:
+                    tasks = ['ys_' + sub + '.bwd'] + tasks
+                if getattr(args, 'ctc_weight_' + sub) > 0:
+                    tasks = ['ys_' + sub + '.ctc'] + tasks
+                if getattr(args, 'lmobj_weight_' + sub) > 0:
+                    tasks = ['ys_' + sub + '.lmobj'] + tasks
     else:
         tasks = ['all']
 
