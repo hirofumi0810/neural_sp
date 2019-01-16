@@ -12,6 +12,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import copy
 import os
 import time
 
@@ -33,7 +34,7 @@ def main():
     args = parse()
 
     # Load a config file
-    config = load_config(os.path.join(args.recog_model, 'config.yml'))
+    config = load_config(os.path.join(args.recog_model[0], 'config.yml'))
 
     # Overwrite config
     for k, v in config.items():
@@ -50,17 +51,17 @@ def main():
     for i, set in enumerate(args.recog_sets):
         # Load dataset
         dataset = Dataset(csv_path=set,
-                          dict_path=os.path.join(args.recog_model, 'dict.txt'),
-                          dict_path_sub1=os.path.join(args.recog_model, 'dict_sub1.txt') if os.path.isfile(
-                              os.path.join(args.recog_model, 'dict_sub1.txt')) else None,
-                          dict_path_sub2=os.path.join(args.recog_model, 'dict_sub2.txt') if os.path.isfile(
-                              os.path.join(args.recog_model, 'dict_sub2.txt')) else None,
-                          dict_path_sub3=os.path.join(args.recog_model, 'dict_sub3.txt') if os.path.isfile(
-                              os.path.join(args.recog_model, 'dict_sub3.txt')) else None,
-                          wp_model=os.path.join(args.recog_model, 'wp.model'),
-                          wp_model_sub1=os.path.join(args.recog_model, 'wp_sub1.model'),
-                          wp_model_sub2=os.path.join(args.recog_model, 'wp_sub2.model'),
-                          wp_model_sub3=os.path.join(args.recog_model, 'wp_sub3.model'),
+                          dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
+                          dict_path_sub1=os.path.join(args.recog_model[0], 'dict_sub1.txt') if os.path.isfile(
+                              os.path.join(args.recog_model[0], 'dict_sub1.txt')) else None,
+                          dict_path_sub2=os.path.join(args.recog_model[0], 'dict_sub2.txt') if os.path.isfile(
+                              os.path.join(args.recog_model[0], 'dict_sub2.txt')) else None,
+                          dict_path_sub3=os.path.join(args.recog_model[0], 'dict_sub3.txt') if os.path.isfile(
+                              os.path.join(args.recog_model[0], 'dict_sub3.txt')) else None,
+                          wp_model=os.path.join(args.recog_model[0], 'wp.model'),
+                          wp_model_sub1=os.path.join(args.recog_model[0], 'wp_sub1.model'),
+                          wp_model_sub2=os.path.join(args.recog_model[0], 'wp_sub2.model'),
+                          wp_model_sub3=os.path.join(args.recog_model[0], 'wp_sub3.model'),
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
                           unit_sub2=args.unit_sub2,
@@ -78,7 +79,7 @@ def main():
             # For cold fusion
             # if args.rnnlm_cold_fusion:
             #     # Load a RNNLM config file
-            #     config['rnnlm_config'] = load_config(os.path.join(args.recog_model, 'config_rnnlm.yml'))
+            #     config['rnnlm_config'] = load_config(os.path.join(args.recog_model[0], 'config_rnnlm.yml'))
             #
             #     assert args.unit == config['rnnlm_config']['unit']
             #     rnnlm_args.vocab = dataset.vocab
@@ -92,9 +93,26 @@ def main():
 
             # Load the ASR model
             model = Seq2seq(args)
-            epoch, _, _, _ = model.load_checkpoint(args.recog_model, epoch=args.recog_epoch)
+            epoch, _, _, _ = model.load_checkpoint(args.recog_model[0], epoch=args.recog_epoch)
+            model.save_path = args.recog_model[0]
 
-            model.save_path = args.recog_model
+            # ensemble
+            ensemble_models = [model]
+            if len(args.recog_model) > 1:
+                for recog_model_e in args.recog_model[1:]:
+                    # Load a config file
+                    config_e = load_config(os.path.join(recog_model_e, 'config.yml'))
+
+                    # Overwrite config
+                    args_e = copy.deepcopy(args)
+                    for k, v in config_e.items():
+                        if 'recog' not in k:
+                            setattr(args_e, k, v)
+
+                    model_e = Seq2seq(args_e)
+                    model_e.load_checkpoint(recog_model_e, epoch=args.recog_epoch)
+                    model_e.cuda()
+                    ensemble_models += [model_e]
 
             # For shallow fusion
             if (not args.rnnlm_cold_fusion) and args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
@@ -135,12 +153,13 @@ def main():
             logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
             logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
             logger.info('epoch: %d' % (epoch - 1))
+            logger.info('ensemble: %d' % (len(ensemble_models)))
 
         start_time = time.time()
 
         if args.unit in ['word', 'word_char'] and not args.recog_unit:
             wer, nsub, nins, ndel, noov_total = eval_word(
-                [model], dataset, decode_params,
+                ensemble_models, dataset, decode_params,
                 epoch=epoch - 1,
                 decode_dir=args.recog_dir,
                 progressbar=True)
@@ -151,7 +170,7 @@ def main():
 
         elif (args.unit == 'wp' and not args.recog_unit) or args.recog_unit == 'wp':
             wer, nsub, nins, ndel = eval_wordpiece(
-                [model], dataset, decode_params,
+                ensemble_models, dataset, decode_params,
                 epoch=epoch - 1,
                 decode_dir=args.recog_dir,
                 progressbar=True)
@@ -161,7 +180,7 @@ def main():
 
         elif ('char' in args.unit and not args.recog_unit) or 'char' in args.recog_unit:
             (wer, nsub, nins, ndel), (cer, _, _, _) = eval_char(
-                [model], dataset, decode_params,
+                ensemble_models, dataset, decode_params,
                 epoch=epoch - 1,
                 decode_dir=args.recog_dir,
                 progressbar=True,
@@ -173,7 +192,7 @@ def main():
 
         elif 'phone' in args.unit:
             per, nsub, nins, ndel = eval_phone(
-                [model], dataset, decode_params,
+                ensemble_models, dataset, decode_params,
                 epoch=epoch - 1,
                 decode_dir=args.recog_dir,
                 progressbar=True)

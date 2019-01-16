@@ -40,9 +40,6 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
     # Reset data counter
     dataset.reset()
 
-    model = models[0]
-    # TODO(hirofumi): ensemble decoding
-
     if decode_dir is None:
         decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['recog_beam_width'])
         decode_dir += '_lp' + str(decode_params['recog_length_penalty'])
@@ -50,8 +47,8 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
         decode_dir += '_' + str(decode_params['recog_min_len_ratio']) + '_' + str(decode_params['recog_max_len_ratio'])
         decode_dir += '_rnnlm' + str(decode_params['recog_rnnlm_weight'])
 
-        ref_trn_save_path = mkdir_join(model.save_path, decode_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(model.save_path, decode_dir, 'hyp.trn')
+        ref_trn_save_path = mkdir_join(models[0].save_path, decode_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(models[0].save_path, decode_dir, 'hyp.trn')
     else:
         ref_trn_save_path = mkdir_join(decode_dir, 'ref.trn')
         hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
@@ -65,10 +62,12 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
-            best_hyps, _, perm_id = model.decode(batch['xs'], decode_params,
-                                                 exclude_eos=True,
-                                                 id2token=dataset.id2wp,
-                                                 refs=batch['ys'])
+            best_hyps, _, perm_id = models[0].decode(
+                batch['xs'], decode_params,
+                exclude_eos=True,
+                id2token=dataset.id2wp,
+                refs=batch['ys'],
+                ensemble_models=models[1:] if len(models) > 1 else [])
             ys = [batch['text'][i] for i in perm_id]
 
             for b in range(len(batch['xs'])):

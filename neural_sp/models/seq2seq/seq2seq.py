@@ -532,7 +532,8 @@ class Seq2seq(ModelBase):
             return ctc_probs, indices_topk, enc_outs[task]['xlens']
 
     def decode(self, xs, decode_params, nbest=1, exclude_eos=False,
-               id2token=None, refs=None, ctc=False, task='ys'):
+               id2token=None, refs=None, ctc=False, task='ys',
+               ensemble_models=[]):
         """Decoding in the inference stage.
 
         Args:
@@ -553,6 +554,7 @@ class Seq2seq(ModelBase):
             refs (list): gold transcriptions to compute log likelihood
             ctc (bool):
             task (str): ys* or ys_sub1* or ys_sub2* or ys_sub3*
+            ensemble_models (list): list of Seq2seq classes
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -577,7 +579,12 @@ class Seq2seq(ModelBase):
             elif task.split('.')[0] == 'ys_sub3':
                 dir = 'fwd' if self.fwd_weight_sub3 >= self.bwd_weight_sub3 else 'bwd'
                 dir += '_sub3'
+            else:
+                raise ValueError(task)
 
+            #########################
+            # CTC
+            #########################
             if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and ctc):
                 # Set RNNLM
                 if decode_params['recog_rnnlm_weight'] > 0:
@@ -590,12 +597,17 @@ class Seq2seq(ModelBase):
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
                     decode_params['recog_beam_width'], rnnlm)
                 return best_hyps, None, perm_ids
+
+            #########################
+            # Attention
+            #########################
             else:
                 if decode_params['recog_beam_width'] == 1 and not decode_params['recog_fwd_bwd_attention']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
                         decode_params['recog_max_len_ratio'], exclude_eos)
                 else:
+                    # forward-backward decoding
                     if decode_params['recog_fwd_bwd_attention']:
                         rnnlm_fwd = None
                         nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
@@ -620,6 +632,21 @@ class Seq2seq(ModelBase):
                                                       flip, self.eos, id2token, refs)
                         aws = None
                     else:
+                        # ensemble
+                        ensemble_eouts = []
+                        ensemble_elens = []
+                        ensemble_decoders = []
+                        if len(ensemble_models) > 0:
+                            for i_e, model in enumerate(ensemble_models):
+                                if model.input_type == 'speech' and model.bwd_weight == 1:
+                                    enc_outs_e, _ = model.encode(xs, task, flip=True)
+                                else:
+                                    enc_outs_e, _ = model.encode(xs, 'all', flip=False)
+                                ensemble_eouts += [enc_outs_e[task]['xs']]
+                                ensemble_elens += [enc_outs_e[task]['xlens']]
+                                ensemble_decoders += [model.dec_fwd]
+                                # NOTE: only support for the main task now
+
                         # Set RNNLM
                         if decode_params['recog_rnnlm_weight'] > 0:
                             assert hasattr(self, 'rnnlm_' + dir)
@@ -629,7 +656,8 @@ class Seq2seq(ModelBase):
                         nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             decode_params, rnnlm,
-                            nbest, exclude_eos, id2token, refs)
+                            nbest, exclude_eos, id2token, refs,
+                            ensemble_eouts, ensemble_elens, ensemble_decoders)
 
                         if nbest == 1:
                             best_hyps = [hyp[0] for hyp in nbest_hyps]

@@ -979,7 +979,8 @@ class Decoder(nn.Module):
         return best_hyps, aws
 
     def beam_search(self, eouts, elens, params, rnnlm, nbest=1,
-                    exclude_eos=False, id2token=None, refs=None):
+                    exclude_eos=False, id2token=None, refs=None,
+                    ensemble_eouts=None, ensemble_elens=None, ensemble_decoders=[]):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -998,6 +999,9 @@ class Decoder(nn.Module):
             exclude_eos (bool):
             id2token (): converter from index to token
             refs ():
+            ensemble_eouts (list): list of FloatTensor
+            ensemble_elens (list) list of list
+            ensemble_decoders (list): list of torch.nn.Module
         Returns:
             nbest_hyps (list): A list of length `[B]`, which contains list of n hypotheses
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -1005,6 +1009,7 @@ class Decoder(nn.Module):
 
         """
         bs, _, enc_nunits = eouts.size()
+        nmodels = len(ensemble_decoders) + 1
 
         # For cold fusion
         if params['recog_rnnlm_weight'] > 0 and not self.cold_fusion:
@@ -1032,6 +1037,19 @@ class Decoder(nn.Module):
                 con_vec = eouts.new_zeros(1, 1, self.enc_nunits)
             self.score.reset()
 
+            # Ensemble initialization
+            ensemble_dstates = []
+            ensemble_con_vec = []
+            if nmodels > 0:
+                for dec in ensemble_decoders:
+                    ensemble_dstates += [dec.init_dec_state(1, dec.nlayers, eouts[b:b + 1], elens[b:b + 1])]
+                    if dec.input_feeding:
+                        ensemble_con_vec += [eouts.new_zeros(1, 1, dec.dec_nunits)]
+                        # NOTE: this is equivalent to attn_vec
+                    else:
+                        ensemble_con_vec += [eouts.new_zeros(1, 1, dec.enc_nunits)]
+                    dec.score.reset()
+
             complete = []
             beam = [{'hyp': [sos],
                      'score': 0,
@@ -1042,7 +1060,11 @@ class Decoder(nn.Module):
                      'aws': [None],
                      'rnnlm_hxs': None,
                      'rnnlm_cxs': None,
-                     'prev_cov': 0}]
+                     'prev_cov': 0,
+                     'ensemble_dstates': ensemble_dstates,
+                     'ensemble_con_vec': ensemble_con_vec,
+                     'ensemble_aws':[[None] for _ in range(nmodels)],
+                     }]
             for t in range(int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1):
                 new_beam = []
                 for i_beam in range(len(beam)):
@@ -1050,15 +1072,46 @@ class Decoder(nn.Module):
                     y = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
                     y_emb = self.embed(y)
                     if self.loop_type in ['conditional', 'rnmt']:
-                        dstates = self.recurrency_step1(y_emb, beam[i_beam]['con_vec'], beam[i_beam]['dstates'])
+                        dstates = self.recurrency_step1(y_emb,
+                                                        beam[i_beam]['con_vec'],
+                                                        beam[i_beam]['dstates'])
                     elif self.loop_type in ['normal', 'lmdecoder']:
-                        dstates = self.recurrency(y_emb, beam[i_beam]['con_vec'], beam[i_beam]['dstates']['dstate'])
+                        dstates = self.recurrency(y_emb,
+                                                  beam[i_beam]['con_vec'],
+                                                  beam[i_beam]['dstates']['dstate'])
+                    # ensemble
+                    ensemble_dstates = []
+                    if nmodels > 0:
+                        for i_e, dec in enumerate(ensemble_decoders):
+                            y_emb = dec.embed(y)
+                            if dec.loop_type in ['conditional', 'rnmt']:
+                                ensemble_dstates += [dec.recurrency_step1(
+                                    y_emb,
+                                    beam[i_beam]['ensemble_con_vec'][i_e],
+                                    beam[i_beam]['ensemble_dstates'][i_e])]
+                            elif dec.loop_type in ['normal', 'lmdecoder']:
+                                ensemble_dstates += [dec.recurrency(
+                                    y_emb,
+                                    beam[i_beam]['ensemble_con_vec'][i_e],
+                                    beam[i_beam]['ensemble_dstates'][i_e]['dstate'])]
 
                     # Score
                     con_vec, aw = self.score(eouts[b:b + 1, :elens[b]],
                                              elens[b:b + 1],
                                              dstates['dout_score'],
                                              beam[i_beam]['aws'][-1])
+                    # ensemble
+                    ensemble_con_vec = []
+                    ensemble_aws = []
+                    if nmodels > 0:
+                        for i_e, dec in enumerate(ensemble_decoders):
+                            con_vec_e, aw_e = dec.score(
+                                ensemble_eouts[i_e][b:b + 1, :ensemble_elens[i_e][b]],
+                                ensemble_elens[i_e][b:b + 1],
+                                ensemble_dstates[i_e]['dout_score'],
+                                beam[i_beam]['ensemble_aws'][i_e][-1])
+                            ensemble_con_vec += [con_vec_e]
+                            ensemble_aws += [aw_e]
 
                     if self.rnnlm_cf:
                         # Update RNNLM states for cold fusion
@@ -1078,15 +1131,31 @@ class Decoder(nn.Module):
                     # Recurrency (2nd, only for the internal decoder)
                     if self.loop_type in ['conditional', 'rnmt']:
                         dstates = self.recurrency_step2(con_vec, dstates)
+                    # ensemble
+                    ensemble_dstates_tmp = []
+                    if nmodels > 0:
+                        for i_e, dec in enumerate(ensemble_decoders):
+                            if dec.loop_type in ['conditional', 'rnmt']:
+                                ensemble_dstates_tmp += [dec.recurrency_step2(
+                                    ensemble_con_vec[i_e],
+                                    ensemble_dstates[i_e])]
+                            else:
+                                ensemble_dstates_tmp += [ensemble_dstates[i_e]]
+                    ensemble_dstates = ensemble_dstates_tmp
 
                     # Generate
                     attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
-                    logits_t = self.output(attn_vec)
-
-                    # Path through the softmax layer & convert to log-scale
-                    log_probs = F.log_softmax(logits_t.squeeze(1), dim=1)  # log-prob-level
-                    # log_probs = logits_t.squeeze(1)  # logits-level
+                    log_probs = F.log_softmax(self.output(attn_vec).squeeze(1), dim=1)
                     # NOTE: `[1 (B), 1, vocab]` -> `[1 (B), vocab]`
+                    # ensemble
+                    if nmodels > 0:
+                        for i_e, dec in enumerate(ensemble_decoders):
+                            attn_vec = dec.generate(ensemble_con_vec[i_e],
+                                                    ensemble_dstates[i_e]['dout_generate'],
+                                                    logits_lm_t, lm_out)
+                            log_probs += F.log_softmax(dec.output(attn_vec).squeeze(1), dim=1)
+                        # re-normalize
+                        log_probs /= (nmodels + 1)
 
                     # Pick up the top-k scores
                     log_probs_topk, indices_topk = torch.topk(
@@ -1135,7 +1204,11 @@ class Decoder(nn.Module):
                              'aws': beam[i_beam]['aws'] + [aw],
                              'rnnlm_hxs': rnnlm_state[0][:] if rnnlm_state is not None else None,
                              'rnnlm_cxs': rnnlm_state[1][:] if rnnlm_state is not None else None,
-                             'prev_cov': cov_sum})
+                             'prev_cov': cov_sum,
+                             'ensemble_dstates': ensemble_dstates,
+                             'ensemble_con_vec': ensemble_con_vec,
+                             'ensemble_aws': ensemble_aws,
+                             })
 
                 new_beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
 

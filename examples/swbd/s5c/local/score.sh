@@ -4,6 +4,9 @@
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 model=
+model1=
+model2=
+model3=
 model_bwd=
 gpu=
 
@@ -49,11 +52,18 @@ for set in eval2000; do
   if ${fwd_bwd_attention}; then
     recog_dir=${recog_dir}_fwdbwd
   fi
+  if [ ! -z ${model3} ]; then
+    recog_dir=${recog_dir}_ensemble4
+  elif [ ! -z ${model2} ]; then
+    recog_dir=${recog_dir}_ensemble3
+  elif [ ! -z ${model1} ]; then
+    recog_dir=${recog_dir}_ensemble2
+  fi
   mkdir -p ${recog_dir}
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
     --recog_sets ${data}/dataset/${set}_wpbpe10000.csv \
-    --recog_model ${model} \
+    --recog_model ${model} ${model1} ${model2} ${model3} \
     --recog_model_bwd ${model_bwd} \
     --recog_epoch ${epoch} \
     --recog_batch_size ${batch_size} \
