@@ -7,6 +7,10 @@ model=
 model1=
 model2=
 model3=
+model4=
+model5=
+model6=
+model7=
 model_bwd=
 gpu=
 
@@ -38,7 +42,7 @@ set -o pipefail
 
 if [ -z ${gpu} ]; then
   echo "Error: set GPU number." 1>&2
-  echo "Usage: ./run.sh --gpu 0" 1>&2
+  echo "Usage: local/score.sh --gpu 0" 1>&2
   exit 1
 fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
@@ -51,7 +55,15 @@ for set in eval1 eval2 eval3; do
   if ${fwd_bwd_attention}; then
     recog_dir=${recog_dir}_fwdbwd
   fi
-  if [ ! -z ${model3} ]; then
+  if [ ! -z ${model7} ]; then
+    recog_dir=${recog_dir}_ensemble8
+  elif [ ! -z ${model6} ]; then
+    recog_dir=${recog_dir}_ensemble7
+  elif [ ! -z ${model5} ]; then
+    recog_dir=${recog_dir}_ensemble6
+  elif [ ! -z ${model4} ]; then
+    recog_dir=${recog_dir}_ensemble5
+  elif [ ! -z ${model3} ]; then
     recog_dir=${recog_dir}_ensemble4
   elif [ ! -z ${model2} ]; then
     recog_dir=${recog_dir}_ensemble3
@@ -62,7 +74,7 @@ for set in eval1 eval2 eval3; do
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
     --recog_sets ${data}/dataset/${set}_aps_other_wpbpe10000.csv \
-    --recog_model ${model} ${model1} ${model2} ${model3} \
+    --recog_model ${model} ${model1} ${model2} ${model3} ${model4} ${model5} ${model6} ${model7} \
     --recog_model_bwd ${model_bwd} \
     --recog_epoch ${epoch} \
     --recog_batch_size ${batch_size} \
