@@ -60,6 +60,7 @@ class Decoder(nn.Module):
         dropout_att ():
         rnn_type (str): lstm or gru
         nunits (int): the number of units in each RNN layer
+        nprojs (int): the number of units in each projection layer
         nlayers (int): the number of RNN layers
         loop_type (str): normal or lmdecoder or conditional or rnmt
         residual (bool):
@@ -103,6 +104,7 @@ class Decoder(nn.Module):
                  attn_nheads,
                  rnn_type,
                  nunits,
+                 nprojs,
                  nlayers,
                  residual,
                  loop_type,
@@ -142,6 +144,7 @@ class Decoder(nn.Module):
         assert rnn_type in ['lstm', 'gru']
         self.enc_nunits = enc_nunits
         self.dec_nunits = nunits
+        self.nprojs = nprojs
         self.nlayers = nlayers
         self.loop_type = loop_type
         if loop_type in ['conditional', 'lmdecoder', 'rnmt']:
@@ -200,7 +203,7 @@ class Decoder(nn.Module):
             if attn_nheads > 1:
                 self.score = MultiheadAttentionMechanism(
                     enc_nunits=self.enc_nunits,
-                    dec_nunits=nunits,
+                    dec_nunits=nunits if nprojs == 0 else nprojs,
                     attn_type=attn_type,
                     attn_dim=attn_dim,
                     sharpening_factor=attn_sharpening_factor,
@@ -212,7 +215,7 @@ class Decoder(nn.Module):
             else:
                 self.score = AttentionMechanism(
                     enc_nunits=self.enc_nunits,
-                    dec_nunits=nunits,
+                    dec_nunits=nunits if nprojs == 0 else nprojs,
                     attn_type=attn_type,
                     attn_dim=attn_dim,
                     sharpening_factor=attn_sharpening_factor,
@@ -237,6 +240,8 @@ class Decoder(nn.Module):
             # Decoder
             self.rnn = torch.nn.ModuleList()
             self.dropout = torch.nn.ModuleList()
+            if self.nprojs > 0:
+                self.proj = torch.nn.ModuleList()
             if rnn_type == 'lstm':
                 rnn_cell = nn.LSTMCell
             elif rnn_type == 'gru':
@@ -245,39 +250,76 @@ class Decoder(nn.Module):
             if loop_type == 'normal':
                 dec_in_dim = nunits if input_feeding else enc_nunits
                 self.rnn += [rnn_cell(emb_dim + dec_in_dim, nunits)]
+                if self.nprojs > 0:
+                    self.proj += [LinearND(nunits, nprojs)]
                 self.dropout += [nn.Dropout(p=dropout)]
                 for l in range(nlayers - 1):
-                    self.rnn += [rnn_cell(nunits, nunits)]
+                    if self.nprojs > 0:
+                        self.rnn += [rnn_cell(nprojs, nunits)]
+                        self.proj += [LinearND(nunits, nprojs)]
+                    else:
+                        self.rnn += [rnn_cell(nunits, nunits)]
                     self.dropout += [nn.Dropout(p=dropout)]
             elif loop_type == 'lmdecoder':
+                # 1st layer
                 self.rnn += [rnn_cell(emb_dim, nunits)]
+                if self.nprojs > 0:
+                    self.proj += [LinearND(nunits, nprojs)]
                 self.dropout += [nn.Dropout(p=dropout)]
-                self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
+                # 2nd layer
+                if self.nprojs > 0:
+                    self.rnn += [rnn_cell(nprojs + enc_nunits, nunits)]
+                    self.proj += [LinearND(nunits, nprojs)]
+                else:
+                    self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
                 self.dropout += [nn.Dropout(p=dropout)]
                 for l in range(nlayers - 2):
-                    self.rnn += [rnn_cell(nunits, nunits)]
+                    if self.nprojs > 0:
+                        self.rnn += [rnn_cell(nprojs, nunits)]
+                        self.proj += [LinearND(nunits, nprojs)]
+                    else:
+                        self.rnn += [rnn_cell(nunits, nunits)]
                     self.dropout += [nn.Dropout(p=dropout)]
             elif loop_type == 'conditional':
+                # 1st layer
                 self.rnn += [rnn_cell(emb_dim, nunits)]
+                if self.nprojs > 0:
+                    self.proj += [LinearND(nunits, nprojs)]
                 self.dropout += [nn.Dropout(p=dropout)]
+                # 2nd layer
                 self.rnn += [rnn_cell(enc_nunits, nunits)]
+                if self.nprojs > 0:
+                    self.proj += [LinearND(nunits, nprojs)]
                 self.dropout += [nn.Dropout(p=dropout)]
                 for l in range(nlayers - 2):
-                    self.rnn += [rnn_cell(nunits, nunits)]
+                    if self.nprojs > 0:
+                        self.rnn += [rnn_cell(nprojs, nunits)]
+                        self.proj += [LinearND(nunits, nprojs)]
+                    else:
+                        self.rnn += [rnn_cell(nunits, nunits)]
                     self.dropout += [nn.Dropout(p=dropout)]
             elif loop_type == 'rnmt':
                 assert residual
                 self.rnn += [rnn_cell(emb_dim, nunits)]
+                if self.nprojs > 0:
+                    self.proj += [LinearND(nunits, nprojs)]
                 self.dropout += [nn.Dropout(p=dropout)]
                 for l in range(nlayers - 1):
-                    self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
+                    if self.nprojs > 0:
+                        self.rnn += [rnn_cell(nprojs + enc_nunits, nunits)]
+                        self.proj += [LinearND(nunits, nprojs)]
+                    else:
+                        self.rnn += [rnn_cell(nunits + enc_nunits, nunits)]
                     self.dropout += [nn.Dropout(p=dropout)]
             else:
                 raise NotImplementedError(loop_type)
 
             # cold fusion
             if rnnlm_cold_fusion:
-                self.cf_linear_dec_feat = LinearND(nunits + enc_nunits, nunits)
+                if self.nprojs > 0:
+                    self.cf_linear_dec_feat = LinearND(nprojs + enc_nunits, nunits)
+                else:
+                    self.cf_linear_dec_feat = LinearND(nunits + enc_nunits, nunits)
                 if cold_fusion == 'hidden':
                     self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.nunits, nunits)
                 elif cold_fusion == 'prob':
@@ -291,7 +333,10 @@ class Decoder(nn.Module):
                 for p in self.rnnlm_cf.parameters():
                     p.requires_grad = False
             else:
-                self.output_bn = LinearND(nunits + enc_nunits, nunits)
+                if self.nprojs > 0:
+                    self.output_bn = LinearND(nprojs + enc_nunits, nunits)
+                else:
+                    self.output_bn = LinearND(nunits + enc_nunits, nunits)
 
             self.output = LinearND(nunits, vocab)
 
@@ -691,7 +736,10 @@ class Decoder(nn.Module):
                 hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
                 hxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), hxs[0])
-        dout = self.dropout[0](hxs[0])
+        dout = hxs[0]
+        if self.nprojs > 0:
+            dout = torch.tanh(self.proj[0](dout))
+        dout = self.dropout[0](dout)
 
         if self.loop_type == 'lmdecoder' and self.lmobj_weight > 0:
             dstates_new['dout_lmdec'] = dout.unsqueeze(1)
@@ -711,7 +759,10 @@ class Decoder(nn.Module):
                     hxs[l], cxs[l] = self.rnn[l](dout, (hxs[l], cxs[l]))
                 elif self.rnn_type == 'gru':
                     hxs[l] = self.rnn[l](dout, hxs[l])
-            dout_tmp = self.dropout[l](hxs[l])
+            dout_tmp = hxs[l]
+            if self.nprojs > 0:
+                dout_tmp = torch.tanh(self.proj[l](dout_tmp))
+            dout_tmp = self.dropout[l](dout_tmp)
 
             if self.loop_type == 'lmdecoder' and l == 1:
                 # the bottom layer
@@ -768,7 +819,10 @@ class Decoder(nn.Module):
                 hxs[0], cxs[0] = self.rnn[0](y_emb, (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
                 hxs[0] = self.rnn[0](y_emb, hxs[0])
-        dout = self.dropout[0](hxs[0])
+        dout = hxs[0]
+        if self.nprojs > 0:
+            dout = torch.tanh(self.proj[0](dout))
+        dout = self.dropout[0](dout)
 
         # the bottom layer
         dstates_new['dout_score'] = dout.unsqueeze(1)
@@ -827,15 +881,23 @@ class Decoder(nn.Module):
                     hxs[l - 1] = self.rnn[l](torch.cat([dout, con_vec], dim=-1), hxs[l - 1])
 
             if self.loop_type == 'conditional' and l == 1:
+                dout_tmp = dstates['dstate1'][0][0]
+                if self.nprojs > 0:
+                    dout_tmp = torch.tanh(self.proj[l](dout_tmp))
+                dout_tmp = self.dropout[l](dout_tmp)
                 if self.residual:
-                    dout = self.dropout[l](dstates['dstate1'][0][0]) + dout
+                    dout = dout_tmp + dout
                 else:
-                    dout = self.dropout[l](dstates['dstate1'][0][0])
+                    dout = dout_tmp
             else:
+                dout_tmp = hxs[l - 1]
+                if self.nprojs > 0:
+                    dout_tmp = torch.tanh(self.proj[l](dout_tmp))
+                dout_tmp = self.dropout[l](dout_tmp)
                 if self.residual:
-                    dout = self.dropout[l](hxs[l - 1]) + dout
+                    dout = dout_tmp + dout
                 else:
-                    dout = self.dropout[l](hxs[l - 1])
+                    dout = dout_tmp
 
         # the top layer
         dstates_new['dout_generate'] = dout.unsqueeze(1)

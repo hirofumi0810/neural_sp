@@ -221,7 +221,7 @@ def main():
         dir_name += '_' + args.subsample_type + str(subsample_factor)
         dir_name += '_' + args.dec_type
         dir_name += str(args.dec_nunits) + 'H'
-        # dir_name += str(args.dec_nprojs) + 'P'
+        dir_name += str(args.dec_nprojs) + 'P'
         dir_name += str(args.dec_nlayers) + 'L'
         if args.dec_loop_type == 'conditional':
             dir_name += '_cond'
