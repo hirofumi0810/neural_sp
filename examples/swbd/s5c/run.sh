@@ -84,6 +84,7 @@ focal_loss=0.0
 ### MTL
 ctc_weight=0.2
 bwd_weight=0.0
+agreement_weight=0.0
 twin_net_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
@@ -434,6 +435,7 @@ if [ ${stage} -le 4 ]; then
     --focal_loss_weight ${focal_loss} \
     --ctc_weight ${ctc_weight} \
     --bwd_weight ${bwd_weight} \
+    --agreement_weight ${agreement_weight} \
     --twin_net_weight ${twin_net_weight} \
     --mtl_per_batch ${mtl_per_batch} \
     --task_specific_layer ${task_specific_layer} \

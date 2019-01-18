@@ -87,10 +87,15 @@ class Seq2seq(ModelBase):
         self.fwd_weight_sub2 = self.sub2_weight - self.bwd_weight_sub2 - self.ctc_weight_sub2
         self.fwd_weight_sub3 = self.sub3_weight - self.bwd_weight_sub3 - self.ctc_weight_sub3
         self.twin_net_weight = args.twin_net_weight
+        self.agreement_weight = args.agreement_weight
         if args.twin_net_weight > 0:
             assert 0 < self.fwd_weight < 1
             assert 0 < self.bwd_weight < 1
             assert args.mtl_per_batch
+        if args.agreement_weight > 0:
+            assert 0 < self.fwd_weight < 1
+            assert 0 < self.bwd_weight < 1
+            # assert args.mtl_per_batch
 
         # Encoder
         self.enc = RNNEncoder(
@@ -199,6 +204,7 @@ class Seq2seq(ModelBase):
                     '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                 input_feeding=args.input_feeding,
                 backward=(dir == 'bwd'),
+                agreement_weight=args.agreement_weight if dir == 'bwd' else 0,
                 twin_net_weight=args.twin_net_weight,
                 rnnlm_cold_fusion=args.rnnlm_cold_fusion,
                 cold_fusion=args.cold_fusion,
@@ -395,12 +401,17 @@ class Seq2seq(ModelBase):
         # for the backward decoder in the main task
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
             ys = [batch['ys'][:][i] for i in perm_ids]
+            if self.agreement_weight > 0:
+                reverse_dec = self.dec_fwd
+            else:
+                reverse_dec = None
             loss_bwd, obs_bwd = self.dec_bwd(
-                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
+                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, reverse_dec)
             loss += loss_bwd
             observation['loss.att-bwd'] = obs_bwd['loss_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
             observation['loss.lmobj-bwd'] = obs_bwd['loss_lmobj']
+            observation['loss.agreement-bwd'] = obs_bwd['loss_agreement']
             observation['acc.att-bwd'] = obs_bwd['acc_att']
             observation['acc.lmobj-bwd'] = obs_bwd['acc_lmobj']
             observation['ppl.att-bwd'] = obs_bwd['ppl_att']

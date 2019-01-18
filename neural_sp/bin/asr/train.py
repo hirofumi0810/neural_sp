@@ -293,6 +293,8 @@ def main():
             dir_name += '_' + config_pre['unit'] + 'pt'
         if args.twin_net_weight > 0:
             dir_name += '_twin' + str(args.twin_net_weight)
+        if args.agreement_weight > 0:
+            dir_name += '_agree' + str(args.agreement_weight)
 
     if not args.resume:
         # Load pre-trained RNNLM

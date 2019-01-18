@@ -79,6 +79,7 @@ class Decoder(nn.Module):
         ctc_fc_list (list):
         input_feeding (bool):
         backward (bool): decode in the backward order
+        agreement_weight (float):
         twin_net_weight (float):
         rnnlm_cold_fusion (torch.nn.Module):
         cold_fusion (str): the type of cold fusion
@@ -125,6 +126,7 @@ class Decoder(nn.Module):
                  ctc_fc_list=[],
                  input_feeding=False,
                  backward=False,
+                 agreement_weight=0,
                  twin_net_weight=0.0,
                  rnnlm_cold_fusion=False,
                  cold_fusion='hidden',
@@ -169,6 +171,7 @@ class Decoder(nn.Module):
         if input_feeding:
             assert loop_type == 'normal'
         self.backward = backward
+        self.agreement_weight = agreement_weight
         self.twin_net_weight = twin_net_weight
         self.rnnlm_cf = rnnlm_cold_fusion
         self.cold_fusion = cold_fusion
@@ -409,11 +412,13 @@ class Decoder(nn.Module):
 
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and 'ctc' not in task and 'lmobj' not in task:
-            loss_att, acc_att, ppl_att, loss_twin = self.forward_att(eouts, elens, ys, reverse_dec=reverse_dec)
+            loss_att, acc_att, ppl_att, loss_twin, loss_agreement = self.forward_att(
+                eouts, elens, ys, reverse_dec=reverse_dec)
             obserbation['loss_att'] = loss_att.item()
             obserbation['acc_att'] = acc_att
             obserbation['ppl_att'] = ppl_att
             obserbation['loss_twin'] = loss_twin.item()
+            obserbation['loss_agreement'] = loss_agreement.item()
             if self.mtl_per_batch:
                 loss += loss_att
             else:
@@ -526,14 +531,15 @@ class Decoder(nn.Module):
 
         return loss, acc, ppl
 
-    def forward_att(self, eouts, elens, ys, extract_states=False, reverse_dec=None):
+    def forward_att(self, eouts, elens, ys, extract_dout=False, extract_aws=False,
+                    reverse_dec=None):
         """Compute XE loss for the sequence-to-sequence model.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_units]`
             elens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            extract_states (bool):
+            extract_dout (bool):
         Returns:
             loss (FloatTensor): `[B, L, vocab]`
             acc (float):
@@ -570,7 +576,8 @@ class Decoder(nn.Module):
             ys_lm_emb = self.rnnlm_cf.embed(ys_in_pad)
 
         logits = []
-        douts = []
+        douts = []  # for twinnet loss
+        aws = []  # for agreement loss
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
             is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob
@@ -598,6 +605,8 @@ class Decoder(nn.Module):
 
             # Score
             con_vec, aw = self.score(eouts, elens, dstates['dout_score'], aw)
+            if extract_aws or (self.agreement_weight > 0 and self.backward):
+                aws.append(aw)
 
             # Recurrency (2nd, only for the internal decoder)
             if self.loop_type in ['conditional', 'rnmt']:
@@ -607,14 +616,17 @@ class Decoder(nn.Module):
             attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
             logits.append(self.output(attn_vec))
 
-            if extract_states or (self.twin_net_weight > 0 and not self.backward):
+            if extract_dout or (self.twin_net_weight > 0 and not self.backward):
                 douts.append(dstates['dout_generate'])
 
-        if extract_states:
-            douts = torch.cat(douts[::-1], dim=1)
-            return douts
+        if extract_dout:
+            return torch.cat(douts[::-1], dim=1)
+        elif extract_aws:
+            return torch.stack(aws[::-1], dim=-1)
         elif self.twin_net_weight > 0 and not self.backward:
             douts = torch.cat(douts, dim=1)
+        elif self.agreement_weight > 0 and self.backward:
+            aws = torch.stack(aws, dim=-1)
 
         # Compute XE sequence loss
         logits = torch.cat(logits, dim=1) / self.logits_temp
@@ -641,7 +653,7 @@ class Decoder(nn.Module):
 
         # TwinNet (only for the forward)
         if self.twin_net_weight > 0 and not self.backward:
-            douts_reverse = reverse_dec.forward_att(eouts, elens, ys, extract_states=True).detach()
+            douts_reverse = reverse_dec.forward_att(eouts, elens, ys, extract_dout=True).detach()
             douts = self.twinnet_linear(douts)
             loss_twin = F.mse_loss(douts, douts_reverse, size_average=False) / bs
             if not self.training:
@@ -650,6 +662,14 @@ class Decoder(nn.Module):
         else:
             loss_twin = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
 
+        # agreement loss (only for the backward)
+        if self.agreement_weight > 0 and self.backward:
+            aws_reverse = reverse_dec.forward_att(eouts, elens, ys, extract_aws=True).detach()
+            loss_agreement = torch.mul(aws, aws_reverse).sum() / bs
+            loss += loss_agreement * self.agreement_weight
+        else:
+            loss_agreement = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
+
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits.view(ys_out_pad.size(0), ys_out_pad.size(1), logits.size(-1)).argmax(2)
         mask = ys_out_pad != -1
@@ -657,7 +677,7 @@ class Decoder(nn.Module):
         denominator = torch.sum(mask)
         acc = float(numerator) * 100 / float(denominator)
 
-        return loss, acc, ppl, loss_twin
+        return loss, acc, ppl, loss_twin, loss_agreement
 
     def init_dec_state(self, bs, nlayers, eouts=None, elens=None):
         """Initialize decoder state.

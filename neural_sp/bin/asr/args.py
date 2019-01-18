@@ -288,6 +288,14 @@ def parse():
                         help='1.5 is recommended in the orignial paper.')
     parser.add_argument('--twin_net_weight_sub3', type=float, default=0.0,
                         help='1.5 is recommended in the orignial paper.')
+    parser.add_argument('--agreement_weight', type=float, default=0.0,
+                        help='agreement loss weight for the backwar decoder in the main task')
+    parser.add_argument('--agreement_weight_sub1', type=float, default=0.0,
+                        help='agreement loss weight for the backwar decoder in the 1st auxiliary task')
+    parser.add_argument('--agreement_weight_sub2', type=float, default=0.0,
+                        help='agreement loss weight for the backwar decoder in the 2nd auxiliary task')
+    parser.add_argument('--agreement_weight_sub3', type=float, default=0.0,
+                        help='agreement loss weight for the backwar decoder in the 3rd auxiliary task')
     # cold fusion
     parser.add_argument('--cold_fusion', type=str, default='hidden', nargs='?',
                         choices=['hidden', 'prob'],
