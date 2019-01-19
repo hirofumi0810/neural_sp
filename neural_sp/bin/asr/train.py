@@ -21,11 +21,11 @@ import torch
 from tqdm import tqdm
 
 from neural_sp.bin.asr.args import parse
-from neural_sp.bin.asr.train_utils import Controller
-from neural_sp.bin.asr.train_utils import load_config
-from neural_sp.bin.asr.train_utils import Reporter
-from neural_sp.bin.asr.train_utils import save_config
-from neural_sp.bin.asr.train_utils import set_logger
+from neural_sp.bin.train_utils import Controller
+from neural_sp.bin.train_utils import load_config
+from neural_sp.bin.train_utils import Reporter
+from neural_sp.bin.train_utils import save_config
+from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.loss import eval_loss
