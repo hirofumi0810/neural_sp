@@ -129,7 +129,7 @@ class SeqRNNLM(ModelBase):
         """Forward computation.
 
         Args:
-            ys (np.array): `[B, T]`
+            ys (list): A list of length `[B]`, which contains arrays of size `[L]`
             reporter ():
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
@@ -150,7 +150,7 @@ class SeqRNNLM(ModelBase):
         if reporter is not None:
             reporter.add(observation, is_eval)
 
-        return loss, observation
+        return loss, reporter
 
     def _forward(self, ys):
         if self.backward:
@@ -178,7 +178,7 @@ class SeqRNNLM(ModelBase):
                 # Residual connection
                 if self.residual and l > 0:
                     ys_in += xs_lower
-                    xs_lower = ys_in
+                xs_lower = ys_in
                 # NOTE: Exclude residual connection from the raw inputs
 
         logits = self.output(ys_in)
@@ -195,9 +195,9 @@ class SeqRNNLM(ModelBase):
         denominator = torch.sum(mask)
         acc = float(numerator) * 100 / float(denominator)
 
-        observation = {'loss': loss.item(),
-                       'acc': acc,
-                       'ppl': math.exp(loss.item())}
+        observation = {'loss.rnnlm': loss.item(),
+                       'acc.rnnlm': acc,
+                       'ppl.rnnlm': math.exp(loss.item())}
 
         return loss, observation
 
@@ -208,8 +208,8 @@ class SeqRNNLM(ModelBase):
             y (): `[B, emb_dim]`
             state (list):
         Returns:
-            logits_step ():
-            out ():
+            logits_step (FloatTensor):
+            y (FloatTensor):
             state ():
 
         """
@@ -225,8 +225,7 @@ class SeqRNNLM(ModelBase):
             # Residual connection
             if self.residual and l > 0:
                 y += xs_lower
-                xs_lower = y
-
+            xs_lower = y
         logits_step = self.output(y)
 
         return logits_step, y, state
@@ -241,15 +240,13 @@ class SeqRNNLM(ModelBase):
             cx_list (list of FloatTensor):
 
         """
-        zero_state = torch.zeros(bs, self.nunits).float()
-        if self.device_id >= 0:
-            zero_state = zero_state.cuda(self.device_id)
-
         if self.rnn_type == 'lstm':
-            hx_list = [zero_state] * self.nlayers
-            cx_list = [zero_state] * self.nlayers
+            hx_list = [torch.zeros(bs, self.nunits, dtype=torch.float32).cuda(self.device_id)
+                       for l in range(self.nlayers)]
+            cx_list = [torch.zeros(bs, self.nunits, dtype=torch.float32).cuda(self.device_id)
+                       for l in range(self.nlayers)]
         elif self.rnn_type == 'gru':
-            hx_list = [zero_state] * self.nlayers
+            hx_list = [torch.zeros(bs, self.nunits, dtype=torch.float32).cuda(self.device_id)
+                       for l in range(self.nlayers)]
             cx_list = None
-
         return hx_list, cx_list
