@@ -104,7 +104,6 @@ share_lm_softmax=
 model=/n/sd8/inaguma/result/csj
 
 ### path to the model directory to restart training
-rnnlm_resume=
 resume=
 
 ### path to original data
@@ -145,7 +144,6 @@ if [ -z ${gpu} ]; then
   exit 1
 fi
 ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
-rnnlm_gpu=`echo ${gpu} | cut -d "," -f 1`
 
 train_set=train_sp_${data_size}
 dev_set=dev_sp_${data_size}
@@ -201,8 +199,13 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_sp_${data_size} ]; then
   compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
   # Apply global CMVN & dump features
-  for x in ${train_set} ${dev_set} ${test_set}; do
+  for x in ${train_set} ${dev_set}; do
     dump_dir=${data}/dump/${x}
+    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+  done
+  for x in ${test_set}; do
+    dump_dir=${data}/dump/${x}_${data_size}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
@@ -221,22 +224,16 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     echo "run ./run.sh first" && exit 1
   fi
 
-  # Make datset csv files
+  # Make datset csv files for the ASR task
   mkdir -p ${data}/dataset
-  for x in ${train_set}; do
-    echo "Making a csv file for ${x}..."
+  for x in ${train_set} ${dev_set}; do
+    echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
-  for x in ${dev_set}; do
-    echo "Making a csv file for ${x}..."
-    dump_dir=${data}/dump/${x}
-    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
-      ${data}/dev_${data_size} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
-  done
   for x in ${test_set}; do
-    echo "Making a csv file for ${x}..."
+    echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}_${data_size}
     make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
@@ -244,8 +241,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
 
   touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp && echo "Finish creating dataset (stage: 2)."
 fi
-
-exit 1
 
 mkdir -p ${model}
 if [ ${stage} -le 4 ]; then

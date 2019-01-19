@@ -84,7 +84,7 @@ ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
 focal_loss=0.0
-gaussian_noise_std=0.0625
+gaussian_noise_std=0.0
 gaussian_noise_timing=constant
 ### MTL
 ctc_weight=0.0
@@ -104,7 +104,6 @@ share_lm_softmax=
 model=/n/sd8/inaguma/result/swbd
 
 ### path to the model directory to restart training
-rnnlm_resume=
 resume=
 
 ### path to original data
@@ -128,7 +127,6 @@ if [ -z ${gpu} ]; then
   exit 1
 fi
 ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
-rnnlm_gpu=`echo ${gpu} | cut -d "," -f 1`
 
 train_set=train_sp
 dev_set=dev_sp
@@ -203,15 +201,16 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
     echo "run ./run.sh first" && exit 1
   fi
 
-  # Make datset csv files
+  # Make datset csv files for the ASR task
   mkdir -p ${data}/dataset
   for x in ${train_set} ${dev_set}; do
-    echo "Making a csv file for ${x}..."
+    echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
   for x in ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
@@ -234,6 +233,9 @@ if [ ${stage} -le 4 ]; then
     --wp_model ${wp_model}.model \
     --model ${model}/asr \
     --unit ${unit} \
+    --nsplices ${nsplices} \
+    --nstacks ${nstacks} \
+    --nskips ${nskips} \
     --conv_in_channel ${conv_in_channel} \
     --conv_channels ${conv_channels} \
     --conv_kernel_sizes ${conv_kernel_sizes} \
