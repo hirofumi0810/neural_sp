@@ -110,7 +110,6 @@ share_lm_softmax=
 model=/n/sd8/inaguma/result/librispeech
 
 ### path to the model directory to restart training
-rnnlm_resume=
 resume=
 
 ### path to download data
@@ -133,7 +132,6 @@ if [ -z ${gpu} ]; then
   exit 1
 fi
 ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
-rnnlm_gpu=`echo ${gpu} | cut -d "," -f 1`
 
 # Base url for downloads.
 data_url=www.openslr.org/resources/12

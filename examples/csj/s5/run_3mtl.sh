@@ -119,7 +119,6 @@ share_lm_softmax=
 model=/n/sd8/inaguma/result/csj
 
 ### path to the model directory to restart training
-rnnlm_resume=
 resume=
 
 ### path to original data
@@ -160,7 +159,6 @@ if [ -z ${gpu} ]; then
   exit 1
 fi
 ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
-rnnlm_gpu=`echo ${gpu} | cut -d "," -f 1`
 
 train_set=train_${data_size}
 dev_set=dev_${data_size}
