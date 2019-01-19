@@ -8,7 +8,6 @@
 feat="" # feat.scp
 unit=""
 remove_space=false
-is_test=false
 unk="<unk>"
 space="<space>"
 nlsyms=""
@@ -31,7 +30,6 @@ make_csv.py --feat ${feat} \
             --dict ${dict} \
             --unit ${unit} \
             --remove_space ${remove_space} \
-            --is_test ${is_test} \
             --unk ${unk} \
             --space ${space} \
             --nlsyms ${nlsyms} \

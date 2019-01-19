@@ -19,7 +19,7 @@ import sentencepiece as spm
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--feat', type=str,
+parser.add_argument('--feat', type=str, default='', nargs='?',
                     help='feat.scp file')
 parser.add_argument('--utt2num_frames', type=str,
                     help='utt2num_frames file')
@@ -31,7 +31,6 @@ parser.add_argument('--unit', type=str, choices=['word', "wp", 'char', "phone", 
                     help='token units')
 parser.add_argument('--remove_space', type=strtobool, default=False,
                     help='')
-parser.add_argument('--is_test', type=strtobool, default=False)
 parser.add_argument('--unk', type=str, default='<unk>',
                     help='<unk> token')
 parser.add_argument('--space', type=str, default='<space>',
@@ -52,17 +51,18 @@ def main():
                 nlsyms.append(unicode(line, 'utf-8').strip())
 
     utt2feat = {}
-    with open(args.feat, 'r') as f:
-        for line in f:
-            # utt_id, feat_path = unicode(line, 'utf-8').strip().split(' ')
-            utt_id, feat_path = line.strip().split(' ')
-            utt2feat[utt_id] = feat_path
-
     utt2frame = {}
-    with open(args.utt2num_frames, 'r') as f:
-        for line in f:
-            utt_id, x_len = unicode(line, 'utf-8').strip().split(' ')
-            utt2frame[utt_id] = int(x_len)
+    if args.feat:
+        with open(args.feat, 'r') as f:
+            for line in f:
+                # utt_id, feat_path = unicode(line, 'utf-8').strip().split(' ')
+                utt_id, feat_path = line.strip().split(' ')
+                utt2feat[utt_id] = feat_path
+
+        with open(args.utt2num_frames, 'r') as f:
+            for line in f:
+                utt_id, x_len = unicode(line, 'utf-8').strip().split(' ')
+                utt2frame[utt_id] = int(x_len)
 
     token2id = {}
     with open(args.dict, 'r') as f:
@@ -76,7 +76,7 @@ def main():
             token, id = unicode(line, 'utf-8').strip().split(' ')
             id2token[str(id)] = token
 
-    if args.unit == 'wp' and not args.is_test:
+    if args.unit == 'wp':
         sp = spm.SentencePieceProcessor()
         sp.Load(args.wp_model + '.model')
 
@@ -95,71 +95,74 @@ def main():
                 words.remove('')
 
             text = ' '.join(words)
-            feat_path = utt2feat[utt_id]
-            x_len = utt2frame[utt_id]
+            if args.feat:
+                feat_path = utt2feat[utt_id]
+                x_len = utt2frame[utt_id]
 
-            if not os.path.isfile(feat_path.split(':')[0]):
-                raise ValueError('There is no file: %s' % feat_path)
+                if not os.path.isfile(feat_path.split(':')[0]):
+                    raise ValueError('There is no file: %s' % feat_path)
+            else:
+                # dummy for LM
+                feat_path = ''
+                x_len = 0
 
             # Convert strings into the corresponding indices
-            if args.is_test:
-                token_id = ''
-                y_len = 1
-                # NOTE; skip test sets for OOV issues
-            else:
-                token_ids = []
-                if args.unit in ['word', 'word_char']:
-                    for w in words:
-                        if w in token2id.keys():
-                            token_ids.append(token2id[w])
-                        else:
-                            # Replace with <unk>
-                            if args.unit == 'word_char':
-                                for c in list(w):
-                                    if c in token2id.keys():
-                                        token_ids.append(token2id[c])
-                                    else:
-                                        token_ids.append(token2id[args.unk])
-                            else:
-                                token_ids.append(token2id[args.unk])
-
-                elif args.unit == 'wp':
-                    wps = sp.EncodeAsPieces(text)
-                    for wp in wps:
-                        if wp in token2id.keys():
-                            token_ids.append(token2id[wp])
-                        else:
-                            # Replace with <unk>
-                            token_ids.append(token2id[args.unk])
-
-                elif args.unit == 'char':
-                    for i,  w in enumerate(words):
-                        if w in nlsyms:
-                            token_ids.append(token2id[w])
-                        else:
+            token_ids = []
+            if args.unit in ['word', 'word_char']:
+                for w in words:
+                    if w in token2id.keys():
+                        token_ids.append(token2id[w])
+                    else:
+                        # Replace with <unk>
+                        if args.unit == 'word_char':
                             for c in list(w):
                                 if c in token2id.keys():
                                     token_ids.append(token2id[c])
                                 else:
-                                    # Replace with <unk>
                                     token_ids.append(token2id[args.unk])
+                        else:
+                            token_ids.append(token2id[args.unk])
 
-                        # Remove whitespaces
-                        if not args.remove_space:
-                            if i < len(words) - 1:
-                                token_ids.append(token2id[args.space])
+            elif args.unit == 'wp':
+                wps = sp.EncodeAsPieces(text)
+                for wp in wps:
+                    if wp in token2id.keys():
+                        token_ids.append(token2id[wp])
+                    else:
+                        # Replace with <unk>
+                        token_ids.append(token2id[args.unk])
 
-                elif args.unit == 'phone':
-                    for p in words:
-                        token_ids.append(token2id[p])
+            elif args.unit == 'char':
+                for i,  w in enumerate(words):
+                    if w in nlsyms:
+                        token_ids.append(token2id[w])
+                    else:
+                        for c in list(w):
+                            if c in token2id.keys():
+                                token_ids.append(token2id[c])
+                            else:
+                                # Replace with <unk>
+                                token_ids.append(token2id[args.unk])
 
-                else:
-                    raise ValueError(args.unit)
-                token_id = ' '.join(token_ids)
-                y_len = len(token_ids)
+                    # Remove whitespaces
+                    if not args.remove_space:
+                        if i < len(words) - 1:
+                            token_ids.append(token2id[args.space])
+
+            elif args.unit == 'phone':
+                for p in words:
+                    token_ids.append(token2id[p])
+
+            else:
+                raise ValueError(args.unit)
+            token_id = ' '.join(token_ids)
+            y_len = len(token_ids)
 
             if x_dim is None:
-                x_dim = kaldi_io.read_mat(feat_path).shape[-1]
+                if args.feat:
+                    x_dim = kaldi_io.read_mat(feat_path).shape[-1]
+                else:
+                    x_dim = 0
             y_dim = len(token2id.keys())
 
             print('\"%d\",\"%s\",\"%s\",\"%d\",\"%d\",\"%s\",\"%s\",\"%d\",\"%d\"' %
