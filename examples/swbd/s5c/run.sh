@@ -132,7 +132,7 @@ lm_dropout_hidden=0.5
 lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_weight_decay=1e-6
-# lm_backward=
+lm_backward=
 
 ### path to save the model
 model=/n/sd8/inaguma/result/swbd
@@ -301,15 +301,16 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
     cat ${data}/dict/oov_rate/word_${vocab_size}.txt
   fi
 
-  # Make datset csv files
+  # Make datset csv files for the ASR task
   mkdir -p ${data}/dataset
   for x in ${train_set} ${dev_set}; do
-    echo "Making a csv file for ${x}..."
+    echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
   for x in ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
@@ -324,11 +325,24 @@ if [ ${stage} -le 3 ]; then
   echo "                      RNNLM Training stage (stage:3)                       "
   echo ============================================================================
 
+  # Make datset csv files for the LM task
+  mkdir -p ${data}/dataset_lm
+  for x in ${train_set} ${dev_set}; do
+    echo "Making a LM csv file for ${x}..."
+    make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
+      ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+  done
+  for x in ${test_set}; do
+    echo "Making a LM csv file for ${x}..."
+    make_dataset.sh --is_test true --unit ${unit} \
+      ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+  done
+
   # NOTE: support only a single GPU for RNNLM training
   CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
     --ngpus 1 \
-    --train_text ${data}/${train_set}/text \
-    --dev_text ${data}/${dev_set}/text \
+    --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.csv \
+    --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
     --dict ${dict} \
     --wp_model ${wp_model}.model \
     --nlsyms ${nlsyms} \
@@ -360,8 +374,8 @@ if [ ${stage} -le 3 ]; then
     --dropout_hidden ${lm_dropout_hidden} \
     --dropout_out ${lm_dropout_out} \
     --dropout_emb ${lm_dropout_emb} \
-    --weight_decay ${lm_weight_decay} || exit 1;
-    # --backward
+    --weight_decay ${lm_weight_decay} \
+    --lm_backward ${lm_backward} || exit 1;
     # --resume ${rnnlm_resume} || exit 1;
 
   echo "Finish RNNLM training (stage: 3)."
