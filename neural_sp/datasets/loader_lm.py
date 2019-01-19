@@ -16,10 +16,13 @@ from __future__ import print_function
 import numpy as np
 import pandas as pd
 import random
+import os
 
 from neural_sp.datasets.base import Base
 from neural_sp.datasets.token_converter.character import Char2id
 from neural_sp.datasets.token_converter.character import Id2char
+from neural_sp.datasets.token_converter.phone import Id2phone
+from neural_sp.datasets.token_converter.phone import Phone2id
 from neural_sp.datasets.token_converter.word import Id2word
 from neural_sp.datasets.token_converter.word import Word2id
 from neural_sp.datasets.token_converter.wordpiece import Id2wp
@@ -39,7 +42,7 @@ class Dataset(Base):
         Args:
             csv_path (str):
             dict_path (str):
-            unit (str): word or wp or char or phone
+            unit (str): word or wp or char or phone or word_char
             batch_size (int): the size of mini-batch
             bptt (int):
             nepochs (int): the max epoch. None means infinite loop.
@@ -50,6 +53,8 @@ class Dataset(Base):
         """
         super(Dataset, self).__init__()
 
+        self.set = os.path.basename(csv_path).split('.')[0]
+        self.is_test = is_test
         self.unit = unit
         self.batch_size = batch_size
         self.bptt = bptt

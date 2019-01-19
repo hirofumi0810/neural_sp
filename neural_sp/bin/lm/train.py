@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import cProfile
 import math
+import numpy as np
 import os
 # from setproctitle import setproctitle
 import shutil
@@ -205,7 +206,7 @@ def main():
                          duration_step / 60))
             start_time_step = time.time()
         step += args.ngpus
-        pbar_epoch.update(len(ys_train))
+        pbar_epoch.update(np.prod(ys_train.shape))
 
         # Save fugures of loss and accuracy
         if step % (args.print_step * 10) == 0:
