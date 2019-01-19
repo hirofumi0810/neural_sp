@@ -81,9 +81,12 @@ ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
 focal_loss=0.0
+gaussian_noise_std=0.0625
+gaussian_noise_timing=constant
 ### MTL
-ctc_weight=0.2
+ctc_weight=0.0
 bwd_weight=0.0
+agreement_weight=0.0
 twin_net_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
@@ -140,35 +143,17 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
   echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
 
-  local/swbd1_data_download.sh ${SWBD_AUDIOPATH} || exit 1;
-  local/swbd1_prepare_dict.sh || exit 1;
-  local/swbd1_data_prep.sh ${SWBD_AUDIOPATH} || exit 1;
-  local/eval2000_data_prep.sh ${EVAL2000_AUDIOPATH} ${EVAL2000_TRANSPATH} || exit 1;
-
-  # if [ -d ${RT03_PATH} ]; then
-  #   local/rt03_data_prep.sh ${RT03_PATH}
-  # fi
-
-  # prepare fisher data for language models (optional)
-  # if [ -d ${FISHER_PATH} ]; then
-  #   # prepare fisher data and put it under data/train_fisher
-  #   local/fisher_data_prep.sh ${FISHER_PATH}
-  #   local/fisher_swbd_prepare_dict.sh
-  #
-  #   # merge two datasets into one
-  #   mkdir -p ${data}/train_swbd_fisher
-  #   for f in spk2utt utt2spk wav.scp text segments; do
-  #     cat ${data}/train_fisher/$f ${data}/train_swbd/$f > ${data}/train_swbd_fisher/$f
-  #   done
-  # fi
-
-  touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
+  echo "run ./run.sh first" && exit 1
 fi
 
 if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_sp ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
+
+  if [ ! -e ${data}/.done_stage_1 ]; then
+    echo "run ./run.sh first" && exit 1
+  fi
 
   # speed-perturbed
   utils/perturb_data_dir_speed.sh 0.9 ${data}/train ${data}/temp1
@@ -210,6 +195,10 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
+
+  if [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
+    echo "run ./run.sh first" && exit 1
+  fi
 
   # Make datset csv files
   mkdir -p ${data}/dataset
@@ -298,8 +287,11 @@ if [ ${stage} -le 4 ]; then
     --ss_type ${ss_type} \
     --lsm_prob ${lsm_prob} \
     --focal_loss_weight ${focal_loss} \
+    --gaussian_noise_std ${gaussian_noise_std} \
+    --gaussian_noise_timing ${gaussian_noise_timing} \
     --ctc_weight ${ctc_weight} \
     --bwd_weight ${bwd_weight} \
+    --agreement_weight ${agreement_weight} \
     --twin_net_weight ${twin_net_weight} \
     --mtl_per_batch ${mtl_per_batch} \
     --task_specific_layer ${task_specific_layer} \

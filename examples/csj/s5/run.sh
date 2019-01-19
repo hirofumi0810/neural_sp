@@ -300,6 +300,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
   for x in ${test_set}; do
+    echo "Making a csv file for ${x}..."
     dump_dir=${data}/dump/${x}_${data_size}
     make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;

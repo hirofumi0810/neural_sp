@@ -82,7 +82,7 @@ ss_type=constant
 lsm_prob=0.1
 focal_loss=0.0
 ### MTL
-ctc_weight=0.2
+ctc_weight=0.0
 bwd_weight=0.0
 agreement_weight=0.0
 twin_net_weight=0.0

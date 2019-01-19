@@ -88,24 +88,24 @@ def parse():
     parser.add_argument('--conv_in_channel', type=int, default=1, nargs='?',
                         help='')
     parser.add_argument('--conv_channels', type=str, default="", nargs='?',
-                        help='Delimited list input.')
+                        help='delimited list input.')
     parser.add_argument('--conv_kernel_sizes', type=str, default="", nargs='?',
-                        help='Delimited list input.')
+                        help='delimited list input.')
     parser.add_argument('--conv_strides', type=str, default="", nargs='?',
-                        help='Delimited list input.')
+                        help='delimited list input.')
     parser.add_argument('--conv_poolings', type=str, default="", nargs='?',
-                        help='Delimited list input.')
+                        help='delimited list input.')
     parser.add_argument('--conv_batch_norm', type=bool, default=False, nargs='?',
                         help='')
     parser.add_argument('--enc_type', type=str, default='blstm',
                         choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn'],
                         help='')
     parser.add_argument('--enc_nunits', type=int, default=320,
-                        help='The number of units in each encoder RNN layer.')
+                        help='number of units in each encoder RNN layer.')
     parser.add_argument('--enc_nprojs', type=int, default=0,
-                        help='The number of units in each projection layer after the RNN layer.')
+                        help='number of units in each projection layer after the RNN layer.')
     parser.add_argument('--enc_nlayers', type=int, default=5,
-                        help='The number of encoder RNN layers')
+                        help='number of encoder RNN layers')
     parser.add_argument('--enc_nlayers_sub1', type=int, default=0,
                         help='')
     parser.add_argument('--enc_nlayers_sub2', type=int, default=0,
@@ -115,7 +115,7 @@ def parse():
     parser.add_argument('--enc_residual', type=bool, default=False, nargs='?',
                         help='')
     parser.add_argument('--subsample', type=str, default="",
-                        help='Delimited list input.')
+                        help='delimited list input.')
     parser.add_argument('--subsample_type', type=str, default='drop',
                         choices=['drop', 'concat', 'max_pool'],
                         help='')
@@ -174,7 +174,7 @@ def parse():
                         help='')
     # optimization
     parser.add_argument('--batch_size', type=int, default=50,
-                        help='')
+                        help='size of mini-batch')
     parser.add_argument('--optimizer', type=str, default='adam',
                         choices=['adam', 'adadelta', 'sgd'],
                         help='')
@@ -183,11 +183,11 @@ def parse():
     parser.add_argument('--eps', type=float, default=1e-6,
                         help='')
     parser.add_argument('--nepochs', type=int, default=25,
-                        help='')
+                        help='number of epochs')
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
                         help='')
     parser.add_argument('--print_step', type=int, default=200,
-                        help='')
+                        help='the step to print log')
     parser.add_argument('--metric', type=str, default='edit_distance',
                         choices=['edit_distance', 'loss', 'acc', 'ppl', 'bleu'],
                         help='')
@@ -226,17 +226,22 @@ def parse():
     parser.add_argument('--clip_grad_norm', type=float, default=5.0,
                         help='')
     parser.add_argument('--dropout_in', type=float, default=0.0,
-                        help='')
+                        help='dropout probability for the input')
     parser.add_argument('--dropout_enc', type=float, default=0.0,
-                        help='')
+                        help='dropout probability for the')
     parser.add_argument('--dropout_dec', type=float, default=0.0,
-                        help='')
+                        help='dropout probability for the decoder')
     parser.add_argument('--dropout_emb', type=float, default=0.0,
-                        help='')
+                        help='dropout probability for the embedding')
     parser.add_argument('--dropout_att', type=float, default=0.0,
-                        help='')
+                        help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='')
+    parser.add_argument('--gaussian_noise_std', type=float, default=0,
+                        help='standard deviation of Gaussian noise')
+    parser.add_argument('--gaussian_noise_timing', type=str, default='saturation',
+                        choices=['constant', 'saturation'],
+                        help='timing to start Gaussian noise injection')
     parser.add_argument('--logits_temp', type=float, default=1.0,
                         help='')
     parser.add_argument('--ss_prob', type=float, default=0.0,
@@ -254,32 +259,32 @@ def parse():
                         help='')
     # MTL
     parser.add_argument('--ctc_weight', type=float, default=0.0,
-                        help='CTC weight for the main task')
+                        help='CTC loss weight for the main task')
     parser.add_argument('--ctc_weight_sub1', type=float, default=0.0,
-                        help='CTC weight for the 1st auxiliary task')
+                        help='CTC loss weight for the 1st auxiliary task')
     parser.add_argument('--ctc_weight_sub2', type=float, default=0.0,
-                        help='CTC weight for the 2nd auxiliary task')
+                        help='CTC loss weight for the 2nd auxiliary task')
     parser.add_argument('--ctc_weight_sub3', type=float, default=0.0,
-                        help='CTC weight for the 3rd auxiliary task')
+                        help='CTC loss weight for the 3rd auxiliary task')
     parser.add_argument('--sub1_weight', type=float, default=0.0,
-                        help='total weight for the 1st auxiliary task')
+                        help='total loss weight for the 1st auxiliary task')
     parser.add_argument('--sub2_weight', type=float, default=0.0,
-                        help='total weight for the 2nd auxiliary task')
+                        help='total loss weight for the 2nd auxiliary task')
     parser.add_argument('--sub3_weight', type=float, default=0.0,
-                        help='total weight for the 3rd auxiliary task')
+                        help='total loss weight for the 3rd auxiliary task')
     parser.add_argument('--mtl_per_batch', type=bool, default=False, nargs='?',
                         help='If True, change mini-batch per task')
     parser.add_argument('--task_specific_layer', type=bool, default=False, nargs='?',
                         help='If True, insert a task-specific encoder layer per task')
     # foroward-backward
     parser.add_argument('--bwd_weight', type=float, default=0.0,
-                        help='weight for the backward decoder in the main task')
+                        help='cross etnropy loss weight for the backward decoder in the main task')
     parser.add_argument('--bwd_weight_sub1', type=float, default=0.0,
-                        help='weight for the backward decoder in the 1st auxiliary task')
+                        help='cross etnropy loss weight for the backward decoder in the 1st auxiliary task')
     parser.add_argument('--bwd_weight_sub2', type=float, default=0.0,
-                        help='weight for the backward decoder in the 2nd auxiliary task')
+                        help='cross etnropy loss weight for the backward decoder in the 2nd auxiliary task')
     parser.add_argument('--bwd_weight_sub3', type=float, default=0.0,
-                        help='weight for the backward decoder in the 3rd auxiliary task')
+                        help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     parser.add_argument('--twin_net_weight', type=float, default=0.0,
                         help='1.5 is recommended in the orignial paper.')
     parser.add_argument('--twin_net_weight_sub1', type=float, default=0.0,
@@ -343,9 +348,9 @@ def parse():
                         choices=['word', 'wp', 'char', 'phone', 'word_char'],
                         help='')
     parser.add_argument('--recog_batch_size', type=int, default=1,
-                        help='the size of mini-batch in evaluation')
+                        help='size of mini-batch in evaluation')
     parser.add_argument('--recog_beam_width', type=int, default=1,
-                        help='the size of beam')
+                        help='size of beam')
     parser.add_argument('--recog_max_len_ratio', type=float, default=1,
                         help='')
     parser.add_argument('--recog_min_len_ratio', type=float, default=0.0,
@@ -363,11 +368,11 @@ def parse():
     parser.add_argument('--recog_rnnlm_bwd', type=str, default=None, nargs='?',
                         help='path to the RMMLM in the reverse direction')
     parser.add_argument('--recog_resolving_unk', type=strtobool, default=False,
-                        help='Resolving UNK for the word-based model.')
+                        help='resolving UNK for the word-based model.')
     parser.add_argument('--recog_fwd_bwd_attention', type=strtobool, default=False,
-                        help='Forward-backward attention decoding.')
+                        help='forward-backward attention decoding.')
     parser.add_argument('--recog_joint_ctc_attention', type=strtobool, default=False,
-                        help='Forward-backward attention decoding.')
+                        help='forward-backward attention decoding.')
 
     args = parser.parse_args()
     return args

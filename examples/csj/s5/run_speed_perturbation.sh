@@ -81,9 +81,12 @@ ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
 focal_loss=0.0
+gaussian_noise_std=0.0
+gaussian_noise_timing=constant
 ### MTL
 ctc_weight=0.0
 bwd_weight=0.0
+agreement_weight=0.0
 twin_net_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
@@ -141,9 +144,9 @@ fi
 ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
 rnnlm_gpu=`echo ${gpu} | cut -d "," -f 1`
 
-train_set=train_${data_size}_sp
-dev_set=dev_${data_size}_sp
-test_set="eval1 eval2 eval3"
+train_set=train_sp_${data_size}
+dev_set=dev_sp_${data_size}
+test_set="eval1_sp eval2_sp eval3_sp"
 
 if [ ${unit} = char ]; then
   vocab_size=
@@ -157,26 +160,17 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
   echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
 
-  mkdir -p ${data}
-  local/csj_make_trans/csj_autorun.sh ${CSJDATATOP} ${data}/csj-data ${CSJVER} || exit 1;
-  local/csj_data_prep.sh ${data}/csj-data ${data_size} || exit 1;
-  for x in eval1 eval2 eval3; do
-    local/csj_eval_data_prep.sh ${data}/csj-data/eval ${x} || exit 1;
-  done
-
-  # Remove <sp> and POS tag, and lowercase
-  for x in ${train_set} ${test_set}; do
-    local/remove_pos.py ${data}/${x}/text | nkf -Z > ${data}/${x}/text.tmp
-    mv ${data}/${x}/text.tmp ${data}/${x}/text
-  done
-
-  touch ${data}/.done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
+  echo "run ./run.sh first" && exit 1
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_sp_${data_size} ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
+
+  if [ ! -e ${data}/.done_stage_1_${data_size} ]; then
+    echo "run ./run.sh first" && exit 1
+  fi
 
   # speed-perturbed
   utils/perturb_data_dir_speed.sh 0.9 ${data}/train_${data_size} ${data}/temp1
@@ -210,12 +204,12 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
       ${data}/dev_${data_size}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
   for x in ${test_set}; do
-    dump_dir=${data}/dump/${x}_${data_size}_sp
+    dump_dir=${data}/dump/${x}_${data_size}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
 
-  touch ${data}/.done_stage_1_${data_size}_sp && echo "Finish feature extranction (stage: 1)."
+  touch ${data}/.done_stage_1_sp_${data_size} && echo "Finish feature extranction (stage: 1)."
 fi
 
 dict=${data}/dict/train_${data_size}_${unit}${wp_type}${vocab_size}.txt
@@ -224,6 +218,10 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
+
+  if [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
+    echo "run ./run.sh first" && exit 1
+  fi
 
   # Make datset csv files
   mkdir -p ${data}/dataset
@@ -241,13 +239,15 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
   done
   for x in ${test_set}; do
     echo "Making a csv file for ${x}..."
-    dump_dir=${data}/dump/${x}_${data_size}_sp
+    dump_dir=${data}/dump/${x}_${data_size}
     make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_sp_${unit}${wp_type}${vocab_size}.csv || exit 1;
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
 
   touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp && echo "Finish creating dataset (stage: 2)."
 fi
+
+exit 1
 
 mkdir -p ${model}
 if [ ${stage} -le 4 ]; then
@@ -259,7 +259,7 @@ if [ ${stage} -le 4 ]; then
     --ngpus ${ngpus} \
     --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.csv \
     --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
-    --eval_sets ${data}/dataset/eval1_${data_size}_sp_${unit}${wp_type}${vocab_size}.csv \
+    --eval_sets ${data}/dataset/eval1_sp_${data_size}_${unit}${wp_type}${vocab_size}.csv \
     --dict ${dict} \
     --wp_model ${wp_model}.model \
     --model ${model}/asr \
@@ -320,8 +320,11 @@ if [ ${stage} -le 4 ]; then
     --ss_type ${ss_type} \
     --lsm_prob ${lsm_prob} \
     --focal_loss_weight ${focal_loss} \
+    --gaussian_noise_std ${gaussian_noise_std} \
+    --gaussian_noise_timing ${gaussian_noise_timing} \
     --ctc_weight ${ctc_weight} \
     --bwd_weight ${bwd_weight} \
+    --agreement_weight ${agreement_weight} \
     --twin_net_weight ${twin_net_weight} \
     --mtl_per_batch ${mtl_per_batch} \
     --task_specific_layer ${task_specific_layer} \

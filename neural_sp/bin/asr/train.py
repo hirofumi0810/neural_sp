@@ -493,6 +493,9 @@ def main():
             model.module.optimizer.step()
             loss_train = loss.item()
             del loss
+
+            # Gaussian noise injection
+            model.module.gaussian_noise(mean=0, std=args.gaussian_noise_std)
         reporter.step(is_eval=False)
 
         # Update learning rate
@@ -617,7 +620,12 @@ def main():
                     not_improved_epoch += 1
 
                     # start scheduled sampling
-                    model.module.scheduled_sampling_triger()
+                    if args.ss_prob > 0:
+                        model.module.scheduled_sampling_trigger()
+
+                    # start Gaussian noise injection
+                    if args.gaussian_noise_std > 0:
+                        model.module.gaussian_noise_trigger()
 
                 duration_eval = time.time() - start_time_eval
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))

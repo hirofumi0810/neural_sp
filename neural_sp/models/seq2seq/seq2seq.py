@@ -97,6 +97,10 @@ class Seq2seq(ModelBase):
             assert 0 < self.bwd_weight < 1
             # assert args.mtl_per_batch
 
+        # regularization
+        self.gaussian_noise_std = args.gaussian_noise_std
+        self._gaussian_noise = True if args.gaussian_noise_std > 0 and args.gaussian_noise_timing == 'constant' else False
+
         # Encoder
         self.enc = RNNEncoder(
             input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
@@ -307,7 +311,7 @@ class Seq2seq(ModelBase):
         if args.rnnlm_cold_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
 
-    def scheduled_sampling_triger(self):
+    def scheduled_sampling_trigger(self):
         # main task
         directions = []
         if self.fwd_weight > 0 or self.ctc_weight > 0:
