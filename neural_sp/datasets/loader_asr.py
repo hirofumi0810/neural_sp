@@ -36,7 +36,7 @@ class Dataset(Base):
 
     def __init__(self, csv_path, dict_path,
                  unit, batch_size, nepochs=None,
-                 is_test=False,  min_nframes=40, max_nframes=2000,
+                 is_test=False, min_nframes=40, max_nframes=2000,
                  shuffle=False, sort_by_input_length=False,
                  short2long=False, sort_stop_epoch=None,
                  nques=None, dynamic_batching=False,

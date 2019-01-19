@@ -6,47 +6,43 @@
 
 """Base class for loading dataset for the RNNLM.
    In this class, all data will be loaded at each step.
+   You can use the multi-GPU version.
 """
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
 import numpy as np
-import os
 import pandas as pd
 import random
 
 from neural_sp.datasets.base import Base
-from neural_sp.datasets.token_converter.character import Char2idx
-from neural_sp.datasets.token_converter.character import Idx2char
-from neural_sp.datasets.token_converter.word import Idx2word
-from neural_sp.datasets.token_converter.word import Word2idx
-from neural_sp.datasets.token_converter.wordpiece import Idx2wp
-from neural_sp.datasets.token_converter.wordpiece import Wp2idx
+from neural_sp.datasets.token_converter.character import Char2id
+from neural_sp.datasets.token_converter.character import Id2char
+from neural_sp.datasets.token_converter.word import Id2word
+from neural_sp.datasets.token_converter.word import Word2id
+from neural_sp.datasets.token_converter.wordpiece import Id2wp
+from neural_sp.datasets.token_converter.wordpiece import Wp2id
 
 random.seed(1)
 np.random.seed(1)
 
-logger = logging.getLogger('training')
-
 
 class Dataset(Base):
 
-    def __init__(self, csv_path, dict_path, label_type, batch_size, bptt, eos,
-                 nepochs=None, is_test=False, shuffle=False, wp_model=None):
+    def __init__(self, csv_path, dict_path,
+                 unit, batch_size, nepochs=None,
+                 is_test=False, bptt=-1, shuffle=False, wp_model=None):
         """A class for loading dataset.
 
         Args:
             csv_path (str):
             dict_path (str):
-            label_type (str): word or wp or char or phone
+            unit (str): word or wp or char or phone
             batch_size (int): the size of mini-batch
             bptt (int):
-            eos (int):
             nepochs (int): the max epoch. None means infinite loop.
-            is_test (bool):
             shuffle (bool): if True, shuffle utterances.
                 This is disabled when sort_by_input_length is True.
             wp_model ():
@@ -54,31 +50,30 @@ class Dataset(Base):
         """
         super(Dataset, self).__init__()
 
-        self.set = os.path.basename(csv_path).split('.')[0]
-        self.is_test = is_test
-        self.label_type = label_type
+        self.unit = unit
         self.batch_size = batch_size
         self.bptt = bptt
-        self.eos = eos
+        self.sos = 2
+        self.eos = 2
         self.max_epoch = nepochs
         self.shuffle = shuffle
         self.vocab = self.count_vocab_size(dict_path)
 
         # Set index converter
-        if label_type == 'word':
-            self.idx2word = Idx2word(dict_path)
-            self.word2idx = Word2idx(dict_path)
-        elif label_type == 'wp':
-            self.idx2wp = Idx2wp(dict_path, wp_model)
-            self.wp2idx = Wp2idx(dict_path, wp_model)
-        elif label_type == 'char':
-            self.idx2char = Idx2char(dict_path)
-            self.char2idx = Char2idx(dict_path)
+        if unit in ['word', 'word_char']:
+            self.id2word = Id2word(dict_path)
+            self.word2id = Word2id(dict_path, word_char_mix=(unit == 'word_char'))
+        elif unit == 'wp':
+            self.id2wp = Id2wp(dict_path, wp_model)
+            self.wp2id = Wp2id(dict_path, wp_model)
+        elif unit == 'char':
+            self.id2char = Id2char(dict_path)
+            self.char2id = Char2id(dict_path)
         else:
-            raise ValueError(label_type)
+            raise ValueError(unit)
 
         # Load dataset csv file
-        df = pd.read_csv(csv_path, encoding='utf-8')
+        df = pd.read_csv(csv_path, encoding='utf-8', delimiter=',')
         df = df.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
 
         # Sort csv records
@@ -88,13 +83,17 @@ class Dataset(Base):
             self.df = df.sort_values(by='utt_id', ascending=True)
 
         # Concatenate into a single sentence
-        concat_ids = [eos]
+        concat_ids = []
         for i in list(self.df.index):
             assert self.df['token_id'][i] != ''
-            concat_ids += list(map(int, self.df['token_id'][i].split())) + [eos]
+            concat_ids += [self.eos] + list(map(int, self.df['token_id'][i].split()))
+        concat_ids += [self.eos]
+        # NOTE: <sos> and <eos> have the same index
 
-        # Truncate
-        concat_ids = concat_ids[:len(concat_ids) // batch_size * batch_size]
+        # Reshape
+        nutt = len(concat_ids)
+        concat_ids = concat_ids[:nutt // batch_size * batch_size]
+        print('Removed %d tokens / %d tokens' % (nutt - len(concat_ids), nutt))
         self.concat_ids = np.array(concat_ids).reshape((batch_size, -1))
 
     def __len__(self):
@@ -111,7 +110,10 @@ class Dataset(Base):
         Args:
             batch_size (int): the size of mini-batch
         Returns:
-            ys (list):
+            batch (dict):
+                ys (list): target labels in the main task of size `[B, L]`
+                ylens (list):
+                utt_ids (list): file names of input data of size `[B]`
             is_new_epoch (bool): If true, 1 epoch is finished
 
         """
