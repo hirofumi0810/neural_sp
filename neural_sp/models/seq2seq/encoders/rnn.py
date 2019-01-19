@@ -425,7 +425,7 @@ class RNNEncoder(nn.Module):
                     if (not self.subsample[l]) and self.residual:
                         if l >= self.residual_start_layer - 1:
                             xs = xs + xs_lower
-                            xs_lower = xs
+                        xs_lower = xs
                     # NOTE: Exclude residual connection from the raw inputs
 
         if task in ['all', 'ys']:
