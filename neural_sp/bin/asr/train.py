@@ -218,7 +218,10 @@ def main():
         dir_name += str(args.enc_nlayers) + 'L'
         if args.enc_residual:
             dir_name += '_res'
-        dir_name += '_' + args.subsample_type + str(subsample_factor)
+        if args.nstacks > 1:
+            dir_name += '_stack' + str(args.nstacks)
+        else:
+            dir_name += '_' + args.subsample_type + str(subsample_factor)
         dir_name += '_' + args.dec_type
         dir_name += str(args.dec_nunits) + 'H'
         dir_name += str(args.dec_nprojs) + 'P'

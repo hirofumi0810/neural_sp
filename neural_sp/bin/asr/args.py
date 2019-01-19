@@ -73,15 +73,15 @@ def parse():
                         choices=['speech', 'text'],
                         help='')
     parser.add_argument('--nsplices', type=int, default=1,
-                        help='')
+                        help='number of input frames to splice (both for left and right frames)')
     parser.add_argument('--nstacks', type=int, default=1,
-                        help='')
+                        help='number of input frames to stack (frame stacking)')
     parser.add_argument('--nskips', type=int, default=1,
-                        help='')
+                        help='number of input frames to skip')
     parser.add_argument('--max_nframes', type=int, default=2000,
-                        help='')
+                        help='maximum number of input frames')
     parser.add_argument('--min_nframes', type=int, default=40,
-                        help='')
+                        help='minimum number of input frames')
     parser.add_argument('--dynamic_batching', type=bool, default=True,
                         help='')
     # topology (encoder)

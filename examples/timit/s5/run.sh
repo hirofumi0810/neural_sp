@@ -17,6 +17,9 @@ export data=/n/sd8/inaguma/corpus/timit
 # ASR configuration
 #########################
 ### topology
+nsplices=1
+nstacks=1
+nskips=1
 conv_in_channel=1
 conv_channels=
 conv_kernel_sizes=
@@ -44,7 +47,6 @@ dec_loop_type=normal
 dec_residual=
 emb_dim=256
 ctc_fc_list=""
-
 ### optimization
 batch_size=32
 optimizer=adam
@@ -197,6 +199,9 @@ if [ ${stage} -le 4 ]; then
     --dict ${dict} \
     --model ${model}/asr \
     --unit phone \
+    --nsplices ${nsplices} \
+    --nstacks ${nstacks} \
+    --nskips ${nskips} \
     --conv_in_channel ${conv_in_channel} \
     --conv_channels ${conv_channels} \
     --conv_kernel_sizes ${conv_kernel_sizes} \

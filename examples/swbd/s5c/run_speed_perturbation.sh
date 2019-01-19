@@ -22,6 +22,9 @@ wp_type=bpe  # or unigram (for wordpiece)
 # ASR configuration
 #########################
 ### topology
+nsplices=1
+nstacks=1
+nskips=1
 conv_in_channel=1
 conv_channels=
 conv_kernel_sizes=

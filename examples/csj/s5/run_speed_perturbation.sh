@@ -22,6 +22,9 @@ wp_type=bpe  # or unigram (for wordpiece)
 # ASR configuration
 #########################
 ### topology
+nsplices=1
+nstacks=1
+nskips=1
 conv_in_channel=1
 conv_channels=
 conv_kernel_sizes=
@@ -189,22 +192,17 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_sp_${data_size} ]; then
 
   utils/fix_data_dir.sh ${data}/${train_set}
 
+  cp -rf ${data}/dev_${data_size} ${data}/${dev_set}
+  cp -rf ${data}/eval1 ${data}/eval1_sp
+  cp -rf ${data}/eval2 ${data}/eval2_sp
+  cp -rf ${data}/eval3 ${data}/eval3_sp
+
   # Compute global CMVN
   compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
   # Apply global CMVN & dump features
-  for x in ${train_set}; do
+  for x in ${train_set} ${dev_set} ${test_set}; do
     dump_dir=${data}/dump/${x}
-    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
-      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
-  done
-  for x in ${dev_set}; do
-    dump_dir=${data}/dump/${x}
-    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
-      ${data}/dev_${data_size}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
-  done
-  for x in ${test_set}; do
-    dump_dir=${data}/dump/${x}_${data_size}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
@@ -264,6 +262,9 @@ if [ ${stage} -le 4 ]; then
     --wp_model ${wp_model}.model \
     --model ${model}/asr \
     --unit ${unit} \
+    --nsplices ${nsplices} \
+    --nstacks ${nstacks} \
+    --nskips ${nskips} \
     --conv_in_channel ${conv_in_channel} \
     --conv_channels ${conv_channels} \
     --conv_kernel_sizes ${conv_kernel_sizes} \

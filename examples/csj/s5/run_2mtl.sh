@@ -25,6 +25,9 @@ vocab_size_sub1=
 # ASR configuration
 #########################
 ### topology
+nsplices=1
+nstacks=1
+nskips=1
 conv_in_channel=1
 conv_channels=
 conv_kernel_sizes=
@@ -264,6 +267,9 @@ if [ ${stage} -le 4 ]; then
     --model ${model}/asr \
     --unit ${unit} \
     --unit_sub1 ${unit_sub1} \
+    --nsplices ${nsplices} \
+    --nstacks ${nstacks} \
+    --nskips ${nskips} \
     --conv_in_channel ${conv_in_channel} \
     --conv_channels ${conv_channels} \
     --conv_kernel_sizes ${conv_kernel_sizes} \
