@@ -131,7 +131,6 @@ def main():
                     else:
                         # Replace with <unk>
                         token_ids.append(token2id[args.unk])
-
             elif args.unit == 'char':
                 for i,  w in enumerate(words):
                     if w in nlsyms:

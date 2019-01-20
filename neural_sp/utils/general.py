@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import functools
-import logging
 import os
 import six
 import time
@@ -53,29 +52,3 @@ def measure_time(func):
         elapse = time.time() - start
         print("Takes {} seconds.".format(elapse))
     return _measure_time
-
-
-def set_logger(save_path, key):
-    """Set logger.
-
-    Args:
-        save_path (str):
-        key (str):
-    Returns:
-        logger ():
-
-    """
-    logger = logging.getLogger(key)
-    sh = logging.StreamHandler()
-    fh = logging.FileHandler(save_path)
-
-    logger.setLevel(logging.DEBUG)
-    sh.setLevel(logging.WARNING)
-    fh.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s')
-    sh.setFormatter(formatter)
-    fh.setFormatter(formatter)
-    logger.addHandler(sh)
-    logger.addHandler(fh)
-
-    return logger

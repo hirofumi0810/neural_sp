@@ -38,6 +38,6 @@ def make_parallel(func, args, core=mp.cpu_count() - 1):
         p.close()
         p.terminate()
         p.join()
-        raise KeyboardInterrupt
+        raise KeyboardInterrupt()
 
     return result_tuple
