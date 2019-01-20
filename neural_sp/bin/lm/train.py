@@ -56,7 +56,7 @@ def main():
                         batch_size=args.batch_size * args.ngpus,
                         nepochs=args.nepochs,
                         bptt=args.bptt,
-                        shuffle=False)
+                        shuffle=True)
     dev_set = Dataset(csv_path=args.dev_set,
                       dict_path=args.dict,
                       unit=args.unit,

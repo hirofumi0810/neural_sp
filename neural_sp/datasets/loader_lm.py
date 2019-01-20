@@ -140,19 +140,20 @@ class Dataset(Base):
             is_new_epoch = True
             self.epoch += 1
 
-            # TODO(hirofumi): add randomness
-            # if self.shuffle:
-            #     # Shuffle csv records
-            #     self.df = self.df.reindex(np.random.permutation(self.df.index))
-            #
-            #     # Concatenate into a single sentence
-            #     concat_ids = [self.eos]
-            #     for i in list(self.df.index):
-            #         assert self.df['token_id'][i] != ''
-            #         concat_ids += list(map(int, self.df['token_id'][i].split())) + [self.eos]
-            #
-            #     # Truncate
-            #     concat_ids = concat_ids[:len(concat_ids) // batch_size * batch_size]
-            #     self.concat_ids = np.array(concat_ids).reshape((batch_size, -1))
+            if self.shuffle:
+                # Sort csv records
+                self.df = self.df.reindex(np.random.permutation(self.df.index))
+
+                # Concatenate into a single sentence
+                concat_ids = []
+                for i in list(self.df.index):
+                    assert self.df['token_id'][i] != ''
+                    concat_ids += [self.eos] + list(map(int, self.df['token_id'][i].split()))
+                concat_ids += [self.eos]
+                # NOTE: <sos> and <eos> have the same index
+
+                # Reshape
+                concat_ids = concat_ids[:len(concat_ids) // batch_size * batch_size]
+                self.concat_ids = np.array(concat_ids).reshape((batch_size, -1))
 
         return ys, is_new_epoch
