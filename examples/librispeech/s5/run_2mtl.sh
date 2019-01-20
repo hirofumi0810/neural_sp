@@ -116,7 +116,7 @@ resume=
 data_download_path=/n/rd21/corpora_7/librispeech/
 
 ### data size
-data_size=960
+data_size=960  # or 100 or 460
 
 . ./cmd.sh
 . ./path.sh
@@ -162,13 +162,13 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
   echo ============================================================================
 
   # download data
-  # mkdir -p ${data}
-  # for part in dev-clean test-clean dev-other test-other train-clean-100 train-clean-360 train-other-500; do
-  #   local/download_and_untar.sh ${data_download_path} ${data_url} ${part} || exit 1;
-  # done
+  mkdir -p ${data}
+  for part in dev-clean test-clean dev-other test-other train-clean-100 train-clean-360 train-other-500; do
+    local/download_and_untar.sh ${data_download_path} ${data_url} ${part} || exit 1;
+  done
 
   # download the LM resources
-  # local/download_lm.sh ${lm_url} ${data}/local/lm || exit 1;
+  local/download_lm.sh ${lm_url} ${data}/local/lm || exit 1;
 
   # format the data as Kaldi data directories
   for part in dev-clean test-clean dev-other test-other train-clean-100 train-clean-360 train-other-500; do
