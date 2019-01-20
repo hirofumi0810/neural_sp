@@ -107,7 +107,7 @@ lm_nunits=1024
 lm_nprojs=0
 lm_nlayers=2
 lm_emb_dim=1024
-lm_tie_weights=true
+lm_tie_embedding=true
 lm_residual=true
 # optimization
 lm_batch_size=256
@@ -348,7 +348,7 @@ if [ ${stage} -le 3 ]; then
     --nprojs ${lm_nprojs} \
     --nlayers ${lm_nlayers} \
     --emb_dim ${lm_emb_dim} \
-    --tie_weights ${lm_tie_weights} \
+    --tie_embedding ${lm_tie_embedding} \
     --residual ${lm_residual} \
     --batch_size ${lm_batch_size} \
     --bptt ${lm_bptt} \

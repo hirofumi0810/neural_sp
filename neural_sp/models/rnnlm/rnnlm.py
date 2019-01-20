@@ -34,8 +34,8 @@ class RNNLM(ModelBase):
         self.rnn_type = args.rnn_type
         assert args.rnn_type in ['lstm', 'gru']
         self.nunits = args.nunits
-        self.nlayers = args.num_layers
-        self.tie_weights = args.tie_weights
+        self.nlayers = args.nlayers
+        self.tie_embedding = args.tie_embedding
         self.residual = args.residual
         self.backward = args.backward
 
@@ -81,15 +81,11 @@ class RNNLM(ModelBase):
                     rnn_idim = args.nunits
 
                 if args.rnn_type == 'lstm':
-                    rnn_i = nn.LSTM
+                    rnn_cell = nn.LSTMCell
                 elif args.rnn_type == 'gru':
-                    rnn_i = nn.GRU
+                    rnn_cell = nn.GRUCell
 
-                self.rnn += [rnn_i(rnn_idim, args.nunits, 1,
-                                   bias=True,
-                                   batch_first=True,
-                                   dropout=0,
-                                   bidirectional=False)]
+                self.rnn += [rnn_cell(rnn_idim, args.nunits, 1)]
                 self.dropout += [nn.Dropout(p=args.dropout_hidden)]
 
                 if l != self.nlayers - 1 and args.nprojs > 0:
@@ -105,7 +101,7 @@ class RNNLM(ModelBase):
         # and
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
-        if args.tie_weights:
+        if args.tie_embedding:
             if args.nunits != args.emb_dim:
                 raise ValueError('When using the tied flag, nunits must be equal to emb_dim.')
             self.output.fc.weight = self.embed.embed.weight

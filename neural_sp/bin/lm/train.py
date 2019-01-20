@@ -70,7 +70,7 @@ def main():
                               dict_path=args.dict,
                               unit=args.unit,
                               wp_model=args.wp_model,
-                              batch_size=1,
+                              batch_size=args.batch_size * args.ngpus,
                               bptt=args.bptt)]
 
     args.vocab = train_set.vocab
@@ -85,7 +85,8 @@ def main():
     dir_name += '_' + args.optimizer
     dir_name += '_lr' + str(args.learning_rate)
     dir_name += '_bs' + str(args.batch_size)
-    if args.tie_weights:
+    dir_name += '_bptt' + str(args.bptt)
+    if args.tie_embedding:
         dir_name += '_tie'
     if args.residual:
         dir_name += '_residual'

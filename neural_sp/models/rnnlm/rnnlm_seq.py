@@ -36,7 +36,7 @@ class SeqRNNLM(ModelBase):
         assert args.rnn_type in ['lstm', 'gru']
         self.nunits = args.nunits
         self.nlayers = args.nlayers
-        self.tie_weights = args.tie_weights
+        self.tie_embedding = args.tie_embedding
         self.residual = args.residual
         self.backward = args.backward
 
@@ -65,7 +65,7 @@ class SeqRNNLM(ModelBase):
                            bias=True,
                            batch_first=True,
                            dropout=args.dropout_hidden,
-                           bidirectional=self.bidirectional)
+                           bidirectional=False)
             # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
             self.dropout_top = nn.Dropout(p=args.dropout_hidden)
         else:
@@ -106,7 +106,7 @@ class SeqRNNLM(ModelBase):
         # and
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
-        if args.tie_weights:
+        if args.tie_embedding:
             if args.nunits != args.emb_dim:
                 raise ValueError('When using the tied flag, nunits must be equal to emb_dim.')
             self.output.fc.weight = self.embed.embed.weight

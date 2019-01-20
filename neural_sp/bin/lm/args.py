@@ -50,9 +50,9 @@ def parse():
                         help='')
     parser.add_argument('--emb_dim', type=int, default=5,
                         help='')
-    parser.add_argument('--tie_weights', type=bool, default=False, nargs='?',
+    parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
                         help='')
-    parser.add_argument('--residual', type=bool, default=False, nargs='?',
+    parser.add_argument('--residual', type=strtobool, default=False, nargs='?',
                         help='')
     # optimization
     parser.add_argument('--batch_size', type=int, default=256,

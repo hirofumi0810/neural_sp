@@ -1094,7 +1094,7 @@ class Decoder(nn.Module):
         nmodels = len(ensemble_decoders) + 1
 
         # For cold fusion
-        if params['recog_rnnlm_weight'] > 0 and not self.cold_fusion:
+        if params['recog_rnnlm_weight'] > 0 and self.cold_fusion:
             assert self.rnnlm_cf
             self.rnnlm_cf.eval()
 
