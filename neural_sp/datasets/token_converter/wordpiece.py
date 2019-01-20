@@ -63,7 +63,7 @@ class Id2wp(object):
 
     def __init__(self, dict_path, wp_model):
         # Load a dictionary file
-        self.id2token = {}
+        self.id2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 wp, id = line.strip().encode('utf_8').split(' ')

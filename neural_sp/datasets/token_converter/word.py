@@ -69,7 +69,7 @@ class Id2word(object):
 
     def __init__(self, dict_path):
         # Load a dictionary file
-        self.id2token = {}
+        self.id2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 w, id = line.strip().encode('utf_8').split(' ')

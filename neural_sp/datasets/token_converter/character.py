@@ -78,7 +78,7 @@ class Id2char(object):
         self.remove_list = remove_list
 
         # Load a vocabulary file
-        self.id2token = {}
+        self.id2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 c, id = line.strip().encode('utf_8').split(' ')
