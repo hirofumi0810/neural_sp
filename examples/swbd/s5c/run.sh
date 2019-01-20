@@ -155,7 +155,7 @@ RT03_PATH=
 FISHER_PATH=/n/rd7/fisher_english
 
 ### data size
-data_size=swbd  # or fisher_swbd
+data_size=swbd
 
 . ./cmd.sh
 . ./path.sh
@@ -252,7 +252,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
 fi
 
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-nlsyms=${data}/dict/non_linguistic_symbols.txt
+nlsyms=${data}/dict/non_linguistic_symbols_${data_size}.txt
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
   echo ============================================================================

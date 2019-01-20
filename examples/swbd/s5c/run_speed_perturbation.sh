@@ -114,7 +114,7 @@ RT03_PATH=
 FISHER_PATH=/n/rd7/fisher_english
 
 ### data size
-data_size=swbd  # or fisher_swbd
+data_size=swbd
 
 . ./cmd.sh
 . ./path.sh
