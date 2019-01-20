@@ -87,6 +87,7 @@ focal_loss=0.0
 ### MTL
 ctc_weight=0.0
 bwd_weight=0.0
+agreement_weight=0.0
 twin_net_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
@@ -206,43 +207,9 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     rm ${data}/${x}/text.tmp
   done
 
-  touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
-fi
-
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
-  echo ============================================================================
-  echo "                    Feature extranction (stage:1)                          "
-  echo ============================================================================
-
-  for x in train_si284 test_dev93 test_eval92; do
-    steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
-      ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-  done
-
-  # Compute global CMVN
-  compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
-
-  # Apply global CMVN & dump features
-  for x in ${train_set} ${dev_set} ${test_set}; do
-    dump_dir=${data}/dump/${x}
-    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
-      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
-  done
-
-  touch ${data}/.done_stage_1 && echo "Finish feature extranction (stage: 1)."
-fi
-
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-nlsyms=${data}/dict/non_linguistic_symbols.txt
-wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} ]; then
-  echo ============================================================================
-  echo "                      Dataset preparation (stage:2)                        "
-  echo ============================================================================
-
   # nomalization
-  cp ${data}/${train_set}/text ${data}/${train_set}/text.tmp
-  cut -f 2- -d " " ${data}/${train_set}/text.tmp | \
+  cp ${data}/${train_set}/text ${data}/${train_set}/text.tmp.0
+  cut -f 2- -d " " ${data}/${train_set}/text.tmp.0 | \
     sed -e 's/*//g' | \
     sed -e "s/\`/\'/g" | \
     sed -e 's/.period/period/g' | \
@@ -282,9 +249,43 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
     sed -e 's/\"end-of-quote/end-of-quote/g' |
     sed -e 's/\<nperiod/nperiod/g' > ${data}/${train_set}/text.tmp.1
 
-  paste -d "" <(cut -f 1 -d " " ${data}/${train_set}/text.tmp) \
+  paste -d "" <(cut -f 1 -d " " ${data}/${train_set}/text.tmp.0) \
               <(cat ${data}/${train_set}/text.tmp.1 | awk '{$1=""; print tolower($0)}') > ${data}/${train_set}/text
-  rm ${data}/${train_set}/text.tmp
+  rm ${data}/${train_set}/text.tmp*
+
+  touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
+fi
+
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
+  echo ============================================================================
+  echo "                    Feature extranction (stage:1)                          "
+  echo ============================================================================
+
+  for x in train_si284 test_dev93 test_eval92; do
+    steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
+      ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+  done
+
+  # Compute global CMVN
+  compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
+
+  # Apply global CMVN & dump features
+  for x in ${train_set} ${dev_set} ${test_set}; do
+    dump_dir=${data}/dump/${x}
+    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+  done
+
+  touch ${data}/.done_stage_1 && echo "Finish feature extranction (stage: 1)."
+fi
+
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
+nlsyms=${data}/dict/non_linguistic_symbols.txt
+wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} ]; then
+  echo ============================================================================
+  echo "                      Dataset preparation (stage:2)                        "
+  echo ============================================================================
 
   echo "make a non-linguistic symbol list"
   cut -f 2- -d " " ${data}/${train_set}/text | tr " " "\n" | sort | uniq | grep "<" > ${nlsyms}
@@ -350,27 +351,27 @@ if [ ${stage} -le 3 ]; then
   # Extend dictionary for the external text data
   # ${data}/local/dict_nosp_larger/cleaned.gz
 
-  # Make datset csv files for the LM task
-  mkdir -p ${data}/dataset_lm
-  for x in ${train_set} ${dev_set}; do
-    echo "Making a LM csv file for ${x}..."
-    make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-      ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
-  done
-  for x in ${test_set}; do
-    echo "Making a LM csv file for ${x}..."
-    make_dataset.sh --is_test true --unit ${unit} \
-      ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
-  done
+  if [ ! -e ${data}/.done_stage_3_${unit}${wp_type}${vocab_size} ]; then
+    # Make datset csv files for the LM task
+    mkdir -p ${data}/dataset_lm
+    for x in ${train_set} ${dev_set}; do
+      echo "Making a LM csv file for ${x}..."
+      cp ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv ${data}/dataset_lm/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+    done
+
+    touch ${data}/.done_stage_3_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
+  fi
+
+  lm_train_set=${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.csv
+  lm_dev_set=${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.csv
 
   # NOTE: support only a single GPU for RNNLM training
   CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
     --ngpus 1 \
-    --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.csv \
-    --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
+    --train_set ${lm_train_set} \
+    --dev_set ${lm_dev_set} \
     --dict ${dict} \
     --wp_model ${wp_model}.model \
-    --nlsyms ${nlsyms} \
     --model ${model}/rnnlm \
     --unit ${unit} \
     --rnn_type ${lm_rnn_type} \
@@ -400,7 +401,7 @@ if [ ${stage} -le 3 ]; then
     --dropout_out ${lm_dropout_out} \
     --dropout_emb ${lm_dropout_emb} \
     --weight_decay ${lm_weight_decay} \
-    --lm_backward ${lm_backward} || exit 1;
+    --backward ${lm_backward} || exit 1;
     # --resume ${rnnlm_resume} || exit 1;
 
   echo "Finish RNNLM training (stage: 3)."
@@ -481,6 +482,7 @@ if [ ${stage} -le 4 ]; then
     --focal_loss_weight ${focal_loss} \
     --ctc_weight ${ctc_weight} \
     --bwd_weight ${bwd_weight} \
+    --agreement_weight ${agreement_weight} \
     --twin_net_weight ${twin_net_weight} \
     --mtl_per_batch ${mtl_per_batch} \
     --task_specific_layer ${task_specific_layer} \
