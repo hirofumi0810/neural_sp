@@ -135,7 +135,10 @@ SWBD_AUDIOPATH=/n/rd21/corpora_7/swb
 EVAL2000_AUDIOPATH=/n/rd21/corpora_7/hub5_english/LDC2002S09
 EVAL2000_TRANSPATH=/n/rd21/corpora_7/hub5_english/LDC2002T43
 RT03_PATH=
-FISHER_PATH=
+FISHER_PATH=/n/rd7/fisher_english
+
+### data size
+data_size=swbd  # or fisher_swbd
 
 . ./cmd.sh
 . ./path.sh
@@ -152,8 +155,8 @@ if [ -z ${gpu} ]; then
 fi
 ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
 
-train_set=train
-dev_set=dev
+train_set=train_${data_size}
+dev_set=dev_${data_size}
 test_set="eval2000"
 
 # main
@@ -185,7 +188,7 @@ if [ ${unit_sub3} != wp ]; then
   wp_type_sub3=
 fi
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
   echo ============================================================================
   echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
@@ -212,15 +215,15 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
   #   done
   # fi
 
-  touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
+  touch ${data}/.done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
 
-  for x in train eval2000; do
+  for x in ${train_set} ${test_set}; do
     steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
       ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
   done
@@ -238,19 +241,24 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
   compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
   # Apply global CMVN & dump features
-  for x in ${train_set} ${dev_set} ${test_set}; do
+  for x in ${train_set} ${dev_set}; do
     dump_dir=${data}/dump/${x}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
+  for x in ${test_set}; do
+    dump_dir=${data}/dump/${x}_${data_size}
+    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
+  done
 
-  touch ${data}/.done_stage_1 && echo "Finish feature extranction (stage: 1)."
+  touch ${data}/.done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
 fi
 
 # main
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} ]; then
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2, main)                  "
   echo ============================================================================
@@ -282,12 +290,12 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
   # Compute OOV rate
   if [ ${unit} = word ]; then
     mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
-    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}.txt
+    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
     for x in ${train_set} ${dev_set}; do
       cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-        > ${data}/dict/word_count/${x}.txt || exit 1;
-      compute_oov_rate.py ${data}/dict/word_count/${x}.txt ${dict} ${x} \
-        >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+        > ${data}/dict/word_count/${x}_${data_size}.txt || exit 1;
+      compute_oov_rate.py ${data}/dict/word_count/${x}_${data_size}.txt ${dict} ${x} \
+        >> ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt || exit 1;
     done
 
     # 1) convert upper to lower
@@ -308,25 +316,31 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
       > ${data}/dict/word_count/${test_set}_callhm.txt || exit 1;
     compute_oov_rate.py ${data}/dict/word_count/${test_set}_callhm.txt ${dict} ${test_set}_callhm \
       >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
-    cat ${data}/dict/oov_rate/word_${vocab_size}.txt
+    cat ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
   fi
 
   # Make datset csv files for the ASR task
   mkdir -p ${data}/dataset
-  for x in ${train_set} ${dev_set} ${test_set}; do
+  for x in ${train_set} ${dev_set}; do
     echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
+  for x in ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}_${data_size}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+  done
 
-  touch ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for ASR (stage: 2)."
+  touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 # sub1
 dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
 wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} ]; then
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2, sub1)                  "
   echo ============================================================================
@@ -357,20 +371,26 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit_sub1}${wp_type_sub1
 
   # Make datset csv files for the ASR task
   mkdir -p ${data}/dataset
-  for x in ${train_set} ${dev_set} ${test_set}; do
+  for x in ${train_set} ${dev_set}; do
     echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --wp_model ${wp_model_sub1} \
       ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv || exit 1;
   done
+  for x in ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}_${data_size}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --wp_model ${wp_model_sub1} \
+      ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv || exit 1;
+  done
 
-  touch ${data}/.done_stage_2_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} && echo "Finish creating dataset for ASR (stage: 2)."
+  touch ${data}/.done_stage_2_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 # sub2
 dict_sub2=${data}/dict/${train_set}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.txt
 wp_model_sub2=${data}/dict/${train_set}_${wp_type_sub2}${vocab_size_sub2}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit_sub2}${wp_type_sub2}${vocab_size_sub2} ]; then
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2, sub2)                  "
   echo ============================================================================
@@ -401,20 +421,26 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit_sub2}${wp_type_sub2
 
   # Make datset csv files for the ASR task
   mkdir -p ${data}/dataset
-  for x in ${train_set} ${dev_set} ${test_set}; do
+  for x in ${train_set} ${dev_set}; do
     echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub2} --nlsyms ${nlsyms} --wp_model ${wp_model_sub2} \
       ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.csv || exit 1;
   done
+  for x in ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}_${data_size}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub2} --nlsyms ${nlsyms} --wp_model ${wp_model_sub2} \
+      ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${data_size}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.csv || exit 1;
+  done
 
-  touch ${data}/.done_stage_2_${unit_sub2}${wp_type_sub2}${vocab_size_sub2} && echo "Finish creating dataset for ASR (stage: 2)."
+  touch ${data}/.done_stage_2_${data_size}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 # sub3
 dict_sub3=${data}/dict/${train_set}_${unit_sub3}${wp_type_sub3}${vocab_size_sub3}.txt
 wp_model_sub3=${data}/dict/${train_set}_${wp_type_sub3}${vocab_size_sub3}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit_sub3}${wp_type_sub3}${vocab_size_sub3} ]; then
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub3}${wp_type_sub3}${vocab_size_sub3} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2, sub3)                  "
   echo ============================================================================
@@ -445,14 +471,20 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit_sub3}${wp_type_sub3
 
   # Make datset csv files for the ASR task
   mkdir -p ${data}/dataset
-  for x in ${train_set} ${dev_set} ${test_set}; do
+  for x in ${train_set} ${dev_set}; do
     echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub3} --nlsyms ${nlsyms} --wp_model ${wp_model_sub3} \
       ${data}/${x} ${dict_sub3} > ${data}/dataset/${x}_${unit_sub3}${wp_type_sub3}${vocab_size_sub3}.csv || exit 1;
   done
+  for x in ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}_${data_size}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub3} --nlsyms ${nlsyms} --wp_model ${wp_model_sub3} \
+      ${data}/${x} ${dict_sub3} > ${data}/dataset/${x}_${data_size}_${unit_sub3}${wp_type_sub3}${vocab_size_sub3}.csv || exit 1;
+  done
 
-  touch ${data}/.done_stage_2_${unit_sub3}${wp_type_sub3}${vocab_size_sub3} && echo "Finish creating dataset for ASR (stage: 2)."
+  touch ${data}/.done_stage_2_${data_size}_${unit_sub3}${wp_type_sub3}${vocab_size_sub3} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}

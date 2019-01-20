@@ -30,6 +30,10 @@ conv_channels=
 conv_kernel_sizes=
 conv_strides=
 conv_poolings=
+# conv_channels="64_64_128_128"
+# conv_kernel_sizes="(3,3)_(3,3)_(3,3)_(3,3)"
+# conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
+# conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 conv_batch_norm=
 enc_type=blstm
 enc_nunits=320
@@ -133,6 +137,8 @@ lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_weight_decay=1e-6
 lm_backward=
+# data size
+lm_data_size=  # default is the same data as ASR
 
 ### path to save the model
 model=/n/sd8/inaguma/result/swbd
@@ -147,6 +153,9 @@ EVAL2000_AUDIOPATH=/n/rd21/corpora_7/hub5_english/LDC2002S09
 EVAL2000_TRANSPATH=/n/rd21/corpora_7/hub5_english/LDC2002T43
 RT03_PATH=
 FISHER_PATH=/n/rd7/fisher_english
+
+### data size
+data_size=swbd  # or fisher_swbd
 
 . ./cmd.sh
 . ./path.sh
@@ -164,8 +173,8 @@ fi
 ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
 rnnlm_gpu=`echo ${gpu} | cut -d "," -f 1`
 
-train_set=train
-dev_set=dev
+train_set=train_${data_size}
+dev_set=dev_${data_size}
 test_set="eval2000"
 
 if [ ${unit} = char ]; then
@@ -175,7 +184,7 @@ if [ ${unit} != wp ]; then
   wp_type=
 fi
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
   echo ============================================================================
   echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
@@ -202,15 +211,15 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
   #   done
   # fi
 
-  touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
+  touch ${data}/.done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
 
-  for x in train eval2000; do
+  for x in ${train_set} ${test_set}; do
     steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
       ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
   done
@@ -228,19 +237,24 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
   compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
   # Apply global CMVN & dump features
-  for x in ${train_set} ${dev_set} ${test_set}; do
+  for x in ${train_set} ${dev_set}; do
     dump_dir=${data}/dump/${x}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
+  for x in ${test_set}; do
+    dump_dir=${data}/dump/${x}_${data_size}
+    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
+  done
 
-  touch ${data}/.done_stage_1 && echo "Finish feature extranction (stage: 1)."
+  touch ${data}/.done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
 fi
 
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
 nlsyms=${data}/dict/non_linguistic_symbols.txt
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} ]; then
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
@@ -272,12 +286,12 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
   # Compute OOV rate
   if [ ${unit} = word ]; then
     mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
-    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}.txt
+    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
     for x in ${train_set} ${dev_set}; do
       cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-        > ${data}/dict/word_count/${x}.txt || exit 1;
-      compute_oov_rate.py ${data}/dict/word_count/${x}.txt ${dict} ${x} \
-        >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+        > ${data}/dict/word_count/${x}_${data_size}.txt || exit 1;
+      compute_oov_rate.py ${data}/dict/word_count/${x}_${data_size}.txt ${dict} ${x} \
+        >> ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt || exit 1;
     done
 
     # 1) convert upper to lower
@@ -298,7 +312,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
       > ${data}/dict/word_count/${test_set}_callhm.txt || exit 1;
     compute_oov_rate.py ${data}/dict/word_count/${test_set}_callhm.txt ${dict} ${test_set}_callhm \
       >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
-    cat ${data}/dict/oov_rate/word_${vocab_size}.txt
+    cat ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
   fi
 
   # Make datset csv files for the ASR task
@@ -311,12 +325,12 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
   done
   for x in ${test_set}; do
     echo "Making a ASR csv file for ${x}..."
-    dump_dir=${data}/dump/${x}
-    make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+    dump_dir=${data}/dump/${x}_${data_size}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
 
-  touch ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
+  touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}
@@ -325,27 +339,37 @@ if [ ${stage} -le 3 ]; then
   echo "                      RNNLM Training stage (stage:3)                       "
   echo ============================================================================
 
-  # Make datset csv files for the LM task
-  mkdir -p ${data}/dataset_lm
-  for x in ${train_set} ${dev_set}; do
-    echo "Making a LM csv file for ${x}..."
-    make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-      ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
-  done
-  for x in ${test_set}; do
-    echo "Making a LM csv file for ${x}..."
-    make_dataset.sh --is_test true --unit ${unit} \
-      ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
-  done
+  if [ -z ${lm_data_size} ]; then
+    lm_data_size=${data_size}
+  fi
+
+  if [ ! -e ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} ]; then
+    if [ ! -e ${data}/.done_stage_1_${data_size} ]; then
+      echo "run ./run.sh --data_size `${lm_data_size}` first" && exit 1
+    fi
+
+    # Make datset csv files for the LM task
+    mkdir -p ${data}/dataset_lm
+    for x in train_${lm_data_size} dev_${lm_data_size}; do
+      echo "Making a LM csv file for ${x}..."
+      dump_dir=${data}/dump/${x}
+      make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
+        ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+    done
+
+    touch ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
+  fi
+
+  lm_train_set=${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.csv
+  lm_dev_set=${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.csv
 
   # NOTE: support only a single GPU for RNNLM training
   CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
     --ngpus 1 \
-    --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.csv \
-    --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
+    --train_set ${lm_train_set} \
+    --dev_set ${lm_dev_set} \
     --dict ${dict} \
     --wp_model ${wp_model}.model \
-    --nlsyms ${nlsyms} \
     --model ${model}/rnnlm \
     --unit ${unit} \
     --rnn_type ${lm_rnn_type} \
@@ -375,7 +399,7 @@ if [ ${stage} -le 3 ]; then
     --dropout_out ${lm_dropout_out} \
     --dropout_emb ${lm_dropout_emb} \
     --weight_decay ${lm_weight_decay} \
-    --lm_backward ${lm_backward} || exit 1;
+    --backward ${lm_backward} || exit 1;
     # --resume ${rnnlm_resume} || exit 1;
 
   echo "Finish RNNLM training (stage: 3)."
