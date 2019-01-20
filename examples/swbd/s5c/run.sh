@@ -352,9 +352,13 @@ if [ ${stage} -le 3 ]; then
     mkdir -p ${data}/dataset_lm
     for x in train_${lm_data_size} dev_${lm_data_size}; do
       echo "Making a LM csv file for ${x}..."
-      dump_dir=${data}/dump/${x}
-      make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-        ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+      if [ ${lm_data_size} == ${data_size} ]; then
+        cp ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+      else
+        dump_dir=${data}/dump/${x}
+        make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
+          ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+      fi
     done
 
     touch ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
