@@ -176,6 +176,7 @@ class Seq2seq(ModelBase):
                 sos=self.sos,
                 eos=self.eos,
                 pad=self.pad,
+                blank=self.blank,
                 enc_nunits=self.enc_nunits,
                 attn_type=args.attn_type,
                 attn_dim=args.attn_dim,
@@ -233,6 +234,7 @@ class Seq2seq(ModelBase):
                         sos=self.sos,
                         eos=self.eos,
                         pad=self.pad,
+                        blank=self.blank,
                         enc_nunits=self.enc_nunits,
                         attn_type=args.attn_type,
                         attn_dim=args.attn_dim,
@@ -548,14 +550,13 @@ class Seq2seq(ModelBase):
                 enc_outs[task]['xs'], enc_outs[task]['xlens'], temperature, topk)
             return ctc_probs, indices_topk, enc_outs[task]['xlens']
 
-    def decode(self, xs, decode_params, nbest=1, exclude_eos=False,
-               id2token=None, refs=None, ctc=False, task='ys',
-               ensemble_models=[]):
+    def decode(self, xs, params, nbest=1, exclude_eos=False,
+               id2token=None, refs=None, task='ys', ensemble_models=[]):
         """Decoding in the inference stage.
 
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_dim]`
-            decode_params (dict):
+            params (dict): hyper-parameters for decoding
                 beam_width (int): the size of beam
                 min_len_ratio (float):
                 max_len_ratio (float):
@@ -569,7 +570,6 @@ class Seq2seq(ModelBase):
             exclude_eos (bool): exclude <eos> from best_hyps
             id2token (): converter from index to token
             refs (list): gold transcriptions to compute log likelihood
-            ctc (bool):
             task (str): ys* or ys_sub1* or ys_sub2* or ys_sub3*
             ensemble_models (list): list of Seq2seq classes
         Returns:
@@ -602,9 +602,9 @@ class Seq2seq(ModelBase):
             #########################
             # CTC
             #########################
-            if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and ctc):
+            if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
                 # Set RNNLM
-                if decode_params['recog_rnnlm_weight'] > 0:
+                if params['recog_rnnlm_weight'] > 0:
                     assert hasattr(self, 'rnnlm_' + dir)
                     rnnlm = getattr(self, 'rnnlm_' + dir)
                 else:
@@ -612,25 +612,30 @@ class Seq2seq(ModelBase):
 
                 best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                    decode_params['recog_beam_width'], rnnlm)
+                    params['recog_beam_width'], rnnlm)
                 return best_hyps, None, perm_ids
 
             #########################
             # Attention
             #########################
             else:
-                if decode_params['recog_beam_width'] == 1 and not decode_params['recog_fwd_bwd_attention']:
+                if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                        decode_params['recog_max_len_ratio'], exclude_eos)
+                        params['recog_max_len_ratio'], exclude_eos)
                 else:
+                    if params['recog_ctc_weight'] > 0:
+                        ctc_log_probs = getattr(self, 'dec_' + dir).ctc_log_probs(enc_outs[task]['xs'])
+                    else:
+                        ctc_log_probs = None
+
                     # forward-backward decoding
-                    if decode_params['recog_fwd_bwd_attention']:
+                    if params['recog_fwd_bwd_attention']:
                         rnnlm_fwd = None
                         nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            decode_params, rnnlm_fwd,
-                            decode_params['recog_beam_width'], False, id2token, refs)
+                            params, rnnlm_fwd, ctc_log_probs,
+                            params['recog_beam_width'], False, id2token, refs)
 
                         flip = False
                         if self.input_type == 'speech' and self.mtl_per_batch:
@@ -642,8 +647,8 @@ class Seq2seq(ModelBase):
                         rnnlm_bwd = None
                         nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
-                            decode_params, rnnlm_bwd,
-                            decode_params['recog_beam_width'], False, id2token, refs)
+                            params, rnnlm_bwd, ctc_log_probs,
+                            params['recog_beam_width'], False, id2token, refs)
                         best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                                                       nbest_hyps_bwd, aws_bwd, scores_bwd,
                                                       flip, self.eos, id2token, refs)
@@ -665,14 +670,14 @@ class Seq2seq(ModelBase):
                                 # NOTE: only support for the main task now
 
                         # Set RNNLM
-                        if decode_params['recog_rnnlm_weight'] > 0:
+                        if params['recog_rnnlm_weight'] > 0:
                             assert hasattr(self, 'rnnlm_' + dir)
                             rnnlm = getattr(self, 'rnnlm_' + dir)
                         else:
                             rnnlm = None
                         nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            decode_params, rnnlm,
+                            params, rnnlm, ctc_log_probs,
                             nbest, exclude_eos, id2token, refs,
                             ensemble_eouts, ensemble_elens, ensemble_decoders)
 

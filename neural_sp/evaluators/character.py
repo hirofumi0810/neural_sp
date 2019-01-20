@@ -101,7 +101,7 @@ def eval_char(models, dataset, decode_params, epoch,
                 # logger.info('Ref: %s' % ref.lower())
                 logger.info('Ref: %s' % ref)
                 logger.info('Hyp: %s' % hyp)
-                logger.info('-' * 50)
+                logger.info('-' * 150)
 
                 if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_id > 0 and dataset.unit_sub1 == 'char'):
                     # Compute WER

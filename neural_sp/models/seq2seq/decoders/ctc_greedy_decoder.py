@@ -16,28 +16,28 @@ import numpy as np
 
 class GreedyDecoder(object):
 
-    def __init__(self, blank_index):
-        self.blank = blank_index
+    def __init__(self, blank):
+        self.blank = blank
 
-    def __call__(self, logits, x_lens):
+    def __call__(self, log_probs, xlens):
         """
 
         Args:
-            logits (np.ndarray): `[B, T, vocab]`
-            x_lens (np.ndarray): `[B]`
+            log_probs (torch.FloatTensor): `[B, T, vocab]`
+            xlens (np.ndarray): `[B]`
         Returns:
             best_hyps (np.ndarray): Best path hypothesis. `[B, labels_max_seq_len]`
 
         """
-        batch_size = logits.shape[0]
+        bs = log_probs.size(0)
         best_hyps = []
 
         # Pickup argmax class
-        for b in range(batch_size):
+        for b in range(bs):
             indices = []
-            time = x_lens[b]
+            time = xlens[b]
             for t in range(time):
-                argmax = np.argmax(logits[b, t], axis=0)
+                argmax = np.argmax(log_probs[b, t], axis=0).item()
                 indices.append(argmax)
 
             # Step 1. Collapse repeated labels

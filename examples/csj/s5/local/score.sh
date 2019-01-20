@@ -28,6 +28,7 @@ coverage_threshold=0.0
 rnnlm=
 rnnlm_bwd=
 rnnlm_weight=0.0
+ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=0
 fwd_bwd_attention=false
 recog_unit=
@@ -48,7 +49,14 @@ fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
 
 for set in eval1 eval2 eval3; do
+  if [ ${ctc_weight} != 0.0 ]; then
+    coverage_penalty=0.0
+  fi
+
   recog_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
+  if [ ${ctc_weight} != 0.0 ]; then
+    recog_dir=${recog_dir}_ctc${ctc_weight}
+  fi
   if [ ! -z ${recog_unit} ]; then
       recog_dir=${recog_dir}_${recog_unit}
   fi
@@ -87,6 +95,7 @@ for set in eval1 eval2 eval3; do
     --recog_rnnlm ${rnnlm} \
     --recog_rnnlm_bwd ${rnnlm_bwd} \
     --recog_rnnlm_weight ${rnnlm_weight} \
+    --recog_ctc_weight ${ctc_weight} \
     --recog_resolving_unk ${resolving_unk} \
     --recog_fwd_bwd_attention ${fwd_bwd_attention} \
     --recog_unit ${recog_unit} \

@@ -80,7 +80,7 @@ def eval_phone(models, dataset, decode_params, epoch,
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
                 logger.info('Ref: %s' % ref)
                 logger.info('Hyp: %s' % hyp)
-                logger.info('-' * 50)
+                logger.info('-' * 150)
 
                 # Compute PER
                 per_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),

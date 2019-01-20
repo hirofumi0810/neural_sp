@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Args option."""
+"""Args option for the ASR task."""
 
 import argparse
 from distutils.util import strtobool
@@ -363,6 +363,8 @@ def parse():
                         help='coverage threshold')
     parser.add_argument('--recog_rnnlm_weight', type=float, default=0.0,
                         help='the weight of RNNLM score')
+    parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
+                        help='the weight of CTC score')
     parser.add_argument('--recog_rnnlm', type=str, default=None, nargs='?',
                         help='path to the RMMLM')
     parser.add_argument('--recog_rnnlm_bwd', type=str, default=None, nargs='?',

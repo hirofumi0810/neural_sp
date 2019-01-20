@@ -17,6 +17,7 @@ max_len_ratio=1.0
 length_penalty=0.0
 coverage_penalty=0.6
 coverage_threshold=0.0
+ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 
 . ./cmd.sh
 . ./path.sh
@@ -34,7 +35,14 @@ fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
 
 for set in dev test; do
+  if [ ${ctc_weight} != 0.0 ]; then
+    coverage_penalty=0.0
+  fi
+
   recog_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
+  if [ ${ctc_weight} != 0.0 ]; then
+    recog_dir=${recog_dir}_ctc${ctc_weight}
+  fi
   mkdir -p ${recog_dir}
 
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
@@ -48,6 +56,7 @@ for set in dev test; do
     --recog_length_penalty ${length_penalty} \
     --recog_coverage_penalty ${coverage_penalty} \
     --recog_coverage_threshold ${coverage_threshold} \
+    --recog_ctc_weight ${ctc_weight} \
     --recog_dir ${recog_dir} || exit 1;
 
   echo ${set}

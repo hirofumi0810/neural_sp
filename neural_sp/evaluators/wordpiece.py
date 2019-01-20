@@ -84,7 +84,7 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
                 # logger.info('Ref: %s' % ref.lower())
                 logger.info('Ref: %s' % ref)
                 logger.info('Hyp: %s' % hyp)
-                logger.info('-' * 50)
+                logger.info('-' * 150)
 
                 # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),

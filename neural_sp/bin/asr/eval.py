@@ -152,6 +152,7 @@ def main():
             logger.info('length penalty: %.3f' % args.recog_length_penalty)
             logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
             logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
+            logger.info('CTC weight: %.3f' % args.recog_ctc_weight)
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('ensemble: %d' % (len(ensemble_models)))
 

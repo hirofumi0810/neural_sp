@@ -79,13 +79,13 @@ def eval_word(models, dataset, decode_params, epoch,
 
                 # Resolving UNK
                 if decode_params['recog_resolving_unk'] and '<unk>' in hyp:
-                    best_hyps_sub, aw_sub, _ = model.decode(
+                    best_hyps_sub, aw_sub, _ = models[0].decode(
                         batch['xs'][b:b + 1], decode_params, exclude_eos=True)
                     # task_index=1
 
                     hyp = resolve_unk(
                         hyp, best_hyps_sub[0], aws[b], aw_sub[0], dataset.id2char,
-                        diff_time_resolution=2 ** sum(model.subsample) // 2 ** sum(model.subsample[:model.enc_nlayers_sub - 1]))
+                        diff_time_resolution=2 ** sum(models[0].subsample) // 2 ** sum(models[0].subsample[:models[0].enc_nlayers_sub - 1]))
                     hyp = hyp.replace('*', '')
 
                 # Write to trn
@@ -98,7 +98,7 @@ def eval_word(models, dataset, decode_params, epoch,
                 # logger.info('Ref: %s' % ref.lower())
                 logger.info('Ref: %s' % ref)
                 logger.info('Hyp: %s' % hyp)
-                logger.info('-' * 50)
+                logger.info('-' * 150)
 
                 # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
