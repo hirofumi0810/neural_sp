@@ -27,7 +27,7 @@ fi
 
 SWBD_DIR=$1
 
-dir=${data}/local/train
+dir=${data}/local/train_swbd
 mkdir -p $dir
 
 
@@ -134,23 +134,23 @@ sort -k 2 $dir/utt2spk | utils/utt2spk_to_spk2utt.pl > $dir/spk2utt || exit 1;
 
 # Copy stuff into its final locations [this has been moved from the format_data
 # script]
-mkdir -p ${data}/train
+mkdir -p ${data}/train_swbd
 for f in spk2utt utt2spk wav.scp text segments reco2file_and_channel; do
-  cp ${data}/local/train/$f ${data}/train/$f || exit 1;
+  cp ${data}/local/train_swbd/$f ${data}/train_swbd/$f || exit 1;
 done
 
 if [ $# == 2 ]; then # fix speaker IDs
   find $2 -name conv.tab > $dir/conv.tab
-  local/swbd1_fix_speakerid.pl `cat $dir/conv.tab` ${data}/train
-  utils/utt2spk_to_spk2utt.pl ${data}/train/utt2spk.new > ${data}/train/spk2utt.new
+  local/swbd1_fix_speakerid.pl `cat $dir/conv.tab` ${data}/train_swbd
+  utils/utt2spk_to_spk2utt.pl ${data}/train_swbd/utt2spk.new > ${data}/train_swbd/spk2utt.new
   # patch files
   for f in spk2utt utt2spk text segments; do
-    cp ${data}/train/$f ${data}/train/$f.old || exit 1;
-    cp ${data}/train/$f.new ${data}/train/$f || exit 1;
+    cp ${data}/train_swbd/$f ${data}/train_swbd/$f.old || exit 1;
+    cp ${data}/train_swbd/$f.new ${data}/train_swbd/$f || exit 1;
   done
   rm $dir/conv.tab
 fi
 
 echo Switchboard-1 data preparation succeeded.
 
-utils/fix_data_dir.sh ${data}/train
+utils/fix_data_dir.sh ${data}/train_swbd
