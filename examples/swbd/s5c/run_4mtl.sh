@@ -250,34 +250,209 @@ fi
 # main
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} ]; then
+  echo ============================================================================
+  echo "                      Dataset preparation (stage:2, main)                  "
+  echo ============================================================================
+
+  echo "make a non-linguistic symbol list"
+  cut -f 2- -d " " ${data}/${train_set}/text | tr " " "\n" | sort | uniq | grep "\[" > ${nlsyms}
+  cat ${nlsyms}
+
+  # Make a dictionary
+  echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
+  echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
+  echo "<pad> 3" >> ${dict}
+  if [ ${unit} = char ]; then
+    echo "<space> 4" >> ${dict}
+  fi
+  offset=`cat ${dict} | wc -l`
+  echo "Making a dictionary..."
+  if [ ${unit} = wp ]; then
+    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
+    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
+  else
+    text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
+      --wp_type ${wp_type} --wp_model ${wp_model} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+  fi
+  echo "vocab size:" `cat ${dict} | wc -l`
+
+  # Compute OOV rate
+  if [ ${unit} = word ]; then
+    mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
+    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}.txt
+    for x in ${train_set} ${dev_set}; do
+      cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+        > ${data}/dict/word_count/${x}.txt || exit 1;
+      compute_oov_rate.py ${data}/dict/word_count/${x}.txt ${dict} ${x} \
+        >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+    done
+
+    # 1) convert upper to lower
+    # 2) remove tags (%AH) (%HESITATION) (%UH)
+    # 3) remove <B_ASIDE> <E_ASIDE>
+    # 4) remove "(" or ")"
+    # swichboard
+    grep -v en ${data}/${test_set}/text | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
+      perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' | \
+      tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+      > ${data}/dict/word_count/${test_set}_swbd.txt || exit 1;
+    compute_oov_rate.py ${data}/dict/word_count/${test_set}_swbd.txt ${dict} ${test_set}_swbd \
+      >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+    # callhome
+    grep -v sw ${data}/${test_set}/text | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
+      perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' | \
+      tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+      > ${data}/dict/word_count/${test_set}_callhm.txt || exit 1;
+    compute_oov_rate.py ${data}/dict/word_count/${test_set}_callhm.txt ${dict} ${test_set}_callhm \
+      >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+    cat ${data}/dict/oov_rate/word_${vocab_size}.txt
+  fi
+
+  # Make datset csv files for the ASR task
+  mkdir -p ${data}/dataset
+  for x in ${train_set} ${dev_set} ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+  done
+
+  touch ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for ASR (stage: 2)."
+fi
+
 # sub1
 dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
 wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} ]; then
+  echo ============================================================================
+  echo "                      Dataset preparation (stage:2, sub1)                  "
+  echo ============================================================================
+
+  echo "make a non-linguistic symbol list"
+  cut -f 2- -d " " ${data}/${train_set}/text | tr " " "\n" | sort | uniq | grep "\[" > ${nlsyms}
+  cat ${nlsyms}
+
+  # Make a dictionary
+  echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
+  echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
+  echo "<pad> 3" >> ${dict_sub1}
+  if [ ${unit_sub1} = char ]; then
+    echo "<space> 4" >> ${dict_sub1}
+  fi
+  offset=`cat ${dict_sub1} | wc -l`
+  echo "Making a dictionary..."
+  if [ ${unit_sub1} = wp ]; then
+    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
+    spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
+  else
+    text2dict.py ${data}/${train_set}/text --unit ${unit_sub1} --vocab_size ${vocab_size_sub1} --nlsyms ${nlsyms} \
+      --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
+  fi
+  echo "vocab size:" `cat ${dict_sub1} | wc -l`
+
+  # Make datset csv files for the ASR task
+  mkdir -p ${data}/dataset
+  for x in ${train_set} ${dev_set} ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --wp_model ${wp_model_sub1} \
+      ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv || exit 1;
+  done
+
+  touch ${data}/.done_stage_2_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} && echo "Finish creating dataset for ASR (stage: 2)."
+fi
+
 # sub2
 dict_sub2=${data}/dict/${train_set}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.txt
 wp_model_sub2=${data}/dict/${train_set}_${wp_type_sub2}${vocab_size_sub2}
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit_sub2}${wp_type_sub2}${vocab_size_sub2} ]; then
+  echo ============================================================================
+  echo "                      Dataset preparation (stage:2, sub2)                  "
+  echo ============================================================================
+
+  echo "make a non-linguistic symbol list"
+  cut -f 2- -d " " ${data}/${train_set}/text | tr " " "\n" | sort | uniq | grep "\[" > ${nlsyms}
+  cat ${nlsyms}
+
+  # Make a dictionary
+  echo "<unk> 1" > ${dict_sub2}  # <unk> must be 1, 0 will be used for "blank" in CTC
+  echo "<eos> 2" >> ${dict_sub2}  # <sos> and <eos> share the same index
+  echo "<pad> 3" >> ${dict_sub2}
+  if [ ${unit_sub2} = char ]; then
+    echo "<space> 4" >> ${dict_sub2}
+  fi
+  offset=`cat ${dict_sub2} | wc -l`
+  echo "Making a dictionary..."
+  if [ ${unit_sub2} = wp ]; then
+    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub2} --model_type=${wp_type_sub2} --model_prefix=${wp_model_sub2} --input_sentence_size=100000000 --character_coverage=1.0
+    spm_encode --model=${wp_model_sub2}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub2}
+  else
+    text2dict.py ${data}/${train_set}/text --unit ${unit_sub2} --vocab_size ${vocab_size_sub2} --nlsyms ${nlsyms} \
+      --wp_type ${wp_type_sub2} --wp_model ${wp_model_sub2} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub2} || exit 1;
+  fi
+  echo "vocab size:" `cat ${dict_sub2} | wc -l`
+
+  # Make datset csv files for the ASR task
+  mkdir -p ${data}/dataset
+  for x in ${train_set} ${dev_set} ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub2} --nlsyms ${nlsyms} --wp_model ${wp_model_sub2} \
+      ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.csv || exit 1;
+  done
+
+  touch ${data}/.done_stage_2_${unit_sub2}${wp_type_sub2}${vocab_size_sub2} && echo "Finish creating dataset for ASR (stage: 2)."
+fi
+
 # sub3
 dict_sub3=${data}/dict/${train_set}_${unit_sub3}${wp_type_sub3}${vocab_size_sub3}.txt
 wp_model_sub3=${data}/dict/${train_set}_${wp_type_sub3}${vocab_size_sub3}
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit_sub3}${wp_type_sub3}${vocab_size_sub3} ]; then
+  echo ============================================================================
+  echo "                      Dataset preparation (stage:2, sub3)                  "
+  echo ============================================================================
 
-if [ ! -f ${dict} ]; then
-  echo "There is no file such as "${dict}
-  exit 1
-fi
+  echo "make a non-linguistic symbol list"
+  cut -f 2- -d " " ${data}/${train_set}/text | tr " " "\n" | sort | uniq | grep "\[" > ${nlsyms}
+  cat ${nlsyms}
 
-if [ ! -f ${dict_sub1} ]; then
-  echo "There is no file such as "${dict_sub1}
-  exit 1
-fi
+  # Make a dictionary
+  echo "<unk> 1" > ${dict_sub3}  # <unk> must be 1, 0 will be used for "blank" in CTC
+  echo "<eos> 2" >> ${dict_sub3}  # <sos> and <eos> share the same index
+  echo "<pad> 3" >> ${dict_sub3}
+  if [ ${unit_sub3} = char ]; then
+    echo "<space> 4" >> ${dict_sub3}
+  fi
+  offset=`cat ${dict_sub3} | wc -l`
+  echo "Making a dictionary..."
+  if [ ${unit_sub3} = wp ]; then
+    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub3} --model_type=${wp_type_sub3} --model_prefix=${wp_model_sub3} --input_sentence_size=100000000 --character_coverage=1.0
+    spm_encode --model=${wp_model_sub3}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub3}
+  else
+    text2dict.py ${data}/${train_set}/text --unit ${unit_sub3} --vocab_size ${vocab_size_sub3} --nlsyms ${nlsyms} \
+      --wp_type ${wp_type_sub3} --wp_model ${wp_model_sub3} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub3} || exit 1;
+  fi
+  echo "vocab size:" `cat ${dict_sub3} | wc -l`
 
-if [ ! -f ${dict_sub2} ]; then
-  echo "There is no file such as "${dict_sub2}
-  exit 1
-fi
+  # Make datset csv files for the ASR task
+  mkdir -p ${data}/dataset
+  for x in ${train_set} ${dev_set} ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub3} --nlsyms ${nlsyms} --wp_model ${wp_model_sub3} \
+      ${data}/${x} ${dict_sub3} > ${data}/dataset/${x}_${unit_sub3}${wp_type_sub3}${vocab_size_sub3}.csv || exit 1;
+  done
 
-if [ ! -f ${dict_sub3} ]; then
-  echo "There is no file such as "${dict_sub3}
-  exit 1
+  touch ${data}/.done_stage_2_${unit_sub3}${wp_type_sub3}${vocab_size_sub3} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}

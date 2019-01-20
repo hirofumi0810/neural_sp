@@ -179,8 +179,8 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
   # lowercasing
   for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
     cp ${data}/${x}/text ${data}/${x}/text.tmp
-    paste -d " " <(cut -f 1 -d" " ${data}/${x}/text.tmp) \
-                 <(cut -f 2- -d" " ${data}/${x}/text.tmp | awk '{$1=""; print tolower($0)}') > ${data}/${x}/text
+    paste -d "" <(cut -f 1 -d " " ${data}/${x}/text.tmp) \
+                <(cut -f 2- -d " " ${data}/${x}/text.tmp | awk '{$1=""; print tolower($0)}') > ${data}/${x}/text
     rm ${data}/${x}/text.tmp
   done
 
@@ -198,7 +198,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
   done
 
   utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
-  utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${dev_set} ${data}/dev_clean ${data}/dev_other || exit 1;
+  cp -rf ${data}/dev_clean ${data}/${dev_set}
 
   # Compute global CMVN
   compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
@@ -219,20 +219,108 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
 fi
 
 # main
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
+  echo ============================================================================
+  echo "                      Dataset preparation (stage:2, main)                  "
+  echo ============================================================================
+
+  # Make a dictionary
+  echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
+  echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
+  echo "<pad> 3" >> ${dict}
+  if [ ${unit} = char ]; then
+    echo "<space> 4" >> ${dict}
+  fi
+  offset=`cat ${dict} | wc -l`
+  echo "Making a dictionary..."
+  if [ ${unit} = wp ]; then
+    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
+    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
+  else
+    text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
+      --wp_type ${wp_type} --wp_model ${wp_model} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+  fi
+  echo "vocab size:" `cat ${dict} | wc -l`
+
+  # Compute OOV rate
+  if [ ${unit} = word ]; then
+    mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
+    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
+    for x in ${train_set} ${dev_set} ${test_set}; do
+      cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+        > ${data}/dict/word_count/${x}_${data_size}.txt || exit 1;
+      compute_oov_rate.py ${data}/dict/word_count/${x}_${data_size}.txt ${dict} ${x} \
+        >> ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt || exit 1;
+    done
+    cat ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
+  fi
+
+  # Make datset csv files for the ASR task
+  mkdir -p ${data}/dataset
+  for x in ${train_set} ${dev_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+  done
+  for x in ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}_${data_size}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+  done
+
+  touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for ASR (stage: 2)."
+fi
+
 # sub1
 dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
 wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} ]; then
+  echo ============================================================================
+  echo "                      Dataset preparation (stage:2, sub1)                  "
+  echo ============================================================================
 
-if [ ! -f ${dict} ]; then
-  echo "There is no file such as "${dict}
-  exit 1
-fi
+  # Make a dictionary
+  echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
+  echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
+  echo "<pad> 3" >> ${dict_sub1}
+  if [ ${unit_sub1} = char ]; then
+    echo "<space> 4" >> ${dict_sub1}
+  fi
+  offset=`cat ${dict_sub1} | wc -l`
+  echo "Making a dictionary..."
+  if [ ${unit_sub1} = wp ]; then
+    cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
+    spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
+  else
+    text2dict.py ${data}/${train_set}/text --unit ${unit_sub1} --vocab_size ${vocab_size_sub1} \
+      --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
+  fi
+  echo "vocab size:" `cat ${dict_sub1} | wc -l`
 
-if [ ! -f ${dict_sub1} ]; then
-  echo "There is no file such as "${dict_sub1}
-  exit 1
+  # Make datset csv files for the ASR task
+  mkdir -p ${data}/dataset
+  for x in ${train_set} ${dev_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
+      ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv || exit 1;
+  done
+  for x in ${test_set}; do
+    echo "Making a ASR csv file for ${x}..."
+    dump_dir=${data}/dump/${x}_${data_size}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
+      ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv || exit 1;
+  done
+
+  touch ${data}/.done_stage_2_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}
