@@ -1443,6 +1443,10 @@ def end_detect(ended_hyps, i, M=3, D_end=np.log(1 * np.exp(-10))):
         D_end (float):
     Returns:
         bool
+
+    [Reference]:
+        https://github.com/espnet/espnet
+
     """
     if len(ended_hyps) == 0:
         return False

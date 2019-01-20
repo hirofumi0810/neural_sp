@@ -165,6 +165,9 @@ class CTCPrefixScore(object):
     "HYBRID CTC/ATTENTION ARCHITECTURE FOR END-TO-END SPEECH RECOGNITION,"
     but extended to efficiently compute the probablities of multiple labels
     simultaneously
+
+    [Reference]:
+        https://github.com/espnet/espnet
     """
 
     def __init__(self, log_probs, blank, eos):
