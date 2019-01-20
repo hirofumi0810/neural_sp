@@ -113,6 +113,9 @@ EVAL2000_TRANSPATH=/n/rd21/corpora_7/hub5_english/LDC2002T43
 RT03_PATH=
 FISHER_PATH=/n/rd7/fisher_english
 
+### data size
+data_size=swbd  # or fisher_swbd
+
 . ./cmd.sh
 . ./path.sh
 . utils/parse_options.sh
@@ -128,8 +131,8 @@ if [ -z ${gpu} ]; then
 fi
 ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
 
-train_set=train_sp
-dev_set=dev_sp
+train_set=train_sp_${data_size}
+dev_set=dev_sp_${data_size}
 test_set="eval2000_sp"
 
 if [ ${unit} = char ]; then
@@ -139,60 +142,67 @@ if [ ${unit} != wp ]; then
   wp_type=
 fi
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
   echo ============================================================================
   echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
 
-  echo "run ./run.sh first" && exit 1
+  if [ ! -e ${data}/.done_stage_0_${data_size} ]; then
+    echo "run ./run.sh first" && exit 1
+  fi
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_sp ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
 
-  if [ ! -e ${data}/.done_stage_1 ]; then
+  if [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     echo "run ./run.sh first" && exit 1
   fi
 
   # speed-perturbed
-  utils/perturb_data_dir_speed.sh 0.9 ${data}/train ${data}/temp1
-  utils/perturb_data_dir_speed.sh 1.0 ${data}/train ${data}/temp2
-  utils/perturb_data_dir_speed.sh 1.1 ${data}/train ${data}/temp3
+  utils/perturb_data_dir_speed.sh 0.9 ${data}/train_swbd ${data}/temp1
+  utils/perturb_data_dir_speed.sh 1.0 ${data}/train_swbd ${data}/temp2
+  utils/perturb_data_dir_speed.sh 1.1 ${data}/train_swbd ${data}/temp3
   utils/combine_data.sh --extra-files utt2uniq ${data}/${train_set} ${data}/temp1 ${data}/temp2 ${data}/temp3
   rm -r ${data}/temp1 ${data}/temp2 ${data}/temp3
   steps/make_fbank.sh --cmd "$train_cmd" --nj 16 --write_utt2num_frames true \
     ${data}/${train_set} ${data}/log/make_fbank/${train_set} ${data}/fbank
-  cat ${data}/train/utt2spk | awk -v p="sp0.9-" '{printf("%s %s%s\n", $1, p, $1);}' > ${data}/${train_set}/utt_map
-  utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/train/text >${data}/${train_set}/text
-  cat ${data}/train/utt2spk | awk -v p="sp1.0-" '{printf("%s %s%s\n", $1, p, $1);}' > ${data}/${train_set}/utt_map
-  utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/train/text >>${data}/${train_set}/text
-  cat ${data}/train/utt2spk | awk -v p="sp1.1-" '{printf("%s %s%s\n", $1, p, $1);}' > ${data}/${train_set}/utt_map
-  utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/train/text >>${data}/${train_set}/text
+  cat ${data}/train_swbd/utt2spk | awk -v p="sp0.9-" '{printf("%s %s%s\n", $1, p, $1);}' > ${data}/${train_set}/utt_map
+  utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/train_swbd/text >${data}/${train_set}/text
+  cat ${data}/train_swbd/utt2spk | awk -v p="sp1.0-" '{printf("%s %s%s\n", $1, p, $1);}' > ${data}/${train_set}/utt_map
+  utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/train_swbd/text >>${data}/${train_set}/text
+  cat ${data}/train_swbd/utt2spk | awk -v p="sp1.1-" '{printf("%s %s%s\n", $1, p, $1);}' > ${data}/${train_set}/utt_map
+  utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/train_swbd/text >>${data}/${train_set}/text
 
   utils/fix_data_dir.sh ${data}/${train_set}
 
-  cp -rf ${data}/dev ${data}/dev_sp
-  cp -rf ${data}/eval2000 ${data}/eval2000_sp
+  cp -rf ${data}/dev_swbd ${data}/${dev_set}
+  cp -rf ${data}/eval2000_swbd ${data}/${test_set}
 
   # Compute global CMVN
   compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
   # Apply global CMVN & dump features
-  for x in ${train_set} ${dev_set} ${test_set}; do
+  for x in ${train_set} ${dev_set}; do
     dump_dir=${data}/dump/${x}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
+  for x in ${test_set}; do
+    dump_dir=${data}/dump/${x}_${data_size}
+    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
+  done
 
-  touch ${data}/.done_stage_1_sp && echo "Finish feature extranction (stage: 1)."
+  touch ${data}/.done_stage_1_${data_size}_sp && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/train_${unit}${wp_type}${vocab_size}.txt
+dict=${data}/dict/train_${data_size}_${unit}${wp_type}${vocab_size}.txt
 nlsyms=${data}/dict/non_linguistic_symbols.txt
-wp_model=${data}/dict/train_${wp_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_size}_sp ]; then
+wp_model=${data}/dict/train_${data_size}_${wp_type}${vocab_size}
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
@@ -211,12 +221,12 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
   done
   for x in ${test_set}; do
     echo "Making a ASR csv file for ${x}..."
-    dump_dir=${data}/dump/${x}
-    make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+    dump_dir=${data}/dump/${x}_${data_size}
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
 
-  touch ${data}/.done_stage_2_${unit}${wp_type}${vocab_size}_sp && echo "Finish creating dataset (stage: 2)."
+  touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}

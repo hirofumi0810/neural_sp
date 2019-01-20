@@ -161,10 +161,12 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
   echo "                       Data Preparation (stage:0)                          "
   echo ============================================================================
 
-  echo "run ./run.sh first" && exit 1
+  if [ ! -e ${data}/.done_stage_0_${data_size} ]; then
+    echo "run ./run.sh first" && exit 1
+  fi
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_sp_${data_size} ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
   echo ============================================================================
   echo "                    Feature extranction (stage:1)                          "
   echo ============================================================================
@@ -207,10 +209,10 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_sp_${data_size} ]; then
   for x in ${test_set}; do
     dump_dir=${data}/dump/${x}_${data_size}
     dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
-      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
+      ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
   done
 
-  touch ${data}/.done_stage_1_sp_${data_size} && echo "Finish feature extranction (stage: 1)."
+  touch ${data}/.done_stage_1_${data_size}_sp && echo "Finish feature extranction (stage: 1)."
 fi
 
 dict=${data}/dict/train_${data_size}_${unit}${wp_type}${vocab_size}.txt
@@ -235,11 +237,11 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
   for x in ${test_set}; do
     echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}_${data_size}
-    make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} \
+    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
       ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
   done
 
-  touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp && echo "Finish creating dataset (stage: 2)."
+  touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}
