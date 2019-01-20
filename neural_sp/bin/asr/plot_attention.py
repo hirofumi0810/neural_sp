@@ -16,8 +16,8 @@ import shutil
 
 from neural_sp.bin.asr.args import parse
 from neural_sp.bin.asr.plot_utils import plot_attention_weights
-from neural_sp.bin.asr.train_utils import load_config
-from neural_sp.bin.asr.train_utils import set_logger
+from neural_sp.bin.train_utils import load_config
+from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM

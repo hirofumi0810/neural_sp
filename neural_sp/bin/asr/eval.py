@@ -17,8 +17,8 @@ import os
 import time
 
 from neural_sp.bin.asr.args import parse
-from neural_sp.bin.asr.train_utils import load_config
-from neural_sp.bin.asr.train_utils import set_logger
+from neural_sp.bin.train_utils import load_config
+from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
