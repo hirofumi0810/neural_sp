@@ -179,7 +179,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
   utils/fix_data_dir.sh ${data}/${train_set}
 
   cp -rf ${data}/dev_swbd ${data}/${dev_set}
-  cp -rf ${data}/eval2000_swbd ${data}/${test_set}
+  cp -rf ${data}/eval2000 ${data}/${test_set}
 
   # Compute global CMVN
   compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
@@ -200,7 +200,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
 fi
 
 dict=${data}/dict/train_${data_size}_${unit}${wp_type}${vocab_size}.txt
-nlsyms=${data}/dict/non_linguistic_symbols.txt
+nlsyms=${data}/dict/non_linguistic_symbols_${data_size}.txt
 wp_model=${data}/dict/train_${data_size}_${wp_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp ]; then
   echo ============================================================================
