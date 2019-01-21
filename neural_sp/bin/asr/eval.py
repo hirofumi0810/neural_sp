@@ -115,46 +115,75 @@ def main():
                     ensemble_models += [model_e]
 
             # For shallow fusion
-            if (not args.rnnlm_cold_fusion) and args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
-                # Load a RNNLM config file
-                config_rnnlm = load_config(os.path.join(args.recog_rnnlm, 'config.yml'))
+            if not args.rnnlm_cold_fusion:
+                if args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
+                    # Load a RNNLM config file
+                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm, 'config.yml'))
 
-                # Merge config with args
-                args_rnnlm = argparse.Namespace()
-                for k, v in config_rnnlm.items():
-                    setattr(args_rnnlm, k, v)
+                    # Merge config with args
+                    args_rnnlm = argparse.Namespace()
+                    for k, v in config_rnnlm.items():
+                        setattr(args_rnnlm, k, v)
 
-                assert args.unit == args_rnnlm.unit
-                args_rnnlm.vocab = dataset.vocab
+                    assert args.unit == args_rnnlm.unit
+                    args_rnnlm.vocab = dataset.vocab
 
-                # Load the pre-trianed RNNLM
-                seq_rnnlm = SeqRNNLM(args_rnnlm)
-                seq_rnnlm.load_checkpoint(args.recog_rnnlm, epoch=-1)
+                    # Load the pre-trianed RNNLM
+                    seq_rnnlm = SeqRNNLM(args_rnnlm)
+                    seq_rnnlm.load_checkpoint(args.recog_rnnlm, epoch=-1)
 
-                # Copy parameters
-                rnnlm = RNNLM(args_rnnlm)
-                rnnlm.copy_from_seqrnnlm(seq_rnnlm)
+                    # Copy parameters
+                    rnnlm = RNNLM(args_rnnlm)
+                    rnnlm.copy_from_seqrnnlm(seq_rnnlm)
 
-                if args_rnnlm.backward:
-                    model.rnnlm_bwd = rnnlm
-                else:
-                    model.rnnlm_fwd = rnnlm
+                    # Register to the ASR model
+                    if args_rnnlm.backward:
+                        model.rnnlm_bwd = rnnlm
+                    else:
+                        model.rnnlm_fwd = rnnlm
 
-                logger.info('RNNLM path: %s' % args.recog_rnnlm)
-                logger.info('RNNLM weight: %.3f' % args.recog_rnnlm_weight)
-                logger.info('RNNLM backward: %s' % str(config_rnnlm['backward']))
+                if args.recog_rnnlm_bwd is not None and args.recog_rnnlm_weight > 0 and args.recog_fwd_bwd_attention:
+                    # Load a RNNLM config file
+                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm_bwd, 'config.yml'))
 
-            # GPU setting
-            model.cuda()
+                    # Merge config with args
+                    args_rnnlm_bwd = argparse.Namespace()
+                    for k, v in config_rnnlm.items():
+                        setattr(args_rnnlm_bwd, k, v)
 
+                    assert args.unit == args_rnnlm_bwd.unit
+                    args_rnnlm_bwd.vocab = dataset.vocab
+
+                    # Load the pre-trianed RNNLM
+                    seq_rnnlm_bwd = SeqRNNLM(args_rnnlm_bwd)
+                    seq_rnnlm_bwd.load_checkpoint(args.recog_rnnlm_bwd, epoch=-1)
+
+                    # Copy parameters
+                    rnnlm_bwd = RNNLM(args_rnnlm_bwd)
+                    rnnlm_bwd.copy_from_seqrnnlm(seq_rnnlm_bwd)
+
+                    # Resister to the ASR model
+                    model.rnnlm_bwd = rnnlm_bwd
+
+            logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
             logger.info('beam width: %d' % args.recog_beam_width)
+            logger.info('min length ratio: %.3f' % args.recog_min_len_ratio)
+            logger.info('max length ratio: %.3f' % args.recog_max_len_ratio)
             logger.info('length penalty: %.3f' % args.recog_length_penalty)
             logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
             logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
             logger.info('CTC weight: %.3f' % args.recog_ctc_weight)
-            logger.info('epoch: %d' % (epoch - 1))
+            logger.info('RNNLM path: %s' % args.recog_rnnlm)
+            logger.info('RNNLM path (bwd): %s' % args.recog_rnnlm_bwd)
+            logger.info('RNNLM weight: %.3f' % args.recog_rnnlm_weight)
+            logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
+            logger.info('resolving UNK: %s' % args.recog_resolving_unk)
+            logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))
+
+            # GPU setting
+            model.cuda()
 
         start_time = time.time()
 
