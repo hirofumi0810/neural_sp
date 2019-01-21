@@ -1109,10 +1109,10 @@ class Decoder(nn.Module):
 
         # For joint CTC-Attention decoding
         if params['recog_ctc_weight'] > 0:
-            ctc_prefix_score = CTCPrefixScore(tensor2np(ctc_log_probs)[0], self.blank, self.eos)
-            # pre-pruning based on attention scores
-            CTC_SCORING_RATIO = 1.5  # TODO(hirofumi): make this parameter
-            ctc_beam_width = min(ctc_log_probs.size(-1), int(params['recog_beam_width'] * CTC_SCORING_RATIO))
+            if self.backward:
+                ctc_prefix_score = CTCPrefixScore(tensor2np(ctc_log_probs)[0][::-1], self.blank, self.eos)
+            else:
+                ctc_prefix_score = CTCPrefixScore(tensor2np(ctc_log_probs)[0], self.blank, self.eos)
 
         if self.backward:
             sos, eos = self.eos, self.sos
@@ -1256,9 +1256,7 @@ class Decoder(nn.Module):
 
                     # Pick up the top-k scores
                     log_probs_topk, indices_topk = torch.topk(
-                        log_probs,
-                        # k=ctc_beam_width if params['recog_ctc_weight'] > 0 else params['recog_beam_width'],
-                        k=params['recog_beam_width'],
+                        log_probs, k=params['recog_beam_width'],
                         dim=1, largest=True, sorted=True)
 
                     # Add length penalty

@@ -603,7 +603,6 @@ class Seq2seq(ModelBase):
             # CTC
             #########################
             if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
-                # Set RNNLM
                 if params['recog_rnnlm_weight'] > 0:
                     assert hasattr(self, 'rnnlm_' + dir)
                     rnnlm = getattr(self, 'rnnlm_' + dir)
@@ -631,24 +630,35 @@ class Seq2seq(ModelBase):
 
                     # forward-backward decoding
                     if params['recog_fwd_bwd_attention']:
-                        rnnlm_fwd = None
+                        # forward decoder
+                        if params['recog_rnnlm_weight'] > 0:
+                            assert hasattr(self, 'rnnlm_fwd')
+                            rnnlm_fwd = self.rnnlm_fwd
+                        else:
+                            rnnlm_fwd = None
                         nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_fwd, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs)
 
+                        # backward decoder
+                        if params['recog_rnnlm_weight'] > 0:
+                            assert hasattr(self, 'rnnlm_bwd')
+                            rnnlm_bwd = self.rnnlm_bwd
+                        else:
+                            rnnlm_bwd = None
                         flip = False
                         if self.input_type == 'speech' and self.mtl_per_batch:
                             flip = True
                             enc_outs_bwd, perm_ids = self.encode(xs, task, flip=True)
                         else:
                             enc_outs_bwd = enc_outs
-
-                        rnnlm_bwd = None
                         nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_bwd, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs)
+
+                        # forward-backward attention
                         best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                                                       nbest_hyps_bwd, aws_bwd, scores_bwd,
                                                       flip, self.eos, id2token, refs)
@@ -669,7 +679,6 @@ class Seq2seq(ModelBase):
                                 ensemble_decoders += [model.dec_fwd]
                                 # NOTE: only support for the main task now
 
-                        # Set RNNLM
                         if params['recog_rnnlm_weight'] > 0:
                             assert hasattr(self, 'rnnlm_' + dir)
                             rnnlm = getattr(self, 'rnnlm_' + dir)
