@@ -42,19 +42,6 @@ from neural_sp.utils.general import mkdir_join
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
 
-decode_params = {
-    'recog_batch_size': 1,
-    'recog_beam_width': 1,
-    'recog_min_len_ratio': 0.0,
-    'recog_max_len_ratio': 1.0,
-    'recog_length_penalty': 0.0,
-    'recog_coverage_penalty': 0.0,
-    'recog_coverage_threshold': 0.0,
-    'recog_rnnlm_weight': 0.0,
-    'recog_resolving_unk': False,
-    'recog_fwd_bwd_attention': False
-}
-
 
 def main():
 
@@ -66,6 +53,7 @@ def main():
         config = load_config(os.path.join(args.resume, 'config.yml'))
         for k, v in config.items():
             setattr(args, k, v)
+    decode_params = vars(args)
 
     # Automatically reduce batch size in multi-GPU setting
     if args.ngpus > 1:
