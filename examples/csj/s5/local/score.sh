@@ -80,8 +80,22 @@ for set in eval1 eval2 eval3; do
   fi
   mkdir -p ${recog_dir}
 
+  if [ `echo ${model} | grep 'train_sp'` ]; then
+    if [ `echo ${model} | grep 'all'` ]; then
+      recog_set=${data}/dataset/${set}_sp_all_wpbpe30000.csv
+    elif [ `echo ${model} | grep 'aps_other'` ]; then
+      recog_set=${data}/dataset/${set}_sp_aps_other_wpbpe10000.csv
+    fi
+  else
+    if [ `echo ${model} | grep 'all'` ]; then
+      recog_set=${data}/dataset/${set}_all_wpbpe30000.csv
+    elif [ `echo ${model} | grep 'aps_other'` ]; then
+      recog_set=${data}/dataset/${set}_aps_other_wpbpe10000.csv
+    fi
+  fi
+
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
-    --recog_sets ${data}/dataset/${set}_aps_other_wpbpe10000.csv \
+    --recog_sets ${recog_set} \
     --recog_model ${model} ${model1} ${model2} ${model3} ${model4} ${model5} ${model6} ${model7} \
     --recog_model_bwd ${model_bwd} \
     --recog_epoch ${epoch} \
