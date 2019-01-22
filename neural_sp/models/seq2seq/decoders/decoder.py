@@ -442,7 +442,7 @@ class Decoder(nn.Module):
             loss (FloatTensor): `[B, L, vocab]`
 
         """
-        logits = self.output_ctc(eouts).transpose(0, 1).cpu()  # time-major
+        logits = self.output_ctc(eouts)
 
         # Compute the auxiliary CTC loss
         assert not self.backward
@@ -454,7 +454,8 @@ class Decoder(nn.Module):
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
-        loss = self.warpctc_loss(logits, ys_ctc, elens_ctc, ylens)
+        loss = self.warpctc_loss(logits.transpose(0, 1).cpu(),  # time-major
+                                 ys_ctc, elens_ctc, ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
@@ -1280,7 +1281,6 @@ class Decoder(nn.Module):
                     # Add RNNLM score
                     if params['recog_rnnlm_weight'] > 0:
                         lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
-                        # assert log_probs.size() == lm_log_probs.size()
                         local_scores += lm_log_probs[0, indices_topk[0]] * params['recog_rnnlm_weight']
 
                     # CTC score
