@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/swbd
 
 ### vocabulary
-unit=wp      # or word or char or word_char
+unit=wp      # or word or char or word_char or phone
 vocab_size=10000
 wp_type=bpe  # or unigram (for wordpiece)
 
@@ -277,6 +277,9 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
     spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
   else
+    # map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt
+    # map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt
+
     text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
       --wp_type ${wp_type} --wp_model ${wp_model} | \
       sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
@@ -345,7 +348,7 @@ if [ ${stage} -le 3 ]; then
 
   if [ ! -e ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} ]; then
     if [ ! -e ${data}/.done_stage_1_${data_size} ]; then
-      echo "run ./run.sh --data_size `${lm_data_size}` first" && exit 1
+      echo "run ./run_fisher_swbd.sh first" && exit 1
     fi
 
     # Make datset csv files for the LM task
@@ -406,7 +409,7 @@ if [ ${stage} -le 3 ]; then
     --backward ${lm_backward} || exit 1;
     # --resume ${rnnlm_resume} || exit 1;
 
-  echo "Finish RNNLM training (stage: 3)."
+  echo "Finish RNNLM training (stage: 3)." && exit 1;
 fi
 
 if [ ${stage} -le 4 ]; then

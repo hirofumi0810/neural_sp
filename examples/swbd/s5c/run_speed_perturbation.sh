@@ -199,16 +199,73 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
   touch ${data}/.done_stage_1_${data_size}_sp && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/train_${data_size}_${unit}${wp_type}${vocab_size}.txt
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt
 nlsyms=${data}/dict/non_linguistic_symbols_${data_size}.txt
-wp_model=${data}/dict/train_${data_size}_${wp_type}${vocab_size}
+wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp ]; then
   echo ============================================================================
   echo "                      Dataset preparation (stage:2)                        "
   echo ============================================================================
 
-  if [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
-    echo "run ./run.sh first" && exit 1
+  cat ${data}/${train_set}/text | grep sp1.0 > ${data}/${train_set}/text.org
+
+  echo "make a non-linguistic symbol list"
+  cut -f 2- -d " " ${data}/${train_set}/text.org | tr " " "\n" | sort | uniq | grep "\[" > ${nlsyms}
+  cat ${nlsyms}
+
+  # Make a dictionary
+  echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
+  echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
+  echo "<pad> 3" >> ${dict}
+  if [ ${unit} = char ]; then
+    echo "<space> 4" >> ${dict}
+  fi
+  offset=`cat ${dict} | wc -l`
+  echo "Making a dictionary..."
+  if [ ${unit} = wp ]; then
+    cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
+    spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
+    spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
+  else
+    map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt
+    map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt
+
+    text2dict.py ${data}/${train_set}/text.org --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
+      --wp_type ${wp_type} --wp_model ${wp_model} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+  fi
+  echo "vocab size:" `cat ${dict} | wc -l`
+
+  # Compute OOV rate
+  if [ ${unit} = word ]; then
+    mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
+    echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
+    for x in ${train_set} ${dev_set}; do
+      cut -f 2- -d " " ${data}/${x}/text.org | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+        > ${data}/dict/word_count/${x}_${data_size}.txt || exit 1;
+      compute_oov_rate.py ${data}/dict/word_count/${x}_${data_size}.txt ${dict} ${x} \
+        >> ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt || exit 1;
+    done
+
+    # 1) convert upper to lower
+    # 2) remove tags (%AH) (%HESITATION) (%UH)
+    # 3) remove <B_ASIDE> <E_ASIDE>
+    # 4) remove "(" or ")"
+    # swichboard
+    grep -v en ${data}/${test_set}/text.org | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
+      perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' | \
+      tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+      > ${data}/dict/word_count/${test_set}_swbd.txt || exit 1;
+    compute_oov_rate.py ${data}/dict/word_count/${test_set}_swbd.txt ${dict} ${test_set}_swbd \
+      >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+    # callhome
+    grep -v sw ${data}/${test_set}/text.org | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
+      perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' | \
+      tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+      > ${data}/dict/word_count/${test_set}_callhm.txt || exit 1;
+    compute_oov_rate.py ${data}/dict/word_count/${test_set}_callhm.txt ${dict} ${test_set}_callhm \
+      >> ${data}/dict/oov_rate/word_${vocab_size}.txt || exit 1;
+    cat ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
   fi
 
   # Make datset csv files for the ASR task
