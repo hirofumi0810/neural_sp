@@ -401,7 +401,7 @@ if [ ${stage} -le 3 ]; then
     --backward ${lm_backward} || exit 1;
     # --resume ${rnnlm_resume} || exit 1;
 
-  echo "Finish RNNLM training (stage: 3)."
+  echo "Finish RNNLM training (stage: 3)." && exit 1;
 fi
 
 if [ ${stage} -le 4 ]; then
