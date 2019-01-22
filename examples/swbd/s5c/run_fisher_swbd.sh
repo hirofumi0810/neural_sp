@@ -216,8 +216,8 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     echo "run ./run.sh first" && exit 1
   fi
 
-  # steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
-  #   ${data}/train_fisher ${data}/log/make_fbank/train_fisher ${data}/fbank || exit 1;
+  steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
+    ${data}/train_fisher ${data}/log/make_fbank/train_fisher ${data}/fbank || exit 1;
 
   # utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_swbd ${data}/train_fisher || exit 1;
   cp -rf ${data}/dev_swbd ${data}/${dev_set}

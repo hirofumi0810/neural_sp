@@ -17,10 +17,10 @@ export data=/n/sd8/inaguma/corpus/swbd
 unit=wp      # or word or word_char
 vocab_size=10000
 wp_type=bpe  # or unigram (for wordpiece)
-unit_sub1=wp
+unit_sub1=char
 wp_type_sub1=bpe  # or unigram (for wordpiece)
 vocab_size_sub1=1000
-unit_sub2=char
+unit_sub2=phone
 wp_type_sub2=bpe  # or unigram (for wordpiece)
 vocab_size_sub2=
 
@@ -165,7 +165,7 @@ if [ ${unit_sub1} != wp ]; then
   wp_type_sub1=
 fi
 # sub2
-if [ ${unit_sub2} = char ]; then
+if [ ${unit_sub2} = char ] || [ ${unit_sub2} = phone ]; then
   vocab_size_sub2=
 fi
 if [ ${unit_sub2} != wp ]; then
@@ -182,22 +182,9 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
   local/swbd1_data_prep.sh ${SWBD_AUDIOPATH} || exit 1;
   local/eval2000_data_prep.sh ${EVAL2000_AUDIOPATH} ${EVAL2000_TRANSPATH} || exit 1;
 
-  # if [ -d ${RT03_PATH} ]; then
-  #   local/rt03_data_prep.sh ${RT03_PATH}
-  # fi
-
-  # prepare fisher data for language models (optional)
-  # if [ -d ${FISHER_PATH} ]; then
-  #   # prepare fisher data and put it under data/train_fisher
-  #   local/fisher_data_prep.sh ${FISHER_PATH}
-  #   local/fisher_swbd_prepare_dict.sh
-  #
-  #   # merge two datasets into one
-  #   mkdir -p ${data}/train_swbd_fisher
-  #   for f in spk2utt utt2spk wav.scp text segments; do
-  #     cat ${data}/train_fisher/$f ${data}/train_swbd/$f > ${data}/train_swbd_fisher/$f
-  #   done
-  # fi
+  if [ -d ${RT03_PATH} ]; then
+    local/rt03_data_prep.sh ${RT03_PATH}
+  fi
 
   touch ${data}/.done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
 fi
@@ -396,6 +383,11 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub2}$
     cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
     spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub2} --model_type=${wp_type_sub2} --model_prefix=${wp_model_sub2} --input_sentence_size=100000000 --character_coverage=1.0
     spm_encode --model=${wp_model_sub2}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub2}
+  elif [ ${unit_sub2} = phone ]; then
+    map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt
+    map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt
+    text2dict.py ${data}/${train_set}/text.phone --unit ${unit_sub2} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub2} || exit 1;
   else
     text2dict.py ${data}/${train_set}/text --unit ${unit_sub2} --vocab_size ${vocab_size_sub2} --nlsyms ${nlsyms} \
       --wp_type ${wp_type_sub2} --wp_model ${wp_model_sub2} | \
@@ -408,15 +400,22 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub2}$
   for x in ${train_set} ${dev_set}; do
     echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
-    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub2} --nlsyms ${nlsyms} --wp_model ${wp_model_sub2} \
-      ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.csv || exit 1;
+    if [ ${unit_sub2} = phone ]; then
+      make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub2} --text ${data}/${x}/text.phone \
+        ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.csv || exit 1;
+    else
+      make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub2} --nlsyms ${nlsyms} --wp_model ${wp_model_sub2} \
+        ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.csv || exit 1;
+    fi
   done
-  for x in ${test_set}; do
-    echo "Making a ASR csv file for ${x}..."
-    dump_dir=${data}/dump/${x}_${data_size}
-    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub2} --nlsyms ${nlsyms} --wp_model ${wp_model_sub2} \
-      ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${data_size}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.csv || exit 1;
-  done
+  if [ ${unit_sub2} != phone ]; then
+    for x in ${test_set}; do
+      echo "Making a ASR csv file for ${x}..."
+      dump_dir=${data}/dump/${x}_${data_size}
+      make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub2} --nlsyms ${nlsyms} --wp_model ${wp_model_sub2} \
+        ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${data_size}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.csv || exit 1;
+    done
+  fi
 
   touch ${data}/.done_stage_2_${data_size}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2} && echo "Finish creating dataset for ASR (stage: 2)."
 fi

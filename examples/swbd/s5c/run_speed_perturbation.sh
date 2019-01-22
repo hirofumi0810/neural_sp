@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/swbd
 
 ### vocabulary
-unit=wp      # or word or char or word_char
+unit=wp      # or word or char or word_char or phone
 vocab_size=10000
 wp_type=bpe  # or unigram (for wordpiece)
 
@@ -135,7 +135,7 @@ train_set=train_sp_${data_size}
 dev_set=dev_sp_${data_size}
 test_set="eval2000_sp"
 
-if [ ${unit} = char ]; then
+if [ ${unit} = char ] || [ ${unit} = phone ]; then
   vocab_size=
 fi
 if [ ${unit} != wp ]; then
@@ -226,10 +226,12 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
     spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
     spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
-  else
+  elif [ ${unit} = phone ]; then
     map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt
     map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt
-
+    text2dict.py ${data}/${train_set}/text.phone --unit ${unit} | \
+      sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+  else
     text2dict.py ${data}/${train_set}/text.org --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
       --wp_type ${wp_type} --wp_model ${wp_model} | \
       sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
@@ -273,15 +275,22 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
   for x in ${train_set} ${dev_set}; do
     echo "Making a ASR csv file for ${x}..."
     dump_dir=${data}/dump/${x}
-    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+    if [ ${unit} = phone ]; then
+      make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --text ${data}/${x}/text.phone \
+        ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+    else
+      make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+        ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+    fi
   done
-  for x in ${test_set}; do
-    echo "Making a ASR csv file for ${x}..."
-    dump_dir=${data}/dump/${x}_${data_size}
-    make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
-  done
+  if [ ${unit} != phone ]; then
+    for x in ${test_set}; do
+      echo "Making a ASR csv file for ${x}..."
+      dump_dir=${data}/dump/${x}_${data_size}
+      make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+        ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+    done
+  fi
 
   touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp && echo "Finish creating dataset for ASR (stage: 2)."
 fi

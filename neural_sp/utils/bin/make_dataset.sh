@@ -12,6 +12,7 @@ unk="<unk>"
 space="<space>"
 nlsyms=""
 wp_model=""
+text=
 
 . utils/parse_options.sh
 
@@ -23,10 +24,14 @@ fi
 data=$1
 dict=$2
 
+if [ -z ${text} ]; then
+  text=${data}/text
+fi
+
 # csv: utt_id, feat_path, xlen, text, tokenid, ylen
 make_csv.py --feat ${feat} \
             --utt2num_frames ${data}/utt2num_frames \
-            --text ${data}/text \
+            --text ${text} \
             --dict ${dict} \
             --unit ${unit} \
             --remove_space ${remove_space} \
