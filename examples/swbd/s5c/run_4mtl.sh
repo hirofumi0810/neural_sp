@@ -93,9 +93,9 @@ pretrained_model=
 ### regularization
 clip_grad_norm=5.0
 dropout_in=0.0
-dropout_enc=0.2
-dropout_dec=0.2
-dropout_emb=0.2
+dropout_enc=0.4
+dropout_dec=0.4
+dropout_emb=0.4
 dropout_att=0.0
 weight_decay=1e-6
 ss_prob=0.2
