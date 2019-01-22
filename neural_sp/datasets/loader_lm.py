@@ -107,7 +107,7 @@ class Dataset(Base):
     @property
     def epoch_detail(self):
         # Floating point version of epoch
-        return self.epoch + (self.offset / len(self.concat_ids))
+        return self.epoch + (self.offset / len(self.concat_ids.reshape((-1,))))
 
     def __next__(self, batch_size=None):
         """Generate each mini-batch.
