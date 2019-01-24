@@ -20,7 +20,7 @@ import time
 import torch
 from tqdm import tqdm
 
-from neural_sp.bin.asr.args import parse
+from neural_sp.bin.args_asr import parse
 from neural_sp.bin.train_utils import Controller
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import Reporter
@@ -234,7 +234,8 @@ def main():
         dir_name += '_' + args.optimizer
         dir_name += '_lr' + str(args.learning_rate)
         dir_name += '_bs' + str(args.batch_size)
-        dir_name += '_ss' + str(args.ss_prob)
+        if args.ctc_weight < 1:
+            dir_name += '_ss' + str(args.ss_prob)
         dir_name += '_ls' + str(args.lsm_prob)
         if args.focal_loss_weight > 0:
             dir_name += '_fl' + str(args.focal_loss_weight)

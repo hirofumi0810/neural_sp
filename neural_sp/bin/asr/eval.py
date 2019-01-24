@@ -16,7 +16,7 @@ import copy
 import os
 import time
 
-from neural_sp.bin.asr.args import parse
+from neural_sp.bin.args_asr import parse
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset

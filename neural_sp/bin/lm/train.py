@@ -20,7 +20,7 @@ import time
 import torch
 from tqdm import tqdm
 
-from neural_sp.bin.lm.args import parse
+from neural_sp.bin.args_lm import parse
 from neural_sp.bin.train_utils import Controller
 from neural_sp.bin.train_utils import Reporter
 from neural_sp.bin.train_utils import load_config
