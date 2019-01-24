@@ -583,7 +583,7 @@ class Seq2seq(ModelBase):
             if self.input_type == 'speech' and self.bwd_weight == 1:
                 enc_outs, perm_ids = self.encode(xs, task, flip=True)
             else:
-                enc_outs, perm_ids = self.encode(xs, 'all', flip=False)
+                enc_outs, perm_ids = self.encode(xs, task, flip=False)
 
             if task.split('.')[0] == 'ys':
                 dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
@@ -624,7 +624,7 @@ class Seq2seq(ModelBase):
                         params['recog_max_len_ratio'], exclude_eos)
                 else:
                     if params['recog_ctc_weight'] > 0:
-                        ctc_log_probs = getattr(self, 'dec_' + dir).ctc_log_probs(enc_outs[task]['xs'])
+                        ctc_log_probs = self.dec_fwd.ctc_log_probs(enc_outs[task]['xs'])
                     else:
                         ctc_log_probs = None
 
@@ -636,10 +636,24 @@ class Seq2seq(ModelBase):
                             rnnlm_fwd = self.rnnlm_fwd
                         else:
                             rnnlm_fwd = None
+
+                        # ensemble (forward)
+                        ensemble_eouts_fwd = []
+                        ensemble_elens_fwd = []
+                        ensemble_decoders_fwd = []
+                        if len(ensemble_models) > 0:
+                            for i_e, model in enumerate(ensemble_models):
+                                enc_outs_e_fwd, _ = model.encode(xs, task, flip=False)
+                                ensemble_eouts_fwd += [enc_outs_e_fwd[task]['xs']]
+                                ensemble_elens_fwd += [enc_outs_e_fwd[task]['xlens']]
+                                ensemble_decoders_fwd += [model.dec_fwd]
+                                # NOTE: only support for the main task now
+
                         nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_fwd, ctc_log_probs,
-                            params['recog_beam_width'], False, id2token, refs)
+                            params['recog_beam_width'], False, id2token, refs,
+                            ensemble_eouts_fwd, ensemble_elens_fwd, ensemble_decoders_fwd)
 
                         # backward decoder
                         if params['recog_rnnlm_weight'] > 0:
@@ -647,16 +661,34 @@ class Seq2seq(ModelBase):
                             rnnlm_bwd = self.rnnlm_bwd
                         else:
                             rnnlm_bwd = None
+
+                        # ensemble (backward)
+                        ensemble_eouts_bwd = []
+                        ensemble_elens_bwd = []
+                        ensemble_decoders_bwd = []
+                        if len(ensemble_models) > 0:
+                            for i_e, model in enumerate(ensemble_models):
+                                if self.input_type == 'speech' and self.mtl_per_batch:
+                                    enc_outs_e_bwd, _ = model.encode(xs, task, flip=True)
+                                else:
+                                    enc_outs_e_bwd, _ = model.encode(xs, task, flip=False)
+                                ensemble_eouts_bwd += [enc_outs_e_bwd[task]['xs']]
+                                ensemble_elens_bwd += [enc_outs_e_bwd[task]['xlens']]
+                                ensemble_decoders_bwd += [model.dec_bwd]
+                                # NOTE: only support for the main task now
+                                # TODO(hirofumi): merge with the forward for the efficiency
+
                         flip = False
                         if self.input_type == 'speech' and self.mtl_per_batch:
                             flip = True
-                            enc_outs_bwd, perm_ids = self.encode(xs, task, flip=True)
+                            enc_outs_bwd, _ = self.encode(xs, task, flip=True)
                         else:
                             enc_outs_bwd = enc_outs
                         nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_bwd, ctc_log_probs,
-                            params['recog_beam_width'], False, id2token, refs)
+                            params['recog_beam_width'], False, id2token, refs,
+                            ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decoders_bwd)
 
                         # forward-backward attention
                         best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
@@ -673,10 +705,10 @@ class Seq2seq(ModelBase):
                                 if model.input_type == 'speech' and model.bwd_weight == 1:
                                     enc_outs_e, _ = model.encode(xs, task, flip=True)
                                 else:
-                                    enc_outs_e, _ = model.encode(xs, 'all', flip=False)
+                                    enc_outs_e, _ = model.encode(xs, task, flip=False)
                                 ensemble_eouts += [enc_outs_e[task]['xs']]
                                 ensemble_elens += [enc_outs_e[task]['xlens']]
-                                ensemble_decoders += [model.dec_fwd]
+                                ensemble_decoders += [getattr(model, 'dec_' + dir)]
                                 # NOTE: only support for the main task now
 
                         if params['recog_rnnlm_weight'] > 0:

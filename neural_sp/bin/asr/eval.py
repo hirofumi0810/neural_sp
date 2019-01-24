@@ -115,9 +115,9 @@ def main():
                     ensemble_models += [model_e]
             # checkpoint ensemble
             elif args.recog_checkpoint_ensemble > 1:
-                for i_m in range(1, args.recog_checkpoint_ensemble):
+                for i_e in range(1, args.recog_checkpoint_ensemble):
                     model_e = Seq2seq(args)
-                    model_e.load_checkpoint(args.recog_model[0], epoch=args.recog_epoch - i_m)
+                    model_e.load_checkpoint(args.recog_model[0], epoch=args.recog_epoch - i_e)
                     model_e.cuda()
                     ensemble_models += [model_e]
 
@@ -188,7 +188,7 @@ def main():
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))
-            logger.info('checkpoint ensemble: %d' % (args.checkpoint_ensemble))
+            logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
 
             # GPU setting
             model.cuda()
