@@ -1099,8 +1099,17 @@ class Decoder(nn.Module):
         bs, _, enc_nunits = eouts.size()
         nmodels = len(ensemble_decoders) + 1
 
+        # TODO(hirofumi): fix later
+        beam_width = params['recog_beam_width']
+        ctc_weight = params['recog_ctc_weight']
+        lp_weight = params['recog_length_penalty']
+        cp_weight = params['recog_coverage_penalty']
+        cp_threshold = params['recog_coverage_threshold']
+        rnnlm_weight = params['recog_rnnlm_weight']
+        gnmt_decoding = params['recog_gnmt_decoding']
+
         # For cold fusion
-        if params['recog_rnnlm_weight'] > 0 and self.cold_fusion:
+        if rnnlm_weight > 0 and self.cold_fusion:
             assert self.rnnlm_cf
             self.rnnlm_cf.eval()
 
@@ -1109,7 +1118,7 @@ class Decoder(nn.Module):
             rnnlm.eval()
 
         # For joint CTC-Attention decoding
-        if params['recog_ctc_weight'] > 0:
+        if ctc_weight > 0:
             if self.backward:
                 ctc_prefix_score = CTCPrefixScore(tensor2np(ctc_log_probs)[0][::-1], self.blank, self.eos)
             else:
@@ -1149,21 +1158,23 @@ class Decoder(nn.Module):
             beam = [{'hyp': [sos],
                      'score': 0,
                      'scores': [0],
-                     'score_raw': 0,
+                     'score_att': 0,
+                     'score_ctc': 0,
+                     'score_lm': 0,
                      'dstates': dstates,
                      'con_vec': con_vec,
                      'aws': [None],
                      'rnnlm_hxs': None,
                      'rnnlm_cxs': None,
-                     'cov_prev': 0,
+                     'cp_prev': 0,
                      'ensemble_dstates': ensemble_dstates,
                      'ensemble_con_vec': ensemble_con_vec,
                      'ensemble_aws':[[None] for _ in range(nmodels)],
-                     'ctc_state':  ctc_prefix_score.initial_state() if params['recog_ctc_weight'] > 0 else None,
+                     'ctc_state':  ctc_prefix_score.initial_state() if ctc_weight > 0 else None,
                      'ctc_score': 0
                      }]
-            max_len = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
-            for t in range(max_len):
+            max_ylen = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
+            for t in range(max_ylen):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     # Recurrency (1st) for the main model
@@ -1245,7 +1256,7 @@ class Decoder(nn.Module):
                     attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
                     log_probs = F.log_softmax(self.output(attn_vec).squeeze(1), dim=1)
                     # NOTE: `[1 (B), 1, vocab]` -> `[1 (B), vocab]`
-                    # Generate for nsemble
+                    # Generate for ensemble
                     if nmodels > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
                             attn_vec = dec.generate(ensemble_con_vec[i_e],
@@ -1257,60 +1268,86 @@ class Decoder(nn.Module):
 
                     # Pick up the top-k scores
                     log_probs_topk, indices_topk = torch.topk(
-                        log_probs, k=params['recog_beam_width'],
+                        log_probs, k=beam_width,
                         dim=1, largest=True, sorted=True)
 
+                    scores_att = beam[i_beam]['score_att'] + log_probs_topk
+                    local_scores = scores_att.clone()
+
                     # Add length penalty
-                    scores_raw = beam[i_beam]['score_raw'] + log_probs_topk
-                    local_scores = scores_raw * (1 - params['recog_ctc_weight']) + params['recog_length_penalty']
+                    lp = 1
+                    if lp_weight > 0:
+                        if gnmt_decoding:
+                            lp = math.pow(5 + (len(beam[i_beam]['hyp']) - 1 + 1), lp_weight)
+                            lp /= math.pow(6, lp_weight)
+                            local_scores /= lp
+                        else:
+                            local_scores += (len(beam[i_beam]['hyp']) - 1 + 1) * lp_weight
 
                     # Add coverage penalty
-                    if params['recog_coverage_penalty'] > 0:
-                        # Recompute converage penalty in each step
-                        local_scores -= beam[i_beam]['cov_prev'] * params['recog_coverage_penalty']
-                        cov_sum = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=-1)
-                        if params['recog_coverage_threshold'] == 0:
-                            cov_sum = cov_sum.sum() / self.score.nheads
+                    if cp_weight > 0:
+                        aw_mat = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=-1)  # `[B, T, len(hyp)]`
+                        if gnmt_decoding:
+                            aw_mat = torch.log(aw_mat.sum(-1))
+                            cp = torch.where(aw_mat < 0, aw_mat, torch.zeros_like(aw_mat)).sum()
+                            # TODO (hirofumi): mask by elens[b]
+                            local_scores += cp * cp_weight
                         else:
-                            cov_sum = cov_sum[torch.where(cov_sum > params['recog_coverage_threshold'])[
-                                0]].sum() / self.score.nheads
-                        local_scores += cov_sum * params['recog_coverage_penalty']
+                            # Recompute converage penalty in each step
+                            if cp_threshold == 0:
+                                cp = aw_mat.sum() / self.score.nheads
+                            else:
+                                cp = torch.where(aw_mat > cp_threshold, aw_mat,
+                                                 torch.zeros_like(aw_mat)).sum() / self.score.nheads
+                            local_scores += cp * cp_weight
+                            # local_scores += (cp - beam[i_beam]['cp_prev']) * cp_weight  # old
                     else:
-                        cov_sum = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
+                        cp = torch.zeros((), dtype=torch.float32)
+                        aw_mat = None
+
+                    local_scores *= (1 - ctc_weight)
 
                     # Add RNNLM score
-                    if params['recog_rnnlm_weight'] > 0:
+                    if rnnlm_weight > 0:
                         lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
-                        local_scores += lm_log_probs[0, indices_topk[0]] * params['recog_rnnlm_weight']
+                        score_lm = beam[i_beam]['score_lm'] + lm_log_probs[0, indices_topk[0]]
+                        score_lm /= lp  # normalize
+                        local_scores += score_lm * rnnlm_weight
+                    else:
+                        score_lm = torch.zeros((beam_width,), dtype=torch.float32)
 
                     # CTC score
-                    if params['recog_ctc_weight'] > 0:
+                    if ctc_weight > 0:
                         ctc_scores, ctc_states = ctc_prefix_score(
                             beam[i_beam]['hyp'], indices_topk[0], beam[i_beam]['ctc_state'])
-                        local_scores += torch.from_numpy(ctc_scores -
-                                                         beam[i_beam]['ctc_score']).cuda(self.device_id) * params['recog_ctc_weight']
-                        local_scores, joint_indices_topk = torch.topk(local_scores, params['recog_beam_width'], dim=1)
+                        score_ctc = beam[i_beam]['score_ctc'] + torch.from_numpy(
+                            ctc_scores - beam[i_beam]['ctc_score']).cuda(self.device_id)
+                        score_ctc /= lp  # normalize
+                        local_scores += score_ctc * ctc_weight
+                        local_scores, joint_indices_topk = torch.topk(local_scores, beam_width, dim=1)
                         indices_topk = indices_topk[:, joint_indices_topk[0]]
+                    else:
+                        score_ctc = torch.zeros((beam_width,), dtype=torch.float32)
 
-                    for k in range(params['recog_beam_width']):
+                    for k in range(beam_width):
                         # Exclude short hypotheses
-                        if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) < elens[b] * params['recog_min_len_ratio']:
+                        if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) - 1 < elens[b] * params['recog_min_len_ratio']:
                             continue
 
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
                              'score': local_scores[0, k].item(),
                              'scores': beam[i_beam]['scores'] + [local_scores[0, k].item()],
-                             'score_raw': scores_raw[0, k].item(),
-                             'score_lm': 0,  # TODO(hirofumi):
-                             'score_lp': 0,  # TODO(hirofumi):
-                             'score_cp': 0,  # TODO(hirofumi):
+                             'score_att': scores_att[0, k].item(),  # NOTE: total score
+                             'score_cp': cp,
+                             'score_ctc': score_ctc[k].item(),  # NOTE: total score
+                             'score_lm': score_lm[k].item(),  # NOTE: total score
                              'dstates': dstates,
                              'con_vec': attn_vec if self.input_feeding else con_vec,
                              'aws': beam[i_beam]['aws'] + [aw],
                              'rnnlm_hxs': rnnlm_state[0][:] if rnnlm_state is not None else None,
                              'rnnlm_cxs': rnnlm_state[1][:] if rnnlm_state is not None else None,
-                             'cov_prev': cov_sum,
+                             'cp_prev': cp,
                              'ensemble_dstates': ensemble_dstates,
                              'ensemble_con_vec': ensemble_con_vec,
                              'ensemble_aws': ensemble_aws,
@@ -1322,22 +1359,22 @@ class Decoder(nn.Module):
 
                 # Remove complete hypotheses
                 not_complete = []
-                for cand in new_beam[:params['recog_beam_width']]:
+                for cand in new_beam[:beam_width]:
                     if cand['hyp'][-1] == eos:
                         complete += [cand]
                     else:
                         not_complete += [cand]
 
                 # end detection
-                if params['recog_ctc_weight'] > 0:
-                    if end_detect(complete, t):
-                        logger.info('end detected at %d', t)
-                        break
-                elif len(complete) >= params['recog_beam_width']:
-                    complete = complete[:params['recog_beam_width']]
+                if end_detect(complete, t):
+                    logger.info('end detected at %d', t)
                     break
 
-                beam = not_complete[:params['recog_beam_width']]
+                # Pruning
+                if len(complete) >= beam_width:
+                    complete = complete[:beam_width]
+                    break
+                beam = not_complete[:beam_width]
 
             # Sort by score
             if len(complete) == 0:
@@ -1362,7 +1399,6 @@ class Decoder(nn.Module):
                 else:
                     aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
                 scores += [[complete[n]['scores'][1:] for n in range(nbest)]]
-            # scores += [[complete[n]['score_raw'] for n in range(nbest)]]
 
             # Check <eos>
             eos_flag = [True if complete[n]['hyp'][-1] == eos else False for n in range(nbest)]
@@ -1376,8 +1412,18 @@ class Decoder(nn.Module):
             if refs is not None:
                 logger.info('log prob (ref): ')
             for n in range(nbest):
-                logger.info('log prob (hyp): %.3f' % complete[n]['score'])
-                logger.info('log prob (hyp, raw): %.3f' % complete[n]['score_raw'])
+                logger.info('log prob (hyp): %.7f' % complete[n]['score'])
+                logger.info('log prob (hyp, att): %.7f' % (complete[n]['score_att'] * (1 - ctc_weight)))
+                logger.info('log prob (hyp, cp): %.7f' % (complete[n]['score_cp'] * cp_weight))
+                if ctc_weight > 0:
+                    logger.info('log prob (hyp, ctc): %.7f' % (complete[n]['score_ctc'] * ctc_weight))
+                    # print(complete[n]['score'])
+                    # print(complete[n]['score_att'] *
+                    #       (1 - ctc_weight) + complete[n]['score_ctc'] * ctc_weight)
+                    # assert complete[n]['score'] == complete[n]['score_att'] * \
+                    #     (1 - ctc_weight) + complete[n]['score_ctc'] * ctc_weight
+                if rnnlm_weight > 0:
+                    logger.info('log prob (hyp, lm): %.7f' % (complete[n]['score_lm'] * rnnlm_weight))
 
         # Concatenate in L dimension
         for b in range(len(aws)):

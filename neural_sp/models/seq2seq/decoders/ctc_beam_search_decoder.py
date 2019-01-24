@@ -204,10 +204,10 @@ class CTCPrefixScore(object):
         Args:
             hyp (list): prefix label sequence
             cs (torch.FloatTensor): array of next labels. A tensor of size `[beam_width]`
-            r_prev (): previous CTC state
+            r_prev (np.ndarray): previous CTC state
         Returns:
-            ctc_scores ():
-            ctc_states ():
+            ctc_scores (np.ndarray):
+            ctc_states (np.ndarray):
         """
         # initialize CTC states
         ylen = len(hyp) - 1  # ignore sos

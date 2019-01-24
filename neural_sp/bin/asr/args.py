@@ -361,6 +361,8 @@ def parse():
                         help='coverage penalty')
     parser.add_argument('--recog_coverage_threshold', type=float, default=0.0,
                         help='coverage threshold')
+    parser.add_argument('--recog_gnmt_decoding', type=strtobool, default=False, nargs='?',
+                        help='If True, adopt Google NMT beam search decoding.')
     parser.add_argument('--recog_rnnlm_weight', type=float, default=0.0,
                         help='the weight of RNNLM score')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
