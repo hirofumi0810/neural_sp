@@ -15,8 +15,8 @@ batch_size=1
 beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=0.0
-coverage_penalty=0.6
+length_penalty=0.05
+coverage_penalty=0.05
 coverage_threshold=0.0
 gnmt_decoding=true
 rnnlm=
@@ -50,13 +50,14 @@ for set in test_dev93 test_eval92; do
   fi
 
   recog_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
-  if [ ${ctc_weight} != 0.0 ]; then
-    recog_dir=${recog_dir}_ctc${ctc_weight}
-  elif ${gnmt_decoding}; then
-      recog_dir=${recog_dir}_gnmt
-  fi
   if [ ! -z ${recog_unit} ]; then
       recog_dir=${recog_dir}_${recog_unit}
+  fi
+  if [ ${ctc_weight} != 0.0 ]; then
+    recog_dir=${recog_dir}_ctc${ctc_weight}
+  fi
+  if ${gnmt_decoding}; then
+      recog_dir=${recog_dir}_gnmt
   fi
   if ${fwd_bwd_attention}; then
     recog_dir=${recog_dir}_fwdbwd

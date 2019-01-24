@@ -14,8 +14,8 @@ batch_size=1
 beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=0.0
-coverage_penalty=0.6
+length_penalty=0.05
+coverage_penalty=0.05
 coverage_threshold=0.0
 gnmt_decoding=true
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
@@ -45,7 +45,8 @@ for set in dev test; do
   recog_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
   if [ ${ctc_weight} != 0.0 ]; then
     recog_dir=${recog_dir}_ctc${ctc_weight}
-  elif ${gnmt_decoding}; then
+  fi
+  if ${gnmt_decoding}; then
       recog_dir=${recog_dir}_gnmt
   fi
   if [ ${checkpoint_ensemble} != 1 ]; then
