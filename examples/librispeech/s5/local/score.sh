@@ -24,6 +24,7 @@ rnnlm_weight=0.0
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=0
 fwd_bwd_attention=false
+checkpoint_ensemble=1  # the number of checkpoints to use
 recog_unit=
 
 . ./cmd.sh
@@ -36,7 +37,7 @@ set -o pipefail
 
 if [ -z ${gpu} ]; then
   echo "Error: set GPU number." 1>&2
-  echo "Usage: ./run.sh --gpu 0" 1>&2
+  echo "Usage: local/score.sh --gpu 0" 1>&2
   exit 1
 fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
@@ -55,6 +56,9 @@ for set in dev_clean dev_other test_clean test_other; do
   fi
   if ${fwd_bwd_attention}; then
     recog_dir=${recog_dir}_fwdbwd
+  fi
+  if [ ${checkpoint_ensemble} != 1 ]; then
+    recog_dir=${recog_dir}_checkpoint${checkpoint_ensemble}
   fi
   mkdir -p ${recog_dir}
 
@@ -76,6 +80,7 @@ for set in dev_clean dev_other test_clean test_other; do
     --recog_ctc_weight ${ctc_weight} \
     --recog_resolving_unk ${resolving_unk} \
     --recog_fwd_bwd_attention ${fwd_bwd_attention} \
+    --recog_checkpoint_ensemble ${checkpoint_ensemble} \
     --recog_unit ${recog_unit} \
     --recog_dir ${recog_dir} || exit 1;
 

@@ -316,7 +316,7 @@ class ModelBase(nn.Module):
 
         Args:
             save_path (str): path to the saved models
-            epoch (int): if -1 means the last saved model
+            epoch (int): negative values mean the offset from the last saved model
             restart (bool): if True, restore the save optimizer
         Returns:
             epoch (int): the currnet epoch
@@ -325,15 +325,14 @@ class ModelBase(nn.Module):
             metric_dev_best (float)
 
         """
-        if int(epoch) == -1:
-            # Restore the last saved model
-            epochs = [(int(os.path.basename(x).split('-')[-1]), x)
+        if int(epoch) < 0:
+            models = [(int(os.path.basename(x).split('-')[-1]), x)
                       for x in glob(os.path.join(save_path, 'model.*'))]
-
-            if len(epochs) == 0:
+            if len(models) == 0:
                 raise ValueError('There is no checkpoint')
 
-            epoch = sorted(epochs, key=lambda x: x[0])[-1][0]
+            # Sort in the discending order
+            epoch = sorted(models, key=lambda x: x[0])[epoch][0]
 
         checkpoint_path = os.path.join(save_path, 'model.epoch-' + str(epoch))
 

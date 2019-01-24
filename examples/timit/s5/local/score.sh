@@ -18,6 +18,7 @@ length_penalty=0.0
 coverage_penalty=0.6
 coverage_threshold=0.0
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
+checkpoint_ensemble=1  # the number of checkpoints to use
 
 . ./cmd.sh
 . ./path.sh
@@ -29,7 +30,7 @@ set -o pipefail
 
 if [ -z ${gpu} ]; then
   echo "Error: set GPU number." 1>&2
-  echo "Usage: ./run.sh --gpu 0" 1>&2
+  echo "Usage: local/score.sh --gpu 0" 1>&2
   exit 1
 fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
@@ -42,6 +43,9 @@ for set in dev test; do
   recog_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
   if [ ${ctc_weight} != 0.0 ]; then
     recog_dir=${recog_dir}_ctc${ctc_weight}
+  fi
+  if [ ${checkpoint_ensemble} != 1 ]; then
+    recog_dir=${recog_dir}_checkpoint${checkpoint_ensemble}
   fi
   mkdir -p ${recog_dir}
 
@@ -57,6 +61,7 @@ for set in dev test; do
     --recog_coverage_penalty ${coverage_penalty} \
     --recog_coverage_threshold ${coverage_threshold} \
     --recog_ctc_weight ${ctc_weight} \
+    --recog_checkpoint_ensemble ${checkpoint_ensemble} \
     --recog_dir ${recog_dir} || exit 1;
 
   echo ${set}

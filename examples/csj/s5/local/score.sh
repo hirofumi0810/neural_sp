@@ -31,6 +31,7 @@ rnnlm_weight=0.0
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=0
 fwd_bwd_attention=false
+checkpoint_ensemble=1  # the number of checkpoints to use
 recog_unit=
 
 . ./cmd.sh
@@ -62,6 +63,9 @@ for set in eval1 eval2 eval3; do
   fi
   if ${fwd_bwd_attention}; then
     recog_dir=${recog_dir}_fwdbwd
+  fi
+  if [ ${checkpoint_ensemble} != 1 ]; then
+    recog_dir=${recog_dir}_checkpoint${checkpoint_ensemble}
   fi
   if [ ! -z ${model7} ]; then
     recog_dir=${recog_dir}_ensemble8
@@ -112,6 +116,7 @@ for set in eval1 eval2 eval3; do
     --recog_ctc_weight ${ctc_weight} \
     --recog_resolving_unk ${resolving_unk} \
     --recog_fwd_bwd_attention ${fwd_bwd_attention} \
+    --recog_checkpoint_ensemble ${checkpoint_ensemble} \
     --recog_unit ${recog_unit} \
     --recog_dir ${recog_dir} || exit 1;
 

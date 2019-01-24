@@ -88,15 +88,15 @@ def main():
             # else:
             #     pass
 
-            args.rnnlm_cold_fusion = None
-            args.rnnlm_init = None
+            args.rnnlm_cold_fusion = False
+            args.rnnlm_init = False
 
             # Load the ASR model
             model = Seq2seq(args)
             epoch, _, _, _ = model.load_checkpoint(args.recog_model[0], epoch=args.recog_epoch)
             model.save_path = args.recog_model[0]
 
-            # ensemble
+            # ensemble (different models)
             ensemble_models = [model]
             if len(args.recog_model) > 1:
                 for recog_model_e in args.recog_model[1:]:
@@ -111,6 +111,13 @@ def main():
 
                     model_e = Seq2seq(args_e)
                     model_e.load_checkpoint(recog_model_e, epoch=args.recog_epoch)
+                    model_e.cuda()
+                    ensemble_models += [model_e]
+            # checkpoint ensemble
+            elif args.recog_checkpoint_ensemble > 1:
+                for i_m in range(1, args.recog_checkpoint_ensemble):
+                    model_e = Seq2seq(args)
+                    model_e.load_checkpoint(args.recog_model[0], epoch=args.recog_epoch - i_m)
                     model_e.cuda()
                     ensemble_models += [model_e]
 
@@ -181,6 +188,7 @@ def main():
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))
+            logger.info('checkpoint ensemble: %d' % (args.checkpoint_ensemble))
 
             # GPU setting
             model.cuda()

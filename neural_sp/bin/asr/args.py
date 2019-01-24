@@ -373,8 +373,16 @@ def parse():
                         help='resolving UNK for the word-based model.')
     parser.add_argument('--recog_fwd_bwd_attention', type=strtobool, default=False,
                         help='forward-backward attention decoding.')
-    parser.add_argument('--recog_joint_ctc_attention', type=strtobool, default=False,
-                        help='forward-backward attention decoding.')
+    parser.add_argument('--recog_checkpoint_ensemble', type=int, default=1,
+                        help='number of checkpoints to use.')
+    # distillation related
+    parser.add_argument('--recog_nbest', type=float, default=1,
+                        help='N-best list for sampling')
+    parser.add_argument('--recog_softmax_temperature', type=float, default=1,
+                        help='Temperature parameter for the final softmax layer.')
+    parser.add_argument('--distillation_type', type=str, default='prob',
+                        choices=['teacher_forcing', 'beam_search'],
+                        help='')
 
     args = parser.parse_args()
     return args
