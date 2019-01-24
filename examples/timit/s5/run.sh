@@ -133,7 +133,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
   echo ============================================================================
 
   for x in train dev test; do
-    steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
+    steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
       ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
   done
 
@@ -143,7 +143,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
   # Apply global CMVN & dump features
   for x in ${train_set} ${dev_set} ${test_set}; do
     dump_dir=${data}/dump/${x}
-    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta true \
+    dump_feat.sh --cmd "$train_cmd" --nj 32 --add_deltadelta true \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
 

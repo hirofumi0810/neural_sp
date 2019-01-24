@@ -216,7 +216,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     echo "run ./run.sh first" && exit 1
   fi
 
-  steps/make_fbank.sh --nj 16 --cmd "$train_cmd" --write_utt2num_frames true \
+  steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
     ${data}/train_fisher ${data}/log/make_fbank/train_fisher ${data}/fbank || exit 1;
 
   # utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_swbd ${data}/train_fisher || exit 1;
@@ -228,12 +228,12 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
   # Apply global CMVN & dump features
   for x in ${train_set} ${dev_set}; do
     dump_dir=${data}/dump/${x}
-    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+    dump_feat.sh --cmd "$train_cmd" --nj 32 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
   done
   for x in ${test_set}; do
     dump_dir=${data}/dump/${x}_${data_size}
-    dump_feat.sh --cmd "$train_cmd" --nj 16 --add_deltadelta false \
+    dump_feat.sh --cmd "$train_cmd" --nj 32 --add_deltadelta false \
       ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
   done
 
