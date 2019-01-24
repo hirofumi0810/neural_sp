@@ -51,6 +51,7 @@ gpu=`echo ${gpu} | cut -d "," -f 1`
 
 for set in eval1 eval2 eval3; do
   if [ ${ctc_weight} != 0.0 ]; then
+    length_penalty=0.0
     coverage_penalty=0.0
   fi
 
