@@ -149,7 +149,7 @@ def main():
                     else:
                         model.rnnlm_fwd = rnnlm
 
-                if args.recog_rnnlm_bwd is not None and args.recog_rnnlm_weight > 0 and args.recog_fwd_bwd_attention:
+                if args.recog_rnnlm_bwd is not None and args.recog_rnnlm_weight > 0 and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
                     # Load a RNNLM config file
                     config_rnnlm = load_config(os.path.join(args.recog_rnnlm_bwd, 'config.yml'))
 
@@ -184,7 +184,9 @@ def main():
             logger.info('RNNLM path: %s' % args.recog_rnnlm)
             logger.info('RNNLM path (bwd): %s' % args.recog_rnnlm_bwd)
             logger.info('RNNLM weight: %.3f' % args.recog_rnnlm_weight)
+            logger.info('GNMT: %s' % args.recog_gnmt_decoding)
             logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
+            logger.info('reverse LM rescoring: %s' % args.recog_reverse_lm_rescoring)
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))

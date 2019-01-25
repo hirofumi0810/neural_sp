@@ -1065,7 +1065,7 @@ class Decoder(nn.Module):
 
         return best_hyps, aws
 
-    def beam_search(self, eouts, elens, params, rnnlm, ctc_log_probs=None,
+    def beam_search(self, eouts, elens, params, rnnlm, rnnlm_rev=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False, id2token=None, refs=None,
                     ensemble_eouts=None, ensemble_elens=None, ensemble_decoders=[]):
         """Beam search decoding in the inference stage.
@@ -1082,6 +1082,7 @@ class Decoder(nn.Module):
                 coverage_threshold (float): threshold for coverage penalty
                 rnnlm_weight (float): the weight of RNNLM score
             rnnlm (torch.nn.Module):
+            rnnlm_rev (torch.nn.Module):
             ctc_log_probs (torch.FloatTensor):
             nbest (int):
             exclude_eos (bool):
@@ -1116,6 +1117,8 @@ class Decoder(nn.Module):
         # For shallow fusion
         if rnnlm is not None:
             rnnlm.eval()
+        if rnnlm_rev is not None:
+            rnnlm_rev.eval()
 
         # For joint CTC-Attention decoding
         if ctc_weight > 0:
@@ -1376,11 +1379,39 @@ class Decoder(nn.Module):
                     break
                 beam = not_complete[:beam_width]
 
-            # Sort by score
+            # Pruning
             if len(complete) == 0:
                 complete = beam
             elif len(complete) < nbest and nbest > 1:
                 complete.extend(beam[:nbest - len(complete)])
+
+            # backward LM rescoring
+            if rnnlm_rev is not None and rnnlm_weight > 0:
+                for cand in complete:
+                    # Initialize
+                    rnnlm_hxs, rnnlm_cxs = None, None
+                    score_lm_rev = 0
+                    lp = 1
+
+                    # Append <eos>
+                    if cand['hyp'][-1] != eos:
+                        cand['hyp'].append(eos)
+
+                    if lp_weight > 0 and gnmt_decoding:
+                        lp = math.pow(5 + (len(cand['hyp']) - 1 + 1), lp_weight)
+                        lp /= math.pow(6, lp_weight)
+                    for t in range(len(cand['hyp'][1:])):
+                        y_lm = eouts.new_zeros(1, 1).fill_(cand['hyp'][-1 - t]).long()
+                        y_lm_emb = rnnlm_rev.embed(y_lm).squeeze(1)
+                        logits_lm_t, _, (rnnlm_hxs, rnnlm_cxs) = rnnlm_rev.predict(
+                            y_lm_emb, (rnnlm_hxs, rnnlm_cxs))
+                        lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
+                        score_lm_rev += lm_log_probs[0, cand['hyp'][-2 - t]]
+                    score_lm_rev /= lp  # normalize
+                    cand['score'] += score_lm_rev * rnnlm_weight
+                    cand['score_lm_rev'] = score_lm_rev
+
+            # Sort by score
             complete = sorted(complete, key=lambda x: x['score'], reverse=True)
 
             # N-best list
@@ -1417,13 +1448,10 @@ class Decoder(nn.Module):
                 logger.info('log prob (hyp, cp): %.7f' % (complete[n]['score_cp'] * cp_weight))
                 if ctc_weight > 0:
                     logger.info('log prob (hyp, ctc): %.7f' % (complete[n]['score_ctc'] * ctc_weight))
-                    # print(complete[n]['score'])
-                    # print(complete[n]['score_att'] *
-                    #       (1 - ctc_weight) + complete[n]['score_ctc'] * ctc_weight)
-                    # assert complete[n]['score'] == complete[n]['score_att'] * \
-                    #     (1 - ctc_weight) + complete[n]['score_ctc'] * ctc_weight
                 if rnnlm_weight > 0:
                     logger.info('log prob (hyp, lm): %.7f' % (complete[n]['score_lm'] * rnnlm_weight))
+                    if rnnlm_rev is not None:
+                        logger.info('log prob (hyp, lm rev): %.7f' % (complete[n]['score_lm_rev'] * rnnlm_weight))
 
         # Concatenate in L dimension
         for b in range(len(aws)):

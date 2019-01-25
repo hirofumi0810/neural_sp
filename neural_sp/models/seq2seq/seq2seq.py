@@ -603,11 +603,9 @@ class Seq2seq(ModelBase):
             # CTC
             #########################
             if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
+                rnnlm = None
                 if params['recog_rnnlm_weight'] > 0:
-                    assert hasattr(self, 'rnnlm_' + dir)
                     rnnlm = getattr(self, 'rnnlm_' + dir)
-                else:
-                    rnnlm = None
 
                 best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
@@ -631,11 +629,9 @@ class Seq2seq(ModelBase):
                     # forward-backward decoding
                     if params['recog_fwd_bwd_attention']:
                         # forward decoder
+                        rnnlm_fwd = None
                         if params['recog_rnnlm_weight'] > 0:
-                            assert hasattr(self, 'rnnlm_fwd')
                             rnnlm_fwd = self.rnnlm_fwd
-                        else:
-                            rnnlm_fwd = None
 
                         # ensemble (forward)
                         ensemble_eouts_fwd = []
@@ -651,16 +647,14 @@ class Seq2seq(ModelBase):
 
                         nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            params, rnnlm_fwd, ctc_log_probs,
+                            params, rnnlm_fwd, None, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs,
                             ensemble_eouts_fwd, ensemble_elens_fwd, ensemble_decoders_fwd)
 
                         # backward decoder
+                        rnnlm_bwd = None
                         if params['recog_rnnlm_weight'] > 0:
-                            assert hasattr(self, 'rnnlm_bwd')
                             rnnlm_bwd = self.rnnlm_bwd
-                        else:
-                            rnnlm_bwd = None
 
                         # ensemble (backward)
                         ensemble_eouts_bwd = []
@@ -686,7 +680,7 @@ class Seq2seq(ModelBase):
                             enc_outs_bwd = enc_outs
                         nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
-                            params, rnnlm_bwd, ctc_log_probs,
+                            params, rnnlm_bwd, None, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs,
                             ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decoders_bwd)
 
@@ -711,14 +705,16 @@ class Seq2seq(ModelBase):
                                 ensemble_decoders += [getattr(model, 'dec_' + dir)]
                                 # NOTE: only support for the main task now
 
+                        rnnlm, rnnlm_rev = None, None
                         if params['recog_rnnlm_weight'] > 0:
-                            assert hasattr(self, 'rnnlm_' + dir)
                             rnnlm = getattr(self, 'rnnlm_' + dir)
-                        else:
-                            rnnlm = None
+                            if params['recog_reverse_lm_rescoring']:
+                                # rnnlm_rev = getattr(self, 'rnnlm_' + dir)
+                                rnnlm_rev = getattr(self, 'rnnlm_bwd')
+
                         nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            params, rnnlm, ctc_log_probs,
+                            params, rnnlm, rnnlm_rev, ctc_log_probs,
                             nbest, exclude_eos, id2token, refs,
                             ensemble_eouts, ensemble_elens, ensemble_decoders)
 
@@ -766,7 +762,7 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                 if nbest_hyps_fwd[b][n][-1] == eos:
                     merged.append({'hyp': nbest_hyps_fwd[b][n][:-1],
                                    'score': scores_fwd[b][n][-2]})
-                   # NOTE: remove eos probability
+                    # NOTE: remove eos probability
                 else:
                     merged.append({'hyp': nbest_hyps_fwd[b][n],
                                    'score': scores_fwd[b][n][-1]})
@@ -779,7 +775,7 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                 if nbest_hyps_bwd[b][n][0] == eos:
                     merged.append({'hyp': nbest_hyps_bwd[b][n][1:],
                                    'score': scores_bwd[b][n][1]})
-                   # NOTE: remove eos probability
+                    # NOTE: remove eos probability
                 else:
                     merged.append({'hyp': nbest_hyps_bwd[b][n],
                                    'score': scores_bwd[b][n][0]})

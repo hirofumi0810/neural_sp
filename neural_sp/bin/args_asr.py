@@ -163,7 +163,7 @@ def parse():
     parser.add_argument('--emb_dim', type=int, default=320,
                         help='')
     parser.add_argument('--tie_embedding', type=bool, default=False, nargs='?',
-                        help='If True, tie weights between an embedding matrix and a linear layer before the softmax layer.')
+                        help='tie weights between an embedding matrix and a linear layer before the softmax layer.')
     parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
                         help='')
     parser.add_argument('--ctc_fc_list_sub1', type=str, default="", nargs='?',
@@ -273,9 +273,9 @@ def parse():
     parser.add_argument('--sub3_weight', type=float, default=0.0,
                         help='total loss weight for the 3rd auxiliary task')
     parser.add_argument('--mtl_per_batch', type=bool, default=False, nargs='?',
-                        help='If True, change mini-batch per task')
+                        help='change mini-batch per task')
     parser.add_argument('--task_specific_layer', type=bool, default=False, nargs='?',
-                        help='If True, insert a task-specific encoder layer per task')
+                        help='insert a task-specific encoder layer per task')
     # foroward-backward
     parser.add_argument('--bwd_weight', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the main task')
@@ -362,7 +362,7 @@ def parse():
     parser.add_argument('--recog_coverage_threshold', type=float, default=0.0,
                         help='coverage threshold')
     parser.add_argument('--recog_gnmt_decoding', type=strtobool, default=False, nargs='?',
-                        help='If True, adopt Google NMT beam search decoding.')
+                        help='adopt Google NMT beam search decoding.')
     parser.add_argument('--recog_rnnlm_weight', type=float, default=0.0,
                         help='the weight of RNNLM score')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
@@ -375,6 +375,8 @@ def parse():
                         help='resolving UNK for the word-based model.')
     parser.add_argument('--recog_fwd_bwd_attention', type=strtobool, default=False,
                         help='forward-backward attention decoding.')
+    parser.add_argument('--recog_reverse_lm_rescoring', type=strtobool, default=False,
+                        help='rescore with another LM in the reverse direction.')
     parser.add_argument('--recog_checkpoint_ensemble', type=int, default=1,
                         help='number of checkpoints to use.')
     # distillation related
