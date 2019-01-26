@@ -22,8 +22,8 @@ batch_size=1
 beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=0.05
-coverage_penalty=0.05
+length_penalty=0.03
+coverage_penalty=0.03
 coverage_threshold=0.0
 gnmt_decoding=true
 rnnlm=
@@ -32,6 +32,8 @@ rnnlm_weight=0.0
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
+bwd_attention=false
+reverse_lm_rescoring=false
 checkpoint_ensemble=1  # the number of checkpoints to use
 recog_unit=
 
@@ -51,11 +53,6 @@ fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
 
 for set in eval1 eval2 eval3; do
-  if [ ${ctc_weight} != 0.0 ]; then
-    length_penalty=0.0
-    coverage_penalty=0.0
-  fi
-
   recog_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
   if [ ! -z ${recog_unit} ]; then
       recog_dir=${recog_dir}_${recog_unit}
@@ -68,6 +65,12 @@ for set in eval1 eval2 eval3; do
   fi
   if ${fwd_bwd_attention}; then
     recog_dir=${recog_dir}_fwdbwd
+  fi
+  if ${bwd_attention}; then
+    recog_dir=${recog_dir}_bwd
+  fi
+  if ${reverse_lm_rescoring}; then
+    recog_dir=${recog_dir}_revLM
   fi
   if [ ${checkpoint_ensemble} != 1 ]; then
     recog_dir=${recog_dir}_checkpoint${checkpoint_ensemble}
@@ -122,6 +125,8 @@ for set in eval1 eval2 eval3; do
     --recog_ctc_weight ${ctc_weight} \
     --recog_resolving_unk ${resolving_unk} \
     --recog_fwd_bwd_attention ${fwd_bwd_attention} \
+    --recog_bwd_attention ${bwd_attention} \
+    --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
     --recog_checkpoint_ensemble ${checkpoint_ensemble} \
     --recog_unit ${recog_unit} \
     --recog_dir ${recog_dir} || exit 1;
