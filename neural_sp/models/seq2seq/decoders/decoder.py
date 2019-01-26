@@ -245,10 +245,10 @@ class Decoder(nn.Module):
                     self.output_lmobj = LinearND(nunits, vocab)
 
             # Decoder
-            self.rnn = torch.nn.ModuleList()
-            self.dropout = torch.nn.ModuleList()
+            self.rnn = nn.ModuleList()
+            self.dropout = nn.ModuleList()
             if self.nprojs > 0:
-                self.proj = torch.nn.ModuleList()
+                self.proj = nn.ModuleList()
             if rnn_type == 'lstm':
                 rnn_cell = nn.LSTMCell
             elif rnn_type == 'gru':
@@ -1132,7 +1132,7 @@ class Decoder(nn.Module):
         else:
             sos, eos = self.sos, self.eos
 
-        nbest_hyps, aws, scores = [], [], []
+        nbest_hyps, aws, scores, scores_cp = [], [], [], []
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
@@ -1161,6 +1161,7 @@ class Decoder(nn.Module):
             beam = [{'hyp': [sos],
                      'score': 0,
                      'scores': [0],
+                     'scores_cp': [0],
                      'score_att': 0,
                      'score_ctc': 0,
                      'score_lm': 0,
@@ -1281,8 +1282,7 @@ class Decoder(nn.Module):
                     lp = 1
                     if lp_weight > 0:
                         if gnmt_decoding:
-                            lp = math.pow(5 + (len(beam[i_beam]['hyp']) - 1 + 1), lp_weight)
-                            lp /= math.pow(6, lp_weight)
+                            lp = (math.pow(5 + (len(beam[i_beam]['hyp']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
                             local_scores /= lp
                         else:
                             local_scores += (len(beam[i_beam]['hyp']) - 1 + 1) * lp_weight
@@ -1313,38 +1313,45 @@ class Decoder(nn.Module):
                     # Add RNNLM score
                     if rnnlm_weight > 0:
                         lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
-                        score_lm = beam[i_beam]['score_lm'] + lm_log_probs[0, indices_topk[0]]
-                        score_lm /= lp  # normalize
-                        local_scores += score_lm * rnnlm_weight
+                        scores_lm = beam[i_beam]['score_lm'] + lm_log_probs[0, indices_topk[0]]
+                        score_lm_norm = scores_lm / lp  # normalize
+                        local_scores += score_lm_norm * rnnlm_weight
                     else:
-                        score_lm = torch.zeros((beam_width,), dtype=torch.float32)
+                        scores_lm = torch.zeros((beam_width,), dtype=torch.float32)
 
                     # CTC score
                     if ctc_weight > 0:
                         ctc_scores, ctc_states = ctc_prefix_score(
                             beam[i_beam]['hyp'], indices_topk[0], beam[i_beam]['ctc_state'])
-                        score_ctc = beam[i_beam]['score_ctc'] + torch.from_numpy(
+                        scores_ctc = beam[i_beam]['score_ctc'] + torch.from_numpy(
                             ctc_scores - beam[i_beam]['ctc_score']).cuda(self.device_id)
-                        score_ctc /= lp  # normalize
-                        local_scores += score_ctc * ctc_weight
+                        scores_ctc_norm = scores_ctc / lp  # normalize
+                        local_scores += scores_ctc_norm * ctc_weight
                         local_scores, joint_indices_topk = torch.topk(local_scores, beam_width, dim=1)
                         indices_topk = indices_topk[:, joint_indices_topk[0]]
                     else:
-                        score_ctc = torch.zeros((beam_width,), dtype=torch.float32)
+                        scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
 
                     for k in range(beam_width):
                         # Exclude short hypotheses
                         if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) - 1 < elens[b] * params['recog_min_len_ratio']:
                             continue
 
+                        score_att = scores_att[0, k].item()
+                        score_ctc = scores_ctc[k].item()
+                        score_lm = scores_lm[k].item()
+                        score_t = score_att * (1 - ctc_weight) + score_ctc * ctc_weight + score_lm * rnnlm_weight
+
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
                              'score': local_scores[0, k].item(),
+                             #  'scores': beam[i_beam]['scores'] + [score_t],
                              'scores': beam[i_beam]['scores'] + [local_scores[0, k].item()],
-                             'score_att': scores_att[0, k].item(),  # NOTE: total score
+                             'scores_cp': beam[i_beam]['scores_cp'] + [cp * cp_weight],
+                             'score_att': score_att,  # NOTE: total score
                              'score_cp': cp,
-                             'score_ctc': score_ctc[k].item(),  # NOTE: total score
-                             'score_lm': score_lm[k].item(),  # NOTE: total score
+                             'score_ctc': score_ctc,  # NOTE: total score
+                             'score_lm': score_lm,  # NOTE: total score
                              'dstates': dstates,
                              'con_vec': attn_vec if self.input_feeding else con_vec,
                              'aws': beam[i_beam]['aws'] + [aw],
@@ -1398,8 +1405,7 @@ class Decoder(nn.Module):
                         cand['hyp'].append(eos)
 
                     if lp_weight > 0 and gnmt_decoding:
-                        lp = math.pow(5 + (len(cand['hyp']) - 1 + 1), lp_weight)
-                        lp /= math.pow(6, lp_weight)
+                        lp = (math.pow(5 + (len(cand['hyp']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
                     for t in range(len(cand['hyp'][1:])):
                         y_lm = eouts.new_zeros(1, 1).fill_(cand['hyp'][-1 - t]).long()
                         y_lm_emb = rnnlm_rev.embed(y_lm).squeeze(1)
@@ -1409,7 +1415,7 @@ class Decoder(nn.Module):
                         score_lm_rev += lm_log_probs[0, cand['hyp'][-2 - t]]
                     score_lm_rev /= lp  # normalize
                     cand['score'] += score_lm_rev * rnnlm_weight
-                    cand['score_lm_rev'] = score_lm_rev
+                    cand['score_lm_rev'] = score_lm_rev * rnnlm_weight
 
             # Sort by score
             complete = sorted(complete, key=lambda x: x['score'], reverse=True)
@@ -1423,6 +1429,7 @@ class Decoder(nn.Module):
                 else:
                     aws += [[complete[n]['aws'][1:][::-1] for n in range(nbest)]]
                 scores += [[complete[n]['scores'][1:][::-1] for n in range(nbest)]]
+                scores_cp += [[complete[n]['scores_cp'][1:][::-1] for n in range(nbest)]]
             else:
                 nbest_hyps += [[np.array(complete[n]['hyp'][1:]) for n in range(nbest)]]
                 if self.score.nheads > 1:
@@ -1430,6 +1437,7 @@ class Decoder(nn.Module):
                 else:
                     aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
                 scores += [[complete[n]['scores'][1:] for n in range(nbest)]]
+                scores_cp += [[complete[n]['scores_cp'][1:] for n in range(nbest)]]
 
             # Check <eos>
             eos_flag = [True if complete[n]['hyp'][-1] == eos else False for n in range(nbest)]
@@ -1451,7 +1459,7 @@ class Decoder(nn.Module):
                 if rnnlm_weight > 0:
                     logger.info('log prob (hyp, lm): %.7f' % (complete[n]['score_lm'] * rnnlm_weight))
                     if rnnlm_rev is not None:
-                        logger.info('log prob (hyp, lm rev): %.7f' % (complete[n]['score_lm_rev'] * rnnlm_weight))
+                        logger.info('log prob (hyp, lm rev): %.7f' % (complete[n]['score_lm_rev']))
 
         # Concatenate in L dimension
         for b in range(len(aws)):
@@ -1467,7 +1475,7 @@ class Decoder(nn.Module):
                 nbest_hyps = [[nbest_hyps[b][n][:-1] if eos_flags[b][n]
                                else nbest_hyps[b][n] for n in range(nbest)] for b in range(bs)]
 
-        return nbest_hyps, aws, scores
+        return nbest_hyps, aws, scores, scores_cp
 
     def decode_ctc(self, eouts, xlens, beam_width=1, rnnlm=None):
         """Decoding by the CTC layer in the inference stage.

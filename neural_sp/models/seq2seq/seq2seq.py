@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import copy
 import logging
+import math
 import numpy as np
 import torch
 
@@ -290,7 +291,7 @@ class Seq2seq(ModelBase):
         self.init_weights(args.param_init, dist=args.param_init_dist, ignore_keys=['bias'])
 
         # Initialize CNN layers like chainer
-        # self.init_weights(args.param_init, dist='lecun', keys=['conv'], ignore_keys=['score'])
+        self.init_weights(args.param_init, dist='lecun', keys=['conv'], ignore_keys=['score'])
 
         # Initialize all biases with 0
         self.init_weights(0, dist='constant', keys=['bias'])
@@ -645,7 +646,7 @@ class Seq2seq(ModelBase):
                                 ensemble_decoders_fwd += [model.dec_fwd]
                                 # NOTE: only support for the main task now
 
-                        nbest_hyps_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
+                        nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_fwd, None, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs,
@@ -678,16 +679,18 @@ class Seq2seq(ModelBase):
                             enc_outs_bwd, _ = self.encode(xs, task, flip=True)
                         else:
                             enc_outs_bwd = enc_outs
-                        nbest_hyps_bwd, aws_bwd, scores_bwd = self.dec_bwd.beam_search(
+                        nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_bwd, None, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs,
                             ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decoders_bwd)
 
                         # forward-backward attention
-                        best_hyps = fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
-                                                      nbest_hyps_bwd, aws_bwd, scores_bwd,
-                                                      flip, self.eos, id2token, refs)
+                        best_hyps = fwd_bwd_attention(
+                            nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
+                            nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd,
+                            flip, self.eos, params['recog_gnmt_decoding'], params['recog_length_penalty'],
+                            id2token, refs)
                         aws = None
                     else:
                         # ensemble
@@ -712,7 +715,7 @@ class Seq2seq(ModelBase):
                                 # rnnlm_rev = getattr(self, 'rnnlm_' + dir)
                                 rnnlm_rev = getattr(self, 'rnnlm_bwd')
 
-                        nbest_hyps, aws, scores = getattr(self, 'dec_' + dir).beam_search(
+                        nbest_hyps, aws, scores, _ = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm, rnnlm_rev, ctc_log_probs,
                             nbest, exclude_eos, id2token, refs,
@@ -728,20 +731,24 @@ class Seq2seq(ModelBase):
                 return best_hyps, aws, perm_ids
 
 
-def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
-                      nbest_hyps_bwd, aws_bwd, scores_bwd,
-                      flip, eos, id2token=None, refs=None):
+def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
+                      nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd,
+                      flip, eos, gnmt_decoding, lp_weight, id2token=None, refs=None):
     """Forward-backward joint decoding.
 
     Args:
         nbest_hyps_fwd (list): A list of length `[B]`, which contains list of n hypotheses
         aws_fwd (list): A list of length `[B]`, which contains arrays of size `[L, T]`
         scores_fwd (list):
+        scores_cp_fwd (list):
         nbest_hyps_bwd (list):
         aws_bwd (list):
         scores_bwd (list):
+        scores_cp_bwd (list):
         flip (bool):
         eos (int):
+        gnmt_decoding ():
+        lp_weight ():
         id2token (): converter from index to token
         refs ():
     Returns:
@@ -804,6 +811,16 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                             score_curr_bwd = scores_bwd[b][n_b][i_b] - scores_bwd[b][n_b][i_b + 1]
                             score_curr = max(score_curr_fwd, score_curr_bwd)
                             new_score = scores_fwd[b][n_f][i_f - 1] + scores_bwd[b][n_b][i_b + 1] + score_curr
+                            # if gnmt_decoding:
+                            #     lp = (math.pow(5 + len(nbest_hyps_fwd[b][n_f][:i_f + 1]) + len(nbest_hyps_bwd[b][n_b][i_b + 1:]),
+                            #                    lp_weight)) / math.pow(6, lp_weight)
+                            #     new_score /= lp
+
+                            # coverage
+                            # score_cp_curr_fwd = scores_cp_fwd[b][n_f][i_f] - scores_cp_fwd[b][n_f][i_f - 1]
+                            # score_cp_curr_bwd = scores_cp_bwd[b][n_b][i_b] - scores_cp_bwd[b][n_b][i_b + 1]
+                            # score_cp_curr = max(score_cp_curr_fwd, score_cp_curr_bwd)
+                            # new_score += scores_cp_fwd[b][n_f][i_f - 1] + scores_cp_bwd[b][n_b][i_b + 1] + score_cp_curr
                             merged.append({'hyp': new_hyp, 'score': new_score})
 
                             logger.info('time matching')
