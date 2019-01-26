@@ -581,24 +581,25 @@ class Seq2seq(ModelBase):
         """
         self.eval()
         with torch.no_grad():
-            if self.input_type == 'speech' and self.bwd_weight == 1:
-                enc_outs, perm_ids = self.encode(xs, task, flip=True)
-            else:
-                enc_outs, perm_ids = self.encode(xs, task, flip=False)
-
             if task.split('.')[0] == 'ys':
-                dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
+                dir = 'bwd' if self.bwd_weight > 0 and params['recog_bwd_attention'] else 'fwd'
             elif task.split('.')[0] == 'ys_sub1':
-                dir = 'fwd' if self.fwd_weight_sub1 >= self.bwd_weight_sub1 else 'bwd'
+                dir = 'bwd' if self.bwd_weight_sub1 > 0 and params['recog_bwd_attention'] else 'fwd'
                 dir += '_sub1'
             elif task.split('.')[0] == 'ys_sub2':
-                dir = 'fwd' if self.fwd_weight_sub2 >= self.bwd_weight_sub2 else 'bwd'
+                dir = 'bwd' if self.bwd_weight_sub2 > 0 and params['recog_bwd_attention'] else 'fwd'
                 dir += '_sub2'
             elif task.split('.')[0] == 'ys_sub3':
-                dir = 'fwd' if self.fwd_weight_sub3 >= self.bwd_weight_sub3 else 'bwd'
+                dir = 'bwd' if self.bwd_weight_sub3 > 0 and params['recog_bwd_attention'] else 'fwd'
                 dir += '_sub3'
             else:
                 raise ValueError(task)
+
+            # encode
+            if self.input_type == 'speech' and self.mtl_per_batch and 'bwd' in dir:
+                enc_outs, perm_ids = self.encode(xs, task, flip=True)
+            else:
+                enc_outs, perm_ids = self.encode(xs, task, flip=False)
 
             #########################
             # CTC
@@ -699,7 +700,7 @@ class Seq2seq(ModelBase):
                         ensemble_decoders = []
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
-                                if model.input_type == 'speech' and model.bwd_weight == 1:
+                                if model.input_type == 'speech' and model.mtl_per_batch and 'bwd' in dir:
                                     enc_outs_e, _ = model.encode(xs, task, flip=True)
                                 else:
                                     enc_outs_e, _ = model.encode(xs, task, flip=False)

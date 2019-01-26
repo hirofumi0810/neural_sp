@@ -183,12 +183,12 @@ class RNNEncoder(nn.Module):
                 # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
                 self.dropout_top = nn.Dropout(p=dropout)
             else:
-                self.rnn = torch.nn.ModuleList()
-                self.dropout = torch.nn.ModuleList()
+                self.rnn = nn.ModuleList()
+                self.dropout = nn.ModuleList()
                 if self.nprojs > 0:
-                    self.proj = torch.nn.ModuleList()
+                    self.proj = nn.ModuleList()
                 if subsample_type == 'max_pool' and np.prod(self.subsample) > 1:
-                    self.max_pool = torch.nn.ModuleList()
+                    self.max_pool = nn.ModuleList()
                     for l in range(nlayers):
                         if self.subsample[l] > 1:
                             self.max_pool += [nn.MaxPool2d((1, 1),
@@ -197,7 +197,7 @@ class RNNEncoder(nn.Module):
                         else:
                             self.max_pool += [None]
                 if subsample_type == 'concat' and np.prod(self.subsample) > 1:
-                    self.concat = torch.nn.ModuleList()
+                    self.concat = nn.ModuleList()
                     for l in range(nlayers):
                         if self.subsample[l] > 1:
                             self.concat += [LinearND(nunits * self.ndirs * self.subsample[l], nunits * self.ndirs)]

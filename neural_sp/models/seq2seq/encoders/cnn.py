@@ -59,7 +59,6 @@ class CNNEncoder(nn.Module):
         layers = OrderedDict()
         in_ch = self.in_channel
         in_freq = self.input_freq
-        first_max_pool = True
         for l in range(len(channels)):
 
             # Conv
@@ -81,7 +80,7 @@ class CNNEncoder(nn.Module):
                 act = nn.Hardtanh(min_val=0, max_val=20, inplace=True)
             elif activation == 'maxout':
                 raise NotImplementedError(activation)
-                act = Maxout(1, 1, 2)
+                # act = Maxout(1, 1, 2)
             else:
                 raise NotImplementedError(activation)
             layers[activation + '_' + str(l)] = act
@@ -91,13 +90,10 @@ class CNNEncoder(nn.Module):
                 pool = nn.MaxPool2d(kernel_size=tuple(poolings[l]),
                                     stride=tuple(poolings[l]),
                                     padding=(0, 0),  # default
-                                    ceil_mode=not first_max_pool)
+                                    ceil_mode=True)
                 layers['pool_' + str(l)] = pool
                 # NOTE: If ceil_mode is False, remove last feature when the
                 # dimension of features are odd.
-
-                first_max_pool = False
-                # NOTE: This is important for having the same frames as RNN models
 
                 if pool.ceil_mode:
                     in_freq = int(math.ceil(
@@ -117,7 +113,6 @@ class CNNEncoder(nn.Module):
             in_ch = channels[l]
 
         self.layers = nn.Sequential(layers)
-
         self.get_conv_out_size = ConvOutSize(self.layers)
         self.output_dim = int(in_ch * in_freq)
 
@@ -135,22 +130,16 @@ class CNNEncoder(nn.Module):
         bs, max_time, input_dim = xs.size()
         # assert input_dim == self.input_freq * self.in_channel
 
-        # Reshape to 4D tensor `[B, in_ch, max_time, freq // in_ch]`
-        # xs = xs.view(bs, max_time, self.in_channel, input_dim // self.in_channel)
-        # xs = xs.transpose(1, 2).contiguous()
-
-        xs = xs.view(bs, max_time, input_dim // self.in_channel, self.in_channel)
-        xs = xs.transpose(2, 3).contiguous()
-        xs = xs.transpose(1, 2).contiguous()
+        # Reshape to 4D tensor `[B, in_ch, freq // in_ch, max_time]`
+        xs = xs.view(bs, self.in_channel, input_dim // self.in_channel, max_time)
 
         xs = self.layers(xs)
-        # NOTE: xs: `[B, out_ch, new_time, new_freq]`
+        # NOTE: xs: `[B, out_ch, new_freq, new_time]`
 
         # Collapse feature dimension
-        bs, out_ch, time, freq = xs.size()
+        bs, out_ch, freq, time = xs.size()
+        xs = xs.view(bs, -1, time)
         xs = xs.transpose(1, 2).contiguous()
-        xs = xs.view(bs, time, freq * out_ch)
-        # NOTE: xs: `[B, new_time, new_freq * out_ch]`
 
         # Update xlens
         xlens = [self.get_conv_out_size(x_len, 1) for x_len in xlens]

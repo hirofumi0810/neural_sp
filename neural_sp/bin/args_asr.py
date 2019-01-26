@@ -375,6 +375,8 @@ def parse():
                         help='resolving UNK for the word-based model.')
     parser.add_argument('--recog_fwd_bwd_attention', type=strtobool, default=False,
                         help='forward-backward attention decoding.')
+    parser.add_argument('--recog_bwd_attention', type=strtobool, default=False,
+                        help='backward attention decoding.')
     parser.add_argument('--recog_reverse_lm_rescoring', type=strtobool, default=False,
                         help='rescore with another LM in the reverse direction.')
     parser.add_argument('--recog_checkpoint_ensemble', type=int, default=1,
