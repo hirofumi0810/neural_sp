@@ -15,7 +15,7 @@ export data=/n/sd8/inaguma/corpus/librispeech
 
 ### vocabulary
 unit=wp      # or word or word_char
-vocab_size=10000
+vocab_size=30000
 wp_type=bpe  # or unigram (for wordpiece)
 unit_sub1=char
 wp_type_sub1=bpe  # or unigram (for wordpiece)
@@ -81,9 +81,9 @@ pretrained_model=
 ### regularization
 clip_grad_norm=5.0
 dropout_in=0.0
-dropout_enc=0.2
-dropout_dec=0.2
-dropout_emb=0.2
+dropout_enc=0.4
+dropout_dec=0.4
+dropout_emb=0.4
 dropout_att=0.0
 weight_decay=1e-6
 ss_prob=0.2
