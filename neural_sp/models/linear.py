@@ -61,7 +61,7 @@ class Embedding(nn.Module):
 
         Args:
             vocab (int): the number of nodes in softmax layer
-                (including <SOS> and <EOS> classes)
+                (including <sos> and <eos> classes)
             emb_dim (int): the dimension of the embedding in target spaces
             dropout (float): the probability to dropout nodes of the embedding
             ignore_index (int):

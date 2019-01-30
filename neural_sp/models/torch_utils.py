@@ -44,12 +44,11 @@ def np2tensor(array, device_id=-1):
     return var.cuda(device_id)
 
 
-def pad_list(xs, pad_value=float("nan")):
+def pad_list(xs, pad_value=0.0):
     """Convert list of Tensors to a single Tensor with padding.
 
     Args:
-        xs (list): A list of length `[B]`, which concains Tensors of size
-            `[T, input_size]`
+        xs (list): A list of length `[B]`, which concains Tensors of size `[T, input_size]`
         pad_value (float):
     Returns:
         xs_pad (FloatTensor): `[B, T, input_size]`
