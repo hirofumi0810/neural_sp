@@ -37,6 +37,7 @@ class RNNLM(ModelBase):
         self.nlayers = args.nlayers
         self.tie_embedding = args.tie_embedding
         self.residual = args.residual
+        self.use_glu = args.use_glu
         self.backward = args.backward
 
         self.vocab = args.vocab
@@ -90,6 +91,11 @@ class RNNLM(ModelBase):
 
                 if l != self.nlayers - 1 and args.nprojs > 0:
                     self.proj += [LinearND(args.nunits * self.ndirs, args.nprojs)]
+
+        if self.use_glu:
+            self.fc_glu = LinearND(args.nprojs if args.nprojs > 0 else args.nunits,
+                                   args.nprojs * 2 if args.nprojs > 0 else args.nunits * 2,
+                                   dropout=args.dropout_hidden)
 
         self.output = LinearND(args.nprojs if args.nprojs > 0 else args.nunits,
                                self.vocab,
@@ -173,6 +179,7 @@ class RNNLM(ModelBase):
             hx_list, cx_list = state
 
         # Path through RNN
+        residual = None
         if self.fast_impl:
             if self.rnn_type == 'lstm':
                 hx_list[-1], cx_list[-1] = self.rnn(ys_in, (hx_list[0], cx_list[0]))
@@ -180,7 +187,6 @@ class RNNLM(ModelBase):
                 hx_list[-1] = self.rnn(ys_in, hx_list[0])
             hx_list[-1] = self.dropout_top(hx_list[-1])
         else:
-            xs_lower = None
             for l in range(self.nlayers):
                 if self.rnn_type == 'lstm':
                     if l == 0:
@@ -196,10 +202,17 @@ class RNNLM(ModelBase):
 
                 # Residual connection
                 if self.residual and l > 0:
-                    hx_list[l] += xs_lower
-                    xs_lower = hx_list[l]
+                    hx_list[l] += residual
+                    residual = hx_list[l]
+        output = hx_list[-1].unsqueeze(1)
 
-        logits = self.output(hx_list[-1].unsqueeze(1))
+        if self.use_glu:
+            if self.residual:
+                residual = output
+            output = F.glu(self.fc_glu(output), dim=-1)
+            if self.residual:
+                output += residual
+        logits = self.output(output)
 
         # Compute XE sequence loss
         loss = F.cross_entropy(logits.view((-1, logits.size(2))),
@@ -226,9 +239,9 @@ class RNNLM(ModelBase):
             y (): `[B, emb_dim]`
             state (list):
         Returns:
-            logits_step ():
-            out ():
-            state (): A tuple of (hx_list, cx_list)
+            logits_step (FloatTensor):
+            y ():
+            state (tuple): A tuple of (hx_list, cx_list)
                 hx_list (list of FloatTensor):
                 cx_list (list of FloatTensor):
 
@@ -239,7 +252,7 @@ class RNNLM(ModelBase):
             hx_list, cx_list = state
 
         # Path through RNN
-        xs_lower = None
+        residual = None
         for l in range(self.nlayers):
             if self.rnn_type == 'lstm':
                 if l == 0:
@@ -258,11 +271,18 @@ class RNNLM(ModelBase):
             hx_list[l] = self.dropout[l](hx_list[l])
 
             # Residual connection
-            if self.residual and xs_lower is not None:
-                hx_list[l] += xs_lower
-            xs_lower = hx_list[l]
+            if self.residual and residual is not None:
+                hx_list[l] += residual
+            residual = hx_list[l]
+        output = hx_list[-1].unsqueeze(1)
 
-        logits_step = self.output(hx_list[-1].unsqueeze(1))
+        if self.use_glu:
+            if self.residual:
+                residual = output
+            output = F.glu(self.fc_glu(output), dim=-1)
+            if self.residual:
+                output += residual
+        logits_step = self.output(output)
 
         return logits_step, y, (hx_list, cx_list)
 

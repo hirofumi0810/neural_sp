@@ -38,6 +38,7 @@ class SeqRNNLM(ModelBase):
         self.nlayers = args.nlayers
         self.tie_embedding = args.tie_embedding
         self.residual = args.residual
+        self.use_glu = args.use_glu
         self.backward = args.backward
 
         self.vocab = args.vocab
@@ -95,6 +96,11 @@ class SeqRNNLM(ModelBase):
 
                 if l != self.nlayers - 1 and args.nprojs > 0:
                     self.proj += [LinearND(args.nunits * self.ndirs, args.nprojs)]
+
+        if self.use_glu:
+            self.fc_glu = LinearND(args.nprojs if args.nprojs > 0 else args.nunits,
+                                   args.nprojs * 2 if args.nprojs > 0 else args.nunits * 2,
+                                   dropout=args.dropout_hidden)
 
         self.output = LinearND(args.nprojs if args.nprojs > 0 else args.nunits,
                                self.vocab,
@@ -165,11 +171,11 @@ class SeqRNNLM(ModelBase):
         # Path through embedding
         ys_in = self.embed(ys_in)
 
+        residual = None
         if self.fast_impl:
             ys_in, _ = self.rnn(ys_in, hx=None)
             ys_in = self.dropout_top(ys_in)
         else:
-            xs_lower = None
             for l in range(self.nlayers):
                 # Path through RNN
                 ys_in, _ = self.rnn[l](ys_in, hx=None)
@@ -177,10 +183,16 @@ class SeqRNNLM(ModelBase):
 
                 # Residual connection
                 if self.residual and l > 0:
-                    ys_in += xs_lower
-                xs_lower = ys_in
+                    ys_in += residual
+                residual = ys_in
                 # NOTE: Exclude residual connection from the raw inputs
 
+        if self.use_glu:
+            if self.residual:
+                residual = ys_in
+            ys_in = F.glu(self.fc_glu(ys_in), dim=-1)
+            if self.residual:
+                ys_in += residual
         logits = self.output(ys_in)
 
         # Compute XE sequence loss
@@ -217,15 +229,22 @@ class SeqRNNLM(ModelBase):
             state = [None] * self.nlayers
 
         # Path through RNN
-        xs_lower = None
+        residual = None
         for l in range(self.nlayers):
             y, state[l] = self.rnn[l](y, hx=state[l])
             y = self.dropout[l](y)
 
             # Residual connection
             if self.residual and l > 0:
-                y += xs_lower
-            xs_lower = y
+                y += residual
+            residual = y
+
+        if self.use_glu:
+            if self.residual:
+                residual = y
+            y = F.glu(self.fc_glu(y), dim=-1)
+            if self.residual:
+                y += residual
         logits_step = self.output(y)
 
         return logits_step, y, state

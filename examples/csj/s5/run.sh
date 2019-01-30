@@ -30,17 +30,19 @@ conv_channels=
 conv_kernel_sizes=
 conv_strides=
 conv_poolings=
+subsample="1_2_2_2_1"
+# VGG
 # conv_channels="64_64_128_128"
 # conv_kernel_sizes="(3,3)_(3,3)_(3,3)_(3,3)"
 # conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
+# subsample="1_1_1_1_1"
 conv_batch_norm=
 enc_type=blstm
 enc_nunits=320
 enc_nprojs=0
 enc_nlayers=5
 enc_residual=
-subsample="1_2_2_2_1"
 subsample_type=drop
 attn_type=location
 attn_dim=320
@@ -113,6 +115,7 @@ lm_nlayers=2
 lm_emb_dim=1024
 lm_tie_embedding=true
 lm_residual=true
+lm_use_glu=true
 # optimization
 lm_batch_size=256
 lm_bptt=100
@@ -378,6 +381,7 @@ if [ ${stage} -le 3 ]; then
     --emb_dim ${lm_emb_dim} \
     --tie_embedding ${lm_tie_embedding} \
     --residual ${lm_residual} \
+    --use_glu ${lm_use_glu} \
     --batch_size ${lm_batch_size} \
     --bptt ${lm_bptt} \
     --optimizer ${lm_optimizer} \

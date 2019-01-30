@@ -90,6 +90,8 @@ def main():
         dir_name += '_tie'
     if args.residual:
         dir_name += '_residual'
+    if args.use_glu:
+        dir_name += '_glu'
     if args.backward:
         dir_name += '_bwd'
 
