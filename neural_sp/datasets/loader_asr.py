@@ -190,6 +190,7 @@ class Dataset(Base):
             print('Original utterance num: %d' % len(df))
             nutt = len(df)
             df = df[df.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
+            df = df[df.apply(lambda x: x['y_len'] > 0, axis=1)]
             print('Removed %d utterances (threshold)' % (nutt - len(df)))
 
             if ctc and subsample_factor > 1:
@@ -280,7 +281,7 @@ class Dataset(Base):
         if self.is_test:
             ys = [self.df['text'][i].encode('utf-8') for i in utt_indices]
         else:
-            ys = [list(map(int, self.df['token_id'][i].split())) for i in utt_indices]
+            ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in utt_indices]
         ylens = [self.df['y_len'][i] for i in utt_indices]
         text = [self.df['text'][i].encode('utf-8') for i in utt_indices]
 

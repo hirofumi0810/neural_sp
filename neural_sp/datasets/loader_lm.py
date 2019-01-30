@@ -80,6 +80,7 @@ class Dataset(Base):
         # Load dataset csv file
         df = pd.read_csv(csv_path, encoding='utf-8', delimiter=',')
         df = df.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
+        df = df[df.apply(lambda x: x['y_len'] > 0, axis=1)]
 
         # Sort csv records
         if shuffle:
