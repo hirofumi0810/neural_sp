@@ -216,7 +216,9 @@ def parse():
     parser.add_argument('--param_init', type=float, default=0.1,
                         help='')
     parser.add_argument('--param_init_dist', type=str, default='uniform',
-                        choices=['uniform', 'he', 'glorot', 'lecun'],
+                        choices=['uniform', 'he', 'glorot', 'lecun',
+                                 'xavier_uniform', 'xavier_normal',
+                                 'kaiming_uniform', 'kaiming_normal'],
                         help='')
     parser.add_argument('--rec_weight_orthogonal', type=bool, default=False,
                         help='')

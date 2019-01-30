@@ -89,10 +89,10 @@ class ModelBase(nn.Module):
                 nn.init.uniform_(p.data, a=-param_init, b=param_init)
             elif dist == 'normal':
                 assert param_init > 0
-                torch.nn.init.normal(p.data, mean=0, std=param_init)
+                torch.nn.init.normal_(p.data, mean=0, std=param_init)
             elif dist == 'orthogonal':
                 if p.dim() >= 2:
-                    torch.nn.init.orthogonal(p.data, gain=1)
+                    torch.nn.init.orthogonal_(p.data, gain=1)
             elif dist == 'constant':
                 torch.nn.init.constant_(p.data, val=param_init)
             elif dist == 'lecun':
@@ -109,6 +109,15 @@ class ModelBase(nn.Module):
                     p.data.normal_(0, 1. / math.sqrt(n))
                 else:
                     raise NotImplementedError(p.data.dim())
+            elif dist == 'xavier_uniform':
+                torch.nn.init.xavier_uniform_(p.data)
+            elif dist == 'xavier_normal':
+                print(n)
+                torch.nn.init.xavier_normal_(p.data)
+            elif dist == 'kaiming_uniform':
+                torch.nn.init.kaiming_uniform_(p.data, mode='fan_in', nonlinearity='relu')
+            elif dist == 'kaiming_normal':
+                torch.nn.init.kaiming_normal_(p.data, mode='fan_in', nonlinearity='relu')
             else:
                 raise NotImplementedError(dist)
 
