@@ -215,7 +215,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
   touch ${data}/.done_stage_1_${data_size}_sp && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp ]; then
   echo ============================================================================
@@ -361,8 +361,8 @@ if [ ${stage} -le 4 ]; then
     --rnnlm_cold_fusion =${rnnlm_cold_fusion} \
     --rnnlm_init ${rnnlm_init} \
     --lmobj_weight ${lmobj_weight} \
-    --share_lm_softmax ${share_lm_softmax} || exit 1;
-    # --resume ${resume} || exit 1;
+    --share_lm_softmax ${share_lm_softmax} \
+    --resume ${resume} || exit 1;
 
   echo "Finish model training (stage: 4)."
 fi

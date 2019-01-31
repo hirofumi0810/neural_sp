@@ -363,7 +363,9 @@ class ModelBase(nn.Module):
                 for state in self.optimizer.state.values():
                     for k, v in state.items():
                         if torch.is_tensor(v):
-                            state[k] = v.cuda(self.device_id)
+                            state[k] = v.cuda(0)
+                            # state[k] = v.cuda(self.device_id)
+                            # TODO (hirofumi): Fix for multi-GPU
                 # NOTE: from https://github.com/pytorch/pytorch/issues/2830
             else:
                 raise ValueError('Set optimizer.')

@@ -458,8 +458,8 @@ if [ ${stage} -le 4 ]; then
     --rnnlm_cold_fusion =${rnnlm_cold_fusion} \
     --rnnlm_init ${rnnlm_init} \
     --lmobj_weight ${lmobj_weight} \
-    --share_lm_softmax ${share_lm_softmax} || exit 1;
-    # --resume ${resume} || exit 1;
+    --share_lm_softmax ${share_lm_softmax} \
+    --resume ${resume} || exit 1;
 
   echo "Finish model training (stage: 4)."
 fi

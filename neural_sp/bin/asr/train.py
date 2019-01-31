@@ -52,7 +52,8 @@ def main():
     if args.resume:
         config = load_config(os.path.join(args.resume, 'config.yml'))
         for k, v in config.items():
-            setattr(args, k, v)
+            if k != 'resume':
+                setattr(args, k, v)
     decode_params = vars(args)
 
     # Automatically reduce batch size in multi-GPU setting
@@ -288,7 +289,44 @@ def main():
         if args.agreement_weight > 0:
             dir_name += '_agree' + str(args.agreement_weight)
 
-    if not args.resume:
+    if args.resume:
+        # Restart from the last checkpoint
+        # Set save path
+        model.save_path = args.resume
+
+        # Setting for logging
+        logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
+
+        # Set optimizer
+        model.set_optimizer(
+            optimizer=config['optimizer'],
+            learning_rate_init=float(config['learning_rate']),  # on-the-fly
+            weight_decay=float(config['weight_decay']),
+            clip_grad_norm=config['clip_grad_norm'],
+            lr_schedule=False,
+            factor=config['decay_rate'],
+            patience_epoch=config['decay_patient_epoch'])
+
+        # Restore the last saved model
+        epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
+            save_path=args.resume, epoch=-1, restart=True)
+
+        if epoch >= config['convert_to_sgd_epoch']:
+            model.set_optimizer(
+                optimizer='sgd',
+                learning_rate_init=float(config['learning_rate']),  # on-the-fly
+                weight_decay=float(config['weight_decay']),
+                clip_grad_norm=config['clip_grad_norm'],
+                lr_schedule=False,
+                factor=config['decay_rate'],
+                patience_epoch=config['decay_patient_epoch'])
+
+        # if config['rnnlm_cold_fusion']:
+        #     if config['rnnlm_config_cold_fusion']['backward']:
+        #         model.rnnlm_0_bwd.flatten_parameters()
+        #     else:
+        #         model.rnnlm_0_fwd.flatten_parameters()
+    else:
         # Load pre-trained RNNLM
         # if config['rnnlm_cold_fusion']:
         #     rnnlm = RNNLM(args)
@@ -347,9 +385,12 @@ def main():
             model_pre.load_checkpoint(args.pretrained_model, epoch=-1)
 
             # Overwrite parameters
+            only_encoder = (args.enc_nlayers != args_pre.enc_nlayers) or (args.unit != args_pre.unit)
             param_dict = dict(model_pre.named_parameters())
             for n, p in model.named_parameters():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
+                    if only_encoder and 'enc' not in n:
+                        continue
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
@@ -365,44 +406,6 @@ def main():
         epoch, step = 1, 1
         learning_rate = float(args.learning_rate)
         metric_dev_best = 10000
-
-    # NOTE: Restart from the last checkpoint
-    # elif args.resume:
-    #     # Set save path
-    #     model.save_path = args.resume
-    #
-    #     # Setting for logging
-    #     logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
-    #
-    #     # Set optimizer
-    #     model.set_optimizer(
-    #         optimizer=config['optimizer'],
-    #         learning_rate_init=float(config['learning_rate']),  # on-the-fly
-    #         weight_decay=float(config['weight_decay']),
-    #         clip_grad_norm=config['clip_grad_norm'],
-    #         lr_schedule=False,
-    #         factor=config['decay_rate'],
-    #         patience_epoch=config['decay_patient_epoch'])
-    #
-    #     # Restore the last saved model
-    #     epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
-    #         save_path=args.resume, epoch=-1, restart=True)
-    #
-    #     if epoch >= config['convert_to_sgd_epoch']:
-    #         model.set_optimizer(
-    #             optimizer='sgd',
-    #             learning_rate_init=float(config['learning_rate']),  # on-the-fly
-    #             weight_decay=float(config['weight_decay']),
-    #             clip_grad_norm=config['clip_grad_norm'],
-    #             lr_schedule=False,
-    #             factor=config['decay_rate'],
-    #             patience_epoch=config['decay_patient_epoch'])
-    #
-    #     if config['rnnlm_cold_fusion']:
-    #         if config['rnnlm_config_cold_fusion']['backward']:
-    #             model.rnnlm_0_bwd.flatten_parameters()
-    #         else:
-    #             model.rnnlm_0_fwd.flatten_parameters()
 
     train_set.epoch = epoch - 1  # start from index:0
 

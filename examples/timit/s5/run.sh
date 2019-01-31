@@ -20,11 +20,16 @@ export data=/n/sd8/inaguma/corpus/timit
 nsplices=1
 nstacks=1
 nskips=1
-conv_in_channel=1
+conv_in_channel=3
 conv_channels=
 conv_kernel_sizes=
 conv_strides=
 conv_poolings=
+# VGG
+# conv_channels="64_64_128_128"
+# conv_kernel_sizes="(3,3)_(3,3)_(3,3)_(3,3)"
+# conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
+# conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 conv_batch_norm=
 enc_type=blstm
 enc_nunits=320
@@ -45,7 +50,9 @@ dec_nprojs=0
 dec_nlayers=1
 dec_loop_type=normal
 dec_residual=
+input_feeding=
 emb_dim=256
+tie_embedding=
 ctc_fc_list=""
 ### optimization
 batch_size=32
@@ -168,15 +175,10 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2 ]; then
 
   # Make datset csv files
   mkdir -p ${data}/dataset
-  for x in ${train_set} ${dev_set}; do
+  for x in ${train_set} ${dev_set} ${test_set}; do
     echo "Making a csv file for ${x}..."
     dump_dir=${data}/dump/${x}
     make_dataset.sh --feat ${dump_dir}/feats.scp --unit phone \
-      ${data}/${x} ${dict} > ${data}/dataset/${x}.csv || exit 1;
-  done
-  for x in ${test_set}; do
-    dump_dir=${data}/dump/${x}
-    make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit phone \
       ${data}/${x} ${dict} > ${data}/dataset/${x}.csv || exit 1;
   done
 
@@ -262,8 +264,8 @@ if [ ${stage} -le 4 ]; then
     --bwd_weight ${bwd_weight} \
     --twin_net_weight ${twin_net_weight} \
     --mtl_per_batch ${mtl_per_batch} \
-    --task_specific_layer ${task_specific_layer} || exit 1;
-    # --resume ${resume} || exit 1;
+    --task_specific_layer ${task_specific_layer} \
+    --resume ${resume} || exit 1;
 
   echo "Finish model training (stage: 4)."
 fi

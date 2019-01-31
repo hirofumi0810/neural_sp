@@ -17,7 +17,7 @@ def parse():
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--model', type=str, default=False,
                         help='directory to save a model')
-    parser.add_argument('--resume', type=str, default=False,
+    parser.add_argument('--resume', type=str, default=False, nargs='?',
                         help='path to the model to resume training')
     parser.add_argument('--job_name', type=str, default='',
                         help='name of job')
