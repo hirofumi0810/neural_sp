@@ -236,6 +236,7 @@ class Seq2seq(ModelBase):
                 global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                 mtl_per_batch=args.mtl_per_batch)
             setattr(self, 'dec_' + dir, dec)
+            # TODO(hirofumi): transformer decoder
 
         # sub task
         for sub in ['sub1', 'sub2', 'sub3']:
@@ -307,7 +308,7 @@ class Seq2seq(ModelBase):
         # Initialize weight matrices
         self.init_weights(args.param_init, dist=args.param_init_dist, ignore_keys=['bias'])
 
-        # Initialize CNN layers like chainer
+        # Initialize CNN layers
         # self.init_weights(args.param_init, dist='lecun', keys=['conv'], ignore_keys=['score'])
         self.init_weights(args.param_init, dist='xavier_normal', keys=['conv'], ignore_keys=['score', 'bias'])
 
@@ -328,9 +329,14 @@ class Seq2seq(ModelBase):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-        # Initialize bias in gating with -1
+        # Initialize bias in gating with -1 for cold fusion
         if args.rnnlm_cold_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
+
+        # Initialize for transformer
+        if args.enc_type == 'transformer':
+            self.init_weights(args.param_init, dist='xavier_uniform',
+                              keys=['transformer'], ignore_keys=['conv', 'bias'])
 
     def scheduled_sampling_trigger(self):
         # main task
