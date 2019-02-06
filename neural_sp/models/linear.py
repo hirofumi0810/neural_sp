@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import math
 import numpy as np
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -93,6 +94,44 @@ class Embedding(nn.Module):
         if self.scale:
             y *= math.sqrt(self.emb_dim)
         return y
+
+
+class PositionalEncoding(nn.Module):
+    """Positional encoding for Transformer.
+
+    Args:
+        d_model (int):
+        dropout (float):
+        max_len (int):
+
+    """
+
+    def __init__(self, d_model, dropout, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+
+        # Compute the positional encodings once in log space.
+        pe = torch.zeros(max_len, d_model, dtype=torch.float)
+        position = torch.arange(0, max_len).float().unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)  # for batch dimension
+        self.pe = pe
+
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, xs):
+        """Forward computation.
+
+        Args:
+            xs (FloatTensor):
+        Returns:
+            (FloatTensor):
+
+        """
+        device_id = xs.get_device()
+        xs = xs + self.pe[:, :xs.size(1)].cuda(device_id)
+        return self.dropout(xs)
 
 
 class SublayerConnection(nn.Module):

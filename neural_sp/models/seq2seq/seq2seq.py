@@ -24,6 +24,7 @@ from neural_sp.models.seq2seq.decoders.decoder import Decoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
 from neural_sp.models.seq2seq.encoders.splicing import splice
+from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
@@ -103,40 +104,62 @@ class Seq2seq(ModelBase):
         self._gaussian_noise = True if args.gaussian_noise_std > 0 and args.gaussian_noise_timing == 'constant' else False
 
         # Encoder
-        self.enc = RNNEncoder(
-            input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
-            rnn_type=args.enc_type,
-            nunits=args.enc_nunits,
-            nprojs=args.enc_nprojs,
-            nlayers=args.enc_nlayers,
-            nlayers_sub1=args.enc_nlayers_sub1,
-            nlayers_sub2=args.enc_nlayers_sub2,
-            nlayers_sub3=args.enc_nlayers_sub3,
-            dropout_in=args.dropout_in,
-            dropout=args.dropout_enc,
-            subsample=[int(s) for s in args.subsample.split('_')],
-            subsample_type=args.subsample_type,
-            nstacks=args.nstacks,
-            nsplices=args.nsplices,
-            conv_in_channel=args.conv_in_channel,
-            conv_channels=args.conv_channels,
-            conv_kernel_sizes=args.conv_kernel_sizes,
-            conv_strides=args.conv_strides,
-            conv_poolings=args.conv_poolings,
-            conv_batch_norm=args.conv_batch_norm,
-            conv_bottleneck_dim=args.conv_bottleneck_dim,
-            residual=args.enc_residual,
-            add_ffl=args.enc_add_ffl,
-            nin=0,
-            # layer_norm=args.layer_norm,
-            task_specific_layer=args.task_specific_layer)
-        # NOTE: CNN encoder is also included
-        # TODO(hirofumi): transformer
+        if args.enc_type == 'transformer':
+            self.enc = TransformerEncoder(
+                input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
+                nlayers=args.transformer_enc_nlayers,
+                d_model=args.d_model,
+                d_ff=args.d_ff,
+                attn_type=args.self_attn_type,
+                nheads=args.self_attn_nheads,
+                dropout_in=args.dropout_in,
+                dropout=args.dropout_enc,
+                dropout_att=args.dropout_att,
+                nstacks=args.nstacks,
+                nsplices=args.nsplices,
+                conv_in_channel=args.conv_in_channel,
+                conv_channels=args.conv_channels,
+                conv_kernel_sizes=args.conv_kernel_sizes,
+                conv_strides=args.conv_strides,
+                conv_poolings=args.conv_poolings,
+                conv_batch_norm=args.conv_batch_norm,
+                conv_bottleneck_dim=args.conv_bottleneck_dim)
+        else:
+            self.enc = RNNEncoder(
+                input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
+                rnn_type=args.enc_type,
+                nunits=args.enc_nunits,
+                nprojs=args.enc_nprojs,
+                nlayers=args.enc_nlayers,
+                nlayers_sub1=args.enc_nlayers_sub1,
+                nlayers_sub2=args.enc_nlayers_sub2,
+                nlayers_sub3=args.enc_nlayers_sub3,
+                dropout_in=args.dropout_in,
+                dropout=args.dropout_enc,
+                subsample=[int(s) for s in args.subsample.split('_')],
+                subsample_type=args.subsample_type,
+                nstacks=args.nstacks,
+                nsplices=args.nsplices,
+                conv_in_channel=args.conv_in_channel,
+                conv_channels=args.conv_channels,
+                conv_kernel_sizes=args.conv_kernel_sizes,
+                conv_strides=args.conv_strides,
+                conv_poolings=args.conv_poolings,
+                conv_batch_norm=args.conv_batch_norm,
+                conv_bottleneck_dim=args.conv_bottleneck_dim,
+                residual=args.enc_residual,
+                add_ffl=args.enc_add_ffl,
+                nin=0,
+                # layer_norm=args.layer_norm,
+                task_specific_layer=args.task_specific_layer)
+            # NOTE: pure CNN encoder is also included
 
         # Bridge layer between the encoder and decoder
-        if args.enc_type == 'cnn' or args.bridge_layer:
+        self.is_bridge = False
+        if args.enc_type in ['cnn', 'transformer'] or args.bridge_layer:
             self.bridge = LinearND(self.enc.output_dim, args.dec_nunits,
                                    dropout=args.dropout_enc)
+            self.is_bridge = True
             if self.sub1_weight > 0:
                 self.bridge_sub1 = LinearND(self.enc.output_dim, args.dec_nunits,
                                             dropout=args.dropout_enc)
@@ -513,13 +536,13 @@ class Seq2seq(ModelBase):
                     enc_outs['ys_' + sub]['xlens'] = copy.deepcopy(enc_outs['ys']['xlens'])
 
             # Bridge between the encoder and decoder
-            if self.main_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys']):
+            if self.main_weight > 0 and self.is_bridge and (task in ['all', 'ys']):
                 enc_outs['ys']['xs'] = self.bridge(enc_outs['ys']['xs'])
-            if self.sub1_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer) and (task in ['all', 'ys_sub1']):
+            if self.sub1_weight > 0 and self.is_bridge and (task in ['all', 'ys_sub1']):
                 enc_outs['ys_sub1']['xs'] = self.bridge_sub1(enc_outs['ys_sub1']['xs'])
-            if self.sub2_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer)and (task in ['all', 'ys_sub2']):
+            if self.sub2_weight > 0 and self.is_bridge and (task in ['all', 'ys_sub2']):
                 enc_outs['ys_sub2']['xs'] = self.bridge_sub2(enc_outs['ys_sub2']['xs'])
-            if self.sub3_weight > 0 and (self.enc_type == 'cnn' or self.bridge_layer)and (task in ['all', 'ys_sub3']):
+            if self.sub3_weight > 0 and self.is_bridge and (task in ['all', 'ys_sub3']):
                 enc_outs['ys_sub3']['xs'] = self.bridge_sub3(enc_outs['ys_sub3']['xs'])
 
             return enc_outs, perm_ids

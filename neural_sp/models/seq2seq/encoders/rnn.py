@@ -167,7 +167,7 @@ class RNNEncoder(nn.Module):
                                    bottleneck_dim=conv_bottleneck_dim)
             self._output_dim = self.conv.output_dim
         else:
-            self._output_dim *= nsplices * nstacks
+            self._output_dim = input_dim * nsplices * nstacks
             self.conv = None
 
         if rnn_type != 'cnn':
@@ -188,6 +188,7 @@ class RNNEncoder(nn.Module):
                                dropout=dropout,
                                bidirectional=self.bidirectional)
                 # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
+                self._output_dim = nunits
                 self.dropout_top = nn.Dropout(p=dropout)
             else:
                 self.rnn = nn.ModuleList()
@@ -317,7 +318,6 @@ class RNNEncoder(nn.Module):
         # Path through CNN layers before RNN layers
         if self.conv is not None:
             xs, xlens = self.conv(xs, xlens)
-            xs = self.conv_bottleneck(xs)  # dimension reduction
             if self.rnn_type == 'cnn':
                 eouts['ys']['xs'] = xs
                 eouts['ys']['xlens'] = xlens

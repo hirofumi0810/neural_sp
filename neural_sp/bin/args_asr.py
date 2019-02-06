@@ -100,8 +100,8 @@ def parse():
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
-                        choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn'],
-                        help='')
+                        choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn', 'transformer'],
+                        help='type of the encoder')
     parser.add_argument('--enc_nunits', type=int, default=320,
                         help='number of units in each encoder RNN layer')
     parser.add_argument('--enc_nprojs', type=int, default=0,
@@ -109,11 +109,11 @@ def parse():
     parser.add_argument('--enc_nlayers', type=int, default=5,
                         help='number of encoder RNN layers')
     parser.add_argument('--enc_nlayers_sub1', type=int, default=0,
-                        help='')
+                        help='number of encoder RNN layers in the 1st auxiliary task')
     parser.add_argument('--enc_nlayers_sub2', type=int, default=0,
-                        help='')
+                        help='number of encoder RNN layers in the 2nd auxiliary task')
     parser.add_argument('--enc_nlayers_sub3', type=int, default=0,
-                        help='')
+                        help='number of encoder RNN layers in the 3rd auxiliary task')
     parser.add_argument('--enc_residual', type=bool, default=False, nargs='?',
                         help='Residual connection between each encoder layer')
     parser.add_argument('--enc_add_ffl', type=bool, default=False, nargs='?',
@@ -127,7 +127,7 @@ def parse():
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['location', 'add', 'dot',
                                  'luong_dot', 'luong_general', 'luong_concat'],
-                        help='')
+                        help='type of attention for RNN sequence-to-sequence models')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='')
     parser.add_argument('--attn_conv_nchannels', type=int, default=10,
@@ -135,7 +135,7 @@ def parse():
     parser.add_argument('--attn_conv_width', type=int, default=100,
                         help='')
     parser.add_argument('--attn_nheads', type=int, default=1,
-                        help='')
+                        help='number of heads in the attention layer')
     parser.add_argument('--attn_sharpening', type=float, default=1.0,
                         help='')
     parser.add_argument('--attn_sigmoid', type=bool, default=False, nargs='?',
@@ -332,15 +332,20 @@ def parse():
                         help='')
     # transformer
     parser.add_argument('--transformer', type=bool, default=False,
-                        help='')
+                        help='Pure transformer (transformer encoder + transformer decoder)')
     parser.add_argument('--d_model', type=int, default=512,
                         help='')
     parser.add_argument('--d_ff', type=int, default=2048,
                         help='')
-    parser.add_argument('--pre_process', type=str, default=False,
+    parser.add_argument('--transformer_enc_nlayers', type=int, default=6,
                         help='')
-    parser.add_argument('--post_process', type=str, default='dal',
+    parser.add_argument('--transformer_dec_nlayers', type=int, default=6,
                         help='')
+    parser.add_argument('--self_attn_type', type=str, default='scaled_dot_product',
+                        choices=['scaled_dot_product', 'average'],
+                        help='type of attention for transformer')
+    parser.add_argument('--self_attn_nheads', type=int, default=8,
+                        help='number of heads in the self-attention layer')
     parser.add_argument('--share_embedding', type=bool, default=True,
                         help='')
     # decoding parameters

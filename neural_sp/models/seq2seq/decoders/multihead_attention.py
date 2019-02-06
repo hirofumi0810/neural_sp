@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,7 +19,7 @@ from neural_sp.models.linear import LinearND
 
 
 class MultiheadAttentionMechanism(nn.Module):
-    """Multi-head attention layer.
+    """Multi-headed attention layer.
 
     Args:
         enc_nunits (int): the number of units in each layer of the encoder
@@ -192,3 +193,69 @@ class MultiheadAttentionMechanism(nn.Module):
             contexts.append(context)
 
         return self.w_out(torch.cat(contexts, dim=-1)), torch.stack(aw_steps, dim=0)
+
+
+class TransformerMultiheadAttentionMechanism(nn.Module):
+    def __init__(self, nheads, d_model, dropout):
+        """Multi-headed attention layer impelemented in Transformer.
+
+        Args:
+            nheads (int):
+            d_model (int):
+            dropout (float):
+
+        """
+        super(TransformerMultiheadAttentionMechanism, self).__init__()
+
+        assert d_model % nheads == 0
+        # We assume d_v always equals d_k
+        self.d_model = d_model
+        self.d_k = d_model // nheads
+        self.nheads = nheads
+
+        self.w_key = nn.Linear(d_model, d_model)
+        self.w_value = nn.Linear(d_model, d_model)
+        self.w_query = nn.Linear(d_model, d_model)
+        self.w_out = nn.Linear(d_model, d_model)
+        self.dropout = nn.Dropout(p=dropout)  # for probabilities
+
+    def reset(self):
+        self.mask = None
+
+    def forward(self, key, value, query, mask):
+        """Forward computation.
+
+        Args:
+            key (FloatTensor): `[B, key_time, d_model]`
+            value (FloatTensor): `[B, key_time, d_model]`
+            query (FloatTensor): `[B, query_time, d_model]`
+            mask (): `[B, query_time, key_time]`
+                0: place to pad with -inf
+                1: otherwise
+        Returns:
+            context (FloatTensor): `[B, query_time, key_time]`
+            aw (FloatTensor): `[B, nheads, query_time, key_time]`
+
+        """
+        bs = query.size(0)
+
+        # 1) Do all the linear projections in batch from d_model => head x d_k
+        key = self.w_key(key).view(bs, -1, self.nheads, self.d_k).transpose(1, 2)
+        value = self.w_value(value).view(bs, -1, self.nheads, self.d_k).transpose(1, 2)
+        query = self.w_query(query).view(bs, -1, self.nheads, self.d_k).transpose(1, 2)
+
+        # 2) Apply attention on all the projected vectors in batch.
+        energy = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
+        if mask is not None:
+            mask = mask.unsqueeze(1)  # Same mask applied to all heads.
+            # scores_test = energy.masked_fill(mask == 0, -float('inf'))  # this is buggy
+            # scores_test = energy.masked_fill(mask == 0, -10e9)  # this is ok
+            energy = energy.masked_fill(mask == 0, -1024)
+        aw = self.dropout(F.softmax(energy, dim=-1))
+        context = torch.matmul(aw, value)
+
+        # 3) "Concat" using a view and apply a final linear.
+        context = context.transpose(1, 2).contiguous().view(bs, -1, self.nheads * self.d_k)
+        context = self.w_out(context)
+
+        return context, aw

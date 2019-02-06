@@ -53,6 +53,7 @@ class CNNEncoder(nn.Module):
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
         self.input_freq = input_dim // in_channel
+        self.bottleneck_dim = bottleneck_dim
 
         assert len(channels) > 0
         assert len(channels) == len(kernel_sizes)
@@ -115,7 +116,7 @@ class CNNEncoder(nn.Module):
         self._output_dim = int(in_ch * in_freq)
 
         if bottleneck_dim > 0:
-            self.layers += [LinearND(self._output_dim, bottleneck_dim)]
+            self.bottleneck = LinearND(self._output_dim, bottleneck_dim)
             self._output_dim = bottleneck_dim
 
         self.layers = nn.Sequential(layers)
@@ -148,6 +149,10 @@ class CNNEncoder(nn.Module):
         # Collapse feature dimension
         bs, out_ch, freq, time = xs.size()
         xs = xs.transpose(1, 2).contiguous().view(bs, time, -1)
+
+        # Reduce dimension
+        if self.bottleneck_dim > 0:
+            xs = self.bottleneck(xs)
 
         # Update xlens
         xlens = [self.get_conv_out_size(xlen, 1) for xlen in xlens]
