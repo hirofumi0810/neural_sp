@@ -306,25 +306,25 @@ class Seq2seq(ModelBase):
                                           ignore_index=self.pad)
 
         # Initialize weight matrices
-        self.init_weights(args.param_init, dist=args.param_init_dist, ignore_keys=['bias'])
+        self.init_weights(args.param_init, dist=args.param_init_dist)
+
+        # Initialize bias vectors with zero
+        self.init_weights(0, dist='constant', keys=['bias'])
 
         # Initialize CNN layers
-        # self.init_weights(args.param_init, dist='lecun', keys=['conv'], ignore_keys=['score'])
-        self.init_weights(args.param_init, dist='xavier_normal', keys=['conv'], ignore_keys=['score', 'bias'])
-
-        # Initialize all biases with 0
-        self.init_weights(0, dist='constant', keys=['bias'])
+        self.init_weights(args.param_init, dist='xavier_uniform',
+                          keys=['conv'], ignore_keys=['score'])
 
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
             # encoder
             if args.enc_type != 'cnn':
                 self.init_weights(args.param_init, dist='orthogonal',
-                                  keys=[args.enc_type, 'weight'], ignore_keys=['bias'])
+                                  keys=[args.enc_type, 'weight'])
             # TODO(hirofumi): in case of CNN + LSTM
             # decoder
             self.init_weights(args.param_init, dist='orthogonal',
-                              keys=[args.dec_type, 'weight'], ignore_keys=['bias'])
+                              keys=[args.dec_type, 'weight'])
 
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
@@ -336,7 +336,7 @@ class Seq2seq(ModelBase):
         # Initialize for transformer
         if args.enc_type == 'transformer':
             self.init_weights(args.param_init, dist='xavier_uniform',
-                              keys=['transformer'], ignore_keys=['conv', 'bias'])
+                              keys=['transformer'], ignore_keys=['conv'])
 
     def scheduled_sampling_trigger(self):
         # main task

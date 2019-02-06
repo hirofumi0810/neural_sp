@@ -69,7 +69,7 @@ class ModelBase(nn.Module):
         return torch.cuda.device_of(next(self.parameters()).data).idx
 
     def init_weights(self, param_init, dist, keys=[None], ignore_keys=[None]):
-        """Initialize parameters.
+        """Initialize parameters. All biases are initialized with zero unless otherwise specified.
 
         Args:
             param_init (float):
@@ -81,45 +81,46 @@ class ModelBase(nn.Module):
         for n, p in self.named_parameters():
             if keys != [None] and len(list(filter(lambda k: k in n, keys))) == 0:
                 continue
-
             if ignore_keys != [None] and len(list(filter(lambda k: k in n, ignore_keys))) > 0:
                 continue
 
-            if dist == 'uniform':
-                nn.init.uniform_(p.data, a=-param_init, b=param_init)
-            elif dist == 'normal':
-                assert param_init > 0
-                torch.nn.init.normal_(p.data, mean=0, std=param_init)
-            elif dist == 'orthogonal':
-                if p.dim() >= 2:
-                    torch.nn.init.orthogonal_(p.data, gain=1)
-            elif dist == 'constant':
-                torch.nn.init.constant_(p.data, val=param_init)
-            elif dist == 'lecun':
-                if p.data.dim() == 1:
-                    p.data.zero_()  # bias
-                elif p.data.dim() == 2:
-                    n = p.data.size(1)  # linear weight
-                    p.data.normal_(0, 1. / math.sqrt(n))
-                elif p.data.dim() == 4:
-                    # conv weight
-                    n = p.data.size(1)
-                    for k in p.data.size()[2:]:
-                        n *= k
-                    p.data.normal_(0, 1. / math.sqrt(n))
+            if p.data.dim() == 1:
+                if dist == 'constant':
+                    torch.nn.init.constant_(p.data, val=param_init)
                 else:
-                    raise NotImplementedError(p.data.dim())
-            elif dist == 'xavier_uniform':
-                torch.nn.init.xavier_uniform_(p.data)
-            elif dist == 'xavier_normal':
-                print(n)
-                torch.nn.init.xavier_normal_(p.data)
-            elif dist == 'kaiming_uniform':
-                torch.nn.init.kaiming_uniform_(p.data, mode='fan_in', nonlinearity='relu')
-            elif dist == 'kaiming_normal':
-                torch.nn.init.kaiming_normal_(p.data, mode='fan_in', nonlinearity='relu')
+                    p.data.zero_()
             else:
-                raise NotImplementedError(dist)
+                if dist == 'uniform':
+                    nn.init.uniform_(p.data, a=-param_init, b=param_init)
+                elif dist == 'normal':
+                    assert param_init > 0
+                    torch.nn.init.normal_(p.data, mean=0, std=param_init)
+                elif dist == 'orthogonal':
+                    torch.nn.init.orthogonal_(p.data, gain=1)
+                elif dist == 'constant':
+                    torch.nn.init.constant_(p.data, val=param_init)
+                elif dist == 'lecun':
+                    if p.data.dim() == 2:
+                        n = p.data.size(1)  # linear weight
+                        p.data.normal_(0, 1. / math.sqrt(n))
+                    elif p.data.dim() == 4:
+                        # conv weight
+                        n = p.data.size(1)
+                        for k in p.data.size()[2:]:
+                            n *= k
+                        p.data.normal_(0, 1. / math.sqrt(n))
+                    else:
+                        raise NotImplementedError(p.data.dim())
+                elif dist == 'xavier_uniform':
+                    torch.nn.init.xavier_uniform_(p.data)
+                elif dist == 'xavier_normal':
+                    torch.nn.init.xavier_normal_(p.data)
+                elif dist == 'kaiming_uniform':
+                    torch.nn.init.kaiming_uniform_(p.data, mode='fan_in', nonlinearity='relu')
+                elif dist == 'kaiming_normal':
+                    torch.nn.init.kaiming_normal_(p.data, mode='fan_in', nonlinearity='relu')
+                else:
+                    raise NotImplementedError(dist)
 
     def init_forget_gate_bias_with_one(self):
         """Initialize bias in forget gate with 1. See detail in

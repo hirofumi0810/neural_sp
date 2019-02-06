@@ -118,15 +118,15 @@ class SeqRNNLM(ModelBase):
             self.output.fc.weight = self.embed.embed.weight
 
         # Initialize weight matrices
-        self.init_weights(args.param_init, dist=args.param_init_dist, ignore_keys=['bias'])
+        self.init_weights(args.param_init, dist=args.param_init_dist)
 
-        # Initialize all biases with 0
+        # Initialize bias vectors with zero
         self.init_weights(0, dist='constant', keys=['bias'])
 
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
             self.init_weights(args.param_init, dist='orthogonal',
-                              keys=[args.rnn_type, 'weight'], ignore_keys=['bias'])
+                              keys=[args.rnn_type, 'weight'])
 
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
