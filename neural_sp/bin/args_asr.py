@@ -88,22 +88,22 @@ def parse():
     parser.add_argument('--conv_in_channel', type=int, default=1, nargs='?',
                         help='')
     parser.add_argument('--conv_channels', type=str, default="", nargs='?',
-                        help='delimited list input.')
+                        help='delimited list input')
     parser.add_argument('--conv_kernel_sizes', type=str, default="", nargs='?',
-                        help='delimited list input.')
+                        help='delimited list input')
     parser.add_argument('--conv_strides', type=str, default="", nargs='?',
-                        help='delimited list input.')
+                        help='delimited list input')
     parser.add_argument('--conv_poolings', type=str, default="", nargs='?',
-                        help='delimited list input.')
+                        help='delimited list input')
     parser.add_argument('--conv_batch_norm', type=bool, default=False, nargs='?',
                         help='')
     parser.add_argument('--enc_type', type=str, default='blstm',
                         choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn'],
                         help='')
     parser.add_argument('--enc_nunits', type=int, default=320,
-                        help='number of units in each encoder RNN layer.')
+                        help='number of units in each encoder RNN layer')
     parser.add_argument('--enc_nprojs', type=int, default=0,
-                        help='number of units in each projection layer after the RNN layer.')
+                        help='number of units in the projection layer after each encoder RNN layer')
     parser.add_argument('--enc_nlayers', type=int, default=5,
                         help='number of encoder RNN layers')
     parser.add_argument('--enc_nlayers_sub1', type=int, default=0,
@@ -113,9 +113,11 @@ def parse():
     parser.add_argument('--enc_nlayers_sub3', type=int, default=0,
                         help='')
     parser.add_argument('--enc_residual', type=bool, default=False, nargs='?',
-                        help='')
+                        help='Residual connection between each encoder layer')
+    parser.add_argument('--enc_residual_ffn', type=bool, default=False, nargs='?',
+                        help='Add a residual fully-connected layer between each encoder layer')
     parser.add_argument('--subsample', type=str, default="",
-                        help='delimited list input.')
+                        help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
                         choices=['drop', 'concat', 'max_pool'],
                         help='')
@@ -142,11 +144,11 @@ def parse():
                         choices=['lstm', 'gru'],
                         help='')
     parser.add_argument('--dec_nunits', type=int, default=320,
-                        help='')
+                        help='number of units in each decoder RNN layer')
     parser.add_argument('--dec_nprojs', type=int, default=0,
-                        help='')
+                        help='number of units in the projection layer after each decoder RNN layer')
     parser.add_argument('--dec_nlayers', type=int, default=1,
-                        help='')
+                        help='number of decoder RNN layers')
     parser.add_argument('--dec_nlayers_sub1', type=int, default=1,
                         help='')
     parser.add_argument('--dec_nlayers_sub2', type=int, default=1,
@@ -157,13 +159,15 @@ def parse():
                         choices=['normal', 'lmdecoder', 'conditional', 'rnmt'],
                         help='')
     parser.add_argument('--dec_residual', type=bool, default=False, nargs='?',
-                        help='')
+                        help='Residual connection between each decoder layer')
+    parser.add_argument('--dec_residual_ffn', type=bool, default=False, nargs='?',
+                        help='Add a residual fully-connected layer between each decoder layer')
     parser.add_argument('--input_feeding', type=bool, default=False, nargs='?',
                         help='')
     parser.add_argument('--emb_dim', type=int, default=320,
-                        help='')
+                        help='number of dimensions in the embedding layer')
     parser.add_argument('--tie_embedding', type=bool, default=False, nargs='?',
-                        help='tie weights between an embedding matrix and a linear layer before the softmax layer.')
+                        help='tie weights between an embedding matrix and a linear layer before the softmax layer')
     parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
                         help='')
     parser.add_argument('--ctc_fc_list_sub1', type=str, default="", nargs='?',
@@ -254,7 +258,7 @@ def parse():
     parser.add_argument('--lsm_prob', type=float, default=0.0,
                         help='')
     parser.add_argument('--layer_norm', default=False,
-                        help='If true, apply layer normalization (see https://arxiv.org/abs/1607.06450).')
+                        help='If true, apply layer normalization (see https://arxiv.org/abs/1607.06450)')
     parser.add_argument('--focal_loss_weight', type=float, default=0.0,
                         help='')
     parser.add_argument('--focal_loss_gamma', type=float, default=2.0,
@@ -288,13 +292,13 @@ def parse():
     parser.add_argument('--bwd_weight_sub3', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     parser.add_argument('--twin_net_weight', type=float, default=0.0,
-                        help='1.5 is recommended in the orignial paper.')
+                        help='1.5 is recommended in the orignial paper')
     parser.add_argument('--twin_net_weight_sub1', type=float, default=0.0,
-                        help='1.5 is recommended in the orignial paper.')
+                        help='1.5 is recommended in the orignial paper')
     parser.add_argument('--twin_net_weight_sub2', type=float, default=0.0,
-                        help='1.5 is recommended in the orignial paper.')
+                        help='1.5 is recommended in the orignial paper')
     parser.add_argument('--twin_net_weight_sub3', type=float, default=0.0,
-                        help='1.5 is recommended in the orignial paper.')
+                        help='1.5 is recommended in the orignial paper')
     parser.add_argument('--agreement_weight', type=float, default=0.0,
                         help='agreement loss weight for the backwar decoder in the main task')
     parser.add_argument('--agreement_weight_sub1', type=float, default=0.0,
@@ -308,7 +312,7 @@ def parse():
                         choices=['hidden', 'prob'],
                         help='')
     parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',
-                        help='RNNLM parameters for cold fusion.')
+                        help='RNNLM parameters for cold fusion')
     # RNNLM initialization, objective
     parser.add_argument('--rnnlm_init', type=str, default=False, nargs='?',
                         help='')
@@ -364,7 +368,7 @@ def parse():
     parser.add_argument('--recog_coverage_threshold', type=float, default=0.0,
                         help='coverage threshold')
     parser.add_argument('--recog_gnmt_decoding', type=strtobool, default=False, nargs='?',
-                        help='adopt Google NMT beam search decoding.')
+                        help='adopt Google NMT beam search decoding')
     parser.add_argument('--recog_rnnlm_weight', type=float, default=0.0,
                         help='the weight of RNNLM score')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
@@ -374,20 +378,20 @@ def parse():
     parser.add_argument('--recog_rnnlm_bwd', type=str, default=None, nargs='?',
                         help='path to the RMMLM in the reverse direction')
     parser.add_argument('--recog_resolving_unk', type=strtobool, default=False,
-                        help='resolving UNK for the word-based model.')
+                        help='resolving UNK for the word-based model')
     parser.add_argument('--recog_fwd_bwd_attention', type=strtobool, default=False,
-                        help='forward-backward attention decoding.')
+                        help='forward-backward attention decoding')
     parser.add_argument('--recog_bwd_attention', type=strtobool, default=False,
-                        help='backward attention decoding.')
+                        help='backward attention decoding')
     parser.add_argument('--recog_reverse_lm_rescoring', type=strtobool, default=False,
-                        help='rescore with another LM in the reverse direction.')
+                        help='rescore with another LM in the reverse direction')
     parser.add_argument('--recog_checkpoint_ensemble', type=int, default=1,
-                        help='number of checkpoints to use.')
+                        help='number of checkpoints to use')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')
     parser.add_argument('--recog_softmax_temperature', type=float, default=1,
-                        help='Temperature parameter for the final softmax layer.')
+                        help='Temperature parameter for the final softmax layer')
     parser.add_argument('--distillation_type', type=str, default='prob',
                         choices=['teacher_forcing', 'beam_search'],
                         help='')
