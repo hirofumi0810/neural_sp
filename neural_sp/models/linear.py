@@ -10,8 +10,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import numpy as np
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class LinearND(nn.Module):
@@ -56,7 +58,7 @@ class LinearND(nn.Module):
 
 class Embedding(nn.Module):
 
-    def __init__(self, vocab, emb_dim, dropout=0, ignore_index=-1):
+    def __init__(self, vocab, emb_dim, dropout=0, ignore_index=-1, scale=False):
         """Embedding layer.
 
         Args:
@@ -65,13 +67,16 @@ class Embedding(nn.Module):
             emb_dim (int): the dimension of the embedding in target spaces
             dropout (float): the probability to dropout nodes of the embedding
             ignore_index (int):
+            scale (bool): if True, scale outputs of the embedding layer by square root of emb_dim
 
         """
         super(Embedding, self).__init__()
 
+        self.emb_dim = emb_dim
         self.embed = nn.Embedding(vocab, emb_dim, padding_idx=ignore_index)
         if dropout > 0:
             self.dropout = nn.Dropout(p=dropout)
+        self.scale = scale
 
     def forward(self, y):
         """Forward computation.
@@ -85,4 +90,90 @@ class Embedding(nn.Module):
         y = self.embed(y)
         if hasattr(self, 'dropout'):
             y = self.dropout(y)
+        if self.scale:
+            y *= math.sqrt(self.emb_dim)
         return y
+
+
+class SublayerConnection(nn.Module):
+    """A residual connection with dropout and layer normalization.
+
+        input -> layer norm -> (residual) -> sublayer -> dropout -> add -> output
+                                   |                                 |
+                                   -----------------------------------
+    Args:
+        epsilon (float): epsilon parameter for layer normalization
+
+    """
+
+    def __init__(self, d_model, dropout, layer_normalization=True, epsilon=1e-6):
+        super(SublayerConnection, self).__init__()
+
+        self.layer_normalization = layer_normalization
+        if layer_normalization:
+            self.norm = nn.LayerNorm(d_model, eps=epsilon)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, xs, sublayer):
+        """Apply residual connection to any sublayer with the same size.
+
+        Args:
+            xs (FloatTensor):
+        Returns:
+            xs (FloatTensor):
+
+        """
+        if self.layer_normalization:
+            xs = self.norm(xs)
+        residual = xs
+
+        out = sublayer(xs)
+        # NOTE: out may be tuple
+
+        rest_out = None
+        if isinstance(out, tuple):
+            xs = out[0]
+            rest_out = out[1:]
+        else:
+            xs = out
+
+        xs = self.dropout(xs)
+        xs += residual
+
+        if rest_out is not None:
+            xs = (xs, rest_out)
+        return xs
+
+
+class PositionwiseFeedForward(nn.Module):
+    """Positionwise fully-connected feed-forward neural network.
+
+    Args:
+        d_model (int):
+        d_ff (int):
+        dropout (float):
+
+    """
+
+    def __init__(self, d_model, d_ff, dropout, nonlinearity='relu'):
+        super(PositionwiseFeedForward, self).__init__()
+
+        self.w_1 = nn.Linear(d_model, d_ff)
+        self.w_2 = nn.Linear(d_ff, d_model)
+        self.dropout = nn.Dropout(dropout)
+        self.nonlinearity = nonlinearity
+
+    def forward(self, xs):
+        """Forward computation.
+
+        Args:
+            xs (FloatTensor):
+        Returns:
+            (FloatTensor):
+
+        """
+        if self.nonlinearity == 'relu':
+            xs = F.relu(self.w_1(xs))
+        elif self.nonlinearity == 'leaky_relu':
+            xs = F.leaky_relu(self.w_1(xs))
+        return self.w_2(self.dropout(xs))
