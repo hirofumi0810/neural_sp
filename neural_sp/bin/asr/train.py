@@ -206,7 +206,9 @@ def main():
         dir_name += str(args.enc_nprojs) + 'P'
         dir_name += str(args.enc_nlayers) + 'L'
         if args.enc_residual:
-            dir_name += '_res'
+            dir_name += 'res'
+        if args.enc_add_ffl:
+            dir_name += 'ffl'
         if args.nstacks > 1:
             dir_name += '_stack' + str(args.nstacks)
         else:
@@ -215,14 +217,16 @@ def main():
         dir_name += str(args.dec_nunits) + 'H'
         dir_name += str(args.dec_nprojs) + 'P'
         dir_name += str(args.dec_nlayers) + 'L'
+        if args.dec_residual:
+            dir_name += 'res'
+        if args.dec_add_ffl:
+            dir_name += 'ffl'
         if args.dec_loop_type == 'conditional':
             dir_name += '_cond'
         elif args.dec_loop_type == 'lmdecoder':
             dir_name += '_lmdec'
         elif args.dec_loop_type == 'rnmt':
             dir_name += '_rnmt'
-        if args.dec_residual:
-            dir_name += '_res'
         if args.input_feeding:
             dir_name += '_inputfeed'
         if args.tie_embedding:

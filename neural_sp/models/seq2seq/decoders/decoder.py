@@ -28,6 +28,7 @@ from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.linear import Embedding
 from neural_sp.models.linear import LinearND
+from neural_sp.models.linear import ResidualFeedForward
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import CTCPrefixScore
@@ -66,6 +67,8 @@ class Decoder(nn.Module):
         nlayers (int): the number of RNN layers
         loop_type (str): normal or lmdecoder or conditional or rnmt
         residual (bool):
+        add_ffl (bool):
+        layerwise_attention (bool):
         emb_dim (int): the dimension of the embedding in target spaces.
         tie_embedding (bool):
         vocab (int): the number of nodes in softmax layer
@@ -90,6 +93,8 @@ class Decoder(nn.Module):
         rnnlm_init ():
         lmobj_weight (float):
         share_lm_softmax (bool):
+        global_weight (float):
+        mtl_per_batch (bool):
 
     """
 
@@ -111,6 +116,8 @@ class Decoder(nn.Module):
                  nprojs,
                  nlayers,
                  residual,
+                 add_ffl,
+                 layerwise_attention,
                  loop_type,
                  emb_dim,
                  tie_embedding,
@@ -137,8 +144,7 @@ class Decoder(nn.Module):
                  lmobj_weight=0.,
                  share_lm_softmax=False,
                  global_weight=1.0,
-                 mtl_per_batch=False,
-                 vocab_char=None):
+                 mtl_per_batch=False):
 
         super(Decoder, self).__init__()
 
@@ -156,6 +162,8 @@ class Decoder(nn.Module):
         if loop_type in ['conditional', 'lmdecoder', 'rnmt']:
             assert nlayers >= 2
         self.residual = residual
+        self.add_ffl = add_ffl
+        self.layerwise_attention = layerwise_attention
         self.logits_temp = logits_temp
         self.dropout = dropout
         self.dropout_emb = dropout_emb
@@ -190,7 +198,7 @@ class Decoder(nn.Module):
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
 
-        if ctc_weight > 0 and not backward:
+        if ctc_weight > 0:
             # Fully-connected layers for CTC
             if len(ctc_fc_list) > 0:
                 fc_layers = OrderedDict()
@@ -249,25 +257,33 @@ class Decoder(nn.Module):
             self.dropout = nn.ModuleList()
             if self.nprojs > 0:
                 self.proj = nn.ModuleList()
+            if add_ffl:
+                self.ffl = nn.ModuleList()
             if rnn_type == 'lstm':
                 rnn_cell = nn.LSTMCell
             elif rnn_type == 'gru':
                 rnn_cell = nn.GRUCell
 
             if loop_type == 'normal':
-                dec_in_dim = nunits if input_feeding else enc_nunits
-                self.rnn += [rnn_cell(emb_dim + dec_in_dim, nunits)]
+                dec_idim = nunits if input_feeding else enc_nunits
+                self.rnn += [rnn_cell(emb_dim + dec_idim, nunits)]
+                dec_idim = nunits
                 if self.nprojs > 0:
                     self.proj += [LinearND(nunits, nprojs)]
+                    dec_idim = nprojs
                 self.dropout += [nn.Dropout(p=dropout)]
+                if add_ffl:
+                    self.ffl += [ResidualFeedForward(dec_idim, dec_idim * 4, dropout, layer_norm)]
                 for l in range(nlayers - 1):
+                    self.rnn += [rnn_cell(dec_idim, nunits)]
                     if self.nprojs > 0:
-                        self.rnn += [rnn_cell(nprojs, nunits)]
                         self.proj += [LinearND(nunits, nprojs)]
-                    else:
-                        self.rnn += [rnn_cell(nunits, nunits)]
                     self.dropout += [nn.Dropout(p=dropout)]
+                    if add_ffl:
+                        self.ffl += [ResidualFeedForward(dec_idim, dec_idim * 4, dropout, layer_norm)]
             elif loop_type == 'lmdecoder':
+                if add_ffl:
+                    raise ValueError()
                 # 1st layer
                 self.rnn += [rnn_cell(emb_dim, nunits)]
                 if self.nprojs > 0:
@@ -288,6 +304,8 @@ class Decoder(nn.Module):
                         self.rnn += [rnn_cell(nunits, nunits)]
                     self.dropout += [nn.Dropout(p=dropout)]
             elif loop_type == 'conditional':
+                if add_ffl:
+                    raise ValueError()
                 # 1st layer
                 self.rnn += [rnn_cell(emb_dim, nunits)]
                 if self.nprojs > 0:
@@ -306,6 +324,8 @@ class Decoder(nn.Module):
                         self.rnn += [rnn_cell(nunits, nunits)]
                     self.dropout += [nn.Dropout(p=dropout)]
             elif loop_type == 'rnmt':
+                if add_ffl:
+                    raise ValueError()
                 assert residual
                 self.rnn += [rnn_cell(emb_dim, nunits)]
                 if self.nprojs > 0:
@@ -389,7 +409,8 @@ class Decoder(nn.Module):
 
         """
         obserbation = {'loss': None,
-                       'loss_att': None, 'loss_ctc': None, 'loss_lmobj': None, 'loss_twin': None,
+                       'loss_att': None, 'loss_ctc': None, 'loss_lmobj': None,
+                       'loss_twin': None, 'loss_agreement': None,
                        'acc_att': None, 'acc_lmobj': None,
                        'ppl_att': None, 'ppl_lmobj': None}
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
@@ -445,7 +466,6 @@ class Decoder(nn.Module):
         logits = self.output_ctc(eouts)
 
         # Compute the auxiliary CTC loss
-        assert not self.backward
         elens_ctc = np2tensor(np.fromiter(elens, dtype=np.int32), -1).int()
         ys_ctc = [np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys]  # always fwd
         ylens = np2tensor(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int32), -1).int()
@@ -765,6 +785,8 @@ class Decoder(nn.Module):
         if self.nprojs > 0:
             dout = torch.tanh(self.proj[0](dout))
         dout = self.dropout[0](dout)
+        if self.add_ffl:
+            dout = self.ffl[0](dout)
 
         if self.loop_type == 'lmdecoder' and self.lmobj_weight > 0:
             dstates_new['dout_lmdec'] = dout.unsqueeze(1)
@@ -788,6 +810,8 @@ class Decoder(nn.Module):
             if self.nprojs > 0:
                 dout_tmp = torch.tanh(self.proj[l](dout_tmp))
             dout_tmp = self.dropout[l](dout_tmp)
+            if self.add_ffl:
+                dout_tmp = self.ffl[l](dout_tmp)
 
             if self.loop_type == 'lmdecoder' and l == 1:
                 # the bottom layer
@@ -1121,7 +1145,7 @@ class Decoder(nn.Module):
             rnnlm_rev.eval()
 
         # For joint CTC-Attention decoding
-        if ctc_weight > 0:
+        if ctc_weight > 0 and ctc_log_probs is not None:
             if self.backward:
                 ctc_prefix_score = CTCPrefixScore(tensor2np(ctc_log_probs)[0][::-1], self.blank, self.eos)
             else:
@@ -1174,7 +1198,7 @@ class Decoder(nn.Module):
                      'ensemble_dstates': ensemble_dstates,
                      'ensemble_con_vec': ensemble_con_vec,
                      'ensemble_aws':[[None] for _ in range(nmodels)],
-                     'ctc_state':  ctc_prefix_score.initial_state() if ctc_weight > 0 else None,
+                     'ctc_state':  ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
                      'ctc_score': 0
                      }]
             max_ylen = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
@@ -1320,7 +1344,7 @@ class Decoder(nn.Module):
                         scores_lm = torch.zeros((beam_width,), dtype=torch.float32)
 
                     # CTC score
-                    if ctc_weight > 0:
+                    if ctc_weight > 0 and ctc_log_probs is not None:
                         ctc_scores, ctc_states = ctc_prefix_score(
                             beam[i_beam]['hyp'], indices_topk[0], beam[i_beam]['ctc_state'])
                         scores_ctc = beam[i_beam]['score_ctc'] + torch.from_numpy(
@@ -1454,7 +1478,7 @@ class Decoder(nn.Module):
                 logger.info('log prob (hyp): %.7f' % complete[n]['score'])
                 logger.info('log prob (hyp, att): %.7f' % (complete[n]['score_att'] * (1 - ctc_weight)))
                 logger.info('log prob (hyp, cp): %.7f' % (complete[n]['score_cp'] * cp_weight))
-                if ctc_weight > 0:
+                if ctc_weight > 0 and ctc_log_probs is not None:
                     logger.info('log prob (hyp, ctc): %.7f' % (complete[n]['score_ctc'] * ctc_weight))
                 if rnnlm_weight > 0:
                     logger.info('log prob (hyp, lm): %.7f' % (complete[n]['score_lm'] * rnnlm_weight))

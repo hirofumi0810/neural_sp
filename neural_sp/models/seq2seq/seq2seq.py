@@ -125,13 +125,16 @@ class Seq2seq(ModelBase):
             conv_poolings=args.conv_poolings,
             conv_batch_norm=args.conv_batch_norm,
             residual=args.enc_residual,
+            add_ffl=args.enc_add_ffl,
             nin=0,
-            layer_norm=args.layer_norm,
+            # layer_norm=args.layer_norm,
             task_specific_layer=args.task_specific_layer)
 
         # Bridge layer between the encoder and decoder
         if args.enc_type == 'cnn':
-            self.bridge = LinearND(self.enc.conv.output_dim, args.dec_nunits,
+            # self.bridge = LinearND(self.enc.conv.output_dim, args.dec_nunits,
+            #                        dropout=args.dropout_enc)
+            self.bridge = LinearND(args.enc_nunits, args.dec_nunits,
                                    dropout=args.dropout_enc)
             if self.sub1_weight > 0:
                 self.bridge_sub1 = LinearND(self.enc.conv.output_dim, args.dec_nunits,
@@ -192,6 +195,8 @@ class Seq2seq(ModelBase):
                 nlayers=args.dec_nlayers,
                 loop_type=args.dec_loop_type,
                 residual=args.dec_residual,
+                add_ffl=args.dec_add_ffl,
+                layerwise_attention=args.dec_layerwise_attention,
                 emb_dim=args.emb_dim,
                 tie_embedding=args.tie_embedding,
                 vocab=self.vocab,
@@ -218,8 +223,7 @@ class Seq2seq(ModelBase):
                 lmobj_weight=args.lmobj_weight,
                 share_lm_softmax=args.share_lm_softmax,
                 global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
-                mtl_per_batch=args.mtl_per_batch,
-                vocab_char=args.vocab_sub1)
+                mtl_per_batch=args.mtl_per_batch)
             setattr(self, 'dec_' + dir, dec)
 
         # sub task
@@ -250,6 +254,8 @@ class Seq2seq(ModelBase):
                         nlayers=args.dec_nlayers,
                         loop_type=args.dec_loop_type,
                         residual=args.dec_residual,
+                        add_ffl=args.dec_add_ffl,
+                        layerwise_attention=args.dec_layerwise_attention,
                         emb_dim=args.emb_dim,
                         tie_embedding=args.tie_embedding,
                         vocab=getattr(self, 'vocab_' + sub),
@@ -263,7 +269,7 @@ class Seq2seq(ModelBase):
                         layer_norm=args.layer_norm,
                         fl_weight=args.focal_loss_weight,
                         fl_gamma=args.focal_loss_gamma,
-                        ctc_weight=getattr(self, 'ctc_weight_' + sub),
+                        ctc_weight=getattr(self, 'ctc_weight_' + sub) if dir_sub == 'fwd' else 0,
                         ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
                                      ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
                         input_feeding=args.input_feeding,
@@ -291,7 +297,8 @@ class Seq2seq(ModelBase):
         self.init_weights(args.param_init, dist=args.param_init_dist, ignore_keys=['bias'])
 
         # Initialize CNN layers like chainer
-        self.init_weights(args.param_init, dist='lecun', keys=['conv'], ignore_keys=['score'])
+        # self.init_weights(args.param_init, dist='lecun', keys=['conv'], ignore_keys=['score'])
+        self.init_weights(args.param_init, dist='xavier_normal', keys=['conv'], ignore_keys=['score', 'bias'])
 
         # Initialize all biases with 0
         self.init_weights(0, dist='constant', keys=['bias'])
@@ -317,7 +324,7 @@ class Seq2seq(ModelBase):
     def scheduled_sampling_trigger(self):
         # main task
         directions = []
-        if self.fwd_weight > 0 or self.ctc_weight > 0:
+        if self.fwd_weight > 0:
             directions.append('fwd')
         if self.bwd_weight > 0:
             directions.append('bwd')
@@ -328,7 +335,7 @@ class Seq2seq(ModelBase):
         for sub in ['sub1', 'sub2', 'sub3']:
             if getattr(self, sub + '_weight') > 0:
                 directions = []
-                if getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0:
+                if getattr(self, 'fwd_weight_' + sub) > 0:
                     directions.append('fwd')
                 if getattr(self, 'bwd_weight_' + sub) > 0:
                     directions.append('bwd')
@@ -502,7 +509,7 @@ class Seq2seq(ModelBase):
                     xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
                 else:
                     xs = [np2tensor(x, self.device_id).float() for x in xs]
-                xs = pad_list(xs)
+                xs = pad_list(xs, 0.0)
 
             elif self.input_type == 'text':
                 xlens = [len(x) for x in xs]
@@ -631,9 +638,11 @@ class Seq2seq(ModelBase):
                     # forward-backward decoding
                     if params['recog_fwd_bwd_attention']:
                         # forward decoder
-                        rnnlm_fwd = None
+                        rnnlm_fwd, rnnlm_bwd = None, None
                         if params['recog_rnnlm_weight'] > 0:
                             rnnlm_fwd = self.rnnlm_fwd
+                            if params['recog_reverse_lm_rescoring']:
+                                rnnlm_bwd = self.rnnlm_bwd
 
                         # ensemble (forward)
                         ensemble_eouts_fwd = []
@@ -649,14 +658,16 @@ class Seq2seq(ModelBase):
 
                         nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            params, rnnlm_fwd, None, ctc_log_probs,
+                            params, rnnlm_fwd, rnnlm_bwd, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs,
                             ensemble_eouts_fwd, ensemble_elens_fwd, ensemble_decoders_fwd)
 
                         # backward decoder
-                        rnnlm_bwd = None
+                        rnnlm_bwd, rnnlm_fwd = None, None
                         if params['recog_rnnlm_weight'] > 0:
                             rnnlm_bwd = self.rnnlm_bwd
+                            if params['recog_reverse_lm_rescoring']:
+                                rnnlm_fwd = self.rnnlm_fwd
 
                         # ensemble (backward)
                         ensemble_eouts_bwd = []
@@ -682,7 +693,7 @@ class Seq2seq(ModelBase):
                             enc_outs_bwd = enc_outs
                         nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
-                            params, rnnlm_bwd, None, ctc_log_probs,
+                            params, rnnlm_bwd, rnnlm_fwd, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs,
                             ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decoders_bwd)
 
@@ -713,8 +724,10 @@ class Seq2seq(ModelBase):
                         if params['recog_rnnlm_weight'] > 0:
                             rnnlm = getattr(self, 'rnnlm_' + dir)
                             if params['recog_reverse_lm_rescoring']:
-                                # rnnlm_rev = getattr(self, 'rnnlm_' + dir)
-                                rnnlm_rev = getattr(self, 'rnnlm_bwd')
+                                if dir == 'fwd':
+                                    rnnlm_rev = self.rnnlm_bwd
+                                else:
+                                    raise NotImplementedError()
 
                         nbest_hyps, aws, scores, _ = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],

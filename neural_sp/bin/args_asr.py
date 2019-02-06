@@ -114,8 +114,8 @@ def parse():
                         help='')
     parser.add_argument('--enc_residual', type=bool, default=False, nargs='?',
                         help='Residual connection between each encoder layer')
-    parser.add_argument('--enc_residual_ffn', type=bool, default=False, nargs='?',
-                        help='Add a residual fully-connected layer between each encoder layer')
+    parser.add_argument('--enc_add_ffl', type=bool, default=False, nargs='?',
+                        help='Add a residual feed-forward fully-connected layer between each encoder layer')
     parser.add_argument('--subsample', type=str, default="",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
@@ -160,8 +160,10 @@ def parse():
                         help='')
     parser.add_argument('--dec_residual', type=bool, default=False, nargs='?',
                         help='Residual connection between each decoder layer')
-    parser.add_argument('--dec_residual_ffn', type=bool, default=False, nargs='?',
-                        help='Add a residual fully-connected layer between each decoder layer')
+    parser.add_argument('--dec_add_ffl', type=bool, default=False, nargs='?',
+                        help='Add a residual feed-forward fully-connected layer between each decoder layer')
+    parser.add_argument('--dec_layerwise_attention', type=bool, default=False, nargs='?',
+                        help='Compute attention weights in each decoder layer')
     parser.add_argument('--input_feeding', type=bool, default=False, nargs='?',
                         help='')
     parser.add_argument('--emb_dim', type=int, default=320,
@@ -257,7 +259,7 @@ def parse():
                         help='')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
                         help='')
-    parser.add_argument('--layer_norm', default=False,
+    parser.add_argument('--layer_norm', default=False, nargs='?',
                         help='If true, apply layer normalization (see https://arxiv.org/abs/1607.06450)')
     parser.add_argument('--focal_loss_weight', type=float, default=0.0,
                         help='')

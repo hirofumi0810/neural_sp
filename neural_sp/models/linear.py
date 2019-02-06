@@ -155,13 +155,12 @@ class PositionwiseFeedForward(nn.Module):
 
     """
 
-    def __init__(self, d_model, d_ff, dropout, nonlinearity='relu'):
+    def __init__(self, d_model, d_ff, dropout):
         super(PositionwiseFeedForward, self).__init__()
 
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
-        self.nonlinearity = nonlinearity
 
     def forward(self, xs):
         """Forward computation.
@@ -172,8 +171,38 @@ class PositionwiseFeedForward(nn.Module):
             (FloatTensor):
 
         """
-        if self.nonlinearity == 'relu':
-            xs = F.relu(self.w_1(xs))
-        elif self.nonlinearity == 'leaky_relu':
-            xs = F.leaky_relu(self.w_1(xs))
-        return self.w_2(self.dropout(xs))
+        return self.w_2(self.dropout(F.relu(self.w_1(xs))))
+
+
+class ResidualFeedForward(nn.Module):
+    """Wrapper for the combination of SublayerConnection and PositionwiseFeedForward
+
+        input -> layer norm -> (residual) -> PositionwiseFeedForward -> dropout -> add -> output
+                                   |                                                |
+                                   --------------------------------------------------
+
+    Args:
+        d_model (int):
+        d_ff (int):
+        dropout (float):
+        layer_normalization (bool):
+        epsilon (float):
+
+    """
+
+    def __init__(self, d_model, d_ff, dropout, layer_normalization=False, epsilon=1e-6):
+        super(ResidualFeedForward, self).__init__()
+
+        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
+        self.add_norm = SublayerConnection(d_model, dropout, layer_normalization, epsilon)
+
+    def forward(self, xs):
+        """Forward computation.
+
+        Args:
+            xs (FloatTensor):
+        Returns:
+            (FloatTensor):
+
+        """
+        return self.add_norm(xs, self.feed_forward)

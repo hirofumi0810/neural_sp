@@ -19,6 +19,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.linear import LinearND
+from neural_sp.models.linear import ResidualFeedForward
 from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
 
 
@@ -45,6 +46,7 @@ class RNNEncoder(nn.Module):
         conv_poolings (list): the size of poolings in the CNN layers
         conv_batch_norm (bool): apply batch normalization only in the CNN layers
         residual (bool): add residual connections between the consecutive layers
+        add_ffl (bool):
         nlayers_sub1 (int): the number of layers in the 1st auxiliary task
         nlayers_sub2 (int): the number of layers in the 2nd auxiliary task
         nlayers_sub3 (int): the number of layers in the 3rd auxiliary task
@@ -74,6 +76,7 @@ class RNNEncoder(nn.Module):
                  conv_poolings,
                  conv_batch_norm,
                  residual,
+                 add_ffl,
                  nlayers_sub1=0,
                  nlayers_sub2=0,
                  nlayers_sub3=0,
@@ -101,6 +104,8 @@ class RNNEncoder(nn.Module):
         self.nprojs = nprojs
         self.nlayers = nlayers
         self.layer_norm = layer_norm
+        self.residual = residual
+        self.add_ffl = add_ffl
 
         # Setting for hierarchical encoder
         self.nlayers_sub1 = nlayers_sub1
@@ -116,7 +121,6 @@ class RNNEncoder(nn.Module):
         self.subsample_type = subsample_type
 
         # Setting for residual connection
-        self.residual = residual
         subsample_last = 0
         for l_reverse, is_subsample in enumerate(subsample[::-1]):
             if is_subsample:
@@ -148,9 +152,9 @@ class RNNEncoder(nn.Module):
             poolings = []
 
         if len(channels) > 0 and len(channels) == len(kernel_sizes) and len(kernel_sizes) == len(strides):
-            assert nstacks == 1 and nsplices == 1
-            self.conv = CNNEncoder(input_dim,
-                                   in_channel=conv_in_channel,
+            # assert nstacks == 1 and nsplices == 1
+            self.conv = CNNEncoder(input_dim * nstacks,
+                                   in_channel=conv_in_channel * nstacks,
                                    channels=channels,
                                    kernel_sizes=kernel_sizes,
                                    strides=strides,
@@ -159,6 +163,8 @@ class RNNEncoder(nn.Module):
                                    activation='relu',
                                    batch_norm=conv_batch_norm)
             input_dim = self.conv.output_dim
+            self.conv_bottleneck = LinearND(input_dim, nunits)
+            input_dim = nunits
         else:
             input_dim *= nsplices * nstacks
             self.conv = None
@@ -166,7 +172,7 @@ class RNNEncoder(nn.Module):
         if rnn_type != 'cnn':
             self.fast_impl = False
             # Fast implementation without processes between each layer
-            if np.prod(self.subsample) == 1 and self.nprojs == 0 and not residual and nlayers_sub1 == 0 and (not conv_batch_norm) and nin == 0:
+            if np.prod(self.subsample) == 1 and self.nprojs == 0 and not residual and not add_ffl and nlayers_sub1 == 0 and (not conv_batch_norm) and nin == 0:
                 self.fast_impl = True
                 if 'lstm' in rnn_type:
                     rnn = nn.LSTM
@@ -187,6 +193,8 @@ class RNNEncoder(nn.Module):
                 self.dropout = nn.ModuleList()
                 if self.nprojs > 0:
                     self.proj = nn.ModuleList()
+                if add_ffl:
+                    self.ffl = nn.ModuleList()
                 if subsample_type == 'max_pool' and np.prod(self.subsample) > 1:
                     self.max_pool = nn.ModuleList()
                     for l in range(nlayers):
@@ -229,11 +237,21 @@ class RNNEncoder(nn.Module):
                     self.dropout += [nn.Dropout(p=dropout)]
                     enc_odim = nunits * self.ndirs
 
-                    if l != nlayers - 1 and nprojs > 0:
+                    # Projection layer
+                    if nprojs > 0:
                         self.proj += [LinearND(nunits * self.ndirs, nprojs)]
                         enc_odim = nprojs
 
-                    # insert task specific layer
+                    # Residual feed-forward fully-connected layer
+                    if add_ffl:
+                        # self.ffl += [ResidualFeedForward(enc_odim, enc_odim * 4, dropout, layer_norm)]
+                        self.ffl += [ResidualFeedForward(enc_odim, enc_odim * 4, dropout)]
+                        # NOTE: upscaling as Transformer
+                        # TODO(hirofumi): layer normalization is not supported for the RNN encoder
+                        # because layer normalization cannot be applied to per step with nn.LSTM
+                        # (using nn.LSTMCell does not support pad_packed_sequence)
+
+                    # Task specific layer
                     if l == nlayers_sub1 - 1 and task_specific_layer:
                         self.rnn_sub1_tsl = rnn_i(enc_odim, nunits, 1,
                                                   bias=True,
@@ -303,6 +321,7 @@ class RNNEncoder(nn.Module):
         # Path through CNN layers before RNN layers
         if self.conv is not None:
             xs, xlens = self.conv(xs, xlens)
+            xs = self.conv_bottleneck(xs)  # dimension reduction
             if self.rnn_type == 'cnn':
                 eouts['ys']['xs'] = xs
                 eouts['ys']['xlens'] = xlens
@@ -378,6 +397,15 @@ class RNNEncoder(nn.Module):
                         eouts[task]['xlens'] = xlens_sub3
                         return eouts
 
+                # Projection layer
+                if self.nprojs > 0:
+                    # xs = torch.tanh(self.proj[l](xs))
+                    xs = self.proj[l](xs)
+
+                # Residual feed-forward fully-connected layer
+                if self.add_ffl:
+                    xs = self.ffl[l](xs)
+
                 # NOTE: Exclude the last layer
                 if l != self.nlayers - 1:
                     # Subsampling
@@ -401,10 +429,6 @@ class RNNEncoder(nn.Module):
 
                         # Update xlens
                         xlens = [x.size(0) for x in xs]
-
-                    # Projection layer
-                    if self.nprojs > 0:
-                        xs = torch.tanh(self.proj[l](xs))
 
                     # NiN
                     if self.nin > 0:
