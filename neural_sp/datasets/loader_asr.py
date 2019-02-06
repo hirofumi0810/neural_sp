@@ -186,7 +186,12 @@ class Dataset(Base):
             df_sub3 = None
 
         # Remove inappropriate utteraces
-        if not self.is_test:
+        if self.is_test:
+            print('Original utterance num: %d' % len(df))
+            nutt = len(df)
+            df = df[df.apply(lambda x: x['y_len'] > 0, axis=1)]
+            print('Removed %d empty utterances' % (nutt - len(df)))
+        else:
             print('Original utterance num: %d' % len(df))
             nutt = len(df)
             df = df[df.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
