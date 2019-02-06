@@ -97,6 +97,8 @@ def parse():
                         help='delimited list input')
     parser.add_argument('--conv_batch_norm', type=bool, default=False, nargs='?',
                         help='')
+    parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
+                        help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
                         choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn'],
                         help='')
@@ -193,7 +195,7 @@ def parse():
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
                         help='')
     parser.add_argument('--print_step', type=int, default=200,
-                        help='the step to print log')
+                        help='step to print log')
     parser.add_argument('--metric', type=str, default='edit_distance',
                         choices=['edit_distance', 'loss', 'acc', 'ppl', 'bleu'],
                         help='')
@@ -349,7 +351,7 @@ def parse():
     parser.add_argument('--recog_model_bwd', type=str, default=None, nargs='?',
                         help='path to the model in the reverse direction')
     parser.add_argument('--recog_epoch', type=int, default=-1,
-                        help='the epoch to restore')
+                        help='epoch to restore')
     parser.add_argument('--recog_dir', type=str, default=None,
                         help='directory to save decoding results')
     parser.add_argument('--recog_unit', type=str, default=False, nargs='?',
@@ -372,9 +374,9 @@ def parse():
     parser.add_argument('--recog_gnmt_decoding', type=strtobool, default=False, nargs='?',
                         help='adopt Google NMT beam search decoding')
     parser.add_argument('--recog_rnnlm_weight', type=float, default=0.0,
-                        help='the weight of RNNLM score')
+                        help='weight of RNNLM score')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
-                        help='the weight of CTC score')
+                        help='weight of CTC score')
     parser.add_argument('--recog_rnnlm', type=str, default=None, nargs='?',
                         help='path to the RMMLM')
     parser.add_argument('--recog_rnnlm_bwd', type=str, default=None, nargs='?',

@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""(Hierarchical) RNN encoders."""
+"""(Hierarchical) RNN encoder."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -27,29 +27,30 @@ class RNNEncoder(nn.Module):
     """RNN encoder.
 
     Args:
-        input_dim (int): the dimension of input features (freq * channel)
+        input_dim (int): dimension of input features (freq * channel)
         rnn_type (str): blstm or lstm or bgru or gru
-        nunits (int): the number of units in each layer
-        nprojs (int): the number of units in each projection layer
-        nlayers (int): the number of layers
-        dropout_in (float): the probability to drop nodes in input-hidden connection
-        dropout (float): the probability to drop nodes in hidden-hidden connection
+        nunits (int): number of units in each layer
+        nprojs (int): number of units in each projection layer
+        nlayers (int): number of layers
+        dropout_in (float): probability to drop nodes in input-hidden connection
+        dropout (float): probability to drop nodes in hidden-hidden connection
         subsample (list): subsample in the corresponding RNN layers
             ex.) [False, True, True, False] means that subsample is conducted in the 2nd and 3rd layers.
         subsample_type (str): drop or concat or max_pool
-        nstacks (int): the number of frames to stack
+        nstacks (int): number of frames to stack
         nsplices (int): frames to splice. Default is 1 frame.
-        conv_in_channel (int): the number of channels of input features
-        conv_channels (int): the number of channles in the CNN layers
-        conv_kernel_sizes (list): the size of kernels in the CNN layers
-        conv_strides (list): the number of strides in the CNN layers
-        conv_poolings (list): the size of poolings in the CNN layers
+        conv_in_channel (int): number of channels of input features
+        conv_channels (int): number of channles in the CNN layers
+        conv_kernel_sizes (list): size of kernels in the CNN layers
+        conv_strides (list): number of strides in the CNN layers
+        conv_poolings (list): size of poolings in the CNN layers
         conv_batch_norm (bool): apply batch normalization only in the CNN layers
+        conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and RNN layers
         residual (bool): add residual connections between the consecutive layers
         add_ffl (bool):
-        nlayers_sub1 (int): the number of layers in the 1st auxiliary task
-        nlayers_sub2 (int): the number of layers in the 2nd auxiliary task
-        nlayers_sub3 (int): the number of layers in the 3rd auxiliary task
+        nlayers_sub1 (int): number of layers in the 1st auxiliary task
+        nlayers_sub2 (int): number of layers in the 2nd auxiliary task
+        nlayers_sub3 (int): number of layers in the 3rd auxiliary task
         nin (int): if larger than 0, insert 1*1 conv (filter size: nin)
             and ReLU activation between each LSTM layer
         layer_norm (bool): layer normalization
@@ -75,6 +76,7 @@ class RNNEncoder(nn.Module):
                  conv_strides,
                  conv_poolings,
                  conv_batch_norm,
+                 conv_bottleneck_dim,
                  residual,
                  add_ffl,
                  nlayers_sub1=0,
@@ -161,12 +163,11 @@ class RNNEncoder(nn.Module):
                                    poolings=poolings,
                                    dropout=dropout,
                                    activation='relu',
-                                   batch_norm=conv_batch_norm)
-            input_dim = self.conv.output_dim
-            self.conv_bottleneck = LinearND(input_dim, nunits)
-            input_dim = nunits
+                                   batch_norm=conv_batch_norm,
+                                   bottleneck_dim=conv_bottleneck_dim)
+            self._output_dim = self.conv.output_dim
         else:
-            input_dim *= nsplices * nstacks
+            self._output_dim *= nsplices * nstacks
             self.conv = None
 
         if rnn_type != 'cnn':
@@ -181,7 +182,7 @@ class RNNEncoder(nn.Module):
                 else:
                     raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
 
-                self.rnn = rnn(input_dim, nunits, nlayers,
+                self.rnn = rnn(self._output_dim, nunits, nlayers,
                                bias=True,
                                batch_first=True,
                                dropout=dropout,
@@ -213,15 +214,6 @@ class RNNEncoder(nn.Module):
                             self.concat += [None]
 
                 for l in range(nlayers):
-                    if l == 0:
-                        enc_idim = input_dim
-                    elif nin > 0:
-                        enc_idim = nin
-                    elif self.nprojs > 0:
-                        enc_idim = nprojs
-                    else:
-                        enc_idim = nunits * self.ndirs
-
                     if 'lstm' in rnn_type:
                         rnn_i = nn.LSTM
                     elif 'gru' in rnn_type:
@@ -229,23 +221,23 @@ class RNNEncoder(nn.Module):
                     else:
                         raise ValueError('rnn_type must be "lstm" or "gru".')
 
-                    self.rnn += [rnn_i(enc_idim, nunits, 1,
+                    self.rnn += [rnn_i(self._output_dim, nunits, 1,
                                        bias=True,
                                        batch_first=True,
                                        dropout=0,
                                        bidirectional=self.bidirectional)]
                     self.dropout += [nn.Dropout(p=dropout)]
-                    enc_odim = nunits * self.ndirs
+                    self._output_dim = nunits * self.ndirs
 
                     # Projection layer
                     if nprojs > 0:
                         self.proj += [LinearND(nunits * self.ndirs, nprojs)]
-                        enc_odim = nprojs
+                        self._output_dim = nprojs
 
                     # Residual feed-forward fully-connected layer
                     if add_ffl:
-                        # self.ffl += [ResidualFeedForward(enc_odim, enc_odim * 4, dropout, layer_norm)]
-                        self.ffl += [ResidualFeedForward(enc_odim, enc_odim * 4, dropout)]
+                        # self.ffl += [ResidualFeedForward(self._output_dim, self._output_dim * 4, dropout, layer_norm)]
+                        self.ffl += [ResidualFeedForward(self._output_dim, self._output_dim * 4, dropout)]
                         # NOTE: upscaling as Transformer
                         # TODO(hirofumi): layer normalization is not supported for the RNN encoder
                         # because layer normalization cannot be applied to per step with nn.LSTM
@@ -253,21 +245,21 @@ class RNNEncoder(nn.Module):
 
                     # Task specific layer
                     if l == nlayers_sub1 - 1 and task_specific_layer:
-                        self.rnn_sub1_tsl = rnn_i(enc_odim, nunits, 1,
+                        self.rnn_sub1_tsl = rnn_i(self._output_dim, nunits, 1,
                                                   bias=True,
                                                   batch_first=True,
                                                   dropout=0,
                                                   bidirectional=self.bidirectional)
                         self.dropout_sub1_tsl = nn.Dropout(p=dropout)
                     if l == nlayers_sub2 - 1 and task_specific_layer:
-                        self.rnn_sub2_tsl = rnn_i(enc_odim, nunits, 1,
+                        self.rnn_sub2_tsl = rnn_i(self._output_dim, nunits, 1,
                                                   bias=True,
                                                   batch_first=True,
                                                   dropout=0,
                                                   bidirectional=self.bidirectional)
                         self.dropout_sub2_tsl = nn.Dropout(p=dropout)
                     if l == nlayers_sub3 - 1 and task_specific_layer:
-                        self.rnn_sub3_tsl = rnn_i(enc_odim, nunits, 1,
+                        self.rnn_sub3_tsl = rnn_i(self._output_dim, nunits, 1,
                                                   bias=True,
                                                   batch_first=True,
                                                   dropout=0,
@@ -277,7 +269,7 @@ class RNNEncoder(nn.Module):
                     # Network in network (1*1 conv)
                     if nin > 0:
                         setattr(self, 'nin_l' + str(l),
-                                nn.Conv1d(in_channels=enc_odim,
+                                nn.Conv1d(in_channels=self._output_dim,
                                           out_channels=nin,
                                           kernel_size=1,
                                           stride=1,
@@ -287,11 +279,15 @@ class RNNEncoder(nn.Module):
                         # Batch normalization
                         if conv_batch_norm:
                             if nin:
-                                setattr(self, 'bn_0_l' + str(l), nn.BatchNorm1d(enc_odim))
+                                setattr(self, 'bn_0_l' + str(l), nn.BatchNorm1d(self._output_dim))
                                 setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(nin))
                             else:
-                                setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(enc_odim))
+                                setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(self._output_dim))
                         # NOTE* BN in RNN models is applied only after NiN
+
+    @property
+    def output_dim(self):
+        return self._output_dim
 
     def forward(self, xs, xlens, task):
         """Forward computation.
@@ -338,7 +334,7 @@ class RNNEncoder(nn.Module):
             xs = self.dropout_top(xs)
         else:
             xs_lower = None
-            for l in range(self.nlayers):
+            for l in range(len(self.rnn)):
                 self.rnn[l].flatten_parameters()
                 # NOTE: this is necessary for multi-GPUs setting
 
@@ -407,7 +403,7 @@ class RNNEncoder(nn.Module):
                     xs = self.ffl[l](xs)
 
                 # NOTE: Exclude the last layer
-                if l != self.nlayers - 1:
+                if l != len(self.rnn) - 1:
                     # Subsampling
                     if self.subsample[l] > 1:
                         if self.subsample_type == 'drop':

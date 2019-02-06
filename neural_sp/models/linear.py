@@ -106,11 +106,11 @@ class SublayerConnection(nn.Module):
 
     """
 
-    def __init__(self, d_model, dropout, layer_normalization=True, epsilon=1e-6):
+    def __init__(self, d_model, dropout, layer_norm=True, epsilon=1e-6):
         super(SublayerConnection, self).__init__()
 
-        self.layer_normalization = layer_normalization
-        if layer_normalization:
+        self.layer_norm = layer_norm
+        if layer_norm:
             self.norm = nn.LayerNorm(d_model, eps=epsilon)
         self.dropout = nn.Dropout(dropout)
 
@@ -123,7 +123,7 @@ class SublayerConnection(nn.Module):
             xs (FloatTensor):
 
         """
-        if self.layer_normalization:
+        if self.layer_norm:
             xs = self.norm(xs)
         residual = xs
 
@@ -185,16 +185,16 @@ class ResidualFeedForward(nn.Module):
         d_model (int):
         d_ff (int):
         dropout (float):
-        layer_normalization (bool):
+        layer_norm (bool):
         epsilon (float):
 
     """
 
-    def __init__(self, d_model, d_ff, dropout, layer_normalization=False, epsilon=1e-6):
+    def __init__(self, d_model, d_ff, dropout, layer_norm=False, epsilon=1e-6):
         super(ResidualFeedForward, self).__init__()
 
         self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
-        self.add_norm = SublayerConnection(d_model, dropout, layer_normalization, epsilon)
+        self.add_norm = SublayerConnection(d_model, dropout, layer_norm, epsilon)
 
     def forward(self, xs):
         """Forward computation.

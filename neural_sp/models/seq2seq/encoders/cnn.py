@@ -14,6 +14,7 @@ from collections import OrderedDict
 import math
 import torch.nn as nn
 
+from neural_sp.models.linear import LinearND
 from neural_sp.models.seq2seq.encoders.cnn_utils import ConvOutSize
 from neural_sp.models.seq2seq.encoders.cnn_utils import Maxout
 
@@ -22,15 +23,16 @@ class CNNEncoder(nn.Module):
     """CNN encoder.
 
     Args:
-        input_dim (int): the dimension of input features (freq * channel)
-        in_channel (int): the number of channels of input features
-        channels (list): the number of channles in CNN layers
-        kernel_sizes (list): the size of kernels in CNN layers
+        input_dim (int) dimension of input features (freq * channel)
+        in_channel (int) number of channels of input features
+        channels (list) number of channles in CNN layers
+        kernel_sizes (list) size of kernels in CNN layers
         strides (list): strides in CNN layers
-        poolings (list): the size of poolings in CNN layers
-        dropout (float): the probability to drop nodes in hidden-hidden connection
+        poolings (list) size of poolings in CNN layers
+        dropout (float) probability to drop nodes in hidden-hidden connection
         activation (str): relu or prelu or hard_tanh or maxout
         batch_norm (bool): if True, apply batch normalization
+        bottleneck_dim (int): dimension of the bottleneck layer after the last layer
 
     """
 
@@ -43,7 +45,8 @@ class CNNEncoder(nn.Module):
                  poolings,
                  dropout,
                  activation='relu',
-                 batch_norm=False):
+                 batch_norm=False,
+                 bottleneck_dim=0):
 
         super(CNNEncoder, self).__init__()
 
@@ -66,7 +69,8 @@ class CNNEncoder(nn.Module):
                              out_channels=channels[l],
                              kernel_size=tuple(kernel_sizes[l]),
                              stride=tuple(strides[l]),
-                             padding=tuple(strides[l]),
+                             #  padding=tuple(strides[l]),
+                             padding=0,
                              bias=not batch_norm)
             layers['conv' + str(channels[l]) + '_l' + str(l)] = conv
             in_freq = int(math.floor((in_freq + 2 * conv.padding[0] - conv.kernel_size[0]) / conv.stride[0] + 1))
@@ -95,12 +99,8 @@ class CNNEncoder(nn.Module):
                 # NOTE: If ceil_mode is False, remove last feature when the
                 # dimension of features are odd.
 
-                if pool.ceil_mode:
-                    in_freq = int(math.ceil(
-                        (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1))
-                else:
-                    in_freq = int(math.floor(
-                        (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1))
+                in_freq = int(math.ceil(
+                    (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1))
 
             # Batch Normalization
             if batch_norm:
@@ -112,9 +112,18 @@ class CNNEncoder(nn.Module):
 
             in_ch = channels[l]
 
+        self._output_dim = int(in_ch * in_freq)
+
+        if bottleneck_dim > 0:
+            self.layers += [LinearND(self._output_dim, bottleneck_dim)]
+            self._output_dim = bottleneck_dim
+
         self.layers = nn.Sequential(layers)
         self.get_conv_out_size = ConvOutSize(self.layers)
-        self.output_dim = int(in_ch * in_freq)
+
+    @property
+    def output_dim(self):
+        return self._output_dim
 
     def forward(self, xs, xlens):
         """Forward computation.
@@ -128,20 +137,19 @@ class CNNEncoder(nn.Module):
 
         """
         bs, max_time, input_dim = xs.size()
-        # assert input_dim == self.input_freq * self.in_channel
 
         # Reshape to 4D tensor `[B, in_ch, freq // in_ch, max_time]`
-        xs = xs.view(bs, self.in_channel, input_dim // self.in_channel, max_time)
+        xs = xs.contiguous().view(bs, max_time, input_dim // self.in_channel, self.in_channel)
+        xs = xs.transpose(1, 3)
 
         xs = self.layers(xs)
         # NOTE: xs: `[B, out_ch, new_freq, new_time]`
 
         # Collapse feature dimension
         bs, out_ch, freq, time = xs.size()
-        xs = xs.view(bs, -1, time)
-        xs = xs.transpose(1, 2).contiguous()
+        xs = xs.transpose(1, 2).contiguous().view(bs, time, -1)
 
         # Update xlens
-        xlens = [self.get_conv_out_size(x_len, 1) for x_len in xlens]
+        xlens = [self.get_conv_out_size(xlen, 1) for xlen in xlens]
 
         return xs, xlens

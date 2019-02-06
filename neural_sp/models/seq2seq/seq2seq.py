@@ -124,39 +124,27 @@ class Seq2seq(ModelBase):
             conv_strides=args.conv_strides,
             conv_poolings=args.conv_poolings,
             conv_batch_norm=args.conv_batch_norm,
+            conv_bottleneck_dim=args.conv_bottleneck_dim,
             residual=args.enc_residual,
             add_ffl=args.enc_add_ffl,
             nin=0,
             # layer_norm=args.layer_norm,
             task_specific_layer=args.task_specific_layer)
+        # NOTE: CNN encoder is also included
+        # TODO(hirofumi): transformer
 
         # Bridge layer between the encoder and decoder
-        if args.enc_type == 'cnn':
-            # self.bridge = LinearND(self.enc.conv.output_dim, args.dec_nunits,
-            #                        dropout=args.dropout_enc)
-            self.bridge = LinearND(args.enc_nunits, args.dec_nunits,
+        if args.enc_type == 'cnn' or args.bridge_layer:
+            self.bridge = LinearND(self.enc.output_dim, args.dec_nunits,
                                    dropout=args.dropout_enc)
             if self.sub1_weight > 0:
-                self.bridge_sub1 = LinearND(self.enc.conv.output_dim, args.dec_nunits,
+                self.bridge_sub1 = LinearND(self.enc.output_dim, args.dec_nunits,
                                             dropout=args.dropout_enc)
             if self.sub2_weight > 0:
-                self.bridge_sub2 = LinearND(self.enc.conv.output_dim, args.dec_nunits,
+                self.bridge_sub2 = LinearND(self.enc.output_dim, args.dec_nunits,
                                             dropout=args.dropout_enc)
             if self.sub3_weight > 0:
-                self.bridge_sub3 = LinearND(self.enc.conv.output_dim, args.dec_nunits,
-                                            dropout=args.dropout_enc)
-            self.enc_nunits = args.dec_nunits
-        elif args.bridge_layer:
-            self.bridge = LinearND(self.enc_nunits, args.dec_nunits,
-                                   dropout=args.dropout_enc)
-            if self.sub1_weight > 0:
-                self.bridge_sub1 = LinearND(self.enc_nunits, args.dec_nunits,
-                                            dropout=args.dropout_enc)
-            if self.sub2_weight > 0:
-                self.bridge_sub2 = LinearND(self.enc_nunits, args.dec_nunits,
-                                            dropout=args.dropout_enc)
-            if self.sub3_weight > 0:
-                self.bridge_sub3 = LinearND(self.enc_nunits, args.dec_nunits,
+                self.bridge_sub3 = LinearND(self.enc.output_dim, args.dec_nunits,
                                             dropout=args.dropout_enc)
             self.enc_nunits = args.dec_nunits
 
