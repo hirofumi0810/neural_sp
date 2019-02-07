@@ -13,14 +13,16 @@ from __future__ import print_function
 import logging
 import matplotlib
 matplotlib.use('Agg')
+
+import math
 from matplotlib import pyplot as plt
 import numpy as np
 import os
 import seaborn as sns
+import torch
 from tensorboardX import SummaryWriter
 import yaml
 
-import torch
 
 plt.style.use('ggplot')
 blue = '#4682B4'
@@ -161,7 +163,7 @@ class Controller(object):
             If False, the higher, the better.
         best_value (float): the worst value of evaluation metric
         model_size (int):
-        warmup_step (int):
+        warmup_steps (int):
         factor (float):
 
     """
@@ -169,8 +171,7 @@ class Controller(object):
     def __init__(self, learning_rate_init, decay_type,
                  decay_start_epoch, decay_rate,
                  decay_patient_epoch=1, lower_better=True, best_value=10000,
-                 model_size=-1, warmup_step=4000, factor=1):
-        self.learning_rate_init = learning_rate_init
+                 model_size=-1, warmup_steps=4000, factor=1):
         self.decay_type = decay_type
         self.decay_start_epoch = decay_start_epoch
         self.decay_rate = decay_rate
@@ -180,21 +181,27 @@ class Controller(object):
         self.best_value = best_value
 
         # for warmup
+        if warmup_steps > 0:
+            self.init_lr = factor * np.power(model_size, -0.5)
+        else:
+            self.init_lr = learning_rate_init
         self.model_size = model_size
-        self.warmup_step = warmup_step
-        self.factor = factor
+        self.warmup_steps = warmup_steps
 
-    def decay_lr(self, optimizer, learning_rate, epoch, value):
+        if decay_type == 'warmup':
+            assert warmup_steps > 0
+
+    def decay_lr(self, optimizer, lr, epoch, value):
         """Decay learning rate per epoch.
 
         Args:
             optimizer:
-            learning_rate (float): the current learning rete
+            lr (float): the current learning rete
             epoch (int): the current epoch
             value: (float) A value to evaluate
         Returns:
             optimizer:
-            learning_rate (float): the decayed learning rate
+            lr (float): the decayed learning rate
 
         """
         if not self.lower_better:
@@ -218,47 +225,47 @@ class Controller(object):
                 else:
                     # Not improved, and learning rate will be decayed
                     self.not_improved_epoch = 0
-                    learning_rate = learning_rate * self.decay_rate
+                    lr *= self.decay_rate
 
                     # Update optimizer
                     for param_group in optimizer.param_groups:
                         if isinstance(optimizer, torch.optim.Adadelta):
-                            param_group['eps'] = learning_rate
+                            param_group['eps'] = lr
                         else:
-                            param_group['lr'] = learning_rate
+                            param_group['lr'] = lr
 
             elif self.decay_type == 'epoch':
-                learning_rate = learning_rate * self.decay_rate
+                lr *= self.decay_rate
 
                 # Update optimizer
                 for param_group in optimizer.param_groups:
                     if isinstance(optimizer, torch.optim.Adadelta):
-                        param_group['eps'] = learning_rate
+                        param_group['eps'] = lr
                     else:
-                        param_group['lr'] = learning_rate
+                        param_group['lr'] = lr
 
-        return optimizer, learning_rate
+        return optimizer, lr
 
-    def warmup_lr(self, optimizer, learning_rate, step):
+    def warmup_lr(self, optimizer, lr, step):
         """Warm up learning rate per step.
 
         Args:
             optimizer:
-            learning_rate (float): the current learning rete
+            lr (float): the current learning rete
             epoch (int): the current epoch
         Returns:
             optimizer:
-            learning_rate (float): the decayed learning rate
+            lr (float): the decayed learning rate
 
         """
-        learning_rate = self.factor * (self.model_size ** (-0.5)
-                                       * min(step ** (-0.5), step * self.warmup_step ** (-1.5)))
+        lr = self.init_lr * np.min([np.power(step, -0.5),
+                                    step * np.power(self.warmup_steps, -1.5)])
 
         # Update optimizer
         for param_group in optimizer.param_groups:
-            param_group['lr'] = learning_rate
+            param_group['lr'] = lr
 
-        return optimizer, learning_rate
+        return optimizer, lr
 
 
 def load_config(config_path):

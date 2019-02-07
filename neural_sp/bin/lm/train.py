@@ -131,7 +131,7 @@ def main():
                             patience_epoch=args.decay_patient_epoch)
 
         epoch, step = 1, 1
-        learning_rate = float(args.learning_rate)
+        lr = float(args.learning_rate)
         metric_dev_best = 10000
 
     else:
@@ -157,7 +157,7 @@ def main():
     #     setproctitle(dir_name)
 
     # Set learning rate controller
-    lr_controller = Controller(learning_rate_init=learning_rate,
+    lr_controller = Controller(learning_rate_init=lr,
                                decay_type=args.decay_type,
                                decay_start_epoch=args.decay_start_epoch,
                                decay_rate=args.decay_rate,
@@ -205,7 +205,7 @@ def main():
                         (step, train_set.epoch_detail,
                          loss_train, loss_dev,
                          math.exp(loss_train), math.exp(loss_dev),
-                         learning_rate, len(ys_train),
+                         lr, len(ys_train),
                          duration_step / 60))
             start_time_step = time.time()
         step += args.ngpus
@@ -223,7 +223,7 @@ def main():
             if epoch < args.eval_start_epoch:
                 # Save the model
                 model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
-                                             learning_rate, metric_dev_best)
+                                             lr, metric_dev_best)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -231,11 +231,9 @@ def main():
                 logger.info('PPL (%s): %.3f' % (dev_set.set, ppl_dev))
 
                 # Update learning rate
-                model.module.optimizer, learning_rate = lr_controller.decay_lr(
-                    optimizer=model.module.optimizer,
-                    learning_rate=learning_rate,
-                    epoch=epoch,
-                    value=ppl_dev)
+                model.module.optimizer, lr = lr_controller.decay_lr(
+                    model.module.optimizer, lr,
+                    epoch=epoch, value=ppl_dev)
 
                 if ppl_dev < metric_dev_best:
                     metric_dev_best = ppl_dev
@@ -244,7 +242,7 @@ def main():
 
                     # Save the model
                     model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
-                                                 learning_rate, metric_dev_best)
+                                                 lr, metric_dev_best)
 
                     # test
                     ppl_test_mean = 0.
@@ -268,7 +266,8 @@ def main():
                     # Convert to fine-tuning stage
                     model.module.set_optimizer(
                         'sgd',
-                        learning_rate_init=float(args.learning_rate),  # TODO: ?
+                        # learning_rate_init=float(args.learning_rate),
+                        learning_rate_init=lr,
                         weight_decay=float(args.weight_decay),
                         clip_grad_norm=args.clip_grad_norm,
                         lr_schedule=False,

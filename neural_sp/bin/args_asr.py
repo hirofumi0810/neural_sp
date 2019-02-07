@@ -216,9 +216,9 @@ def parse():
                         help='')
     parser.add_argument('--warmup_start_learning_rate', type=float, default=1e-4,
                         help='')
-    parser.add_argument('--warmup_step', type=int, default=0,
+    parser.add_argument('--warmup_nsteps', type=int, default=4000,
                         help='')
-    parser.add_argument('--warmup_epoch', type=int, default=0,
+    parser.add_argument('--warmup_nepochs', type=int, default=0,
                         help='')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,

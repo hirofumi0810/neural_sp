@@ -170,6 +170,9 @@ def main():
     #     config['rnnlm_config_cold_fusion']['vocab'] = train_set.vocab
     args.rnnlm_cold_fusion = False
 
+    if args.enc_type == 'transformer':
+        args.decay_type = 'warmup'
+
     # Model setting
     if args.transformer:
         model = Transformer(args)
@@ -279,8 +282,8 @@ def main():
                     if getattr(args, 'bwd_weight_' + sub) > 0:
                         dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
                     if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                        dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') -
-                                                getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                        dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
+                                                - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
         if args.task_specific_layer:
             dir_name += '_tsl'
         # Pre-training
@@ -312,7 +315,7 @@ def main():
             patience_epoch=config['decay_patient_epoch'])
 
         # Restore the last saved model
-        epoch, step, learning_rate, metric_dev_best = model.load_checkpoint(
+        epoch, step, lr, metric_dev_best = model.load_checkpoint(
             save_path=args.resume, epoch=-1, restart=True)
 
         if epoch >= config['convert_to_sgd_epoch']:
@@ -408,7 +411,7 @@ def main():
                             patience_epoch=args.decay_patient_epoch)
 
         epoch, step = 1, 1
-        learning_rate = float(args.learning_rate)
+        lr = float(args.learning_rate)
         metric_dev_best = 10000
 
     train_set.epoch = epoch - 1  # start from index:0
@@ -431,7 +434,7 @@ def main():
     #     setproctitle(dir_name)
 
     # Set learning rate controller
-    lr_controller = Controller(learning_rate_init=learning_rate,
+    lr_controller = Controller(learning_rate_init=lr,
                                decay_type=args.decay_type,
                                decay_start_epoch=args.decay_start_epoch,
                                decay_rate=args.decay_rate,
@@ -439,7 +442,7 @@ def main():
                                lower_better=True,
                                best_value=metric_dev_best,
                                model_size=args.d_model,
-                               warmup_step=args.warmup_step,
+                               warmup_steps=args.warmup_nsteps,
                                factor=1)
 
     # Set reporter
@@ -499,10 +502,8 @@ def main():
 
         # Update learning rate
         if args.decay_type == 'warmup':
-            model.module.optimizer, learning_rate = lr_controller.warmup_lr(
-                optimizer=model.module.optimizer,
-                learning_rate=learning_rate,
-                step=step)
+            model.module.optimizer, lr = lr_controller.warmup_lr(
+                model.module.optimizer, lr, step=step)
 
         if step % args.print_step == 0:
             # Compute loss in the dev set
@@ -523,7 +524,7 @@ def main():
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
                         (step, train_set.epoch_detail,
                          loss_train, loss_dev,
-                         learning_rate, len(batch_train['utt_ids']),
+                         lr, len(batch_train['utt_ids']),
                          x_len, duration_step / 60))
             start_time_step = time.time()
         step += args.ngpus
@@ -541,7 +542,7 @@ def main():
             if epoch < args.eval_start_epoch:
                 # Save the model
                 model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
-                                             learning_rate, metric_dev_best)
+                                             lr, metric_dev_best)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -573,11 +574,9 @@ def main():
 
                 # Update learning rate
                 if args.decay_type != 'warmup':
-                    model.module.optimizer, learning_rate = lr_controller.decay_lr(
-                        optimizer=model.module.optimizer,
-                        learning_rate=learning_rate,
-                        epoch=epoch,
-                        value=metric_dev)
+                    model.module.optimizer, lr = lr_controller.decay_lr(
+                        model.module.optimizer, lr,
+                        epoch=epoch, value=metric_dev)
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
@@ -586,7 +585,7 @@ def main():
 
                     # Save the model
                     model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
-                                                 learning_rate, metric_dev_best)
+                                                 lr, metric_dev_best)
 
                     # test
                     for eval_set in eval_sets:
@@ -637,7 +636,8 @@ def main():
                     # Convert to fine-tuning stage
                     model.module.set_optimizer(
                         'sgd',
-                        learning_rate_init=float(args.learning_rate),  # TODO: ?
+                        # learning_rate_init=float(args.learning_rate),
+                        learning_rate_init=lr,
                         weight_decay=float(args.weight_decay),
                         clip_grad_norm=args.clip_grad_norm,
                         lr_schedule=False,
