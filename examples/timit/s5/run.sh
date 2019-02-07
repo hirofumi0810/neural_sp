@@ -25,12 +25,13 @@ conv_channels=
 conv_kernel_sizes=
 conv_strides=
 conv_poolings=
+conv_batch_norm=
 # VGG
 # conv_channels="64_64_128_128"
 # conv_kernel_sizes="(3,3)_(3,3)_(3,3)_(3,3)"
 # conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
-conv_batch_norm=
+subsample="1_1_1_1_1"
 enc_type=blstm
 enc_nunits=320
 enc_type=bgru
@@ -38,7 +39,6 @@ enc_nunits=256
 enc_nprojs=0
 enc_nlayers=5
 enc_residual=
-subsample="1_1_1_1_1"
 subsample_type=drop
 attn_type=location
 attn_dim=256
@@ -68,8 +68,8 @@ decay_type=epoch
 not_improved_patient_epoch=20
 eval_start_epoch=20
 warmup_start_learning_rate=1e-4
-warmup_step=0
-warmup_epoch=0
+warmup_nsteps=4000
+warmup_nepochs=0
 ### initialization
 param_init=0.1
 param_init_dist=uniform
@@ -244,8 +244,8 @@ if [ ${stage} -le 4 ]; then
     --not_improved_patient_epoch ${not_improved_patient_epoch} \
     --eval_start_epoch ${eval_start_epoch} \
     --warmup_start_learning_rate ${warmup_start_learning_rate} \
-    --warmup_step ${warmup_step} \
-    --warmup_epoch ${warmup_epoch} \
+    --warmup_nsteps ${warmup_nsteps} \
+    --warmup_nepochs ${warmup_nepochs} \
     --param_init ${param_init} \
     --param_init_dist ${param_init_dist} \
     --pretrained_model ${pretrained_model} \

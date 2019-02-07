@@ -33,14 +33,20 @@ conv_channels=
 conv_kernel_sizes=
 conv_strides=
 conv_poolings=
-conv_batch_norm=
+conv_batch_norm
+subsample="1_2_2_2_1"
+# VGG
+# conv_channels="64_64_128_128"
+# conv_kernel_sizes="(3,3)_(3,3)_(3,3)_(3,3)"
+# conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
+# conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
+# subsample="1_1_1_1_1"
 enc_type=blstm
 enc_nunits=320
 enc_nprojs=0
 enc_nlayers=5
 enc_nlayers_sub1=4
 enc_residual=
-subsample="1_2_2_2_1"
 subsample_type=drop
 attn_type=location
 attn_dim=320
@@ -53,6 +59,8 @@ dec_nlayers=1
 dec_nlayers_sub1=1
 dec_loop_type=normal
 dec_residual=
+dec_add_ffl=
+dec_layerwise_attention=
 input_feeding=
 emb_dim=320
 tie_embedding=
@@ -72,8 +80,8 @@ decay_type=epoch
 not_improved_patient_epoch=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
-warmup_step=0
-warmup_epoch=0
+warmup_nsteps=4000
+warmup_nepochs=0
 ### initialization
 param_init=0.1
 param_init_dist=uniform
@@ -89,6 +97,7 @@ weight_decay=1e-6
 ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
+layer_norm=
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
@@ -357,6 +366,7 @@ if [ ${stage} -le 4 ]; then
     --enc_nlayers ${enc_nlayers} \
     --enc_nlayers_sub1 ${enc_nlayers_sub1} \
     --enc_residual ${enc_residual} \
+    --enc_add_ffl ${enc_add_ffl} \
     --subsample ${subsample} \
     --subsample_type ${subsample_type} \
     --attn_type ${attn_type} \
@@ -370,6 +380,8 @@ if [ ${stage} -le 4 ]; then
     --dec_nlayers_sub1 ${dec_nlayers_sub1} \
     --dec_loop_type ${dec_loop_type} \
     --dec_residual ${dec_residual} \
+    --dec_add_ffl ${dec_add_ffl} \
+    --dec_layerwise_attention ${dec_layerwise_attention} \
     --input_feeding ${input_feeding} \
     --emb_dim ${emb_dim} \
     --tie_embedding ${tie_embedding} \
@@ -388,8 +400,8 @@ if [ ${stage} -le 4 ]; then
     --not_improved_patient_epoch ${not_improved_patient_epoch} \
     --eval_start_epoch ${eval_start_epoch} \
     --warmup_start_learning_rate ${warmup_start_learning_rate} \
-    --warmup_step ${warmup_step} \
-    --warmup_epoch ${warmup_epoch} \
+    --warmup_nsteps ${warmup_nsteps} \
+    --warmup_nepochs ${warmup_nepochs} \
     --param_init ${param_init} \
     --param_init_dist ${param_init_dist} \
     --pretrained_model ${pretrained_model} \
@@ -403,6 +415,7 @@ if [ ${stage} -le 4 ]; then
     --ss_prob ${ss_prob} \
     --ss_type ${ss_type} \
     --lsm_prob ${lsm_prob} \
+    --layer_norm ${layer_norm} \
     --focal_loss_weight ${focal_loss} \
     --ctc_weight ${ctc_weight} \
     --ctc_weight_sub1 ${ctc_weight_sub1} \
