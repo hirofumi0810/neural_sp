@@ -191,6 +191,7 @@ def main():
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
+            logger.info('cache size: %d' % (args.recog_ncaches))
 
             # GPU setting
             model.cuda()
