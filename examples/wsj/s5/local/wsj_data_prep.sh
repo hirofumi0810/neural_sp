@@ -27,14 +27,15 @@ if [ -z $IRSTLM ] ; then
   export IRSTLM=$KALDI_ROOT/tools/irstlm/
 fi
 export PATH=${PATH}:$IRSTLM/bin
-if ! command -v prune-lm >/dev/null 2>&1 ; then
-  echo "$0: Error: the IRSTLM is not available or compiled" >&2
-  echo "$0: Error: We used to install it by default, but." >&2
-  echo "$0: Error: this is no longer the case." >&2
-  echo "$0: Error: To install it, go to $KALDI_ROOT/tools" >&2
-  echo "$0: Error: and run extras/install_irstlm.sh" >&2
-  exit 1
-fi
+# if ! command -v prune-lm >/dev/null 2>&1 ; then
+#   echo "$0: Error: the IRSTLM is not available or compiled" >&2
+#   echo "$0: Error: We used to install it by default, but." >&2
+#   echo "$0: Error: this is no longer the case." >&2
+#   echo "$0: Error: To install it, go to $KALDI_ROOT/tools" >&2
+#   echo "$0: Error: and run extras/install_irstlm.sh" >&2
+#   exit 1
+# fi
+# TODO(hirofumi): install IRSTLM
 
 cd $dir
 # Make directory of links to the WSJ disks such as 11-13.1.  This relies on the command
@@ -166,8 +167,8 @@ cat links/13-32.1/wsj1/doc/lng_modl/base_lm/tcb20onp.z | \
  perl -e 'while(<>){ if(m/^\\data\\/){ print; last;  } } while(<>){ print; }' | \
  gzip -c -f > $lmdir/lm_tg.arpa.gz || exit 1;
 
-prune-lm --threshold=1e-7 $lmdir/lm_tg.arpa.gz $lmdir/lm_tgpr.arpa || exit 1;
-gzip -f $lmdir/lm_tgpr.arpa || exit 1;
+# prune-lm --threshold=1e-7 $lmdir/lm_tg.arpa.gz $lmdir/lm_tgpr.arpa || exit 1;
+# gzip -f $lmdir/lm_tgpr.arpa || exit 1;
 
 # repeat for 5k language models
 cp links/13-32.1/wsj1/doc/lng_modl/base_lm/bcb05onp.z  $lmdir/lm_bg_5k.arpa.gz || exit 1;
@@ -180,8 +181,8 @@ gunzip $lmdir/lm_tg_5k.arpa.gz
 tail -n 4328839 $lmdir/lm_tg_5k.arpa | gzip -c -f > $lmdir/lm_tg_5k.arpa.gz
 rm $lmdir/lm_tg_5k.arpa
 
-prune-lm --threshold=1e-7 $lmdir/lm_tg_5k.arpa.gz $lmdir/lm_tgpr_5k.arpa || exit 1;
-gzip -f $lmdir/lm_tgpr_5k.arpa || exit 1;
+# prune-lm --threshold=1e-7 $lmdir/lm_tg_5k.arpa.gz $lmdir/lm_tgpr_5k.arpa || exit 1;
+# gzip -f $lmdir/lm_tgpr_5k.arpa || exit 1;
 
 
 if [ ! -f wsj0-train-spkrinfo.txt ] || [ `cat wsj0-train-spkrinfo.txt | wc -l` -ne 134 ]; then
