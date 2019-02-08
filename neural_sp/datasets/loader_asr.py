@@ -205,8 +205,8 @@ class Dataset(Base):
 
             if df_sub1 is not None:
                 if ctc_sub1 and subsample_factor_sub1 > 1:
-                    df_sub1 = df_sub1[df_sub1.apply(lambda x: x['y_len'] <= x['x_len'] //
-                                                    subsample_factor_sub1, axis=1)]
+                    df_sub1 = df_sub1[df_sub1.apply(lambda x: x['y_len'] <= x['x_len']
+                                                    // subsample_factor_sub1, axis=1)]
 
                 if len(df) != len(df_sub1):
                     nutt = len(df)
@@ -216,8 +216,8 @@ class Dataset(Base):
 
             if df_sub2 is not None:
                 if ctc_sub2 and subsample_factor_sub2 > 1:
-                    df_sub2 = df_sub2[df_sub2.apply(lambda x: x['y_len'] <= x['x_len'] //
-                                                    subsample_factor_sub2, axis=1)]
+                    df_sub2 = df_sub2[df_sub2.apply(lambda x: x['y_len'] <= x['x_len']
+                                                    // subsample_factor_sub2, axis=1)]
 
                 if len(df) != len(df_sub2):
                     nutt = len(df)
@@ -228,8 +228,8 @@ class Dataset(Base):
 
             if df_sub3 is not None:
                 if ctc_sub3 and subsample_factor_sub3 > 1:
-                    df_sub3 = df_sub3[df_sub3.apply(lambda x: x['y_len'] <= x['x_len'] //
-                                                    subsample_factor_sub3, axis=1)]
+                    df_sub3 = df_sub3[df_sub3.apply(lambda x: x['y_len'] <= x['x_len']
+                                                    // subsample_factor_sub3, axis=1)]
 
                 if len(df) != len(df_sub3):
                     nutt = len(df)
@@ -319,10 +319,17 @@ class Dataset(Base):
 
         utt_ids = [self.df['utt_id'][i].encode('utf-8') for i in utt_indices]
 
-        return {'xs': xs, 'xlens': xlens,
-                'ys': ys, 'ylens': ylens,
-                'ys_sub1': ys_sub1, 'ylens_sub1': ylens_sub1,
-                'ys_sub2': ys_sub2, 'ylens_sub2': ylens_sub2,
-                'ys_sub3': ys_sub3, 'ylens_sub3': ylens_sub3,
-                'utt_ids':  utt_ids, 'text': text,
-                'feat_path': [self.df['feat_path'][i] for i in utt_indices]}
+        batch_dict = {'xs': xs, 'xlens': xlens,
+                      'ys': ys, 'ylens': ylens,
+                      'ys_sub1': ys_sub1, 'ylens_sub1': ylens_sub1,
+                      'ys_sub2': ys_sub2, 'ylens_sub2': ylens_sub2,
+                      'ys_sub3': ys_sub3, 'ylens_sub3': ylens_sub3,
+                      'utt_ids':  utt_ids, 'speakers': None,
+                      'text': text,
+                      'feat_path': [self.df['feat_path'][i] for i in utt_indices]}
+
+        if self.is_test:
+            speakers = ['_'.join(utt_id.replace('-', '_').split('_')[:-2]) for utt_id in utt_ids]
+            batch_dict['speakers'] = speakers
+
+        return batch_dict

@@ -19,7 +19,6 @@ from neural_sp.bin.asr.plot_utils import plot_ctc_probs
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
-from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.utils.general import mkdir_join
 
@@ -84,6 +83,7 @@ def main():
             model.cuda()
 
             logger.info('epoch: %d' % (epoch - 1))
+            logger.info('batch size: %d' % args.recog_batch_size)
 
         save_path = mkdir_join(args.plot_dir, 'att_weights')
 
@@ -92,11 +92,22 @@ def main():
             shutil.rmtree(save_path)
             os.mkdir(save_path)
 
+        if args.unit == 'word':
+            id2token = dataset.id2word
+        elif args.unit == 'wp':
+            id2token = dataset.id2wp
+        elif args.unit == 'char':
+            id2token = dataset.id2char
+        elif args.unit == 'phone':
+            id2token = dataset.id2phone
+        else:
+            raise NotImplementedError(args.unit)
+
         while True:
             batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
-            best_hyps, aws, perm_idx = model.decode(batch['xs'], decode_params,
-                                                    exclude_eos=False)
-            ys = [batch['ys'][i] for i in perm_idx]
+            best_hyps, aws, perm_id, _ = model.decode(batch['xs'], decode_params,
+                                                      exclude_eos=False)
+            ys = [batch['ys'][i] for i in perm_id]
 
             # Get CTC probs
             ctc_probs, indices_topk, xlens = model.get_ctc_posteriors(
@@ -104,16 +115,7 @@ def main():
             # NOTE: ctc_probs: '[B, T, topk]'
 
             for b in range(len(batch['xs'])):
-                if args.unit == 'word':
-                    token_list = dataset.idx2word(best_hyps[b], return_list=True)
-                elif args.unit == 'wp':
-                    token_list = dataset.idx2wp(best_hyps[b], return_list=True)
-                elif args.unit == 'char':
-                    token_list = dataset.idx2char(best_hyps[b], return_list=True)
-                elif args.unit == 'phone':
-                    token_list = dataset.idx2phone(best_hyps[b], return_list=True)
-                else:
-                    raise NotImplementedError(args.unit)
+                token_list = id2token(best_hyps[b], return_list=True)
                 token_list = [unicode(t, 'utf-8') for t in token_list]
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
 

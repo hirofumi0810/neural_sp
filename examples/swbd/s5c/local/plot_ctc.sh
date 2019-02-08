@@ -7,7 +7,7 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/csj
+data=/n/sd8/inaguma/corpus/swbd
 
 epoch=-1
 batch_size=1
@@ -28,7 +28,7 @@ if [ -z ${gpu} ]; then
 fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
 
-for set in eval1 eval2 eval3; do
+for set in eval2000; do
   recog_dir=${model}/plot_${set}_ep${epoch}
   if [ ! -z ${recog_unit} ]; then
       recog_dir=${recog_dir}_${recog_unit}
@@ -36,16 +36,16 @@ for set in eval1 eval2 eval3; do
   mkdir -p ${recog_dir}
 
   if [ `echo ${model} | grep 'train_sp'` ]; then
-    if [ `echo ${model} | grep 'all'` ]; then
-      recog_set=${data}/dataset/${set}_sp_all_wpbpe30000.csv
-    elif [ `echo ${model} | grep 'aps_other'` ]; then
-      recog_set=${data}/dataset/${set}_sp_aps_other_wpbpe10000.csv
+    if [ `echo ${model} | grep 'fisher_swbd'` ]; then
+      recog_set=${data}/dataset/${set}_sp_fisher_swbd_wpbpe30000.csv
+    else
+      recog_set=${data}/dataset/${set}_sp_swbd_wpbpe10000.csv
     fi
   else
-    if [ `echo ${model} | grep 'all'` ]; then
-      recog_set=${data}/dataset/${set}_all_wpbpe30000.csv
-    elif [ `echo ${model} | grep 'aps_other'` ]; then
-      recog_set=${data}/dataset/${set}_aps_other_wpbpe10000.csv
+    if [ `echo ${model} | grep 'fisher_swbd'` ]; then
+      recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe30000.csv
+    else
+      recog_set=${data}/dataset/${set}_swbd_wpbpe10000.csv
     fi
   fi
 
@@ -56,5 +56,4 @@ for set in eval1 eval2 eval3; do
     --recog_batch_size ${batch_size} \
     --recog_unit ${recog_unit} \
     --recog_dir ${recog_dir} || exit 1;
-
 done

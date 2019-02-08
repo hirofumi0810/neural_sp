@@ -62,19 +62,19 @@ class Decoder(nn.Module):
         attn_nheads ():
         dropout_att ():
         rnn_type (str): lstm or gru
-        nunits (int): the number of units in each RNN layer
-        nprojs (int): the number of units in each projection layer
-        nlayers (int): the number of RNN layers
+        nunits (int): number of units in each RNN layer
+        nprojs (int): number of units in each projection layer
+        nlayers (int): number of RNN layers
         loop_type (str): normal or lmdecoder or conditional or rnmt
         residual (bool):
         add_ffl (bool):
         layerwise_attention (bool):
-        emb_dim (int): the dimension of the embedding in target spaces.
+        emb_dim (int): dimension of the embedding in target spaces.
         tie_embedding (bool):
-        vocab (int): the number of nodes in softmax layer
-        logits_temp (float): a parameter for smoothing the softmax layer in outputing probabilities
-        dropout (float): the probability to drop nodes in the RNN layer
-        dropout_emb (float): the probability to drop nodes of the embedding layer
+        vocab (int): number of nodes in softmax layer
+        logits_temp (float): a parameter for smoothing the softmax layer in output probabilities
+        dropout (float): probability to drop nodes in the RNN layer
+        dropout_emb (float): probability to drop nodes of the embedding layer
         dropout_att (float):
         ss_prob (float): scheduled sampling probability
         ss_type (str): constant or saturation
@@ -197,6 +197,11 @@ class Decoder(nn.Module):
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
+
+        # for cache
+        self.global_cache_keys = []
+        self.global_cache_values = []
+        self.prev_speaker = ''
 
         if ctc_weight > 0:
             # Fully-connected layers for CTC
@@ -536,7 +541,7 @@ class Decoder(nn.Module):
             if self.loop_type == 'lmdecoder':
                 logits_t = self.output_lmobj(dstates['dout_lmdec'])
             elif self.loop_type == 'normal':
-                attn_vec = self.generate(con_vec, dstates['dout_generate'])
+                attn_vec = self.generate(con_vec, dstates['dout_gen'])
                 logits_t = self.output(attn_vec)
             logits.append(logits_t)
 
@@ -638,11 +643,11 @@ class Decoder(nn.Module):
                 dstates = self.recurrency_step2(con_vec, dstates)
 
             # Generate
-            attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
+            attn_vec = self.generate(con_vec, dstates['dout_gen'], logits_lm_t, lm_out)
             logits.append(self.output(attn_vec))
 
             if extract_dout or (self.twin_net_weight > 0 and not self.backward):
-                douts.append(dstates['dout_generate'])
+                douts.append(dstates['dout_gen'])
 
         if extract_dout:
             return torch.cat(douts[::-1], dim=1)
@@ -720,14 +725,14 @@ class Decoder(nn.Module):
 
         """
         dstates = {'dout_score': None,  # for attention score
-                   'dout_generate': None,  # for token generation
+                   'dout_gen': None,  # for token generation
                    'dstate': None,
                    'dstate1': None,
                    'dstate2': None}
         dstates['dout_score'] = torch.zeros((bs, 1, self.dec_nunits),
                                             dtype=torch.float32).cuda(self.device_id)
-        dstates['dout_generate'] = torch.zeros((bs, 1, self.dec_nunits),
-                                               dtype=torch.float32).cuda(self.device_id)
+        dstates['dout_gen'] = torch.zeros((bs, 1, self.dec_nunits),
+                                          dtype=torch.float32).cuda(self.device_id)
         if self.loop_type in ['conditional', 'rnmt']:
             hxs1 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
                     for l in range(1)]
@@ -757,7 +762,7 @@ class Decoder(nn.Module):
         Returns:
             dstates_new (dict):
                 dout_score (FloatTensor): `[B, 1, nunits]`
-                dout_generate (FloatTensor): `[B, 1, nunits]`
+                dout_gen (FloatTensor): `[B, 1, nunits]`
                 dstate (tuple): A tuple of (hxs, cxs)
                     hxs (list of FloatTensor):
                     cxs (list of FloatTensor):
@@ -768,7 +773,7 @@ class Decoder(nn.Module):
         con_vec = con_vec.squeeze(1)
 
         dstates_new = {'dout_score': None,  # for attention score
-                       'dout_generate': None,  # for token generation
+                       'dout_gen': None,  # for token generation
                        'dout_lmdec': None,
                        'dstate': None}
         if self.loop_type == 'lmdecoder':
@@ -823,7 +828,7 @@ class Decoder(nn.Module):
                 dout = dout_tmp
 
         # the top layer
-        dstates_new['dout_generate'] = dout.unsqueeze(1)
+        dstates_new['dout_gen'] = dout.unsqueeze(1)
         dstates_new['dstate'] = (hxs[:], cxs[:])
         return dstates_new
 
@@ -893,7 +898,7 @@ class Decoder(nn.Module):
                     cxs (list of FloatTensor):
         Returns:
             dstates_new (dict):
-                dout_generate (FloatTensor): `[B, 1, nunits]`
+                dout_gen (FloatTensor): `[B, 1, nunits]`
                 dstate1 (tuple): A tuple of (hxs, cxs),
                     hxs (list of FloatTensor):
                     cxs (list of FloatTensor):
@@ -905,7 +910,7 @@ class Decoder(nn.Module):
         hxs, cxs = dstates['dstate2']
         con_vec = con_vec.squeeze(1)
 
-        dstates_new = {'dout_generate': None,  # for token generation
+        dstates_new = {'dout_gen': None,  # for token generation
                        'dstate1': None,
                        'dstate2': None}
 
@@ -949,7 +954,7 @@ class Decoder(nn.Module):
                     dout = dout_tmp
 
         # the top layer
-        dstates_new['dout_generate'] = dout.unsqueeze(1)
+        dstates_new['dout_gen'] = dout.unsqueeze(1)
         dstates_new['dstate1'] = (dstates['dstate1'][0][:], dstates['dstate1'][1][:])
         dstates_new['dstate2'] = (hxs[:], cxs[:])
         return dstates_new
@@ -986,7 +991,7 @@ class Decoder(nn.Module):
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
             elens (list): A list of length `[B]`
-            max_len_ratio (int): the maximum sequence length of tokens
+            max_len_ratio (int): maximum sequence length of tokens
             exclude_eos (bool):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
@@ -1038,7 +1043,7 @@ class Decoder(nn.Module):
                 dstates = self.recurrency_step2(con_vec, dstates)
 
             # Generate
-            attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
+            attn_vec = self.generate(con_vec, dstates['dout_gen'], logits_lm_t, lm_out)
             logits_t = self.output(attn_vec)
 
             # Pick up 1-best
@@ -1091,20 +1096,21 @@ class Decoder(nn.Module):
 
     def beam_search(self, eouts, elens, params, rnnlm, rnnlm_rev=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False, id2token=None, refs=None,
-                    ensemble_eouts=None, ensemble_elens=None, ensemble_decoders=[]):
+                    ensemble_eouts=None, ensemble_elens=None, ensemble_decoders=[], speakers=None):
         """Beam search decoding in the inference stage.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_units]`
             elens (list): A list of length `[B]`
             params (dict):
-                beam_width (int): the size of beam
-                max_len_ratio (int): the maximum sequence length of tokens
-                min_len_ratio (float): the minimum sequence length of tokens
+                beam_width (int): size of beam
+                max_len_ratio (int): maximum sequence length of tokens
+                min_len_ratio (float): minimum sequence length of tokens
                 length_penalty (float): length penalty
                 coverage_penalty (float): coverage penalty
                 coverage_threshold (float): threshold for coverage penalty
-                rnnlm_weight (float): the weight of RNNLM score
+                rnnlm_weight (float): weight of RNNLM score
+                ncaches (int):
             rnnlm (torch.nn.Module):
             rnnlm_rev (torch.nn.Module):
             ctc_log_probs (torch.FloatTensor):
@@ -1115,6 +1121,7 @@ class Decoder(nn.Module):
             ensemble_eouts (list): list of FloatTensor
             ensemble_elens (list) list of list
             ensemble_decoders (list): list of torch.nn.Module
+            speakers (list):
         Returns:
             nbest_hyps (list): A list of length `[B]`, which contains list of n hypotheses
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -1132,6 +1139,7 @@ class Decoder(nn.Module):
         cp_threshold = params['recog_coverage_threshold']
         rnnlm_weight = params['recog_rnnlm_weight']
         gnmt_decoding = params['recog_gnmt_decoding']
+        ncaches = params['recog_ncaches']
 
         # For cold fusion
         if rnnlm_weight > 0 and self.cold_fusion:
@@ -1181,6 +1189,10 @@ class Decoder(nn.Module):
                         ensemble_con_vec += [eouts.new_zeros(1, 1, dec.enc_nunits)]
                     dec.score.reset()
 
+            if speakers[b] != self.prev_speaker:
+                self.reset_global_cache()
+            self.prev_speaker = speakers[b]
+
             complete = []
             beam = [{'hyp': [sos],
                      'score': 0,
@@ -1199,7 +1211,11 @@ class Decoder(nn.Module):
                      'ensemble_con_vec': ensemble_con_vec,
                      'ensemble_aws':[[None] for _ in range(nmodels)],
                      'ctc_state':  ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
-                     'ctc_score': 0
+                     'ctc_score': 0,
+                     'local_cache_keys': [],
+                     'local_cache_values': [],
+                     'cache_keys_history': [None],
+                     'cache_probs_history': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.global_cache_keys) == 0 else [],
                      }]
             max_ylen = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
             for t in range(max_ylen):
@@ -1216,7 +1232,7 @@ class Decoder(nn.Module):
                         dstates = self.recurrency(y_emb,
                                                   beam[i_beam]['con_vec'],
                                                   beam[i_beam]['dstates']['dstate'])
-                    # Recurrency (1st) for ensemble
+                    # Recurrency (1st) for the ensemble
                     ensemble_dstates = []
                     if nmodels > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
@@ -1265,10 +1281,10 @@ class Decoder(nn.Module):
                     else:
                         logits_lm_t, lm_out, rnnlm_state = None, None, None
 
-                    # Recurrency (2nd, only for the internal decoder)
+                    # Recurrency (2nd, only for the internal decoder) for the main model
                     if self.loop_type in ['conditional', 'rnmt']:
                         dstates = self.recurrency_step2(con_vec, dstates)
-                    # ensemble
+                    # Recurrency (2nd, only for the internal decoder) for the ensemble
                     ensemble_dstates_tmp = []
                     if nmodels > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
@@ -1278,26 +1294,51 @@ class Decoder(nn.Module):
                                     ensemble_dstates[i_e])]
                             else:
                                 ensemble_dstates_tmp += [ensemble_dstates[i_e]]
-                    ensemble_dstates = ensemble_dstates_tmp
+                    ensemble_dstates = ensemble_dstates_tmp[:]
 
                     # Generate for the main model
-                    attn_vec = self.generate(con_vec, dstates['dout_generate'], logits_lm_t, lm_out)
-                    log_probs = F.log_softmax(self.output(attn_vec).squeeze(1), dim=1)
+                    attn_vec = self.generate(con_vec, dstates['dout_gen'], logits_lm_t, lm_out)
+                    probs = F.softmax(self.output(attn_vec).squeeze(1), dim=1)
                     # NOTE: `[1 (B), 1, vocab]` -> `[1 (B), vocab]`
-                    # Generate for ensemble
+
+                    # Cache decoding
+                    exist_cache = len(self.global_cache_keys + beam[i_beam]['local_cache_keys']) > 0
+                    cache_probs_sum = torch.zeros_like(probs)
+                    cache_theta = 1.0  # smoothing parameter
+                    cache_lambda = 0.2  # cache weight
+                    if ncaches > 0 and exist_cache:
+                        # Compute inner-product over cache
+                        cache_keys_all = self.global_cache_keys + beam[i_beam]['local_cache_keys']
+                        cache_values_all = self.global_cache_values + beam[i_beam]['local_cache_values']
+                        cache_keys = cache_keys_all[-ncaches:]
+                        cache_values = torch.cat(cache_values_all[-ncaches:], dim=1)  # `[1, L, dec_nunits]`
+                        cache_probs = F.softmax(cache_theta * torch.matmul(
+                            cache_values, dstates['dout_gen'].transpose(1, 2)), dim=1)  # `[1, L, 1]`
+
+                        # Sum all probabilities
+                        for c in set(beam[i_beam]['local_cache_keys']):
+                            for offset in [i for i, key in enumerate(cache_keys) if key == c]:
+                                cache_probs_sum[0, c] += cache_probs[0, offset, 0]
+                        probs = (1 - cache_lambda) * probs + cache_lambda * cache_probs_sum
+                    else:
+                        cache_keys = None
+                        cache_probs =None
+
+                    log_probs = torch.log(probs)
+                    # Generate for the ensemble
                     if nmodels > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
                             attn_vec = dec.generate(ensemble_con_vec[i_e],
-                                                    ensemble_dstates[i_e]['dout_generate'],
+                                                    ensemble_dstates[i_e]['dout_gen'],
                                                     logits_lm_t, lm_out)
                             log_probs += F.log_softmax(dec.output(attn_vec).squeeze(1), dim=1)
                         # re-normalize
                         log_probs /= (nmodels + 1)
+                        # TODO(hirofumi): cache
 
                     # Pick up the top-k scores
                     log_probs_topk, indices_topk = torch.topk(
-                        log_probs, k=beam_width,
-                        dim=1, largest=True, sorted=True)
+                        log_probs, k=beam_width, dim=1, largest=True, sorted=True)
 
                     scores_att = beam[i_beam]['score_att'] + log_probs_topk
                     local_scores = scores_att.clone()
@@ -1338,7 +1379,7 @@ class Decoder(nn.Module):
                     if rnnlm_weight > 0:
                         lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
                         scores_lm = beam[i_beam]['score_lm'] + lm_log_probs[0, indices_topk[0]]
-                        score_lm_norm = scores_lm / lp  # normalize
+                        score_lm_norm = scores_lm / lp  # normalize by length
                         local_scores += score_lm_norm * rnnlm_weight
                     else:
                         scores_lm = torch.zeros((beam_width,), dtype=torch.float32)
@@ -1357,8 +1398,10 @@ class Decoder(nn.Module):
                         scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
 
                     for k in range(beam_width):
+                        top_id = indices_topk[0, k].item()
+
                         # Exclude short hypotheses
-                        if indices_topk[0, k].item() == eos and len(beam[i_beam]['hyp']) - 1 < elens[b] * params['recog_min_len_ratio']:
+                        if top_id == eos and len(beam[i_beam]['hyp']) - 1 < elens[b] * params['recog_min_len_ratio']:
                             continue
 
                         score_att = scores_att[0, k].item()
@@ -1367,7 +1410,7 @@ class Decoder(nn.Module):
                         score_t = score_att * (1 - ctc_weight) + score_ctc * ctc_weight + score_lm * rnnlm_weight
 
                         new_beam.append(
-                            {'hyp': beam[i_beam]['hyp'] + [indices_topk[0, k].item()],
+                            {'hyp': beam[i_beam]['hyp'] + [top_id],
                              'score': local_scores[0, k].item(),
                              #  'scores': beam[i_beam]['scores'] + [score_t],
                              'scores': beam[i_beam]['scores'] + [local_scores[0, k].item()],
@@ -1386,7 +1429,11 @@ class Decoder(nn.Module):
                              'ensemble_con_vec': ensemble_con_vec,
                              'ensemble_aws': ensemble_aws,
                              'ctc_state': ctc_states[joint_indices_topk[0, k]] if ctc_log_probs is not None else None,
-                             'ctc_score': ctc_scores[joint_indices_topk[0, k]] if ctc_log_probs is not None else None
+                             'ctc_score': ctc_scores[joint_indices_topk[0, k]] if ctc_log_probs is not None else None,
+                             'local_cache_keys': beam[i_beam]['local_cache_keys'] + [top_id],
+                             'local_cache_values': beam[i_beam]['local_cache_values'] + [dstates['dout_gen']],
+                             'cache_keys_history': beam[i_beam]['cache_keys_history'] + [cache_keys] if exist_cache else beam[i_beam]['cache_keys_history'],
+                             'cache_probs_history': beam[i_beam]['cache_probs_history'] + [cache_probs] if exist_cache else beam[i_beam]['cache_probs_history'],
                              })
 
                 new_beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
@@ -1499,7 +1546,39 @@ class Decoder(nn.Module):
                 nbest_hyps = [[nbest_hyps[b][n][:-1] if eos_flags[b][n]
                                else nbest_hyps[b][n] for n in range(nbest)] for b in range(bs)]
 
-        return nbest_hyps, aws, scores, scores_cp
+        # Pop to cache
+        if ncaches > 0:
+            hyp_len = len(complete[0]['hyp'][1:])
+            self.store_global_cache(complete[0]['local_cache_keys'],
+                                    complete[0]['local_cache_values'],
+                                    ncaches)
+            cache_keys_history = complete[0]['cache_keys_history']
+            cache_probs_history = torch.zeros((1, complete[0]['cache_probs_history'][-1].size(1), hyp_len), dtype=torch.float32)
+            for i, p in enumerate(complete[0]['cache_probs_history']):
+                if p.size(1) < ncaches:
+                    cache_probs_history[0, :p.size(1), i] = p[0, :, 0].cpu()
+                else:
+                    cache_probs_history[0, :ncaches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
+        else:
+            cache_keys_history = None
+            cache_probs_history = None
+
+        return nbest_hyps, aws, scores, scores_cp, (cache_probs_history, cache_keys_history)
+
+    def store_global_cache(self, keys, values, ncaches):
+        self.global_cache_keys += keys
+        self.global_cache_values += values
+
+        # trancate cache
+        if len(self.global_cache_keys) > ncaches:
+            self.global_cache_keys = self.global_cache_keys[:ncaches]
+            self.global_cache_values = self.global_cache_values[:ncaches]
+
+    def reset_global_cache(self):
+        """Reset global cache when the speaker/session is changed
+        """
+        self.global_cache_keys = []
+        self.global_cache_values = []
 
     def decode_ctc(self, eouts, xlens, beam_width=1, rnnlm=None):
         """Decoding by the CTC layer in the inference stage.
@@ -1507,7 +1586,7 @@ class Decoder(nn.Module):
             This is only used for Joint CTC-Attention model.
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
-            beam_width (int): the size of beam
+            beam_width (int): size of beam
             rnnlm ():
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`

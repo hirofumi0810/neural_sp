@@ -35,6 +35,7 @@ fwd_bwd_attention=false
 bwd_attention=false
 reverse_lm_rescoring=false
 checkpoint_ensemble=1  # the number of checkpoints to use
+ncaches=0
 recog_unit=
 
 . ./cmd.sh
@@ -75,6 +76,9 @@ for set in dev_clean dev_other test_clean test_other; do
   if [ ${checkpoint_ensemble} != 1 ]; then
     recog_dir=${recog_dir}_checkpoint${checkpoint_ensemble}
   fi
+  if [ ${ncaches} != 1 ]; then
+    recog_dir=${recog_dir}_cache${ncaches}
+  fi
   if [ ! -z ${model7} ]; then
     recog_dir=${recog_dir}_ensemble8
   elif [ ! -z ${model6} ]; then
@@ -114,6 +118,7 @@ for set in dev_clean dev_other test_clean test_other; do
     --recog_bwd_attention ${bwd_attention} \
     --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
     --recog_checkpoint_ensemble ${checkpoint_ensemble} \
+    --recog_ncaches ${ncaches} \
     --recog_unit ${recog_unit} \
     --recog_dir ${recog_dir} || exit 1;
 

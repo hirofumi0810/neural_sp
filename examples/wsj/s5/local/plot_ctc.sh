@@ -7,7 +7,7 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/csj
+data=/n/sd8/inaguma/corpus/wsj
 
 epoch=-1
 batch_size=1
@@ -28,33 +28,18 @@ if [ -z ${gpu} ]; then
 fi
 gpu=`echo ${gpu} | cut -d "," -f 1`
 
-for set in eval1 eval2 eval3; do
+for set in test_dev93 test_eval92; do
   recog_dir=${model}/plot_${set}_ep${epoch}
   if [ ! -z ${recog_unit} ]; then
       recog_dir=${recog_dir}_${recog_unit}
   fi
   mkdir -p ${recog_dir}
 
-  if [ `echo ${model} | grep 'train_sp'` ]; then
-    if [ `echo ${model} | grep 'all'` ]; then
-      recog_set=${data}/dataset/${set}_sp_all_wpbpe30000.csv
-    elif [ `echo ${model} | grep 'aps_other'` ]; then
-      recog_set=${data}/dataset/${set}_sp_aps_other_wpbpe10000.csv
-    fi
-  else
-    if [ `echo ${model} | grep 'all'` ]; then
-      recog_set=${data}/dataset/${set}_all_wpbpe30000.csv
-    elif [ `echo ${model} | grep 'aps_other'` ]; then
-      recog_set=${data}/dataset/${set}_aps_other_wpbpe10000.csv
-    fi
-  fi
-
   CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/plot_ctc.py \
-    --recog_sets ${recog_set} \
+    --recog_sets ${data}/dataset/${set}_char.csv \
     --recog_model ${model} \
     --recog_epoch ${epoch} \
     --recog_batch_size ${batch_size} \
     --recog_unit ${recog_unit} \
     --recog_dir ${recog_dir} || exit 1;
-
 done

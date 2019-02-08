@@ -27,15 +27,45 @@ green = '#006400'
 sns.set(font='Noto Sans CJK JP')
 
 
-def plot_attention_weights(aw, token_list=[], spectrogram=None, text_ref=None,
-                           save_path=None, figsize=(10, 4)):
+def plot_cache_weights(cache_probs, keys, querys,
+                       save_path=None, figsize=(20, 8)):
+    """Plot weights over cache.
+
+    Args:
+        cache_probs (np.ndarray): A tensor of size `[L, T]`
+        keys (list):
+        querys ():
+        save_path (str): path to save a figure of CTC posterior (utterance)
+        figsize (tuple):
+
+    """
+    plt.clf()
+    plt.figure(figsize=figsize)
+
+    sns.heatmap(cache_probs.transpose(0, 1), cmap='viridis',
+                xticklabels=keys,
+                yticklabels=querys,
+                vmin=0, vmax=1)
+    # cbar_kws={"orientation": "horizontal"}
+    plt.ylabel(u'Query (←)', fontsize=8)
+    plt.yticks(rotation=0)
+
+    # Save as a png file
+    if save_path is not None:
+        plt.savefig(save_path, dvi=500)
+
+    plt.close()
+
+
+def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
+                           save_path=None, figsize=(20, 8)):
     """Plot attention weights.
 
     Args:
         aw (np.ndarray): A tensor of size `[L, T]`
-        token_list (list):
+        tokens (list):
         spectrogram (np.ndarray): A tensor of size `[T, feature_dim]`
-        text_ref (str):
+        ref (str):
         save_path (str): path to save a figure of CTC posterior (utterance)
         figsize (tuple):
 
@@ -44,19 +74,17 @@ def plot_attention_weights(aw, token_list=[], spectrogram=None, text_ref=None,
     plt.figure(figsize=figsize)
 
     if spectrogram is None:
-        # Plot attention weights
         sns.heatmap(aw, cmap='viridis',
                     xticklabels=False,
-                    yticklabels=token_list if len(token_list) > 0 else False)
+                    yticklabels=tokens if len(tokens) > 0 else False)
         # cbar_kws={"orientation": "horizontal"}
-        plt.ylabel(u'Output labels (←)', fontsize=12)
+        plt.ylabel(u'Output labels (←)', fontsize=8)
         plt.yticks(rotation=0)
     else:
-        # Plot attention weights
         plt.subplot(211)
         sns.heatmap(aw, cmap='viridis',
                     xticklabels=False,
-                    yticklabels=token_list if len(token_list) > 0 else False)
+                    yticklabels=tokens if len(tokens) > 0 else False)
         plt.ylabel(u'Output labels (←)', fontsize=12)
         plt.yticks(rotation=0)
 
@@ -75,8 +103,8 @@ def plot_attention_weights(aw, token_list=[], spectrogram=None, text_ref=None,
     plt.close()
 
 
-def plot_hierarchical_attention_weights(aw, aw_sub, token_list=[], label_list_sub=[],
-                                        spectrogram=None, text_ref=None,
+def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
+                                        spectrogram=None, ref=None,
                                         save_path=None, figsize=(20, 8)):
     """Plot attention weights for the hierarchical model.
 
@@ -84,10 +112,10 @@ def plot_hierarchical_attention_weights(aw, aw_sub, token_list=[], label_list_su
         spectrogram (np.ndarray): A tensor of size `[T, input_size]`
         aw (np.ndarray): A tensor of size `[L, T]`
         aw_sub (np.ndarray): A tensor of size `[L_sub, T]`
-        token_list (list):
-        label_list_sub (list):
+        tokens (list):
+        tokens_sub (list):
         spectrogram (np.ndarray): A tensor of size `[T, feature_dim]`
-        text_ref (str):
+        ref (str):
         save_path (str): path to save a figure of CTC posterior (utterance)
         figsize (tuple):
 
@@ -96,34 +124,32 @@ def plot_hierarchical_attention_weights(aw, aw_sub, token_list=[], label_list_su
     plt.figure(figsize=figsize)
 
     if spectrogram is None:
-        # Plot attention weights
         plt.subplot(211)
         sns.heatmap(aw, cmap='viridis',
                     xticklabels=False,
-                    yticklabels=token_list if len(token_list) > 0 else False)
+                    yticklabels=tokens if len(tokens) > 0 else False)
         plt.ylabel(u'Output labels (main) (←)', fontsize=12)
         plt.yticks(rotation=0)
 
         plt.subplot(212)
         sns.heatmap(aw_sub, cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list_sub if len(label_list_sub) > 0 else False)
+                    yticklabels=tokens_sub if len(tokens_sub) > 0 else False)
         plt.xlabel(u'Time [sec]', fontsize=12)
         plt.ylabel(u'Output labels (sub) (←)', fontsize=12)
         plt.yticks(rotation=0)
     else:
-        # Plot attention weights
         plt.subplot(311)
         sns.heatmap(aw, cmap='viridis',
                     xticklabels=False,
-                    yticklabels=token_list if len(token_list) > 0 else False)
+                    yticklabels=tokens if len(tokens) > 0 else False)
         plt.ylabel(u'Output labels (main) (←)', fontsize=12)
         plt.yticks(rotation=0)
 
         plt.subplot(312)
         sns.heatmap(aw_sub, cmap='viridis',
                     xticklabels=False,
-                    yticklabels=label_list_sub if len(label_list_sub) > 0 else False)
+                    yticklabels=tokens_sub if len(tokens_sub) > 0 else False)
         plt.ylabel(u'Output labels (sub) (←)', fontsize=12)
         plt.yticks(rotation=0)
 
@@ -142,47 +168,15 @@ def plot_hierarchical_attention_weights(aw, aw_sub, token_list=[], label_list_su
     plt.close()
 
 
-def plot_nested_attention_weights(aw, token_list=[], label_list_sub=[],
-                                  save_path=None, figsize=(10, 4)):
-    """Plot attention weights from word-level decoder to character-level decoder.
-
-    Args:
-        aw (np.ndarray): A tensor of size `[L, T]`
-        token_list (list):
-        label_list_sub (list):
-        save_path (str): path to save a figure of CTC posterior (utterance)
-        figsize (tuple):
-
-    """
-    plt.clf()
-    plt.figure(figsize=figsize)
-
-    # Plot attention weights
-    sns.heatmap(awmap='viridis',
-                xticklabels=label_list_sub,
-                yticklabels=token_list)
-    # cbar_kws={"orientation": "horizontal"}
-    plt.ylabel(u'Output characters (→)', fontsize=12)
-    plt.ylabel(u'Output words (←)', fontsize=12)
-    plt.yticks(rotation=0)
-    plt.xticks(rotation=0)
-
-    # Save as a png file
-    if save_path is not None:
-        plt.savefig(save_path, dvi=500)
-
-    plt.close()
-
-
-def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_index=None, hyp='',
-                   spectrogram=None, save_path=None, figsize=(10, 4), topk=None):
+def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_id=None, hyp='',
+                   spectrogram=None, save_path=None, figsize=(20, 8), topk=None):
     """Plot CTC posteriors.
 
     Args:
         ctc_probs (np.ndarray): A tensor of size `[T, vocab]`
         nframes (int):
         subsample_factor (int): the number of frames to stack
-        space_index (int):
+        space_id (int):
         hyp (str):
         save_path (str): path to save a figure of CTC posterior (utterance)
         figsize (tuple):
@@ -206,8 +200,8 @@ def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_ind
         for i in indices_topk:
             if i == 0:
                 plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
-            elif space_index is not None and i == space_index:
-                plt.plot(times_probs, ctc_probs[:, space_index], label='<space>', color='black')
+            elif space_id is not None and i == space_id:
+                plt.plot(times_probs, ctc_probs[:, space_id], label='<space>', color='black')
             else:
                 plt.plot(times_probs, ctc_probs[:, i])
         plt.xlabel(u'Time [sec]', fontsize=12)
@@ -215,7 +209,6 @@ def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_ind
         plt.xticks(list(range(0, int(nframes * subsample_factor / 100) + 1, 1)))
         plt.yticks(list(range(0, 2, 1)))
     else:
-        # Plot CTC posteriors
         plt.subplot(211)
         # NOTE: index 0 is reserved for blank
         if 0 not in indices_topk:
@@ -223,8 +216,8 @@ def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_ind
         for i in indices_topk:
             if i == 0:
                 plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
-            elif space_index is not None and i == space_index:
-                plt.plot(times_probs, ctc_probs[:, space_index], label='<space>', color='black')
+            elif space_id is not None and i == space_id:
+                plt.plot(times_probs, ctc_probs[:, space_id], label='<space>', color='black')
             else:
                 plt.plot(times_probs, ctc_probs[:, i])
         plt.ylabel('Posteriors', fontsize=12)
@@ -247,7 +240,7 @@ def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_ind
 
 
 def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, nframes, subsample_factor,
-                                space_index=None, hyp='', text_hyp_sub='',
+                                space_id=None, hyp='', hyp_sub='',
                                 spectrogram=None, save_path=None, figsize=(20, 8)):
     """Plot CTC posteriors for the hierarchical model.
 
@@ -258,7 +251,7 @@ def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, nframes, subsample_fac
         subsample_factor (int):
         save_path (str): path to save a figure of CTC posterior (utterance)
         figsize (tuple):
-        space_index (int):
+        space_id (int):
 
     """
     # TODO: add spectrogram
@@ -268,7 +261,7 @@ def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, nframes, subsample_fac
     times_probs = np.arange(nframes) * subsample_factor / 100
     if len(hyp) > 0:
         plt.title(hyp)
-        # plt.title(text_hyp_sub)
+        # plt.title(hyp_sub)
 
     # NOTE: index 0 is reserved for blank
     plt.subplot(211)
@@ -291,8 +284,8 @@ def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, nframes, subsample_fac
     plt.subplot(212)
     plt.plot(times_probs, ctc_probs_sub[:, 0], ':', label='<blank>', color='grey')
     for i in range(1, ctc_probs_sub.shape[-1], 1):
-        if space_index is not None and i == space_index:
-            plt.plot(times_probs, ctc_probs_sub[:, space_index], label='<space>', color='black')
+        if space_id is not None and i == space_id:
+            plt.plot(times_probs, ctc_probs_sub[:, space_id], label='<space>', color='black')
         else:
             plt.plot(times_probs, ctc_probs_sub[:, i])
     plt.xlabel(u'Time [sec]', fontsize=12)

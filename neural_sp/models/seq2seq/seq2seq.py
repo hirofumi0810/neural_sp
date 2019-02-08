@@ -576,7 +576,7 @@ class Seq2seq(ModelBase):
             return ctc_probs, indices_topk, enc_outs[task]['xlens']
 
     def decode(self, xs, params, nbest=1, exclude_eos=False,
-               id2token=None, refs=None, task='ys', ensemble_models=[]):
+               id2token=None, refs=None, task='ys', ensemble_models=[], speakers=None):
         """Decoding in the inference stage.
 
         Args:
@@ -597,6 +597,7 @@ class Seq2seq(ModelBase):
             refs (list): gold transcriptions to compute log likelihood
             task (str): ys* or ys_sub1* or ys_sub2* or ys_sub3*
             ensemble_models (list): list of Seq2seq classes
+            speakers (list):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -636,7 +637,7 @@ class Seq2seq(ModelBase):
                 best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
                     params['recog_beam_width'], rnnlm)
-                return best_hyps, None, perm_ids
+                return best_hyps, None, perm_ids, None
 
             #########################
             # Attention
@@ -673,7 +674,7 @@ class Seq2seq(ModelBase):
                                 ensemble_decoders_fwd += [model.dec_fwd]
                                 # NOTE: only support for the main task now
 
-                        nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd = self.dec_fwd.beam_search(
+                        nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd, cache_info = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_fwd, rnnlm_bwd, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs,
@@ -708,7 +709,7 @@ class Seq2seq(ModelBase):
                             enc_outs_bwd, _ = self.encode(xs, task, flip=True)
                         else:
                             enc_outs_bwd = enc_outs
-                        nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd = self.dec_bwd.beam_search(
+                        nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd, _ = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_bwd, rnnlm_fwd, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs,
@@ -746,11 +747,12 @@ class Seq2seq(ModelBase):
                                 else:
                                     raise NotImplementedError()
 
-                        nbest_hyps, aws, scores, _ = getattr(self, 'dec_' + dir).beam_search(
+                        nbest_hyps, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm, rnnlm_rev, ctc_log_probs,
                             nbest, exclude_eos, id2token, refs,
-                            ensemble_eouts, ensemble_elens, ensemble_decoders)
+                            ensemble_eouts, ensemble_elens, ensemble_decoders,
+                            speakers)
 
                         if nbest == 1:
                             best_hyps = [hyp[0] for hyp in nbest_hyps]
@@ -759,7 +761,7 @@ class Seq2seq(ModelBase):
                             return nbest_hyps, aws, scores, perm_ids
                         # NOTE: nbest >= 2 is used for MWER training only
 
-                return best_hyps, aws, perm_ids
+                return best_hyps, aws, perm_ids, cache_info
 
 
 def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,

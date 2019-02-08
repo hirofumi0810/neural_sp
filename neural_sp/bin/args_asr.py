@@ -396,6 +396,8 @@ def parse():
                         help='rescore with another LM in the reverse direction')
     parser.add_argument('--recog_checkpoint_ensemble', type=int, default=1,
                         help='number of checkpoints to use')
+    parser.add_argument('--recog_ncaches', type=int, default=0,
+                        help='number of tokens for cache')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')
