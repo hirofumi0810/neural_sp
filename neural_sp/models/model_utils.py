@@ -137,9 +137,9 @@ class PositionalEncoding(nn.Module):
 class SublayerConnection(nn.Module):
     """A residual connection with dropout and layer normalization.
 
-        input -> layer norm -> (residual) -> sublayer -> dropout -> add -> output
-                                   |                                 |
-                                   -----------------------------------
+        input -> layer norm -> sublayer -> dropout -> add -> output
+          |                                            |
+          ----------------------------------------------
     Args:
         epsilon (float): epsilon parameter for layer normalization
 
@@ -162,13 +162,15 @@ class SublayerConnection(nn.Module):
             xs (FloatTensor):
 
         """
-        if self.layer_norm:
-            xs = self.norm(xs)
         residual = xs
 
+        # layer normalization
+        if self.layer_norm:
+            xs = self.norm(xs)
+
+        # sublayer
         out = sublayer(xs)
         # NOTE: out may be tuple
-
         rest_out = None
         if isinstance(out, tuple):
             xs = out[0]
@@ -176,7 +178,10 @@ class SublayerConnection(nn.Module):
         else:
             xs = out
 
+        # dropout
         xs = self.dropout(xs)
+
+        # residual
         xs += residual
 
         if rest_out is not None:
@@ -216,9 +221,9 @@ class PositionwiseFeedForward(nn.Module):
 class ResidualFeedForward(nn.Module):
     """Wrapper for the combination of SublayerConnection and PositionwiseFeedForward
 
-        input -> layer norm -> (residual) -> PositionwiseFeedForward -> dropout -> add -> output
-                                   |                                                |
-                                   --------------------------------------------------
+        input -> layer norm -> PositionwiseFeedForward -> dropout -> add -> output
+          |                                                           |
+          -------------------------------------------------------------
 
     Args:
         d_model (int):
