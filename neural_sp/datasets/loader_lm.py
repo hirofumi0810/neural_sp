@@ -36,7 +36,7 @@ class Dataset(Base):
 
     def __init__(self, csv_path, dict_path,
                  unit, batch_size, nepochs=None,
-                 is_test=False, bptt=-1, shuffle=False, wp_model=None):
+                 is_test=False, bptt=2, shuffle=False, wp_model=None):
         """A class for loading dataset.
 
         Args:
@@ -63,6 +63,7 @@ class Dataset(Base):
         self.max_epoch = nepochs
         self.shuffle = shuffle
         self.vocab = self.count_vocab_size(dict_path)
+        assert bptt >= 2
 
         # Set index converter
         if unit in ['word', 'word_char']:
@@ -97,9 +98,9 @@ class Dataset(Base):
         # NOTE: <sos> and <eos> have the same index
 
         # Reshape
-        nutt = len(concat_ids)
-        concat_ids = concat_ids[:nutt // batch_size * batch_size]
-        print('Removed %d tokens / %d tokens' % (nutt - len(concat_ids), nutt))
+        nutts = len(concat_ids)
+        concat_ids = concat_ids[:nutts // batch_size * batch_size]
+        print('Removed %d tokens / %d tokens' % (nutts - len(concat_ids), nutts))
         self.concat_ids = np.array(concat_ids).reshape((batch_size, -1))
 
     def __len__(self):
@@ -136,7 +137,7 @@ class Dataset(Base):
         self.offset += self.bptt
 
         # Last mini-batch
-        if (self.offset + 1) * self.batch_size >= len(self.concat_ids.reshape((-1,))):
+        if (self.offset + 1) * self.batch_size >= len(self.concat_ids.reshape((-1))):
             self.offset = 0
             is_new_epoch = True
             self.epoch += 1

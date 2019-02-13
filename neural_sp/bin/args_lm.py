@@ -32,7 +32,7 @@ def parse():
                         help='path to a dictionary file')
     parser.add_argument('--unit', type=str, default='word',
                         choices=['word', 'wp', 'char', 'word_char'],
-                        help='')
+                        help='Output unit')
     parser.add_argument('--wp_model', type=str, default=False, nargs='?',
                         help='path to of the wordpiece model')
     # features
@@ -73,7 +73,7 @@ def parse():
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
                         help='')
     parser.add_argument('--print_step', type=int, default=100,
-                        help='the step to print log')
+                        help='step to print log')
     parser.add_argument('--decay_type', type=str, default='epoch',
                         choices=['epoch', 'metric'],
                         help='')
@@ -114,5 +114,18 @@ def parse():
                         help='')
     parser.add_argument('--backward', type=bool, default=False, nargs='?',
                         help='')
+    # evaluation
+    parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
+                        help='path to csv files for the evaluation sets')
+    parser.add_argument('--recog_model', type=str, default=None, nargs='+',
+                        help='path to the model')
+    parser.add_argument('--recog_epoch', type=int, default=-1,
+                        help='epoch to restore')
+    parser.add_argument('--recog_dir', type=str, default=None,
+                        help='directory to save decoding results')
+    parser.add_argument('--recog_batch_size', type=int, default=1,
+                        help='size of mini-batch in evaluation')
+    parser.add_argument('--recog_ncaches', type=int, default=0,
+                        help='number of tokens for cache')
     args = parser.parse_args()
     return args

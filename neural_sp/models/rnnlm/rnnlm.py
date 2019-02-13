@@ -24,7 +24,7 @@ from neural_sp.models.torch_utils import pad_list
 
 
 class RNNLM(ModelBase):
-    """RNN language model."""
+    """RNN language model implemented by torch.nn.LSTMCell (or GRUCell)."""
 
     def __init__(self, args):
 
@@ -67,20 +67,15 @@ class RNNLM(ModelBase):
                            dropout=args.dropout_hidden,
                            bidirectional=self.bidirectional)
             # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
+            rnn_idim = args.nunits
             self.dropout_top = nn.Dropout(p=args.dropout_hidden)
         else:
             self.rnn = torch.nn.ModuleList()
             self.dropout = torch.nn.ModuleList()
             if args.nprojs > 0:
                 self.proj = torch.nn.ModuleList()
+            rnn_idim = args.nunits
             for l in range(args.nlayers):
-                if l == 0:
-                    rnn_idim = args.emb_dim
-                elif args.nprojs > 0:
-                    rnn_idim = args.nprojs
-                else:
-                    rnn_idim = args.nunits
-
                 if args.rnn_type == 'lstm':
                     rnn_cell = nn.LSTMCell
                 elif args.rnn_type == 'gru':
@@ -88,17 +83,18 @@ class RNNLM(ModelBase):
 
                 self.rnn += [rnn_cell(rnn_idim, args.nunits, 1)]
                 self.dropout += [nn.Dropout(p=args.dropout_hidden)]
+                rnn_idim = args.nunits
 
                 if l != self.nlayers - 1 and args.nprojs > 0:
                     self.proj += [LinearND(args.nunits * self.ndirs, args.nprojs)]
+                    rnn_idim = args.nprojs
 
         if self.use_glu:
-            self.fc_glu = LinearND(args.nprojs if args.nprojs > 0 else args.nunits,
-                                   args.nprojs * 2 if args.nprojs > 0 else args.nunits * 2,
+            self.fc_glu = LinearND(rnn_idim, rnn_idim * 2,
                                    dropout=args.dropout_hidden)
 
-        self.output = LinearND(args.nprojs if args.nprojs > 0 else args.nunits,
-                               self.vocab,
+        self.output = LinearND(rnn_idim, self.vocab,
+                               bias=not args.tie_embedding,
                                dropout=args.dropout_out)
 
         # Optionally tie weights as in:
@@ -126,32 +122,32 @@ class RNNLM(ModelBase):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-    def forward(self, ys, state, reporter=None, is_eval=False):
+    def forward(self, ys, hidden, reporter=None, is_eval=False):
         """Forward computation.
 
         Args:
             ys (np.array): A tensor of of size `[B, 2]`
-            state (list): list of (hx_list, cx_list)
-                hx_list (list of FloatTensor):
-                cx_list (list of FloatTensor):
+            hidden (list): list of (hxs, cxs)
+                hxs (list of FloatTensor):
+                cxs (list of FloatTensor):
             reporter ():
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
             loss (FloatTensor): `[1]`
-            state (list): list of (hx_list, cx_list)
-                hx_list (list of FloatTensor):
-                cx_list (list of FloatTensor):
+            hidden (list): list of (hxs, cxs)
+                hxs (list of FloatTensor):
+                cxs (list of FloatTensor):
             reporter ():
 
         """
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, observation = self._forward(ys, state)
+                loss, observation = self._forward(ys, hidden)
         else:
             self.train()
-            loss, observation = self._forward(ys, state)
+            loss, observation = self._forward(ys, hidden)
 
         # Report here
         if reporter is not None:
@@ -159,7 +155,7 @@ class RNNLM(ModelBase):
 
         return loss, observation
 
-    def _forward(self, ys, state):
+    def _forward(self, ys, hidden):
         if self.backward:
             raise NotImplementedError()
             # TODO(hirofumi): reverse the order out of the model
@@ -167,44 +163,44 @@ class RNNLM(ModelBase):
             ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
             ys = pad_list(ys, self.pad)
 
-            ys_in = ys[:, :-1]  # B*1
-            ys_out = ys[:, 1:]  # B*1
+            ys_in = ys[:, :-1]  # `[B, 1]`
+            ys_out = ys[:, 1:]  # `[B, 1]`
 
         # Path through embedding
         ys_in = self.embed(ys_in)
 
-        if state is None:
-            hx_list, cx_list = self.initialize_hidden(bs=ys.shape[0])
+        if hidden is None:
+            hxs, cxs = self.initialize_hidden(bs=ys.shape[0])
         else:
-            hx_list, cx_list = state
+            hxs, cxs = hidden
 
         # Path through RNN
         residual = None
         if self.fast_impl:
             if self.rnn_type == 'lstm':
-                hx_list[-1], cx_list[-1] = self.rnn(ys_in, (hx_list[0], cx_list[0]))
+                hxs[-1], cxs[-1] = self.rnn(ys_in, (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
-                hx_list[-1] = self.rnn(ys_in, hx_list[0])
-            hx_list[-1] = self.dropout_top(hx_list[-1])
+                hxs[-1] = self.rnn(ys_in, hxs[0])
+            hxs[-1] = self.dropout_top(hxs[-1])
         else:
             for l in range(self.nlayers):
                 if self.rnn_type == 'lstm':
                     if l == 0:
-                        hx_list[0], cx_list[0] = self.rnn[l](ys_in, (hx_list[0], cx_list[0]))
+                        hxs[0], cxs[0] = self.rnn[l](ys_in, (hxs[0], cxs[0]))
                     else:
-                        hx_list[l], cx_list[l] = self.rnn[l](hx_list[l - 1], (hx_list[l], cx_list[l]))
+                        hxs[l], cxs[l] = self.rnn[l](hxs[l - 1], (hxs[l], cxs[l]))
                 elif self.rnn_type == 'gru':
                     if l == 0:
-                        hx_list[0] = self.rnn[l](ys_in, hx_list[0])
+                        hxs[0] = self.rnn[l](ys_in, hxs[0])
                     else:
-                        hx_list[l] = self.rnn[l](hx_list[l - 1], hx_list[l])
-                hx_list[l] = self.dropout[l](hx_list[l])
+                        hxs[l] = self.rnn[l](hxs[l - 1], hxs[l])
+                hxs[l] = self.dropout[l](hxs[l])
 
                 # Residual connection
                 if self.residual and l > 0:
-                    hx_list[l] += residual
-                    residual = hx_list[l]
-        output = hx_list[-1].unsqueeze(1)
+                    hxs[l] += residual
+                    residual = hxs[l]
+        output = hxs[-1].unsqueeze(1)
 
         if self.use_glu:
             if self.residual:
@@ -230,51 +226,51 @@ class RNNLM(ModelBase):
                        'acc': acc,
                        'ppl': math.exp(loss.item())}
 
-        return loss, (hx_list, cx_list), observation
+        return loss, (hxs, cxs), observation
 
-    def predict(self, y, state):
-        """
+    def predict(self, y, hidden):
+        """Predict a token per step for ASR decoding.
 
         Args:
-            y (): `[B, emb_dim]`
-            state (list):
+            y (FloatTensor): `[B, emb_dim]`
+            hidden (tuple): A tuple of (hxs, cxs)
+                hxs (list of FloatTensor):
+                cxs (list of FloatTensor):
         Returns:
             logits_step (FloatTensor):
-            y ():
-            state (tuple): A tuple of (hx_list, cx_list)
-                hx_list (list of FloatTensor):
-                cx_list (list of FloatTensor):
+            y (FloatTensor): `[B, nunits]`
+            hidden (tuple): A tuple of (hxs, cxs)
+                hxs (list of FloatTensor):
+                cxs (list of FloatTensor):
 
         """
-        if state[0] is None:
-            hx_list, cx_list = self.initialize_hidden(bs=1)
+        if hidden[0] is None:
+            hxs, cxs = self.initialize_hidden(bs=1)
         else:
-            hx_list, cx_list = state
+            hxs, cxs = hidden
 
         # Path through RNN
         residual = None
         for l in range(self.nlayers):
             if self.rnn_type == 'lstm':
                 if l == 0:
-                    hx_list[0], cx_list[0] = self.rnn[l](
-                        y, (hx_list[0], cx_list[0]))
+                    hxs[0], cxs[0] = self.rnn[l](y, (hxs[0], cxs[0]))
                 else:
-                    hx_list[l], cx_list[l] = self.rnn[l](
-                        hx_list[l - 1], (hx_list[l], cx_list[l]))
+                    hxs[l], cxs[l] = self.rnn[l](hxs[l - 1], (hxs[l], cxs[l]))
             elif self.rnn_type == 'gru':
                 if l == 0:
-                    hx_list[0] = self.rnn[l](y, hx_list[0])
+                    hxs[0] = self.rnn[l](y, hxs[0])
                 else:
-                    hx_list[l] = self.rnn[l](hx_list[l - 1], hx_list[l])
+                    hxs[l] = self.rnn[l](hxs[l - 1], hxs[l])
 
             # Dropout for hidden-hidden or hidden-output connection
-            hx_list[l] = self.dropout[l](hx_list[l])
+            hxs[l] = self.dropout[l](hxs[l])
 
             # Residual connection
             if self.residual and residual is not None:
-                hx_list[l] += residual
-            residual = hx_list[l]
-        output = hx_list[-1].unsqueeze(1)
+                hxs[l] += residual
+            residual = hxs[l]
+        output = hxs[-1].unsqueeze(1)
 
         if self.use_glu:
             if self.residual:
@@ -284,7 +280,7 @@ class RNNLM(ModelBase):
                 output += residual
         logits_step = self.output(output)
 
-        return logits_step, y, (hx_list, cx_list)
+        return logits_step, y, (hxs, cxs)
 
     def initialize_hidden(self, bs):
         """Initialize hidden states.
@@ -292,43 +288,41 @@ class RNNLM(ModelBase):
         Args:
             bs (int): the size of mini-batch
         Returns:
-            hx_list (list of FloatTensor):
-            cx_list (list of FloatTensor):
+            hxs (list of FloatTensor):
+            cxs (list of FloatTensor):
 
         """
-        zero_state = torch.zeros(bs, self.nunits).float()
-        if self.device_id >= 0:
-            zero_state = zero_state.cuda(self.device_id)
+        w = next(self.parameters())
 
         if self.rnn_type == 'lstm':
-            hx_list = [zero_state] * self.nlayers
-            cx_list = [zero_state] * self.nlayers
+            hxs = [w.new_zeros(bs, self.nunits)] * self.nlayers
+            cxs = [w.new_zeros(bs, self.nunits)] * self.nlayers
         elif self.rnn_type == 'gru':
-            hx_list = [zero_state] * self.nlayers
-            cx_list = None
+            hxs = [w.new_zeros(bs, self.nunits)] * self.nlayers
+            cxs = None
 
-        return hx_list, cx_list
+        return hxs, cxs
 
-    def repackage_hidden(self, state):
+    def repackage_hidden(self, hidden):
         """Initialize hidden states.
 
         Args:
-            state (list):
-                hx_list (list of FloatTensor):
-                cx_list (list of FloatTensor):
+            hidden (list):
+                hxs (list of FloatTensor):
+                cxs (list of FloatTensor):
         Returns:
-            state (list):
-                hx_list (list of FloatTensor):
-                cx_list (list of FloatTensor):
+            hidden (list):
+                hxs (list of FloatTensor):
+                cxs (list of FloatTensor):
 
         """
-        hx_list, cx_list = state
+        hxs, cxs = hidden
         if self.rnn_type == 'lstm':
-            hx_list = [h.detach() for h in hx_list]
-            cx_list = [c.detach() for c in cx_list]
+            hxs = [h.detach() for h in hxs]
+            cxs = [c.detach() for c in cxs]
         else:
-            hx_list = [h.detach() for h in hx_list]
-        return (hx_list, cx_list)
+            hxs = [h.detach() for h in hxs]
+        return (hxs, cxs)
 
     def copy_from_seqrnnlm(self, rnnlm):
         """Copy parameters from sequene-level RNNLM.
@@ -343,4 +337,5 @@ class RNNLM(ModelBase):
             self.rnn[l].bias_ih.data = rnnlm.rnn[l].bias_ih_l0.data
             self.rnn[l].bias_hh.data = rnnlm.rnn[l].bias_hh_l0.data
         self.output.fc.weight.data = rnnlm.output.fc.weight.data
-        self.output.fc.bias.data = rnnlm.output.fc.bias.data
+        if not self.tie_embedding:
+            self.output.fc.bias.data = rnnlm.output.fc.bias.data

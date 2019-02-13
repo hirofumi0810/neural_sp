@@ -14,15 +14,13 @@ import logging
 import matplotlib
 matplotlib.use('Agg')
 
-import math
 from matplotlib import pyplot as plt
 import numpy as np
 import os
 import seaborn as sns
-import torch
 from tensorboardX import SummaryWriter
+import torch
 import yaml
-
 
 plt.style.use('ggplot')
 blue = '#4682B4'
@@ -171,7 +169,7 @@ class Controller(object):
     def __init__(self, learning_rate_init, decay_type,
                  decay_start_epoch, decay_rate,
                  decay_patient_epoch=1, lower_better=True, best_value=10000,
-                 model_size=-1, warmup_steps=4000, factor=1):
+                 model_size=1, warmup_steps=4000, factor=1):
         self.decay_type = decay_type
         self.decay_start_epoch = decay_start_epoch
         self.decay_rate = decay_rate

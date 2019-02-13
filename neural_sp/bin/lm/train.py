@@ -56,7 +56,7 @@ def main():
                         batch_size=args.batch_size * args.ngpus,
                         nepochs=args.nepochs,
                         bptt=args.bptt,
-                        shuffle=True)
+                        shuffle=False)
     dev_set = Dataset(csv_path=args.dev_set,
                       dict_path=args.dict,
                       unit=args.unit,
@@ -70,7 +70,7 @@ def main():
                               dict_path=args.dict,
                               unit=args.unit,
                               wp_model=args.wp_model,
-                              batch_size=args.batch_size * args.ngpus,
+                              batch_size=1,
                               bptt=args.bptt)]
 
     args.vocab = train_set.vocab
@@ -132,7 +132,7 @@ def main():
 
         epoch, step = 1, 1
         lr = float(args.learning_rate)
-        metric_dev_best = 10000
+        ppl_dev_best = 10000
 
     else:
         raise NotImplementedError()
@@ -163,12 +163,13 @@ def main():
                                decay_rate=args.decay_rate,
                                decay_patient_epoch=args.decay_patient_epoch,
                                lower_better=True,
-                               best_value=metric_dev_best,
+                               best_value=ppl_dev_best,
                                factor=1)
 
     # Set reporter
     reporter = Reporter(model.module.save_path, tensorboard=True)
 
+    hidden = None
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
@@ -179,7 +180,7 @@ def main():
         ys_train, is_new_epoch = train_set.next()
 
         model.module.optimizer.zero_grad()
-        loss, reporter = model(ys_train, reporter)
+        loss, hidden, reporter = model(ys_train, hidden, reporter)
         if len(model.device_ids) > 1:
             loss.backward(torch.ones(len(model.device_ids)))
         else:
@@ -190,12 +191,13 @@ def main():
         model.module.optimizer.step()
         loss_train = loss.item()
         del loss
+        hidden = model.module.repackage_hidden(hidden)
         reporter.step(is_eval=False)
 
         if step % args.print_step == 0:
             # Compute loss in the dev set
             ys_dev = dev_set.next()[0]
-            loss, reporter = model(ys_dev, reporter, is_eval=True)
+            loss, _, reporter = model(ys_dev, None, reporter, is_eval=True)
             loss_dev = loss.item()
             del loss
             reporter.step(is_eval=True)
@@ -223,7 +225,7 @@ def main():
             if epoch < args.eval_start_epoch:
                 # Save the model
                 model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
-                                             lr, metric_dev_best)
+                                             lr, ppl_dev_best)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -235,14 +237,14 @@ def main():
                     model.module.optimizer, lr,
                     epoch=epoch, value=ppl_dev)
 
-                if ppl_dev < metric_dev_best:
-                    metric_dev_best = ppl_dev
+                if ppl_dev < ppl_dev_best:
+                    ppl_dev_best = ppl_dev
                     not_improved_epoch = 0
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
                     model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
-                                                 lr, metric_dev_best)
+                                                 lr, ppl_dev_best)
 
                     # test
                     ppl_test_mean = 0.

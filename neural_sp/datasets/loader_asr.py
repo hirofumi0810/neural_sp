@@ -188,20 +188,20 @@ class Dataset(Base):
         # Remove inappropriate utteraces
         if self.is_test:
             print('Original utterance num: %d' % len(df))
-            nutt = len(df)
+            nutts = len(df)
             df = df[df.apply(lambda x: x['y_len'] > 0, axis=1)]
-            print('Removed %d empty utterances' % (nutt - len(df)))
+            print('Removed %d empty utterances' % (nutts - len(df)))
         else:
             print('Original utterance num: %d' % len(df))
-            nutt = len(df)
+            nutts = len(df)
             df = df[df.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
             df = df[df.apply(lambda x: x['y_len'] > 0, axis=1)]
-            print('Removed %d utterances (threshold)' % (nutt - len(df)))
+            print('Removed %d utterances (threshold)' % (nutts - len(df)))
 
             if ctc and subsample_factor > 1:
-                nutt = len(df)
+                nutts = len(df)
                 df = df[df.apply(lambda x: x['y_len'] <= x['x_len'] // subsample_factor, axis=1)]
-                print('Removed %d utterances (for CTC)' % (nutt - len(df)))
+                print('Removed %d utterances (for CTC)' % (nutts - len(df)))
 
             if df_sub1 is not None:
                 if ctc_sub1 and subsample_factor_sub1 > 1:
@@ -209,9 +209,9 @@ class Dataset(Base):
                                                     // subsample_factor_sub1, axis=1)]
 
                 if len(df) != len(df_sub1):
-                    nutt = len(df)
+                    nutts = len(df)
                     df = df.drop(df.index.difference(df_sub1.index))
-                    print('Removed %d utterances (for CTC, sub1)' % (nutt - len(df)))
+                    print('Removed %d utterances (for CTC, sub1)' % (nutts - len(df)))
                     df_sub1 = df_sub1.drop(df_sub1.index.difference(df.index))
 
             if df_sub2 is not None:
@@ -220,9 +220,9 @@ class Dataset(Base):
                                                     // subsample_factor_sub2, axis=1)]
 
                 if len(df) != len(df_sub2):
-                    nutt = len(df)
+                    nutts = len(df)
                     df = df.drop(df.index.difference(df_sub2.index))
-                    print('Removed %d utterances (for CTC, sub2)' % (nutt - len(df)))
+                    print('Removed %d utterances (for CTC, sub2)' % (nutts - len(df)))
                     df_sub1 = df_sub1.drop(df_sub1.index.difference(df.index))
                     df_sub2 = df_sub2.drop(df_sub2.index.difference(df.index))
 
@@ -232,9 +232,9 @@ class Dataset(Base):
                                                     // subsample_factor_sub3, axis=1)]
 
                 if len(df) != len(df_sub3):
-                    nutt = len(df)
+                    nutts = len(df)
                     df = df.drop(df.index.difference(df_sub3.index))
-                    print('Removed %d utterances (for CTC, sub3)' % (nutt - len(df)))
+                    print('Removed %d utterances (for CTC, sub3)' % (nutts - len(df)))
                     df_sub1 = df_sub1.drop(df_sub1.index.difference(df.index))
                     df_sub2 = df_sub2.drop(df_sub2.index.difference(df.index))
                     df_sub3 = df_sub3.drop(df_sub3.index.difference(df.index))
