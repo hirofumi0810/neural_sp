@@ -17,8 +17,8 @@ import numpy as np
 import torch
 
 from neural_sp.models.base import ModelBase
-from neural_sp.models.linear import Embedding
-from neural_sp.models.linear import LinearND
+from neural_sp.models.model_utils import Embedding
+from neural_sp.models.model_utils import LinearND
 from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.decoder import Decoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame

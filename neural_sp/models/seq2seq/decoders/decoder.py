@@ -26,9 +26,9 @@ except:
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import kldiv_lsm_ctc
-from neural_sp.models.linear import Embedding
-from neural_sp.models.linear import LinearND
-from neural_sp.models.linear import ResidualFeedForward
+from neural_sp.models.model_utils import Embedding
+from neural_sp.models.model_utils import LinearND
+from neural_sp.models.model_utils import ResidualFeedForward
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import CTCPrefixScore
@@ -1322,7 +1322,7 @@ class Decoder(nn.Module):
                         probs = (1 - cache_lambda) * probs + cache_lambda * cache_probs_sum
                     else:
                         cache_keys = None
-                        cache_probs =None
+                        cache_probs = None
 
                     log_probs = torch.log(probs)
                     # Generate for the ensemble
@@ -1553,7 +1553,8 @@ class Decoder(nn.Module):
                                     complete[0]['local_cache_values'],
                                     ncaches)
             cache_keys_history = complete[0]['cache_keys_history']
-            cache_probs_history = torch.zeros((1, complete[0]['cache_probs_history'][-1].size(1), hyp_len), dtype=torch.float32)
+            cache_probs_history = torch.zeros(
+                (1, complete[0]['cache_probs_history'][-1].size(1), hyp_len), dtype=torch.float32)
             for i, p in enumerate(complete[0]['cache_probs_history']):
                 if p.size(1) < ncaches:
                     cache_probs_history[0, :p.size(1), i] = p[0, :, 0].cpu()

@@ -14,7 +14,7 @@ from collections import OrderedDict
 import math
 import torch.nn as nn
 
-from neural_sp.models.linear import LinearND
+from neural_sp.models.model_utils import LinearND
 from neural_sp.models.seq2seq.encoders.cnn_utils import ConvOutSize
 from neural_sp.models.seq2seq.encoders.cnn_utils import Maxout
 

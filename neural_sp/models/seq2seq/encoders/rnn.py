@@ -18,8 +18,8 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.utils.rnn import pad_packed_sequence
 
-from neural_sp.models.linear import LinearND
-from neural_sp.models.linear import ResidualFeedForward
+from neural_sp.models.model_utils import LinearND
+from neural_sp.models.model_utils import ResidualFeedForward
 from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
 
 
@@ -175,18 +175,15 @@ class RNNEncoder(nn.Module):
             # Fast implementation without processes between each layer
             if np.prod(self.subsample) == 1 and self.nprojs == 0 and not residual and not add_ffl and nlayers_sub1 == 0 and (not conv_batch_norm) and nin == 0:
                 self.fast_impl = True
-                if 'lstm' in rnn_type:
-                    rnn = nn.LSTM
-                elif 'gru' in rnn_type:
-                    rnn = nn.GRU
-                else:
+                if 'lstm' not in rnn_type and 'gru' in rnn_type:
                     raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
 
-                self.rnn = rnn(self._output_dim, nunits, nlayers,
-                               bias=True,
-                               batch_first=True,
-                               dropout=dropout,
-                               bidirectional=self.bidirectional)
+                self.rnn = getattr(nn, rnn_type.upper())(
+                    self._output_dim, nunits, nlayers,
+                    bias=True,
+                    batch_first=True,
+                    dropout=dropout,
+                    bidirectional=self.bidirectional)
                 # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
                 self._output_dim = nunits
                 self.dropout_top = nn.Dropout(p=dropout)
