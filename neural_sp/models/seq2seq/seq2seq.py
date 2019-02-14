@@ -20,7 +20,7 @@ from neural_sp.models.base import ModelBase
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
 from neural_sp.models.rnnlm.rnnlm import RNNLM
-from neural_sp.models.seq2seq.decoders.decoder import Decoder
+from neural_sp.models.seq2seq.decoders.rnn_decoder import RNNDecoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
 from neural_sp.models.seq2seq.encoders.splicing import splice
@@ -187,7 +187,7 @@ class Seq2seq(ModelBase):
                 args.rnnlm_cold_fusion = False
 
             # Decoder
-            dec = Decoder(
+            dec = RNNDecoder(
                 sos=self.sos,
                 eos=self.eos,
                 pad=self.pad,
@@ -247,7 +247,7 @@ class Seq2seq(ModelBase):
                 if getattr(self, 'bwd_weight_' + sub) > 0:
                     directions.append('bwd')
                 for dir_sub in directions:
-                    dec_sub = Decoder(
+                    dec_sub = RNNDecoder(
                         sos=self.sos,
                         eos=self.eos,
                         pad=self.pad,

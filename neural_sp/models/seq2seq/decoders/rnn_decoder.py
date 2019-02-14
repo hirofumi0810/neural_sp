@@ -43,7 +43,7 @@ random.seed(1)
 logger = logging.getLogger("decoding")
 
 
-class Decoder(nn.Module):
+class RNNDecoder(nn.Module):
     """RNN decoder.
 
     Args:
@@ -146,7 +146,7 @@ class Decoder(nn.Module):
                  global_weight=1.0,
                  mtl_per_batch=False):
 
-        super(Decoder, self).__init__()
+        super(RNNDecoder, self).__init__()
 
         self.sos = sos
         self.eos = eos
