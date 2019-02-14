@@ -137,10 +137,10 @@ class CNNEncoder(nn.Module):
             xlens (list): A list of length `[B]`
 
         """
-        bs, max_time, input_dim = xs.size()
+        bs, max_xlen, input_dim = xs.size()
 
-        # Reshape to 4D tensor `[B, in_ch, freq // in_ch, max_time]`
-        xs = xs.contiguous().view(bs, max_time, input_dim // self.in_channel, self.in_channel)
+        # Reshape to 4D tensor `[B, in_ch, freq // in_ch, max_xlen]`
+        xs = xs.contiguous().view(bs, max_xlen, input_dim // self.in_channel, self.in_channel)
         xs = xs.transpose(1, 3)
 
         xs = self.layers(xs)

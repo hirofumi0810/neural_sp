@@ -118,7 +118,7 @@ def parse():
                         help='Residual connection between each encoder layer')
     parser.add_argument('--enc_add_ffl', type=bool, default=False, nargs='?',
                         help='Add a residual feed-forward fully-connected layer between each encoder layer')
-    parser.add_argument('--subsample', type=str, default="",
+    parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
                         choices=['drop', 'concat', 'max_pool'],
@@ -143,7 +143,7 @@ def parse():
     parser.add_argument('--bridge_layer', type=bool, default=False,
                         help='')
     parser.add_argument('--dec_type', type=str, default='lstm',
-                        choices=['lstm', 'gru'],
+                        choices=['lstm', 'gru', 'transformer'],
                         help='')
     parser.add_argument('--dec_nunits', type=int, default=320,
                         help='number of units in each decoder RNN layer')
@@ -214,7 +214,7 @@ def parse():
                         help='')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
                         help='')
-    parser.add_argument('--warmup_start_learning_rate', type=float, default=1e-4,
+    parser.add_argument('--warmup_start_learning_rate', type=float, default=0,
                         help='')
     parser.add_argument('--warmup_nsteps', type=int, default=4000,
                         help='')
@@ -252,8 +252,6 @@ def parse():
     parser.add_argument('--gaussian_noise_timing', type=str, default='saturation',
                         choices=['constant', 'saturation'],
                         help='timing to start Gaussian noise injection')
-    parser.add_argument('--logits_temp', type=float, default=1.0,
-                        help='')
     parser.add_argument('--ss_prob', type=float, default=0.0,
                         help='')
     parser.add_argument('--ss_type', type=str, default='constant',
@@ -315,8 +313,6 @@ def parse():
     parser.add_argument('--share_lm_softmax', type=bool, default=False, nargs='?',
                         help='')
     # transformer
-    parser.add_argument('--transformer', type=bool, default=False,
-                        help='Pure transformer (transformer encoder + transformer decoder)')
     parser.add_argument('--d_model', type=int, default=512,
                         help='')
     parser.add_argument('--d_ff', type=int, default=2048,
@@ -325,13 +321,11 @@ def parse():
                         help='')
     parser.add_argument('--transformer_dec_nlayers', type=int, default=6,
                         help='')
-    parser.add_argument('--self_attn_type', type=str, default='scaled_dot_product',
+    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot_product',
                         choices=['scaled_dot_product', 'average'],
                         help='type of attention for transformer')
-    parser.add_argument('--self_attn_nheads', type=int, default=8,
+    parser.add_argument('--transformer_attn_nheads', type=int, default=8,
                         help='number of heads in the self-attention layer')
-    parser.add_argument('--share_embedding', type=bool, default=True,
-                        help='')
     # decoding parameters
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='path to csv files for the evaluation sets')

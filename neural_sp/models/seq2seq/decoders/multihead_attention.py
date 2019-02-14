@@ -230,7 +230,7 @@ class TransformerMultiheadAttentionMechanism(nn.Module):
             value (FloatTensor): `[B, key_time, d_model]`
             query (FloatTensor): `[B, query_time, d_model]`
             mask (): `[B, query_time, key_time]`
-                0: place to pad with -inf
+                0: place to pad with -1024
                 1: otherwise
         Returns:
             context (FloatTensor): `[B, query_time, key_time]`
