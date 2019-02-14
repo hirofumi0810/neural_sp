@@ -31,7 +31,7 @@ class TransformerEncoder(nn.Module):
                    the first-layer of the PositionwiseFeedForward
         d_ff (int): dimension of the second layer of the PositionwiseFeedForward
         attn_type (str): type of attention
-        nheads (int): number of heads for multi-head attention
+        attn_nheads (int): number of heads for multi-head attention
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
@@ -53,7 +53,7 @@ class TransformerEncoder(nn.Module):
                  d_model,
                  d_ff,
                  attn_type,
-                 nheads,
+                 attn_nheads,
                  dropout_in,
                  dropout,
                  dropout_att,
@@ -112,7 +112,7 @@ class TransformerEncoder(nn.Module):
         # Self-attention layers
         self.layers = nn.ModuleList(
             [TransformerEncoderBlock(d_model, d_ff,
-                                     attn_type, nheads,
+                                     attn_type, attn_nheads,
                                      dropout, dropout_att)
              for l in range(nlayers)])
         self._output_dim = d_model
@@ -152,7 +152,7 @@ class TransformerEncoder(nn.Module):
 
         bs, max_time = xs.size()[:2]
 
-        # Make source-source mask
+        # Make source-side self-attention mask
         xx_mask = xs.new_ones(bs, max_time, max_time)
         for b in range(bs):
             if xlens[b] < max_time:
@@ -182,18 +182,18 @@ class TransformerEncoderBlock(nn.Module):
                    the first-layer of the PositionwiseFeedForward
         d_ff (int): second-layer of the PositionwiseFeedForward
         attn_type (str):
-        nheads (int): number of heads for multi-head attention
+        attn_nheads (int): number of heads for multi-head attention
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
 
     """
 
-    def __init__(self, d_model, d_ff, attn_type, nheads,
+    def __init__(self, d_model, d_ff, attn_type, attn_nheads,
                  dropout, dropout_att):
         super(TransformerEncoderBlock, self).__init__()
 
         # self-attention
-        self.self_attn = TransformerMultiheadAttentionMechanism(nheads, d_model, dropout_att)
+        self.self_attn = TransformerMultiheadAttentionMechanism(attn_nheads, d_model, dropout_att)
         self.add_norm1 = SublayerConnection(d_model, dropout, layer_norm=True)
 
         # feed-forward
@@ -206,7 +206,7 @@ class TransformerEncoderBlock(nn.Module):
         Args:
             xs (FloatTensor): `[B, T, d_model]`
             mask (LongTensor): `[B, T, T]`
-                0: place to pad with -inf
+                0: place to pad with -1024
                 1: otherwise
         Returns:
             xs (FloatTensor): `[B, T, d_model]`

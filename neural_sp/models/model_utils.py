@@ -118,6 +118,8 @@ class PositionalEncoding(nn.Module):
         pe = pe.unsqueeze(0)  # for batch dimension
         self.pe = pe
 
+        # TODO(hirofumi): add concat option
+
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, xs):
@@ -137,9 +139,9 @@ class PositionalEncoding(nn.Module):
 class SublayerConnection(nn.Module):
     """A residual connection with dropout and layer normalization.
 
-        input -> layer norm -> sublayer -> dropout -> add -> output
-          |                                            |
-          ----------------------------------------------
+        input -> layer norm -> sublayer -> dropout -> output
+          |                                             |
+          -----------------------------------------------
     Args:
         epsilon (float): epsilon parameter for layer normalization
 
@@ -169,14 +171,12 @@ class SublayerConnection(nn.Module):
             xs = self.norm(xs)
 
         # sublayer
-        out = sublayer(xs)
-        # NOTE: out may be tuple
-        rest_out = None
-        if isinstance(out, tuple):
-            xs = out[0]
-            rest_out = out[1:]
+        output = sublayer(xs)
+        # NOTE: output may be tuple paired with attention weights
+        if isinstance(output, tuple):
+            xs, aw = output
         else:
-            xs = out
+            xs = output
 
         # dropout
         xs = self.dropout(xs)
@@ -184,9 +184,10 @@ class SublayerConnection(nn.Module):
         # residual
         xs += residual
 
-        if rest_out is not None:
-            xs = (xs, rest_out)
-        return xs
+        if isinstance(output, tuple):
+            return xs, aw
+        else:
+            return xs
 
 
 class PositionwiseFeedForward(nn.Module):
@@ -221,9 +222,9 @@ class PositionwiseFeedForward(nn.Module):
 class ResidualFeedForward(nn.Module):
     """Wrapper for the combination of SublayerConnection and PositionwiseFeedForward
 
-        input -> layer norm -> PositionwiseFeedForward -> dropout -> add -> output
-          |                                                           |
-          -------------------------------------------------------------
+        input -> layer norm -> PositionwiseFeedForward -> dropout -> output
+          |                                                            |
+          --------------------------------------------------------------
 
     Args:
         d_model (int):
