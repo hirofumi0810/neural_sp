@@ -88,16 +88,6 @@ class Seq2seq(ModelBase):
         self.fwd_weight_sub1 = self.sub1_weight - self.bwd_weight_sub1 - self.ctc_weight_sub1
         self.fwd_weight_sub2 = self.sub2_weight - self.bwd_weight_sub2 - self.ctc_weight_sub2
         self.fwd_weight_sub3 = self.sub3_weight - self.bwd_weight_sub3 - self.ctc_weight_sub3
-        self.twin_net_weight = args.twin_net_weight
-        self.agreement_weight = args.agreement_weight
-        if args.twin_net_weight > 0:
-            assert 0 < self.fwd_weight < 1
-            assert 0 < self.bwd_weight < 1
-            assert args.mtl_per_batch
-        if args.agreement_weight > 0:
-            assert 0 < self.fwd_weight < 1
-            assert 0 < self.bwd_weight < 1
-            # assert args.mtl_per_batch
 
         # regularization
         self.gaussian_noise_std = args.gaussian_noise_std
@@ -226,8 +216,6 @@ class Seq2seq(ModelBase):
                     '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                 input_feeding=args.input_feeding,
                 backward=(dir == 'bwd'),
-                agreement_weight=args.agreement_weight if dir == 'bwd' else 0,
-                twin_net_weight=args.twin_net_weight,
                 rnnlm_cold_fusion=args.rnnlm_cold_fusion,
                 cold_fusion=args.cold_fusion,
                 rnnlm_init=args.rnnlm_init,
@@ -286,7 +274,6 @@ class Seq2seq(ModelBase):
                                      ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
                         input_feeding=args.input_feeding,
                         backward=(dir_sub == 'bwd'),
-                        twin_net_weight=args.twin_net_weight,
                         # rnnlm_cold_fusion=args.rnnlm_cold_fusion,
                         # cold_fusion=args.cold_fusion,
                         lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
@@ -413,17 +400,12 @@ class Seq2seq(ModelBase):
                 ys = batch['ys'][:]  # for lmobj
             else:
                 ys = [batch['ys'][:][i] for i in perm_ids]
-            if task == 'ys' and self.twin_net_weight > 0:
-                reverse_dec = self.dec_bwd
-            else:
-                reverse_dec = None
             loss_fwd, obs_fwd = self.dec_fwd(
-                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, reverse_dec)
+                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
             observation['loss.lmobj'] = obs_fwd['loss_lmobj']
-            observation['loss.twinnet'] = obs_fwd['loss_twin']
             observation['acc.att'] = obs_fwd['acc_att']
             observation['acc.lmobj'] = obs_fwd['acc_lmobj']
             observation['ppl.att'] = obs_fwd['ppl_att']
@@ -432,17 +414,12 @@ class Seq2seq(ModelBase):
         # for the backward decoder in the main task
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
             ys = [batch['ys'][:][i] for i in perm_ids]
-            if self.agreement_weight > 0:
-                reverse_dec = self.dec_fwd
-            else:
-                reverse_dec = None
             loss_bwd, obs_bwd = self.dec_bwd(
-                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, reverse_dec)
+                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
             loss += loss_bwd
             observation['loss.att-bwd'] = obs_bwd['loss_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
             observation['loss.lmobj-bwd'] = obs_bwd['loss_lmobj']
-            observation['loss.agreement-bwd'] = obs_bwd['loss_agreement']
             observation['acc.att-bwd'] = obs_bwd['acc_att']
             observation['acc.lmobj-bwd'] = obs_bwd['acc_lmobj']
             observation['ppl.att-bwd'] = obs_bwd['ppl_att']

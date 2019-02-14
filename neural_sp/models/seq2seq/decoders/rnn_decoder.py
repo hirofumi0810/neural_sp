@@ -47,7 +47,6 @@ class RNNDecoder(nn.Module):
     """RNN decoder.
 
     Args:
-        enc_nunits (int):
         sos (int): index for <sos>
         eos (int): index for <eos>
         pad (int): index for <pad>
@@ -59,8 +58,7 @@ class RNNDecoder(nn.Module):
         attn_sigmoid_smoothing ():
         attn_conv_out_channels ():
         attn_conv_kernel_size ():
-        attn_nheads ():
-        dropout_att ():
+        attn_nheads (int): number of attention heads
         rnn_type (str): lstm or gru
         nunits (int): number of units in each RNN layer
         nprojs (int): number of units in each projection layer
@@ -75,7 +73,7 @@ class RNNDecoder(nn.Module):
         logits_temp (float): a parameter for smoothing the softmax layer in output probabilities
         dropout (float): probability to drop nodes in the RNN layer
         dropout_emb (float): probability to drop nodes of the embedding layer
-        dropout_att (float):
+        dropout_att (float): dropout probabilities for attention distributions
         ss_prob (float): scheduled sampling probability
         ss_type (str): constant or saturation
         lsm_prob (float): label smoothing probability
@@ -84,8 +82,6 @@ class RNNDecoder(nn.Module):
         ctc_fc_list (list):
         input_feeding (bool):
         backward (bool): decode in the backward order
-        agreement_weight (float):
-        twin_net_weight (float):
         rnnlm_cold_fusion (torch.nn.Module):
         cold_fusion (str): the type of cold fusion
             prob: probability from RNNLM
@@ -132,19 +128,17 @@ class RNNDecoder(nn.Module):
                  layer_norm,
                  fl_weight,
                  fl_gamma,
-                 ctc_weight=0.,
-                 ctc_fc_list=[],
-                 input_feeding=False,
-                 backward=False,
-                 agreement_weight=0,
-                 twin_net_weight=0.0,
-                 rnnlm_cold_fusion=False,
-                 cold_fusion='hidden',
-                 rnnlm_init=False,
-                 lmobj_weight=0.,
-                 share_lm_softmax=False,
-                 global_weight=1.0,
-                 mtl_per_batch=False):
+                 ctc_weight,
+                 ctc_fc_list,
+                 input_feeding,
+                 backward,
+                 rnnlm_cold_fusion,
+                 cold_fusion,
+                 rnnlm_init,
+                 lmobj_weight,
+                 share_lm_softmax,
+                 global_weight,
+                 mtl_per_batch):
 
         super(RNNDecoder, self).__init__()
 
@@ -165,8 +159,6 @@ class RNNDecoder(nn.Module):
         self.add_ffl = add_ffl
         self.layerwise_attention = layerwise_attention
         self.logits_temp = logits_temp
-        self.dropout = dropout
-        self.dropout_emb = dropout_emb
         self.ss_prob = ss_prob
         self.ss_type = ss_type
         if ss_type == 'constant':
@@ -183,8 +175,6 @@ class RNNDecoder(nn.Module):
         if input_feeding:
             assert loop_type == 'normal'
         self.backward = backward
-        self.agreement_weight = agreement_weight
-        self.twin_net_weight = twin_net_weight
         self.rnnlm_cf = rnnlm_cold_fusion
         self.cold_fusion = cold_fusion
         self.rnnlm_init = rnnlm_init
@@ -370,13 +360,10 @@ class RNNDecoder(nn.Module):
                 else:
                     self.output_bn = LinearND(nunits + enc_nunits, nunits)
 
-            self.output = LinearND(nunits, vocab)
-
-            # Embedding
-            self.embed = Embedding(vocab=vocab,
-                                   emb_dim=emb_dim,
+            self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
                                    ignore_index=pad)
+            self.output = LinearND(nunits, vocab)
 
             # Optionally tie weights as in:
             # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -389,10 +376,6 @@ class RNNDecoder(nn.Module):
                     raise ValueError('When using the tied flag, nunits must be equal to emb_dim.')
                 self.output.fc.weight = self.embed.embed.weight
 
-            # TwinNet (only for the forward)
-            if twin_net_weight > 0 and not backward:
-                self.twinnet_linear = LinearND(nunits, nunits)
-
     @property
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
@@ -400,7 +383,7 @@ class RNNDecoder(nn.Module):
     def start_scheduled_sampling(self):
         self._ss_prob = self.ss_prob
 
-    def forward(self, eouts, elens, ys, task='all', reverse_dec=None):
+    def forward(self, eouts, elens, ys, task='all'):
         """Forward computation.
 
         Args:
@@ -415,7 +398,6 @@ class RNNDecoder(nn.Module):
         """
         obserbation = {'loss': None,
                        'loss_att': None, 'loss_ctc': None, 'loss_lmobj': None,
-                       'loss_twin': None, 'loss_agreement': None,
                        'acc_att': None, 'acc_lmobj': None,
                        'ppl_att': None, 'ppl_lmobj': None}
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
@@ -442,13 +424,10 @@ class RNNDecoder(nn.Module):
 
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and 'ctc' not in task and 'lmobj' not in task:
-            loss_att, acc_att, ppl_att, loss_twin, loss_agreement = self.forward_att(
-                eouts, elens, ys, reverse_dec=reverse_dec)
+            loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys)
             obserbation['loss_att'] = loss_att.item()
             obserbation['acc_att'] = acc_att
             obserbation['ppl_att'] = ppl_att
-            obserbation['loss_twin'] = loss_twin.item()
-            obserbation['loss_agreement'] = loss_agreement.item()
             if self.mtl_per_batch:
                 loss += loss_att
             else:
@@ -561,15 +540,13 @@ class RNNDecoder(nn.Module):
 
         return loss, acc, ppl
 
-    def forward_att(self, eouts, elens, ys, extract_dout=False, extract_aws=False,
-                    reverse_dec=None):
+    def forward_att(self, eouts, elens, ys):
         """Compute XE loss for the sequence-to-sequence model.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_units]`
             elens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            extract_dout (bool):
         Returns:
             loss (FloatTensor): `[B, L, vocab]`
             acc (float):
@@ -606,8 +583,6 @@ class RNNDecoder(nn.Module):
             ys_lm_emb = self.rnnlm_cf.embed(ys_in_pad)
 
         logits = []
-        douts = []  # for twinnet loss
-        aws = []  # for agreement loss
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
             is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob
@@ -635,8 +610,6 @@ class RNNDecoder(nn.Module):
 
             # Score
             con_vec, aw = self.score(eouts, elens, dstates['dout_score'], aw)
-            if extract_aws or (self.agreement_weight > 0 and self.backward):
-                aws.append(aw)
 
             # Recurrency (2nd, only for the internal decoder)
             if self.loop_type in ['conditional', 'rnmt']:
@@ -645,18 +618,6 @@ class RNNDecoder(nn.Module):
             # Generate
             attn_vec = self.generate(con_vec, dstates['dout_gen'], logits_lm_t, lm_out)
             logits.append(self.output(attn_vec))
-
-            if extract_dout or (self.twin_net_weight > 0 and not self.backward):
-                douts.append(dstates['dout_gen'])
-
-        if extract_dout:
-            return torch.cat(douts[::-1], dim=1)
-        elif extract_aws:
-            return torch.stack(aws[::-1], dim=-1)
-        elif self.twin_net_weight > 0 and not self.backward:
-            douts = torch.cat(douts, dim=1)
-        elif self.agreement_weight > 0 and self.backward:
-            aws = torch.stack(aws, dim=-1)
 
         # Compute XE sequence loss
         logits = torch.cat(logits, dim=1) / self.logits_temp
@@ -681,25 +642,6 @@ class RNNDecoder(nn.Module):
                             gamma=self.fl_gamma, size_average=True)
             loss = loss * (1 - self.fl_weight) + fl * self.fl_weight
 
-        # TwinNet (only for the forward)
-        if self.twin_net_weight > 0 and not self.backward:
-            douts_reverse = reverse_dec.forward_att(eouts, elens, ys, extract_dout=True).detach()
-            douts = self.twinnet_linear(douts)
-            loss_twin = F.mse_loss(douts, douts_reverse, size_average=False) / bs
-            if not self.training:
-                loss_twin = loss_twin.float()
-            loss += loss_twin * self.twin_net_weight
-        else:
-            loss_twin = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
-
-        # agreement loss (only for the backward)
-        if self.agreement_weight > 0 and self.backward:
-            aws_reverse = reverse_dec.forward_att(eouts, elens, ys, extract_aws=True).detach()
-            loss_agreement = torch.mul(aws, aws_reverse).sum() / bs
-            loss += loss_agreement * self.agreement_weight
-        else:
-            loss_agreement = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
-
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits.view(ys_out_pad.size(0), ys_out_pad.size(1), logits.size(-1)).argmax(2)
         mask = ys_out_pad != -1
@@ -707,7 +649,7 @@ class RNNDecoder(nn.Module):
         denominator = torch.sum(mask)
         acc = float(numerator) * 100 / float(denominator)
 
-        return loss, acc, ppl, loss_twin, loss_agreement
+        return loss, acc, ppl
 
     def init_dec_state(self, bs, nlayers, eouts=None, elens=None):
         """Initialize decoder state.
