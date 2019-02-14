@@ -101,8 +101,8 @@ class Seq2seq(ModelBase):
                 nlayers=args.transformer_enc_nlayers,
                 d_model=args.d_model,
                 d_ff=args.d_ff,
-                attn_type=args.self_attn_type,
-                attn_nheads=args.self_attn_nheads,
+                attn_type=args.transformer_attn_type,
+                attn_nheads=args.transformer_attn_nheads,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
                 dropout_att=args.dropout_att,
@@ -172,7 +172,7 @@ class Seq2seq(ModelBase):
         for dir in directions:
             # Cold fusion
             if args.rnnlm_cold_fusion and dir == 'fwd':
-                logger.inof('cold fusion')
+                logger.info('cold fusion')
                 raise NotImplementedError()
                 # TODO(hirofumi): cold fusion for backward RNNLM
             else:
@@ -186,8 +186,8 @@ class Seq2seq(ModelBase):
                     pad=self.pad,
                     blank=self.blank,
                     enc_nunits=self.enc_nunits,
-                    attn_type=args.self_attn_type,
-                    attn_nheads=args.self_attn_nheads,
+                    attn_type=args.transformer_attn_type,
+                    attn_nheads=args.transformer_attn_nheads,
                     nlayers=args.transformer_dec_nlayers,
                     d_model=args.d_model,
                     d_ff=args.d_ff,
@@ -320,7 +320,23 @@ class Seq2seq(ModelBase):
                                           ignore_index=self.pad)
 
         # Initialize weight matrices
-        self.init_weights(args.param_init, dist=args.param_init_dist)
+        if args.enc_type == 'transformer':
+            self.init_weights(args.param_init, dist='xavier_uniform',
+                              keys=['enc'], ignore_keys=['score', 'embed_in'])
+            self.init_weights(args.d_model**-0.5, dist='normal',
+                              keys=['embed_in'])
+        else:
+            self.init_weights(args.param_init, dist=args.param_init_dist,
+                              keys=['enc'])
+
+        if args.dec_type == 'transformer':
+            self.init_weights(args.param_init, dist='xavier_uniform',
+                              keys=['dec'], ignore_keys=['score', 'embed'])
+            self.init_weights(args.d_model**-0.5, dist='normal',
+                              keys=['embed'])
+        else:
+            self.init_weights(args.param_init, dist=args.param_init_dist,
+                              keys=['dec'])
 
         # Initialize bias vectors with zero
         self.init_weights(0, dist='constant', keys=['bias'])
@@ -346,11 +362,6 @@ class Seq2seq(ModelBase):
         # Initialize bias in gating with -1 for cold fusion
         if args.rnnlm_cold_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
-
-        # Initialize for transformer
-        if args.enc_type == 'transformer':
-            self.init_weights(args.param_init, dist='xavier_uniform',
-                              keys=['transformer'], ignore_keys=['conv'])
 
     def scheduled_sampling_trigger(self):
         # main task

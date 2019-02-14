@@ -31,7 +31,6 @@ OPTIMIZER_CLS_NAMES = {
 }
 
 logger = logging.getLogger('training')
-logger = logging.getLogger('decoding')
 
 
 class ModelBase(nn.Module):
@@ -87,6 +86,7 @@ class ModelBase(nn.Module):
             if p.data.dim() == 1:
                 if dist == 'constant':
                     torch.nn.init.constant_(p.data, val=param_init)
+                    logger.info('Initialize %s / %s / %.3f' % (n, dist, param_init))
                 else:
                     p.data.zero_()
             else:
@@ -121,6 +121,7 @@ class ModelBase(nn.Module):
                     torch.nn.init.kaiming_normal_(p.data, mode='fan_in', nonlinearity='relu')
                 else:
                     raise NotImplementedError(dist)
+                logger.info('Initialize %s / %s / %.3f' % (n, dist, param_init))
 
     def init_forget_gate_bias_with_one(self):
         """Initialize bias in forget gate with 1. See detail in
