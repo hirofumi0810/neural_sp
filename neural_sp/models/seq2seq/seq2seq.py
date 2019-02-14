@@ -147,7 +147,7 @@ class Seq2seq(ModelBase):
 
         # Bridge layer between the encoder and decoder
         self.is_bridge = False
-        if args.enc_type in ['cnn', 'transformer'] or args.bridge_layer:
+        if args.enc_type in ['cnn', 'transformer'] or args.dec_type == 'transformer' or args.bridge_layer:
             self.bridge = LinearND(self.enc.output_dim,
                                    args.d_model if args.dec_type == 'transformer' else args.dec_nunits,
                                    dropout=args.dropout_enc)
@@ -185,7 +185,7 @@ class Seq2seq(ModelBase):
                     eos=self.eos,
                     pad=self.pad,
                     blank=self.blank,
-                    enc_nunits=self.enc_nunits,
+                    enc_nunits=args.d_model,
                     attn_type=args.transformer_attn_type,
                     attn_nheads=args.transformer_attn_nheads,
                     nlayers=args.transformer_dec_nlayers,
