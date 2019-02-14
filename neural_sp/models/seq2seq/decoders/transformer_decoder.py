@@ -115,37 +115,36 @@ class TransformerDecoder(nn.Module):
             if len(ctc_fc_list) > 0:
                 fc_layers = OrderedDict()
                 for i in range(len(ctc_fc_list)):
-                    input_dim = enc_nunits if i == 0 else ctc_fc_list[i - 1]
+                    input_dim = d_model if i == 0 else ctc_fc_list[i - 1]
                     fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i], dropout=dropout)
                 fc_layers['fc' + str(len(ctc_fc_list))] = LinearND(ctc_fc_list[-1], vocab, dropout=0)
                 self.output_ctc = nn.Sequential(fc_layers)
             else:
-                self.output_ctc = LinearND(enc_nunits, vocab)
+                self.output_ctc = LinearND(d_model, vocab)
             self.decode_ctc_greedy = GreedyDecoder(blank=blank)
             self.decode_ctc_beam = BeamSearchDecoder(blank=blank)
             self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
 
-        assert global_weight > ctc_weight
+        if ctc_weight < global_weight:
+            self.layers = nn.ModuleList(
+                [TransformerDecoderBlock(d_model, d_ff,
+                                         attn_type, attn_nheads,
+                                         dropout, dropout_att)
+                 for _ in range(nlayers)])
 
-        self.layers = nn.ModuleList(
-            [TransformerDecoderBlock(d_model, d_ff,
-                                     attn_type, attn_nheads,
-                                     dropout, dropout_att)
-             for _ in range(nlayers)])
+            self.embed = Embedding(vocab, d_model,
+                                   dropout=dropout_emb,
+                                   ignore_index=pad, scale=True)
+            self.output = LinearND(d_model, vocab)
 
-        self.embed = Embedding(vocab, d_model,
-                               dropout=dropout_emb,
-                               ignore_index=pad, scale=True)
-        self.output = LinearND(d_model, vocab)
-
-        # Optionally tie weights as in:
-        # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-        # https://arxiv.org/abs/1608.05859
-        # and
-        # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-        # https://arxiv.org/abs/1611.01462
-        if tie_embedding:
-            self.output.fc.weight.data = self.embed.embed.weight.data
+            # Optionally tie weights as in:
+            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
+            # https://arxiv.org/abs/1608.05859
+            # and
+            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
+            # https://arxiv.org/abs/1611.01462
+            if tie_embedding:
+                self.output.fc.weight.data = self.embed.embed.weight.data
 
     @property
     def device_id(self):
