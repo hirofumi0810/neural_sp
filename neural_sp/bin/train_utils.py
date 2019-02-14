@@ -161,7 +161,8 @@ class Controller(object):
             If False, the higher, the better.
         best_value (float): the worst value of evaluation metric
         model_size (int):
-        warmup_steps (int):
+        warmup_start_learning_rate (float):
+        warmup_nsteps (int):
         factor (float):
 
     """
@@ -169,7 +170,7 @@ class Controller(object):
     def __init__(self, learning_rate_init, decay_type,
                  decay_start_epoch, decay_rate,
                  decay_patient_epoch=1, lower_better=True, best_value=10000,
-                 model_size=1, warmup_steps=4000, factor=1):
+                 model_size=1, warmup_start_learning_rate=0, warmup_nsteps=4000, factor=1):
         self.decay_type = decay_type
         self.decay_start_epoch = decay_start_epoch
         self.decay_rate = decay_rate
@@ -179,15 +180,17 @@ class Controller(object):
         self.best_value = best_value
 
         # for warmup
-        if warmup_steps > 0:
-            self.init_lr = factor * np.power(model_size, -0.5)
+        if warmup_nsteps > 0:
+            if warmup_start_learning_rate > 0:
+                self.init_lr = warmup_start_learning_rate
+            else:
+                self.init_lr = factor * np.power(model_size, -0.5)
         else:
             self.init_lr = learning_rate_init
-        self.model_size = model_size
-        self.warmup_steps = warmup_steps
+        self.warmup_nsteps = warmup_nsteps
 
         if decay_type == 'warmup':
-            assert warmup_steps > 0
+            assert warmup_nsteps > 0
 
     def decay_lr(self, optimizer, lr, epoch, value):
         """Decay learning rate per epoch.
@@ -257,7 +260,7 @@ class Controller(object):
 
         """
         lr = self.init_lr * np.min([np.power(step, -0.5),
-                                    step * np.power(self.warmup_steps, -1.5)])
+                                    step * np.power(self.warmup_nsteps, -1.5)])
 
         # Update optimizer
         for param_group in optimizer.param_groups:

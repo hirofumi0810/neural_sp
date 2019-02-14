@@ -34,7 +34,6 @@ from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
-from neural_sp.models.seq2seq.transformer import Transformer
 from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.utils.general import mkdir_join
 
@@ -174,127 +173,8 @@ def main():
         args.decay_type = 'warmup'
 
     # Model setting
-    if args.transformer:
-        model = Transformer(args)
-        dir_name = 'transformer'
-        if len(args.conv_channels) > 0:
-            tmp = dir_name
-            dir_name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
-            if args.conv_batch_norm:
-                dir_name += 'bn'
-            dir_name += tmp
-        dir_name += str(args.d_model) + 'H'
-        dir_name += str(args.enc_nlayers) + 'L'
-        dir_name += str(args.dec_nlayers) + 'L'
-        dir_name += '_head' + str(args.attn_nheads)
-        dir_name += '_' + args.optimizer
-        dir_name += '_lr' + str(args.learning_rate)
-        dir_name += '_bs' + str(args.batch_size)
-        dir_name += '_ls' + str(args.lsm_prob)
-        dir_name += '_' + str(args.pre_process) + 't' + str(args.post_process)
-        if args.nstacks > 1:
-            dir_name += '_stack' + str(args.nstacks)
-        if args.bwd_weight > 0:
-            dir_name += '_bwd' + str(args.bwd_weight)
-    else:
-        model = Seq2seq(args)
-        dir_name = args.enc_type
-        if args.conv_channels and len(args.conv_channels.split('_')) > 0:
-            tmp = dir_name
-            dir_name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
-            if args.conv_batch_norm:
-                dir_name += 'bn'
-            dir_name += tmp
-        dir_name += str(args.enc_nunits) + 'H'
-        dir_name += str(args.enc_nprojs) + 'P'
-        dir_name += str(args.enc_nlayers) + 'L'
-        if args.enc_residual:
-            dir_name += 'res'
-        if args.enc_add_ffl:
-            dir_name += 'ffl'
-        if args.nstacks > 1:
-            dir_name += '_stack' + str(args.nstacks)
-        else:
-            dir_name += '_' + args.subsample_type + str(subsample_factor)
-        dir_name += '_' + args.dec_type
-        dir_name += str(args.dec_nunits) + 'H'
-        dir_name += str(args.dec_nprojs) + 'P'
-        dir_name += str(args.dec_nlayers) + 'L'
-        if args.dec_residual:
-            dir_name += 'res'
-        if args.dec_add_ffl:
-            dir_name += 'ffl'
-        if args.dec_loop_type == 'conditional':
-            dir_name += '_cond'
-        elif args.dec_loop_type == 'lmdecoder':
-            dir_name += '_lmdec'
-        elif args.dec_loop_type == 'rnmt':
-            dir_name += '_rnmt'
-        if args.input_feeding:
-            dir_name += '_inputfeed'
-        if args.tie_embedding:
-            dir_name += '_tie'
-        dir_name += '_' + args.attn_type
-        if args.attn_nheads > 1:
-            dir_name += '_head' + str(args.attn_nheads)
-        if args.attn_sigmoid:
-            dir_name += '_sig'
-        dir_name += '_' + args.optimizer
-        dir_name += '_lr' + str(args.learning_rate)
-        dir_name += '_bs' + str(args.batch_size)
-        if args.ctc_weight < 1:
-            dir_name += '_ss' + str(args.ss_prob)
-        dir_name += '_ls' + str(args.lsm_prob)
-        if args.focal_loss_weight > 0:
-            dir_name += '_fl' + str(args.focal_loss_weight)
-        if args.layer_norm:
-            dir_name += '_layernorm'
-        # MTL
-        if args.mtl_per_batch:
-            dir_name += '_mtlperbatch'
-            if args.ctc_weight > 0:
-                dir_name += '_' + args.unit + 'ctc'
-            if args.bwd_weight > 0:
-                dir_name += '_' + args.unit + 'bwd'
-            if args.lmobj_weight > 0:
-                dir_name += '_' + args.unit + 'lmobj'
-            for sub in ['sub1', 'sub2', 'sub3']:
-                if getattr(args, 'train_set_' + sub):
-                    dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
-                    if getattr(args, 'ctc_weight_' + sub) > 0:
-                        dir_name += 'ctc'
-                    if getattr(args, 'bwd_weight_' + sub) > 0:
-                        dir_name += 'bwd'
-                    if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                        dir_name += 'fwd'
-        else:
-            if args.ctc_weight > 0:
-                dir_name += '_ctc' + str(args.ctc_weight)
-            if args.bwd_weight > 0:
-                dir_name += '_bwd' + str(args.bwd_weight)
-            if args.lmobj_weight > 0:
-                dir_name += '_lmobj' + str(args.lmobj_weight)
-            for sub in ['sub1', 'sub2', 'sub3']:
-                if getattr(args, sub + '_weight') > 0:
-                    dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
-                    if getattr(args, 'ctc_weight_' + sub) > 0:
-                        dir_name += 'ctc' + str(getattr(args, 'ctc_weight_' + sub))
-                    if getattr(args, 'bwd_weight_' + sub) > 0:
-                        dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
-                    if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                        dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
-                                                - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
-        if args.task_specific_layer:
-            dir_name += '_tsl'
-        # Pre-training
-        if args.pretrained_model and os.path.isdir(args.pretrained_model):
-            # Load a config file
-            config_pre = load_config(os.path.join(args.pretrained_model, 'config.yml'))
-            dir_name += '_' + config_pre['unit'] + 'pt'
-        if args.twin_net_weight > 0:
-            dir_name += '_twin' + str(args.twin_net_weight)
-        if args.agreement_weight > 0:
-            dir_name += '_agree' + str(args.agreement_weight)
+    model = Seq2seq(args)
+    dir_name = make_model_name(args, subsample_factor)
 
     if args.resume:
         # Restart from the last checkpoint
@@ -383,6 +263,9 @@ def main():
 
         # Initialize with pre-trained model's parameters
         if args.pretrained_model and os.path.isdir(args.pretrained_model):
+            # Load a config file
+            config_pre = load_config(os.path.join(args.pretrained_model, 'config.yml'))
+
             # Merge config with args
             for k, v in config_pre.items():
                 setattr(args_pre, k, v)
@@ -442,7 +325,8 @@ def main():
                                lower_better=True,
                                best_value=metric_dev_best,
                                model_size=args.d_model,
-                               warmup_steps=args.warmup_nsteps,
+                               warmup_start_learning_rate=args.warmup_start_learning_rate,
+                               warmup_nsteps=args.warmup_nsteps,
                                factor=1)
 
     # Set reporter
@@ -501,7 +385,7 @@ def main():
         reporter.step(is_eval=False)
 
         # Update learning rate
-        if args.decay_type == 'warmup':
+        if args.decay_type == 'warmup' and step < args.warmup_nsteps:
             model.module.optimizer, lr = lr_controller.warmup_lr(
                 model.module.optimizer, lr, step=step)
 
@@ -573,10 +457,8 @@ def main():
                     raise NotImplementedError(args.metric)
 
                 # Update learning rate
-                if args.decay_type != 'warmup':
-                    model.module.optimizer, lr = lr_controller.decay_lr(
-                        model.module.optimizer, lr,
-                        epoch=epoch, value=metric_dev)
+                model.module.optimizer, lr = lr_controller.decay_lr(
+                    model.module.optimizer, lr, epoch=epoch, value=metric_dev)
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
@@ -662,6 +544,117 @@ def main():
     pbar_epoch.close()
 
     return model.module.save_path
+
+
+def make_model_name(args, subsample_factor):
+
+    # encoder
+    dir_name = args.enc_type
+    if args.conv_channels and len(args.conv_channels.split('_')) > 0:
+        tmp = dir_name
+        dir_name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
+        if args.conv_batch_norm:
+            dir_name += 'bn'
+        dir_name += tmp
+    if args.enc_type == 'transformer':
+        dir_name += str(args.d_model) + 'H'
+        dir_name += str(args.transformer_enc_nlayers) + 'L'
+    else:
+        dir_name += str(args.enc_nunits) + 'H'
+        dir_name += str(args.enc_nprojs) + 'P'
+        dir_name += str(args.enc_nlayers) + 'L'
+        if args.enc_residual:
+            dir_name += 'res'
+        if args.enc_add_ffl:
+            dir_name += 'ffl'
+    if args.nstacks > 1:
+        dir_name += '_stack' + str(args.nstacks)
+    else:
+        dir_name += '_' + args.subsample_type + str(subsample_factor)
+
+    # decoder
+    dir_name += '_' + args.dec_type
+    if args.dec_type == 'transformer':
+        dir_name += str(args.d_model) + 'H'
+        dir_name += str(args.transformer_dec_nlayers) + 'L'
+        dir_name += '_' + args.transformer_attn_type
+    else:
+        dir_name += str(args.dec_nunits) + 'H'
+        dir_name += str(args.dec_nprojs) + 'P'
+        dir_name += str(args.dec_nlayers) + 'L'
+        dir_name += '_' + args.dec_loop_type
+        if args.dec_residual:
+            dir_name += 'res'
+        if args.dec_add_ffl:
+            dir_name += 'ffl'
+        if args.input_feeding:
+            dir_name += '_inputfeed'
+        dir_name += '_' + args.attn_type
+        if args.attn_sigmoid:
+            dir_name += '_sig'
+
+    if args.attn_nheads > 1:
+        dir_name += '_head' + str(args.attn_nheads)
+    if args.tie_embedding:
+        dir_name += '_tie'
+
+    # optimization and regularization
+    dir_name += '_' + args.optimizer
+    dir_name += '_lr' + str(args.learning_rate)
+    dir_name += '_bs' + str(args.batch_size)
+    if args.ctc_weight < 1:
+        dir_name += '_ss' + str(args.ss_prob)
+    dir_name += '_ls' + str(args.lsm_prob)
+    if args.focal_loss_weight > 0:
+        dir_name += '_fl' + str(args.focal_loss_weight)
+    if args.layer_norm:
+        dir_name += '_ln'
+
+    # MTL
+    if args.mtl_per_batch:
+        dir_name += '_mtlperbatch'
+        if args.ctc_weight > 0:
+            dir_name += '_' + args.unit + 'ctc'
+        if args.bwd_weight > 0:
+            dir_name += '_' + args.unit + 'bwd'
+        if args.lmobj_weight > 0:
+            dir_name += '_' + args.unit + 'lmobj'
+        for sub in ['sub1', 'sub2', 'sub3']:
+            if getattr(args, 'train_set_' + sub):
+                dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
+                if getattr(args, 'ctc_weight_' + sub) > 0:
+                    dir_name += 'ctc'
+                if getattr(args, 'bwd_weight_' + sub) > 0:
+                    dir_name += 'bwd'
+                if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
+                    dir_name += 'fwd'
+    else:
+        if args.ctc_weight > 0:
+            dir_name += '_ctc' + str(args.ctc_weight)
+        if args.bwd_weight > 0:
+            dir_name += '_bwd' + str(args.bwd_weight)
+        if args.lmobj_weight > 0:
+            dir_name += '_lmobj' + str(args.lmobj_weight)
+        for sub in ['sub1', 'sub2', 'sub3']:
+            if getattr(args, sub + '_weight') > 0:
+                dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
+                if getattr(args, 'ctc_weight_' + sub) > 0:
+                    dir_name += 'ctc' + str(getattr(args, 'ctc_weight_' + sub))
+                if getattr(args, 'bwd_weight_' + sub) > 0:
+                    dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
+                if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
+                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+    if args.task_specific_layer:
+        dir_name += '_tsl'
+
+    # Pre-training
+    if args.pretrained_model and os.path.isdir(args.pretrained_model):
+        # Load a config file
+        config_pre = load_config(os.path.join(args.pretrained_model, 'config.yml'))
+        dir_name += '_' + config_pre['unit'] + 'pt'
+
+    return dir_name
 
 
 if __name__ == '__main__':
