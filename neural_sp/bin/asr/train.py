@@ -189,7 +189,6 @@ def main():
             optimizer=config['optimizer'],
             learning_rate=float(config['learning_rate']),  # on-the-fly
             weight_decay=float(config['weight_decay']),
-            clip_grad_norm=config['clip_grad_norm'],
             lr_schedule=False,
             factor=config['decay_rate'],
             patience_epoch=config['decay_patient_epoch'])
@@ -203,7 +202,6 @@ def main():
                 optimizer='sgd',
                 learning_rate=float(config['learning_rate']),  # on-the-fly
                 weight_decay=float(config['weight_decay']),
-                clip_grad_norm=config['clip_grad_norm'],
                 lr_schedule=False,
                 factor=config['decay_rate'],
                 patience_epoch=config['decay_patient_epoch'])
@@ -288,10 +286,10 @@ def main():
         model.set_optimizer(optimizer=args.optimizer,
                             learning_rate=float(args.learning_rate),
                             weight_decay=float(args.weight_decay),
-                            clip_grad_norm=args.clip_grad_norm,
                             lr_schedule=False,
                             factor=args.decay_rate,
-                            patience_epoch=args.decay_patient_epoch)
+                            patience_epoch=args.decay_patient_epoch,
+                            transformer=True if args.enc_type == 'transformer' or args.dec_type == 'transformer' else False)
 
         epoch, step = 1, 1
         lr = float(args.learning_rate)
@@ -523,7 +521,6 @@ def main():
                         # learning_rate=float(args.learning_rate),
                         learning_rate=lr,
                         weight_decay=float(args.weight_decay),
-                        clip_grad_norm=args.clip_grad_norm,
                         lr_schedule=False,
                         factor=args.decay_rate,
                         patience_epoch=args.decay_patient_epoch)

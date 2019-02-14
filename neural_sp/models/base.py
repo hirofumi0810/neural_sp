@@ -112,9 +112,9 @@ class ModelBase(nn.Module):
                     else:
                         raise NotImplementedError(p.data.dim())
                 elif dist == 'xavier_uniform':
-                    torch.nn.init.xavier_uniform_(p.data)
+                    torch.nn.init.xavier_uniform_(p.data, gain=1.0)
                 elif dist == 'xavier_normal':
-                    torch.nn.init.xavier_normal_(p.data)
+                    torch.nn.init.xavier_normal_(p.data, gain=1.0)
                 elif dist == 'kaiming_uniform':
                     torch.nn.init.kaiming_uniform_(p.data, mode='fan_in', nonlinearity='relu')
                 elif dist == 'kaiming_normal':
@@ -188,29 +188,28 @@ class ModelBase(nn.Module):
         else:
             logger.warning('CPU mode')
 
-    def set_optimizer(self, optimizer, learning_rate_init,
-                      weight_decay=0.0, clip_grad_norm=5.0,
-                      lr_schedule=True, factor=0.1, patience_epoch=5):
+    def set_optimizer(self, optimizer, learning_rate, weight_decay=0.0,
+                      lr_schedule=True, factor=0.1, patience_epoch=5,
+                      transformer=False):
         """Set optimizer.
 
         Args:
             optimizer (str): sgd or adam or adadelta or adagrad or rmsprop
-            learning_rate_init (float): An initial learning rate
+            learning_rate (float): learning rate
             weight_decay (float): L2 penalty
-            clip_grad_norm (float): not used here
             lr_schedule (bool): if True, wrap optimizer with
                 scheduler. Default is True.
             factor (float):
             patience_epoch (int):
+            transformer (bool):
         Returns:
             scheduler ():
 
         """
         optimizer = optimizer.lower()
         parameters = [p for p in self.parameters() if p.requires_grad]
-        names = [n for n, p in self.named_parameters() if p.requires_grad]
-        logger.info("===== Update parameters =====")
-        for n in names:
+        logger.info("===== Fixed parameters =====")
+        for n in [n for n, p in self.named_parameters() if not p.requires_grad]:
             logger.info("%s" % n)
 
         if optimizer not in OPTIMIZER_CLS_NAMES:
@@ -220,18 +219,18 @@ class ModelBase(nn.Module):
 
         if optimizer == 'sgd':
             self.optimizer = torch.optim.SGD(parameters,
-                                             lr=learning_rate_init,
+                                             lr=learning_rate,
                                              weight_decay=weight_decay,
                                              nesterov=False)
         elif optimizer == 'momentum':
             self.optimizer = torch.optim.SGD(parameters,
-                                             lr=learning_rate_init,
+                                             lr=learning_rate,
                                              momentum=0.9,
                                              weight_decay=weight_decay,
                                              nesterov=False)
         elif optimizer == 'nesterov':
             self.optimizer = torch.optim.SGD(parameters,
-                                             lr=learning_rate_init,
+                                             lr=learning_rate,
                                              momentum=0.9,
                                              weight_decay=weight_decay,
                                              nesterov=True)
@@ -242,13 +241,26 @@ class ModelBase(nn.Module):
                 rho=0.95,  # chainer default
                 # eps=1e-8,  # pytorch default
                 # eps=1e-6,  # chainer default
-                eps=learning_rate_init,
+                eps=learning_rate,
                 weight_decay=weight_decay)
 
+        elif optimizer == 'adam':
+            if transformer:
+                self.optimizer = torch.optim.Adam(
+                    parameters,
+                    lr=learning_rate,
+                    betas=(0.9, 0.997),
+                    eps=1e-09,
+                    weight_decay=weight_decay)
+            else:
+                self.optimizer = torch.optim.Adam(
+                    parameters,
+                    lr=learning_rate,
+                    weight_decay=weight_decay)
         else:
             self.optimizer = OPTIMIZER_CLS_NAMES[optimizer](
                 parameters,
-                lr=learning_rate_init,
+                lr=learning_rate,
                 weight_decay=weight_decay)
 
         # if lr_schedule:
