@@ -187,7 +187,7 @@ def main():
         # Set optimizer
         model.set_optimizer(
             optimizer=config['optimizer'],
-            learning_rate_init=float(config['learning_rate']),  # on-the-fly
+            learning_rate=float(config['learning_rate']),  # on-the-fly
             weight_decay=float(config['weight_decay']),
             clip_grad_norm=config['clip_grad_norm'],
             lr_schedule=False,
@@ -201,7 +201,7 @@ def main():
         if epoch >= config['convert_to_sgd_epoch']:
             model.set_optimizer(
                 optimizer='sgd',
-                learning_rate_init=float(config['learning_rate']),  # on-the-fly
+                learning_rate=float(config['learning_rate']),  # on-the-fly
                 weight_decay=float(config['weight_decay']),
                 clip_grad_norm=config['clip_grad_norm'],
                 lr_schedule=False,
@@ -286,7 +286,7 @@ def main():
 
         # Set optimizer
         model.set_optimizer(optimizer=args.optimizer,
-                            learning_rate_init=float(args.learning_rate),
+                            learning_rate=float(args.learning_rate),
                             weight_decay=float(args.weight_decay),
                             clip_grad_norm=args.clip_grad_norm,
                             lr_schedule=False,
@@ -317,7 +317,7 @@ def main():
     #     setproctitle(dir_name)
 
     # Set learning rate controller
-    lr_controller = Controller(learning_rate_init=lr,
+    lr_controller = Controller(learning_rate=lr,
                                decay_type=args.decay_type,
                                decay_start_epoch=args.decay_start_epoch,
                                decay_rate=args.decay_rate,
@@ -328,6 +328,8 @@ def main():
                                warmup_start_learning_rate=args.warmup_start_learning_rate,
                                warmup_nsteps=args.warmup_nsteps,
                                factor=1)
+    if not args.resume:
+        lr = lr_controller.lr_init
 
     # Set reporter
     reporter = Reporter(model.module.save_path, tensorboard=True)
@@ -518,8 +520,8 @@ def main():
                     # Convert to fine-tuning stage
                     model.module.set_optimizer(
                         'sgd',
-                        # learning_rate_init=float(args.learning_rate),
-                        learning_rate_init=lr,
+                        # learning_rate=float(args.learning_rate),
+                        learning_rate=lr,
                         weight_decay=float(args.weight_decay),
                         clip_grad_norm=args.clip_grad_norm,
                         lr_schedule=False,

@@ -151,7 +151,7 @@ class Controller(object):
     """Controll learning rate per epoch.
 
     Args:
-        learning_rate_init (float): the initial learning rate
+        learning_rate (float): learning rate
         decay_type (str): epoch or metric
         decay_start_epoch (int): the epoch to start decay
         decay_rate (float): the rate to decay the current learning rate
@@ -167,10 +167,12 @@ class Controller(object):
 
     """
 
-    def __init__(self, learning_rate_init, decay_type,
+    def __init__(self, learning_rate, decay_type,
                  decay_start_epoch, decay_rate,
                  decay_patient_epoch=1, lower_better=True, best_value=10000,
-                 model_size=1, warmup_start_learning_rate=0, warmup_nsteps=4000, factor=1):
+                    model_size=1, warmup_start_learning_rate=0, warmup_nsteps=4000, factor=1):
+
+        self.lr_max = learning_rate
         self.decay_type = decay_type
         self.decay_start_epoch = decay_start_epoch
         self.decay_rate = decay_rate
@@ -182,11 +184,12 @@ class Controller(object):
         # for warmup
         if warmup_nsteps > 0:
             if warmup_start_learning_rate > 0:
-                self.init_lr = warmup_start_learning_rate
+                self.lr_init = warmup_start_learning_rate
             else:
-                self.init_lr = factor * np.power(model_size, -0.5)
+                self.lr_init = factor * np.power(model_size, -0.5)
         else:
-            self.init_lr = learning_rate_init
+            self.lr_init = learning_rate
+        self.warmup_start_lr = warmup_start_learning_rate
         self.warmup_nsteps = warmup_nsteps
 
         if decay_type == 'warmup':
@@ -259,8 +262,13 @@ class Controller(object):
             lr (float): the decayed learning rate
 
         """
-        lr = self.init_lr * np.min([np.power(step, -0.5),
-                                    step * np.power(self.warmup_nsteps, -1.5)])
+        if self.warmup_start_lr > 0:
+            # linearly increse
+            lr = (self.lr_max - self.warmup_start_lr) / self.warmup_nsteps * step  + self.lr_init
+        else:
+            # based on the original transformer paper
+            lr = self.lr_init * np.min([np.power(step, -0.5),
+                                        step * np.power(self.warmup_nsteps, -1.5)])
 
         # Update optimizer
         for param_group in optimizer.param_groups:
