@@ -359,9 +359,9 @@ class RNNDecoder(nn.Module):
 
             self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
-                                   bias=not tie_embedding,
                                    ignore_index=pad)
-            self.output = LinearND(nunits, vocab)
+            self.output = LinearND(nunits, vocab,
+                                   bias=not tie_embedding)
 
             # Optionally tie weights as in:
             # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
