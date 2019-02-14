@@ -69,6 +69,8 @@ class TransformerEncoder(nn.Module):
 
         super(TransformerEncoder, self).__init__()
 
+        self.d_model = d_model
+
         # Setting for CNNs before RNNs
         if conv_poolings:
             channels = [int(c) for c in conv_channels.split('_')] if len(conv_channels) > 0 else []
@@ -104,10 +106,10 @@ class TransformerEncoder(nn.Module):
             self.conv = None
 
             self.embed_in = LinearND(self._output_dim, d_model,
-                                     dropout=dropout_in)
+                                     dropout=0)  # NOTE: do not apply dropout here
 
+        self.pos_emb_in = PositionalEncoding(d_model, dropout_in)
         self.layer_norm_in = nn.LayerNorm(d_model, eps=1e-6)
-        self.position_in = PositionalEncoding(d_model, dropout_in)
 
         # Self-attention layers
         self.layers = nn.ModuleList(
@@ -146,20 +148,20 @@ class TransformerEncoder(nn.Module):
         # Path through CNN layers before RNN layers
         if self.conv is None:
             # Transform to d_model dimension
-            xs = self.embed_in(xs)
+            xs = self.embed_in(xs) * (self.d_model ** 0.5)
         else:
             xs, xlens = self.conv(xs, xlens)
 
-        bs, max_time = xs.size()[:2]
+        bs, max_xlen = xs.size()[:2]
 
         # Make source-side self-attention mask
-        xx_mask = xs.new_ones(bs, max_time, max_time)
+        xx_mask = xs.new_ones(bs, max_xlen, max_xlen)
         for b in range(bs):
-            if xlens[b] < max_time:
+            if xlens[b] < max_xlen:
                 xx_mask[b, xlens[b]:, xlens[b]:] = 0
 
         # Positional encoding & layer normalization
-        xs = self.position_in(xs)
+        xs = self.pos_emb_in(xs)
         xs = self.layer_norm_in(xs)
 
         for i in range(len(self.layers)):

@@ -102,6 +102,7 @@ class TransformerDecoder(nn.Module):
         self.pad = pad
         self.blank = blank
         self.enc_nunits = enc_nunits
+        self.d_model = d_model
         self.nlayers = nlayers
         self.lsm_prob = lsm_prob
         self.ctc_weight = ctc_weight
@@ -133,8 +134,9 @@ class TransformerDecoder(nn.Module):
                  for _ in range(nlayers)])
 
             self.embed = Embedding(vocab, d_model,
-                                   dropout=dropout_emb,
-                                   ignore_index=pad, scale=True)
+                                   dropout=0,  # NOTE: do not apply dropout here
+                                   ignore_index=pad)
+            self.pos_emb_out = PositionalEncoding(d_model, dropout_emb)
             self.output = LinearND(d_model, vocab)
 
             # Optionally tie weights as in:
@@ -258,8 +260,9 @@ class TransformerDecoder(nn.Module):
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, -1)
 
-        # Pre-computation of embedding
-        ys_emb = self.embed(ys_in_pad)
+        # Add positional embedding
+        ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
+        ys_emb = self.pos_emb_out(ys_emb)
 
         # Make source-target attention mask: `[B, L(query), T(key)]`
         bs, max_xlen = eouts.size()[:2]
@@ -339,7 +342,10 @@ class TransformerDecoder(nn.Module):
                 if elens[b] < max_xlen:
                     yx_mask[b, :, elens[b]:] = 0
 
-            out = self.embed(ys)
+            # Add positional embedding
+            out = self.embed(ys) * (self.d_model ** 0.5)
+            out = self.pos_emb_out(out)
+
             for l in range(self.nlayers):
                 out, yy_aw, xy_aw = self.layers[l](eouts, out, yx_mask, yy_mask)
                 # xy_aw: `[B, head, T, L]`

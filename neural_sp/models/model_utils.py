@@ -59,7 +59,7 @@ class LinearND(nn.Module):
 
 class Embedding(nn.Module):
 
-    def __init__(self, vocab, emb_dim, dropout=0, ignore_index=-1, scale=False):
+    def __init__(self, vocab, emb_dim, dropout=0, ignore_index=-1):
         """Embedding layer.
 
         Args:
@@ -77,7 +77,6 @@ class Embedding(nn.Module):
         self.embed = nn.Embedding(vocab, emb_dim, padding_idx=ignore_index)
         if dropout > 0:
             self.dropout = nn.Dropout(p=dropout)
-        self.scale = scale
 
     def forward(self, y):
         """Forward computation.
@@ -91,8 +90,6 @@ class Embedding(nn.Module):
         y = self.embed(y)
         if hasattr(self, 'dropout'):
             y = self.dropout(y)
-        if self.scale:
-            y *= math.sqrt(self.emb_dim)
         return y
 
 
@@ -110,7 +107,7 @@ class PositionalEncoding(nn.Module):
         super(PositionalEncoding, self).__init__()
 
         # Compute the positional encodings once in log space.
-        pe = torch.zeros(max_len, d_model, dtype=torch.float)
+        pe = torch.zeros(max_len, d_model, dtype=torch.float32)
         position = torch.arange(0, max_len).float().unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
