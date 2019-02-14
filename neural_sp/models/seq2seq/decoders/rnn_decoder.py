@@ -70,7 +70,6 @@ class RNNDecoder(nn.Module):
         emb_dim (int): dimension of the embedding in target spaces.
         tie_embedding (bool):
         vocab (int): number of nodes in softmax layer
-        logits_temp (float): a parameter for smoothing the softmax layer in output probabilities
         dropout (float): probability to drop nodes in the RNN layer
         dropout_emb (float): probability to drop nodes of the embedding layer
         dropout_att (float): dropout probabilities for attention distributions
@@ -118,7 +117,6 @@ class RNNDecoder(nn.Module):
                  emb_dim,
                  tie_embedding,
                  vocab,
-                 logits_temp,
                  dropout,
                  dropout_emb,
                  dropout_att,
@@ -158,7 +156,6 @@ class RNNDecoder(nn.Module):
         self.residual = residual
         self.add_ffl = add_ffl
         self.layerwise_attention = layerwise_attention
-        self.logits_temp = logits_temp
         self.ss_prob = ss_prob
         self.ss_type = ss_type
         if ss_type == 'constant':
@@ -362,6 +359,7 @@ class RNNDecoder(nn.Module):
 
             self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
+                                   bias=not tie_embedding,
                                    ignore_index=pad)
             self.output = LinearND(nunits, vocab)
 
@@ -396,16 +394,16 @@ class RNNDecoder(nn.Module):
             observation (dict):
 
         """
-        obserbation = {'loss': None,
+        observation = {'loss': None,
                        'loss_att': None, 'loss_ctc': None, 'loss_lmobj': None,
                        'acc_att': None, 'acc_lmobj': None,
                        'ppl_att': None, 'ppl_lmobj': None}
-        loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
+        loss = eouts.new_zeros((1,))
 
         # CTC loss
         if self.ctc_weight > 0 and (not self.mtl_per_batch or (self.mtl_per_batch and 'ctc' in task)):
             loss_ctc = self.forward_ctc(eouts, elens, ys)
-            obserbation['loss_ctc'] = loss_ctc.item()
+            observation['loss_ctc'] = loss_ctc.item()
             if self.mtl_per_batch:
                 loss += loss_ctc
             else:
@@ -414,9 +412,9 @@ class RNNDecoder(nn.Module):
         # LM objective
         if self.lmobj_weight > 0 and 'lmobj' in task:
             loss_lmobj, acc_lmobj, ppl_lmobj = self.forward_lmobj(ys)
-            obserbation['loss_lmobj'] = loss_lmobj.item()
-            obserbation['acc_lmobj'] = acc_lmobj
-            obserbation['ppl_lmobj'] = ppl_lmobj
+            observation['loss_lmobj'] = loss_lmobj.item()
+            observation['acc_lmobj'] = acc_lmobj
+            observation['ppl_lmobj'] = ppl_lmobj
             if self.mtl_per_batch:
                 loss += loss_lmobj
             else:
@@ -425,16 +423,16 @@ class RNNDecoder(nn.Module):
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and 'ctc' not in task and 'lmobj' not in task:
             loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys)
-            obserbation['loss_att'] = loss_att.item()
-            obserbation['acc_att'] = acc_att
-            obserbation['ppl_att'] = ppl_att
+            observation['loss_att'] = loss_att.item()
+            observation['acc_att'] = acc_att
+            observation['ppl_att'] = ppl_att
             if self.mtl_per_batch:
                 loss += loss_att
             else:
                 loss += loss_att * (self.global_weight - self.ctc_weight)
 
-        obserbation['loss'] = loss.item()
-        return loss, obserbation
+        observation['loss'] = loss.item()
+        return loss, observation
 
     def forward_ctc(self, eouts, elens, ys):
         """Compute CTC loss.
@@ -486,10 +484,11 @@ class RNNDecoder(nn.Module):
 
         """
         bs = len(ys)
+        w = next(self.parameters())
 
         # Append <sos> and <eos>
-        sos = torch.zeros((1,)).fill_(self.sos).long().cuda(self.device_id)
-        eos = torch.zeros((1,)).fill_(self.eos).long().cuda(self.device_id)
+        sos = w.new_zeros((1,)).fill_(self.sos).long()
+        eos = w.new_zeros((1,)).fill_(self.eos).long()
         if self.backward:
             ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
             ys_in = [torch.cat([eos, y], dim=0) for y in ys]
@@ -503,8 +502,8 @@ class RNNDecoder(nn.Module):
 
         # Initialization
         dstates = self.init_dec_state(bs, self.nlayers)
-        con_vec = torch.zeros((bs, 1, self.enc_nunits), dtype=torch.float32).cuda(self.device_id)
-        attn_vec = torch.zeros((bs, 1, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+        con_vec = w.new_zeros((bs, 1, self.enc_nunits))
+        attn_vec = w.new_zeros((bs, 1, self.dec_nunits))
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
@@ -525,7 +524,7 @@ class RNNDecoder(nn.Module):
             logits.append(logits_t)
 
         # Compute XE loss for RNNLM objective
-        logits = torch.cat(logits, dim=1) / self.logits_temp
+        logits = torch.cat(logits, dim=1)
         loss = F.cross_entropy(logits.view((-1, logits.size(2))),
                                ys_out_pad.view(-1),
                                ignore_index=-1, size_average=False) / bs
@@ -620,20 +619,20 @@ class RNNDecoder(nn.Module):
             logits.append(self.output(attn_vec))
 
         # Compute XE sequence loss
-        logits = torch.cat(logits, dim=1) / self.logits_temp
-        loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
+        logits = torch.cat(logits, dim=1)
         if self.lsm_prob > 0:
             # Label smoothing
             ylens = [y.size(0) for y in ys_out]
-            loss += cross_entropy_lsm(
+            loss = cross_entropy_lsm(
                 logits, ys=ys_out_pad, ylens=ylens,
                 lsm_prob=self.lsm_prob, size_average=True)
         else:
-            loss += F.cross_entropy(
+            loss = F.cross_entropy(
                 logits.view((-1, logits.size(2))),
                 ys_out_pad.view(-1),  # long
                 ignore_index=-1, size_average=False) / bs
-        ppl = math.exp(loss.item())
+        # ppl = math.exp(loss.item())
+        ppl = np.exp(loss.item())
 
         # Focal loss
         if self.fl_weight > 0:
@@ -671,25 +670,25 @@ class RNNDecoder(nn.Module):
                    'dstate': None,
                    'dstate1': None,
                    'dstate2': None}
-        dstates['dout_score'] = torch.zeros((bs, 1, self.dec_nunits),
-                                            dtype=torch.float32).cuda(self.device_id)
-        dstates['dout_gen'] = torch.zeros((bs, 1, self.dec_nunits),
-                                          dtype=torch.float32).cuda(self.device_id)
+        w = next(self.parameters())
+
+        dstates['dout_score'] = w.new_zeros((bs, 1, self.dec_nunits))
+        dstates['dout_gen'] = w.new_zeros((bs, 1, self.dec_nunits))
         if self.loop_type in ['conditional', 'rnmt']:
-            hxs1 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+            hxs1 = [w.new_zeros((bs, self.dec_nunits))
                     for l in range(1)]
-            cxs1 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+            cxs1 = [w.new_zeros((bs, self.dec_nunits))
                     for l in range(1)] if self.rnn_type == 'lstm' else []
             dstates['dstate1'] = (hxs1, cxs1)
-            hxs2 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+            hxs2 = [w.new_zeros((bs, self.dec_nunits))
                     for l in range(self.nlayers - 1)]
-            cxs2 = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+            cxs2 = [w.new_zeros((bs, self.dec_nunits))
                     for l in range(self.nlayers - 1)] if self.rnn_type == 'lstm' else []
             dstates['dstate2'] = (hxs2, cxs2)
         else:
-            hxs = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+            hxs = [w.new_zeros((bs, self.dec_nunits))
                    for l in range(self.nlayers)]
-            cxs = [torch.zeros((bs, self.dec_nunits), dtype=torch.float32).cuda(self.device_id)
+            cxs = [w.new_zeros((bs, self.dec_nunits))
                    for l in range(self.nlayers)] if self.rnn_type == 'lstm' else []
             dstates['dstate'] = (hxs, cxs)
         return dstates
@@ -940,7 +939,7 @@ class RNNDecoder(nn.Module):
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
 
         """
-        bs, enc_time, enc_nunits = eouts.size()
+        bs, max_xlen, enc_nunits = eouts.size()
 
         # Initialization
         dstates = self.init_dec_state(bs, self.nlayers, eouts, elens)
@@ -961,7 +960,7 @@ class RNNDecoder(nn.Module):
         best_hyps_tmp, aws_tmp = [], []
         ylens = np.zeros((bs,), dtype=np.int32)
         eos_flags = [False] * bs
-        for t in range(int(math.floor(enc_time * max_len_ratio)) + 1):
+        for t in range(int(math.floor(max_xlen * max_len_ratio)) + 1):
             # Recurrency (1st)
             y_emb = self.embed(y)
             dec_in = attn_vec if self.input_feeding else con_vec
@@ -989,7 +988,7 @@ class RNNDecoder(nn.Module):
             logits_t = self.output(attn_vec)
 
             # Pick up 1-best
-            y = np.argmax(logits_t.squeeze(1).detach(), axis=1).cuda(self.device_id).unsqueeze(1)
+            y = np.argmax(logits_t.detach(), axis=2).cuda(self.device_id)
             best_hyps_tmp += [y]
             if self.score.nheads > 1:
                 aws_tmp += [aw[0]]
@@ -1159,8 +1158,8 @@ class RNNDecoder(nn.Module):
                      'cache_keys_history': [None],
                      'cache_probs_history': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.global_cache_keys) == 0 else [],
                      }]
-            max_ylen = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
-            for t in range(max_ylen):
+            ylen_max = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
+            for t in range(ylen_max):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     # Recurrency (1st) for the main model
@@ -1245,7 +1244,7 @@ class RNNDecoder(nn.Module):
 
                     # Cache decoding
                     exist_cache = len(self.global_cache_keys + beam[i_beam]['local_cache_keys']) > 0
-                    cache_probs_sum = torch.zeros_like(probs)
+                    cache_probs_sum = probs.new_zeros(probs)
                     cache_theta = 1.0  # smoothing parameter
                     cache_lambda = 0.2  # cache weight
                     if ncaches > 0 and exist_cache:
@@ -1299,7 +1298,7 @@ class RNNDecoder(nn.Module):
                         aw_mat = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=-1)  # `[B, T, len(hyp)]`
                         if gnmt_decoding:
                             aw_mat = torch.log(aw_mat.sum(-1))
-                            cp = torch.where(aw_mat < 0, aw_mat, torch.zeros_like(aw_mat)).sum()
+                            cp = torch.where(aw_mat < 0, aw_mat, aw_mat.new_zeros(aw_mat)).sum()
                             # TODO (hirofumi): mask by elens[b]
                             local_scores += cp * cp_weight
                         else:
@@ -1308,7 +1307,7 @@ class RNNDecoder(nn.Module):
                                 cp = aw_mat.sum() / self.score.nheads
                             else:
                                 cp = torch.where(aw_mat > cp_threshold, aw_mat,
-                                                 torch.zeros_like(aw_mat)).sum() / self.score.nheads
+                                                 aw_mat.new_zeros(aw_mat)).sum() / self.score.nheads
                             local_scores += cp * cp_weight
                             # local_scores += (cp - beam[i_beam]['cp_prev']) * cp_weight  # old
                     else:
