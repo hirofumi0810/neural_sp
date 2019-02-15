@@ -148,6 +148,8 @@ class TransformerDecoder(nn.Module):
             if tie_embedding:
                 self.output.fc.weight.data = self.embed.embed.weight.data
 
+            self.layer_norm_top = nn.LayerNorm(d_model, eps=1e-6)
+
     @property
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
@@ -282,6 +284,8 @@ class TransformerDecoder(nn.Module):
         for l in range(self.nlayers):
             ys_emb, yy_aw, xy_aw = self.layers[l](eouts, ys_emb, yx_mask, yy_mask)
 
+        ys_emb = self.layer_norm_top(ys_emb)
+
         # Compute XE sequence loss
         logits = self.output(ys_emb)
         if self.lsm_prob > 0:
@@ -349,6 +353,7 @@ class TransformerDecoder(nn.Module):
             for l in range(self.nlayers):
                 out, yy_aw, xy_aw = self.layers[l](eouts, out, yx_mask, yy_mask)
                 # xy_aw: `[B, head, T, L]`
+            out = self.layer_norm_top(out)
             logits_t = self.output(out)
 
             # Pick up 1-best
@@ -403,6 +408,26 @@ class TransformerDecoder(nn.Module):
 
         # return best_hyps, aws
         return best_hyps, None
+
+    def decode_ctc(self, eouts, xlens, beam_width=1, rnnlm=None):
+        """Decoding by the CTC layer in the inference stage.
+
+            This is only used for Joint CTC-Attention model.
+        Args:
+            eouts (FloatTensor): `[B, T, enc_units]`
+            beam_width (int): size of beam
+            rnnlm ():
+        Returns:
+            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
+
+        """
+        log_probs = F.log_softmax(self.output_ctc(eouts), dim=-1)
+        if beam_width == 1:
+            best_hyps = self.decode_ctc_greedy(log_probs, xlens)
+        else:
+            best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width, rnnlm)
+            # TODO(hirofumi): add decoding paramters
+        return best_hyps
 
 
 class TransformerDecoderBlock(nn.Module):
