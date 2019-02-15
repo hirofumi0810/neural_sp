@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -213,10 +212,10 @@ class TransformerMultiheadAttentionMechanism(nn.Module):
         self.d_k = d_model // nheads
         self.nheads = nheads
 
-        self.w_key = nn.Linear(d_model, d_model)
-        self.w_value = nn.Linear(d_model, d_model)
-        self.w_query = nn.Linear(d_model, d_model)
-        self.w_out = nn.Linear(d_model, d_model)
+        self.w_key = nn.Linear(d_model, d_model, bias=False)
+        self.w_value = nn.Linear(d_model, d_model, bias=False)
+        self.w_query = nn.Linear(d_model, d_model, bias=False)
+        self.w_out = nn.Linear(d_model, d_model, bias=False)
         self.dropout = nn.Dropout(p=dropout)  # for probabilities
 
     def reset(self):
@@ -245,12 +244,12 @@ class TransformerMultiheadAttentionMechanism(nn.Module):
         query = self.w_query(query).view(bs, -1, self.nheads, self.d_k).transpose(1, 2)
 
         # 2) Apply attention on all the projected vectors in batch.
-        energy = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
+        energy = torch.matmul(query, key.transpose(2, 3)) * (self.d_k ** -0.5)
         if mask is not None:
             mask = mask.unsqueeze(1)  # Same mask applied to all heads.
-            # scores_test = energy.masked_fill(mask == 0, -float('inf'))  # this is buggy
-            # scores_test = energy.masked_fill(mask == 0, -10e9)  # this is ok
-            energy = energy.masked_fill(mask == 0, -1024)
+            # energy = energy.masked_fill(mask == 0, -float('inf'))  # this is buggy
+            energy = energy.masked_fill(mask == 0, -10e9)  # this is ok
+            # energy = energy.masked_fill(mask == 0, -1024)
         aw = self.dropout(F.softmax(energy, dim=-1))
         context = torch.matmul(aw, value)
 
