@@ -502,8 +502,8 @@ class RNNDecoder(nn.Module):
 
         # Initialization
         dstates = self.init_dec_state(bs, self.nlayers)
-        con_vec = w.new_zeros((bs, 1, self.enc_nunits))
-        attn_vec = w.new_zeros((bs, 1, self.dec_nunits))
+        cv = w.new_zeros((bs, 1, self.enc_nunits))
+        attn_v = w.new_zeros((bs, 1, self.dec_nunits))
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
@@ -513,14 +513,14 @@ class RNNDecoder(nn.Module):
             y_emb = ys_emb[:, t:t + 1]
 
             # Recurrency
-            dstates = self.recurrency(y_emb, con_vec, dstates['dstate'])
+            dstates = self.recurrency(y_emb, cv, dstates['dstate'])
 
             # Generate
             if self.loop_type == 'lmdecoder':
                 logits_t = self.output_lmobj(dstates['dout_lmdec'])
             elif self.loop_type == 'normal':
-                attn_vec = self.generate(con_vec, dstates['dout_gen'])
-                logits_t = self.output(attn_vec)
+                attn_v = self.generate(cv, dstates['dout_gen'])
+                logits_t = self.output(attn_v)
             logits.append(logits_t)
 
         # Compute XE loss for RNNLM objective
@@ -570,8 +570,8 @@ class RNNDecoder(nn.Module):
 
         # Initialization
         dstates = self.init_dec_state(bs, self.nlayers, eouts, elens)
-        con_vec = eouts.new_zeros(bs, 1, self.enc_nunits)
-        attn_vec = eouts.new_zeros(bs, 1, self.dec_nunits)
+        cv = eouts.new_zeros(bs, 1, self.enc_nunits)
+        attn_v = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -591,7 +591,7 @@ class RNNDecoder(nn.Module):
                 y_emb = ys_emb[:, t:t + 1]
 
             # Recurrency (1st)
-            dec_in = attn_vec if self.input_feeding else con_vec
+            dec_in = attn_v if self.input_feeding else cv
             if self.loop_type in ['conditional', 'rnmt']:
                 dstates = self.recurrency_step1(y_emb, dec_in, dstates)
             elif self.loop_type in ['normal', 'lmdecoder']:
@@ -608,15 +608,15 @@ class RNNDecoder(nn.Module):
                 logits_lm_t, lm_out = None, None
 
             # Score
-            con_vec, aw = self.score(eouts, elens, dstates['dout_score'], aw)
+            cv, aw = self.score(eouts, elens, dstates['dout_score'], aw)
 
             # Recurrency (2nd, only for the internal decoder)
             if self.loop_type in ['conditional', 'rnmt']:
-                dstates = self.recurrency_step2(con_vec, dstates)
+                dstates = self.recurrency_step2(cv, dstates)
 
             # Generate
-            attn_vec = self.generate(con_vec, dstates['dout_gen'], logits_lm_t, lm_out)
-            logits.append(self.output(attn_vec))
+            attn_v = self.generate(cv, dstates['dout_gen'], logits_lm_t, lm_out)
+            logits.append(self.output(attn_v))
 
         # Compute XE sequence loss
         logits = torch.cat(logits, dim=1)
@@ -693,12 +693,12 @@ class RNNDecoder(nn.Module):
             dstates['dstate'] = (hxs, cxs)
         return dstates
 
-    def recurrency(self, y_emb, con_vec, dstate):
+    def recurrency(self, y_emb, cv, dstate):
         """Recurrency function.
 
         Args:
             y_emb (FloatTensor): `[B, 1, emb_dim]`
-            con_vec (FloatTensor): `[B, 1, enc_nunits]`
+            cv (FloatTensor): `[B, 1, enc_nunits]`
             dstate (tuple): A tuple of (hxs, cxs)
         Returns:
             dstates_new (dict):
@@ -711,7 +711,7 @@ class RNNDecoder(nn.Module):
         """
         hxs, cxs = dstate
         y_emb = y_emb.squeeze(1)
-        con_vec = con_vec.squeeze(1)
+        cv = cv.squeeze(1)
 
         dstates_new = {'dout_score': None,  # for attention score
                        'dout_gen': None,  # for token generation
@@ -724,9 +724,9 @@ class RNNDecoder(nn.Module):
                 hxs[0] = self.rnn[0](y_emb, hxs[0])
         elif self.loop_type == 'normal':
             if self.rnn_type == 'lstm':
-                hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), (hxs[0], cxs[0]))
+                hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, cv], dim=-1), (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
-                hxs[0] = self.rnn[0](torch.cat([y_emb, con_vec], dim=-1), hxs[0])
+                hxs[0] = self.rnn[0](torch.cat([y_emb, cv], dim=-1), hxs[0])
         dout = hxs[0]
         if self.nprojs > 0:
             dout = torch.tanh(self.proj[0](dout))
@@ -744,9 +744,9 @@ class RNNDecoder(nn.Module):
         for l in range(1, self.nlayers):
             if self.loop_type == 'lmdecoder' and l == 1:
                 if self.rnn_type == 'lstm':
-                    hxs[l], cxs[l] = self.rnn[l](torch.cat([dout, con_vec], dim=-1), (hxs[l], cxs[l]))
+                    hxs[l], cxs[l] = self.rnn[l](torch.cat([dout, cv], dim=-1), (hxs[l], cxs[l]))
                 elif self.rnn_type == 'gru':
-                    hxs[l] = self.rnn[l](torch.cat([dout, con_vec], dim=-1), hxs[l])
+                    hxs[l] = self.rnn[l](torch.cat([dout, cv], dim=-1), hxs[l])
             else:
                 if self.rnn_type == 'lstm':
                     hxs[l], cxs[l] = self.rnn[l](dout, (hxs[l], cxs[l]))
@@ -773,12 +773,12 @@ class RNNDecoder(nn.Module):
         dstates_new['dstate'] = (hxs[:], cxs[:])
         return dstates_new
 
-    def recurrency_step1(self, y_emb, con_vec, dstates):
+    def recurrency_step1(self, y_emb, cv, dstates):
         """Recurrency function for the internal deocder (before attention scoring).
 
         Args:
             y_emb (FloatTensor): `[B, 1, emb_dim]`
-            con_vec (FloatTensor): `[B, 1, enc_nunits]`
+            cv (FloatTensor): `[B, 1, enc_nunits]`
             dstates (dict):
                 dstates1 (tuple): A tuple of (hxs, cxs)
                     hxs (list of FloatTensor):
@@ -799,7 +799,7 @@ class RNNDecoder(nn.Module):
         """
         hxs, cxs = dstates['dstate1']
         y_emb = y_emb.squeeze(1)
-        con_vec = con_vec.squeeze(1)
+        cv = cv.squeeze(1)
 
         dstates_new = {'dout_score': None,  # for attention score
                        'dstate1': None,
@@ -824,11 +824,11 @@ class RNNDecoder(nn.Module):
         dstates_new['dstate1'] = (hxs[:], cxs[:])
         return dstates_new
 
-    def recurrency_step2(self, con_vec, dstates):
+    def recurrency_step2(self, cv, dstates):
         """Recurrency function for the internal deocder (after attention scoring).
 
         Args:
-            con_vec (FloatTensor): `[B, 1, enc_nunits]`
+            cv (FloatTensor): `[B, 1, enc_nunits]`
             dstates (dict):
                 dout_score (FloatTensor): `[B, 1, nunits]`
                 dstate1 (tuple): A tuple of (hxs, cxs),
@@ -849,7 +849,7 @@ class RNNDecoder(nn.Module):
 
         """
         hxs, cxs = dstates['dstate2']
-        con_vec = con_vec.squeeze(1)
+        cv = cv.squeeze(1)
 
         dstates_new = {'dout_gen': None,  # for token generation
                        'dstate1': None,
@@ -861,9 +861,9 @@ class RNNDecoder(nn.Module):
                 if l == 1:
                     if self.rnn_type == 'lstm':
                         dstates['dstate1'][0][0], dstates['dstate1'][1][0] = self.rnn[l](
-                            con_vec, (dstates['dstate1'][0][0], dstates['dstate1'][1][0]))
+                            cv, (dstates['dstate1'][0][0], dstates['dstate1'][1][0]))
                     elif self.rnn_type == 'gru':
-                        dstates['dstate1'][0][0] = self.rnn[l](con_vec, dstates['dstate1'][0][0])
+                        dstates['dstate1'][0][0] = self.rnn[l](cv, dstates['dstate1'][0][0])
                 else:
                     if self.rnn_type == 'lstm':
                         hxs[l - 1], cxs[l - 1] = self.rnn[l](dout, (hxs[l - 1], cxs[l - 1]))
@@ -871,9 +871,9 @@ class RNNDecoder(nn.Module):
                         hxs[l - 1] = self.rnn[l](dout, hxs[l - 1])
             elif self.loop_type == 'rnmt':
                 if self.rnn_type == 'lstm':
-                    hxs[l - 1], cxs[l - 1] = self.rnn[l](torch.cat([dout, con_vec], dim=-1), (hxs[l - 1], cxs[l - 1]))
+                    hxs[l - 1], cxs[l - 1] = self.rnn[l](torch.cat([dout, cv], dim=-1), (hxs[l - 1], cxs[l - 1]))
                 elif self.rnn_type == 'gru':
-                    hxs[l - 1] = self.rnn[l](torch.cat([dout, con_vec], dim=-1), hxs[l - 1])
+                    hxs[l - 1] = self.rnn[l](torch.cat([dout, cv], dim=-1), hxs[l - 1])
 
             if self.loop_type == 'conditional' and l == 1:
                 dout_tmp = dstates['dstate1'][0][0]
@@ -900,11 +900,11 @@ class RNNDecoder(nn.Module):
         dstates_new['dstate2'] = (hxs[:], cxs[:])
         return dstates_new
 
-    def generate(self, con_vec, dout, logits_lm_t=None, lm_out=None):
+    def generate(self, cv, dout, logits_lm_t=None, lm_out=None):
         """Generate function.
 
         Args:
-            con_vec (FloatTensor): `[B, 1, enc_nunits]`
+            cv (FloatTensor): `[B, 1, enc_nunits]`
             dout (FloatTensor): `[B, 1, dec_units]`
             logits_lm_t (FloatTensor): `[B, 1, vocab]`
             lm_out (FloatTensor): `[B, 1, lm_nunits]`
@@ -918,12 +918,12 @@ class RNNDecoder(nn.Module):
                 lm_feat = self.cf_linear_lm_feat(lm_out)
             elif self.cold_fusion == 'prob':
                 lm_feat = self.cf_linear_lm_feat(logits_lm_t)
-            dec_feat = self.cf_linear_dec_feat(torch.cat([dout, con_vec], dim=-1))
+            dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
             gate = F.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
             logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
-            logits_t = self.output_bn(torch.cat([dout, con_vec], dim=-1))
+            logits_t = self.output_bn(torch.cat([dout, cv], dim=-1))
         return torch.tanh(logits_t)
 
     def greedy(self, eouts, elens, max_len_ratio, exclude_eos=False):
@@ -943,8 +943,8 @@ class RNNDecoder(nn.Module):
 
         # Initialization
         dstates = self.init_dec_state(bs, self.nlayers, eouts, elens)
-        con_vec = eouts.new_zeros(bs, 1, self.enc_nunits)
-        attn_vec = eouts.new_zeros(bs, 1, self.dec_nunits)
+        cv = eouts.new_zeros(bs, 1, self.enc_nunits)
+        attn_v = eouts.new_zeros(bs, 1, self.dec_nunits)
         self.score.reset()
         aw = None
         rnnlm_state = None
@@ -963,7 +963,7 @@ class RNNDecoder(nn.Module):
         for t in range(int(math.floor(max_xlen * max_len_ratio)) + 1):
             # Recurrency (1st)
             y_emb = self.embed(y)
-            dec_in = attn_vec if self.input_feeding else con_vec
+            dec_in = attn_v if self.input_feeding else cv
             if self.loop_type in ['conditional', 'rnmt']:
                 dstates = self.recurrency_step1(y_emb, dec_in, dstates)
             elif self.loop_type in ['normal', 'lmdecoder']:
@@ -977,15 +977,15 @@ class RNNDecoder(nn.Module):
                 logits_lm_t, lm_out = None, None
 
             # Score
-            con_vec, aw = self.score(eouts, elens, dstates['dout_score'], aw)
+            cv, aw = self.score(eouts, elens, dstates['dout_score'], aw)
 
             # Recurrency (2nd, only for the internal decoder)
             if self.loop_type in ['conditional', 'rnmt']:
-                dstates = self.recurrency_step2(con_vec, dstates)
+                dstates = self.recurrency_step2(cv, dstates)
 
             # Generate
-            attn_vec = self.generate(con_vec, dstates['dout_gen'], logits_lm_t, lm_out)
-            logits_t = self.output(attn_vec)
+            attn_v = self.generate(cv, dstates['dout_gen'], logits_lm_t, lm_out)
+            logits_t = self.output(attn_v)
 
             # Pick up 1-best
             y = np.argmax(logits_t.detach(), axis=2).cuda(self.device_id)
@@ -1111,23 +1111,23 @@ class RNNDecoder(nn.Module):
             # Initialization per utterance
             dstates = self.init_dec_state(1, self.nlayers, eouts[b:b + 1], elens[b:b + 1])
             if self.input_feeding:
-                con_vec = eouts.new_zeros(1, 1, self.dec_nunits)
-                # NOTE: this is equivalent to attn_vec
+                cv = eouts.new_zeros(1, 1, self.dec_nunits)
+                # NOTE: this is equivalent to attn_v
             else:
-                con_vec = eouts.new_zeros(1, 1, self.enc_nunits)
+                cv = eouts.new_zeros(1, 1, self.enc_nunits)
             self.score.reset()
 
             # Ensemble initialization
             ensemble_dstates = []
-            ensemble_con_vec = []
+            ensemble_cv = []
             if nmodels > 0:
                 for dec in ensemble_decoders:
                     ensemble_dstates += [dec.init_dec_state(1, dec.nlayers, eouts[b:b + 1], elens[b:b + 1])]
                     if dec.input_feeding:
-                        ensemble_con_vec += [eouts.new_zeros(1, 1, dec.dec_nunits)]
-                        # NOTE: this is equivalent to attn_vec
+                        ensemble_cv += [eouts.new_zeros(1, 1, dec.dec_nunits)]
+                        # NOTE: this is equivalent to attn_v
                     else:
-                        ensemble_con_vec += [eouts.new_zeros(1, 1, dec.enc_nunits)]
+                        ensemble_cv += [eouts.new_zeros(1, 1, dec.enc_nunits)]
                     dec.score.reset()
 
             if speakers[b] != self.prev_speaker:
@@ -1143,13 +1143,13 @@ class RNNDecoder(nn.Module):
                      'score_ctc': 0,
                      'score_lm': 0,
                      'dstates': dstates,
-                     'con_vec': con_vec,
+                     'cv': cv,
                      'aws': [None],
                      'rnnlm_hxs': None,
                      'rnnlm_cxs': None,
                      'cp_prev': 0,
                      'ensemble_dstates': ensemble_dstates,
-                     'ensemble_con_vec': ensemble_con_vec,
+                     'ensemble_cv': ensemble_cv,
                      'ensemble_aws':[[None] for _ in range(nmodels)],
                      'ctc_state':  ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
                      'ctc_score': 0,
@@ -1167,11 +1167,11 @@ class RNNDecoder(nn.Module):
                     y_emb = self.embed(y)
                     if self.loop_type in ['conditional', 'rnmt']:
                         dstates = self.recurrency_step1(y_emb,
-                                                        beam[i_beam]['con_vec'],
+                                                        beam[i_beam]['cv'],
                                                         beam[i_beam]['dstates'])
                     elif self.loop_type in ['normal', 'lmdecoder']:
                         dstates = self.recurrency(y_emb,
-                                                  beam[i_beam]['con_vec'],
+                                                  beam[i_beam]['cv'],
                                                   beam[i_beam]['dstates']['dstate'])
                     # Recurrency (1st) for the ensemble
                     ensemble_dstates = []
@@ -1181,21 +1181,21 @@ class RNNDecoder(nn.Module):
                             if dec.loop_type in ['conditional', 'rnmt']:
                                 ensemble_dstates += [dec.recurrency_step1(
                                     y_emb,
-                                    beam[i_beam]['ensemble_con_vec'][i_e],
+                                    beam[i_beam]['ensemble_cv'][i_e],
                                     beam[i_beam]['ensemble_dstates'][i_e])]
                             elif dec.loop_type in ['normal', 'lmdecoder']:
                                 ensemble_dstates += [dec.recurrency(
                                     y_emb,
-                                    beam[i_beam]['ensemble_con_vec'][i_e],
+                                    beam[i_beam]['ensemble_cv'][i_e],
                                     beam[i_beam]['ensemble_dstates'][i_e]['dstate'])]
 
                     # Score for the main model
-                    con_vec, aw = self.score(eouts[b:b + 1, :elens[b]],
-                                             elens[b:b + 1],
-                                             dstates['dout_score'],
-                                             beam[i_beam]['aws'][-1])
+                    cv, aw = self.score(eouts[b:b + 1, :elens[b]],
+                                        elens[b:b + 1],
+                                        dstates['dout_score'],
+                                        beam[i_beam]['aws'][-1])
                     # Score for the ensemble
-                    ensemble_con_vec = []
+                    ensemble_cv = []
                     ensemble_aws = []
                     if nmodels > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
@@ -1204,7 +1204,7 @@ class RNNDecoder(nn.Module):
                                 ensemble_elens[i_e][b:b + 1],
                                 ensemble_dstates[i_e]['dout_score'],
                                 beam[i_beam]['ensemble_aws'][i_e][-1])
-                            ensemble_con_vec += [con_vec_e]
+                            ensemble_cv += [con_vec_e]
                             ensemble_aws += [aw_e]
 
                     if self.rnnlm_cf:
@@ -1224,22 +1224,22 @@ class RNNDecoder(nn.Module):
 
                     # Recurrency (2nd, only for the internal decoder) for the main model
                     if self.loop_type in ['conditional', 'rnmt']:
-                        dstates = self.recurrency_step2(con_vec, dstates)
+                        dstates = self.recurrency_step2(cv, dstates)
                     # Recurrency (2nd, only for the internal decoder) for the ensemble
                     ensemble_dstates_tmp = []
                     if nmodels > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
                             if dec.loop_type in ['conditional', 'rnmt']:
                                 ensemble_dstates_tmp += [dec.recurrency_step2(
-                                    ensemble_con_vec[i_e],
+                                    ensemble_cv[i_e],
                                     ensemble_dstates[i_e])]
                             else:
                                 ensemble_dstates_tmp += [ensemble_dstates[i_e]]
                     ensemble_dstates = ensemble_dstates_tmp[:]
 
                     # Generate for the main model
-                    attn_vec = self.generate(con_vec, dstates['dout_gen'], logits_lm_t, lm_out)
-                    probs = F.softmax(self.output(attn_vec).squeeze(1), dim=1)
+                    attn_v = self.generate(cv, dstates['dout_gen'], logits_lm_t, lm_out)
+                    probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
                     # NOTE: `[1 (B), 1, vocab]` -> `[1 (B), vocab]`
 
                     # Cache decoding
@@ -1269,16 +1269,16 @@ class RNNDecoder(nn.Module):
                     # Generate for the ensemble
                     if nmodels > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
-                            attn_vec = dec.generate(ensemble_con_vec[i_e],
-                                                    ensemble_dstates[i_e]['dout_gen'],
-                                                    logits_lm_t, lm_out)
-                            log_probs += F.log_softmax(dec.output(attn_vec).squeeze(1), dim=1)
+                            attn_v = dec.generate(ensemble_cv[i_e],
+                                                  ensemble_dstates[i_e]['dout_gen'],
+                                                  logits_lm_t, lm_out)
+                            log_probs += F.log_softmax(dec.output(attn_v).squeeze(1), dim=1)
                         # re-normalize
                         log_probs /= (nmodels + 1)
                         # TODO(hirofumi): cache
 
                     # Pick up the top-k scores
-                    log_probs_topk, indices_topk = torch.topk(
+                    log_probs_topk, ids_topk = torch.topk(
                         log_probs, k=beam_width, dim=1, largest=True, sorted=True)
 
                     scores_att = beam[i_beam]['score_att'] + log_probs_topk
@@ -1319,7 +1319,7 @@ class RNNDecoder(nn.Module):
                     # Add RNNLM score
                     if rnnlm_weight > 0:
                         lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
-                        scores_lm = beam[i_beam]['score_lm'] + lm_log_probs[0, indices_topk[0]]
+                        scores_lm = beam[i_beam]['score_lm'] + lm_log_probs[0, ids_topk[0]]
                         score_lm_norm = scores_lm / lp  # normalize by length
                         local_scores += score_lm_norm * rnnlm_weight
                     else:
@@ -1328,18 +1328,18 @@ class RNNDecoder(nn.Module):
                     # CTC score
                     if ctc_weight > 0 and ctc_log_probs is not None:
                         ctc_scores, ctc_states = ctc_prefix_score(
-                            beam[i_beam]['hyp'], indices_topk[0], beam[i_beam]['ctc_state'])
+                            beam[i_beam]['hyp'], ids_topk[0], beam[i_beam]['ctc_state'])
                         scores_ctc = beam[i_beam]['score_ctc'] + torch.from_numpy(
                             ctc_scores - beam[i_beam]['ctc_score']).cuda(self.device_id)
                         scores_ctc_norm = scores_ctc / lp  # normalize
                         local_scores += scores_ctc_norm * ctc_weight
-                        local_scores, joint_indices_topk = torch.topk(local_scores, beam_width, dim=1)
-                        indices_topk = indices_topk[:, joint_indices_topk[0]]
+                        local_scores, joint_ids_topk = torch.topk(local_scores, beam_width, dim=1)
+                        ids_topk = ids_topk[:, joint_ids_topk[0]]
                     else:
                         scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
 
                     for k in range(beam_width):
-                        top_id = indices_topk[0, k].item()
+                        top_id = ids_topk[0, k].item()
 
                         # Exclude short hypotheses
                         if top_id == eos and len(beam[i_beam]['hyp']) - 1 < elens[b] * params['recog_min_len_ratio']:
@@ -1361,16 +1361,16 @@ class RNNDecoder(nn.Module):
                              'score_ctc': score_ctc,  # NOTE: total score
                              'score_lm': score_lm,  # NOTE: total score
                              'dstates': dstates,
-                             'con_vec': attn_vec if self.input_feeding else con_vec,
+                             'cv': attn_v if self.input_feeding else cv,
                              'aws': beam[i_beam]['aws'] + [aw],
                              'rnnlm_hxs': rnnlm_state[0][:] if rnnlm_state is not None else None,
                              'rnnlm_cxs': rnnlm_state[1][:] if rnnlm_state is not None else None,
                              'cp_prev': cp,
                              'ensemble_dstates': ensemble_dstates,
-                             'ensemble_con_vec': ensemble_con_vec,
+                             'ensemble_cv': ensemble_cv,
                              'ensemble_aws': ensemble_aws,
-                             'ctc_state': ctc_states[joint_indices_topk[0, k]] if ctc_log_probs is not None else None,
-                             'ctc_score': ctc_scores[joint_indices_topk[0, k]] if ctc_log_probs is not None else None,
+                             'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
+                             'ctc_score': ctc_scores[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
                              'local_cache_keys': beam[i_beam]['local_cache_keys'] + [top_id],
                              'local_cache_values': beam[i_beam]['local_cache_values'] + [dstates['dout_gen']],
                              'cache_keys_history': beam[i_beam]['cache_keys_history'] + [cache_keys] if exist_cache else beam[i_beam]['cache_keys_history'],
@@ -1534,7 +1534,7 @@ class RNNDecoder(nn.Module):
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
 
         """
-        log_probs = self.ctc_log_probs(eouts)
+        log_probs = F.log_softmax(self.output_ctc(eouts), dim=-1)
         if beam_width == 1:
             best_hyps = self.decode_ctc_greedy(log_probs, xlens)
         else:
@@ -1542,17 +1542,14 @@ class RNNDecoder(nn.Module):
             # TODO(hirofumi): add decoding paramters
         return best_hyps
 
-    def ctc_log_probs(self, eouts):
-        return F.log_softmax(self.output_ctc(eouts), dim=-1)
-
     def ctc_posteriors(self, eouts, xlens, temperature, topk):
         # Path through the softmax layer
         logits_ctc = self.output_ctc(eouts)
         ctc_probs = F.softmax(logits_ctc / temperature, dim=-1)
         if topk is None:
             topk = ctc_probs.size(-1)
-        _, indices_topk = torch.topk(ctc_probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
-        return tensor2np(ctc_probs), tensor2np(indices_topk)
+        _, ids_topk = torch.topk(ctc_probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
+        return tensor2np(ctc_probs), tensor2np(ids_topk)
 
 
 def end_detect(ended_hyps, i, M=3, D_end=np.log(1 * np.exp(-10))):
@@ -1579,8 +1576,8 @@ def end_detect(ended_hyps, i, M=3, D_end=np.log(1 * np.exp(-10))):
     best_hyp = sorted(ended_hyps, key=lambda x: x['score'], reverse=True)[0]
     for m in range(M):
         # get ended_hyps with their length is i - m
-        hyp_length = i - m
-        hyps_same_length = [x for x in ended_hyps if len(x['hyp']) - 1 == hyp_length]
+        hyp_len = i - m
+        hyps_same_length = [x for x in ended_hyps if len(x['hyp']) - 1 == hyp_len]
         # NOTE: key:hyp includes <sos>
         if len(hyps_same_length) > 0:
             best_hyp_same_length = sorted(hyps_same_length, key=lambda x: x['score'], reverse=True)[0]
