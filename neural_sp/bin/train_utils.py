@@ -167,10 +167,9 @@ class Controller(object):
 
     """
 
-    def __init__(self, learning_rate, decay_type,
-                 decay_start_epoch, decay_rate,
+    def __init__(self, learning_rate, decay_type, decay_start_epoch, decay_rate,
                  decay_patient_epoch=1, lower_better=True, best_value=10000,
-                    model_size=1, warmup_start_learning_rate=0, warmup_nsteps=4000, factor=1):
+                 model_size=1, warmup_start_learning_rate=0, warmup_nsteps=4000, factor=10):
 
         self.lr_max = learning_rate
         self.decay_type = decay_type
@@ -186,7 +185,7 @@ class Controller(object):
             if warmup_start_learning_rate > 0:
                 self.lr_init = warmup_start_learning_rate
             else:
-                self.lr_init = factor * np.power(model_size, -0.5)
+                self.lr_init = factor * (model_size ** (-0.5))
         else:
             self.lr_init = learning_rate
         self.warmup_start_lr = warmup_start_learning_rate
@@ -267,8 +266,8 @@ class Controller(object):
             lr = (self.lr_max - self.warmup_start_lr) / self.warmup_nsteps * step  + self.lr_init
         else:
             # based on the original transformer paper
-            lr = self.lr_init * np.min([np.power(step, -0.5),
-                                        step * np.power(self.warmup_nsteps, -1.5)])
+            lr = self.lr_init * min(step ** (-0.5),
+                                    step * (self.warmup_nsteps ** (-1.5)))
 
         # Update optimizer
         for param_group in optimizer.param_groups:

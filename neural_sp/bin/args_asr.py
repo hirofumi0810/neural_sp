@@ -326,6 +326,11 @@ def parse():
                         help='type of attention for transformer')
     parser.add_argument('--transformer_attn_nheads', type=int, default=8,
                         help='number of heads in the self-attention layer')
+    parser.add_argument('--pe_type', type=str, default='add',
+                        choices=['add', 'concat', 'learned_add', 'learned_concat', False],
+                        help='type of positional encoding')
+    parser.add_argument('--layer_norm_eps', type=float, default=1e-12,
+                        help='')
     # decoding parameters
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='path to csv files for the evaluation sets')
