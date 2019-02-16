@@ -25,16 +25,18 @@ class TransformerEncoder(nn.Module):
 
     Args:
         input_dim (int): dimension of input features (freq * channel)
+        attn_type (str): type of attention
+        attn_nheads (int): number of heads for multi-head attention
         nlayers (int): number of blocks
         d_model (int): dimension of keys/values/queries in
                    TransformerMultiheadAttentionMechanism, also the input size of
                    the first-layer of the PositionwiseFeedForward
         d_ff (int): dimension of the second layer of the PositionwiseFeedForward
-        attn_type (str): type of attention
-        attn_nheads (int): number of heads for multi-head attention
+        pe_type (str): concat or add or learn or False
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
+        layer_norm_eps (float):
         nstacks (int): number of frames to stack
         nsplices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
@@ -49,14 +51,16 @@ class TransformerEncoder(nn.Module):
 
     def __init__(self,
                  input_dim,
+                 attn_type,
+                 attn_nheads,
                  nlayers,
                  d_model,
                  d_ff,
-                 attn_type,
-                 attn_nheads,
+                 pe_type,
                  dropout_in,
                  dropout,
                  dropout_att,
+                 layer_norm_eps,
                  nstacks,
                  nsplices,
                  conv_in_channel,
@@ -70,6 +74,7 @@ class TransformerEncoder(nn.Module):
         super(TransformerEncoder, self).__init__()
 
         self.d_model = d_model
+        self.pe_type = pe_type
 
         # Setting for CNNs before RNNs
         if conv_poolings:
@@ -97,9 +102,7 @@ class TransformerEncoder(nn.Module):
                                    dropout=dropout,
                                    activation='relu',
                                    batch_norm=conv_batch_norm,
-                                   bottleneck_dim=d_model
-                                   #    bottleneck_dim=conv_bottleneck_dim
-                                   )
+                                   bottleneck_dim=d_model)
             self._output_dim = self.conv.output_dim
         else:
             self._output_dim = input_dim * nsplices * nstacks
@@ -108,18 +111,17 @@ class TransformerEncoder(nn.Module):
             self.embed_in = LinearND(self._output_dim, d_model,
                                      dropout=0)  # NOTE: do not apply dropout here
 
-        self.pos_emb_in = PositionalEncoding(d_model, dropout_in)
-        self.layer_norm_in = nn.LayerNorm(d_model, eps=1e-6)
+        if pe_type:
+            self.pos_emb_in = PositionalEncoding(d_model, dropout_in, pe_type)
+        self.layer_norm_in = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         # Self-attention layers
         self.layers = nn.ModuleList(
-            [TransformerEncoderBlock(d_model, d_ff,
-                                     attn_type, attn_nheads,
-                                     dropout, dropout_att)
-             for l in range(nlayers)])
-        self._output_dim = d_model
+            [TransformerEncoderBlock(d_model, d_ff, attn_type, attn_nheads,
+                                     dropout, dropout_att, layer_norm_eps) for l in range(nlayers)])
+        self.layer_norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
-        self.layer_norm_top = nn.LayerNorm(d_model, eps=1e-6)
+        self._output_dim = d_model
 
     @property
     def output_dim(self):
@@ -161,7 +163,8 @@ class TransformerEncoder(nn.Module):
                 xx_mask[b, xlens[b]:, xlens[b]:] = 0
 
         # Positional encoding & layer normalization
-        xs = self.pos_emb_in(xs)
+        if self.pe_type:
+            xs = self.pos_emb_in(xs)
         xs = self.layer_norm_in(xs)
 
         for i in range(len(self.layers)):
@@ -187,20 +190,21 @@ class TransformerEncoderBlock(nn.Module):
         attn_nheads (int): number of heads for multi-head attention
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
+        layer_norm_eps (float):
 
     """
 
     def __init__(self, d_model, d_ff, attn_type, attn_nheads,
-                 dropout, dropout_att):
+                 dropout, dropout_att, layer_norm_eps):
         super(TransformerEncoderBlock, self).__init__()
 
         # self-attention
         self.self_attn = TransformerMultiheadAttentionMechanism(attn_nheads, d_model, dropout_att)
-        self.add_norm1 = SublayerConnection(d_model, dropout, layer_norm=True)
+        self.add_norm1 = SublayerConnection(d_model, dropout, layer_norm_eps)
 
         # feed-forward
         self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
-        self.add_norm2 = SublayerConnection(d_model, dropout, layer_norm=True)
+        self.add_norm2 = SublayerConnection(d_model, dropout, layer_norm_eps)
 
     def forward(self, xs, mask):
         """Transformer encoder layer definition.

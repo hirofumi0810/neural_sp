@@ -49,7 +49,6 @@ class LinearND(nn.Module):
         """
         size = list(xs.size())
         xs = xs.contiguous().view((int(np.prod(size[:-1])), int(size[-1])))
-        # print(self.fc.weight.data.sum())
         xs = self.fc(xs)
         if hasattr(self, 'dropout'):
             xs = self.dropout(xs)
@@ -99,21 +98,25 @@ class PositionalEncoding(nn.Module):
     Args:
         d_model (int):
         dropout (float):
+        pe_type (str):
         max_len (int):
 
     """
 
-    def __init__(self, d_model, dropout, max_len=5000):
+    def __init__(self, d_model, dropout, pe_type, max_len=5000):
         super(PositionalEncoding, self).__init__()
+
+        self.pe_type = pe_type
 
         # Compute the positional encodings once in log space.
         pe = torch.zeros(max_len, d_model, dtype=torch.float32)
-        position = torch.arange(0, max_len).float().unsqueeze(1)
+        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)  # for batch dimension
-        self.pe = pe
+        # self.pe = pe
+        self.register_buffer('pe', pe)
 
         # TODO(hirofumi): add concat option
 
@@ -128,8 +131,12 @@ class PositionalEncoding(nn.Module):
             (FloatTensor):
 
         """
-        device_id = xs.get_device()
-        xs = xs + self.pe[:, :xs.size(1)].cuda(device_id)
+        if self.pe_type == 'add':
+            xs = xs + self.pe[:, :xs.size(1)]
+        elif self.pe_type == 'concat':
+            xs = torch.cat([xs, self.pe[:, :xs.size(1)]], dim=-1)
+        else:
+            raise NotImplementedError
         return self.dropout(xs)
 
 
@@ -140,16 +147,14 @@ class SublayerConnection(nn.Module):
           |                                             |
           -----------------------------------------------
     Args:
-        epsilon (float): epsilon parameter for layer normalization
+        layer_norm_eps (float): epsilon parameter for layer normalization
 
     """
 
-    def __init__(self, d_model, dropout, layer_norm=True, epsilon=1e-6):
+    def __init__(self, d_model, dropout, layer_norm_eps=1e-6):
         super(SublayerConnection, self).__init__()
 
-        self.layer_norm = layer_norm
-        if layer_norm:
-            self.norm = nn.LayerNorm(d_model, eps=epsilon)
+        self.layer_norm = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs, sublayer):
@@ -161,30 +166,21 @@ class SublayerConnection(nn.Module):
             xs (FloatTensor):
 
         """
-        residual = xs
+        xs_norm = self.layer_norm(xs)
+        output = sublayer(xs_norm)
 
-        # layer normalization
-        if self.layer_norm:
-            xs = self.norm(xs)
-
-        # sublayer
-        output = sublayer(xs)
         # NOTE: output may be tuple paired with attention weights
         if isinstance(output, tuple):
-            xs, aw = output
+            xs_norm, aw = output
         else:
-            xs = output
-
-        # dropout
-        xs = self.dropout(xs)
-
-        # residual
-        xs += residual
+            xs_norm = output
+        xs_norm = self.dropout(xs_norm)
+        xs_norm += xs
 
         if isinstance(output, tuple):
-            return xs, aw
+            return xs_norm, aw
         else:
-            return xs
+            return xs_norm
 
 
 class PositionwiseFeedForward(nn.Module):
@@ -200,8 +196,8 @@ class PositionwiseFeedForward(nn.Module):
     def __init__(self, d_model, d_ff, dropout):
         super(PositionwiseFeedForward, self).__init__()
 
-        self.w_1 = nn.Linear(d_model, d_ff)
-        self.w_2 = nn.Linear(d_ff, d_model)
+        self.w_1 = LinearND(d_model, d_ff)
+        self.w_2 = LinearND(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs):
@@ -227,16 +223,15 @@ class ResidualFeedForward(nn.Module):
         d_model (int):
         d_ff (int):
         dropout (float):
-        layer_norm (bool):
-        epsilon (float):
+        layer_norm_eps (float):
 
     """
 
-    def __init__(self, d_model, d_ff, dropout, layer_norm=False, epsilon=1e-6):
+    def __init__(self, d_model, d_ff, dropout, layer_norm_eps=1e-6):
         super(ResidualFeedForward, self).__init__()
 
         self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
-        self.add_norm = SublayerConnection(d_model, dropout, layer_norm, epsilon)
+        self.add_norm = SublayerConnection(d_model, dropout, layer_norm_eps)
 
     def forward(self, xs):
         """Forward computation.

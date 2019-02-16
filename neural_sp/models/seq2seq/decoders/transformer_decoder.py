@@ -58,12 +58,14 @@ class TransformerDecoder(nn.Module):
         nlayers (int): number of encoder layers.
         d_model (int): size of the model
         d_ff (int): size of the inner FF layer
+        pe_type (str): concat or add or learn or False
         tie_embedding (bool):
         vocab (int): number of nodes in softmax layer
         dropout (float): dropout probabilities for linear layers
         dropout_emb (float): probability to drop nodes of the embedding layer
         dropout_att (float): dropout probabilities for attention distributions
         lsm_prob (float): label smoothing probability
+        layer_norm_eps (float):
         ctc_weight (float):
         ctc_fc_list (list):
         backward (bool): decode in the backward order
@@ -83,12 +85,14 @@ class TransformerDecoder(nn.Module):
                  nlayers,
                  d_model,
                  d_ff,
+                 pe_type,
                  tie_embedding,
                  vocab,
                  dropout,
                  dropout_emb,
                  dropout_att,
                  lsm_prob,
+                 layer_norm_eps,
                  ctc_weight,
                  ctc_fc_list,
                  backward,
@@ -104,6 +108,7 @@ class TransformerDecoder(nn.Module):
         self.enc_nunits = enc_nunits
         self.d_model = d_model
         self.nlayers = nlayers
+        self.pe_type = pe_type
         self.lsm_prob = lsm_prob
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
@@ -128,15 +133,15 @@ class TransformerDecoder(nn.Module):
 
         if ctc_weight < global_weight:
             self.layers = nn.ModuleList(
-                [TransformerDecoderBlock(d_model, d_ff,
-                                         attn_type, attn_nheads,
-                                         dropout, dropout_att)
+                [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_nheads,
+                                         dropout, dropout_att, layer_norm_eps)
                  for _ in range(nlayers)])
 
             self.embed = Embedding(vocab, d_model,
                                    dropout=0,  # NOTE: do not apply dropout here
                                    ignore_index=pad)
-            self.pos_emb_out = PositionalEncoding(d_model, dropout_emb)
+            if pe_type:
+                self.pos_emb_out = PositionalEncoding(d_model, dropout_emb, pe_type)
             self.output = LinearND(d_model, vocab)
 
             # Optionally tie weights as in:
@@ -148,7 +153,7 @@ class TransformerDecoder(nn.Module):
             if tie_embedding:
                 self.output.fc.weight.data = self.embed.embed.weight.data
 
-            self.layer_norm_top = nn.LayerNorm(d_model, eps=1e-6)
+            self.layer_norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
     @property
     def device_id(self):
@@ -264,7 +269,8 @@ class TransformerDecoder(nn.Module):
 
         # Add positional embedding
         ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
-        ys_emb = self.pos_emb_out(ys_emb)
+        if self.pe_type:
+            ys_emb = self.pos_emb_out(ys_emb)
 
         # Make source-target attention mask: `[B, L(query), T(key)]`
         bs, max_xlen = eouts.size()[:2]
@@ -348,7 +354,8 @@ class TransformerDecoder(nn.Module):
 
             # Add positional embedding
             out = self.embed(ys) * (self.d_model ** 0.5)
-            out = self.pos_emb_out(out)
+            if self.pe_type:
+                out = self.pos_emb_out(out)
 
             for l in range(self.nlayers):
                 out, yy_aw, xy_aw = self.layers[l](eouts, out, yx_mask, yy_mask)
@@ -442,12 +449,13 @@ class TransformerDecoderBlock(nn.Module):
             attn_nheads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
-            attn_type (string): type of self-attention, scaled_dot_product or average
+            attn_type (str): type of self-attention, scaled_dot_product or average
+            layer_norm_eps (float):
 
     """
 
     def __init__(self, d_model, d_ff, attn_type, attn_nheads,
-                 dropout, dropout_att):
+                 dropout, dropout_att, layer_norm_eps):
         super(TransformerDecoderBlock, self).__init__()
 
         self.attn_type = attn_type
@@ -460,15 +468,15 @@ class TransformerDecoderBlock(nn.Module):
             # self.self_attn = AverageAttention(d_model, dropout, layer_norm=True)
         else:
             raise NotImplementedError(attn_type)
-        self.add_norm1 = SublayerConnection(d_model, dropout, layer_norm=True)
+        self.add_norm1 = SublayerConnection(d_model, dropout, layer_norm_eps)
 
         # attention for encoder stacks
         self.enc_attn = TransformerMultiheadAttentionMechanism(attn_nheads, d_model, dropout_att)
-        self.add_norm2 = SublayerConnection(d_model, dropout, layer_norm=True)
+        self.add_norm2 = SublayerConnection(d_model, dropout, layer_norm_eps)
 
         # feed-forward
         self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
-        self.add_norm3 = SublayerConnection(d_model, dropout, layer_norm=True)
+        self.add_norm3 = SublayerConnection(d_model, dropout, layer_norm_eps)
 
     def forward(self, x, y, yx_mask, yy_mask):
         """Transformer decoder layer definition.
