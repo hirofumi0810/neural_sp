@@ -212,10 +212,10 @@ class TransformerMultiheadAttentionMechanism(nn.Module):
         self.d_k = d_model // nheads
         self.nheads = nheads
 
-        self.w_key = nn.Linear(d_model, d_model, bias=False)
-        self.w_value = nn.Linear(d_model, d_model, bias=False)
-        self.w_query = nn.Linear(d_model, d_model, bias=False)
-        self.w_out = nn.Linear(d_model, d_model, bias=False)
+        self.w_key = LinearND(d_model, d_model, bias=False)
+        self.w_value = LinearND(d_model, d_model, bias=False)
+        self.w_query = LinearND(d_model, d_model, bias=False)
+        self.w_out = LinearND(d_model, d_model, bias=False)
         self.dropout = nn.Dropout(p=dropout)  # for probabilities
 
     def reset(self):
