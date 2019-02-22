@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import codecs
 from distutils.util import strtobool
 import kaldi_io
 import os
@@ -46,49 +47,48 @@ def main():
 
     nlsyms = []
     if args.nlsyms:
-        with open(args.nlsyms, 'r') as f:
+        with codecs.open(args.nlsyms, 'r', encoding="utf-8") as f:
             for line in f:
-                nlsyms.append(unicode(line, 'utf-8').strip())
+                nlsyms.append(line.strip())
 
     utt2feat = {}
     utt2frame = {}
     if args.feat:
-        with open(args.feat, 'r') as f:
+        with codecs.open(args.feat, 'r', encoding="utf-8") as f:
             for line in f:
-                # utt_id, feat_path = unicode(line, 'utf-8').strip().split(' ')
                 utt_id, feat_path = line.strip().split(' ')
                 utt2feat[utt_id] = feat_path
 
-        with open(args.utt2num_frames, 'r') as f:
+        with codecs.open(args.utt2num_frames, 'r', encoding="utf-8") as f:
             for line in f:
-                utt_id, x_len = unicode(line, 'utf-8').strip().split(' ')
-                utt2frame[utt_id] = int(x_len)
+                utt_id, xlen = line.strip().split(' ')
+                utt2frame[utt_id] = int(xlen)
 
     token2id = {}
-    with open(args.dict, 'r') as f:
+    with codecs.open(args.dict, 'r', encoding="utf-8") as f:
         for line in f:
-            token, id = unicode(line, 'utf-8').strip().split(' ')
+            token, id = line.strip().split(' ')
             token2id[token] = str(id)
 
     id2token = {}
-    with open(args.dict, 'r') as f:
+    with codecs.open(args.dict, 'r', encoding="utf-8") as f:
         for line in f:
-            token, id = unicode(line, 'utf-8').strip().split(' ')
+            token, id = line.strip().split(' ')
             id2token[str(id)] = token
 
     if args.unit == 'wp':
         sp = spm.SentencePieceProcessor()
         sp.Load(args.wp_model + '.model')
 
-    print(',utt_id,feat_path,x_len,x_dim,text,token_id,y_len,y_dim')
+    print(',utt_id,feat_path,xlen,x_dim,text,token_id,ylen,ydim')
 
     x_dim = None
     utt_count = 0
-    with open(args.text, 'r') as f:
-        pbar = tqdm(total=len(open(args.text).readlines()))
+    with codecs.open(args.text, 'r', encoding="utf-8") as f:
+        pbar = tqdm(total=len(codecs.open(args.text, 'r', encoding="utf-8").readlines()))
         for line in f:
             # Remove succesive spaces
-            line = re.sub(r'[\s]+', ' ', unicode(line, 'utf-8').strip())
+            line = re.sub(r'[\s]+', ' ', line.strip())
             utt_id = line.split(' ')[0]
             words = line.split(' ')[1:]
             if '' in words:
@@ -97,14 +97,14 @@ def main():
             text = ' '.join(words)
             if args.feat:
                 feat_path = utt2feat[utt_id]
-                x_len = utt2frame[utt_id]
+                xlen = utt2frame[utt_id]
 
                 if not os.path.isfile(feat_path.split(':')[0]):
                     raise ValueError('There is no file: %s' % feat_path)
             else:
                 # dummy for LM
                 feat_path = ''
-                x_len = 0
+                xlen = 0
 
             # Convert strings into the corresponding indices
             token_ids = []
@@ -155,18 +155,17 @@ def main():
             else:
                 raise ValueError(args.unit)
             token_id = ' '.join(token_ids)
-            y_len = len(token_ids)
+            ylen = len(token_ids)
 
             if x_dim is None:
                 if args.feat:
                     x_dim = kaldi_io.read_mat(feat_path).shape[-1]
                 else:
                     x_dim = 0
-            y_dim = len(token2id.keys())
+            ydim = len(token2id.keys())
 
             print('\"%d\",\"%s\",\"%s\",\"%d\",\"%d\",\"%s\",\"%s\",\"%d\",\"%d\"' %
-                  (utt_count, utt_id.encode('utf-8'), feat_path, x_len, x_dim,
-                   text.encode('utf-8'), token_id.encode('utf-8'), y_len, y_dim))
+                  (utt_count, utt_id, feat_path, xlen, x_dim, text, token_id, ylen, ydim))
             utt_count += 1
             pbar.update(1)
 

@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import codecs
 import sentencepiece as spm
 from tqdm import tqdm
 
@@ -39,9 +40,9 @@ def main():
 
     nlsyms = []
     if args.nlsyms:
-        with open(args.nlsyms, 'r') as f:
+        with codecs.open(args.nlsyms, 'r', encoding="utf-8") as f:
             for line in f:
-                nlsyms.append(unicode(line, 'utf-8').strip())
+                nlsyms.append(line.strip())
 
     if args.unit == 'wp':
         spm.SentencePieceTrainer.Train('--input=' + args.text +
@@ -56,10 +57,10 @@ def main():
     word_dict = {}
     word2phone = {}
     token_set = set([])
-    with open(args.text, 'r') as f:
-        pbar = tqdm(total=len(open(args.text).readlines()))
+    with codecs.open(args.text, 'r', encoding="utf-8") as f:
+        pbar = tqdm(total=len(codecs.open(args.text, 'r', encoding="utf-8").readlines()))
         for line in f:
-            line = unicode(line, 'utf-8').strip()
+            line = line.strip()
 
             # Remove special tokens
             for token in nlsyms:
@@ -120,7 +121,7 @@ def main():
         token_list = sorted(list(token_set))
 
     for t in token_list:
-        print('%s' % t.encode('utf-8'))
+        print('%s' % t)
 
 
 if __name__ == '__main__':

@@ -16,4 +16,4 @@ data=$1
 lexicon=$2
 
 map2phone.py --text ${data}/text \
-             --lexicon ${lexicon} > ${data}/text.phone
+    --lexicon ${lexicon} > ${data}/text.phone

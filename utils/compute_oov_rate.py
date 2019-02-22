@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import codecs
 
 parser = argparse.ArgumentParser()
 parser.add_argument('word_count', type=str,
@@ -25,17 +26,17 @@ args = parser.parse_args()
 def main():
 
     token_set = set([])
-    with open(args.dict, 'r') as f:
+    with codecs.open(args.dict, 'r', encoding="utf-8") as f:
         token_set = set([])
         for line in f:
-            token, id = unicode(line, 'utf-8').strip().split()
+            token, id = line.strip().split(' ')
             token_set.add(token)
 
     oov_count = 0
     num_words = 0
-    with open(args.word_count, 'r') as f:
+    with codecs.open(args.word_count, 'r', encoding="utf-8") as f:
         for line in f:
-            count, w = unicode(line, 'utf-8').strip().split(' ')
+            count, w = line.strip().split(' ')
 
             # For swbd
             if w == '(%hesitation)':
@@ -45,7 +46,7 @@ def main():
             if w not in token_set:
                 oov_count += int(count)
 
-    oov_rate = float(oov_count * 100 / num_words)
+    oov_rate = float(oov_count * 100) / float(num_words)
     print("%s: %.3f%%" % (args.set, oov_rate))
 
 

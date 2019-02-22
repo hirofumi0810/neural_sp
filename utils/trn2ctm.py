@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import codecs
 
 parser = argparse.ArgumentParser()
 parser.add_argument('trn', type=str,
@@ -24,7 +25,7 @@ def main():
 
     stm_segments = {}
     if args.stm:
-        with open(args.stm, 'r') as f:
+        with codecs.open(args.stm, 'r', encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
 
@@ -38,7 +39,7 @@ def main():
                     stm_segments[speaker] = {}
                 stm_segments[speaker][start_t] = end_t
 
-    with open(args.trn, 'r') as f:
+    with codecs.open(args.trn, 'r', encoding="utf-8") as f:
         for line in f:
             # line = unicode(line, 'utf-8').strip()
             line = line.strip()

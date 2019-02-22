@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import codecs
 import re
 from tqdm import tqdm
 
@@ -25,19 +26,19 @@ args = parser.parse_args()
 def main():
 
     word2phone = {}
-    with open(args.lexicon, 'r') as f:
+    with codecs.open(args.lexicon, 'r', encoding="utf-8") as f:
         for line in f:
-            word = unicode(line, 'utf-8').strip().split(' ')[0]
+            word = line.strip().split(' ')[0]
             word = word.split('+')[0]  # for CSJ
-            phone_seq = ' '.join(unicode(line, 'utf-8').strip().split(' ')[1:])
+            phone_seq = ' '.join(line.strip().split(' ')[1:])
             word2phone[word] = phone_seq
 
     utt_count = 0
-    with open(args.text, 'r') as f:
-        pbar = tqdm(total=len(open(args.text).readlines()))
+    with codecs.open(args.text, 'r', encoding="utf-8") as f:
+        pbar = tqdm(total=len(codecs.open(args.text, 'r', encoding="utf-8").readlines()))
         for line in f:
             # Remove succesive spaces
-            line = re.sub(r'[\s]+', ' ', unicode(line, 'utf-8').strip())
+            line = re.sub(r'[\s]+', ' ', line.strip())
             utt_id = line.split(' ')[0]
             words = line.split(' ')[1:]
             if '' in words:
@@ -48,7 +49,7 @@ def main():
                 phones += word2phone[w].split()
             text_phone = ' '.join(phones)
 
-            print('%s %s' % (utt_id.encode('utf-8'), text_phone.encode('utf-8')))
+            print('%s %s' % (utt_id, text_phone))
             utt_count += 1
             pbar.update(1)
 
