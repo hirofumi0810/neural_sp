@@ -14,8 +14,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.model_utils import LinearND
-
 
 class MultiheadAttentionMechanism(nn.Module):
     """Multi-headed attention layer.
@@ -67,14 +65,14 @@ class MultiheadAttentionMechanism(nn.Module):
             self.dropout = None
 
         if attn_type == 'add':
-            self.w_enc = nn.ModuleList([LinearND(enc_nunits, attn_dim)] * nheads)
-            self.w_dec = nn.ModuleList([LinearND(dec_nunits, attn_dim, bias=False)] * nheads)
-            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * nheads)
+            self.w_enc = nn.ModuleList([nn.Linear(enc_nunits, attn_dim)] * nheads)
+            self.w_dec = nn.ModuleList([nn.Linear(dec_nunits, attn_dim, bias=False)] * nheads)
+            self.v = nn.ModuleList([nn.Linear(attn_dim, 1, bias=False)] * nheads)
 
         elif attn_type == 'location':
-            self.w_enc = nn.ModuleList([LinearND(enc_nunits, attn_dim)] * nheads)
-            self.w_dec = nn.ModuleList([LinearND(dec_nunits, attn_dim, bias=False)] * nheads)
-            self.w_conv = nn.ModuleList([LinearND(conv_out_channels, attn_dim, bias=False)] * nheads)
+            self.w_enc = nn.ModuleList([nn.Linear(enc_nunits, attn_dim)] * nheads)
+            self.w_dec = nn.ModuleList([nn.Linear(dec_nunits, attn_dim, bias=False)] * nheads)
+            self.w_conv = nn.ModuleList([nn.Linear(conv_out_channels, attn_dim, bias=False)] * nheads)
             # self.conv = nn.ModuleList([nn.Conv1d(in_channels=1,
             #                                       out_channels=conv_out_channels,
             #                                       kernel_size=conv_kernel_size * 2 + 1,
@@ -87,27 +85,27 @@ class MultiheadAttentionMechanism(nn.Module):
                                                  stride=1,
                                                  padding=(0, conv_kernel_size),
                                                  bias=False) for _ in range(nheads)] * nheads)
-            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * nheads)
+            self.v = nn.ModuleList([nn.Linear(attn_dim, 1, bias=False)] * nheads)
 
         elif attn_type == 'dot':
-            self.w_enc = nn.ModuleList([LinearND(enc_nunits, attn_dim, bias=False)] * nheads)
-            self.w_dec = nn.ModuleList([LinearND(dec_nunits, attn_dim, bias=False)] * nheads)
+            self.w_enc = nn.ModuleList([nn.Linear(enc_nunits, attn_dim, bias=False)] * nheads)
+            self.w_dec = nn.ModuleList([nn.Linear(dec_nunits, attn_dim, bias=False)] * nheads)
 
         elif attn_type == 'luong_dot':
             pass
             # NOTE: no additional parameters
 
         elif attn_type == 'luong_general':
-            self.w_enc = nn.ModuleList([LinearND(enc_nunits, dec_nunits, bias=False)] * nheads)
+            self.w_enc = nn.ModuleList([nn.Linear(enc_nunits, dec_nunits, bias=False)] * nheads)
 
         elif attn_type == 'luong_concat':
-            self.w = nn.ModuleList([LinearND(enc_nunits + dec_nunits, attn_dim, bias=False)] * nheads)
-            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * nheads)
+            self.w = nn.ModuleList([nn.Linear(enc_nunits + dec_nunits, attn_dim, bias=False)] * nheads)
+            self.v = nn.ModuleList([nn.Linear(attn_dim, 1, bias=False)] * nheads)
 
         else:
             raise ValueError(attn_type)
 
-        self.w_out = LinearND(enc_nunits * nheads, enc_nunits)
+        self.w_out = nn.Linear(enc_nunits * nheads, enc_nunits)
 
     def reset(self):
         self.enc_out_a = None
@@ -212,10 +210,10 @@ class TransformerMultiheadAttentionMechanism(nn.Module):
         self.d_k = d_model // nheads
         self.nheads = nheads
 
-        self.w_key = LinearND(d_model, d_model, bias=False)
-        self.w_value = LinearND(d_model, d_model, bias=False)
-        self.w_query = LinearND(d_model, d_model, bias=False)
-        self.w_out = LinearND(d_model, d_model, bias=False)
+        self.w_key = nn.Linear(d_model, d_model, bias=False)
+        self.w_value = nn.Linear(d_model, d_model, bias=False)
+        self.w_query = nn.Linear(d_model, d_model, bias=False)
+        self.w_out = nn.Linear(d_model, d_model, bias=False)
         self.dropout = nn.Dropout(p=dropout)  # for probabilities
 
     def reset(self):

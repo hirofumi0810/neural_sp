@@ -12,7 +12,6 @@ from __future__ import print_function
 
 from collections import OrderedDict
 import logging
-import math
 import numpy as np
 import random
 import torch
@@ -303,7 +302,6 @@ class TransformerDecoder(nn.Module):
             loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
                                    target=ys_out_pad.view(-1),  # long
                                    ignore_index=-1, size_average=False) / bs
-        # ppl = math.exp(loss.item())
         ppl = np.exp(loss.item())
 
         # Compute token-level accuracy in teacher-forcing
@@ -345,7 +343,7 @@ class TransformerDecoder(nn.Module):
         yy_aws_tmp = [None] * bs
         xy_aws_tmp = [None] * bs
         eos_flags = [False] * bs
-        for t in range(int(math.floor(max_xlen * max_len_ratio)) + 1):
+        for t in range(int(np.floor(max_xlen * max_len_ratio)) + 1):
             # Make source-target attention mask
             yx_mask = eouts.new_ones(bs, t + 1, max_xlen)
             for b in range(bs):
@@ -364,7 +362,7 @@ class TransformerDecoder(nn.Module):
             logits_t = self.output(out)
 
             # Pick up 1-best
-            y = np.argmax(logits_t.detach(), axis=2).cuda(self.device_id)[:, -1:]
+            y = torch.argmax(logits_t.detach(), dim=2).cuda(self.device_id)[:, -1:]
             best_hyps_tmp += [y]
 
             # Count lengths of hypotheses

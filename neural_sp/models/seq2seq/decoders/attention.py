@@ -14,8 +14,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.model_utils import LinearND
-
 
 class AttentionMechanism(nn.Module):
     """Single-head attention layer.
@@ -65,14 +63,14 @@ class AttentionMechanism(nn.Module):
             self.dropout = None
 
         if attn_type == 'add':
-            self.w_enc = LinearND(enc_nunits, attn_dim)
-            self.w_dec = LinearND(dec_nunits, attn_dim, bias=False)
-            self.v = LinearND(attn_dim, 1, bias=False)
+            self.w_enc = nn.Linear(enc_nunits, attn_dim)
+            self.w_dec = nn.Linear(dec_nunits, attn_dim, bias=False)
+            self.v = nn.Linear(attn_dim, 1, bias=False)
 
         elif attn_type == 'location':
-            self.w_enc = LinearND(enc_nunits, attn_dim)
-            self.w_dec = LinearND(dec_nunits, attn_dim, bias=False)
-            self.w_conv = LinearND(conv_out_channels, attn_dim, bias=False)
+            self.w_enc = nn.Linear(enc_nunits, attn_dim)
+            self.w_dec = nn.Linear(dec_nunits, attn_dim, bias=False)
+            self.w_conv = nn.Linear(conv_out_channels, attn_dim, bias=False)
             # self.conv = nn.Conv1d(in_channels=1,
             #                       out_channels=conv_out_channels,
             #                       kernel_size=conv_kernel_size * 2 + 1,
@@ -85,22 +83,22 @@ class AttentionMechanism(nn.Module):
                                   stride=1,
                                   padding=(0, conv_kernel_size),
                                   bias=False)
-            self.v = LinearND(attn_dim, 1, bias=False)
+            self.v = nn.Linear(attn_dim, 1, bias=False)
 
         elif attn_type == 'dot':
-            self.w_enc = LinearND(enc_nunits, attn_dim, bias=False)
-            self.w_dec = LinearND(dec_nunits, attn_dim, bias=False)
+            self.w_enc = nn.Linear(enc_nunits, attn_dim, bias=False)
+            self.w_dec = nn.Linear(dec_nunits, attn_dim, bias=False)
 
         elif attn_type == 'luong_dot':
             pass
             # NOTE: no additional parameters
 
         elif attn_type == 'luong_general':
-            self.w_enc = LinearND(enc_nunits, dec_nunits, bias=False)
+            self.w_enc = nn.Linear(enc_nunits, dec_nunits, bias=False)
 
         elif attn_type == 'luong_concat':
-            self.w = LinearND(enc_nunits + dec_nunits, attn_dim, bias=False)
-            self.v = LinearND(attn_dim, 1, bias=False)
+            self.w = nn.Linear(enc_nunits + dec_nunits, attn_dim, bias=False)
+            self.v = nn.Linear(attn_dim, 1, bias=False)
 
         else:
             raise ValueError(attn_type)
