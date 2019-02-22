@@ -237,11 +237,10 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    for x in ${train_set} ${dev_set}; do
-        dump_dir=${data}/dump/${x}
-        dump_feat.sh --cmd "$train_cmd" --nj 80 \
-            ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x} ${dump_dir} || exit 1;
-    done
+    dump_feat.sh --cmd "$train_cmd" --nj 80 \
+        ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
+    dump_feat.sh --cmd "$train_cmd" --nj 32 \
+        ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
     for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${data_size}
         dump_feat.sh --cmd "$train_cmd" --nj 32 \
@@ -275,8 +274,10 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     echo "Making a dictionary..."
     if [ ${unit} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
+        spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
+            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
+        spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+            sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
     else
         text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
             --wp_type ${wp_type} --wp_model ${wp_model} | \
@@ -357,8 +358,10 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     echo "Making a dictionary..."
     if [ ${unit_sub1} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
+        spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} \
+            --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
+        spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+            sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
     else
         text2dict.py ${data}/${train_set}/text --unit ${unit_sub1} --vocab_size ${vocab_size_sub1} --nlsyms ${nlsyms} \
             --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} | \
@@ -407,8 +410,10 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub2}$
     echo "Making a dictionary..."
     if [ ${unit_sub2} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub2} --model_type=${wp_type_sub2} --model_prefix=${wp_model_sub2} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model_sub2}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub2}
+        spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub2} \
+            --model_type=${wp_type_sub2} --model_prefix=${wp_model_sub2} --input_sentence_size=100000000 --character_coverage=1.0
+        spm_encode --model=${wp_model_sub2}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+            sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub2}
     else
         text2dict.py ${data}/${train_set}/text --unit ${unit_sub2} --vocab_size ${vocab_size_sub2} --nlsyms ${nlsyms} \
             --wp_type ${wp_type_sub2} --wp_model ${wp_model_sub2} | \
@@ -457,8 +462,10 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub3}$
     echo "Making a dictionary..."
     if [ ${unit_sub3} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub3} --model_type=${wp_type_sub3} --model_prefix=${wp_model_sub3} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model_sub3}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub3}
+        spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub3} \
+            --model_type=${wp_type_sub3} --model_prefix=${wp_model_sub3} --input_sentence_size=100000000 --character_coverage=1.0
+        spm_encode --model=${wp_model_sub3}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+            sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub3}
     elif [ ${unit_sub3} = phone ]; then
         map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt
         map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt
