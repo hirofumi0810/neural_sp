@@ -6,7 +6,7 @@
 . ./path.sh
 
 cmd=run.pl
-add_deltadelta=false
+add_deltas=false
 nj=1
 
 . utils/parse_options.sh
@@ -35,7 +35,7 @@ done
 utils/split_scp.pl $feat_scp $split_feet_scps || exit 1;
 
 # dump features
-if ${add_deltadelta};then
+if ${add_deltas};then
   $cmd JOB=1:$nj $log_dir/dump_feature.JOB.log \
     apply-cmvn --norm-vars=true $cvmn_ark scp:$log_dir/feats.JOB.scp ark:- \| \
     add-deltas ark:- ark:- \| \
