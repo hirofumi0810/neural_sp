@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""MLP & embedding layer."""
+"""Utilities for layer definition."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -20,7 +20,7 @@ import torch.nn.functional as F
 class LinearND(nn.Module):
 
     def __init__(self, in_size, out_size, bias=True, dropout=0):
-        """Linear layer.
+        """Linear layer with dropout.
 
         A torch.nn.Linear layer modified to accept ND arrays.
             The function treats the last dimension of the input
@@ -35,8 +35,7 @@ class LinearND(nn.Module):
         super(LinearND, self).__init__()
 
         self.fc = nn.Linear(in_size, out_size, bias=bias)
-        if dropout > 0:
-            self.dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, xs):
         """Forward computation.
@@ -49,9 +48,7 @@ class LinearND(nn.Module):
         """
         size = list(xs.size())
         xs = xs.contiguous().view((int(np.prod(size[:-1])), int(size[-1])))
-        xs = self.fc(xs)
-        if hasattr(self, 'dropout'):
-            xs = self.dropout(xs)
+        xs = self.dropout(self.fc(xs))
         size[-1] = xs.size()[-1]
         return xs.view(size)
 
@@ -63,19 +60,16 @@ class Embedding(nn.Module):
 
         Args:
             vocab (int): the number of nodes in softmax layer
-                (including <sos> and <eos> classes)
             emb_dim (int): the dimension of the embedding in target spaces
             dropout (float): the probability to dropout nodes of the embedding
             ignore_index (int):
-            scale (bool): if True, scale outputs of the embedding layer by square root of emb_dim
 
         """
         super(Embedding, self).__init__()
 
         self.emb_dim = emb_dim
         self.embed = nn.Embedding(vocab, emb_dim, padding_idx=ignore_index)
-        if dropout > 0:
-            self.dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, y):
         """Forward computation.
@@ -86,9 +80,7 @@ class Embedding(nn.Module):
             y (FloatTensor): `[B, L, emb_dim]`
 
         """
-        y = self.embed(y)
-        if hasattr(self, 'dropout'):
-            y = self.dropout(y)
+        y = self.dropout(self.embed(y))
         return y
 
 
