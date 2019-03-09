@@ -107,8 +107,8 @@ if [ -z ${gpu} ]; then
     echo "Usage: ./run.sh --gpu 0" 1>&2
     exit 1
 fi
-ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
-rnnlm_gpu=`echo ${gpu} | cut -d "," -f 1`
+ngpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+rnnlm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 train_set=train
 dev_set=dev
@@ -161,16 +161,16 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2 ]; then
     echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict}
-    offset=`cat ${dict} | wc -l`
+    offset=$(cat ${dict} | wc -l)
     echo "Making a dictionary..."
     text2dict.py ${data}/${train_set}/text --unit phone | \
-        sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset-1}' >> ${dict} || exit 1;
-    echo "vocab size:" `cat ${dict} | wc -l`
+        sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+    echo "vocab size:" $(cat ${dict} | wc -l)
 
     # Make datset tsv files
+    echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
     for x in ${train_set} ${dev_set} ${test_set}; do
-        echo "Making a tsv file for ${x}..."
         dump_dir=${data}/dump/${x}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit phone \
             ${data}/${x} ${dict} > ${data}/dataset/${x}.tsv || exit 1;
