@@ -181,7 +181,8 @@ class Controller(object):
         self.best_value = best_value
 
         # for warmup
-        if warmup_nsteps > 0:
+        if decay_type == 'warmup':
+            assert warmup_nsteps > 0
             if warmup_start_learning_rate > 0:
                 self.lr_init = warmup_start_learning_rate
             else:
@@ -190,9 +191,6 @@ class Controller(object):
             self.lr_init = learning_rate
         self.warmup_start_lr = warmup_start_learning_rate
         self.warmup_nsteps = warmup_nsteps
-
-        if decay_type == 'warmup':
-            assert warmup_nsteps > 0
 
     def decay_lr(self, optimizer, lr, epoch, value):
         """Decay learning rate per epoch.
