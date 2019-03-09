@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import codecs
 import re
 from tqdm import tqdm
 
@@ -22,10 +23,10 @@ args = parser.parse_args()
 
 def main():
 
-    with open(args.text, 'r') as f:
+    with codecs.open(args.text, 'r', encoding="utf-8") as f:
         pbar = tqdm(total=len(open(args.text).readlines()))
         for line in f:
-            line = unicode(line, 'utf-8').strip()
+            line = line.strip()
 
             utt_id = line.split()[0]
             words = line.split()[1:]
@@ -45,9 +46,7 @@ def main():
             if text[-1] == ' ':
                 text = text[:-1]
 
-            line = utt_id + ' ' + text
-
-            print('%s' % line.encode('utf-8'))
+            print(utt_id + ' ' + text)
             pbar.update(1)
 
 
