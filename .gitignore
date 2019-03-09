@@ -9,12 +9,10 @@ pytorch-ctc
 nohup.out
 .done*
 .nfs*
+*.done
 
 vocab
 log
 examples/*/*/steps
 examples/*/*/utils
-
-# under implementation
-nested*
-hierarchical*
+kaldi_io.py
