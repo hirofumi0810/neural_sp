@@ -81,7 +81,7 @@ decay_type=epoch
 not_improved_patient_epoch=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
-warmup_nsteps=4000
+warmup_nsteps=0
 warmup_nepochs=0
 ### initialization
 param_init=0.1
@@ -112,7 +112,7 @@ task_specific_layer=true
 cold_fusion=
 rnnlm_cold_fusion=
 rnnlm_init=
-lmobj_weight=
+lmobj_weight=0.0
 share_lm_softmax=
 
 ### path to save the model
@@ -158,7 +158,7 @@ if [ -z ${gpu} ]; then
     echo "Usage: ./run.sh --gpu 0" 1>&2
     exit 1
 fi
-ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
+ngpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 
 train_set=train_${data_size}
 dev_set=dev_${data_size}
@@ -212,7 +212,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
 
     # Use the first 4k sentences from training data as dev set. (39 speakers.)
     utils/subset_data_dir.sh --first ${data}/${train_set} 4000 ${data}/${dev_set} || exit 1;  # 6hr 31min
-    n=$[`cat ${data}/${train_set}/segments | wc -l` - 4000]
+    n=$[$(cat ${data}/${train_set}/segments | wc -l) - 4000]
     utils/subset_data_dir.sh --last ${data}/${train_set} ${n} ${data}/${train_set}.tmp || exit 1;
 
     # Finally, the full training set:
@@ -225,9 +225,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     # Apply global CMVN & dump features
     dump_feat.sh --cmd "$train_cmd" --nj 80 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
-    dump_feat.sh --cmd "$train_cmd" --nj 32 \
-        ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
-    for x in ${test_set}; do
+    for x in ${dev_set} ${test_set}; do
         dump_dir=${data}/dump/${x}_${data_size}
         dump_feat.sh --cmd "$train_cmd" --nj 32 \
             ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
@@ -251,7 +249,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     if [ ${unit} = char ]; then
         echo "<space> 4" >> ${dict}
     fi
-    offset=`cat ${dict} | wc -l`
+    offset=$(cat ${dict} | wc -l)
     echo "Making a dictionary..."
     if [ ${unit} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
@@ -264,34 +262,28 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
             --wp_type ${wp_type} --wp_model ${wp_model} | \
             sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     fi
-    echo "vocab size:" `cat ${dict} | wc -l`
+    echo "vocab size:" $(cat ${dict} | wc -l)
 
     # Compute OOV rate
     if [ ${unit} = word ]; then
         mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
-        echo "OOV rate:" > ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
+        echo "OOV rate:" > ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
         for x in ${train_set} ${dev_set} ${test_set}; do
             cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
                 > ${data}/dict/word_count/${x}_${data_size}.txt || exit 1;
             compute_oov_rate.py ${data}/dict/word_count/${x}_${data_size}.txt ${dict} ${x} \
-                >> ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt || exit 1;
+                >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
         done
-        cat ${data}/dict/oov_rate/word_${vocab_size}_${data_size}.txt
+        cat ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
     fi
 
-    # Make datset csv files for the ASR task
+    # Make datset tsv files for the ASR task
     mkdir -p ${data}/dataset
-    for x in ${train_set} ${dev_set}; do
-        echo "Making a ASR csv file for ${x}..."
+    for x in ${train_set} ${dev_set} ${test_set}; do
+        echo "Making a ASR tsv file for ${x}..."
         dump_dir=${data}/dump/${x}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
-            ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
-    done
-    for x in ${test_set}; do
-        echo "Making a ASR csv file for ${x}..."
-        dump_dir=${data}/dump/${x}_${data_size}
-        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
-            ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+            ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
     done
 
     touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for ASR (stage: 2)."
@@ -312,7 +304,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     if [ ${unit_sub1} = char ]; then
         echo "<space> 4" >> ${dict_sub1}
     fi
-    offset=`cat ${dict_sub1} | wc -l`
+    offset=$(cat ${dict_sub1} | wc -l)
     echo "Making a dictionary..."
     if [ ${unit_sub1} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
@@ -325,21 +317,15 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
             --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} | \
             sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
     fi
-    echo "vocab size:" `cat ${dict_sub1} | wc -l`
+    echo "vocab size:" $(cat ${dict_sub1} | wc -l)
 
-    # Make datset csv files for the ASR task
+    # Make datset tsv files for the ASR task
     mkdir -p ${data}/dataset
-    for x in ${train_set} ${dev_set}; do
-        echo "Making a ASR csv file for ${x}..."
+    for x in ${train_set} ${dev_set} ${test_set}; do
+        echo "Making a ASR tsv file for ${x}..."
         dump_dir=${data}/dump/${x}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
-            ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv || exit 1;
-    done
-    for x in ${test_set}; do
-        echo "Making a ASR csv file for ${x}..."
-        dump_dir=${data}/dump/${x}_${data_size}
-        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
-            ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv || exit 1;
+            ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;
     done
 
     touch ${data}/.done_stage_2_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} && echo "Finish creating dataset for ASR (stage: 2)."
@@ -351,13 +337,13 @@ if [ ${stage} -le 4 ]; then
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
 
-    CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --ngpus ${ngpus} \
-        --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.csv \
-        --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv \
-        --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
-        --dev_set_sub1 ${data}/dataset/${dev_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.csv \
-        --eval_sets ${data}/dataset/eval1_${data_size}_${unit}${wp_type}${vocab_size}.csv \
+        --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv \
+        --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --dev_set_sub1 ${data}/dataset/${dev_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv \
+        --eval_sets ${data}/dataset/eval1_${data_size}_${unit}${wp_type}${vocab_size}.tsv \
         --dict ${dict} \
         --dict_sub1 ${dict_sub1} \
         --wp_model ${wp_model}.model \

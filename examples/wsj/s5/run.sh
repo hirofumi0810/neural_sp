@@ -73,9 +73,9 @@ decay_rate=0.9
 decay_patient_epoch=0
 decay_type=epoch
 not_improved_patient_epoch=5
-eval_start_epoch=5
+eval_start_epoch=1
 warmup_start_learning_rate=1e-4
-warmup_nsteps=1000
+warmup_nsteps=0
 warmup_nepochs=0
 ### initialization
 param_init=0.1
@@ -103,7 +103,7 @@ task_specific_layer=
 cold_fusion=
 rnnlm_cold_fusion=
 rnnlm_init=
-lmobj_weight=
+lmobj_weight=0.0
 share_lm_softmax=
 
 #########################
@@ -337,22 +337,16 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
         cat ${data}/dict/oov_rate/word_${vocab_size}.txt
     fi
 
-    # Make datset csv files for the ASR task
+    # Make datset tsv files for the ASR task
     mkdir -p ${data}/dataset
-    for x in ${train_set} ${dev_set}; do
-        echo "Making a ASR csv file for ${x}..."
+    for x in ${train_set} ${dev_set} ${test_set}; do
+        echo "Making a ASR tsv file for ${x}..."
         dump_dir=${data}/dump/${x}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
-            ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
-    done
-    for x in ${test_set}; do
-        echo "Making a ASR csv file for ${x}..."
-        dump_dir=${data}/dump/${x}
-        make_dataset.sh --is_test true --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} \
-            ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+            ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
     done
 
-    touch ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset (stage: 2)."
+    touch ${data}/.done_stage_2_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}
@@ -365,21 +359,21 @@ if [ ${stage} -le 3 ]; then
     # ${data}/local/dict_nosp_larger/cleaned.gz
 
     if [ ! -e ${data}/.done_stage_3_${unit}${wp_type}${vocab_size} ]; then
-        # Make datset csv files for the LM task
+        # Make datset tsv files for the LM task
         mkdir -p ${data}/dataset_lm
         for x in ${train_set} ${dev_set}; do
-            echo "Making a LM csv file for ${x}..."
-            cp ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.csv ${data}/dataset_lm/${x}_${unit}${wp_type}${vocab_size}.csv || exit 1;
+            echo "Making a LM tsv file for ${x}..."
+            cp ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv ${data}/dataset_lm/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
         done
 
         touch ${data}/.done_stage_3_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    lm_train_set=${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.csv
-    lm_dev_set=${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.csv
+    lm_train_set=${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.tsv
+    lm_dev_set=${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.tsv
 
     # NOTE: support only a single GPU for RNNLM training
-    CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ../../../neural_sp/bin/lm/train.py \
+    CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --ngpus 1 \
         --train_set ${lm_train_set} \
         --dev_set ${lm_dev_set} \
@@ -418,7 +412,7 @@ if [ ${stage} -le 3 ]; then
         --backward ${lm_backward} || exit 1;
     # --resume ${rnnlm_resume} || exit 1;
 
-    echo "Finish RNNLM training (stage: 3)."
+    echo "Finish RNNLM training (stage: 3)." && exit 1;
 fi
 
 if [ ${stage} -le 4 ]; then
@@ -426,11 +420,11 @@ if [ ${stage} -le 4 ]; then
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
 
-    CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/train.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --ngpus ${ngpus} \
-        --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.csv \
-        --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.csv \
-        --eval_sets ${data}/dataset/${test_set}_${unit}${wp_type}${vocab_size}.csv \
+        --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --eval_sets ${data}/dataset/${test_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model ${model}/asr \
