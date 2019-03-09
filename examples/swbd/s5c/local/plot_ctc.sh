@@ -22,38 +22,38 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
-  echo "Error: set GPU number." 1>&2
-  echo "Usage: local/plot_ctc.sh --gpu 0" 1>&2
-  exit 1
+    echo "Error: set GPU number." 1>&2
+    echo "Usage: local/plot_ctc.sh --gpu 0" 1>&2
+    exit 1
 fi
-gpu=`echo ${gpu} | cut -d "," -f 1`
+gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in eval2000; do
-  recog_dir=${model}/plot_${set}_ep${epoch}
-  if [ ! -z ${recog_unit} ]; then
-      recog_dir=${recog_dir}_${recog_unit}
-  fi
-  mkdir -p ${recog_dir}
-
-  if [ `echo ${model} | grep 'train_sp'` ]; then
-    if [ `echo ${model} | grep 'fisher_swbd'` ]; then
-      recog_set=${data}/dataset/${set}_sp_fisher_swbd_wpbpe30000.csv
-    else
-      recog_set=${data}/dataset/${set}_sp_swbd_wpbpe10000.csv
+    recog_dir=${model}/plot_${set}_ep${epoch}
+    if [ ! -z ${recog_unit} ]; then
+        recog_dir=${recog_dir}_${recog_unit}
     fi
-  else
-    if [ `echo ${model} | grep 'fisher_swbd'` ]; then
-      recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe30000.csv
-    else
-      recog_set=${data}/dataset/${set}_swbd_wpbpe10000.csv
-    fi
-  fi
+    mkdir -p ${recog_dir}
 
-  CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/plot_ctc.py \
-    --recog_sets ${recog_set} \
-    --recog_model ${model} \
-    --recog_epoch ${epoch} \
-    --recog_batch_size ${batch_size} \
-    --recog_unit ${recog_unit} \
-    --recog_dir ${recog_dir} || exit 1;
+    if [ $(echo ${model} | grep 'train_sp') ]; then
+        if [ $(echo ${model} | grep 'fisher_swbd') ]; then
+            recog_set=${data}/dataset/${set}_sp_fisher_swbd_wpbpe30000.tsv
+        else
+            recog_set=${data}/dataset/${set}_sp_swbd_wpbpe10000.tsv
+        fi
+    else
+        if [ $(echo ${model} | grep 'fisher_swbd') ]; then
+            recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe30000.tsv
+        else
+            recog_set=${data}/dataset/${set}_swbd_wpbpe10000.tsv
+        fi
+    fi
+
+    CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/plot_ctc.py \
+        --recog_sets ${recog_set} \
+        --recog_model ${model} \
+        --recog_epoch ${epoch} \
+        --recog_batch_size ${batch_size} \
+        --recog_unit ${recog_unit} \
+        --recog_dir ${recog_dir} || exit 1;
 done
