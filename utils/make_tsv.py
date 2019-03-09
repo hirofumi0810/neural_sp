@@ -21,9 +21,11 @@ from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--feat', type=str, default='', nargs='?',
-                    help='feat.scp file')
+                    help='feats.scp file')
 parser.add_argument('--utt2num_frames', type=str,
                     help='utt2num_frames file')
+parser.add_argument('--utt2spk', type=str,
+                    help='utt2spk file')
 parser.add_argument('--dict', type=str,
                     help='dictionary file')
 parser.add_argument('--text', type=str,
@@ -53,6 +55,7 @@ def main():
 
     utt2feat = {}
     utt2frame = {}
+    utt2speaker = {}
     if args.feat:
         with codecs.open(args.feat, 'r', encoding="utf-8") as f:
             for line in f:
@@ -63,6 +66,11 @@ def main():
             for line in f:
                 utt_id, xlen = line.strip().split(' ')
                 utt2frame[utt_id] = int(xlen)
+
+        with codecs.open(args.utt2spk, 'r', encoding="utf-8") as f:
+            for line in f:
+                utt_id, speaker = line.strip().split(' ')
+                utt2speaker[utt_id] = speaker
 
     token2id = {}
     with codecs.open(args.dict, 'r', encoding="utf-8") as f:
@@ -80,7 +88,7 @@ def main():
         sp = spm.SentencePieceProcessor()
         sp.Load(args.wp_model + '.model')
 
-    print('utt_id\tfeat_path\txlen\txdim\ttext\ttoken_id\tylen\tydim')
+    print('utt_id\tspeaker\tfeat_path\txlen\txdim\ttext\ttoken_id\tylen\tydim')
 
     xdim = None
     utt_count = 0
@@ -98,6 +106,7 @@ def main():
             if args.feat:
                 feat_path = utt2feat[utt_id]
                 xlen = utt2frame[utt_id]
+                speaker = utt2speaker[utt_id]
 
                 if not os.path.isfile(feat_path.split(':')[0]):
                     raise ValueError('There is no file: %s' % feat_path)
@@ -105,6 +114,7 @@ def main():
                 # dummy for LM
                 feat_path = ''
                 xlen = 0
+                speaker = ''
 
             # Convert strings into the corresponding indices
             token_ids = []
@@ -164,8 +174,8 @@ def main():
                     xdim = 0
             ydim = len(token2id.keys())
 
-            print('%d\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d' %
-                  (utt_count, utt_id, feat_path, xlen, xdim, text, token_id, ylen, ydim))
+            print('%d\t%s\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d' %
+                  (utt_count, utt_id, speaker, feat_path, xlen, xdim, text, token_id, ylen, ydim))
             utt_count += 1
             pbar.update(1)
 

@@ -93,7 +93,7 @@ def eval_char(models, dataset, decode_params, epoch,
                 hyp = dataset.id2char(best_hyps[b])
 
                 # Write to trn
-                speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
+                speaker = batch['speakers'][b]
                 start = batch['utt_ids'][b].replace('-', '_').split('_')[-2]
                 end = batch['utt_ids'][b].replace('-', '_').split('_')[-1]
                 f_ref.write(ref + ' (' + speaker + '-' + start + '-' + end + ')\n')

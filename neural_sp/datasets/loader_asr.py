@@ -168,20 +168,24 @@ class Dataset(Base):
 
         # Load dataset csv file
         df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
-        df = df.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+        df = df.loc[:, ['utt_id', 'speaker', 'feat_path',
+                        'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         if tsv_path_sub1:
             df_sub1 = pd.read_csv(tsv_path_sub1, encoding='utf-8', delimiter='\t')
-            df_sub1 = df_sub1.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+            df_sub1 = df_sub1.loc[:, ['utt_id', 'speaker', 'feat_path',
+                                      'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         else:
             df_sub1 = None
         if tsv_path_sub2:
             df_sub2 = pd.read_csv(tsv_path_sub2, encoding='utf-8', delimiter='\t')
-            df_sub2 = df_sub2.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+            df_sub2 = df_sub2.loc[:, ['utt_id', 'speaker', 'feat_path',
+                                      'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         else:
             df_sub2 = None
         if tsv_path_sub3:
             df_sub3 = pd.read_csv(tsv_path_sub3, encoding='utf-8', delimiter='\t')
-            df_sub3 = df_sub3.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+            df_sub3 = df_sub3.loc[:, ['utt_id', 'speaker', 'feat_path',
+                                      'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         else:
             df_sub3 = None
 
@@ -318,18 +322,15 @@ class Dataset(Base):
             ys_sub3, ylens_sub3 = [], []
 
         utt_ids = [self.df['utt_id'][i] for i in utt_indices]
+        speakers = [self.df['speaker'][i] for i in utt_indices]
 
         batch_dict = {'xs': xs, 'xlens': xlens,
                       'ys': ys, 'ylens': ylens,
                       'ys_sub1': ys_sub1, 'ylens_sub1': ylens_sub1,
                       'ys_sub2': ys_sub2, 'ylens_sub2': ylens_sub2,
                       'ys_sub3': ys_sub3, 'ylens_sub3': ylens_sub3,
-                      'utt_ids':  utt_ids, 'speakers': None,
+                      'utt_ids':  utt_ids, 'speakers': speakers,
                       'text': text,
                       'feat_path': [self.df['feat_path'][i] for i in utt_indices]}
-
-        if self.is_test:
-            speakers = ['_'.join(utt_id.replace('-', '_').split('_')[:-2]) for utt_id in utt_ids]
-            batch_dict['speakers'] = speakers
 
         return batch_dict

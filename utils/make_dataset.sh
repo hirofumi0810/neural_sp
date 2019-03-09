@@ -28,9 +28,9 @@ if [ -z ${text} ]; then
     text=${data}/text
 fi
 
-# tsv: utt_id, feat_path, xlen, text, tokenid, ylen
 make_tsv.py --feat ${feat} \
     --utt2num_frames ${data}/utt2num_frames \
+    --utt2spk ${data}/utt2spk \
     --text ${text} \
     --dict ${dict} \
     --unit ${unit} \
