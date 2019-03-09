@@ -34,7 +34,7 @@ np.random.seed(1)
 
 class Dataset(Base):
 
-    def __init__(self, csv_path, dict_path,
+    def __init__(self, tsv_path, dict_path,
                  unit, batch_size, nepochs=None,
                  is_test=False, min_nframes=40, max_nframes=2000,
                  shuffle=False, sort_by_input_length=False,
@@ -42,19 +42,19 @@ class Dataset(Base):
                  nques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1, skip_speech=False,
                  wp_model=False,
-                 csv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
+                 tsv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
                  wp_model_sub1=False,
                  ctc_sub1=False, subsample_factor_sub1=1,
                  wp_model_sub2=False,
-                 csv_path_sub2=False, dict_path_sub2=False, unit_sub2=False,
+                 tsv_path_sub2=False, dict_path_sub2=False, unit_sub2=False,
                  ctc_sub2=False, subsample_factor_sub2=1,
                  wp_model_sub3=False,
-                 csv_path_sub3=False, dict_path_sub3=False, unit_sub3=False,
+                 tsv_path_sub3=False, dict_path_sub3=False, unit_sub3=False,
                  ctc_sub3=False, subsample_factor_sub3=1):
         """A class for loading dataset.
 
         Args:
-            csv_path (str):
+            tsv_path (str):
             dict_path (str):
             unit (str): word or wp or char or phone or word_char
             batch_size (int): the size of mini-batch
@@ -79,7 +79,7 @@ class Dataset(Base):
         """
         super(Dataset, self).__init__()
 
-        self.set = os.path.basename(csv_path).split('.')[0]
+        self.set = os.path.basename(tsv_path).split('.')[0]
         self.is_test = is_test
         self.unit = unit
         self.unit_sub1 = unit_sub1
@@ -167,20 +167,20 @@ class Dataset(Base):
             self.vocab_sub3 = -1
 
         # Load dataset csv file
-        df = pd.read_csv(csv_path, encoding='utf-8', delimiter='\t')
+        df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
         df = df.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
-        if csv_path_sub1:
-            df_sub1 = pd.read_csv(csv_path_sub1, encoding='utf-8', delimiter='\t')
+        if tsv_path_sub1:
+            df_sub1 = pd.read_csv(tsv_path_sub1, encoding='utf-8', delimiter='\t')
             df_sub1 = df_sub1.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         else:
             df_sub1 = None
-        if csv_path_sub2:
-            df_sub2 = pd.read_csv(csv_path_sub2, encoding='utf-8', delimiter='\t')
+        if tsv_path_sub2:
+            df_sub2 = pd.read_csv(tsv_path_sub2, encoding='utf-8', delimiter='\t')
             df_sub2 = df_sub2.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         else:
             df_sub2 = None
-        if csv_path_sub3:
-            df_sub3 = pd.read_csv(csv_path_sub3, encoding='utf-8', delimiter='\t')
+        if tsv_path_sub3:
+            df_sub3 = pd.read_csv(tsv_path_sub3, encoding='utf-8', delimiter='\t')
             df_sub3 = df_sub3.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         else:
             df_sub3 = None

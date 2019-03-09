@@ -79,10 +79,10 @@ def main():
     subsample_factor *= np.prod(subsample)
 
     # Load dataset
-    train_set = Dataset(csv_path=args.train_set,
-                        csv_path_sub1=args.train_set_sub1,
-                        csv_path_sub2=args.train_set_sub2,
-                        csv_path_sub3=args.train_set_sub3,
+    train_set = Dataset(tsv_path=args.train_set,
+                        tsv_path_sub1=args.train_set_sub1,
+                        tsv_path_sub2=args.train_set_sub2,
+                        tsv_path_sub3=args.train_set_sub3,
                         dict_path=args.dict,
                         dict_path_sub1=args.dict_sub1,
                         dict_path_sub2=args.dict_sub2,
@@ -112,10 +112,10 @@ def main():
                         subsample_factor_sub2=subsample_factor_sub2,
                         subsample_factor_sub3=subsample_factor_sub3,
                         skip_speech=(args.input_type != 'speech'))
-    dev_set = Dataset(csv_path=args.dev_set,
-                      csv_path_sub1=args.dev_set_sub1,
-                      csv_path_sub2=args.dev_set_sub2,
-                      csv_path_sub3=args.dev_set_sub3,
+    dev_set = Dataset(tsv_path=args.dev_set,
+                      tsv_path_sub1=args.dev_set_sub1,
+                      tsv_path_sub2=args.dev_set_sub2,
+                      tsv_path_sub3=args.dev_set_sub3,
                       dict_path=args.dict,
                       dict_path_sub1=args.dict_sub1,
                       dict_path_sub2=args.dict_sub2,
@@ -143,7 +143,7 @@ def main():
                       skip_speech=(args.input_type != 'speech'))
     eval_sets = []
     for set in args.eval_sets:
-        eval_sets += [Dataset(csv_path=set,
+        eval_sets += [Dataset(tsv_path=set,
                               dict_path=args.dict,
                               unit=args.unit,
                               wp_model=args.wp_model,

@@ -23,23 +23,23 @@ def parse():
                         help='name of job')
     # dataset
     parser.add_argument('--train_set', type=str,
-                        help='path to a csv file for the training set')
+                        help='path to a tsv file for the training set')
     parser.add_argument('--train_set_sub1', type=str, default=False,
-                        help='path to a csv file for the training set for the 1st auxiliary task')
+                        help='path to a tsv file for the training set for the 1st auxiliary task')
     parser.add_argument('--train_set_sub2', type=str, default=False,
-                        help='path to a csv file for the training set for the 2nd auxiliary task')
+                        help='path to a tsv file for the training set for the 2nd auxiliary task')
     parser.add_argument('--train_set_sub3', type=str, default=False,
-                        help='path to a csv file for the training set for the 3rd auxiliary task')
+                        help='path to a tsv file for the training set for the 3rd auxiliary task')
     parser.add_argument('--dev_set', type=str,
-                        help='path to a csv file for the development set')
+                        help='path to a tsv file for the development set')
     parser.add_argument('--dev_set_sub1', type=str, default=False,
-                        help='path to a csv file for the development set for the 1st auxiliary task')
+                        help='path to a tsv file for the development set for the 1st auxiliary task')
     parser.add_argument('--dev_set_sub2', type=str, default=False,
-                        help='path to a csv file for the development set for the 2nd auxiliary task')
+                        help='path to a tsv file for the development set for the 2nd auxiliary task')
     parser.add_argument('--dev_set_sub3', type=str, default=False,
-                        help='path to a csv file for the development set for the 3rd auxiliary task')
+                        help='path to a tsv file for the development set for the 3rd auxiliary task')
     parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
-                        help='path to csv files for the evaluation sets')
+                        help='path to tsv files for the evaluation sets')
     parser.add_argument('--dict', type=str,
                         help='path to a dictionary file')
     parser.add_argument('--dict_sub1', type=str, default=False,
@@ -329,11 +329,11 @@ def parse():
     parser.add_argument('--pe_type', type=str, default='add',
                         choices=['add', 'concat', 'learned_add', 'learned_concat', False],
                         help='type of positional encoding')
-    parser.add_argument('--layer_norm_eps', type=float, default=1e-12,
+    parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
                         help='')
     # decoding parameters
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
-                        help='path to csv files for the evaluation sets')
+                        help='path to tsv files for the evaluation sets')
     parser.add_argument('--recog_model', type=str, default=None, nargs='+',
                         help='path to the model')
     parser.add_argument('--recog_model_bwd', type=str, default=None, nargs='?',

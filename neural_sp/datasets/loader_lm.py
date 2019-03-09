@@ -34,13 +34,13 @@ np.random.seed(1)
 
 class Dataset(Base):
 
-    def __init__(self, csv_path, dict_path,
+    def __init__(self, tsv_path, dict_path,
                  unit, batch_size, nepochs=None,
                  is_test=False, bptt=2, shuffle=False, wp_model=None):
         """A class for loading dataset.
 
         Args:
-            csv_path (str):
+            tsv_path (str):
             dict_path (str):
             unit (str): word or wp or char or phone or word_char
             batch_size (int): the size of mini-batch
@@ -53,7 +53,7 @@ class Dataset(Base):
         """
         super(Dataset, self).__init__()
 
-        self.set = os.path.basename(csv_path).split('.')[0]
+        self.set = os.path.basename(tsv_path).split('.')[0]
         self.is_test = is_test
         self.unit = unit
         self.batch_size = batch_size
@@ -79,7 +79,7 @@ class Dataset(Base):
             raise ValueError(unit)
 
         # Load dataset csv file
-        df = pd.read_csv(csv_path, encoding='utf-8', delimiter=',')
+        df = pd.read_csv(tsv_path, encoding='utf-8', delimiter=',')
         df = df.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
         df = df[df.apply(lambda x: x['y_len'] > 0, axis=1)]
 

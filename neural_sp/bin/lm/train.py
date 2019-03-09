@@ -49,7 +49,7 @@ def main():
             setattr(args, k, v)
 
     # Load dataset
-    train_set = Dataset(csv_path=args.train_set,
+    train_set = Dataset(tsv_path=args.train_set,
                         dict_path=args.dict,
                         unit=args.unit,
                         wp_model=args.wp_model,
@@ -57,7 +57,7 @@ def main():
                         nepochs=args.nepochs,
                         bptt=args.bptt,
                         shuffle=False)
-    dev_set = Dataset(csv_path=args.dev_set,
+    dev_set = Dataset(tsv_path=args.dev_set,
                       dict_path=args.dict,
                       unit=args.unit,
                       wp_model=args.wp_model,
@@ -66,7 +66,7 @@ def main():
                       shuffle=True)
     eval_sets = []
     for set in args.eval_sets:
-        eval_sets += [Dataset(csv_path=set,
+        eval_sets += [Dataset(tsv_path=set,
                               dict_path=args.dict,
                               unit=args.unit,
                               wp_model=args.wp_model,
@@ -123,7 +123,7 @@ def main():
 
         # Set optimizer
         model.set_optimizer(optimizer=args.optimizer,
-                            learning_rate_init=float(args.learning_rate),
+                            learning_rate=float(args.learning_rate),
                             weight_decay=float(args.weight_decay),
                             clip_grad_norm=args.clip_grad_norm,
                             lr_schedule=False,
@@ -157,7 +157,7 @@ def main():
     #     setproctitle(dir_name)
 
     # Set learning rate controller
-    lr_controller = Controller(learning_rate_init=lr,
+    lr_controller = Controller(learning_rate=lr,
                                decay_type=args.decay_type,
                                decay_start_epoch=args.decay_start_epoch,
                                decay_rate=args.decay_rate,
@@ -268,8 +268,8 @@ def main():
                     # Convert to fine-tuning stage
                     model.module.set_optimizer(
                         'sgd',
-                        # learning_rate_init=float(args.learning_rate),
-                        learning_rate_init=lr,
+                        # learning_rate=float(args.learning_rate),
+                        learning_rate=lr,
                         weight_decay=float(args.weight_decay),
                         clip_grad_norm=args.clip_grad_norm,
                         lr_schedule=False,

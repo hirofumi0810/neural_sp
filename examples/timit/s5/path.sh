@@ -1,24 +1,26 @@
-### Set the root path of kaldi-asr
-if [ -z $KALDI_ROOT ]; then
-  export KALDI_ROOT="/n/sd8/inaguma/kaldi"
-fi
-[ -f $KALDI_ROOT/tools/env.sh ] && . $KALDI_ROOT/tools/env.sh
-NEURALSP_ROOT=../../..
+export NEURALSP_ROOT=$PWD/../../..
+export TOOL=/home/inaguma/tool/neural_sp
+export CONDA=$TOOL/miniconda
+# export KALDI_ROOT=$TOOL/kaldi
+export KALDI_ROOT="/n/sd8/inaguma/kaldi"
 
-export PATH=$PWD/utils/:$NEURALSP_ROOT/neural_sp/utils/bin/:$KALDI_ROOT/tools/sctk/bin/:$PATH
+# Kaldi
+[ -f $KALDI_ROOT/tools/env.sh ] && . $KALDI_ROOT/tools/env.sh
+export PATH=$NEURALSP_ROOT/utils:$PWD/utils/:$KALDI_ROOT/tools/sctk/bin/:$TOOL/sentencepiece/build/src:$PATH
 [ ! -f $KALDI_ROOT/tools/config/common_path.sh ] && echo >&2 "The standard file $KALDI_ROOT/tools/config/common_path.sh is not present -> Exit!" && exit 1
 . $KALDI_ROOT/tools/config/common_path.sh
 export LC_ALL=C
 
 ### Python
-source ~/espnet/tools/venv/bin/activate
-export PYTHONPATH=$NEURALSP_ROOT/:~/espnet/tools/kaldi-io-for-python/:$PYTHONPATH
+source $CONDA/etc/profile.d/conda.sh && conda deactivate && conda activate
+export PYTHONDONTWRITEBYTECODE=1
+export OMP_NUM_THREADS=1
 
 ### CUDA
-export PATH=$PATH:/usr/local/cuda/bin
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64
-
-export PYTHONDONTWRITEBYTECODE=1
-find $NEURALSP_ROOT -name "*.pyc" -exec rm -f {} \;
-
-export OMP_NUM_THREADS=1
+CUDAROOT=/usr/local/cuda
+NCCL_ROOT=/usr/local/nccl
+export CPATH=$NCCL_ROOT/include:$CPATH
+export LD_LIBRARY_PATH=$NCCL_ROOT/lib/:$CUDAROOT/lib64:$LD_LIBRARY_PATH
+export LIBRARY_PATH=$NCCL_ROOT/lib/:$LIBRARY_PATH
+export CUDA_HOME=$CUDAROOT
+export CUDA_PATH=$CUDAROOT

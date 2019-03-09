@@ -23,11 +23,11 @@ def parse():
                         help='name of job')
     # dataset
     parser.add_argument('--train_set', type=str,
-                        help='path to a csv file for the training set')
+                        help='path to a tsv file for the training set')
     parser.add_argument('--dev_set', type=str,
-                        help='path to a csv file for the development set')
+                        help='path to a tsv file for the development set')
     parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
-                        help='path to csv files for the evaluation sets')
+                        help='path to tsv files for the evaluation sets')
     parser.add_argument('--dict', type=str,
                         help='path to a dictionary file')
     parser.add_argument('--unit', type=str, default='word',
@@ -116,7 +116,7 @@ def parse():
                         help='')
     # evaluation
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
-                        help='path to csv files for the evaluation sets')
+                        help='path to tsv files for the evaluation sets')
     parser.add_argument('--recog_model', type=str, default=None, nargs='+',
                         help='path to the model')
     parser.add_argument('--recog_epoch', type=int, default=-1,
