@@ -34,7 +34,7 @@ class Reporter(object):
 
     Args:
         save_path (str):
-        max_loss (int): the maximum value of loss to plot
+        tensorboard (bool): use tensorboard logging
 
     """
 
@@ -45,11 +45,17 @@ class Reporter(object):
         if tensorboard:
             self.tf_writer = SummaryWriter(save_path)
 
+        # report per step
         self._step = 0
-        self.obs_train = {'loss': {}, 'acc': {}, 'ppl': {}}
-        self.obs_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
-        self.obs_dev = {'loss': {}, 'acc': {}, 'ppl': {}}
+        self.observation_train = {'loss': {}, 'acc': {}, 'ppl': {}}
+        self.observation_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
+        self.observation_dev = {'loss': {}, 'acc': {}, 'ppl': {}}
         self.steps = []
+
+        # report per epoch
+        self._epoch = 0
+        self.observation_eval  = {'wer':{}, 'cer': {}, 'per': {}}
+        self.epochs = []
 
     def add(self, observation, is_eval):
         """Restore values per step.
@@ -69,20 +75,20 @@ class Reporter(object):
                 logger.warning("WARNING: received an inf loss for %s." % k)
 
             if not is_eval:
-                if name not in self.obs_train_local[category].keys():
-                    self.obs_train_local[category][name] = []
-                self.obs_train_local[category][name].append(v)
+                if name not in self.observation_train_local[category].keys():
+                    self.observation_train_local[category][name] = []
+                self.observation_train_local[category][name].append(v)
             else:
                 # avarage for training
-                if name not in self.obs_train[category].keys():
-                    self.obs_train[category][name] = []
-                self.obs_train[category][name].append(
-                    np.mean(self.obs_train_local[category][name]))
-                logger.info('%s (train, mean): %.3f' % (k, np.mean(self.obs_train_local[category][name])))
+                if name not in self.observation_train[category].keys():
+                    self.observation_train[category][name] = []
+                self.observation_train[category][name].append(
+                    np.mean(self.observation_train_local[category][name]))
+                logger.info('%s (train, mean): %.3f' % (k, np.mean(self.observation_train_local[category][name])))
 
-                if name not in self.obs_dev[category].keys():
-                    self.obs_dev[category][name] = []
-                self.obs_dev[category][name].append(v)
+                if name not in self.observation_dev[category].keys():
+                    self.observation_dev[category][name] = []
+                self.observation_dev[category][name].append(v)
                 logger.info('%s (dev): %.3f' % (k, v))
 
                 # Logging by tensorboard
@@ -103,26 +109,30 @@ class Reporter(object):
             self.steps.append(self._step)
 
             # reset
-            self.obs_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
+            self.observation_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
+
+    def epoch(self):
+        self._epoch += 1
+        self.epochs.append(self._epoch)
 
     def snapshot(self):
         # linestyles = ['solid', 'dashed', 'dotted', 'dashdotdotted']
         linestyles = ['-', '--', '-.', ':', ':', ':', ':', ':', ':', ':', ':', ':']
-        for category in self.obs_train.keys():
+        for category in self.observation_train.keys():
             plt.clf()
             upper = 0
             i = 0
-            for name, v in sorted(self.obs_train[category].items()):
+            for name, v in sorted(self.observation_train[category].items()):
                 # skip non-observed values
-                if np.mean(self.obs_train[category][name]) == 0:
+                if np.mean(self.observation_train[category][name]) == 0:
                     continue
 
-                plt.plot(self.steps, self.obs_train[category][name], blue,
+                plt.plot(self.steps, self.observation_train[category][name], blue,
                          label=name + " (train)", linestyle=linestyles[i])
-                plt.plot(self.steps, self.obs_dev[category][name], orange,
+                plt.plot(self.steps, self.observation_dev[category][name], orange,
                          label=name + " (dev)", linestyle=linestyles[i])
-                upper = max(upper, max(self.obs_train[category][name]))
-                upper = max(upper, max(self.obs_dev[category][name]))
+                upper = max(upper, max(self.observation_train[category][name]))
+                upper = max(upper, max(self.observation_dev[category][name]))
                 i += 1
             upper = min(upper + 10, 300)
 
@@ -135,15 +145,15 @@ class Reporter(object):
             plt.savefig(os.path.join(self.save_path, category + ".png"), dvi=500)
 
             # Save as csv file
-            for name, v in self.obs_train[category].items():
+            for name, v in self.observation_train[category].items():
                 # skip non-observed values
-                if np.mean(self.obs_train[category][name]) == 0:
+                if np.mean(self.observation_train[category][name]) == 0:
                     continue
 
                 if os.path.isfile(os.path.join(self.save_path, category + '-' + name + ".csv")):
                     os.remove(os.path.join(self.save_path, category + '-' + name + ".csv"))
                 loss_graph = np.column_stack(
-                    (self.steps, self.obs_train[category][name], self.obs_dev[category][name]))
+                    (self.steps, self.observation_train[category][name], self.observation_dev[category][name]))
                 np.savetxt(os.path.join(self.save_path, category + '-' + name + ".csv"), loss_graph, delimiter=",")
 
 
