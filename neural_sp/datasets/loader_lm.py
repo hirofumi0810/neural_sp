@@ -75,13 +75,17 @@ class Dataset(Base):
         elif unit == 'char':
             self.id2char = Id2char(dict_path)
             self.char2id = Char2id(dict_path)
+        elif 'phone' in unit:
+            self.id2phone = Id2phone(dict_path)
+            self.phone2id = Phone2id(dict_path)
         else:
             raise ValueError(unit)
 
         # Load dataset csv file
-        df = pd.read_csv(tsv_path, encoding='utf-8', delimiter=',')
-        df = df.loc[:, ['utt_id', 'speaker', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
-        df = df[df.apply(lambda x: x['y_len'] > 0, axis=1)]
+        df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
+        df = df.loc[:, ['utt_id', 'speaker', 'feat_path',
+                        'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+        df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
 
         # Sort csv records
         if shuffle:
