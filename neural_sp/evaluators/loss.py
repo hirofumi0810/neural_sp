@@ -22,7 +22,7 @@ def eval_loss(models, dataset, decode_params, progressbar=False):
         decode_params (dict):
         progressbar (bool): if True, visualize the progressbar
     Returns:
-        loss_mean (float): average loss
+        loss_avg (float): average loss
 
     """
     # Reset data counter
@@ -35,7 +35,7 @@ def eval_loss(models, dataset, decode_params, progressbar=False):
     if progressbar:
         pbar = tqdm(total=len(dataset))
     while True:
-        batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
+        batch, is_new_ep = dataset.next(decode_params['recog_batch_size'])
         bs = len(batch['utt_ids'])
 
         assert not dataset.is_test
@@ -47,7 +47,7 @@ def eval_loss(models, dataset, decode_params, progressbar=False):
         if progressbar:
             pbar.update(bs)
 
-        if is_new_epoch:
+        if is_new_ep:
             break
 
     if progressbar:
@@ -56,6 +56,6 @@ def eval_loss(models, dataset, decode_params, progressbar=False):
     # Reset data counters
     dataset.reset()
 
-    loss_mean = total_loss / len(dataset)
+    loss_avg = total_loss / len(dataset)
 
-    return loss_mean
+    return loss_avg

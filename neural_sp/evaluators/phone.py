@@ -32,9 +32,9 @@ def eval_phone(models, dataset, decode_params, epoch,
         progressbar (bool): if True, visualize the progressbar
     Returns:
         per (float): Phone error rate
-        nsub (int): the number of substitution errors
-        nins (int): the number of insertion errors
-        ndel (int): the number of deletion errors
+        n_sub (int): the number of substitution errors
+        n_ins (int): the number of insertion errors
+        n_del (int): the number of deletion errors
 
     """
     # Reset data counter
@@ -53,14 +53,14 @@ def eval_phone(models, dataset, decode_params, epoch,
         hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
 
     per = 0
-    nsub, nins, ndel = 0, 0, 0
-    nphone = 0
+    n_sub, n_ins, n_del = 0, 0, 0
+    n_phone = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
-            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
+            batch, is_new_ep = dataset.next(decode_params['recog_batch_size'])
             best_hyps, _, perm_ids, _ = models[0].decode(
                 batch['xs'], decode_params,
                 exclude_eos=True,
@@ -88,16 +88,16 @@ def eval_phone(models, dataset, decode_params, epoch,
                                                          hyp=hyp.split(' '),
                                                          normalize=False)
                 per += per_b
-                nsub += sub_b
-                nins += ins_b
-                ndel += del_b
-                nphone += len(ref.split(' '))
+                n_sub += sub_b
+                n_ins += ins_b
+                n_del += del_b
+                n_phone += len(ref.split(' '))
                 # logger.info('PER: %d%%' % (per_b / len(ref.split(' '))))
 
                 if progressbar:
                     pbar.update(1)
 
-            if is_new_epoch:
+            if is_new_ep:
                 break
 
     if progressbar:
@@ -106,9 +106,9 @@ def eval_phone(models, dataset, decode_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    per /= nphone
-    nsub /= nphone
-    nins /= nphone
-    ndel /= nphone
+    per /= n_phone
+    n_sub /= n_phone
+    n_ins /= n_phone
+    n_del /= n_phone
 
-    return per, nsub, nins, ndel
+    return per, n_sub, n_ins, n_del

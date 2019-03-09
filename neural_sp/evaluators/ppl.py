@@ -40,7 +40,7 @@ def eval_ppl(models, dataset, bptt=-1, progressbar=False):
     if progressbar:
         pbar = tqdm(total=len(dataset))
     while True:
-        ys, is_new_epoch = dataset.next()
+        ys, is_new_ep = dataset.next()
         bs = len(ys)
 
         hidden = None
@@ -52,7 +52,7 @@ def eval_ppl(models, dataset, bptt=-1, progressbar=False):
             if progressbar:
                 pbar.update(np.sum([len(y) for y in ys[:, t:t + 2]]))
 
-        if is_new_epoch:
+        if is_new_ep:
             break
 
     if progressbar:
@@ -62,6 +62,5 @@ def eval_ppl(models, dataset, bptt=-1, progressbar=False):
     dataset.reset()
 
     ppl = math.exp(total_loss / ntokens)
-    print(ppl)
 
     return ppl

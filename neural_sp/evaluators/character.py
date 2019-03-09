@@ -36,13 +36,13 @@ def eval_char(models, dataset, decode_params, epoch,
             2: sub sub task
     Returns:
         wer (float): Word error rate
-        nsub_w (int): the number of substitution errors for WER
-        nins_w (int): the number of insertion errors for WER
-        ndel_w (int): the number of deletion errors for WER
+        n_sub_w (int): the number of substitution errors for WER
+        n_ins_w (int): the number of insertion errors for WER
+        n_del_w (int): the number of deletion errors for WER
         cer (float): Character error rate
-        nsub_w (int): the number of substitution errors for CER
-        nins_c (int): the number of insertion errors for CER
-        ndel_c (int): the number of deletion errors for CER
+        n_sub_w (int): the number of substitution errors for CER
+        n_ins_c (int): the number of insertion errors for CER
+        n_del_c (int): the number of deletion errors for CER
 
     """
     # Reset data counter
@@ -62,9 +62,9 @@ def eval_char(models, dataset, decode_params, epoch,
         hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
 
     wer, cer = 0, 0
-    nsub_w, nins_w, ndel_w = 0, 0, 0
-    nsub_c, nins_c, ndel_c = 0, 0, 0
-    nword, nchar = 0, 0
+    n_sub_w, n_ins_w, n_del_w = 0, 0, 0
+    n_sub_c, n_ins_c, n_del_c = 0, 0, 0
+    n_word, n_char = 0, 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
@@ -79,7 +79,7 @@ def eval_char(models, dataset, decode_params, epoch,
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
-            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
+            batch, is_new_ep = dataset.next(decode_params['recog_batch_size'])
             best_hyps, _, perm_ids, _ = models[0].decode(
                 batch['xs'], decode_params,
                 exclude_eos=True,
@@ -110,10 +110,10 @@ def eval_char(models, dataset, decode_params, epoch,
                                                              hyp=hyp.split(' '),
                                                              normalize=False)
                     wer += wer_b
-                    nsub_w += sub_b
-                    nins_w += ins_b
-                    ndel_w += del_b
-                    nword += len(ref.split(' '))
+                    n_sub_w += sub_b
+                    n_ins_w += ins_b
+                    n_del_w += del_b
+                    n_word += len(ref.split(' '))
                     # logger.info('WER: %d%%' % (wer_b / len(ref.split(' '))))
 
                 # Compute CER
@@ -121,16 +121,16 @@ def eval_char(models, dataset, decode_params, epoch,
                                                          hyp=list(hyp),
                                                          normalize=False)
                 cer += cer_b
-                nsub_c += sub_b
-                nins_c += ins_b
-                ndel_c += del_b
-                nchar += len(ref)
+                n_sub_c += sub_b
+                n_ins_c += ins_b
+                n_del_c += del_b
+                n_char += len(ref)
                 # logger.info('CER: %d%%' % (cer_b / len(ref)))
 
                 if progressbar:
                     pbar.update(1)
 
-            if is_new_epoch:
+            if is_new_ep:
                 break
 
     if progressbar:
@@ -140,16 +140,16 @@ def eval_char(models, dataset, decode_params, epoch,
     dataset.reset()
 
     if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_id > 0 and dataset.unit_sub1 == 'char'):
-        wer /= nword
-        nsub_w /= nword
-        nins_w /= nword
-        ndel_w /= nword
+        wer /= n_word
+        n_sub_w /= n_word
+        n_ins_w /= n_word
+        n_del_w /= n_word
     else:
-        wer = nsub_w = nins_w = ndel_w = 0
+        wer = n_sub_w = n_ins_w = n_del_w = 0
 
-    cer /= nchar
-    nsub_c /= nchar
-    nins_c /= nchar
-    ndel_c /= nchar
+    cer /= n_char
+    n_sub_c /= n_char
+    n_ins_c /= n_char
+    n_del_c /= n_char
 
-    return (wer, nsub_w, nins_w, ndel_w), (cer, nsub_c, nins_c, ndel_c)
+    return (wer, n_sub_w, n_ins_w, n_del_w), (cer, n_sub_c, n_ins_c, n_del_c)
