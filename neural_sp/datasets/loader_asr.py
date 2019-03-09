@@ -284,15 +284,15 @@ class Dataset(Base):
 
         # output
         if self.is_test:
-            ys = [self.df['text'][i].encode('utf-8') for i in utt_indices]
+            ys = [self.df['text'][i] for i in utt_indices]
         else:
             ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in utt_indices]
         ylens = [self.df['ylen'][i] for i in utt_indices]
-        text = [self.df['text'][i].encode('utf-8') for i in utt_indices]
+        text = [self.df['text'][i] for i in utt_indices]
 
         if self.df_sub1 is not None:
             if self.is_test:
-                ys_sub1 = [self.df_sub1['text'][i].encode('utf-8') for i in utt_indices]
+                ys_sub1 = [self.df_sub1['text'][i] for i in utt_indices]
             else:
                 ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in utt_indices]
             ylens_sub1 = [self.df_sub1['ylen'][i] for i in utt_indices]
@@ -301,7 +301,7 @@ class Dataset(Base):
 
         if self.df_sub2 is not None:
             if self.is_test:
-                ys_sub2 = [self.df_sub2['text'][i].encode('utf-8') for i in utt_indices]
+                ys_sub2 = [self.df_sub2['text'][i] for i in utt_indices]
             else:
                 ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in utt_indices]
             ylens_sub2 = [self.df_sub2['ylen'][i] for i in utt_indices]
@@ -310,14 +310,14 @@ class Dataset(Base):
 
         if self.df_sub3 is not None:
             if self.is_test:
-                ys_sub3 = [self.df_sub3['text'][i].encode('utf-8') for i in utt_indices]
+                ys_sub3 = [self.df_sub3['text'][i] for i in utt_indices]
             else:
                 ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in utt_indices]
             ylens_sub3 = [self.df_sub3['ylen'][i] for i in utt_indices]
         else:
             ys_sub3, ylens_sub3 = [], []
 
-        utt_ids = [self.df['utt_id'][i].encode('utf-8') for i in utt_indices]
+        utt_ids = [self.df['utt_id'][i] for i in utt_indices]
 
         batch_dict = {'xs': xs, 'xlens': xlens,
                       'ys': ys, 'ylens': ylens,
