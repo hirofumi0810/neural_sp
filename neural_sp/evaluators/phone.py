@@ -73,11 +73,10 @@ def eval_phone(models, dataset, decode_params, epoch,
                 hyp = dataset.id2phone(best_hyps[b])
 
                 # Write to trn
-                speaker = batch['speakers'][b]
-                start = batch['utt_ids'][b].replace('-', '_').split('_')[-2]
-                end = batch['utt_ids'][b].replace('-', '_').split('_')[-1]
-                f_ref.write(ref + ' (' + speaker + '-' + start + '-' + end + ')\n')
-                f_hyp.write(hyp + ' (' + speaker + '-' + start + '-' + end + ')\n')
+                speaker = batch['speakers'][b].replace('-', '_')
+                utt_id = batch['speakers'][b]
+                f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
+                f_hyp.write(hyp + ' (' + speaker + '-' + utt_id + ')\n')
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
                 logger.info('Ref: %s' % ref)
                 logger.info('Hyp: %s' % hyp)
