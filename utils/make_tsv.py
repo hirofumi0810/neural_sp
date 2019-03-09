@@ -22,9 +22,9 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument('--feat', type=str, default='', nargs='?',
                     help='feats.scp file')
-parser.add_argument('--utt2num_frames', type=str,
+parser.add_argument('--utt2num_frames', type=str, nargs='?',
                     help='utt2num_frames file')
-parser.add_argument('--utt2spk', type=str,
+parser.add_argument('--utt2spk', type=str, nargs='?',
                     help='utt2spk file')
 parser.add_argument('--dict', type=str,
                     help='dictionary file')
@@ -91,7 +91,6 @@ def main():
     print('utt_id\tspeaker\tfeat_path\txlen\txdim\ttext\ttoken_id\tylen\tydim')
 
     xdim = None
-    utt_count = 0
     with codecs.open(args.text, 'r', encoding="utf-8") as f:
         pbar = tqdm(total=len(codecs.open(args.text, 'r', encoding="utf-8").readlines()))
         for line in f:
@@ -174,9 +173,8 @@ def main():
                     xdim = 0
             ydim = len(token2id.keys())
 
-            print('%d\t%s\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d' %
-                  (utt_count, utt_id, speaker, feat_path, xlen, xdim, text, token_id, ylen, ydim))
-            utt_count += 1
+            print('%s\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d' %
+                  (utt_id, speaker, feat_path, xlen, xdim, text, token_id, ylen, ydim))
             pbar.update(1)
 
 

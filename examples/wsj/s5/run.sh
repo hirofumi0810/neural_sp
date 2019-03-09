@@ -175,8 +175,8 @@ if [ -z ${gpu} ]; then
     echo "Usage: ./run.sh --gpu 0" 1>&2
     exit 1
 fi
-ngpus=`echo ${gpu} | tr "," "\n" | wc -l`
-rnnlm_gpu=`echo ${gpu} | cut -d "," -f 1`
+ngpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+rnnlm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 train_set=train_si284
 dev_set=test_dev93
@@ -220,7 +220,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     cp ${data}/${train_set}/text ${data}/${train_set}/text.tmp.0
     cut -f 2- -d " " ${data}/${train_set}/text.tmp.0 | \
         sed -e 's/*//g' | \
-        sed -e "s/\`/\'/g" | \
+        sed -e "s/\)/\'/g" | \
         sed -e 's/.period/period/g' | \
         sed -e 's/,comma/comma/g' | \
         sed -e 's/:colon/colon/g' | \
@@ -309,11 +309,11 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
     if [ ${unit} = char ]; then
         echo "<space> 4" >> ${dict}
     fi
-    offset=`cat ${dict} | wc -l`
+    offset=$(cat ${dict} | wc -l)
     echo "Making a dictionary..."
     if [ ${unit} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        spm_train --user_defined_symbols=`cat ${nlsyms} | tr "\n" ","` --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
+        spm_train --user_defined_symbols=$(cat ${nlsyms} | tr "\n" ",") --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
             sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
@@ -322,7 +322,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
             --wp_type ${wp_type} --wp_model ${wp_model} | \
             sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     fi
-    echo "vocab size:" `cat ${dict} | wc -l`
+    echo "vocab size:" $(cat ${dict} | wc -l)
 
     # Compute OOV rate
     if [ ${unit} = word ]; then
@@ -338,9 +338,9 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
     fi
 
     # Make datset tsv files for the ASR task
+    echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
     for x in ${train_set} ${dev_set} ${test_set}; do
-        echo "Making a ASR tsv file for ${x}..."
         dump_dir=${data}/dump/${x}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
@@ -356,27 +356,27 @@ if [ ${stage} -le 3 ]; then
     echo ============================================================================
 
     # Extend dictionary for the external text data
-    # ${data}/local/dict_nosp_larger/cleaned.gz
-
     if [ ! -e ${data}/.done_stage_3_${unit}${wp_type}${vocab_size} ]; then
         # Make datset tsv files for the LM task
+        echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
-        for x in ${train_set} ${dev_set}; do
-            echo "Making a LM tsv file for ${x}..."
-            cp ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv ${data}/dataset_lm/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-        done
+        cat ${data}/local/dict_nosp_larger/cleaned | tr "[:upper:]" "[:lower:]" > ${data}/dataset_lm/cleaned
+        awk '{print "unpaired-text-"NR, $0}' ${data}/dataset_lm/cleaned > ${data}/dataset_lm/text
+
+        update_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+            ${data}/dataset_lm/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
+            > ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+        cp ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
+            ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
 
         touch ${data}/.done_stage_3_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    lm_train_set=${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.tsv
-    lm_dev_set=${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.tsv
-
     # NOTE: support only a single GPU for RNNLM training
     CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --ngpus 1 \
-        --train_set ${lm_train_set} \
-        --dev_set ${lm_dev_set} \
+        --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model ${model}/rnnlm \
