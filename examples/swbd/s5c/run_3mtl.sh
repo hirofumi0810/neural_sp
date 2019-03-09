@@ -191,7 +191,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
     local/swbd1_data_prep.sh ${SWBD_AUDIOPATH} || exit 1;
     local/eval2000_data_prep.sh ${EVAL2000_AUDIOPATH} ${EVAL2000_TRANSPATH} || exit 1;
 
-    if [ -d ${RT03_PATH} ]; then
+    if [ ! -z ${RT03_PATH} ]; then
         local/rt03_data_prep.sh ${RT03_PATH}
     fi
 
