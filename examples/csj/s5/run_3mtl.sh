@@ -296,15 +296,16 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     fi
 
     # Make datset tsv files for the ASR task
+    echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
-    make_dataset.sh --feat {data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+    make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
         ${data}/${train_set} ${dict} > ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-    make_dataset.sh --feat {data}/dump/${dev_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+    make_dataset.sh --feat ${data}/dump/${dev_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
         ${data}/${dev_set} ${dict} > ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
     for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${data_size}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
-            ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+            ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
     done
 
     touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for ASR (stage: 2)."
@@ -341,14 +342,14 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     echo "vocab size:" $(cat ${dict_sub1} | wc -l)
 
     # Make datset tsv files for the ASR task
-    mkdir -p ${data}/dataset
-    make_dataset.sh --feat {data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
+    echo "Making dataset tsv files for ASR ..."
+    make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
         ${data}/${train_set} ${dict_sub1} > ${data}/dataset/${train_set}_${unit_sub1}${wp_type}${vocab_size_sub1}.tsv || exit 1;
-    make_dataset.sh --feat {data}/dump/${dev_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
+    make_dataset.sh --feat ${data}/dump/${dev_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
         ${data}/${dev_set} ${dict_sub1} > ${data}/dataset/${dev_set}_${unit_sub1}${wp_type}${vocab_size_sub1}.tsv || exit 1;
     for x in ${test_set}; do
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
-            ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;
+            ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;
     done
 
     touch ${data}/.done_stage_2_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} && echo "Finish creating dataset for ASR (stage: 2)."
@@ -385,13 +386,14 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub2}$
     echo "vocab size:" $(cat ${dict_sub2} | wc -l)
 
     # Make datset tsv files for the ASR task
+    echo "Making dataset tsv files for ASR ..."
     make_dataset.sh --feat {data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub2} \
         ${data}/${train_set} ${dict_sub2} > ${data}/dataset/${train_set}_${unit_sub2}${wp_type}${vocab_size_sub2}.tsv || exit 1;
     make_dataset.sh --feat {data}/dump/${dev_set}/feats.scp --unit ${unit_sub2} --wp_model ${wp_model_sub2} \
         ${data}/${dev_set} ${dict_sub2} > ${data}/dataset/${dev_set}_${unit_sub2}${wp_type}${vocab_size_sub2}.tsv || exit 1;
     for x in ${test_set}; do
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub2} --wp_model ${wp_model_sub2} \
-            ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.tsv || exit 1;
+            ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${data_size}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.tsv || exit 1;
     done
 
     touch ${data}/.done_stage_2_${data_size}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2} && echo "Finish creating dataset for ASR (stage: 2)."
