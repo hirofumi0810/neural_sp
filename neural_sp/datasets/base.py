@@ -141,7 +141,7 @@ class Base(object):
         if self.sort_by_input_length or not self.shuffle:
             if self.sort_by_input_length:
                 # Change batch size dynamically
-                min_num_frames_batch = self.df[self.offset:self.offset + 1]['x_len'].values[0]
+                min_num_frames_batch = self.df[self.offset:self.offset + 1]['xlen'].values[0]
                 _batch_size = self.select_batch_size(batch_size, min_num_frames_batch)
             else:
                 _batch_size = batch_size

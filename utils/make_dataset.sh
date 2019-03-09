@@ -28,8 +28,8 @@ if [ -z ${text} ]; then
     text=${data}/text
 fi
 
-# csv: utt_id, feat_path, xlen, text, tokenid, ylen
-make_csv.py --feat ${feat} \
+# tsv: utt_id, feat_path, xlen, text, tokenid, ylen
+make_tsv.py --feat ${feat} \
     --utt2num_frames ${data}/utt2num_frames \
     --text ${text} \
     --dict ${dict} \

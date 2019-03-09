@@ -13,7 +13,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import kaldi_io
 import logging
 import numpy as np
 import os
@@ -28,6 +27,7 @@ from neural_sp.datasets.token_converter.word import Id2word
 from neural_sp.datasets.token_converter.word import Word2id
 from neural_sp.datasets.token_converter.wordpiece import Id2wp
 from neural_sp.datasets.token_converter.wordpiece import Wp2id
+from utils import kaldi_io
 
 np.random.seed(1)
 
@@ -167,21 +167,21 @@ class Dataset(Base):
             self.vocab_sub3 = -1
 
         # Load dataset csv file
-        df = pd.read_csv(csv_path, encoding='utf-8', delimiter=',')
-        df = df.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
+        df = pd.read_csv(csv_path, encoding='utf-8', delimiter='\t')
+        df = df.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         if csv_path_sub1:
-            df_sub1 = pd.read_csv(csv_path_sub1, encoding='utf-8', delimiter=',')
-            df_sub1 = df_sub1.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
+            df_sub1 = pd.read_csv(csv_path_sub1, encoding='utf-8', delimiter='\t')
+            df_sub1 = df_sub1.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         else:
             df_sub1 = None
         if csv_path_sub2:
-            df_sub2 = pd.read_csv(csv_path_sub2, encoding='utf-8', delimiter=',')
-            df_sub2 = df_sub2.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
+            df_sub2 = pd.read_csv(csv_path_sub2, encoding='utf-8', delimiter='\t')
+            df_sub2 = df_sub2.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         else:
             df_sub2 = None
         if csv_path_sub3:
-            df_sub3 = pd.read_csv(csv_path_sub3, encoding='utf-8', delimiter=',')
-            df_sub3 = df_sub3.loc[:, ['utt_id', 'feat_path', 'x_len', 'x_dim', 'text', 'token_id', 'y_len', 'y_dim']]
+            df_sub3 = pd.read_csv(csv_path_sub3, encoding='utf-8', delimiter='\t')
+            df_sub3 = df_sub3.loc[:, ['utt_id', 'feat_path', 'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         else:
             df_sub3 = None
 
@@ -189,23 +189,23 @@ class Dataset(Base):
         if self.is_test:
             print('Original utterance num: %d' % len(df))
             nutts = len(df)
-            df = df[df.apply(lambda x: x['y_len'] > 0, axis=1)]
+            df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
             print('Removed %d empty utterances' % (nutts - len(df)))
         else:
             print('Original utterance num: %d' % len(df))
             nutts = len(df)
-            df = df[df.apply(lambda x: min_nframes <= x['x_len'] <= max_nframes, axis=1)]
-            df = df[df.apply(lambda x: x['y_len'] > 0, axis=1)]
+            df = df[df.apply(lambda x: min_nframes <= x['xlen'] <= max_nframes, axis=1)]
+            df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
             print('Removed %d utterances (threshold)' % (nutts - len(df)))
 
             if ctc and subsample_factor > 1:
                 nutts = len(df)
-                df = df[df.apply(lambda x: x['y_len'] <= x['x_len'] // subsample_factor, axis=1)]
+                df = df[df.apply(lambda x: x['ylen'] <= x['xlen'] // subsample_factor, axis=1)]
                 print('Removed %d utterances (for CTC)' % (nutts - len(df)))
 
             if df_sub1 is not None:
                 if ctc_sub1 and subsample_factor_sub1 > 1:
-                    df_sub1 = df_sub1[df_sub1.apply(lambda x: x['y_len'] <= x['x_len']
+                    df_sub1 = df_sub1[df_sub1.apply(lambda x: x['ylen'] <= x['xlen']
                                                     // subsample_factor_sub1, axis=1)]
 
                 if len(df) != len(df_sub1):
@@ -216,7 +216,7 @@ class Dataset(Base):
 
             if df_sub2 is not None:
                 if ctc_sub2 and subsample_factor_sub2 > 1:
-                    df_sub2 = df_sub2[df_sub2.apply(lambda x: x['y_len'] <= x['x_len']
+                    df_sub2 = df_sub2[df_sub2.apply(lambda x: x['ylen'] <= x['xlen']
                                                     // subsample_factor_sub2, axis=1)]
 
                 if len(df) != len(df_sub2):
@@ -228,7 +228,7 @@ class Dataset(Base):
 
             if df_sub3 is not None:
                 if ctc_sub3 and subsample_factor_sub3 > 1:
-                    df_sub3 = df_sub3[df_sub3.apply(lambda x: x['y_len'] <= x['x_len']
+                    df_sub3 = df_sub3[df_sub3.apply(lambda x: x['ylen'] <= x['xlen']
                                                     // subsample_factor_sub3, axis=1)]
 
                 if len(df) != len(df_sub3):
@@ -241,7 +241,7 @@ class Dataset(Base):
 
         # Sort csv records
         if sort_by_input_length:
-            df = df.sort_values(by='x_len', ascending=short2long)
+            df = df.sort_values(by='xlen', ascending=short2long)
         else:
             if shuffle:
                 df = df.reindex(np.random.permutation(df.index))
@@ -278,7 +278,7 @@ class Dataset(Base):
         # input
         if not self.skip_speech:
             xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in utt_indices]
-            xlens = [self.df['x_len'][i] for i in utt_indices]
+            xlens = [self.df['xlen'][i] for i in utt_indices]
         else:
             xs, xlens = [], []
 
@@ -287,7 +287,7 @@ class Dataset(Base):
             ys = [self.df['text'][i].encode('utf-8') for i in utt_indices]
         else:
             ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in utt_indices]
-        ylens = [self.df['y_len'][i] for i in utt_indices]
+        ylens = [self.df['ylen'][i] for i in utt_indices]
         text = [self.df['text'][i].encode('utf-8') for i in utt_indices]
 
         if self.df_sub1 is not None:
@@ -295,7 +295,7 @@ class Dataset(Base):
                 ys_sub1 = [self.df_sub1['text'][i].encode('utf-8') for i in utt_indices]
             else:
                 ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in utt_indices]
-            ylens_sub1 = [self.df_sub1['y_len'][i] for i in utt_indices]
+            ylens_sub1 = [self.df_sub1['ylen'][i] for i in utt_indices]
         else:
             ys_sub1, ylens_sub1 = [], []
 
@@ -304,7 +304,7 @@ class Dataset(Base):
                 ys_sub2 = [self.df_sub2['text'][i].encode('utf-8') for i in utt_indices]
             else:
                 ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in utt_indices]
-            ylens_sub2 = [self.df_sub2['y_len'][i] for i in utt_indices]
+            ylens_sub2 = [self.df_sub2['ylen'][i] for i in utt_indices]
         else:
             ys_sub2, ylens_sub2 = [], []
 
@@ -313,7 +313,7 @@ class Dataset(Base):
                 ys_sub3 = [self.df_sub3['text'][i].encode('utf-8') for i in utt_indices]
             else:
                 ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in utt_indices]
-            ylens_sub3 = [self.df_sub3['y_len'][i] for i in utt_indices]
+            ylens_sub3 = [self.df_sub3['ylen'][i] for i in utt_indices]
         else:
             ys_sub3, ylens_sub3 = [], []
 
