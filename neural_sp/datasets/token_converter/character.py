@@ -30,7 +30,7 @@ class Char2id(object):
         self.token2id = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
-                c, id = line.strip().encode('utf_8').split(' ')
+                c, id = line.strip().split(' ')
                 if c in remove_list:
                     continue
                 self.token2id[c] = int(id)
@@ -81,7 +81,7 @@ class Id2char(object):
         self.id2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
-                c, id = line.strip().encode('utf_8').split(' ')
+                c, id = line.strip().split(' ')
                 if c in remove_list:
                     continue
                 self.id2token[int(id)] = c

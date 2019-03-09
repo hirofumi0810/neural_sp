@@ -29,7 +29,7 @@ class Word2id(object):
         self.token2id = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
-                w, id = line.strip().encode('utf_8').split(' ')
+                w, id = line.strip().split(' ')
                 self.token2id[w] = int(id)
 
     def __call__(self, text):
@@ -72,7 +72,7 @@ class Id2word(object):
         self.id2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
-                w, id = line.strip().encode('utf_8').split(' ')
+                w, id = line.strip().split(' ')
                 self.id2token[int(id)] = w
 
     def __call__(self, token_ids, return_list=False):
@@ -107,14 +107,14 @@ class Char2word(object):
         self.word2id = {}
         with codecs.open(dict_path_word, 'r', 'utf-8') as f:
             for line in f:
-                w, id = line.strip().encode('utf_8').split(' ')
+                w, id = line.strip().split(' ')
                 self.word2id[w] = int(id)
 
         # Load a character dictionary file
         self.id2char = {}
         with codecs.open(dict_path_char, 'r', 'utf-8') as f:
             for line in f:
-                c, id = line.strip().encode('utf_8').split(' ')
+                c, id = line.strip().split(' ')
                 self.id2char[int(id)] = c
 
     def __call__(self, char_ids):
@@ -151,14 +151,14 @@ class Word2char(object):
         self.id2word = {}
         with codecs.open(dict_path_word, 'r', 'utf-8') as f:
             for line in f:
-                w, id = line.strip().encode('utf_8').split(' ')
+                w, id = line.strip().split(' ')
                 self.id2word[int(id)] = w
 
         # Load a character dictionary file
         self.char2id = {}
         with codecs.open(dict_path_char, 'r', 'utf-8') as f:
             for line in f:
-                c, id = line.strip().encode('utf_8').split(' ')
+                c, id = line.strip().split(' ')
                 self.char2id[c] = int(id)
 
     def __call__(self, word_id):

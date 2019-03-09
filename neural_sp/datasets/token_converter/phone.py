@@ -27,10 +27,10 @@ class Phone2id(object):
         self.token2id = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
-                p, id = line.strip().encode('utf_8').split(' ')
+                p, idx = line.strip().split(' ')
                 if p in remove_list:
                     continue
-                self.token2id[p] = int(id)
+                self.token2id[p] = int(idx)
 
     def __call__(self, text):
         """Convert phone sequence to indices.
@@ -60,10 +60,10 @@ class Id2phone(object):
         self.id2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
-                p, id = line.strip().encode('utf_8').split(' ')
+                p, idx = line.strip().split(' ')
                 if p in remove_list:
                     continue
-                self.id2token[int(id)] = p
+                self.id2token[int(idx)] = p
 
     def __call__(self, token_ids, return_list=False):
         """Convert indices to phone sequence.
