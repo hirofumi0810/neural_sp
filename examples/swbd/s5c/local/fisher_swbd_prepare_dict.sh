@@ -110,7 +110,7 @@ head -n 20 $dir/oov_counts.txt
 
 
 # Preparing SWBD acronymns from its dictionary
-srcdir=${data}/local/train # This is where we downloaded some stuff..
+srcdir=${data}/local/train_swbd # This is where we downloaded some stuff..
 dir=${data}/local/dict_nosp_fisher_swbd
 mkdir -p $dir
 srcdict=$srcdir/swb_ms98_transcriptions/sw-ms98-dict.text
@@ -151,7 +151,7 @@ cat $dir/acronyms_lex_swbd.txt |\
 
 
 # cat $dir/acronyms_lex_swbd_cmuphones.txt $dir/lexicon_fisher.txt | sort -u > $dir/lexicon.txt
-cat $dir/acronyms_lex_swbd_cmuphones.txt $dir/lexicon_fisher.txt $dir/../dict_nosp_swbd/lexicon.txt | sort -u > $dir/lexicon.txt
+cat $dir/acronyms_lex_swbd_cmuphones.txt $dir/lexicon_fisher.txt $dir/../dict_nosp/lexicon.txt | sort -u > $dir/lexicon.txt
 # NOTE: add swbd lexicon
 
 echo Prepared input dictionary and phone-sets for Switchboard phase 1.

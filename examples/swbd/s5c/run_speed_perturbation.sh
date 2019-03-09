@@ -193,7 +193,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 80 \
+    dump_feat.sh --cmd "$train_cmd" --nj 400 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
     dump_feat.sh --cmd "$train_cmd" --nj 32 \
         ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
@@ -280,6 +280,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     fi
 
     # Make datset tsv files for the ASR task
+    echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
     for x in ${train_set} ${dev_set}; do
         dump_dir=${data}/dump/${x}

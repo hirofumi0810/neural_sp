@@ -119,7 +119,7 @@ lm_tie_embedding=true
 lm_residual=true
 lm_use_glu=true
 # optimization
-lm_batch_size=256
+lm_batch_size=128
 lm_bptt=100
 lm_optimizer=adam
 lm_learning_rate=1e-3
@@ -234,7 +234,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 80 \
+    dump_feat.sh --cmd "$train_cmd" --nj 400 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
     dump_feat.sh --cmd "$train_cmd" --nj 32 \
         ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
@@ -314,6 +314,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     fi
 
     # Make datset tsv files for the ASR task
+    echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
     for x in ${train_set} ${dev_set}; do
         dump_dir=${data}/dump/${x}
@@ -337,9 +338,9 @@ if [ ${stage} -le 3 ]; then
 
     if [ ! -e ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} ]; then
         # Make datset tsv files for the LM task
+        echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
         for x in train_${lm_data_size} dev_${lm_data_size}; do
-            echo "Making a LM tsv file for ${x}..."
             cp ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv \
                 ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
         done
