@@ -147,8 +147,8 @@ lm_backward=
 model=/n/sd8/inaguma/result/wsj
 
 ### path to the model directory to restart training
-rnnlm_resume=
 resume=
+rnnlm_resume=
 
 ### path to original data
 wsj0=/n/rd21/corpora_1/WSJ/wsj0

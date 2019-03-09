@@ -207,7 +207,9 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     # Apply global CMVN & dump features
     dump_feat.sh --cmd "$train_cmd" --nj 80 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
-    for x in ${dev_set} ${test_set}; do
+    dump_feat.sh --cmd "$train_cmd" --nj 32 \
+        ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
+    for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${data_size}
         dump_feat.sh --cmd "$train_cmd" --nj 32 \
             ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
@@ -286,13 +288,11 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     # Make datset tsv files for the ASR task
     mkdir -p ${data}/dataset
     for x in ${train_set} ${dev_set}; do
-        echo "Making a ASR tsv file for ${x}..."
         dump_dir=${data}/dump/${x}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
     done
     for x in ${test_set}; do
-        echo "Making a ASR tsv file for ${x}..."
         dump_dir=${data}/dump/${x}_${data_size}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
@@ -343,7 +343,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     # Make datset tsv files for the ASR task
     mkdir -p ${data}/dataset
     for x in ${train_set} ${dev_set}; do
-        echo "Making a ASR tsv file for ${x}..."
         dump_dir=${data}/dump/${x}
         if [ ${unit_sub1} = phone ]; then
             make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --text ${data}/${x}/text.phone \
@@ -355,7 +354,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     done
     if [ ${unit_sub1} != phone ]; then
         for x in ${test_set}; do
-            echo "Making a ASR tsv file for ${x}..."
             dump_dir=${data}/dump/${x}_${data_size}
             make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --wp_model ${wp_model_sub1} \
                 ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;

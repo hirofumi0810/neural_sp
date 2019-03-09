@@ -15,7 +15,7 @@ export data=/n/sd8/inaguma/corpus/csj
 
 ### vocabulary
 unit=wp      # or word or char or word_char
-vocab_size=10000
+vocab_size=30000
 wp_type=bpe  # or unigram (for wordpiece)
 
 #########################
@@ -147,8 +147,8 @@ lm_backward=
 model=/n/sd8/inaguma/result/csj
 
 ### path to the model directory to restart training
-rnnlm_resume=
 resume=
+rnnlm_resume=
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -163,7 +163,7 @@ CSJVER=dvd  ## Set your CSJ format (dvd or usb).
 ## Case merl :MERL setup. Neccesary directory is WAV and sdb
 
 ### data size
-data_size=aps_other
+data_size=all
 lm_data_size=all  # default is the same data as ASR
 # data_size=aps
 # data_size=sps
@@ -248,7 +248,9 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     # Apply global CMVN & dump features
     dump_feat.sh --cmd "$train_cmd" --nj 80 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
-    for x in ${dev_set} ${test_set}; do
+    dump_feat.sh --cmd "$train_cmd" --nj 32 \
+        ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
+    for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${data_size}
         dump_feat.sh --cmd "$train_cmd" --nj 32 \
             ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
@@ -301,9 +303,12 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
 
     # Make datset tsv files for the ASR task
     mkdir -p ${data}/dataset
-    for x in ${train_set} ${dev_set} ${test_set}; do
-        echo "Making a ASR tsv file for ${x}..."
-        dump_dir=${data}/dump/${x}
+    make_dataset.sh --feat {data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+        ${data}/${train_set} ${dict} > ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+    make_dataset.sh --feat {data}/dump/${dev_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+        ${data}/${dev_set} ${dict} > ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+    for x in ${test_set}; do
+        dump_dir=${data}/dump/${x}_${data_size}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
     done
