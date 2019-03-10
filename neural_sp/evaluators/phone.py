@@ -60,7 +60,7 @@ def eval_phone(models, dataset, decode_params, epoch,
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
-            batch, is_new_ep = dataset.next(decode_params['recog_batch_size'])
+            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
             best_hyps, _, perm_ids, _ = models[0].decode(
                 batch['xs'], decode_params,
                 exclude_eos=True,
@@ -73,8 +73,8 @@ def eval_phone(models, dataset, decode_params, epoch,
                 hyp = dataset.id2phone(best_hyps[b])
 
                 # Write to trn
-                speaker = batch['speakers'][b].replace('-', '_')
-                utt_id = batch['speakers'][b]
+                utt_id = str(batch['utt_ids'][b])
+                speaker = str(batch['speakers'][b]).replace('-', '_')
                 f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
                 f_hyp.write(hyp + ' (' + speaker + '-' + utt_id + ')\n')
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
@@ -96,7 +96,7 @@ def eval_phone(models, dataset, decode_params, epoch,
                 if progressbar:
                     pbar.update(1)
 
-            if is_new_ep:
+            if is_new_epoch:
                 break
 
     if progressbar:
