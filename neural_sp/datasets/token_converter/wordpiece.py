@@ -27,8 +27,8 @@ class Wp2id(object):
         self.token2id = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
-                wp, id = line.strip().split(' ')
-                self.token2id[wp] = int(id)
+                wp, idx = line.strip().split(' ')
+                self.token2id[wp] = int(idx)
 
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)
@@ -66,8 +66,8 @@ class Id2wp(object):
         self.id2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
-                wp, id = line.strip().split(' ')
-                self.id2token[int(id)] = wp
+                wp, idx = line.strip().split(' ')
+                self.id2token[int(idx)] = wp
 
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)

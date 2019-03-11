@@ -30,10 +30,10 @@ class Char2id(object):
         self.token2id = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
-                c, id = line.strip().split(' ')
+                c, idx = line.strip().split(' ')
                 if c in remove_list:
                     continue
-                self.token2id[c] = int(id)
+                self.token2id[c] = int(idx)
 
     def __call__(self, text):
         """Convert character sequence into indices.
@@ -81,10 +81,10 @@ class Id2char(object):
         self.id2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
-                c, id = line.strip().split(' ')
+                c, idx = line.strip().split(' ')
                 if c in remove_list:
                     continue
-                self.id2token[int(id)] = c
+                self.id2token[int(idx)] = c
 
     def __call__(self, token_ids, return_list=False):
         """Convert indices into character sequence.

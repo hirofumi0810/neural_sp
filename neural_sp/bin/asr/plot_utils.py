@@ -27,14 +27,14 @@ green = '#006400'
 sns.set(font='Noto Sans CJK JP')
 
 
-def plot_cache_weights(cache_probs, keys, querys,
-                       save_path=None, figsize=(20, 8)):
+def plot_cache_weights(cache_probs, keys=[], queries=[],
+                       save_path=None, figsize=(20, 8), mask=None):
     """Plot weights over cache.
 
     Args:
-        cache_probs (np.ndarray): A tensor of size `[L, T]`
+        cache_probs (np.ndarray): A tensor of size `[n_keys, n_queries]`
         keys (list):
-        querys ():
+        queries (list):
         save_path (str): path to save a figure of CTC posterior (utterance)
         figsize (tuple):
 
@@ -42,9 +42,14 @@ def plot_cache_weights(cache_probs, keys, querys,
     plt.clf()
     plt.figure(figsize=figsize)
 
-    sns.heatmap(cache_probs.transpose(0, 1), cmap='viridis',
+    assert len(keys) == cache_probs.shape[0]
+    assert len(queries) == cache_probs.shape[1]
+    sns.heatmap(cache_probs.transpose(1, 0),
+                # cmap='viridis',
                 xticklabels=keys,
-                yticklabels=querys,
+                yticklabels=queries,
+                linewidths=0.01,
+                mask=mask.transpose(1, 0) if mask is not None else None,
                 vmin=0, vmax=1)
     # cbar_kws={"orientation": "horizontal"}
     plt.ylabel(u'Query (←)', fontsize=8)

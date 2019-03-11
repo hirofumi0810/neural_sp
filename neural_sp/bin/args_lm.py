@@ -125,7 +125,12 @@ def parse():
                         help='directory to save decoding results')
     parser.add_argument('--recog_batch_size', type=int, default=1,
                         help='size of mini-batch in evaluation')
+    # cache
     parser.add_argument('--recog_ncaches', type=int, default=0,
                         help='number of tokens for cache')
+    parser.add_argument('--recog_cache_theta', type=float, default=0.2,
+                        help='theta paramter for cache')
+    parser.add_argument('--recog_cache_lambda', type=float, default=0.2,
+                        help='lambda paramter for cache')
     args = parser.parse_args()
     return args

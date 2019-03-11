@@ -69,6 +69,8 @@ def main():
             # logger.info('ensemble: %d' % (len(ensemble_models)))
             # logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
             logger.info('cache size: %d' % (args.recog_ncaches))
+            logger.info('cache theta: %d' % (args.recog_cache_theta))
+            logger.info('cache lambda: %d' % (args.recog_cache_lambda))
 
             # GPU setting
             rnnlm.cuda()
@@ -76,7 +78,7 @@ def main():
         start_time = time.time()
 
         # TODO(hirofumi): ensemble
-        ppl = eval_ppl([rnnlm], dataset, batch_size=1, bptt=args.bptt, progressbar=True)
+        ppl = eval_ppl([rnnlm], dataset, batch_size=1, bptt=args.bptt, ncaches=args.recog_ncaches, progressbar=True)
         ppl_mean += ppl
         logger.info('PPL (%s): %.3f' % (dataset.set, ppl))
 

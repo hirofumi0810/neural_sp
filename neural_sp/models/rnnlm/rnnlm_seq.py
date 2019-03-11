@@ -22,6 +22,7 @@ from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import to_onehot
 
 
 class SeqRNNLM(ModelBase):
@@ -46,6 +47,13 @@ class SeqRNNLM(ModelBase):
         self.eos = 2
         self.pad = 3
         # NOTE: reserved in advance
+
+        # for cache
+        self.cache_theta = 0.2  # smoothing parameter
+        self.cache_lambda = 0.2  # cache weight
+        self.cache_keys = []
+        self.cache_values = []
+        self.cache_attn = []
 
         self.embed = Embedding(vocab=self.vocab,
                                emb_dim=args.emb_dim,
@@ -95,8 +103,8 @@ class SeqRNNLM(ModelBase):
                                    dropout=args.dropout_hidden)
 
         self.output = LinearND(rnn_idim, self.vocab,
-                               bias=not args.tie_embedding,
                                dropout=args.dropout_out)
+        # NOTE: include bias even when tying weights
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -123,7 +131,7 @@ class SeqRNNLM(ModelBase):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-    def forward(self, ys, hidden=None, reporter=None, is_eval=False):
+    def forward(self, ys, hidden=None, reporter=None, is_eval=False, ncaches=0):
         """Forward computation.
 
         Args:
@@ -132,6 +140,7 @@ class SeqRNNLM(ModelBase):
             reporter ():
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
+            ncaches (int):
         Returns:
             loss (FloatTensor): `[1]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
@@ -141,7 +150,7 @@ class SeqRNNLM(ModelBase):
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, hidden, observation = self._forward(ys, hidden)
+                loss, hidden, observation = self._forward(ys, hidden, ncaches)
         else:
             self.train()
             loss, hidden, observation = self._forward(ys, hidden)
@@ -152,7 +161,7 @@ class SeqRNNLM(ModelBase):
 
         return loss, hidden, reporter
 
-    def _forward(self, ys, hidden):
+    def _forward(self, ys, hidden, ncaches=0):
         if self.backward:
             ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
         else:
@@ -196,15 +205,48 @@ class SeqRNNLM(ModelBase):
         logits = self.output(ys_in)
 
         # Compute XE sequence loss
-        loss = F.cross_entropy(logits.view((-1, logits.size(2))),
-                               ys_out.contiguous().view(-1),
-                               ignore_index=self.pad, size_average=True)
+        if ncaches > 0 and len(self.cache_keys) > 0:
+            assert ys_out.size(1) == 1
+            assert ys_out.size(0) == 1
+            probs = F.softmax(logits, dim=-1)
+
+            cache_probs = torch.zeros_like(probs)
+
+            # Truncate cache
+            self.cache_keys = self.cache_keys[-ncaches:]  # list of `[B, 1]`
+            self.cache_values = self.cache_values[-ncaches:]  # list of `[B, 1, nunits]`
+
+            # Compute inner-product over caches
+            cache_dist = torch.matmul(torch.cat(self.cache_values, dim=1),
+                                      ys_in.transpose(1, 2)).squeeze(2)  # `[B, ncaches]`
+            cache_attn = F.softmax(self.cache_theta * cache_dist, dim=1)
+
+            # For visualization
+            if len(self.cache_keys) == ncaches:
+                self.cache_attn += [cache_attn.cpu().numpy()]
+                self.cache_attn = self.cache_attn[-ncaches:]
+
+            # Sum all probabilities
+            for offset, idx in enumerate(self.cache_keys):
+                cache_probs[:, :, idx] += cache_attn[:, offset]
+            probs = (1 - self.cache_lambda) * probs + self.cache_lambda * cache_probs
+            loss = (-torch.log(probs[:, :, ys_out[:, -1]]))
+        else:
+            loss = F.cross_entropy(logits.view((-1, logits.size(2))),
+                                   ys_out.contiguous().view(-1),
+                                   ignore_index=self.pad, size_average=True)
+
+        if ncaches > 0:
+            # Register to cache
+            # self.cache_keys += [ys_out[:, -1].cpu().numpy()]
+            self.cache_keys += [ys_out[0, -1].item()]
+            self.cache_values += [ys_in]
 
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits.view(ys_out.size(0), ys_out.size(1), logits.size(-1)).argmax(2)
         mask = ys_out != self.pad
-        numerator = torch.sum(pad_pred.masked_select(mask) == ys_out.masked_select(mask))
-        denominator = torch.sum(mask)
+        numerator = (pad_pred.masked_select(mask) == ys_out.masked_select(mask)).sum()
+        denominator = mask.sum()
         acc = float(numerator) * 100 / float(denominator)
 
         observation = {'loss.rnnlm': loss.item(),
