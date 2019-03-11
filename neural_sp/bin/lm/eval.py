@@ -43,7 +43,7 @@ def main():
     ppl_mean = 0
     for i, set in enumerate(args.recog_sets):
         # Load dataset
-        dataset = Dataset(csv_path=set,
+        dataset = Dataset(tsv_path=set,
                           dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
                           wp_model=os.path.join(args.recog_model[0], 'wp.model'),
                           unit=args.unit,
@@ -54,7 +54,6 @@ def main():
             args.vocab = dataset.vocab
 
             # Load the RNNLM
-            # seq_rnnlm = SeqRNNLM(args)
             seq_rnnlm = SeqRNNLM(args)
             epoch, _, _, _ = seq_rnnlm.load_checkpoint(args.recog_model[0], epoch=args.recog_epoch)
             rnnlm = seq_rnnlm
@@ -77,7 +76,7 @@ def main():
         start_time = time.time()
 
         # TODO(hirofumi): ensemble
-        ppl = eval_ppl([rnnlm], dataset, args.bptt, progressbar=True)
+        ppl = eval_ppl([rnnlm], dataset, batch_size=1, bptt=args.bptt, progressbar=True)
         ppl_mean += ppl
         logger.info('PPL (%s): %.3f' % (dataset.set, ppl))
 

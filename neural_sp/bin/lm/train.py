@@ -125,7 +125,6 @@ def main():
         model.set_optimizer(optimizer=args.optimizer,
                             learning_rate=float(args.learning_rate),
                             weight_decay=float(args.weight_decay),
-                            clip_grad_norm=args.clip_grad_norm,
                             lr_schedule=False,
                             factor=args.decay_rate,
                             patience_epoch=args.decay_patient_epoch)
@@ -204,11 +203,9 @@ def main():
 
             duration_step = time.time() - start_time_step
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                        (step, train_set.epoch_detail,
-                         loss_train, loss_dev,
+                        (step, train_set.epoch_detail, loss_train, loss_dev,
                          math.exp(loss_train), math.exp(loss_dev),
-                         lr, len(ys_train),
-                         duration_step / 60))
+                         lr, len(ys_train), duration_step / 60))
             start_time_step = time.time()
         step += args.ngpus
         pbar_epoch.update(np.prod(ys_train.shape))
@@ -229,7 +226,8 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                ppl_dev = eval_ppl([model.module], dev_set, args.bptt)
+                ppl_dev = eval_ppl([model.module], dev_set,
+                                   batch_size=1, bptt=args.bptt)
                 logger.info('PPL (%s): %.3f' % (dev_set.set, ppl_dev))
 
                 # Update learning rate
@@ -249,7 +247,8 @@ def main():
                     # test
                     ppl_test_mean = 0.
                     for eval_set in eval_sets:
-                        ppl_test = eval_ppl([model.module], eval_set, args.bptt)
+                        ppl_test = eval_ppl([model.module], eval_set,
+                                            batch_size=1, bptt=args.bptt)
                         logger.info('PPL (%s): %.3f' % (eval_set.set, ppl_test))
                         ppl_test_mean += ppl_test
                     if len(eval_sets) > 0:
@@ -268,12 +267,10 @@ def main():
                     # Convert to fine-tuning stage
                     model.module.set_optimizer(
                         'sgd',
-                        # learning_rate=float(args.learning_rate),
-                        learning_rate=lr,
+                        learning_rate=float(args.learning_rate),  # back to start lr
                         weight_decay=float(args.weight_decay),
-                        clip_grad_norm=args.clip_grad_norm,
                         lr_schedule=False,
-                        factor=args.decay_rate,
+                        factor=0.1,  # decay factor: 0.1
                         patience_epoch=args.decay_patient_epoch)
                     logger.info('========== Convert to SGD ==========')
 

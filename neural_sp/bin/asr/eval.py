@@ -50,7 +50,7 @@ def main():
     wer_mean, cer_mean, per_mean = 0, 0, 0
     for i, set in enumerate(args.recog_sets):
         # Load dataset
-        dataset = Dataset(csv_path=set,
+        dataset = Dataset(tsv_path=set,
                           dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
                           dict_path_sub1=os.path.join(args.recog_model[0], 'dict_sub1.txt') if os.path.isfile(
                               os.path.join(args.recog_model[0], 'dict_sub1.txt')) else None,
@@ -148,6 +148,7 @@ def main():
                         model.rnnlm_bwd = rnnlm
                     else:
                         model.rnnlm_fwd = rnnlm
+                        # model.rnnlm_fwd = seq_rnnlm
 
                 if args.recog_rnnlm_bwd is not None and args.recog_rnnlm_weight > 0 and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
                     # Load a RNNLM config file
@@ -171,6 +172,9 @@ def main():
 
                     # Resister to the ASR model
                     model.rnnlm_bwd = rnnlm_bwd
+
+            if not args.recog_unit:
+                args.recog_unit = args.unit
 
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)

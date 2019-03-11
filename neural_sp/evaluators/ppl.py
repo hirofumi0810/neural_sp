@@ -15,13 +15,14 @@ import numpy as np
 from tqdm import tqdm
 
 
-def eval_ppl(models, dataset, bptt=-1, progressbar=False):
+def eval_ppl(models, dataset, batch_size=1, bptt=-1, progressbar=False):
     """Evaluate a RNNLM by perprexity.
 
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
-        bptt (int): ???
+        batch_size (int):
+        bptt (int):
         progressbar (bool): if True, visualize the progressbar
     Returns:
         ppl (float): Perplexity
@@ -40,7 +41,7 @@ def eval_ppl(models, dataset, bptt=-1, progressbar=False):
     if progressbar:
         pbar = tqdm(total=len(dataset))
     while True:
-        ys, is_new_ep = dataset.next()
+        ys, is_new_epoch = dataset.next(batch_size)
         bs = len(ys)
 
         hidden = None
@@ -52,7 +53,7 @@ def eval_ppl(models, dataset, bptt=-1, progressbar=False):
             if progressbar:
                 pbar.update(np.sum([len(y) for y in ys[:, t:t + 2]]))
 
-        if is_new_ep:
+        if is_new_epoch:
             break
 
     if progressbar:
