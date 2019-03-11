@@ -32,7 +32,7 @@ def main():
                 if line[0] == ';':
                     continue
 
-                speaker = line.split()[0]
+                speaker = line.split()[2]
                 start_t = float(line.split()[3])
                 end_t = float(line.split()[4])
                 if speaker not in stm_segments.keys():
@@ -41,17 +41,17 @@ def main():
 
     with codecs.open(args.trn, 'r', encoding="utf-8") as f:
         for line in f:
-            # line = unicode(line, 'utf-8').strip()
             line = line.strip()
             words = line.split()[:-1]
-            utt_id = line.split()[-1].replace('(', '').replace(')', '')
+            speaker_utt_id = line.split()[-1].replace('(', '').replace(')', '')
+            speaker = speaker_utt_id.split('-')[0]
+            utt_id = '-'.join(speaker_utt_id.split('-')[1:]).replace('-', '_')
             if args.stm:
-                speaker = '_'.join(utt_id.split('-')[0].split('_')[:-1])
-                channel = utt_id.split('-')[0].split('_')[-1]  # A or B
+                channel = speaker.split('-')[0].split('_')[-1]  # A or B
             else:
-                speaker = utt_id.split('-')[0]
                 channel = '1'
-            start_f, end_f = utt_id.split('-')[1:]
+            start_f = utt_id.split('_')[-2]
+            end_f = utt_id.split('_')[-1]
             start_t = round(int(start_f) / 100, 2)
 
             if args.stm:
@@ -69,8 +69,10 @@ def main():
 
             confidence = 1  # Nist-1 manner in the ROVER paper
 
+            speaker_no_channel = speaker.replace('_A', '').replace('_B', '')
+
             for w in words:
-                print('%s %s %.2f %.2f %s %.3f' % (speaker, channel, start_t, duration_t, w, confidence))
+                print('%s %s %.2f %.2f %s %.3f' % (speaker_no_channel, channel, start_t, duration_t, w, confidence))
                 start_t += duration_t
 
 
