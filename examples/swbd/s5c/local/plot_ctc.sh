@@ -49,7 +49,7 @@ for set in eval2000; do
         fi
     fi
 
-    CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/plot_ctc.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_ctc.py \
         --recog_sets ${recog_set} \
         --recog_model ${model} \
         --recog_epoch ${epoch} \

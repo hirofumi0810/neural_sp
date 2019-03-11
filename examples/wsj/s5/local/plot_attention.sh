@@ -96,7 +96,7 @@ for set in test_dev93 test_eval92; do
     fi
     mkdir -p ${recog_dir}
 
-    CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/plot_attention.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_attention.py \
         --recog_sets ${data}/dataset/${set}_char.csv \
         --recog_model ${model} ${model1} ${model2} ${model3} ${model4} ${model5} ${model6} ${model7} \
         --recog_model_bwd ${model_bwd} \

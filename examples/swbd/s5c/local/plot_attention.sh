@@ -111,7 +111,7 @@ for set in eval2000; do
         fi
     fi
 
-    CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/plot_attention.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_attention.py \
         --recog_sets ${recog_set} \
         --recog_model ${model} ${model1} ${model2} ${model3} ${model4} ${model5} ${model6} ${model7} \
         --recog_model_bwd ${model_bwd} \

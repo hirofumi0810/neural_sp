@@ -77,7 +77,7 @@ for set in eval2000; do
     if [ ${checkpoint_ensemble} != 1 ]; then
         recog_dir=${recog_dir}_checkpoint${checkpoint_ensemble}
     fi
-    if [ ${ncaches} != 1 ]; then
+    if [ ${ncaches} != 0 ]; then
         recog_dir=${recog_dir}_cache${ncaches}
     fi
     if [ ! -z ${model7} ]; then
@@ -111,7 +111,7 @@ for set in eval2000; do
         fi
     fi
 
-    CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/eval.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
         --recog_sets ${recog_set} \
         --recog_model ${model} ${model1} ${model2} ${model3} ${model4} ${model5} ${model6} ${model7} \
         --recog_model_bwd ${model_bwd} \

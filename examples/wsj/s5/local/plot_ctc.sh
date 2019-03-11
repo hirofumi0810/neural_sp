@@ -35,7 +35,7 @@ for set in test_dev93 test_eval92; do
     fi
     mkdir -p ${recog_dir}
 
-    CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/plot_ctc.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_ctc.py \
         --recog_sets ${data}/dataset/${set}_char.csv \
         --recog_model ${model} \
         --recog_epoch ${epoch} \

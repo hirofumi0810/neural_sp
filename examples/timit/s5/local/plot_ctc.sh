@@ -31,7 +31,7 @@ for set in dev test; do
     recog_dir=${model}/plot_${set}_ep${epoch}
     mkdir -p ${recog_dir}
 
-    CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/plot_ctc.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_ctc.py \
         --recog_sets ${data}/dataset/${set}.csv \
         --recog_model ${model} \
         --recog_epoch ${epoch} \

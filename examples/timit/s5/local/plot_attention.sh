@@ -49,7 +49,7 @@ for set in dev test; do
     fi
     mkdir -p ${recog_dir}
 
-    CUDA_VISIBLE_DEVICES=${gpu} ../../../neural_sp/bin/asr/plot_attention.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_attention.py \
         --recog_sets ${data}/dataset/${set}.csv \
         --recog_model ${model} \
         --recog_epoch ${epoch} \
