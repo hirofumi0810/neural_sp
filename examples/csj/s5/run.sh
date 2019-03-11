@@ -65,8 +65,8 @@ ctc_fc_list="320"
 batch_size=50
 optimizer=adam
 learning_rate=1e-3
-nepochs=25
-convert_to_sgd_epoch=20
+nepochs=30
+convert_to_sgd_epoch=25
 print_step=200
 decay_start_epoch=10
 decay_rate=0.9
@@ -146,7 +146,7 @@ lm_backward=
 ### path to save the model
 model=/n/sd8/inaguma/result/csj
 
-### path to the model directory to restart training
+### path to the model directory to resume training
 resume=
 rnnlm_resume=
 
@@ -246,7 +246,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 80 \
+    dump_feat.sh --cmd "$train_cmd" --nj 400 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
     dump_feat.sh --cmd "$train_cmd" --nj 32 \
         ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
@@ -331,19 +331,10 @@ if [ ${stage} -le 3 ]; then
         # Make datset tsv files for the LM task
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
-        for x in train_${lm_data_size} dev_${lm_data_size}; do
+        for x in train dev ${test_set}; do
             if [ ${lm_data_size} = ${data_size} ]; then
-                cp ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv \
-                    ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-            else
-                dump_dir=${data}/dump/${x}
-                make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-                    ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-            fi
-        done
-        for x in ${test_set}; do
-            if [ ${lm_data_size} = ${data_size} ]; then
-                cp ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.tsv ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv
+                cp ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.tsv \
+                    ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv
             else
                 dump_dir=${data}/dump/${x}_${lm_data_size}
                 make_dataset.sh --unit ${unit} --wp_model ${wp_model} \

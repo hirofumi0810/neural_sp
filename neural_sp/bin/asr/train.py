@@ -177,7 +177,7 @@ def main():
     dir_name = make_model_name(args, subsample_factor)
 
     if args.resume:
-        # Restart from the last checkpoint
+        # Resume from the last checkpoint
         # Set save path
         model.save_path = args.resume
 
@@ -195,7 +195,7 @@ def main():
 
         # Restore the last saved model
         epoch, step, lr, metric_dev_best = model.load_checkpoint(
-            save_path=args.resume, epoch=-1, restart=True)
+            save_path=args.resume, epoch=-1, resume=True)
 
         if epoch >= config['convert_to_sgd_epoch']:
             model.set_optimizer(
@@ -427,6 +427,8 @@ def main():
                 # Save the model
                 model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
                                              lr, metric_dev_best)
+                reporter._epoch += 1
+                # TODO(hirofumi): fix later
             else:
                 start_time_eval = time.time()
                 # dev
@@ -455,6 +457,7 @@ def main():
                     logger.info('Loss (%s): %.3f %%' % (dev_set.set, metric_dev))
                 else:
                     raise NotImplementedError(args.metric)
+                reporter.epoch(metric_dev)
 
                 # Update learning rate
                 model.module.optimizer, lr = lr_controller.decay_lr(
@@ -507,6 +510,7 @@ def main():
                     if args.gaussian_noise_std > 0:
                         model.module.gaussian_noise_trigger()
 
+
                 duration_eval = time.time() - start_time_eval
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
@@ -518,11 +522,10 @@ def main():
                     # Convert to fine-tuning stage
                     model.module.set_optimizer(
                         'sgd',
-                        # learning_rate=float(args.learning_rate),
-                        learning_rate=lr,
+                        learning_rate=float(args.learning_rate),  # back to start lr
                         weight_decay=float(args.weight_decay),
                         lr_schedule=False,
-                        factor=args.decay_rate,
+                        factor=0.1,  # decay factor: 0.1
                         patience_epoch=args.decay_patient_epoch)
                     logger.info('========== Convert to SGD ==========')
 
@@ -642,8 +645,8 @@ def make_model_name(args, subsample_factor):
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
-                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') -
+                                            getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
 

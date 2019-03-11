@@ -65,8 +65,8 @@ ctc_fc_list="320"
 batch_size=50
 optimizer=adam
 learning_rate=1e-3
-nepochs=25
-convert_to_sgd_epoch=20
+nepochs=30
+convert_to_sgd_epoch=25
 print_step=500
 decay_start_epoch=10
 decay_rate=0.9
@@ -119,7 +119,7 @@ lm_tie_embedding=true
 lm_residual=true
 lm_use_glu=true
 # optimization
-lm_batch_size=256
+lm_batch_size=128
 lm_bptt=100
 lm_optimizer=adam
 lm_learning_rate=1e-3
@@ -146,7 +146,7 @@ lm_backward=
 ### path to save the model
 model=/n/sd8/inaguma/result/librispeech
 
-### path to the model directory to restart training
+### path to the model directory to resume training
 resume=
 rnnlm_resume=
 
@@ -237,7 +237,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 80 \
+    dump_feat.sh --cmd "$train_cmd" --nj 400 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
     dump_feat.sh --cmd "$train_cmd" --nj 32 \
         ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
@@ -293,10 +293,11 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     fi
 
     # Make datset tsv files for the ASR task
+    echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
-    make_dataset.sh --feat {data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+    make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
         ${data}/${train_set} ${dict} > ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-    make_dataset.sh --feat {data}/dump/${dev_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+    make_dataset.sh --feat ${data}/dump/${dev_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
         ${data}/${dev_set} ${dict} > ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
     for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${data_size}
@@ -313,20 +314,16 @@ if [ ${stage} -le 3 ]; then
     echo "                      RNNLM Training stage (stage:3)                       "
     echo ============================================================================
 
-    if [ -z ${lm_data_size} != ${data_size} ]; then
-        lm_data_size=${data_size}
-    fi
-
     if [ ! -e ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} ]; then
         if [ ! -e ${data}/.done_stage_1_${data_size} ]; then
             echo "run ./run.sh --data_size ${lm_data_size} first" && exit 1
         fi
 
         # Make datset tsv files for the LM task
+        echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
         for x in train_${lm_data_size} dev_${lm_data_size}; do
-            echo "Making a LM tsv file for ${x}..."
-            if [ ${lm_data_size} == ${data_size} ]; then
+            if [ ${lm_data_size} = ${data_size} ]; then
                 cp ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv \
                     ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
             else
@@ -339,14 +336,11 @@ if [ ${stage} -le 3 ]; then
         touch ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    lm_train_set=${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv
-    lm_dev_set=${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv
-
     # NOTE: support only a single GPU for RNNLM training
     CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --ngpus 1 \
-        --train_set ${lm_train_set} \
-        --dev_set ${lm_dev_set} \
+        --train_set ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --dev_set ${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model ${model}/rnnlm \

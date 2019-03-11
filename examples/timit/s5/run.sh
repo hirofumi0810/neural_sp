@@ -88,7 +88,7 @@ task_specific_layer=
 ### path to save the model
 model=/n/sd8/inaguma/result/timit
 
-### path to the model directory to restart training
+### path to the model directory to resume training
 resume=
 
 ### path to original data

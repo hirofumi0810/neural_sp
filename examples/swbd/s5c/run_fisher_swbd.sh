@@ -65,8 +65,8 @@ ctc_fc_list="320"
 batch_size=50
 optimizer=adam
 learning_rate=1e-3
-nepochs=25
-convert_to_sgd_epoch=20
+nepochs=30
+convert_to_sgd_epoch=25
 print_step=1000
 decay_start_epoch=10
 decay_rate=0.9
@@ -146,9 +146,9 @@ lm_backward=
 ### path to save the model
 model=/n/sd8/inaguma/result/swbd
 
-### path to the model directory to restart training
-rnnlm_resume=
+### path to the model directory to resume training
 resume=
+rnnlm_resume=
 
 ### path to original data
 SWBD_AUDIOPATH=/n/rd21/corpora_7/swb

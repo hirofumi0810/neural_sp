@@ -334,13 +334,13 @@ class ModelBase(nn.Module):
 
         logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))
 
-    def load_checkpoint(self, save_path, epoch=-1, restart=False):
+    def load_checkpoint(self, save_path, epoch=-1, resume=False):
         """Load checkpoint.
 
         Args:
             save_path (str): path to the saved models
             epoch (int): negative values mean the offset from the last saved model
-            restart (bool): if True, restore the save optimizer
+            resume (bool): if True, restore the save optimizer
         Returns:
             epoch (int): the currnet epoch
             step (int): the current step
@@ -368,7 +368,7 @@ class ModelBase(nn.Module):
         self.load_state_dict(checkpoint['state_dict'])
 
         # Restore optimizer
-        if restart:
+        if resume:
             logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
 
             if hasattr(self, 'optimizer'):

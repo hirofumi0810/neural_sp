@@ -77,8 +77,8 @@ ctc_fc_list_sub2="320"
 batch_size=50
 optimizer=adam
 learning_rate=1e-3
-nepochs=25
-convert_to_sgd_epoch=20
+nepochs=30
+convert_to_sgd_epoch=25
 print_step=200
 decay_start_epoch=10
 decay_rate=0.9
@@ -127,7 +127,7 @@ share_lm_softmax=
 ### path to save the model
 model=/n/sd8/inaguma/result/csj
 
-### path to the model directory to restart training
+### path to the model directory to resume training
 resume=
 
 ### path to original data
@@ -239,7 +239,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 80 \
+    dump_feat.sh --cmd "$train_cmd" --nj 400 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
     dump_feat.sh --cmd "$train_cmd" --nj 32 \
         ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;

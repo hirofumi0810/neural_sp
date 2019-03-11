@@ -83,8 +83,8 @@ ctc_fc_list_sub3=""
 batch_size=50
 optimizer=adam
 learning_rate=1e-3
-nepochs=25
-convert_to_sgd_epoch=20
+nepochs=30
+convert_to_sgd_epoch=25
 print_step=200
 decay_start_epoch=10
 decay_rate=0.9
@@ -136,7 +136,7 @@ share_lm_softmax=
 ### path to save the model
 model=/n/sd8/inaguma/result/swbd
 
-### path to the model directory to restart training
+### path to the model directory to resume training
 resume=
 
 ### path to original data
