@@ -54,7 +54,7 @@ def main():
                         unit=args.unit,
                         wp_model=args.wp_model,
                         batch_size=args.batch_size * args.ngpus,
-                        nepochs=args.nepochs,
+                        n_epochs=args.nepochs,
                         bptt=args.bptt,
                         shuffle=False)
     dev_set = Dataset(tsv_path=args.dev_set,

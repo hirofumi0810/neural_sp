@@ -35,7 +35,7 @@ np.random.seed(1)
 class Dataset(Base):
 
     def __init__(self, tsv_path, dict_path,
-                 unit, batch_size, nepochs=None,
+                 unit, batch_size, n_epochs=None,
                  is_test=False, bptt=2, shuffle=False, wp_model=None):
         """A class for loading dataset.
 
@@ -45,7 +45,7 @@ class Dataset(Base):
             unit (str): word or wp or char or phone or word_char
             batch_size (int): the size of mini-batch
             bptt (int):
-            nepochs (int): the max epoch. None means infinite loop.
+            n_epochs (int): the max epoch. None means infinite loop.
             shuffle (bool): if True, shuffle utterances.
                 This is disabled when sort_by_input_length is True.
             wp_model ():
@@ -60,7 +60,7 @@ class Dataset(Base):
         self.bptt = bptt
         self.sos = 2
         self.eos = 2
-        self.max_epoch = nepochs
+        self.max_epoch = n_epochs
         self.shuffle = shuffle
         self.vocab = self.count_vocab_size(dict_path)
         assert bptt >= 2

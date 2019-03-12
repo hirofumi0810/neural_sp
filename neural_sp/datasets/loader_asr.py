@@ -35,11 +35,11 @@ np.random.seed(1)
 class Dataset(Base):
 
     def __init__(self, tsv_path, dict_path,
-                 unit, batch_size, nepochs=None,
-                 is_test=False, min_nframes=40, max_nframes=2000,
+                 unit, batch_size, n_epochs=None,
+                 is_test=False, min_n_frames=40, max_n_frames=2000,
                  shuffle=False, sort_by_input_length=False,
                  short2long=False, sort_stop_epoch=None,
-                 nques=None, dynamic_batching=False,
+                 n_ques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1, skip_speech=False,
                  wp_model=False,
                  tsv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
@@ -58,17 +58,17 @@ class Dataset(Base):
             dict_path (str):
             unit (str): word or wp or char or phone or word_char
             batch_size (int): the size of mini-batch
-            nepochs (int): the max epoch. None means infinite loop.
+            n_epochs (int): the max epoch. None means infinite loop.
             is_test (bool):
-            min_nframes (int): Exclude utteraces shorter than this value
-            max_nframes (int): Exclude utteraces longer than this value
+            min_n_frames (int): Exclude utteraces shorter than this value
+            max_n_frames (int): Exclude utteraces longer than this value
             shuffle (bool): if True, shuffle utterances.
                 This is disabled when sort_by_input_length is True.
             sort_by_input_length (bool): if True, sort all utterances in the ascending order
             short2long (bool): if True, sort utteraces in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
-            nques (int): the number of elements to enqueue
+            n_ques (int): the number of elements to enqueue
             dynamic_batching (bool): if True, batch size will be chainged
                 dynamically in training
             ctc (bool):
@@ -84,11 +84,11 @@ class Dataset(Base):
         self.unit = unit
         self.unit_sub1 = unit_sub1
         self.batch_size = batch_size
-        self.max_epoch = nepochs
+        self.max_epoch = n_epochs
         self.shuffle = shuffle
         self.sort_by_input_length = sort_by_input_length
         self.sort_stop_epoch = sort_stop_epoch
-        self.nques = nques
+        self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
         self.skip_speech = skip_speech
         self.vocab = self.count_vocab_size(dict_path)
@@ -198,7 +198,7 @@ class Dataset(Base):
         else:
             print('Original utterance num: %d' % len(df))
             nutts = len(df)
-            df = df[df.apply(lambda x: min_nframes <= x['xlen'] <= max_nframes, axis=1)]
+            df = df[df.apply(lambda x: min_n_frames <= x['xlen'] <= max_n_frames, axis=1)]
             df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
             print('Removed %d utterances (threshold)' % (nutts - len(df)))
 
