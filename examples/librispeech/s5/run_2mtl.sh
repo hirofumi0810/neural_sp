@@ -423,7 +423,7 @@ if [ ${stage} -le 4 ]; then
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \
         --cold_fusion ${cold_fusion} \
-        --rnnlm_cold_fusion =${rnnlm_cold_fusion} \
+        --rnnlm_cold_fusion ${rnnlm_cold_fusion} \
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
