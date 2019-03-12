@@ -22,11 +22,11 @@ import torch
 from tqdm import tqdm
 
 from neural_sp.bin.args_asr import parse
-from neural_sp.bin.train_utils import Controller
+from neural_sp.bin.lr_controller import Controller
 from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import Reporter
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.loss import eval_loss
@@ -56,9 +56,9 @@ def main():
     decode_params = vars(args)
 
     # Automatically reduce batch size in multi-GPU setting
-    if args.ngpus > 1:
+    if args.n_gpus > 1:
         args.batch_size -= 10
-        args.print_step //= args.ngpus
+        args.print_step //= args.n_gpus
 
     subsample_factor = 1
     subsample_factor_sub1 = 1
@@ -71,11 +71,11 @@ def main():
             if p > 1:
                 subsample_factor *= p
     if args.train_set_sub1:
-        subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub1 - 1])
+        subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
     if args.train_set_sub2:
-        subsample_factor_sub2 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub2 - 1])
+        subsample_factor_sub2 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub2 - 1])
     if args.train_set_sub3:
-        subsample_factor_sub3 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub3 - 1])
+        subsample_factor_sub3 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub3 - 1])
     subsample_factor *= np.prod(subsample)
 
     # Load dataset
@@ -95,10 +95,10 @@ def main():
                         wp_model_sub1=args.wp_model_sub1,
                         wp_model_sub2=args.wp_model_sub2,
                         wp_model_sub3=args.wp_model_sub3,
-                        batch_size=args.batch_size * args.ngpus,
-                        n_epochs=args.nepochs,
-                        min_n_frames=args.min_nframes,
-                        max_n_frames=args.max_nframes,
+                        batch_size=args.batch_size * args.n_gpus,
+                        n_epochs=args.n_epochs,
+                        min_n_frames=args.min_n_frames,
+                        max_n_frames=args.max_n_frames,
                         sort_by_input_length=True,
                         short2long=True,
                         sort_stop_epoch=args.sort_stop_epoch,
@@ -128,9 +128,9 @@ def main():
                       wp_model_sub1=args.wp_model_sub1,
                       wp_model_sub2=args.wp_model_sub2,
                       wp_model_sub3=args.wp_model_sub3,
-                      batch_size=args.batch_size * args.ngpus,
-                      min_n_frames=args.min_nframes,
-                      max_n_frames=args.max_nframes,
+                      batch_size=args.batch_size * args.n_gpus,
+                      min_n_frames=args.min_n_frames,
+                      max_n_frames=args.max_n_frames,
                       shuffle=True,
                       ctc=args.ctc_weight > 0,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
@@ -229,7 +229,7 @@ def main():
         logger.info(model)
 
         # Initialize with pre-trained model's parameters
-        if os.path.isdir(args.pretrained_model):
+        if args.pretrained_model and os.path.isdir(args.pretrained_model):
             # Load a conf file
             config_pt = load_config(os.path.join(args.pretrained_model, 'conf.yml'))
 
@@ -242,7 +242,7 @@ def main():
             model_pre.load_checkpoint(args.pretrained_model, epoch=-1)
 
             # Overwrite parameters
-            only_enc = (args.enc_nlayers != args_pt.enc_nlayers) or (args.unit != args_pt.unit)
+            only_enc = (args.enc_n_layers != args_pt.enc_n_layers) or (args.unit != args_pt.unit)
             param_dict = dict(model_pre.named_parameters())
             for n, p in model.named_parameters():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
@@ -265,9 +265,9 @@ def main():
     train_set.epoch = epoch - 1  # start from index:0
 
     # GPU setting
-    if args.ngpus >= 1:
+    if args.n_gpus >= 1:
         model = CustomDataParallel(model,
-                                   device_ids=list(range(0, args.ngpus, 1)),
+                                   device_ids=list(range(0, args.n_gpus, 1)),
                                    deterministic=False,
                                    benchmark=True)
         model.cuda()
@@ -286,12 +286,12 @@ def main():
                                decay_type=args.decay_type,
                                decay_start_epoch=args.decay_start_epoch,
                                decay_rate=args.decay_rate,
-                               decay_patient_epoch=args.decay_patient_epoch,
+                               decay_patient_n_epochs=args.decay_patient_n_epochs,
                                lower_better=True,
                                best_value=metric_dev_best,
                                model_size=args.d_model,
                                warmup_start_learning_rate=args.warmup_start_learning_rate,
-                               warmup_nsteps=args.warmup_nsteps,
+                               warmup_n_steps=args.warmup_n_steps,
                                factor=1)
     if not args.resume:
         lr = lr_controller.lr_init
@@ -352,7 +352,7 @@ def main():
         reporter.step(is_eval=False)
 
         # Update learning rate
-        if args.decay_type == 'warmup' and step < args.warmup_nsteps:
+        if args.decay_type == 'warmup' and step < args.warmup_n_steps:
             model.module.optimizer, lr = lr_controller.warmup_lr(
                 model.module.optimizer, lr, step=step)
 
@@ -378,7 +378,7 @@ def main():
                          lr, len(batch_train['utt_ids']),
                          x_len, duration_step / 60))
             start_time_step = time.time()
-        step += args.ngpus
+        step += args.n_gpus
         pbar_epoch.update(len(batch_train['utt_ids']))
 
         # Save fugures of loss and accuracy
@@ -496,7 +496,7 @@ def main():
                         decay_type='epoch',
                         decay_start_epoch=epoch,
                         decay_rate=0.1,
-                        decay_patient_epoch=0,
+                        decay_patient_n_epochs=0,
                         lower_better=True,
                         best_value=metric_dev_best)
                     lr = float(args.learning_rate)
@@ -504,7 +504,7 @@ def main():
 
             pbar_epoch = tqdm(total=len(train_set))
 
-            if epoch == args.nepochs:
+            if epoch == args.n_epochs:
                 break
 
             start_time_step = time.time()
@@ -533,17 +533,17 @@ def make_model_name(args, subsample_factor):
         dir_name += tmp
     if args.enc_type == 'transformer':
         dir_name += str(args.d_model) + 'H'
-        dir_name += str(args.transformer_enc_nlayers) + 'L'
+        dir_name += str(args.transformer_enc_n_layers) + 'L'
     else:
-        dir_name += str(args.enc_nunits) + 'H'
-        dir_name += str(args.enc_nprojs) + 'P'
-        dir_name += str(args.enc_nlayers) + 'L'
+        dir_name += str(args.enc_n_units) + 'H'
+        dir_name += str(args.enc_n_projs) + 'P'
+        dir_name += str(args.enc_n_layers) + 'L'
         if args.enc_residual:
             dir_name += 'res'
         if args.enc_add_ffl:
             dir_name += 'ffl'
-    if args.nstacks > 1:
-        dir_name += '_stack' + str(args.nstacks)
+    if args.n_stacks > 1:
+        dir_name += '_stack' + str(args.n_stacks)
     else:
         dir_name += '_' + args.subsample_type + str(subsample_factor)
 
@@ -551,12 +551,12 @@ def make_model_name(args, subsample_factor):
     dir_name += '_' + args.dec_type
     if args.dec_type == 'transformer':
         dir_name += str(args.d_model) + 'H'
-        dir_name += str(args.transformer_dec_nlayers) + 'L'
+        dir_name += str(args.transformer_dec_n_layers) + 'L'
         dir_name += '_' + args.transformer_attn_type
     else:
-        dir_name += str(args.dec_nunits) + 'H'
-        dir_name += str(args.dec_nprojs) + 'P'
-        dir_name += str(args.dec_nlayers) + 'L'
+        dir_name += str(args.dec_n_units) + 'H'
+        dir_name += str(args.dec_n_projs) + 'P'
+        dir_name += str(args.dec_n_layers) + 'L'
         dir_name += '_' + args.dec_loop_type
         if args.dec_residual:
             dir_name += 'res'
@@ -567,8 +567,8 @@ def make_model_name(args, subsample_factor):
         dir_name += '_' + args.attn_type
         if args.attn_sigmoid:
             dir_name += '_sig'
-    if args.attn_nheads > 1:
-        dir_name += '_head' + str(args.attn_nheads)
+    if args.attn_n_heads > 1:
+        dir_name += '_head' + str(args.attn_n_heads)
     if args.tie_embedding:
         dir_name += '_tie'
 
@@ -621,13 +621,13 @@ def make_model_name(args, subsample_factor):
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') -
-                                            getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
+                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
 
     # Pre-training
-    if os.path.isdir(args.pretrained_model):
+    if args.pretrained_model and os.path.isdir(args.pretrained_model):
         # Load a conf file
         config_pt = load_config(os.path.join(args.pretrained_model, 'conf.yml'))
         dir_name += '_' + config_pt['unit'] + 'pt'

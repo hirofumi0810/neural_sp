@@ -21,16 +21,15 @@ import torch
 from tqdm import tqdm
 
 from neural_sp.bin.args_lm import parse
-from neural_sp.bin.train_utils import Controller
-from neural_sp.bin.train_utils import Reporter
+from neural_sp.bin.lr_controller import Controller
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
-from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.utils.general import mkdir_join
 
 
@@ -53,15 +52,15 @@ def main():
                         dict_path=args.dict,
                         unit=args.unit,
                         wp_model=args.wp_model,
-                        batch_size=args.batch_size * args.ngpus,
-                        n_epochs=args.nepochs,
+                        batch_size=args.batch_size * args.n_gpus,
+                        n_epochs=args.n_epochs,
                         bptt=args.bptt,
                         shuffle=False)
     dev_set = Dataset(tsv_path=args.dev_set,
                       dict_path=args.dict,
                       unit=args.unit,
                       wp_model=args.wp_model,
-                      batch_size=args.batch_size * args.ngpus,
+                      batch_size=args.batch_size * args.n_gpus,
                       bptt=args.bptt,
                       shuffle=True)
     eval_sets = []
@@ -136,9 +135,9 @@ def main():
     train_set.epoch = epoch - 1  # start from index:0
 
     # GPU setting
-    if args.ngpus >= 1:
+    if args.n_gpus >= 1:
         model = CustomDataParallel(model,
-                                   device_ids=list(range(0, args.ngpus, 1)),
+                                   device_ids=list(range(0, args.n_gpus, 1)),
                                    deterministic=False,
                                    benchmark=True)
         model.cuda()
@@ -203,7 +202,7 @@ def main():
                          math.exp(loss_train), math.exp(loss_dev),
                          lr, len(ys_train), duration_step / 60))
             start_time_step = time.time()
-        step += args.ngpus
+        step += args.n_gpus
         pbar_epoch.update(np.prod(ys_train.shape))
 
         # Save fugures of loss and accuracy
@@ -279,7 +278,7 @@ def main():
 
             pbar_epoch = tqdm(total=len(train_set))
 
-            if epoch == args.nepochs:
+            if epoch == args.n_epochs:
                 break
 
             start_time_step = time.time()
