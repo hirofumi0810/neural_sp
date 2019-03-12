@@ -34,9 +34,9 @@ class SeqRNNLM(ModelBase):
         self.emb_dim = args.emb_dim
         self.rnn_type = args.rnn_type
         assert args.rnn_type in ['lstm', 'gru']
-        self.n_units = args.nunits
-        self.n_projs = args.nprojs
-        self.n_layers = args.nlayers
+        self.n_units = args.n_units
+        self.n_projs = args.n_projs
+        self.n_layers = args.n_layers
         self.tie_embedding = args.tie_embedding
         self.residual = args.residual
         self.use_glu = args.use_glu
@@ -259,18 +259,16 @@ class SeqRNNLM(ModelBase):
         """Predict a token per step for ASR decoding.
 
         Args:
-            y (FloatTensor): `[B, emb_dim]`
+            y (FloatTensor): `[B, 1, emb_dim]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
         Returns:
-            logits_step (FloatTensor): `[B, vocab]`
-            y (FloatTensor): `[B, n_units]`
+            logits_step (FloatTensor): `[B, 1, vocab]`
+            y (FloatTensor): `[B, 1, n_units]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
 
         """
         if hidden[0] is None:
             hidden = self.initialize_hidden(y.size(0))
-
-        y = y.unsqueeze(1)  # `[B, 1, emb_dim]`
 
         residual = None
         if self.fast_impl:
@@ -299,7 +297,7 @@ class SeqRNNLM(ModelBase):
                 y += residual
         logits_step = self.output(y)
 
-        return logits_step, y.squeeze(1), hidden
+        return logits_step, y, hidden
 
     def initialize_hidden(self, bs):
         """Initialize hidden states."""

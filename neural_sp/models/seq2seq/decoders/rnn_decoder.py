@@ -220,7 +220,7 @@ class RNNDecoder(nn.Module):
                     sigmoid_smoothing=attn_sigmoid_smoothing,
                     conv_out_channels=attn_conv_out_channels,
                     conv_kernel_size=attn_conv_kernel_size,
-                    nheads=attn_n_heads,
+                    n_heads=attn_n_heads,
                     dropout=dropout_att)
             else:
                 self.score = AttentionMechanism(
@@ -581,7 +581,7 @@ class RNNDecoder(nn.Module):
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
-        if self.rnnlm_cf:
+        if self.rnnlm_cf is not None:
             ys_lm_emb = self.rnnlm_cf.embed(ys_in_pad)
 
         logits = []
@@ -601,11 +601,11 @@ class RNNDecoder(nn.Module):
                 dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
 
             # Update RNNLM states for cold fusion
-            if self.rnnlm_cf:
+            if self.rnnlm_cf is not None:
                 if is_sample:
-                    y_lm_emb = self.rnnlm_cf.embed(logits[-1].detach().argmax(-1)).squeeze(1)
+                    y_lm_emb = self.rnnlm_cf.embed(logits[-1].detach().argmax(-1))
                 else:
-                    y_lm_emb = ys_lm_emb[:, t]
+                    y_lm_emb = ys_lm_emb[:, t:t + 1]
                 logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(
                     y_lm_emb, rnnlm_state)
             else:
@@ -909,18 +909,18 @@ class RNNDecoder(nn.Module):
         Args:
             cv (FloatTensor): `[B, 1, enc_n_units]`
             dout (FloatTensor): `[B, 1, dec_units]`
-            logits_lm_t (FloatTensor): `[B, vocab]`
-            lm_out (FloatTensor): `[B, lm_nunits]`
+            logits_lm_t (FloatTensor): `[B, 1, vocab]`
+            lm_out (FloatTensor): `[B, 1, lm_nunits]`
         Returns:
             logits_t (FloatTensor): `[B, 1, vocab]`
 
         """
-        if self.rnnlm_cf:
+        if self.rnnlm_cf is not None:
             # cold fusion
             if self.cold_fusion_type == 'hidden':
-                lm_feat = self.cf_linear_lm_feat(lm_out.unsqueeze(1))
+                lm_feat = self.cf_linear_lm_feat(lm_out)
             elif self.cold_fusion_type == 'prob':
-                lm_feat = self.cf_linear_lm_feat(logits_lm_t.unsqueeze(1))
+                lm_feat = self.cf_linear_lm_feat(logits_lm_t)
             dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
             gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
@@ -973,8 +973,8 @@ class RNNDecoder(nn.Module):
                 dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
 
             # Update RNNLM states for cold fusion
-            if self.rnnlm_cf:
-                y_lm = self.rnnlm_cf.embed(y).squeeze(1)
+            if self.rnnlm_cf is not None:
+                y_lm = self.rnnlm_cf.embed(y)
                 logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm, rnnlm_state)
             else:
                 logits_lm_t, lm_out = None, None
@@ -993,7 +993,7 @@ class RNNDecoder(nn.Module):
             # Pick up 1-best
             y = logits_t.detach().argmax(-1)
             best_hyps_tmp += [y]
-            if self.score.nheads > 1:
+            if self.score.n_heads > 1:
                 aws_tmp += [aw[0]]
             else:
                 aws_tmp += [aw]
@@ -1084,11 +1084,10 @@ class RNNDecoder(nn.Module):
         cp_threshold = params['recog_coverage_threshold']
         rnnlm_weight = params['recog_rnnlm_weight']
         gnmt_decoding = params['recog_gnmt_decoding']
-        n_caches = params['recog_ncaches']
+        n_caches = params['recog_n_caches']
 
         # For cold fusion
-        if rnnlm_weight > 0 and self.cold_fusion_type:
-            assert self.rnnlm_cf
+        if self.rnnlm_cf is not None:
             self.rnnlm_cf.eval()
 
         # For shallow fusion
@@ -1213,19 +1212,18 @@ class RNNDecoder(nn.Module):
                             ensemble_cv += [con_vec_e]
                             ensemble_aws += [aw_e]
 
-                    if self.rnnlm_cf:
+                    if self.rnnlm_cf is not None:
                         # Update RNNLM states for cold fusion
                         y_lm = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
-                        y_lm_emb = self.rnnlm_cf.embed(y_lm).squeeze(1)
+                        y_lm_emb = self.rnnlm_cf.embed(y_lm)
                         logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hxs'], beam[i_beam]['rnnlm_cxs']))
                     elif rnnlm_weight > 0:
                         # Update RNNLM states for shallow fusion
                         y_lm = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
-                        y_lm_emb = rnnlm.embed(y_lm).squeeze(1)
+                        y_lm_emb = rnnlm.embed(y_lm)
                         logits_lm_t, lm_out, rnnlm_state = rnnlm.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hxs'], beam[i_beam]['rnnlm_cxs']))
-                        lm_out = lm_out.unsqueeze(1)
                     else:
                         logits_lm_t, lm_out, rnnlm_state = None, None, None
 
@@ -1330,10 +1328,10 @@ class RNNDecoder(nn.Module):
                         else:
                             # Recompute converage penalty in each step
                             if cp_threshold == 0:
-                                cp = aw_mat.sum() / self.score.nheads
+                                cp = aw_mat.sum() / self.score.n_heads
                             else:
                                 cp = torch.where(aw_mat > cp_threshold, aw_mat,
-                                                 torch.zeros_like(aw_mat)).sum() / self.score.nheads
+                                                 torch.zeros_like(aw_mat)).sum() / self.score.n_heads
                             local_scores += cp * cp_weight
                             # local_scores += (cp - beam[i_beam]['cp_prev']) * cp_weight  # old
                     else:
@@ -1448,7 +1446,7 @@ class RNNDecoder(nn.Module):
                         lp = (math.pow(5 + (len(cand['hyp']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
                     for t in range(len(cand['hyp'][1:])):
                         y_lm = eouts.new_zeros(1, 1).fill_(cand['hyp'][-1 - t]).long()
-                        y_lm_emb = rnnlm_rev.embed(y_lm).squeeze(1)
+                        y_lm_emb = rnnlm_rev.embed(y_lm)
                         logits_lm_t, _, (rnnlm_hxs, rnnlm_cxs) = rnnlm_rev.predict(
                             y_lm_emb, (rnnlm_hxs, rnnlm_cxs))
                         lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
@@ -1464,7 +1462,7 @@ class RNNDecoder(nn.Module):
             if self.backward:
                 # Reverse the order
                 nbest_hyps += [[np.array(complete[n]['hyp'][1:][::-1]) for n in range(nbest)]]
-                if self.score.nheads > 1:
+                if self.score.n_heads > 1:
                     aws += [[complete[n]['aws'][0, 1:][::-1] for n in range(nbest)]]
                 else:
                     aws += [[complete[n]['aws'][1:][::-1] for n in range(nbest)]]
@@ -1472,7 +1470,7 @@ class RNNDecoder(nn.Module):
                 scores_cp += [[complete[n]['scores_cp'][1:][::-1] for n in range(nbest)]]
             else:
                 nbest_hyps += [[np.array(complete[n]['hyp'][1:]) for n in range(nbest)]]
-                if self.score.nheads > 1:
+                if self.score.n_heads > 1:
                     aws += [[complete[n]['aws'][0, 1:] for n in range(nbest)]]
                 else:
                     aws += [[complete[n]['aws'][1:] for n in range(nbest)]]

@@ -54,7 +54,7 @@ class AttentionMechanism(nn.Module):
         self.attn_dim = attn_dim
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
-        self.nheads = 1
+        self.n_heads = 1
         self.enc_out_a = None
         self.mask = None
 
