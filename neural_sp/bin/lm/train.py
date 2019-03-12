@@ -124,10 +124,7 @@ def main():
         # Set optimizer
         model.set_optimizer(optimizer=args.optimizer,
                             learning_rate=float(args.learning_rate),
-                            weight_decay=float(args.weight_decay),
-                            lr_schedule=False,
-                            factor=args.decay_rate,
-                            patience_epoch=args.decay_patient_epoch)
+                            weight_decay=float(args.weight_decay))
 
         epoch, step = 1, 1
         lr = float(args.learning_rate)
@@ -162,8 +159,7 @@ def main():
                                decay_rate=args.decay_rate,
                                decay_patient_epoch=args.decay_patient_epoch,
                                lower_better=True,
-                               best_value=ppl_dev_best,
-                               factor=1)
+                               best_value=ppl_dev_best)
 
     # Set reporter
     reporter = Reporter(model.module.save_path, tensorboard=True)
@@ -268,10 +264,17 @@ def main():
                     model.module.set_optimizer(
                         'sgd',
                         learning_rate=float(args.learning_rate),  # back to start lr
-                        weight_decay=float(args.weight_decay),
-                        lr_schedule=False,
-                        factor=0.1,  # decay factor: 0.1
-                        patience_epoch=args.decay_patient_epoch)
+                        weight_decay=float(args.weight_decay))
+
+                    lr_controller = Controller(
+                        learning_rate=float(args.learning_rate),  # back to start lr
+                        decay_type='epoch',
+                        decay_start_epoch=epoch,
+                        decay_rate=0.1,
+                        decay_patient_epoch=0,
+                        lower_better=True,
+                        best_value=ppl_dev_best)
+                    lr = float(args.learning_rate)
                     logger.info('========== Convert to SGD ==========')
 
             pbar_epoch = tqdm(total=len(train_set))

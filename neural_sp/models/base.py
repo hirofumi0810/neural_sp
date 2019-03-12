@@ -189,7 +189,6 @@ class ModelBase(nn.Module):
             logger.warning('CPU mode')
 
     def set_optimizer(self, optimizer, learning_rate, weight_decay=0.0,
-                      lr_schedule=True, factor=0.1, patience_epoch=5,
                       transformer=False):
         """Set optimizer.
 
@@ -197,13 +196,7 @@ class ModelBase(nn.Module):
             optimizer (str): sgd or adam or adadelta or adagrad or rmsprop
             learning_rate (float): learning rate
             weight_decay (float): L2 penalty
-            lr_schedule (bool): if True, wrap optimizer with
-                scheduler. Default is True.
-            factor (float):
-            patience_epoch (int):
             transformer (bool):
-        Returns:
-            scheduler ():
 
         """
         optimizer = optimizer.lower()
@@ -275,9 +268,6 @@ class ModelBase(nn.Module):
         #                                   cooldown=0,
         #                                   min_lr=0,
         #                                   eps=1e-08)
-        scheduler = None
-
-        return scheduler
 
     def set_save_path(self, save_path):
         # Reset model directory

@@ -38,14 +38,6 @@ class LinearND(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, xs):
-        """Forward computation.
-
-        Args:
-            xs (FloatTensor): `[B, T, input_dim]`
-        Returns:
-            xs (FloatTensor): `[B, T, size[-1]]`
-
-        """
         size = list(xs.size())
         xs = xs.contiguous().view((int(np.prod(size[:-1])), int(size[-1])))
         xs = self.dropout(self.fc(xs))
@@ -72,16 +64,29 @@ class Embedding(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, y):
-        """Forward computation.
+        return self.dropout(self.embed(y))  # `[B, L, emb_dim]`
 
-        Args:
-            y (LongTensor): `[B, L]`
-        Returns:
-            y (FloatTensor): `[B, L, emb_dim]`
 
-        """
-        y = self.dropout(self.embed(y))
-        return y
+class LayerNorm(nn.Module):
+    """Layer normalizazion.
+
+    Args:
+        d_model (float):
+        eps (float):
+
+    """
+
+    def __init__(self, d_model, eps=1e-6):
+        super(LayerNorm, self).__init__()
+        self.gamma = nn.Parameter(torch.ones(d_model))
+        self.beta = nn.Parameter(torch.zeros(d_model))
+        self.eps = eps
+
+    def forward(self, x):
+        mean = x.mean(dim=-1, keepdim=True)
+        std = x.std(dim=-1, keepdim=True)
+        x_norm = (x - mean) / (std + self.eps)
+        return self.gamma * x_norm + self.beta
 
 
 class PositionalEncoding(nn.Module):
@@ -115,14 +120,6 @@ class PositionalEncoding(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, xs):
-        """Forward computation.
-
-        Args:
-            xs (FloatTensor):
-        Returns:
-            (FloatTensor):
-
-        """
         if self.pe_type == 'add':
             xs = xs + self.pe[:, :xs.size(1)]
         elif self.pe_type == 'concat':
@@ -147,17 +144,10 @@ class SublayerConnection(nn.Module):
         super(SublayerConnection, self).__init__()
 
         self.layer_norm = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        # self.layer_norm = LayerNorm(d_model, eps=layer_norm_eps)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs, sublayer):
-        """Apply residual connection to any sublayer with the same size.
-
-        Args:
-            xs (FloatTensor):
-        Returns:
-            xs (FloatTensor):
-
-        """
         xs_norm = self.layer_norm(xs)
         output = sublayer(xs_norm)
 
@@ -188,19 +178,11 @@ class PositionwiseFeedForward(nn.Module):
     def __init__(self, d_model, d_ff, dropout):
         super(PositionwiseFeedForward, self).__init__()
 
-        self.w_1 = LinearND(d_model, d_ff)
-        self.w_2 = LinearND(d_ff, d_model)
+        self.w_1 = nn.Linear(d_model, d_ff)
+        self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs):
-        """Forward computation.
-
-        Args:
-            xs (FloatTensor):
-        Returns:
-            (FloatTensor):
-
-        """
         return self.w_2(self.dropout(F.relu(self.w_1(xs))))
 
 
@@ -226,12 +208,8 @@ class ResidualFeedForward(nn.Module):
         self.add_norm = SublayerConnection(d_model, dropout, layer_norm_eps)
 
     def forward(self, xs):
-        """Forward computation.
-
-        Args:
-            xs (FloatTensor):
-        Returns:
-            (FloatTensor):
-
-        """
         return self.add_norm(xs, self.feed_forward)
+
+
+def gelu(x):
+    return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))

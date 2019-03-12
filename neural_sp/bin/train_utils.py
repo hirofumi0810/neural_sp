@@ -23,8 +23,10 @@ import torch
 import yaml
 
 plt.style.use('ggplot')
+grey = '#878f99'
 blue = '#4682B4'
 orange = '#D2691E'
+green = '#82b74b'
 
 logger = logging.getLogger('training')
 
@@ -54,7 +56,7 @@ class Reporter(object):
 
         # report per epoch
         self._epoch = 0
-        self.observation_eval  = {'wer':{}, 'cer': {}, 'per': {}}
+        self.observation_eval = []
         self.epochs = []
 
     def add(self, observation, is_eval):
@@ -68,35 +70,35 @@ class Reporter(object):
         for k, v in observation.items():
             if v is None:
                 continue
-            category, name = k.split('.')
-            # NOTE: category: loss, acc, ppl
+            metric, name = k.split('.')
+            # NOTE: metric: loss, acc, ppl
 
             if v == float("inf") or v == -float("inf"):
                 logger.warning("WARNING: received an inf loss for %s." % k)
 
             if not is_eval:
-                if name not in self.observation_train_local[category].keys():
-                    self.observation_train_local[category][name] = []
-                self.observation_train_local[category][name].append(v)
+                if name not in self.observation_train_local[metric].keys():
+                    self.observation_train_local[metric][name] = []
+                self.observation_train_local[metric][name].append(v)
             else:
                 # avarage for training
-                if name not in self.observation_train[category].keys():
-                    self.observation_train[category][name] = []
-                self.observation_train[category][name].append(
-                    np.mean(self.observation_train_local[category][name]))
-                logger.info('%s (train, mean): %.3f' % (k, np.mean(self.observation_train_local[category][name])))
+                if name not in self.observation_train[metric].keys():
+                    self.observation_train[metric][name] = []
+                self.observation_train[metric][name].append(
+                    np.mean(self.observation_train_local[metric][name]))
+                logger.info('%s (train, mean): %.3f' % (k, np.mean(self.observation_train_local[metric][name])))
 
-                if name not in self.observation_dev[category].keys():
-                    self.observation_dev[category][name] = []
-                self.observation_dev[category][name].append(v)
+                if name not in self.observation_dev[metric].keys():
+                    self.observation_dev[metric][name] = []
+                self.observation_dev[metric][name].append(v)
                 logger.info('%s (dev): %.3f' % (k, v))
 
                 # Logging by tensorboard
                 if self.tensorboard:
                     if not is_eval:
-                        self.tf_writer.add_scalar('train/' + category + '/' + name, v, self._step)
+                        self.tf_writer.add_scalar('train/' + metric + '/' + name, v, self._step)
                     else:
-                        self.tf_writer.add_scalar('dev/' + category + '/' + name, v, self._step)
+                        self.tf_writer.add_scalar('dev/' + metric + '/' + name, v, self._step)
                 # for n, p in model.module.named_parameters():
                 #     n = n.replace('.', '/')
                 #     if p.grad is not None:
@@ -111,50 +113,58 @@ class Reporter(object):
             # reset
             self.observation_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
 
-    def epoch(self):
+    def epoch(self, wer):
         self._epoch += 1
         self.epochs.append(self._epoch)
+
+        # register
+        self.observation_eval.append(wer)
+
+        plt.clf()
+        plt.plot(self.epochs, self.observation_eval, orange,
+                 label='dev', linestyle='-')
+        plt.xlabel('epoch', fontsize=12)
+        plt.ylabel('WER', fontsize=12)
+        plt.ylim([0,  max(100, max(self.observation_eval))])
+        plt.legend(loc="upper right", fontsize=12)
+        if os.path.isfile(os.path.join(self.save_path, 'wer' + ".png")):
+            os.remove(os.path.join(self.save_path, 'wer' + ".png"))
+        plt.savefig(os.path.join(self.save_path, 'wer' + ".png"), dvi=500)
 
     def snapshot(self):
         # linestyles = ['solid', 'dashed', 'dotted', 'dashdotdotted']
         linestyles = ['-', '--', '-.', ':', ':', ':', ':', ':', ':', ':', ':', ':']
-        for category in self.observation_train.keys():
+        for metric in self.observation_train.keys():
             plt.clf()
             upper = 0
-            i = 0
-            for name, v in sorted(self.observation_train[category].items()):
+            for i, (k, v) in enumerate(sorted(self.observation_train[metric].items())):
                 # skip non-observed values
-                if np.mean(self.observation_train[category][name]) == 0:
+                if np.mean(self.observation_train[metric][k]) == 0:
                     continue
 
-                plt.plot(self.steps, self.observation_train[category][name], blue,
-                         label=name + " (train)", linestyle=linestyles[i])
-                plt.plot(self.steps, self.observation_dev[category][name], orange,
-                         label=name + " (dev)", linestyle=linestyles[i])
-                upper = max(upper, max(self.observation_train[category][name]))
-                upper = max(upper, max(self.observation_dev[category][name]))
-                i += 1
+                plt.plot(self.steps, self.observation_train[metric][k], blue,
+                         label=k + " (train)", linestyle=linestyles[i])
+                plt.plot(self.steps, self.observation_dev[metric][k], orange,
+                         label=k + " (dev)", linestyle=linestyles[i])
+                upper = max(upper, max(self.observation_train[metric][k]))
+                upper = max(upper, max(self.observation_dev[metric][k]))
+
+                # Save as csv file
+                if os.path.isfile(os.path.join(self.save_path, metric + '-' + k + ".csv")):
+                    os.remove(os.path.join(self.save_path, metric + '-' + k + ".csv"))
+                loss_graph = np.column_stack(
+                    (self.steps, self.observation_train[metric][k], self.observation_dev[metric][k]))
+                np.savetxt(os.path.join(self.save_path, metric + '-' + k + ".csv"), loss_graph, delimiter=",")
+
             upper = min(upper + 10, 300)
 
             plt.xlabel('step', fontsize=12)
-            plt.ylabel(category, fontsize=12)
+            plt.ylabel(metric, fontsize=12)
             plt.ylim([0, upper])
             plt.legend(loc="upper right", fontsize=12)
-            if os.path.isfile(os.path.join(self.save_path, category + ".png")):
-                os.remove(os.path.join(self.save_path, category + ".png"))
-            plt.savefig(os.path.join(self.save_path, category + ".png"), dvi=500)
-
-            # Save as csv file
-            for name, v in self.observation_train[category].items():
-                # skip non-observed values
-                if np.mean(self.observation_train[category][name]) == 0:
-                    continue
-
-                if os.path.isfile(os.path.join(self.save_path, category + '-' + name + ".csv")):
-                    os.remove(os.path.join(self.save_path, category + '-' + name + ".csv"))
-                loss_graph = np.column_stack(
-                    (self.steps, self.observation_train[category][name], self.observation_dev[category][name]))
-                np.savetxt(os.path.join(self.save_path, category + '-' + name + ".csv"), loss_graph, delimiter=",")
+            if os.path.isfile(os.path.join(self.save_path, metric + ".png")):
+                os.remove(os.path.join(self.save_path, metric + ".png"))
+            plt.savefig(os.path.join(self.save_path, metric + ".png"), dvi=500)
 
 
 class Controller(object):
@@ -178,8 +188,9 @@ class Controller(object):
     """
 
     def __init__(self, learning_rate, decay_type, decay_start_epoch, decay_rate,
-                 decay_patient_epoch=1, lower_better=True, best_value=10000,
-                 model_size=1, warmup_start_learning_rate=0, warmup_nsteps=4000, factor=10):
+                 decay_patient_epoch=0, lower_better=True, best_value=10000,
+                 model_size=1, warmup_start_learning_rate=0, warmup_nsteps=4000,
+                 factor=1):
 
         self.lr_max = learning_rate
         self.decay_type = decay_type
@@ -271,7 +282,7 @@ class Controller(object):
         """
         if self.warmup_start_lr > 0:
             # linearly increse
-            lr = (self.lr_max - self.warmup_start_lr) / self.warmup_nsteps * step  + self.lr_init
+            lr = (self.lr_max - self.warmup_start_lr) / self.warmup_nsteps * step + self.lr_init
         else:
             # based on the original transformer paper
             lr = self.lr_init * min(step ** (-0.5),
