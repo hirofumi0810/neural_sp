@@ -28,9 +28,9 @@ vocab_size_sub2=
 # ASR configuration
 #########################
 ### topology
-nsplices=1
-nstacks=1
-nskips=1
+n_splices=1
+n_stacks=1
+n_skips=1
 conv_in_channel=1
 conv_channels=
 conv_kernel_sizes=
@@ -45,24 +45,24 @@ subsample="1_2_2_2_1"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 # subsample="1_1_1_1_1"
 enc_type=blstm
-enc_nunits=320
-enc_nprojs=0
-enc_nlayers=5
-enc_nlayers_sub1=4
-enc_nlayers_sub2=3
+enc_n_units=320
+enc_n_projs=0
+enc_n_layers=5
+enc_n_layers_sub1=4
+enc_n_layers_sub2=3
 enc_residual=
 enc_add_ffl=
 subsample_type=drop
 attn_type=location
 attn_dim=320
-attn_nheads=1
+attn_n_heads=1
 attn_sigmoid=
 dec_type=lstm
-dec_nunits=320
-dec_nprojs=0
-dec_nlayers=1
-dec_nlayers_sub1=1
-dec_nlayers_sub2=1
+dec_n_units=320
+dec_n_projs=0
+dec_n_layers=1
+dec_n_layers_sub1=1
+dec_n_layers_sub2=1
 dec_loop_type=normal
 dec_residual=
 dec_add_ffl=
@@ -77,18 +77,18 @@ ctc_fc_list_sub2=""
 batch_size=50
 optimizer=adam
 learning_rate=1e-3
-nepochs=30
+n_epochs=30
 convert_to_sgd_epoch=25
 print_step=200
 decay_start_epoch=10
 decay_rate=0.9
-decay_patient_epoch=0
+decay_patient_n_epochs=0
 decay_type=epoch
 not_improved_patient_epoch=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
-warmup_nsteps=0
-warmup_nepochs=0
+warmup_n_steps=0
+warmup_n_epochs=0
 ### initialization
 param_init=0.1
 param_init_dist=uniform
@@ -153,7 +153,7 @@ if [ -z ${gpu} ]; then
     echo "Usage: ./run.sh --gpu 0" 1>&2
     exit 1
 fi
-ngpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 
 train_set=train_${data_size}
 dev_set=dev_${data_size}
@@ -437,7 +437,7 @@ if [ ${stage} -le 4 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
-        --ngpus ${ngpus} \
+        --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv \
         --train_set_sub2 ${data}/dataset/${train_set}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.tsv \
@@ -454,9 +454,9 @@ if [ ${stage} -le 4 ]; then
         --unit ${unit} \
         --unit_sub1 ${unit_sub1} \
         --unit_sub2 ${unit_sub2} \
-        --nsplices ${nsplices} \
-        --nstacks ${nstacks} \
-        --nskips ${nskips} \
+        --n_splices ${n_splices} \
+        --n_stacks ${n_stacks} \
+        --n_skips ${n_skips} \
         --conv_in_channel ${conv_in_channel} \
         --conv_channels ${conv_channels} \
         --conv_kernel_sizes ${conv_kernel_sizes} \
@@ -464,25 +464,25 @@ if [ ${stage} -le 4 ]; then
         --conv_poolings ${conv_poolings} \
         --conv_batch_norm ${conv_batch_norm} \
         --enc_type ${enc_type} \
-        --enc_nunits ${enc_nunits} \
-        --enc_nprojs ${enc_nprojs} \
-        --enc_nlayers ${enc_nlayers} \
-        --enc_nlayers_sub1 ${enc_nlayers_sub1} \
-        --enc_nlayers_sub2 ${enc_nlayers_sub2} \
+        --enc_n_units ${enc_n_units} \
+        --enc_n_projs ${enc_n_projs} \
+        --enc_n_layers ${enc_n_layers} \
+        --enc_n_layers_sub1 ${enc_n_layers_sub1} \
+        --enc_n_layers_sub2 ${enc_n_layers_sub2} \
         --enc_residual ${enc_residual} \
         --enc_add_ffl ${enc_add_ffl} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
         --attn_dim ${attn_dim} \
-        --attn_nheads ${attn_nheads} \
+        --attn_n_heads ${attn_n_heads} \
         --attn_sigmoid ${attn_sigmoid} \
         --dec_type ${dec_type} \
-        --dec_nunits ${dec_nunits} \
-        --dec_nprojs ${dec_nprojs} \
-        --dec_nlayers ${dec_nlayers} \
-        --dec_nlayers_sub1 ${dec_nlayers_sub1} \
-        --dec_nlayers_sub2 ${dec_nlayers_sub2} \
+        --dec_n_units ${dec_n_units} \
+        --dec_n_projs ${dec_n_projs} \
+        --dec_n_layers ${dec_n_layers} \
+        --dec_n_layers_sub1 ${dec_n_layers_sub1} \
+        --dec_n_layers_sub2 ${dec_n_layers_sub2} \
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
         --dec_add_ffl ${dec_add_ffl} \
@@ -496,18 +496,18 @@ if [ ${stage} -le 4 ]; then
         --batch_size ${batch_size} \
         --optimizer ${optimizer} \
         --learning_rate ${learning_rate} \
-        --nepochs ${nepochs} \
+        --n_epochs ${n_epochs} \
         --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
         --print_step ${print_step} \
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
         --decay_type ${decay_type} \
-        --decay_patient_epoch ${decay_patient_epoch} \
+        --decay_patient_n_epochs ${decay_patient_n_epochs} \
         --not_improved_patient_epoch ${not_improved_patient_epoch} \
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \
-        --warmup_nsteps ${warmup_nsteps} \
-        --warmup_nepochs ${warmup_nepochs} \
+        --warmup_n_steps ${warmup_n_steps} \
+        --warmup_n_epochs ${warmup_n_epochs} \
         --param_init ${param_init} \
         --param_init_dist ${param_init_dist} \
         --pretrained_model ${pretrained_model} \

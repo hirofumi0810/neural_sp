@@ -70,7 +70,7 @@ convert_to_sgd_epoch=15
 print_step=400
 decay_start_epoch=5
 decay_rate=0.8
-decay_patient_epoch=0
+decay_patient_n_epochs=0
 decay_type=epoch
 not_improved_patient_epoch=5
 eval_start_epoch=1
@@ -339,7 +339,7 @@ if [ ${stage} -le 4 ]; then
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
         --decay_type ${decay_type} \
-        --decay_patient_epoch ${decay_patient_epoch} \
+        --decay_patient_n_epochs ${decay_patient_n_epochs} \
         --not_improved_patient_epoch ${not_improved_patient_epoch} \
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \

@@ -12,7 +12,7 @@ data=/n/sd8/inaguma/corpus/swbd
 epoch=-1
 batch_size=1
 # checkpoint_ensemble=1  # the number of checkpoints to use
-ncaches=0
+n_caches=100
 cache_theta=0.2
 cache_lambda=0.2
 
@@ -33,8 +33,8 @@ gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in dev; do
     recog_dir=${model}/plot_${set}_ep${epoch}
-    if [ ${ncaches} != 0 ]; then
-        recog_dir=${recog_dir}_cache${ncaches}_theta${cache_theta}_lambda${cache_lambda}
+    if [ ${n_caches} != 0 ]; then
+        recog_dir=${recog_dir}_cache${n_caches}_theta${cache_theta}_lambda${cache_lambda}
     fi
     mkdir -p ${recog_dir}
 
@@ -51,7 +51,7 @@ for set in dev; do
         --recog_model ${model} \
         --recog_epoch ${epoch} \
         --recog_batch_size ${batch_size} \
-        --recog_ncaches ${ncaches} \
+        --recog_n_caches ${n_caches} \
         --recog_cache_theta ${cache_theta} \
         --recog_cache_lambda ${cache_lambda} \
         --recog_dir ${recog_dir} || exit 1;

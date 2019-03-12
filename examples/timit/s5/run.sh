@@ -17,9 +17,9 @@ export data=/n/sd8/inaguma/corpus/timit
 # ASR configuration
 #########################
 ### topology
-nsplices=1
-nstacks=1
-nskips=1
+n_splices=1
+n_stacks=1
+n_skips=1
 conv_in_channel=3
 conv_channels=
 conv_kernel_sizes=
@@ -28,21 +28,21 @@ conv_poolings=
 conv_batch_norm=
 subsample="1_1_1_1_1"
 enc_type=blstm
-enc_nunits=320
+enc_n_units=320
 enc_type=bgru
-enc_nunits=256
-enc_nprojs=0
-enc_nlayers=5
+enc_n_units=256
+enc_n_projs=0
+enc_n_layers=5
 enc_residual=
 subsample_type=drop
 attn_type=location
 attn_dim=256
-attn_nheads=1
+attn_n_heads=1
 attn_sigmoid=
 dec_type=gru
-dec_nunits=256
-dec_nprojs=0
-dec_nlayers=1
+dec_n_units=256
+dec_n_projs=0
+dec_n_layers=1
 dec_loop_type=normal
 dec_residual=
 input_feeding=
@@ -53,12 +53,12 @@ ctc_fc_list=""
 batch_size=32
 optimizer=adam
 learning_rate=1e-3
-nepochs=100
+n_epochs=100
 convert_to_sgd_epoch=40
 print_step=10
 decay_start_epoch=20
 decay_rate=0.97
-decay_patient_epoch=0
+decay_patient_n_epochs=0
 decay_type=epoch
 not_improved_patient_epoch=20
 eval_start_epoch=20
@@ -107,7 +107,7 @@ if [ -z ${gpu} ]; then
     echo "Usage: ./run.sh --gpu 0" 1>&2
     exit 1
 fi
-ngpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 rnnlm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 train_set=train
@@ -188,16 +188,16 @@ if [ ${stage} -le 4 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
-        --ngpus ${ngpus} \
+        --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}.tsv \
         --dev_set ${data}/dataset/${dev_set}.tsv \
         --eval_sets ${data}/dataset/${test_set}.tsv \
         --dict ${dict} \
         --model ${model}/asr \
         --unit phone \
-        --nsplices ${nsplices} \
-        --nstacks ${nstacks} \
-        --nskips ${nskips} \
+        --n_splices ${n_splices} \
+        --n_stacks ${n_stacks} \
+        --n_skips ${n_skips} \
         --conv_in_channel ${conv_in_channel} \
         --conv_channels ${conv_channels} \
         --conv_kernel_sizes ${conv_kernel_sizes} \
@@ -205,20 +205,20 @@ if [ ${stage} -le 4 ]; then
         --conv_poolings ${conv_poolings} \
         --conv_batch_norm ${conv_batch_norm} \
         --enc_type ${enc_type} \
-        --enc_nunits ${enc_nunits} \
-        --enc_nprojs ${enc_nprojs} \
-        --enc_nlayers ${enc_nlayers} \
+        --enc_n_units ${enc_n_units} \
+        --enc_n_projs ${enc_n_projs} \
+        --enc_n_layers ${enc_n_layers} \
         --enc_residual ${enc_residual} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
         --attn_dim ${attn_dim} \
-        --attn_nheads ${attn_nheads} \
+        --attn_n_heads ${attn_n_heads} \
         --attn_sigmoid ${attn_sigmoid} \
         --dec_type ${dec_type} \
-        --dec_nunits ${dec_nunits} \
-        --dec_nprojs ${dec_nprojs} \
-        --dec_nlayers ${dec_nlayers} \
+        --dec_n_units ${dec_n_units} \
+        --dec_n_projs ${dec_n_projs} \
+        --dec_n_layers ${dec_n_layers} \
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
         --input_feeding ${input_feeding} \
@@ -228,13 +228,13 @@ if [ ${stage} -le 4 ]; then
         --batch_size ${batch_size} \
         --optimizer ${optimizer} \
         --learning_rate ${learning_rate} \
-        --nepochs ${nepochs} \
+        --n_epochs ${n_epochs} \
         --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
         --print_step ${print_step} \
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
         --decay_type ${decay_type} \
-        --decay_patient_epoch ${decay_patient_epoch} \
+        --decay_patient_n_epochs ${decay_patient_n_epochs} \
         --not_improved_patient_epoch ${not_improved_patient_epoch} \
         --eval_start_epoch ${eval_start_epoch} \
         --param_init ${param_init} \

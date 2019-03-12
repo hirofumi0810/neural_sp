@@ -70,7 +70,7 @@ convert_to_sgd_epoch=25
 print_step=200
 decay_start_epoch=10
 decay_rate=0.9
-decay_patient_epoch=0
+decay_patient_n_epochs=0
 decay_type=epoch
 not_improved_patient_epoch=5
 eval_start_epoch=1
@@ -128,7 +128,7 @@ lm_convert_to_sgd_epoch=50
 lm_print_step=20
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
-lm_decay_patient_epoch=0
+lm_decay_patient_n_epochs=0
 lm_not_improved_patient_epoch=10
 lm_eval_start_epoch=1
 # initialization
@@ -376,7 +376,7 @@ if [ ${stage} -le 3 ]; then
         --print_step ${lm_print_step} \
         --decay_start_epoch ${lm_decay_start_epoch} \
         --decay_rate ${lm_decay_rate} \
-        --decay_patient_epoch ${lm_decay_patient_epoch} \
+        --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
         --not_improved_patient_epoch ${lm_not_improved_patient_epoch} \
         --eval_start_epoch ${lm_eval_start_epoch} \
         --param_init ${lm_param_init} \
@@ -449,7 +449,7 @@ if [ ${stage} -le 4 ]; then
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
         --decay_type ${decay_type} \
-        --decay_patient_epoch ${decay_patient_epoch} \
+        --decay_patient_n_epochs ${decay_patient_n_epochs} \
         --not_improved_patient_epoch ${not_improved_patient_epoch} \
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \

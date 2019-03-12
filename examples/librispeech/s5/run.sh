@@ -22,9 +22,9 @@ wp_type=bpe  # or unigram (for wordpiece)
 # ASR configuration
 #########################
 ### topology
-nsplices=1
-nstacks=1
-nskips=1
+n_splices=1
+n_stacks=1
+n_skips=1
 conv_in_channel=1
 conv_channels=
 conv_kernel_sizes=
@@ -39,20 +39,20 @@ subsample="1_2_2_2_1"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 # subsample="1_1_1_1_1"
 enc_type=blstm
-enc_nunits=320
-enc_nprojs=0
-enc_nlayers=5
+enc_n_units=320
+enc_n_projs=0
+enc_n_layers=5
 enc_residual=
 enc_add_ffl=
 subsample_type=drop
 attn_type=location
 attn_dim=320
-attn_nheads=1
+attn_n_heads=1
 attn_sigmoid=
 dec_type=lstm
-dec_nunits=320
-dec_nprojs=0
-dec_nlayers=1
+dec_n_units=320
+dec_n_projs=0
+dec_n_layers=1
 dec_loop_type=normal
 dec_residual=
 dec_add_ffl=
@@ -65,18 +65,18 @@ ctc_fc_list="320"
 batch_size=50
 optimizer=adam
 learning_rate=1e-3
-nepochs=30
+n_epochs=30
 convert_to_sgd_epoch=25
 print_step=500
 decay_start_epoch=10
 decay_rate=0.9
-decay_patient_epoch=0
+decay_patient_n_epochs=0
 decay_type=epoch
 not_improved_patient_epoch=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
-warmup_nsteps=0
-warmup_nepochs=0
+warmup_n_steps=0
+warmup_n_epochs=0
 ### initialization
 param_init=0.1
 param_init_dist=uniform
@@ -111,9 +111,9 @@ share_lm_softmax=
 #########################
 # topology
 lm_rnn_type=lstm
-lm_nunits=1024
-lm_nprojs=0
-lm_nlayers=2
+lm_n_units=1024
+lm_n_projs=0
+lm_n_layers=2
 lm_emb_dim=1024
 lm_tie_embedding=true
 lm_residual=true
@@ -123,12 +123,12 @@ lm_batch_size=128
 lm_bptt=100
 lm_optimizer=adam
 lm_learning_rate=1e-3
-lm_nepochs=50
+lm_n_epochs=50
 lm_convert_to_sgd_epoch=50
 lm_print_step=20
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
-lm_decay_patient_epoch=0
+lm_decay_patient_n_epochs=0
 lm_not_improved_patient_epoch=10
 lm_eval_start_epoch=1
 # initialization
@@ -170,7 +170,7 @@ if [ -z ${gpu} ]; then
     echo "Usage: ./run.sh --gpu 0" 1>&2
     exit 1
 fi
-ngpus=$(echo ${gpu} | tr "," "\n" | wc -l)
+n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 rnnlm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 # Base url for downloads.
@@ -302,7 +302,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${data_size}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
-            ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+            ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
     done
 
     touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for ASR (stage: 2)."
@@ -338,7 +338,7 @@ if [ ${stage} -le 3 ]; then
 
     # NOTE: support only a single GPU for RNNLM training
     CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
-        --ngpus 1 \
+        --n_gpus 1 \
         --train_set ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dict ${dict} \
@@ -346,9 +346,9 @@ if [ ${stage} -le 3 ]; then
         --model ${model}/rnnlm \
         --unit ${unit} \
         --rnn_type ${lm_rnn_type} \
-        --nunits ${lm_nunits} \
-        --nprojs ${lm_nprojs} \
-        --nlayers ${lm_nlayers} \
+        --n_units ${lm_n_units} \
+        --n_projs ${lm_n_projs} \
+        --n_layers ${lm_n_layers} \
         --emb_dim ${lm_emb_dim} \
         --tie_embedding ${lm_tie_embedding} \
         --residual ${lm_residual} \
@@ -357,12 +357,12 @@ if [ ${stage} -le 3 ]; then
         --bptt ${lm_bptt} \
         --optimizer ${lm_optimizer} \
         --learning_rate ${lm_learning_rate} \
-        --nepochs ${lm_nepochs} \
+        --n_epochs ${lm_n_epochs} \
         --convert_to_sgd_epoch ${lm_convert_to_sgd_epoch} \
         --print_step ${lm_print_step} \
         --decay_start_epoch ${lm_decay_start_epoch} \
         --decay_rate ${lm_decay_rate} \
-        --decay_patient_epoch ${lm_decay_patient_epoch} \
+        --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
         --not_improved_patient_epoch ${lm_not_improved_patient_epoch} \
         --eval_start_epoch ${lm_eval_start_epoch} \
         --param_init ${lm_param_init} \
@@ -385,16 +385,16 @@ if [ ${stage} -le 4 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
-        --ngpus ${ngpus} \
+        --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model ${model}/asr \
         --unit ${unit} \
-        --nsplices ${nsplices} \
-        --nstacks ${nstacks} \
-        --nskips ${nskips} \
+        --n_splices ${n_splices} \
+        --n_stacks ${n_stacks} \
+        --n_skips ${n_skips} \
         --conv_in_channel ${conv_in_channel} \
         --conv_channels ${conv_channels} \
         --conv_kernel_sizes ${conv_kernel_sizes} \
@@ -402,21 +402,21 @@ if [ ${stage} -le 4 ]; then
         --conv_poolings ${conv_poolings} \
         --conv_batch_norm ${conv_batch_norm} \
         --enc_type ${enc_type} \
-        --enc_nunits ${enc_nunits} \
-        --enc_nprojs ${enc_nprojs} \
-        --enc_nlayers ${enc_nlayers} \
+        --enc_n_units ${enc_n_units} \
+        --enc_n_projs ${enc_n_projs} \
+        --enc_n_layers ${enc_n_layers} \
         --enc_residual ${enc_residual} \
         --enc_add_ffl ${enc_add_ffl} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
         --attn_dim ${attn_dim} \
-        --attn_nheads ${attn_nheads} \
+        --attn_n_heads ${attn_n_heads} \
         --attn_sigmoid ${attn_sigmoid} \
         --dec_type ${dec_type} \
-        --dec_nunits ${dec_nunits} \
-        --dec_nprojs ${dec_nprojs} \
-        --dec_nlayers ${dec_nlayers} \
+        --dec_n_units ${dec_n_units} \
+        --dec_n_projs ${dec_n_projs} \
+        --dec_n_layers ${dec_n_layers} \
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
         --dec_add_ffl ${dec_add_ffl} \
@@ -428,18 +428,18 @@ if [ ${stage} -le 4 ]; then
         --batch_size ${batch_size} \
         --optimizer ${optimizer} \
         --learning_rate ${learning_rate} \
-        --nepochs ${nepochs} \
+        --n_epochs ${n_epochs} \
         --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
         --print_step ${print_step} \
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
         --decay_type ${decay_type} \
-        --decay_patient_epoch ${decay_patient_epoch} \
+        --decay_patient_n_epochs ${decay_patient_n_epochs} \
         --not_improved_patient_epoch ${not_improved_patient_epoch} \
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \
-        --warmup_nsteps ${warmup_nsteps} \
-        --warmup_nepochs ${warmup_nepochs} \
+        --warmup_n_steps ${warmup_n_steps} \
+        --warmup_n_epochs ${warmup_n_epochs} \
         --param_init ${param_init} \
         --param_init_dist ${param_init_dist} \
         --pretrained_model ${pretrained_model} \
