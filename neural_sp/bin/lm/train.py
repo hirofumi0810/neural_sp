@@ -42,10 +42,10 @@ def main():
 
     args = parse()
 
-    # Load a config file
+    # Load a conf file
     if args.resume:
-        config = load_config(os.path.join(args.resume, 'config.yml'))
-        for k, v in config.items():
+        conf = load_config(os.path.join(args.resume, 'conf.yml'))
+        for k, v in conf.items():
             setattr(args, k, v)
 
     # Load dataset
@@ -100,7 +100,7 @@ def main():
         save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
         model.set_save_path(save_path)  # avoid overwriting
 
-        # Save the config file as a yaml file
+        # Save the conf file as a yaml file
         save_config(vars(args), model.save_path)
 
         # Save the dictionary & wp_model
@@ -241,14 +241,14 @@ def main():
                                                  lr, ppl_dev_best)
 
                     # test
-                    ppl_test_mean = 0.
+                    ppl_test_avg = 0.
                     for eval_set in eval_sets:
                         ppl_test = eval_ppl([model.module], eval_set,
                                             batch_size=1, bptt=args.bptt)
                         logger.info('PPL (%s): %.3f' % (eval_set.set, ppl_test))
-                        ppl_test_mean += ppl_test
+                        ppl_test_avg += ppl_test
                     if len(eval_sets) > 0:
-                        logger.info('PPL (mean): %.3f' % (ppl_test_mean / len(eval_sets)))
+                        logger.info('PPL (avg.): %.3f' % (ppl_test_avg / len(eval_sets)))
                 else:
                     not_improved_epoch += 1
 

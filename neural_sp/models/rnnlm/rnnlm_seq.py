@@ -22,7 +22,6 @@ from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import to_onehot
 
 
 class SeqRNNLM(ModelBase):
@@ -35,8 +34,9 @@ class SeqRNNLM(ModelBase):
         self.emb_dim = args.emb_dim
         self.rnn_type = args.rnn_type
         assert args.rnn_type in ['lstm', 'gru']
-        self.nunits = args.nunits
-        self.nlayers = args.nlayers
+        self.n_units = args.nunits
+        self.n_projs = args.nprojs
+        self.n_layers = args.nlayers
         self.tie_embedding = args.tie_embedding
         self.residual = args.residual
         self.use_glu = args.use_glu
@@ -61,7 +61,7 @@ class SeqRNNLM(ModelBase):
                                ignore_index=self.pad)
 
         self.fast_impl = False
-        if args.nprojs == 0 and not args.residual:
+        if self.n_projs == 0 and not args.residual:
             self.fast_impl = True
             if 'lstm' in args.rnn_type:
                 rnn = nn.LSTM
@@ -70,33 +70,33 @@ class SeqRNNLM(ModelBase):
             else:
                 raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
 
-            self.rnn = rnn(args.emb_dim, args.nunits, args.nlayers,
+            self.rnn = rnn(args.emb_dim, self.n_units, self.n_layers,
                            bias=True,
                            batch_first=True,
                            dropout=args.dropout_hidden,
                            bidirectional=False)
             # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
-            rnn_idim = args.nunits
+            rnn_idim = self.n_units
             self.dropout_top = nn.Dropout(p=args.dropout_hidden)
         else:
             self.rnn = torch.nn.ModuleList()
             self.dropout = torch.nn.ModuleList()
-            if args.nprojs > 0:
+            if self.n_projs > 0:
                 self.proj = torch.nn.ModuleList()
             rnn_idim = args.emb_dim
-            for l in range(args.nlayers):
+            for l in range(self.n_layers):
                 self.rnn += [getattr(nn, args.rnn_type.upper())(
-                    rnn_idim, args.nunits, 1,
+                    rnn_idim, self.n_units, 1,
                     bias=True,
                     batch_first=True,
                     dropout=0,
                     bidirectional=False)]
                 self.dropout += [nn.Dropout(p=args.dropout_hidden)]
-                rnn_idim = args.nunits
+                rnn_idim = self.n_units
 
-                if l != self.nlayers - 1 and args.nprojs > 0:
-                    self.proj += [LinearND(args.nunits * self.ndirs, args.nprojs)]
-                    rnn_idim = args.nprojs
+                if l != self.n_layers - 1 and self.n_projs > 0:
+                    self.proj += [LinearND(self.n_units, self.n_projs)]
+                    rnn_idim = self.n_projs
 
         if self.use_glu:
             self.fc_glu = LinearND(rnn_idim, rnn_idim * 2,
@@ -113,8 +113,8 @@ class SeqRNNLM(ModelBase):
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
         if args.tie_embedding:
-            if args.nunits != args.emb_dim:
-                raise ValueError('When using the tied flag, nunits must be equal to emb_dim.')
+            if self.n_units != args.emb_dim:
+                raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
             self.output.fc.weight = self.embed.embed.weight
 
         # Initialize weight matrices
@@ -131,7 +131,7 @@ class SeqRNNLM(ModelBase):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-    def forward(self, ys, hidden=None, reporter=None, is_eval=False, ncaches=0):
+    def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0):
         """Forward computation.
 
         Args:
@@ -140,7 +140,7 @@ class SeqRNNLM(ModelBase):
             reporter ():
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
-            ncaches (int):
+            n_caches (int):
         Returns:
             loss (FloatTensor): `[1]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
@@ -150,7 +150,7 @@ class SeqRNNLM(ModelBase):
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, hidden, observation = self._forward(ys, hidden, ncaches)
+                loss, hidden, observation = self._forward(ys, hidden, n_caches)
         else:
             self.train()
             loss, hidden, observation = self._forward(ys, hidden)
@@ -161,7 +161,7 @@ class SeqRNNLM(ModelBase):
 
         return loss, hidden, reporter
 
-    def _forward(self, ys, hidden, ncaches=0):
+    def _forward(self, ys, hidden, n_caches=0):
         if self.backward:
             ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
         else:
@@ -182,7 +182,7 @@ class SeqRNNLM(ModelBase):
             ys_in, hidden = self.rnn(ys_in, hx=hidden)
             ys_in = self.dropout_top(ys_in)
         else:
-            for l in range(self.nlayers):
+            for l in range(self.n_layers):
                 # Path through RNN
                 if self.rnn_type == 'lstm':
                     ys_in, (hidden[0][l], hidden[1][l]) = self.rnn[l](ys_in, hx=(hidden[0][l], hidden[1][l]))
@@ -205,7 +205,7 @@ class SeqRNNLM(ModelBase):
         logits = self.output(ys_in)
 
         # Compute XE sequence loss
-        if ncaches > 0 and len(self.cache_keys) > 0:
+        if n_caches > 0 and len(self.cache_keys) > 0:
             assert ys_out.size(1) == 1
             assert ys_out.size(0) == 1
             probs = F.softmax(logits, dim=-1)
@@ -213,18 +213,18 @@ class SeqRNNLM(ModelBase):
             cache_probs = torch.zeros_like(probs)
 
             # Truncate cache
-            self.cache_keys = self.cache_keys[-ncaches:]  # list of `[B, 1]`
-            self.cache_values = self.cache_values[-ncaches:]  # list of `[B, 1, nunits]`
+            self.cache_keys = self.cache_keys[-n_caches:]  # list of `[B, 1]`
+            self.cache_values = self.cache_values[-n_caches:]  # list of `[B, 1, n_units]`
 
             # Compute inner-product over caches
             cache_dist = torch.matmul(torch.cat(self.cache_values, dim=1),
-                                      ys_in.transpose(1, 2)).squeeze(2)  # `[B, ncaches]`
+                                      ys_in.transpose(1, 2)).squeeze(2)  # `[B, n_caches]`
             cache_attn = F.softmax(self.cache_theta * cache_dist, dim=1)
 
             # For visualization
-            if len(self.cache_keys) == ncaches:
+            if len(self.cache_keys) == n_caches:
                 self.cache_attn += [cache_attn.cpu().numpy()]
-                self.cache_attn = self.cache_attn[-ncaches:]
+                self.cache_attn = self.cache_attn[-n_caches:]
 
             # Sum all probabilities
             for offset, idx in enumerate(self.cache_keys):
@@ -236,7 +236,7 @@ class SeqRNNLM(ModelBase):
                                    ys_out.contiguous().view(-1),
                                    ignore_index=self.pad, size_average=True)
 
-        if ncaches > 0:
+        if n_caches > 0:
             # Register to cache
             # self.cache_keys += [ys_out[:, -1].cpu().numpy()]
             self.cache_keys += [ys_out[0, -1].item()]
@@ -262,8 +262,8 @@ class SeqRNNLM(ModelBase):
             y (FloatTensor): `[B, emb_dim]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
         Returns:
-            logits_step (FloatTensor):
-            y (FloatTensor): `[B, nunits]`
+            logits_step (FloatTensor): `[B, vocab]`
+            y (FloatTensor): `[B, n_units]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
 
         """
@@ -277,7 +277,7 @@ class SeqRNNLM(ModelBase):
             y, hidden = self.rnn(y, hx=hidden)
             y = self.dropout_top(y)
         else:
-            for l in range(self.nlayers):
+            for l in range(self.n_layers):
                 # Path through RNN
                 if self.rnn_type == 'lstm':
                     y, (hidden[0][l], hidden[1][l]) = self.rnn[l](y, hx=(hidden[0][:][l], hidden[1][:][l]))
@@ -307,19 +307,19 @@ class SeqRNNLM(ModelBase):
 
         if self.fast_impl:
             # return None
-            h_n = w.new_zeros(self.nlayers, bs, self.nunits)
+            h_n = w.new_zeros(self.n_layers, bs, self.n_units)
             if self.rnn_type == 'lstm':
-                c_n = w.new_zeros(self.nlayers, bs, self.nunits)
+                c_n = w.new_zeros(self.n_layers, bs, self.n_units)
             elif self.rnn_type == 'gru':
                 c_n = None
             return (h_n, c_n)
         else:
             hxs, cxs = [], []
-            for l in range(self.nlayers):
+            for l in range(self.n_layers):
                 # h_l = None
-                h_l = w.new_zeros(1, bs, self.nunits)
+                h_l = w.new_zeros(1, bs, self.n_units)
                 if self.rnn_type == 'lstm':
-                    c_l = w.new_zeros(1, bs, self.nunits)
+                    c_l = w.new_zeros(1, bs, self.n_units)
                 elif self.rnn_type == 'gru':
                     c_l = None
                 hxs.append(h_l)

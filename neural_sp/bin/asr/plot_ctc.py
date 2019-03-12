@@ -27,11 +27,11 @@ def main():
 
     args = parse()
 
-    # Load a config file
-    config = load_config(os.path.join(args.recog_model, 'config.yml'))
+    # Load a conf file
+    conf = load_config(os.path.join(args.recog_model, 'conf.yml'))
 
-    # Overwrite config
-    for k, v in config.items():
+    # Overwrite conf
+    for k, v in conf.items():
         setattr(args, k, v)
     decode_params = vars(args)
 
@@ -54,7 +54,7 @@ def main():
         subsample_factor *= np.prod(subsample)
 
         # Load dataset
-        dataset = Dataset(csv_path=set,
+        dataset = Dataset(tsv_path=set,
                           dict_path=os.path.join(args.recog_model, 'dict.txt'),
                           dict_path_sub1=os.path.join(args.recog_model, 'dict_sub1.txt') if os.path.isfile(
                               os.path.join(args.recog_model, 'dict_sub1.txt')) else None,

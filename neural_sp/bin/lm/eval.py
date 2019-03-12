@@ -27,11 +27,11 @@ def main():
 
     args = parse()
 
-    # Load a config file
-    config = load_config(os.path.join(args.recog_model[0], 'config.yml'))
+    # Load a conf file
+    conf = load_config(os.path.join(args.recog_model[0], 'conf.yml'))
 
-    # Overwrite config
-    for k, v in config.items():
+    # Overwrite conf
+    for k, v in conf.items():
         if 'recog' not in k:
             setattr(args, k, v)
 
@@ -40,7 +40,7 @@ def main():
         os.remove(os.path.join(args.recog_dir, 'decode.log'))
     logger = set_logger(os.path.join(args.recog_dir, 'decode.log'), key='decoding')
 
-    ppl_mean = 0
+    ppl_avg = 0
     for i, set in enumerate(args.recog_sets):
         # Load dataset
         dataset = Dataset(tsv_path=set,
@@ -68,9 +68,12 @@ def main():
             # logger.info('recog unit: %s' % args.recog_unit)
             # logger.info('ensemble: %d' % (len(ensemble_models)))
             # logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
+            logger.info('BPTT: %d' % (args.bptt))
             logger.info('cache size: %d' % (args.recog_ncaches))
             logger.info('cache theta: %d' % (args.recog_cache_theta))
             logger.info('cache lambda: %d' % (args.recog_cache_lambda))
+            rnnlm.cache_theta = args.recog_cache_theta
+            rnnlm.cache_lambda = args.recog_cache_lambda
 
             # GPU setting
             rnnlm.cuda()
@@ -78,13 +81,14 @@ def main():
         start_time = time.time()
 
         # TODO(hirofumi): ensemble
-        ppl = eval_ppl([rnnlm], dataset, batch_size=1, bptt=args.bptt, ncaches=args.recog_ncaches, progressbar=True)
-        ppl_mean += ppl
+        ppl = eval_ppl([rnnlm], dataset, batch_size=1, bptt=args.bptt,
+                       n_caches=args.recog_ncaches, progressbar=True)
+        ppl_avg += ppl
         logger.info('PPL (%s): %.3f' % (dataset.set, ppl))
 
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
-    logger.info('PPL (mean): %.3f\n' % (ppl_mean / len(args.recog_sets)))
+    logger.info('PPL (avg.): %.3f\n' % (ppl_avg / len(args.recog_sets)))
 
 
 if __name__ == '__main__':

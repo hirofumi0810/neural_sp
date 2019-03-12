@@ -33,11 +33,11 @@ def main():
 
     args = parse()
 
-    # Load a config file
-    config = load_config(os.path.join(args.recog_model[0], 'config.yml'))
+    # Load a conf file
+    conf = load_config(os.path.join(args.recog_model[0], 'conf.yml'))
 
-    # Overwrite config
-    for k, v in config.items():
+    # Overwrite conf
+    for k, v in conf.items():
         if 'recog' not in k:
             setattr(args, k, v)
     decode_params = vars(args)
@@ -47,7 +47,7 @@ def main():
         os.remove(os.path.join(args.recog_dir, 'decode.log'))
     logger = set_logger(os.path.join(args.recog_dir, 'decode.log'), key='decoding')
 
-    wer_mean, cer_mean, per_mean = 0, 0, 0
+    wer_avg, cer_avg, per_avg = 0, 0, 0
     for i, set in enumerate(args.recog_sets):
         # Load dataset
         dataset = Dataset(tsv_path=set,
@@ -78,12 +78,12 @@ def main():
 
             # For cold fusion
             # if args.rnnlm_cold_fusion:
-            #     # Load a RNNLM config file
-            #     config['rnnlm_config'] = load_config(os.path.join(args.recog_model[0], 'config_rnnlm.yml'))
+            #     # Load a RNNLM conf file
+            #     conf['rnnlm_config'] = load_config(os.path.join(args.recog_model[0], 'config_rnnlm.yml'))
             #
-            #     assert args.unit == config['rnnlm_config']['unit']
+            #     assert args.unit == conf['rnnlm_config']['unit']
             #     rnnlm_args.vocab = dataset.vocab
-            #     logger.info('RNNLM path: %s' % config['rnnlm'])
+            #     logger.info('RNNLM path: %s' % conf['rnnlm'])
             #     logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
             # else:
             #     pass
@@ -100,10 +100,10 @@ def main():
             ensemble_models = [model]
             if len(args.recog_model) > 1:
                 for recog_model_e in args.recog_model[1:]:
-                    # Load a config file
-                    config_e = load_config(os.path.join(recog_model_e, 'config.yml'))
+                    # Load a conf file
+                    config_e = load_config(os.path.join(recog_model_e, 'conf.yml'))
 
-                    # Overwrite config
+                    # Overwrite conf
                     args_e = copy.deepcopy(args)
                     for k, v in config_e.items():
                         if 'recog' not in k:
@@ -124,10 +124,10 @@ def main():
             # For shallow fusion
             if not args.rnnlm_cold_fusion:
                 if args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
-                    # Load a RNNLM config file
-                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm, 'config.yml'))
+                    # Load a RNNLM conf file
+                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm, 'conf.yml'))
 
-                    # Merge config with args
+                    # Merge conf with args
                     args_rnnlm = argparse.Namespace()
                     for k, v in config_rnnlm.items():
                         setattr(args_rnnlm, k, v)
@@ -147,14 +147,14 @@ def main():
                     if args_rnnlm.backward:
                         model.rnnlm_bwd = rnnlm
                     else:
-                        model.rnnlm_fwd = rnnlm
-                        # model.rnnlm_fwd = seq_rnnlm
+                        # model.rnnlm_fwd = rnnlm
+                        model.rnnlm_fwd = seq_rnnlm
 
                 if args.recog_rnnlm_bwd is not None and args.recog_rnnlm_weight > 0 and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
-                    # Load a RNNLM config file
-                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm_bwd, 'config.yml'))
+                    # Load a RNNLM conf file
+                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm_bwd, 'conf.yml'))
 
-                    # Merge config with args
+                    # Merge conf with args
                     args_rnnlm_bwd = argparse.Namespace()
                     for k, v in config_rnnlm.items():
                         setattr(args_rnnlm_bwd, k, v)
@@ -203,47 +203,47 @@ def main():
         start_time = time.time()
 
         if args.unit in ['word', 'word_char'] and not args.recog_unit:
-            wer, nsub, nins, ndel, noov_total = eval_word(
+            wer, n_sub, n_ins, n_del, n_oov_total = eval_word(
                 ensemble_models, dataset, decode_params,
                 epoch=epoch - 1,
                 decode_dir=args.recog_dir,
                 progressbar=True)
-            wer_mean += wer
+            wer_avg += wer
             logger.info('WER (%s): %.3f %%' % (dataset.set, wer))
-            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
-            logger.info('OOV (total): %d' % (noov_total))
+            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
+            logger.info('OOV (total): %d' % (n_oov_total))
 
         elif (args.unit == 'wp' and not args.recog_unit) or args.recog_unit == 'wp':
-            wer, nsub, nins, ndel = eval_wordpiece(
+            wer, n_sub, n_ins, n_del = eval_wordpiece(
                 ensemble_models, dataset, decode_params,
                 epoch=epoch - 1,
                 decode_dir=args.recog_dir,
                 progressbar=True)
-            wer_mean += wer
+            wer_avg += wer
             logger.info('WER (%s): %.3f %%' % (dataset.set, wer))
-            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
+            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
 
         elif ('char' in args.unit and not args.recog_unit) or 'char' in args.recog_unit:
-            (wer, nsub, nins, ndel), (cer, _, _, _) = eval_char(
+            (wer, n_sub, n_ins, n_del), (cer, _, _, _) = eval_char(
                 ensemble_models, dataset, decode_params,
                 epoch=epoch - 1,
                 decode_dir=args.recog_dir,
                 progressbar=True,
                 task_id=1 if args.recog_unit and 'char' in args.recog_unit else 0)
-            wer_mean += wer
-            cer_mean += cer
+            wer_avg += wer
+            cer_avg += cer
             logger.info('WER / CER (%s): %.3f / %.3f %%' % (dataset.set, wer, cer))
-            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
+            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
 
         elif 'phone' in args.unit:
-            per, nsub, nins, ndel = eval_phone(
+            per, n_sub, n_ins, n_del = eval_phone(
                 ensemble_models, dataset, decode_params,
                 epoch=epoch - 1,
                 decode_dir=args.recog_dir,
                 progressbar=True)
-            per_mean += per
+            per_avg += per
             logger.info('PER (%s): %.3f %%' % (dataset.set, per))
-            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (nsub, nins, ndel))
+            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
 
         else:
             raise ValueError(args.unit)
@@ -251,14 +251,14 @@ def main():
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
     if args.unit == 'word':
-        logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.recog_sets)))
+        logger.info('WER (avg.): %.3f %%\n' % (wer_avg / len(args.recog_sets)))
     if args.unit == 'wp':
-        logger.info('WER (mean): %.3f %%\n' % (wer_mean / len(args.recog_sets)))
+        logger.info('WER (avg.): %.3f %%\n' % (wer_avg / len(args.recog_sets)))
     elif 'char' in args.unit:
-        logger.info('WER / CER (mean): %.3f / %.3f %%\n' %
-                    (wer_mean / len(args.recog_sets), cer_mean / len(args.recog_sets)))
+        logger.info('WER / CER (avg.): %.3f / %.3f %%\n' %
+                    (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
     elif 'phone' in args.unit:
-        logger.info('PER (mean): %.3f %%\n' % (per_mean / len(args.recog_sets)))
+        logger.info('PER (avg.): %.3f %%\n' % (per_avg / len(args.recog_sets)))
 
 
 if __name__ == '__main__':

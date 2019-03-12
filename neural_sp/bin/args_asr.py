@@ -294,7 +294,7 @@ def parse():
     parser.add_argument('--bwd_weight_sub3', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     # cold fusion
-    parser.add_argument('--cold_fusion', type=str, default='hidden', nargs='?',
+    parser.add_argument('--cold_fusion_type', type=str, default='hidden', nargs='?',
                         choices=['hidden', 'prob'],
                         help='')
     parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',

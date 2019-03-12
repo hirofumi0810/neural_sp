@@ -118,7 +118,7 @@ sub2_weight=0.2
 mtl_per_batch=true
 task_specific_layer=true
 ### LM integration
-cold_fusion=
+cold_fusion_type=hidden
 rnnlm_cold_fusion=
 rnnlm_init=
 lmobj_weight=0.0
@@ -503,7 +503,7 @@ if [ ${stage} -le 4 ]; then
         --sub2_weight ${sub2_weight} \
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \
-        --cold_fusion ${cold_fusion} \
+        --cold_fusion_type ${cold_fusion_type} \
         --rnnlm_cold_fusion ${rnnlm_cold_fusion} \
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \

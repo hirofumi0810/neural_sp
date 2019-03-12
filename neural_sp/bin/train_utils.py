@@ -305,31 +305,21 @@ def load_config(config_path):
 
     """
     with open(config_path, "r") as f:
-        config = yaml.load(f)
+        conf = yaml.load(f)
 
-        # Load the parent config file
-        if 'parent' in config.keys():
-            with open(config['parent'], "r") as fp:
-                config_parent = yaml.load(fp)
-            params = config_parent['param']
-
-            # Override
-            for key in config['param'].keys():
-                params[key] = config['param'][key]
-        else:
-            params = config['param']
+    params = conf['param']
     return params
 
 
-def save_config(config, save_path):
+def save_config(conf, save_path):
     """Save a configuration file as a yaml file.
 
     Args:
-        config (dict):
+        conf (dict):
 
     """
-    with open(os.path.join(save_path, 'config.yml'), "w") as f:
-        f.write(yaml.dump({'param': config}, default_flow_style=False))
+    with open(os.path.join(save_path), "w") as f:
+        f.write(yaml.dump({'param': conf}, default_flow_style=False))
 
 
 def set_logger(save_path, key):
@@ -356,3 +346,9 @@ def set_logger(save_path, key):
     logger.addHandler(fh)
 
     return logger
+
+def dict2args():
+    pass
+
+def args2dict():
+    pass

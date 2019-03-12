@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import argparse
 import copy
 import cProfile
 import numpy as np
@@ -34,7 +35,6 @@ from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
-from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.utils.general import mkdir_join
 
 
@@ -45,12 +45,12 @@ torch.cuda.manual_seed_all(1)
 def main():
 
     args = parse()
-    args_pre = copy.deepcopy(args)
+    args_pt = copy.deepcopy(args)
 
-    # Load a config file
+    # Load a conf file
     if args.resume:
-        config = load_config(os.path.join(args.resume, 'config.yml'))
-        for k, v in config.items():
+        conf = load_config(os.path.join(args.resume, 'conf.yml'))
+        for k, v in conf.items():
             if k != 'resume':
                 setattr(args, k, v)
     decode_params = vars(args)
@@ -157,17 +157,17 @@ def main():
     args.vocab_sub3 = train_set.vocab_sub3
     args.input_dim = train_set.input_dim
 
-    # Load a RNNLM config file for cold fusion & RNNLM initialization
-    # if config['rnnlm_cold_fusion']:
-    #     if args.model:
-    #         config['rnnlm_config_cold_fusion'] = load_config(
-    #             os.path.join(config['rnnlm_cold_fusion'], 'config.yml'), is_eval=True)
-    #     elif args.resume:
-    #         config = load_config(os.path.join(
-    #             args.resume, 'config_rnnlm_cf.yml'))
-    #     assert args.unit == config['rnnlm_config_cold_fusion']['unit']
-    #     config['rnnlm_config_cold_fusion']['vocab'] = train_set.vocab
-    args.rnnlm_cold_fusion = False
+    # Load a RNNLM conf file for cold fusion & RNNLM initialization
+    if args.rnnlm_cold_fusion:
+        if args.model:
+            rnnlm_conf = load_config(os.path.join(args.rnnlm_cold_fusion, 'conf.yml'))
+        elif args.resume:
+            rnnlm_conf = load_config(os.path.join(args.resume, 'conf_rnnlm.yml'))
+        args.rnnlm_conf = argparse.Namespace()
+        for k, v in rnnlm_conf.items():
+            setattr(args.rnnlm_conf, k, v)
+        assert args.unit == args.rnnlm_conf.unit
+        assert args.vocab == args.rnnlm_conf.vocab
 
     if args.enc_type == 'transformer':
         args.decay_type = 'warmup'
@@ -178,7 +178,6 @@ def main():
 
     if args.resume:
         # Resume from the last checkpoint
-        # Set save path
         model.save_path = args.resume
 
         # Setting for logging
@@ -186,59 +185,35 @@ def main():
 
         # Set optimizer
         model.set_optimizer(
-            optimizer=config['optimizer'],
-            learning_rate=float(config['learning_rate']),  # on-the-fly
-            weight_decay=float(config['weight_decay']))
+            optimizer=conf['optimizer'],
+            learning_rate=float(conf['learning_rate']),  # on-the-fly
+            weight_decay=float(conf['weight_decay']))
 
         # Restore the last saved model
         epoch, step, lr, metric_dev_best = model.load_checkpoint(
             save_path=args.resume, epoch=-1, resume=True)
 
-        if epoch >= config['convert_to_sgd_epoch']:
+        if epoch >= conf['convert_to_sgd_epoch']:
             model.set_optimizer(
                 optimizer='sgd',
-                learning_rate=float(config['learning_rate']),  # on-the-fly
-                weight_decay=float(config['weight_decay']))
-
-        # if config['rnnlm_cold_fusion']:
-        #     if config['rnnlm_config_cold_fusion']['backward']:
-        #         model.rnnlm_0_bwd.flatten_parameters()
-        #     else:
-        #         model.rnnlm_0_fwd.flatten_parameters()
+                learning_rate=float(conf['learning_rate']),  # on-the-fly
+                weight_decay=float(conf['weight_decay']))
     else:
-        # Load pre-trained RNNLM
-        # if config['rnnlm_cold_fusion']:
-        #     rnnlm = RNNLM(args)
-        #     rnnlm.load_checkpoint(save_path=config['rnnlm_cold_fusion'], epoch=-1)
-        #     rnnlm.flatten_parameters()
-        #
-        #     # Fix RNNLM parameters
-        #     for param in rnnlm.parameters():
-        #         param.requires_grad = False
-        #
-        #     # Set pre-trained parameters
-        #     if config['rnnlm_config_cold_fusion']['backward']:
-        #         model.dec_0_bwd.rnnlm = rnnlm
-        #     else:
-        #         model.dec_0_fwd.rnnlm = rnnlm
-        # TODO(hirofumi): 最初にRNNLMのモデルをコピー
-
         # Set save path
         save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
         model.set_save_path(save_path)  # avoid overwriting
 
-        # Save the config file as a yaml file
-        save_config(vars(args), model.save_path)
+        # Save the conf file as a yaml file
+        save_config(vars(args), os.path.join(model.save_path, 'conf_rnnlm.yml'))
+        if args.rnnlm_cold_fusion:
+            save_config(args.rnnlm_conf, os.path.join(model.save_path, 'conf_rnnlm.yml'))
 
         # Save the dictionary & wp_model
-        shutil.copy(args.dict, os.path.join(model.save_path, 'dict.txt'))
-        if args.unit == 'wp':
-            shutil.copy(args.wp_model, os.path.join(model.save_path, 'wp.model'))
-        for sub in ['sub1', 'sub2', 'sub3']:
-            if getattr(args, 'dict_' + sub):
-                shutil.copy(getattr(args, 'dict_' + sub), os.path.join(model.save_path, 'dict_' + sub + '.txt'))
-            if getattr(args, 'unit_sub1') == 'wp':
-                shutil.copy(getattr(args, 'wp_model_' + sub), os.path.join(model.save_path, 'wp_' + sub + '.model'))
+        for sub in ['', '_sub1', '_sub2', '_sub3']:
+            if getattr(args, 'dict' + sub):
+                shutil.copy(getattr(args, 'dict' + sub), os.path.join(model.save_path, 'dict' + sub + '.txt'))
+            if getattr(args, 'unit' + sub) == 'wp':
+                shutil.copy(getattr(args, 'wp_model' + sub), os.path.join(model.save_path, 'wp' + sub + '.model'))
 
         # Setting for logging
         logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
@@ -254,24 +229,24 @@ def main():
         logger.info(model)
 
         # Initialize with pre-trained model's parameters
-        if args.pretrained_model and os.path.isdir(args.pretrained_model):
-            # Load a config file
-            config_pre = load_config(os.path.join(args.pretrained_model, 'config.yml'))
+        if os.path.isdir(args.pretrained_model):
+            # Load a conf file
+            config_pt = load_config(os.path.join(args.pretrained_model, 'conf.yml'))
 
-            # Merge config with args
-            for k, v in config_pre.items():
-                setattr(args_pre, k, v)
+            # Merge conf with args
+            for k, v in config_pt.items():
+                setattr(args_pt, k, v)
 
             # Load the ASR model
-            model_pre = Seq2seq(args_pre)
+            model_pre = Seq2seq(args_pt)
             model_pre.load_checkpoint(args.pretrained_model, epoch=-1)
 
             # Overwrite parameters
-            only_encoder = (args.enc_nlayers != args_pre.enc_nlayers) or (args.unit != args_pre.unit)
+            only_enc = (args.enc_nlayers != args_pt.enc_nlayers) or (args.unit != args_pt.unit)
             param_dict = dict(model_pre.named_parameters())
             for n, p in model.named_parameters():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
-                    if only_encoder and 'enc' not in n:
+                    if only_enc and 'enc' not in n:
                         continue
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
@@ -592,7 +567,6 @@ def make_model_name(args, subsample_factor):
         dir_name += '_' + args.attn_type
         if args.attn_sigmoid:
             dir_name += '_sig'
-
     if args.attn_nheads > 1:
         dir_name += '_head' + str(args.attn_nheads)
     if args.tie_embedding:
@@ -609,6 +583,10 @@ def make_model_name(args, subsample_factor):
         dir_name += '_fl' + str(args.focal_loss_weight)
     if args.layer_norm:
         dir_name += '_ln'
+
+    # LM integration
+    if args.rnnlm_cold_fusion:
+        dir_name += '_coldfusion'
 
     # MTL
     if args.mtl_per_batch:
@@ -643,16 +621,16 @@ def make_model_name(args, subsample_factor):
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
-                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') -
+                                            getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
 
     # Pre-training
-    if args.pretrained_model and os.path.isdir(args.pretrained_model):
-        # Load a config file
-        config_pre = load_config(os.path.join(args.pretrained_model, 'config.yml'))
-        dir_name += '_' + config_pre['unit'] + 'pt'
+    if os.path.isdir(args.pretrained_model):
+        # Load a conf file
+        config_pt = load_config(os.path.join(args.pretrained_model, 'conf.yml'))
+        dir_name += '_' + config_pt['unit'] + 'pt'
 
     return dir_name
 

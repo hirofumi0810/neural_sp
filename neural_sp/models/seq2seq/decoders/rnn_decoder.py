@@ -29,6 +29,7 @@ from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
 from neural_sp.models.model_utils import ResidualFeedForward
+from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import CTCPrefixScore
@@ -37,6 +38,7 @@ from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAtten
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import tensor2np
+
 
 random.seed(1)
 
@@ -82,7 +84,7 @@ class RNNDecoder(nn.Module):
         input_feeding (bool):
         backward (bool): decode in the backward order
         rnnlm_cold_fusion (RNNLM):
-        cold_fusion (str): the type of cold fusion
+        cold_fusion_type (str): the type of cold fusion
             prob: probability from RNNLM
             hidden: hidden states of RNNLM
         rnnlm_init (RNNLM):
@@ -131,7 +133,7 @@ class RNNDecoder(nn.Module):
                  input_feeding,
                  backward,
                  rnnlm_cold_fusion,
-                 cold_fusion,
+                 cold_fusion_type,
                  rnnlm_init,
                  lmobj_weight,
                  share_lm_softmax,
@@ -173,7 +175,7 @@ class RNNDecoder(nn.Module):
             assert loop_type == 'normal'
         self.backward = backward
         self.rnnlm_cf = rnnlm_cold_fusion
-        self.cold_fusion = cold_fusion
+        self.cold_fusion_type = cold_fusion_type
         self.rnnlm_init = rnnlm_init
         if rnnlm_init:
             assert loop_type == 'lmdecoder'
@@ -335,17 +337,17 @@ class RNNDecoder(nn.Module):
                 raise NotImplementedError(loop_type)
 
             # cold fusion
-            if rnnlm_cold_fusion:
+            if rnnlm_cold_fusion is not None:
                 if self.n_projs > 0:
                     self.cf_linear_dec_feat = LinearND(n_projs + enc_n_units, n_units)
                 else:
                     self.cf_linear_dec_feat = LinearND(n_units + enc_n_units, n_units)
-                if cold_fusion == 'hidden':
+                if cold_fusion_type == 'hidden':
                     self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.n_units, n_units)
-                elif cold_fusion == 'prob':
+                elif cold_fusion_type == 'prob':
                     self.cf_linear_lm_feat = LinearND(rnnlm_cold_fusion.vocab, n_units)
                 else:
-                    raise ValueError(cold_fusion)
+                    raise ValueError(cold_fusion_type)
                 self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
                 self.output_bn = LinearND(n_units * 2, n_units)
 
@@ -575,7 +577,7 @@ class RNNDecoder(nn.Module):
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
-        rnnlm_state = None
+        rnnlm_state = (None, None)
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
@@ -601,10 +603,11 @@ class RNNDecoder(nn.Module):
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
                 if is_sample:
-                    y_lm_emb = self.rnnlm_cf.embed(logits[-1].detach().argmax(-1))
+                    y_lm_emb = self.rnnlm_cf.embed(logits[-1].detach().argmax(-1)).squeeze(1)
                 else:
-                    y_lm_emb = ys_lm_emb[:, t:t + 1]
-                logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
+                    y_lm_emb = ys_lm_emb[:, t]
+                logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(
+                    y_lm_emb, rnnlm_state)
             else:
                 logits_lm_t, lm_out = None, None
 
@@ -632,7 +635,6 @@ class RNNDecoder(nn.Module):
                 logits.view((-1, logits.size(2))),
                 ys_out_pad.view(-1),  # long
                 ignore_index=-1, size_average=False) / bs
-        # ppl = math.exp(loss.item())
         ppl = np.exp(loss.item())
 
         # Focal loss
@@ -901,26 +903,26 @@ class RNNDecoder(nn.Module):
         dstates_new['dstate2'] = (hxs[:], cxs[:])
         return dstates_new
 
-    def generate(self, cv, dout, logits_lm_t=None, lm_out=None):
+    def generate(self, cv, dout, logits_lm_t, lm_out):
         """Generate function.
 
         Args:
             cv (FloatTensor): `[B, 1, enc_n_units]`
             dout (FloatTensor): `[B, 1, dec_units]`
-            logits_lm_t (FloatTensor): `[B, 1, vocab]`
-            lm_out (FloatTensor): `[B, 1, lm_nunits]`
+            logits_lm_t (FloatTensor): `[B, vocab]`
+            lm_out (FloatTensor): `[B, lm_nunits]`
         Returns:
             logits_t (FloatTensor): `[B, 1, vocab]`
 
         """
         if self.rnnlm_cf:
             # cold fusion
-            if self.cold_fusion == 'hidden':
-                lm_feat = self.cf_linear_lm_feat(lm_out)
-            elif self.cold_fusion == 'prob':
-                lm_feat = self.cf_linear_lm_feat(logits_lm_t)
+            if self.cold_fusion_type == 'hidden':
+                lm_feat = self.cf_linear_lm_feat(lm_out.unsqueeze(1))
+            elif self.cold_fusion_type == 'prob':
+                lm_feat = self.cf_linear_lm_feat(logits_lm_t.unsqueeze(1))
             dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
-            gate = F.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+            gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
             logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
@@ -1038,7 +1040,8 @@ class RNNDecoder(nn.Module):
 
     def beam_search(self, eouts, elens, params, rnnlm, rnnlm_rev=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False, id2token=None, refs=None,
-                    ensemble_eouts=None, ensemble_elens=None, ensemble_decoders=[], speakers=None):
+                    ensemble_eouts=None, ensemble_elens=None, ensemble_decoders=[],
+                    speakers=None):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -1052,7 +1055,7 @@ class RNNDecoder(nn.Module):
                 coverage_penalty (float): coverage penalty
                 coverage_threshold (float): threshold for coverage penalty
                 rnnlm_weight (float): weight of RNNLM score
-                ncaches (int):
+                n_caches (int):
             rnnlm (torch.nn.Module):
             rnnlm_rev (torch.nn.Module):
             ctc_log_probs (torch.FloatTensor):
@@ -1071,7 +1074,7 @@ class RNNDecoder(nn.Module):
 
         """
         bs, _, enc_n_units = eouts.size()
-        nmodels = len(ensemble_decoders) + 1
+        n_models = len(ensemble_decoders) + 1
 
         # TODO(hirofumi): fix later
         beam_width = params['recog_beam_width']
@@ -1081,10 +1084,10 @@ class RNNDecoder(nn.Module):
         cp_threshold = params['recog_coverage_threshold']
         rnnlm_weight = params['recog_rnnlm_weight']
         gnmt_decoding = params['recog_gnmt_decoding']
-        ncaches = params['recog_ncaches']
+        n_caches = params['recog_ncaches']
 
         # For cold fusion
-        if rnnlm_weight > 0 and self.cold_fusion:
+        if rnnlm_weight > 0 and self.cold_fusion_type:
             assert self.rnnlm_cf
             self.rnnlm_cf.eval()
 
@@ -1121,7 +1124,7 @@ class RNNDecoder(nn.Module):
             # Ensemble initialization
             ensemble_dstates = []
             ensemble_cv = []
-            if nmodels > 0:
+            if n_models > 0:
                 for dec in ensemble_decoders:
                     ensemble_dstates += [dec.init_dec_state(1, dec.n_layers, eouts[b:b + 1], elens[b:b + 1])]
                     if dec.input_feeding:
@@ -1151,7 +1154,7 @@ class RNNDecoder(nn.Module):
                      'cp_prev': 0,
                      'ensemble_dstates': ensemble_dstates,
                      'ensemble_cv': ensemble_cv,
-                     'ensemble_aws':[[None] for _ in range(nmodels)],
+                     'ensemble_aws':[[None] for _ in range(n_models)],
                      'ctc_state':  ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
                      'ctc_score': 0,
                      'local_cache_keys': [],
@@ -1178,7 +1181,7 @@ class RNNDecoder(nn.Module):
                                                   beam[i_beam]['dstates']['dstate'])
                     # Recurrency (1st) for the ensemble
                     ensemble_dstates = []
-                    if nmodels > 0:
+                    if n_models > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
                             y_emb = dec.embed(y)
                             if dec.loop_type in ['conditional', 'rnmt']:
@@ -1200,7 +1203,7 @@ class RNNDecoder(nn.Module):
                     # Score for the ensemble
                     ensemble_cv = []
                     ensemble_aws = []
-                    if nmodels > 0:
+                    if n_models > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
                             con_vec_e, aw_e = dec.score(
                                 ensemble_eouts[i_e][b:b + 1, :ensemble_elens[i_e][b]],
@@ -1231,7 +1234,7 @@ class RNNDecoder(nn.Module):
                         dstates = self.recurrency_step2(cv, dstates)
                     # Recurrency (2nd, only for the internal decoder) for the ensemble
                     ensemble_dstates_tmp = []
-                    if nmodels > 0:
+                    if n_models > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
                             if dec.loop_type in ['conditional', 'rnmt']:
                                 ensemble_dstates_tmp += [dec.recurrency_step2(
@@ -1254,20 +1257,20 @@ class RNNDecoder(nn.Module):
                     exist_cache = len(self.global_cache_keys + beam[i_beam]['local_cache_keys']) > 0
                     cache_probs_sum = torch.zeros_like(probs)
                     cache_probs_lm_sum = torch.zeros_like(probs)
-                    cache_theta = 1.0  # smoothing parameter
+                    cache_theta = 0.2  # smoothing parameter
                     cache_lambda = 0.2  # cache weight
-                    if ncaches > 0 and exist_cache:
+                    if n_caches > 0 and exist_cache:
                         # Compute inner-product over caches
                         cache_keys_all = self.global_cache_keys + beam[i_beam]['local_cache_keys']
                         cache_values_all = self.global_cache_values + beam[i_beam]['local_cache_values']
                         if rnnlm_weight > 0:
                             cache_values_all_lm = self.global_cache_values_lm + beam[i_beam]['local_cache_values_lm']
-                        cache_keys = cache_keys_all[-ncaches:]
-                        cache_values = torch.cat(cache_values_all[-ncaches:], dim=1)  # `[1, L, dec_n_units]`
+                        cache_keys = cache_keys_all[-n_caches:]
+                        cache_values = torch.cat(cache_values_all[-n_caches:], dim=1)  # `[1, L, dec_n_units]`
                         cache_probs = F.softmax(cache_theta * torch.matmul(
                             cache_values, dstates['dout_gen'].transpose(2, 1)), dim=1)  # `[1, L, 1]`
                         if rnnlm_weight > 0:
-                            cache_values_lm = torch.cat(cache_values_all_lm[-ncaches:], dim=1)  # `[1, L, lm_nunits]`
+                            cache_values_lm = torch.cat(cache_values_all_lm[-n_caches:], dim=1)  # `[1, L, lm_nunits]`
                             cache_probs_lm = F.softmax(cache_theta * torch.matmul(
                                 cache_values_lm, lm_out.transpose(2, 1)), dim=1)  # `[1, L, 1]`
                         else:
@@ -1290,14 +1293,14 @@ class RNNDecoder(nn.Module):
 
                     log_probs = torch.log(probs)
                     # Generate for the ensemble
-                    if nmodels > 0:
+                    if n_models > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
                             attn_v = dec.generate(ensemble_cv[i_e],
                                                   ensemble_dstates[i_e]['dout_gen'],
                                                   logits_lm_t, lm_out)
                             log_probs += F.log_softmax(dec.output(attn_v).squeeze(1), dim=1)
                         # re-normalize
-                        log_probs /= (nmodels + 1)
+                        log_probs /= (n_models + 1)
                         # TODO(hirofumi): cache
 
                     # Pick up the top-k scores
@@ -1362,10 +1365,10 @@ class RNNDecoder(nn.Module):
                         scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
 
                     for k in range(beam_width):
-                        top_id = ids_topk[0, k].item()
+                        top_idx = ids_topk[0, k].item()
 
                         # Exclude short hypotheses
-                        if top_id == eos and len(beam[i_beam]['hyp']) - 1 < elens[b] * params['recog_min_len_ratio']:
+                        if top_idx == eos and len(beam[i_beam]['hyp']) - 1 < elens[b] * params['recog_min_len_ratio']:
                             continue
 
                         score_att = scores_att[0, k].item()
@@ -1374,7 +1377,7 @@ class RNNDecoder(nn.Module):
                         score_t = score_att * (1 - ctc_weight) + score_ctc * ctc_weight + score_lm * rnnlm_weight
 
                         new_beam.append(
-                            {'hyp': beam[i_beam]['hyp'] + [top_id],
+                            {'hyp': beam[i_beam]['hyp'] + [top_idx],
                              'score': local_scores[0, k].item(),
                              #  'scores': beam[i_beam]['scores'] + [score_t],
                              'scores': beam[i_beam]['scores'] + [local_scores[0, k].item()],
@@ -1394,7 +1397,7 @@ class RNNDecoder(nn.Module):
                              'ensemble_aws': ensemble_aws,
                              'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
                              'ctc_score': ctc_scores[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
-                             'local_cache_keys': beam[i_beam]['local_cache_keys'] + [top_id],
+                             'local_cache_keys': beam[i_beam]['local_cache_keys'] + [top_idx],
                              'local_cache_values': beam[i_beam]['local_cache_values'] + [dstates['dout_gen']],
                              'local_cache_values_lm': beam[i_beam]['local_cache_values_lm'] + [lm_out],
                              'cache_keys_history': beam[i_beam]['cache_keys_history'] + [cache_keys] if exist_cache else beam[i_beam]['cache_keys_history'],
@@ -1513,28 +1516,28 @@ class RNNDecoder(nn.Module):
                                else nbest_hyps[b][n] for n in range(nbest)] for b in range(bs)]
 
         # Store in cache
-        if ncaches > 0:
+        if n_caches > 0:
             hyp_len = len(complete[0]['hyp'][1:])
             self.store_global_cache(complete[0]['local_cache_keys'],
                                     complete[0]['local_cache_values'],
                                     complete[0]['local_cache_values_lm'],
-                                    ncaches)
+                                    n_caches)
             cache_keys_history = complete[0]['cache_keys_history']
             cache_probs_history = torch.zeros(
                 (1, complete[0]['cache_probs_history'][-1].size(1), hyp_len), dtype=torch.float32)
             for i, p in enumerate(complete[0]['cache_probs_history']):
-                if p.size(1) < ncaches:
+                if p.size(1) < n_caches:
                     cache_probs_history[0, :p.size(1), i] = p[0, :, 0].cpu()
                 else:
-                    cache_probs_history[0, :ncaches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
+                    cache_probs_history[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
             if rnnlm_weight > 0:
                 cache_probs_history_lm = torch.zeros(
                     (1, complete[0]['cache_probs_history_lm'][-1].size(1), hyp_len), dtype=torch.float32)
                 for i, p in enumerate(complete[0]['cache_probs_history_lm']):
-                    if p.size(1) < ncaches:
+                    if p.size(1) < n_caches:
                         cache_probs_history_lm[0, :p.size(1), i] = p[0, :, 0].cpu()
                     else:
-                        cache_probs_history_lm[0, :ncaches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
+                        cache_probs_history_lm[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
             else:
                 cache_probs_history_lm = None
         else:
@@ -1545,16 +1548,16 @@ class RNNDecoder(nn.Module):
         # return nbest_hyps, aws, scores, scores_cp, (cache_probs_history, cache_keys_history)
         return nbest_hyps, aws, scores, scores_cp, (cache_probs_history_lm, cache_keys_history)
 
-    def store_global_cache(self, keys, values, values_lm, ncaches):
+    def store_global_cache(self, keys, values, values_lm, n_caches):
         self.global_cache_keys += keys
         self.global_cache_values += values
         self.global_cache_values_lm += values_lm
 
         # Truncate cache
-        if len(self.global_cache_keys) > ncaches:
-            self.global_cache_keys = self.global_cache_keys[:ncaches]
-            self.global_cache_values = self.global_cache_values[:ncaches]
-            self.global_cache_values_lm = self.global_cache_values_lm[:ncaches]
+        if len(self.global_cache_keys) > n_caches:
+            self.global_cache_keys = self.global_cache_keys[:n_caches]
+            self.global_cache_values = self.global_cache_values[:n_caches]
+            self.global_cache_values_lm = self.global_cache_values_lm[:n_caches]
 
     def reset_global_cache(self):
         """Reset global cache when the speaker/session is changed

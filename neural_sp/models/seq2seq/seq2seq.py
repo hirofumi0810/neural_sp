@@ -18,7 +18,6 @@ import torch
 from neural_sp.models.base import ModelBase
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
-from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.rnn_decoder import RNNDecoder
 from neural_sp.models.seq2seq.decoders.transformer_decoder import TransformerDecoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
@@ -27,6 +26,9 @@ from neural_sp.models.seq2seq.encoders.splicing import splice
 from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
+
+from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
+
 
 logger = logging.getLogger("training")
 
@@ -174,11 +176,16 @@ class Seq2seq(ModelBase):
         for dir in directions:
             # Cold fusion
             if args.rnnlm_cold_fusion and dir == 'fwd':
-                logger.info('cold fusion')
-                raise NotImplementedError()
-                # TODO(hirofumi): cold fusion for backward RNNLM
+                rnnlm = SeqRNNLM(args.rnnlm_conf)
+                rnnlm.load_checkpoint(save_path=args.rnnlm_cold_fusion, epoch=-1)
+
+                # Fix RNNLM parameters
+                for param in rnnlm.parameters():
+                    param.requires_grad = False
             else:
-                args.rnnlm_cold_fusion = False
+                args.rnnlm_conf = False
+                rnnlm = None
+            # TODO(hirofumi): cold fusion for backward RNNLM
 
             # Decoder
             if args.dec_type == 'transformer':
@@ -246,8 +253,9 @@ class Seq2seq(ModelBase):
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                     input_feeding=args.input_feeding,
                     backward=(dir == 'bwd'),
-                    rnnlm_cold_fusion=args.rnnlm_cold_fusion,
-                    cold_fusion=args.cold_fusion,
+                    # rnnlm_cold_fusion=args.rnnlm_conf,
+                    rnnlm_cold_fusion=rnnlm,
+                    cold_fusion_type=args.cold_fusion_type,
                     rnnlm_init=args.rnnlm_init,
                     lmobj_weight=args.lmobj_weight,
                     share_lm_softmax=args.share_lm_softmax,
@@ -306,7 +314,7 @@ class Seq2seq(ModelBase):
                             input_feeding=args.input_feeding,
                             backward=(dir_sub == 'bwd'),
                             # rnnlm_cold_fusion=args.rnnlm_cold_fusion,
-                            # cold_fusion=args.cold_fusion,
+                            # cold_fusion_type=args.cold_fusion_type,
                             lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
                             share_lm_softmax=args.share_lm_softmax,
                             global_weight=getattr(self, sub + '_weight'),
@@ -710,7 +718,7 @@ class Seq2seq(ModelBase):
                         # ensemble (backward)
                         ensemble_eouts_bwd = []
                         ensemble_elens_bwd = []
-                        ensemble_decoders_bwd = []
+                        ensemble_decs_bwd = []
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
                                 if self.input_type == 'speech' and self.mtl_per_batch:
@@ -719,7 +727,7 @@ class Seq2seq(ModelBase):
                                     enc_outs_e_bwd, _ = model.encode(xs, task, flip=False)
                                 ensemble_eouts_bwd += [enc_outs_e_bwd[task]['xs']]
                                 ensemble_elens_bwd += [enc_outs_e_bwd[task]['xlens']]
-                                ensemble_decoders_bwd += [model.dec_bwd]
+                                ensemble_decs_bwd += [model.dec_bwd]
                                 # NOTE: only support for the main task now
                                 # TODO(hirofumi): merge with the forward for the efficiency
 
@@ -733,7 +741,7 @@ class Seq2seq(ModelBase):
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_bwd, rnnlm_fwd, ctc_log_probs,
                             params['recog_beam_width'], False, id2token, refs,
-                            ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decoders_bwd)
+                            ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decs_bwd)
 
                         # forward-backward attention
                         best_hyps = fwd_bwd_attention(
@@ -746,7 +754,7 @@ class Seq2seq(ModelBase):
                         # ensemble
                         ensemble_eouts = []
                         ensemble_elens = []
-                        ensemble_decoders = []
+                        ensemble_decs = []
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
                                 if model.input_type == 'speech' and model.mtl_per_batch and 'bwd' in dir:
@@ -755,7 +763,7 @@ class Seq2seq(ModelBase):
                                     enc_outs_e, _ = model.encode(xs, task, flip=False)
                                 ensemble_eouts += [enc_outs_e[task]['xs']]
                                 ensemble_elens += [enc_outs_e[task]['xlens']]
-                                ensemble_decoders += [getattr(model, 'dec_' + dir)]
+                                ensemble_decs += [getattr(model, 'dec_' + dir)]
                                 # NOTE: only support for the main task now
 
                         rnnlm, rnnlm_rev = None, None
@@ -771,7 +779,7 @@ class Seq2seq(ModelBase):
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm, rnnlm_rev, ctc_log_probs,
                             nbest, exclude_eos, id2token, refs,
-                            ensemble_eouts, ensemble_elens, ensemble_decoders,
+                            ensemble_eouts, ensemble_elens, ensemble_decs,
                             speakers)
 
                         if nbest == 1:

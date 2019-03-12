@@ -29,11 +29,11 @@ def main():
 
     args = parse()
 
-    # Load a config file
-    config = load_config(os.path.join(args.recog_model[0], 'config.yml'))
+    # Load a conf file
+    conf = load_config(os.path.join(args.recog_model[0], 'conf.yml'))
 
-    # Overwrite config
-    for k, v in config.items():
+    # Overwrite conf
+    for k, v in conf.items():
         if 'recog' not in k:
             setattr(args, k, v)
 
@@ -93,24 +93,24 @@ def main():
 
         hidden = None
         counter = 0
-        ntokens = 30
+        n_tokens = 30
         while True:
             ys, is_new_epoch = dataset.next()
 
             for t in range(ys.shape[1] - 1):
-                loss, hidden = rnnlm(ys[:, t:t + 2], hidden, is_eval=True, ncaches=args.recog_ncaches)[:2]
+                loss, hidden = rnnlm(ys[:, t:t + 2], hidden, is_eval=True, n_caches=args.recog_ncaches)[:2]
 
                 if len(rnnlm.cache_attn) > 0:
-                    if counter == ntokens:
+                    if counter == n_tokens:
                         token_list_keys = id2token(rnnlm.cache_keys[:args.recog_ncaches], return_list=True)
-                        token_list_query = id2token(rnnlm.cache_keys[-ntokens:], return_list=True)
+                        token_list_query = id2token(rnnlm.cache_keys[-n_tokens:], return_list=True)
 
                         # Slide attention matrix
                         n_keys = len(token_list_keys)
                         n_queries = len(token_list_query)
                         cache_probs = np.zeros((n_keys, n_queries))  # `[n_keys, n_queries]`
                         mask = np.zeros((n_keys, n_queries))
-                        for i, aw in enumerate(rnnlm.cache_attn[-ntokens:]):
+                        for i, aw in enumerate(rnnlm.cache_attn[-n_tokens:]):
                             cache_probs[:(n_keys - n_queries + i + 1), i] = aw[0, -(n_keys - n_queries + i + 1):]
                             mask[(n_keys - n_queries + i + 1):, i] = 1
 

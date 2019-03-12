@@ -10,12 +10,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 import numpy as np
 from tqdm import tqdm
 
 
-def eval_ppl(models, dataset, batch_size=1, bptt=-1, ncaches=0, progressbar=False):
+def eval_ppl(models, dataset, batch_size=1, bptt=-1, n_caches=0, progressbar=False):
     """Evaluate a RNNLM by perprexity.
 
     Args:
@@ -23,7 +22,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1, ncaches=0, progressbar=Fals
         dataset: An instance of a `Dataset' class
         batch_size (int):
         bptt (int):
-        ncaches (int):
+        n_caches (int):
         progressbar (bool): if True, visualize the progressbar
     Returns:
         ppl (float): Perplexity
@@ -47,7 +46,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1, ncaches=0, progressbar=Fals
         bs = len(ys)
 
         for t in range(ys.shape[1] - 1):
-            loss, hidden = model(ys[:, t:t + 2], hidden, is_eval=True, ncaches=ncaches)[:2]
+            loss, hidden = model(ys[:, t:t + 2], hidden, is_eval=True, n_caches=n_caches)[:2]
             total_loss += loss.item() * bs
             ntokens += bs
 
@@ -63,6 +62,6 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1, ncaches=0, progressbar=Fals
     # Reset data counters
     dataset.reset()
 
-    ppl = math.exp(total_loss / ntokens)
+    ppl = np.exp(total_loss / ntokens)
 
     return ppl

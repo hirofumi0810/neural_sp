@@ -32,11 +32,11 @@ def main():
 
     args = parse()
 
-    # Load a config file
-    config = load_config(os.path.join(args.recog_model[0], 'config.yml'))
+    # Load a conf file
+    conf = load_config(os.path.join(args.recog_model[0], 'conf.yml'))
 
-    # Overwrite config
-    for k, v in config.items():
+    # Overwrite conf
+    for k, v in conf.items():
         if 'recog' not in k:
             setattr(args, k, v)
     decode_params = vars(args)
@@ -60,7 +60,7 @@ def main():
         subsample_factor *= np.prod(subsample)
 
         # Load dataset
-        dataset = Dataset(csv_path=set,
+        dataset = Dataset(tsv_path=set,
                           dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
                           dict_path_sub1=os.path.join(args.recog_model[0], 'dict_sub1.txt') if os.path.isfile(
                               os.path.join(args.recog_model[0], 'dict_sub1.txt')) else None,
@@ -78,8 +78,8 @@ def main():
             args.input_dim = dataset.input_dim
 
             # TODO(hirofumi): For cold fusion
-            args.recog_rnnlm = None
-            args.recog_rnnlm = None
+            args.rnnlm_cold_fusion = False
+            args.rnnlm_init = False
 
             # Load the ASR model
             model = Seq2seq(args)
@@ -90,10 +90,10 @@ def main():
             ensemble_models = [model]
             if len(args.recog_model) > 1:
                 for recog_model_e in args.recog_model[1:]:
-                    # Load a config file
-                    config_e = load_config(os.path.join(recog_model_e, 'config.yml'))
+                    # Load a conf file
+                    config_e = load_config(os.path.join(recog_model_e, 'conf.yml'))
 
-                    # Overwrite config
+                    # Overwrite conf
                     args_e = copy.deepcopy(args)
                     for k, v in config_e.items():
                         if 'recog' not in k:
@@ -114,10 +114,10 @@ def main():
             # For shallow fusion
             if not args.rnnlm_cold_fusion:
                 if args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
-                    # Load a RNNLM config file
-                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm, 'config.yml'))
+                    # Load a RNNLM conf file
+                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm, 'conf.yml'))
 
-                    # Merge config with args
+                    # Merge conf with args
                     args_rnnlm = argparse.Namespace()
                     for k, v in config_rnnlm.items():
                         setattr(args_rnnlm, k, v)
@@ -137,13 +137,14 @@ def main():
                     if args_rnnlm.backward:
                         model.rnnlm_bwd = rnnlm
                     else:
-                        model.rnnlm_fwd = rnnlm
+                        # model.rnnlm_fwd = rnnlm
+                        model.rnnlm_fwd = seq_rnnlm
 
                 if args.recog_rnnlm_bwd is not None and args.recog_rnnlm_weight > 0 and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
-                    # Load a RNNLM config file
-                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm_bwd, 'config.yml'))
+                    # Load a RNNLM conf file
+                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm_bwd, 'conf.yml'))
 
-                    # Merge config with args
+                    # Merge conf with args
                     args_rnnlm_bwd = argparse.Namespace()
                     for k, v in config_rnnlm.items():
                         setattr(args_rnnlm_bwd, k, v)
