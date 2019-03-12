@@ -47,18 +47,6 @@ def main():
     logger = set_logger(os.path.join(args.recog_dir, 'plot.log'), key='decoding')
 
     for i, set in enumerate(args.recog_sets):
-        subsample_factor = 1
-        subsample_factor_sub1 = 1
-        subsample = [int(s) for s in args.subsample.split('_')]
-        if args.conv_poolings:
-            for p in args.conv_poolings.split('_'):
-                p = int(p.split(',')[0].replace('(', ''))
-                if p > 1:
-                    subsample_factor *= p
-        if args.train_set_sub1 is not None:
-            subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub1 - 1])
-        subsample_factor *= np.prod(subsample)
-
         # Load dataset
         dataset = Dataset(tsv_path=set,
                           dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
@@ -130,8 +118,8 @@ def main():
                     seq_rnnlm.load_checkpoint(args.recog_rnnlm, epoch=-1)
 
                     # Copy parameters
-                    rnnlm = RNNLM(args_rnnlm)
-                    rnnlm.copy_from_seqrnnlm(seq_rnnlm)
+                    # rnnlm = RNNLM(args_rnnlm)
+                    # rnnlm.copy_from_seqrnnlm(seq_rnnlm)
 
                     # Register to the ASR model
                     if args_rnnlm.backward:
@@ -182,19 +170,22 @@ def main():
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
-            logger.info('cache size: %d' % (args.recog_ncaches))
+            logger.info('cache size: %d' % (args.recog_n_caches))
 
             # GPU setting
             model.cuda()
 
         save_path = mkdir_join(args.recog_dir, 'att_weights')
-        if args.recog_ncaches > 0:
+        if args.recog_n_caches > 0:
             save_path_cache = mkdir_join(args.recog_dir, 'cache')
 
         # Clean directory
         if save_path is not None and os.path.isdir(save_path):
             shutil.rmtree(save_path)
             os.mkdir(save_path)
+            if args.recog_n_caches > 0:
+                shutil.rmtree(save_path_cache)
+                os.mkdir(save_path_cache)
 
         if args.unit == 'word':
             id2token = dataset.id2word
@@ -225,23 +216,28 @@ def main():
 
             for b in range(len(batch['xs'])):
                 token_list = id2token(best_hyps[b], return_list=True)
-                token_list = [unicode(t, 'utf-8') for t in token_list]
-                speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
+                speaker = batch['speakers'][b]
 
                 plot_attention_weights(
-                    aws[b][:len(token_list)], token_list,
-                    spectrogram=batch['xs'][b][:,
-                                               :dataset.input_dim] if args.input_type == 'speech' else None,
+                    aws[b][:len(token_list)],
+                    token_list,
+                    spectrogram=batch['xs'][b][:, :dataset.input_dim] if args.input_type == 'speech' else None,
                     save_path=mkdir_join(save_path, speaker, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8))
 
-                if args.recog_ncaches > 0 and cache_keys_history is not None:
+                if args.recog_n_caches > 0 and cache_keys_history is not None:
+                    n_keys, n_queries = cache_probs_history[0].shape
+                    mask = np.ones((n_keys, n_queries))
+                    for i in range(n_queries):
+                        mask[:n_keys - i, -(i + 1)] = 0
+
                     plot_cache_weights(
                         cache_probs_history[0],
-                        [unicode(t, 'utf-8') for t in id2token(cache_keys_history[-1], return_list=True)],
+                        id2token(cache_keys_history[-1], return_list=True),
                         token_list,
                         save_path=mkdir_join(save_path_cache, speaker, batch['utt_ids'][b] + '.png'),
-                        figsize=(40, 16))
+                        figsize=(40, 16),
+                        mask=mask)
 
                 ref = ys[b]
                 if model.bwd_weight > 0.5:

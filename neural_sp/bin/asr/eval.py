@@ -140,8 +140,8 @@ def main():
                     seq_rnnlm.load_checkpoint(args.recog_rnnlm, epoch=-1)
 
                     # Copy parameters
-                    rnnlm = RNNLM(args_rnnlm)
-                    rnnlm.copy_from_seqrnnlm(seq_rnnlm)
+                    # rnnlm = RNNLM(args_rnnlm)
+                    # rnnlm.copy_from_seqrnnlm(seq_rnnlm)
 
                     # Register to the ASR model
                     if args_rnnlm.backward:
@@ -195,7 +195,7 @@ def main():
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
-            logger.info('cache size: %d' % (args.recog_ncaches))
+            logger.info('cache size: %d' % (args.recog_n_caches))
 
             # GPU setting
             model.cuda()

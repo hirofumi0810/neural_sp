@@ -36,6 +36,8 @@ bwd_attention=false
 reverse_lm_rescoring=false
 checkpoint_ensemble=1  # the number of checkpoints to use
 n_caches=0
+cache_theta=0.2
+cache_lambda=0.2
 recog_unit=
 
 . ./cmd.sh
@@ -77,7 +79,7 @@ for set in eval1 eval2 eval3; do
         recog_dir=${recog_dir}_checkpoint${checkpoint_ensemble}
     fi
     if [ ${n_caches} != 0 ]; then
-        recog_dir=${recog_dir}_cache${n_caches}
+        recog_dir=${recog_dir}_cache${n_caches}_theta${cache_theta}_lambda${cache_lambda}
     fi
     if [ ! -z ${model7} ]; then
         recog_dir=${recog_dir}_ensemble8
