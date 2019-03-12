@@ -950,7 +950,7 @@ class RNNDecoder(nn.Module):
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
-        rnnlm_state = None
+        rnnlm_state = (None, None)
 
         if self.backward:
             sos, eos = self.eos, self.sos
@@ -974,7 +974,7 @@ class RNNDecoder(nn.Module):
 
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf:
-                y_lm = self.rnnlm_cf.embed(y)
+                y_lm = self.rnnlm_cf.embed(y).squeeze(1)
                 logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm, rnnlm_state)
             else:
                 logits_lm_t, lm_out = None, None

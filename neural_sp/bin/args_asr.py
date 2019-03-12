@@ -13,7 +13,7 @@ from distutils.util import strtobool
 def parse():
     parser = argparse.ArgumentParser()
     # general
-    parser.add_argument('--ngpus', type=int, default=1,
+    parser.add_argument('--n_gpus', type=int, default=1,
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--model', type=str, default=False,
                         help='directory to save a model')
@@ -72,15 +72,15 @@ def parse():
     parser.add_argument('--input_type', type=str, default='speech',
                         choices=['speech', 'text'],
                         help='')
-    parser.add_argument('--nsplices', type=int, default=1,
+    parser.add_argument('--n_splices', type=int, default=1,
                         help='number of input frames to splice (both for left and right frames)')
-    parser.add_argument('--nstacks', type=int, default=1,
+    parser.add_argument('--n_stacks', type=int, default=1,
                         help='number of input frames to stack (frame stacking)')
-    parser.add_argument('--nskips', type=int, default=1,
+    parser.add_argument('--n_skips', type=int, default=1,
                         help='number of input frames to skip')
-    parser.add_argument('--max_nframes', type=int, default=2000,
+    parser.add_argument('--max_n_frames', type=int, default=2000,
                         help='maximum number of input frames')
-    parser.add_argument('--min_nframes', type=int, default=40,
+    parser.add_argument('--min_n_frames', type=int, default=40,
                         help='minimum number of input frames')
     parser.add_argument('--dynamic_batching', type=bool, default=True,
                         help='')
@@ -102,17 +102,17 @@ def parse():
     parser.add_argument('--enc_type', type=str, default='blstm',
                         choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn', 'transformer'],
                         help='type of the encoder')
-    parser.add_argument('--enc_nunits', type=int, default=320,
+    parser.add_argument('--enc_n_units', type=int, default=320,
                         help='number of units in each encoder RNN layer')
-    parser.add_argument('--enc_nprojs', type=int, default=0,
+    parser.add_argument('--enc_n_projs', type=int, default=0,
                         help='number of units in the projection layer after each encoder RNN layer')
-    parser.add_argument('--enc_nlayers', type=int, default=5,
+    parser.add_argument('--enc_n_layers', type=int, default=5,
                         help='number of encoder RNN layers')
-    parser.add_argument('--enc_nlayers_sub1', type=int, default=0,
+    parser.add_argument('--enc_n_layers_sub1', type=int, default=0,
                         help='number of encoder RNN layers in the 1st auxiliary task')
-    parser.add_argument('--enc_nlayers_sub2', type=int, default=0,
+    parser.add_argument('--enc_n_layers_sub2', type=int, default=0,
                         help='number of encoder RNN layers in the 2nd auxiliary task')
-    parser.add_argument('--enc_nlayers_sub3', type=int, default=0,
+    parser.add_argument('--enc_n_layers_sub3', type=int, default=0,
                         help='number of encoder RNN layers in the 3rd auxiliary task')
     parser.add_argument('--enc_residual', type=bool, default=False, nargs='?',
                         help='Residual connection between each encoder layer')
@@ -130,11 +130,11 @@ def parse():
                         help='type of attention for RNN sequence-to-sequence models')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='')
-    parser.add_argument('--attn_conv_nchannels', type=int, default=10,
+    parser.add_argument('--attn_conv_n_channels', type=int, default=10,
                         help='')
     parser.add_argument('--attn_conv_width', type=int, default=100,
                         help='')
-    parser.add_argument('--attn_nheads', type=int, default=1,
+    parser.add_argument('--attn_n_heads', type=int, default=1,
                         help='number of heads in the attention layer')
     parser.add_argument('--attn_sharpening', type=float, default=1.0,
                         help='')
@@ -145,17 +145,17 @@ def parse():
     parser.add_argument('--dec_type', type=str, default='lstm',
                         choices=['lstm', 'gru', 'transformer'],
                         help='')
-    parser.add_argument('--dec_nunits', type=int, default=320,
+    parser.add_argument('--dec_n_units', type=int, default=320,
                         help='number of units in each decoder RNN layer')
-    parser.add_argument('--dec_nprojs', type=int, default=0,
+    parser.add_argument('--dec_n_projs', type=int, default=0,
                         help='number of units in the projection layer after each decoder RNN layer')
-    parser.add_argument('--dec_nlayers', type=int, default=1,
+    parser.add_argument('--dec_n_layers', type=int, default=1,
                         help='number of decoder RNN layers')
-    parser.add_argument('--dec_nlayers_sub1', type=int, default=1,
+    parser.add_argument('--dec_n_layers_sub1', type=int, default=1,
                         help='')
-    parser.add_argument('--dec_nlayers_sub2', type=int, default=1,
+    parser.add_argument('--dec_n_layers_sub2', type=int, default=1,
                         help='')
-    parser.add_argument('--dec_nlayers_sub3', type=int, default=1,
+    parser.add_argument('--dec_n_layers_sub3', type=int, default=1,
                         help='')
     parser.add_argument('--dec_loop_type', type=str, default='normal', nargs='?',
                         choices=['normal', 'lmdecoder', 'conditional', 'rnmt'],
@@ -190,7 +190,7 @@ def parse():
                         help='')
     parser.add_argument('--eps', type=float, default=1e-6,
                         help='')
-    parser.add_argument('--nepochs', type=int, default=25,
+    parser.add_argument('--n_epochs', type=int, default=25,
                         help='number of epochs')
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
                         help='')
@@ -206,7 +206,7 @@ def parse():
                         help='')
     parser.add_argument('--decay_rate', type=float, default=0.9,
                         help='')
-    parser.add_argument('--decay_patient_epoch', type=int, default=0,
+    parser.add_argument('--decay_patient_n_epochs', type=int, default=0,
                         help='')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
                         help='')
@@ -216,9 +216,9 @@ def parse():
                         help='')
     parser.add_argument('--warmup_start_learning_rate', type=float, default=0,
                         help='')
-    parser.add_argument('--warmup_nsteps', type=int, default=4000,
+    parser.add_argument('--warmup_n_steps', type=int, default=4000,
                         help='')
-    parser.add_argument('--warmup_nepochs', type=int, default=0,
+    parser.add_argument('--warmup_n_epochs', type=int, default=0,
                         help='')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
@@ -317,14 +317,14 @@ def parse():
                         help='')
     parser.add_argument('--d_ff', type=int, default=2048,
                         help='')
-    parser.add_argument('--transformer_enc_nlayers', type=int, default=6,
+    parser.add_argument('--transformer_enc_n_layers', type=int, default=6,
                         help='')
-    parser.add_argument('--transformer_dec_nlayers', type=int, default=6,
+    parser.add_argument('--transformer_dec_n_layers', type=int, default=6,
                         help='')
     parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot_product',
                         choices=['scaled_dot_product', 'average'],
                         help='type of attention for transformer')
-    parser.add_argument('--transformer_attn_nheads', type=int, default=8,
+    parser.add_argument('--transformer_attn_n_heads', type=int, default=8,
                         help='number of heads in the self-attention layer')
     parser.add_argument('--pe_type', type=str, default='add',
                         choices=['add', 'concat', 'learned_add', 'learned_concat', False],
@@ -379,7 +379,7 @@ def parse():
                         help='rescore with another LM in the reverse direction')
     parser.add_argument('--recog_checkpoint_ensemble', type=int, default=1,
                         help='number of checkpoints to use')
-    parser.add_argument('--recog_ncaches', type=int, default=0,
+    parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,

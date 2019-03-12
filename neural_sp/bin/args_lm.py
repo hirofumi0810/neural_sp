@@ -13,7 +13,7 @@ from distutils.util import strtobool
 def parse():
     parser = argparse.ArgumentParser()
     # general
-    parser.add_argument('--ngpus', type=int, default=1,
+    parser.add_argument('--n_gpus', type=int, default=1,
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--model', type=str, default=False,
                         help='directory to save a model')
@@ -42,11 +42,11 @@ def parse():
     parser.add_argument('--rnn_type', type=str, default='lstm',
                         choices=['lstm', 'gru'],
                         help='')
-    parser.add_argument('--nunits', type=int, default=320,
+    parser.add_argument('--n_units', type=int, default=320,
                         help='')
-    parser.add_argument('--nprojs', type=int, default=0,
+    parser.add_argument('--n_projs', type=int, default=0,
                         help='')
-    parser.add_argument('--nlayers', type=int, default=5,
+    parser.add_argument('--n_layers', type=int, default=5,
                         help='')
     parser.add_argument('--emb_dim', type=int, default=5,
                         help='')
@@ -68,7 +68,7 @@ def parse():
                         help='')
     parser.add_argument('--eps', type=float, default=1e-6,
                         help='')
-    parser.add_argument('--nepochs', type=int, default=50,
+    parser.add_argument('--n_epochs', type=int, default=50,
                         help='number of epochs')
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
                         help='')
@@ -93,7 +93,9 @@ def parse():
     parser.add_argument('--param_init', type=float, default=0.1,
                         help='')
     parser.add_argument('--param_init_dist', type=str, default='uniform',
-                        choices=['uniform', 'he', 'glorot', 'lecun'],
+                        choices=['uniform', 'he', 'glorot', 'lecun',
+                                 'xavier_uniform', 'xavier_normal',
+                                 'kaiming_uniform', 'kaiming_normal'],
                         help='')
     parser.add_argument('--rec_weight_orthogonal', type=bool, default=False,
                         help='')
@@ -126,7 +128,7 @@ def parse():
     parser.add_argument('--recog_batch_size', type=int, default=1,
                         help='size of mini-batch in evaluation')
     # cache
-    parser.add_argument('--recog_ncaches', type=int, default=0,
+    parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
     parser.add_argument('--recog_cache_theta', type=float, default=0.2,
                         help='theta paramter for cache')

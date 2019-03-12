@@ -65,14 +65,14 @@ def main():
             # logger.info('recog unit: %s' % args.recog_unit)
             # logger.info('ensemble: %d' % (len(ensemble_models)))
             # logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
-            logger.info('cache size: %d' % (args.recog_ncaches))
+            logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache theta: %d' % (args.recog_cache_theta))
             logger.info('cache lambda: %d' % (args.recog_cache_lambda))
 
             # GPU setting
             rnnlm.cuda()
 
-        assert args.recog_ncaches > 0
+        assert args.recog_n_caches > 0
         save_path = mkdir_join(args.recog_dir, 'cache_dist')
 
         # Clean directory
@@ -98,11 +98,11 @@ def main():
             ys, is_new_epoch = dataset.next()
 
             for t in range(ys.shape[1] - 1):
-                loss, hidden = rnnlm(ys[:, t:t + 2], hidden, is_eval=True, n_caches=args.recog_ncaches)[:2]
+                loss, hidden = rnnlm(ys[:, t:t + 2], hidden, is_eval=True, n_caches=args.recog_n_caches)[:2]
 
                 if len(rnnlm.cache_attn) > 0:
                     if counter == n_tokens:
-                        token_list_keys = id2token(rnnlm.cache_keys[:args.recog_ncaches], return_list=True)
+                        token_list_keys = id2token(rnnlm.cache_keys[:args.recog_n_caches], return_list=True)
                         token_list_query = id2token(rnnlm.cache_keys[-n_tokens:], return_list=True)
 
                         # Slide attention matrix

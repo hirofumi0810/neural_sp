@@ -69,7 +69,7 @@ def main():
             # logger.info('ensemble: %d' % (len(ensemble_models)))
             # logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
             logger.info('BPTT: %d' % (args.bptt))
-            logger.info('cache size: %d' % (args.recog_ncaches))
+            logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache theta: %d' % (args.recog_cache_theta))
             logger.info('cache lambda: %d' % (args.recog_cache_lambda))
             rnnlm.cache_theta = args.recog_cache_theta
@@ -82,7 +82,7 @@ def main():
 
         # TODO(hirofumi): ensemble
         ppl = eval_ppl([rnnlm], dataset, batch_size=1, bptt=args.bptt,
-                       n_caches=args.recog_ncaches, progressbar=True)
+                       n_caches=args.recog_n_caches, progressbar=True)
         ppl_avg += ppl
         logger.info('PPL (%s): %.3f' % (dataset.set, ppl))
 

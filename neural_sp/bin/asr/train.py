@@ -177,7 +177,7 @@ def main():
     dir_name = make_model_name(args, subsample_factor)
 
     if args.resume:
-        # Resume from the last checkpoint
+        # Set save path
         model.save_path = args.resume
 
         # Setting for logging
@@ -204,7 +204,7 @@ def main():
         model.set_save_path(save_path)  # avoid overwriting
 
         # Save the conf file as a yaml file
-        save_config(vars(args), os.path.join(model.save_path, 'conf_rnnlm.yml'))
+        save_config(vars(args), os.path.join(model.save_path, 'conf.yml'))
         if args.rnnlm_cold_fusion:
             save_config(args.rnnlm_conf, os.path.join(model.save_path, 'conf_rnnlm.yml'))
 
