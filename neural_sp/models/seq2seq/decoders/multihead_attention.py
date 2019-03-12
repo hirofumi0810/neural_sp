@@ -14,13 +14,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from neural_sp.models.model_utils import LinearND
+
 
 class MultiheadAttentionMechanism(nn.Module):
     """Multi-headed attention layer.
 
     Args:
-        enc_nunits (int): the number of units in each layer of the encoder
-        dec_nunits (int): the number of units in each layer of the decoder
+        enc_n_units (int): the number of units in each layer of the encoder
+        dec_n_units (int): the number of units in each layer of the decoder
         attn_type (str): the type of attention mechanisms
         attn_dim: (int) the dimension of the attention layer
         sharpening_factor (float): a sharpening factor in the softmax layer
@@ -32,13 +34,13 @@ class MultiheadAttentionMechanism(nn.Module):
         conv_kernel_size (int): the size of kernel.
             This must be the odd number.
         dropout (float):
-        nheads (int): the number of heads in the multi-head attention
+        n_heads (int): the number of heads in the multi-head attention
 
     """
 
     def __init__(self,
-                 enc_nunits,
-                 dec_nunits,
+                 enc_n_units,
+                 dec_n_units,
                  attn_type,
                  attn_dim,
                  sharpening_factor=1,
@@ -46,7 +48,7 @@ class MultiheadAttentionMechanism(nn.Module):
                  conv_out_channels=10,
                  conv_kernel_size=100,
                  dropout=0,
-                 nheads=4):
+                 n_heads=4):
 
         super(MultiheadAttentionMechanism, self).__init__()
 
@@ -54,98 +56,98 @@ class MultiheadAttentionMechanism(nn.Module):
         self.attn_dim = attn_dim
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
-        self.nheads = nheads
+        self.n_heads = n_heads
         self.enc_out_a = None
         self.mask = None
 
         # attention dropout applied AFTER the softmax layer
         if dropout > 0:
-            self.dropout = nn.ModuleList([nn.Dropout(p=dropout)] * nheads)
+            self.dropout = nn.ModuleList([nn.Dropout(p=dropout)] * n_heads)
         else:
             self.dropout = None
 
         if attn_type == 'add':
-            self.w_enc = nn.ModuleList([nn.Linear(enc_nunits, attn_dim)] * nheads)
-            self.w_dec = nn.ModuleList([nn.Linear(dec_nunits, attn_dim, bias=False)] * nheads)
-            self.v = nn.ModuleList([nn.Linear(attn_dim, 1, bias=False)] * nheads)
+            self.w_enc = nn.ModuleList([LinearND(enc_n_units, attn_dim)] * n_heads)
+            self.w_dec = nn.ModuleList([LinearND(dec_n_units, attn_dim, bias=False)] * n_heads)
+            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * n_heads)
 
         elif attn_type == 'location':
-            self.w_enc = nn.ModuleList([nn.Linear(enc_nunits, attn_dim)] * nheads)
-            self.w_dec = nn.ModuleList([nn.Linear(dec_nunits, attn_dim, bias=False)] * nheads)
-            self.w_conv = nn.ModuleList([nn.Linear(conv_out_channels, attn_dim, bias=False)] * nheads)
+            self.w_enc = nn.ModuleList([LinearND(enc_n_units, attn_dim)] * n_heads)
+            self.w_dec = nn.ModuleList([LinearND(dec_n_units, attn_dim, bias=False)] * n_heads)
+            self.w_conv = nn.ModuleList([LinearND(conv_out_channels, attn_dim, bias=False)] * n_heads)
             # self.conv = nn.ModuleList([nn.Conv1d(in_channels=1,
             #                                       out_channels=conv_out_channels,
             #                                       kernel_size=conv_kernel_size * 2 + 1,
             #                                       stride=1,
             #                                       padding=conv_kernel_size,
-            #                                       bias=False) for _ in range(nheads)] * nheads)
+            #                                       bias=False) for _ in range(n_heads)] * n_heads)
             self.conv = nn.ModuleList([nn.Conv2d(in_channels=1,
                                                  out_channels=conv_out_channels,
                                                  kernel_size=(1, conv_kernel_size * 2 + 1),
                                                  stride=1,
                                                  padding=(0, conv_kernel_size),
-                                                 bias=False) for _ in range(nheads)] * nheads)
-            self.v = nn.ModuleList([nn.Linear(attn_dim, 1, bias=False)] * nheads)
+                                                 bias=False) for _ in range(n_heads)] * n_heads)
+            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * n_heads)
 
         elif attn_type == 'dot':
-            self.w_enc = nn.ModuleList([nn.Linear(enc_nunits, attn_dim, bias=False)] * nheads)
-            self.w_dec = nn.ModuleList([nn.Linear(dec_nunits, attn_dim, bias=False)] * nheads)
+            self.w_enc = nn.ModuleList([LinearND(enc_n_units, attn_dim, bias=False)] * n_heads)
+            self.w_dec = nn.ModuleList([LinearND(dec_n_units, attn_dim, bias=False)] * n_heads)
 
         elif attn_type == 'luong_dot':
             pass
             # NOTE: no additional parameters
 
         elif attn_type == 'luong_general':
-            self.w_enc = nn.ModuleList([nn.Linear(enc_nunits, dec_nunits, bias=False)] * nheads)
+            self.w_enc = nn.ModuleList([LinearND(enc_n_units, dec_n_units, bias=False)] * n_heads)
 
         elif attn_type == 'luong_concat':
-            self.w = nn.ModuleList([nn.Linear(enc_nunits + dec_nunits, attn_dim, bias=False)] * nheads)
-            self.v = nn.ModuleList([nn.Linear(attn_dim, 1, bias=False)] * nheads)
+            self.w = nn.ModuleList([LinearND(enc_n_units + dec_n_units, attn_dim, bias=False)] * n_heads)
+            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * n_heads)
 
         else:
             raise ValueError(attn_type)
 
-        self.w_out = nn.Linear(enc_nunits * nheads, enc_nunits)
+        self.w_out = LinearND(enc_n_units * n_heads, enc_n_units)
 
     def reset(self):
         self.enc_out_a = None
         self.mask = None
 
-    def forward(self, enc_out, x_lens, dec_out, aw_step):
+    def forward(self, enc_out, xlens, dec_out, aw_step):
         """Forward computation.
 
         Args:
             enc_out (FloatTensor): `[B, T, enc_units]`
-            x_lens (list): A list of length `[B]`
+            xlens (list): A list of length `[B]`
             dec_out (FloatTensor): `[B, 1, dec_units]`
-            aw_step (FloatTensor): `[B, T, nheads]`
+            aw_step (FloatTensor): `[B, T, n_heads]`
         Returns:
             context (FloatTensor): `[B, 1, enc_units]`
-            aw_step (FloatTensor): `[nheads, B, T]`
+            aw_step (FloatTensor): `[n_heads, B, T]`
 
         """
         bs, enc_time = enc_out.size()[:2]
 
         if aw_step is None:
-            aw_step = enc_out.new_ones(self.nheads, bs, enc_time)
+            aw_step = enc_out.new_ones(self.n_heads, bs, enc_time)
 
         # Pre-computation of encoder-side features for computing scores
         if self.enc_out_a is None:
             if self.attn_type in ['add', 'location', 'dot', 'luong_general']:
-                self.enc_out_a = [self.w_enc[h](enc_out) for h in range(self.nheads)]
+                self.enc_out_a = [self.w_enc[h](enc_out) for h in range(self.n_heads)]
 
         # Mask attention distribution
         if self.mask is None:
             self.mask = enc_out.new_ones(bs, enc_time)
             for b in range(bs):
-                if x_lens[b] < enc_time:
-                    self.mask[b, x_lens[b]:] = 0
+                if xlens[b] < enc_time:
+                    self.mask[b, xlens[b]:] = 0
             # TODO(hirofumi): prepare mask per attention
 
         # Compute per head
         contexts = []
         aw_steps = []
-        for h in range(self.nheads):
+        for h in range(self.n_heads):
             if self.attn_type == 'add':
                 dec_out_h = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))
                 energy_h = self.v[h](F.tanh(self.enc_out_a[h] + self.w_dec[h](dec_out_h))).squeeze(2)
@@ -157,18 +159,18 @@ class MultiheadAttentionMechanism(nn.Module):
                 # For 2D conv
                 conv_feat_h = self.conv[h](aw_step[h].view(bs, 1, 1, enc_time)
                                            ).squeeze(2)  # `[B, conv_out_channels, T]`
-                conv_feat_h = conv_feat_h.transpose(1, 2).contiguous()  # `[B, T, conv_out_channels]`
+                conv_feat_h = conv_feat_h.transpose(2, 1).contiguous()  # `[B, T, conv_out_channels]`
                 energy_h = self.v[h](F.tanh(self.enc_out_a[h] + self.w_dec[h]
                                             (dec_out_h) + self.w_conv[h](conv_feat_h))).squeeze(2)
 
             elif self.attn_type == 'dot':
-                energy_h = torch.matmul(self.enc_out_a[h], self.w_dec[h](dec_out).transpose(-2, -1)).squeeze(2)
+                energy_h = torch.matmul(self.enc_out_a[h], self.w_dec[h](dec_out).transpose(-1, -2)).squeeze(2)
 
             elif self.attn_type == 'luong_dot':
-                energy_h = torch.matmul(enc_out, dec_out.transpose(-2, -1)).squeeze(2)
+                energy_h = torch.matmul(enc_out, dec_out.transpose(-1, -2)).squeeze(2)
 
             elif self.attn_type == 'luong_general':
-                energy_h = torch.matmul(self.enc_out_a[h], dec_out.transpose(-2, -1)).squeeze(2)
+                energy_h = torch.matmul(self.enc_out_a[h], dec_out.transpose(-1, -2)).squeeze(2)
 
             elif self.attn_type == 'luong_concat':
                 dec_out_h = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))
@@ -193,27 +195,27 @@ class MultiheadAttentionMechanism(nn.Module):
 
 
 class TransformerMultiheadAttentionMechanism(nn.Module):
-    def __init__(self, nheads, d_model, dropout):
+    def __init__(self, n_heads, d_model, dropout):
         """Multi-headed attention layer impelemented in Transformer.
 
         Args:
-            nheads (int):
+            n_heads (int):
             d_model (int):
             dropout (float):
 
         """
         super(TransformerMultiheadAttentionMechanism, self).__init__()
 
-        assert d_model % nheads == 0
+        assert d_model % n_heads == 0
         # We assume d_v always equals d_k
         self.d_model = d_model
-        self.d_k = d_model // nheads
-        self.nheads = nheads
+        self.d_k = d_model // n_heads
+        self.n_heads = n_heads
 
-        self.w_key = nn.Linear(d_model, d_model, bias=False)
-        self.w_value = nn.Linear(d_model, d_model, bias=False)
-        self.w_query = nn.Linear(d_model, d_model, bias=False)
-        self.w_out = nn.Linear(d_model, d_model, bias=False)
+        self.w_key = LinearND(d_model, d_model, bias=False)
+        self.w_value = LinearND(d_model, d_model, bias=False)
+        self.w_query = LinearND(d_model, d_model, bias=False)
+        self.w_out = LinearND(d_model, d_model, bias=False)
         self.dropout = nn.Dropout(p=dropout)  # for probabilities
 
     def reset(self):
@@ -231,18 +233,18 @@ class TransformerMultiheadAttentionMechanism(nn.Module):
                 1: otherwise
         Returns:
             context (FloatTensor): `[B, query_time, key_time]`
-            aw (FloatTensor): `[B, nheads, query_time, key_time]`
+            aw (FloatTensor): `[B, n_heads, query_time, key_time]`
 
         """
         bs = query.size(0)
 
         # 1) Do all the linear projections in batch from d_model => head x d_k
-        key = self.w_key(key).view(bs, -1, self.nheads, self.d_k).transpose(1, 2)
-        value = self.w_value(value).view(bs, -1, self.nheads, self.d_k).transpose(1, 2)
-        query = self.w_query(query).view(bs, -1, self.nheads, self.d_k).transpose(1, 2)
+        key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1)
+        value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1)
+        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1)
 
         # 2) Apply attention on all the projected vectors in batch.
-        energy = torch.matmul(query, key.transpose(2, 3)) * (self.d_k ** -0.5)
+        energy = torch.matmul(query, key.transpose(3, 2)) * (self.d_k ** -0.5)
         if mask is not None:
             mask = mask.unsqueeze(1)  # Same mask applied to all heads.
             # energy = energy.masked_fill(mask == 0, -float('inf'))  # this is buggy
@@ -252,7 +254,7 @@ class TransformerMultiheadAttentionMechanism(nn.Module):
         context = torch.matmul(aw, value)
 
         # 3) "Concat" using a view and apply a final linear.
-        context = context.transpose(1, 2).contiguous().view(bs, -1, self.nheads * self.d_k)
+        context = context.transpose(2, 1).contiguous().view(bs, -1, self.n_heads * self.d_k)
         context = self.w_out(context)
 
         return context, aw

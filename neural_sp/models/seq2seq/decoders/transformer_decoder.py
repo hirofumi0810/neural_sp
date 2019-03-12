@@ -54,7 +54,7 @@ class TransformerDecoder(nn.Module):
         enc_nunits (int):
         attn_type (str):
         attn_nheads (int): number of attention heads
-        nlayers (int): number of encoder layers.
+        n_layers (int): number of encoder layers.
         d_model (int): size of the model
         d_ff (int): size of the inner FF layer
         pe_type (str): concat or add or learn or False
@@ -81,7 +81,7 @@ class TransformerDecoder(nn.Module):
                  enc_nunits,
                  attn_type,
                  attn_nheads,
-                 nlayers,
+                 n_layers,
                  d_model,
                  d_ff,
                  pe_type,
@@ -106,7 +106,7 @@ class TransformerDecoder(nn.Module):
         self.blank = blank
         self.enc_nunits = enc_nunits
         self.d_model = d_model
-        self.nlayers = nlayers
+        self.n_layers = n_layers
         self.pe_type = pe_type
         self.lsm_prob = lsm_prob
         self.ctc_weight = ctc_weight
@@ -134,7 +134,7 @@ class TransformerDecoder(nn.Module):
             self.layers = nn.ModuleList(
                 [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_nheads,
                                          dropout, dropout_att, layer_norm_eps)
-                 for _ in range(nlayers)])
+                 for _ in range(n_layers)])
 
             self.embed = Embedding(vocab, d_model,
                                    dropout=0,  # NOTE: do not apply dropout here
@@ -223,7 +223,7 @@ class TransformerDecoder(nn.Module):
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
-        loss = self.warpctc_loss(logits.transpose(0, 1).cpu(),  # time-major
+        loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
                                  ys_ctc, elens_ctc, ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
@@ -286,7 +286,7 @@ class TransformerDecoder(nn.Module):
         history_mask = history_mask.unsqueeze(0).expand(bs, -1, -1) == 0
         yy_mask = yy_mask & history_mask
 
-        for l in range(self.nlayers):
+        for l in range(self.n_layers):
             ys_emb, yy_aw, xy_aw = self.layers[l](eouts, ys_emb, yx_mask, yy_mask)
 
         ys_emb = self.layer_norm_top(ys_emb)
@@ -307,8 +307,8 @@ class TransformerDecoder(nn.Module):
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits.view(ys_out_pad.size(0), ys_out_pad.size(1), logits.size(-1)).argmax(2)
         mask = ys_out_pad != -1
-        numerator = torch.sum(pad_pred.masked_select(mask) == ys_out_pad.masked_select(mask))
-        denominator = torch.sum(mask)
+        numerator = (pad_pred.masked_select(mask) == ys_out_pad.masked_select(mask)).sum()
+        denominator = mask.sum()
         acc = float(numerator) * 100 / float(denominator)
 
         return loss, acc, ppl
@@ -355,14 +355,14 @@ class TransformerDecoder(nn.Module):
             if self.pe_type:
                 out = self.pos_emb_out(out)
 
-            for l in range(self.nlayers):
+            for l in range(self.n_layers):
                 out, yy_aw, xy_aw = self.layers[l](eouts, out, yx_mask, yy_mask)
                 # xy_aw: `[B, head, T, L]`
             out = self.layer_norm_top(out)
             logits_t = self.output(out)
 
             # Pick up 1-best
-            y = torch.argmax(logits_t.detach(), dim=2).cuda(self.device_id)[:, -1:]
+            y = logits_t.detach().argmax(-1)[:, -1:]
             best_hyps_tmp += [y]
 
             # Count lengths of hypotheses

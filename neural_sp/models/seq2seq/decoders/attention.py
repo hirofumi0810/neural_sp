@@ -21,8 +21,8 @@ class AttentionMechanism(nn.Module):
     """Single-head attention layer.
 
     Args:
-        enc_nunits (int): the number of units in each layer of the encoder
-        dec_nunits (int): the number of units in each layer of the decoder
+        enc_n_units (int): the number of units in each layer of the encoder
+        dec_n_units (int): the number of units in each layer of the decoder
         attn_type (str): the type of attention mechanisms
         attn_dim: (int) the dimension of the attention layer
         sharpening_factor (float): a sharpening factor in the softmax layer
@@ -38,8 +38,8 @@ class AttentionMechanism(nn.Module):
     """
 
     def __init__(self,
-                 enc_nunits,
-                 dec_nunits,
+                 enc_n_units,
+                 dec_n_units,
                  attn_type,
                  attn_dim,
                  sharpening_factor=1,
@@ -62,13 +62,13 @@ class AttentionMechanism(nn.Module):
         self.attn_dropout = nn.Dropout(p=dropout)
 
         if attn_type == 'add':
-            self.w_enc = LinearND(enc_nunits, attn_dim)
-            self.w_dec = LinearND(dec_nunits, attn_dim, bias=False)
+            self.w_enc = LinearND(enc_n_units, attn_dim)
+            self.w_dec = LinearND(dec_n_units, attn_dim, bias=False)
             self.v = LinearND(attn_dim, 1, bias=False)
 
         elif attn_type == 'location':
-            self.w_enc = LinearND(enc_nunits, attn_dim)
-            self.w_dec = LinearND(dec_nunits, attn_dim, bias=False)
+            self.w_enc = LinearND(enc_n_units, attn_dim)
+            self.w_dec = LinearND(dec_n_units, attn_dim, bias=False)
             self.w_conv = LinearND(conv_out_channels, attn_dim, bias=False)
             # self.conv = nn.Conv1d(in_channels=1,
             #                       out_channels=conv_out_channels,
@@ -85,18 +85,18 @@ class AttentionMechanism(nn.Module):
             self.v = LinearND(attn_dim, 1, bias=False)
 
         elif attn_type == 'dot':
-            self.w_enc = LinearND(enc_nunits, attn_dim, bias=False)
-            self.w_dec = LinearND(dec_nunits, attn_dim, bias=False)
+            self.w_enc = LinearND(enc_n_units, attn_dim, bias=False)
+            self.w_dec = LinearND(dec_n_units, attn_dim, bias=False)
 
         elif attn_type == 'luong_dot':
             pass
             # NOTE: no additional parameters
 
         elif attn_type == 'luong_general':
-            self.w_enc = LinearND(enc_nunits, dec_nunits, bias=False)
+            self.w_enc = LinearND(enc_n_units, dec_n_units, bias=False)
 
         elif attn_type == 'luong_concat':
-            self.w = LinearND(enc_nunits + dec_nunits, attn_dim, bias=False)
+            self.w = LinearND(enc_n_units + dec_n_units, attn_dim, bias=False)
             self.v = LinearND(attn_dim, 1, bias=False)
 
         else:
@@ -106,12 +106,12 @@ class AttentionMechanism(nn.Module):
         self.enc_out_a = None
         self.mask = None
 
-    def forward(self, enc_out, x_lens, dec_out, aw_step):
+    def forward(self, enc_out, xlens, dec_out, aw_step):
         """Forward computation.
 
         Args:
             enc_out (FloatTensor): `[B, T, enc_units]`
-            x_lens (list): A list of length `[B]`
+            xlens (list): A list of length `[B]`
             dec_out (FloatTensor): `[B, 1, dec_units]`
             aw_step (FloatTensor): `[B, T]`
         Returns:
@@ -133,8 +133,8 @@ class AttentionMechanism(nn.Module):
         if self.mask is None:
             self.mask = enc_out.new_ones(bs, enc_time)
             for b in range(bs):
-                if x_lens[b] < enc_time:
-                    self.mask[b, x_lens[b]:] = 0
+                if xlens[b] < enc_time:
+                    self.mask[b, xlens[b]:] = 0
 
         if self.attn_type == 'add':
             dec_out = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))
@@ -146,17 +146,17 @@ class AttentionMechanism(nn.Module):
             # conv_feat = self.conv(aw_step[:, :].contiguous().unsqueeze(1))
             # For 2D conv
             conv_feat = self.conv(aw_step.view(bs, 1, 1, enc_time)).squeeze(2)  # `[B, conv_out_channels, T]`
-            conv_feat = conv_feat.transpose(1, 2).contiguous()  # `[B, T, conv_out_channels]`
+            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, T, conv_out_channels]`
             energy = self.v(F.tanh(self.enc_out_a + self.w_dec(dec_out) + self.w_conv(conv_feat))).squeeze(2)
 
         elif self.attn_type == 'dot':
-            energy = torch.matmul(self.enc_out_a, self.w_dec(dec_out).transpose(-2, -1)).squeeze(2)
+            energy = torch.matmul(self.enc_out_a, self.w_dec(dec_out).transpose(-1, -2)).squeeze(2)
 
         elif self.attn_type == 'luong_dot':
-            energy = torch.matmul(enc_out, dec_out.transpose(-2, -1)).squeeze(2)
+            energy = torch.matmul(enc_out, dec_out.transpose(-1, -2)).squeeze(2)
 
         elif self.attn_type == 'luong_general':
-            energy = torch.matmul(self.enc_out_a, dec_out.transpose(-2, -1)).squeeze(2)
+            energy = torch.matmul(self.enc_out_a, dec_out.transpose(-1, -2)).squeeze(2)
 
         elif self.attn_type == 'luong_concat':
             dec_out = dec_out.expand_as(torch.zeros((bs, enc_time, dec_out.size(2))))

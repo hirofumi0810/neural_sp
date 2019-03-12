@@ -12,7 +12,6 @@ from __future__ import print_function
 
 import copy
 import logging
-import math
 import numpy as np
 import torch
 
@@ -42,17 +41,17 @@ class Seq2seq(ModelBase):
         # for encoder
         self.input_type = args.input_type
         self.input_dim = args.input_dim
-        self.nstacks = args.nstacks
-        self.nskips = args.nskips
-        self.nsplices = args.nsplices
+        self.n_stacks = args.nstacks
+        self.n_skips = args.nskips
+        self.n_splices = args.nsplices
         self.enc_type = args.enc_type
-        self.enc_nunits = args.enc_nunits
+        self.enc_n_units = args.enc_nunits
         if args.enc_type in ['blstm', 'bgru']:
-            self.enc_nunits *= 2
+            self.enc_n_units *= 2
         self.bridge_layer = args.bridge_layer
 
         # for attention layer
-        self.attn_nheads = args.attn_nheads
+        self.attn_n_heads = args.attn_nheads
 
         # for decoder
         self.vocab = args.vocab
@@ -99,8 +98,8 @@ class Seq2seq(ModelBase):
             self.enc = TransformerEncoder(
                 input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
                 attn_type=args.transformer_attn_type,
-                attn_nheads=args.transformer_attn_nheads,
-                nlayers=args.transformer_enc_nlayers,
+                attn_n_heads=args.transformer_attn_nheads,
+                n_layers=args.transformer_enc_nlayers,
                 d_model=args.d_model,
                 d_ff=args.d_ff,
                 # pe_type=args.pe_type,
@@ -109,8 +108,8 @@ class Seq2seq(ModelBase):
                 dropout=args.dropout_enc,
                 dropout_att=args.dropout_att,
                 layer_norm_eps=args.layer_norm_eps,
-                nstacks=args.nstacks,
-                nsplices=args.nsplices,
+                n_stacks=args.nstacks,
+                n_splices=args.nsplices,
                 conv_in_channel=args.conv_in_channel,
                 conv_channels=args.conv_channels,
                 conv_kernel_sizes=args.conv_kernel_sizes,
@@ -122,18 +121,18 @@ class Seq2seq(ModelBase):
             self.enc = RNNEncoder(
                 input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
                 rnn_type=args.enc_type,
-                nunits=args.enc_nunits,
-                nprojs=args.enc_nprojs,
-                nlayers=args.enc_nlayers,
-                nlayers_sub1=args.enc_nlayers_sub1,
-                nlayers_sub2=args.enc_nlayers_sub2,
-                nlayers_sub3=args.enc_nlayers_sub3,
+                n_units=args.enc_nunits,
+                n_projs=args.enc_nprojs,
+                n_layers=args.enc_nlayers,
+                n_layers_sub1=args.enc_nlayers_sub1,
+                n_layers_sub2=args.enc_nlayers_sub2,
+                n_layers_sub3=args.enc_nlayers_sub3,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
                 subsample=[int(s) for s in args.subsample.split('_')],
                 subsample_type=args.subsample_type,
-                nstacks=args.nstacks,
-                nsplices=args.nsplices,
+                n_stacks=args.nstacks,
+                n_splices=args.nsplices,
                 conv_in_channel=args.conv_in_channel,
                 conv_channels=args.conv_channels,
                 conv_kernel_sizes=args.conv_kernel_sizes,
@@ -164,7 +163,7 @@ class Seq2seq(ModelBase):
             if self.sub3_weight > 0:
                 self.bridge_sub3 = LinearND(self.enc.output_dim, args.dec_nunits,
                                             dropout=args.dropout_enc)
-            self.enc_nunits = args.dec_nunits
+            self.enc_n_units = args.dec_nunits
 
         # main task
         directions = []
@@ -188,10 +187,10 @@ class Seq2seq(ModelBase):
                     eos=self.eos,
                     pad=self.pad,
                     blank=self.blank,
-                    enc_nunits=args.d_model,
+                    enc_n_units=args.d_model,
                     attn_type=args.transformer_attn_type,
-                    attn_nheads=args.transformer_attn_nheads,
-                    nlayers=args.transformer_dec_nlayers,
+                    attn_n_heads=args.transformer_attn_nheads,
+                    n_layers=args.transformer_dec_nlayers,
                     d_model=args.d_model,
                     d_ff=args.d_ff,
                     pe_type=args.pe_type,
@@ -214,18 +213,18 @@ class Seq2seq(ModelBase):
                     eos=self.eos,
                     pad=self.pad,
                     blank=self.blank,
-                    enc_nunits=self.enc_nunits,
+                    enc_n_units=self.enc_n_units,
                     attn_type=args.attn_type,
                     attn_dim=args.attn_dim,
                     attn_sharpening_factor=args.attn_sharpening,
                     attn_sigmoid_smoothing=args.attn_sigmoid,
                     attn_conv_out_channels=args.attn_conv_nchannels,
                     attn_conv_kernel_size=args.attn_conv_width,
-                    attn_nheads=args.attn_nheads,
+                    attn_n_heads=args.attn_nheads,
                     rnn_type=args.dec_type,
-                    nunits=args.dec_nunits,
-                    nprojs=args.dec_nprojs,
-                    nlayers=args.dec_nlayers,
+                    n_units=args.dec_nunits,
+                    n_projs=args.dec_nprojs,
+                    n_layers=args.dec_nlayers,
                     loop_type=args.dec_loop_type,
                     residual=args.dec_residual,
                     add_ffl=args.dec_add_ffl,
@@ -273,18 +272,18 @@ class Seq2seq(ModelBase):
                             eos=self.eos,
                             pad=self.pad,
                             blank=self.blank,
-                            enc_nunits=self.enc_nunits,
+                            enc_n_units=self.enc_n_units,
                             attn_type=args.attn_type,
                             attn_dim=args.attn_dim,
                             attn_sharpening_factor=args.attn_sharpening,
                             attn_sigmoid_smoothing=args.attn_sigmoid,
                             attn_conv_out_channels=args.attn_conv_nchannels,
                             attn_conv_kernel_size=args.attn_conv_width,
-                            attn_nheads=1,
+                            attn_n_heads=1,
                             rnn_type=args.dec_type,
-                            nunits=args.dec_nunits,
-                            nprojs=args.dec_nprojs,
-                            nlayers=args.dec_nlayers,
+                            n_units=args.dec_nunits,
+                            n_projs=args.dec_nprojs,
+                            n_layers=args.dec_nlayers,
                             loop_type=args.dec_loop_type,
                             residual=args.dec_residual,
                             add_ffl=args.dec_add_ffl,
@@ -533,12 +532,12 @@ class Seq2seq(ModelBase):
 
             if self.input_type == 'speech':
                 # Frame stacking
-                if self.nstacks > 1:
-                    xs = [stack_frame(x, self.nstacks, self.nskips)for x in xs]
+                if self.n_stacks > 1:
+                    xs = [stack_frame(x, self.n_stacks, self.n_skips)for x in xs]
 
                 # Splicing
-                if self.nsplices > 1:
-                    xs = [splice(x, self.nsplices, self.nstacks) for x in xs]
+                if self.n_splices > 1:
+                    xs = [splice(x, self.n_splices, self.n_stacks) for x in xs]
 
                 xlens = [len(x) for x in xs]
                 # Flip acoustic features in the reverse order
