@@ -603,7 +603,7 @@ class Seq2seq(ModelBase):
             return ctc_probs, indices_topk, enc_outs[task]['xlens']
 
     def decode(self, xs, params, nbest=1, exclude_eos=False,
-               id2token=None, refs=None, task='ys', ensemble_models=[], speakers=None):
+               idx2token=None, refs=None, task='ys', ensemble_models=[], speakers=None):
         """Decoding in the inference stage.
 
         Args:
@@ -620,7 +620,7 @@ class Seq2seq(ModelBase):
                 fwd_bwd_attention (bool):
             nbest (int):
             exclude_eos (bool): exclude <eos> from best_hyps
-            id2token (): converter from index to token
+            idx2token (): converter from index to token
             refs (list): gold transcriptions to compute log likelihood
             task (str): ys* or ys_sub1* or ys_sub2* or ys_sub3*
             ensemble_models (list): list of Seq2seq classes
@@ -705,7 +705,7 @@ class Seq2seq(ModelBase):
                         nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd, cache_info = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_fwd, rnnlm_bwd, ctc_log_probs,
-                            params['recog_beam_width'], False, id2token, refs,
+                            params['recog_beam_width'], False, idx2token, refs,
                             ensemble_eouts_fwd, ensemble_elens_fwd, ensemble_decoders_fwd)
 
                         # backward decoder
@@ -740,7 +740,7 @@ class Seq2seq(ModelBase):
                         nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd, _ = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_bwd, rnnlm_fwd, ctc_log_probs,
-                            params['recog_beam_width'], False, id2token, refs,
+                            params['recog_beam_width'], False, idx2token, refs,
                             ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decs_bwd)
 
                         # forward-backward attention
@@ -748,7 +748,7 @@ class Seq2seq(ModelBase):
                             nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
                             nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd,
                             flip, self.eos, params['recog_gnmt_decoding'], params['recog_length_penalty'],
-                            id2token, refs)
+                            idx2token, refs)
                         aws = None
                     else:
                         # ensemble
@@ -778,7 +778,7 @@ class Seq2seq(ModelBase):
                         nbest_hyps, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm, rnnlm_rev, ctc_log_probs,
-                            nbest, exclude_eos, id2token, refs,
+                            nbest, exclude_eos, idx2token, refs,
                             ensemble_eouts, ensemble_elens, ensemble_decs,
                             speakers)
 
@@ -794,7 +794,7 @@ class Seq2seq(ModelBase):
 
 def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
                       nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd,
-                      flip, eos, gnmt_decoding, lp_weight, id2token=None, refs=None):
+                      flip, eos, gnmt_decoding, lp_weight, idx2token=None, refs=None):
     """Forward-backward joint decoding.
 
     Args:
@@ -810,7 +810,7 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
         eos (int):
         gnmt_decoding ():
         lp_weight ():
-        id2token (): converter from index to token
+        idx2token (): converter from index to token
         refs ():
     Returns:
 
@@ -885,12 +885,12 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
                             merged.append({'hyp': new_hyp, 'score': new_score})
 
                             logger.info('time matching')
-                            if id2token is not None:
+                            if idx2token is not None:
                                 if refs is not None:
                                     logger.info('Ref: %s' % refs[b].lower())
-                                logger.info('hyp (fwd): %s' % id2token(nbest_hyps_fwd[b][n_f]))
-                                logger.info('hyp (bwd): %s' % id2token(nbest_hyps_bwd[b][n_b]))
-                                logger.info('hyp (fwd-bwd): %s' % id2token(new_hyp))
+                                logger.info('hyp (fwd): %s' % idx2token(nbest_hyps_fwd[b][n_f]))
+                                logger.info('hyp (bwd): %s' % idx2token(nbest_hyps_bwd[b][n_b]))
+                                logger.info('hyp (fwd-bwd): %s' % idx2token(new_hyp))
                             logger.info('log prob (fwd): %.3f' % scores_fwd[b][n_f][-1])
                             logger.info('log prob (bwd): %.3f' % scores_bwd[b][n_b][0])
                             logger.info('log prob (fwd-bwd): %.3f' % new_score)
