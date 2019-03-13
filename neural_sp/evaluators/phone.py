@@ -70,7 +70,7 @@ def eval_phone(models, dataset, decode_params, epoch,
 
             for b in range(len(batch['xs'])):
                 ref = ys[b]
-                hyp = dataset.id2phone(best_hyps[b])
+                hyp = dataset.idx2phone(best_hyps[b])
 
                 # Write to trn
                 utt_id = str(batch['utt_ids'][b])
@@ -91,7 +91,6 @@ def eval_phone(models, dataset, decode_params, epoch,
                 n_ins += ins_b
                 n_del += del_b
                 n_phone += len(ref.split(' '))
-                # logger.info('PER: %d%%' % (per_b / len(ref.split(' '))))
 
                 if progressbar:
                     pbar.update(1)

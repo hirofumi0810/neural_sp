@@ -65,7 +65,7 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
             best_hyps, _, perm_id, _ = models[0].decode(
                 batch['xs'], decode_params,
                 exclude_eos=True,
-                id2token=dataset.id2wp,
+                idx2token=dataset.idx2wp,
                 refs=batch['ys'],
                 ensemble_models=models[1:] if len(models) > 1 else [],
                 speakers=batch['speakers'])
@@ -73,7 +73,7 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
 
             for b in range(len(batch['xs'])):
                 ref = ys[b]
-                hyp = dataset.id2wp(best_hyps[b])
+                hyp = dataset.idx2wp(best_hyps[b])
 
                 # Write to trn
                 utt_id = str(batch['utt_ids'][b])
@@ -81,7 +81,6 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
                 f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
                 f_hyp.write(hyp + ' (' + speaker + '-' + utt_id + ')\n')
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
-                # logger.info('Ref: %s' % ref.lower())
                 logger.info('Ref: %s' % ref)
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 150)
@@ -95,7 +94,6 @@ def eval_wordpiece(models, dataset, decode_params, epoch,
                 n_ins += ins_b
                 n_del += del_b
                 n_word += len(ref.split(' '))
-                # logger.info('WER: %d%%' % (float(wer_b) / len(ref.split(' '))))
 
                 if progressbar:
                     pbar.update(1)

@@ -74,7 +74,7 @@ def eval_word(models, dataset, decode_params, epoch,
 
             for b in range(len(batch['xs'])):
                 ref = ys[b]
-                hyp = dataset.id2word(best_hyps[b])
+                hyp = dataset.idx2word(best_hyps[b])
 
                 n_oov_total += hyp.count('<unk>')
 
@@ -82,7 +82,7 @@ def eval_word(models, dataset, decode_params, epoch,
                 if decode_params['recog_resolving_unk'] and '<unk>' in hyp:
                     best_hyps_sub, aw_sub, _ = models[0].decode(
                         batch['xs'][b:b + 1], decode_params, exclude_eos=True)
-                    # task_index=1
+                    # task_id=1
 
                     hyp = resolve_unk(
                         hyp, best_hyps_sub[0], aws[b], aw_sub[0], dataset.id2char,
@@ -95,7 +95,6 @@ def eval_word(models, dataset, decode_params, epoch,
                 f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
                 f_hyp.write(hyp + ' (' + speaker + '-' + utt_id + ')\n')
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
-                # logger.info('Ref: %s' % ref.lower())
                 logger.info('Ref: %s' % ref)
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 150)

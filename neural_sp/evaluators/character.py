@@ -90,7 +90,7 @@ def eval_char(models, dataset, decode_params, epoch,
 
             for b in range(len(batch['xs'])):
                 ref = ys[b]
-                hyp = dataset.id2char(best_hyps[b])
+                hyp = dataset.idx2char(best_hyps[b])
 
                 # Write to trn
                 utt_id = str(batch['utt_ids'][b])
@@ -112,7 +112,6 @@ def eval_char(models, dataset, decode_params, epoch,
                     n_ins_w += ins_b
                     n_del_w += del_b
                     n_word += len(ref.split(' '))
-                    # logger.info('WER: %d%%' % (wer_b / len(ref.split(' '))))
 
                 # Compute CER
                 cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref),
@@ -123,7 +122,6 @@ def eval_char(models, dataset, decode_params, epoch,
                 n_ins_c += ins_b
                 n_del_c += del_b
                 n_char += len(ref)
-                # logger.info('CER: %d%%' % (cer_b / len(ref)))
 
                 if progressbar:
                     pbar.update(1)
