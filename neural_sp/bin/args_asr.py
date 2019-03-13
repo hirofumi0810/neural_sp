@@ -295,7 +295,7 @@ def parse():
                         help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     # cold fusion
     parser.add_argument('--cold_fusion_type', type=str, default='hidden', nargs='?',
-                        choices=['hidden', 'prob'],
+                        choices=['hidden', 'prob', 'hidden_attention'],
                         help='')
     parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',
                         help='RNNLM parameters for cold fusion')
@@ -381,6 +381,13 @@ def parse():
                         help='number of checkpoints to use')
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
+    parser.add_argument('--recog_cache_theta', type=float, default=0.2,
+                        help='theta paramter for cache')
+    parser.add_argument('--recog_cache_lambda', type=float, default=0.2,
+                        help='lambda paramter for cache')
+    parser.add_argument('--recog_cache_type', type=str, default='lm',
+                        choices=['decoder', 'lm', 'joint'],
+                        help='cache type')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')

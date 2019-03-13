@@ -33,7 +33,7 @@ def main():
     # Overwrite conf
     for k, v in conf.items():
         setattr(args, k, v)
-    decode_params = vars(args)
+    recog_params = vars(args)
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.plot_dir, 'plot.log')):
@@ -50,7 +50,7 @@ def main():
                 if p > 1:
                     subsample_factor *= p
         if args.train_set_sub1 is not None:
-            subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_nlayers_sub1 - 1])
+            subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
         subsample_factor *= np.prod(subsample)
 
         # Load dataset
@@ -93,19 +93,19 @@ def main():
             os.mkdir(save_path)
 
         if args.unit == 'word':
-            id2token = dataset.id2word
+            idx2token = dataset.idx2word
         elif args.unit == 'wp':
-            id2token = dataset.id2wp
+            idx2token = dataset.idx2wp
         elif args.unit == 'char':
-            id2token = dataset.id2char
+            idx2token = dataset.idx2char
         elif args.unit == 'phone':
-            id2token = dataset.id2phone
+            idx2token = dataset.idx2phone
         else:
             raise NotImplementedError(args.unit)
 
         while True:
-            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
-            best_hyps, aws, perm_id, _ = model.decode(batch['xs'], decode_params,
+            batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
+            best_hyps, aws, perm_id, _ = model.decode(batch['xs'], recog_params,
                                                       exclude_eos=False)
             ys = [batch['ys'][i] for i in perm_id]
 
@@ -115,7 +115,7 @@ def main():
             # NOTE: ctc_probs: '[B, T, topk]'
 
             for b in range(len(batch['xs'])):
-                token_list = id2token(best_hyps[b], return_list=True)
+                token_list = idx2token(best_hyps[b], return_list=True)
                 token_list = [unicode(t, 'utf-8') for t in token_list]
                 speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
 

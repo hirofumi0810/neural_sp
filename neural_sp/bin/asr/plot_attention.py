@@ -39,7 +39,7 @@ def main():
     for k, v in conf.items():
         if 'recog' not in k:
             setattr(args, k, v)
-    decode_params = vars(args)
+    recog_params = vars(args)
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'plot.log')):
@@ -171,6 +171,8 @@ def main():
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
             logger.info('cache size: %d' % (args.recog_n_caches))
+            logger.info('cache theta: %d' % (args.recog_cache_theta))
+            logger.info('cache lambda: %d' % (args.recog_cache_lambda))
 
             # GPU setting
             model.cuda()
@@ -188,22 +190,22 @@ def main():
                 os.mkdir(save_path_cache)
 
         if args.unit == 'word':
-            id2token = dataset.id2word
+            idx2token = dataset.id2xword
         elif args.unit == 'wp':
-            id2token = dataset.id2wp
+            idx2token = dataset.idx2wp
         elif args.unit == 'char':
-            id2token = dataset.id2char
+            idx2token = dataset.idx2char
         elif args.unit == 'phone':
-            id2token = dataset.id2phone
+            idx2token = dataset.idx2phone
         else:
             raise NotImplementedError(args.unit)
 
         while True:
-            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
+            batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
             best_hyps, aws, perm_id, (cache_probs_history, cache_keys_history) = model.decode(
-                batch['xs'], decode_params,
+                batch['xs'], recog_params,
                 exclude_eos=False,
-                id2token=id2token,
+                idx2token=idx2token,
                 refs=batch['ys'],
                 ensemble_models=ensemble_models[1:] if len(ensemble_models) > 1 else [],
                 speakers=batch['speakers'])
@@ -215,7 +217,7 @@ def main():
                 aws = [aw[::-1] for aw in aws]
 
             for b in range(len(batch['xs'])):
-                token_list = id2token(best_hyps[b], return_list=True)
+                token_list = idx2token(best_hyps[b], return_list=True)
                 speaker = batch['speakers'][b]
 
                 plot_attention_weights(
@@ -233,7 +235,7 @@ def main():
 
                     plot_cache_weights(
                         cache_probs_history[0],
-                        id2token(cache_keys_history[-1], return_list=True),
+                        idx2token(cache_keys_history[-1], return_list=True),
                         token_list,
                         save_path=mkdir_join(save_path_cache, speaker, batch['utt_ids'][b] + '.png'),
                         figsize=(40, 16),

@@ -53,7 +53,7 @@ def main():
         for k, v in conf.items():
             if k != 'resume':
                 setattr(args, k, v)
-    decode_params = vars(args)
+    recog_params = vars(args)
 
     # Automatically reduce batch size in multi-GPU setting
     if args.n_gpus > 1:
@@ -401,26 +401,26 @@ def main():
                 # dev
                 if args.metric == 'edit_distance':
                     if args.unit in ['word', 'word_char']:
-                        metric_dev = eval_word([model.module], dev_set, decode_params,
+                        metric_dev = eval_word([model.module], dev_set, recog_params,
                                                epoch=epoch)[0]
                         logger.info('WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                     elif args.unit == 'wp':
-                        metric_dev = eval_wordpiece([model.module], dev_set, decode_params,
+                        metric_dev = eval_wordpiece([model.module], dev_set, recog_params,
                                                     epoch=epoch)[0]
                         logger.info('WER (%s): %.3f %%' % (dev_set.set, metric_dev))
                     elif 'char' in args.unit:
-                        dev_results = eval_char([model.module], dev_set, decode_params,
+                        dev_results = eval_char([model.module], dev_set, recog_params,
                                                 epoch=epoch)
                         metric_dev = dev_results[1][0]
                         wer_dev = dev_results[0][0]
                         logger.info('CER (%s): %.3f %%' % (dev_set.set, metric_dev))
                         logger.info('WER (%s): %.3f %%' % (dev_set.set, wer_dev))
                     elif 'phone' in args.unit:
-                        metric_dev = eval_phone([model.module], dev_set, decode_params,
+                        metric_dev = eval_phone([model.module], dev_set, recog_params,
                                                 epoch=epoch)[0]
                         logger.info('PER (%s): %.3f %%' % (dev_set.set, metric_dev))
                 elif args.metric == 'loss':
-                    metric_dev = eval_loss([model.module], dev_set, decode_params)
+                    metric_dev = eval_loss([model.module], dev_set, recog_params)
                     logger.info('Loss (%s): %.3f %%' % (dev_set.set, metric_dev))
                 else:
                     raise NotImplementedError(args.metric)
@@ -443,26 +443,26 @@ def main():
                     for eval_set in eval_sets:
                         if args.metric == 'edit_distance':
                             if args.unit in ['word', 'word_char']:
-                                wer_test = eval_word([model.module], eval_set, decode_params,
+                                wer_test = eval_word([model.module], eval_set, recog_params,
                                                      epoch=epoch)[0]
                                 logger.info('WER (%s): %.3f %%' % (eval_set.set, wer_test))
                             elif args.unit == 'wp':
-                                wer_test = eval_wordpiece([model.module], eval_set, decode_params,
+                                wer_test = eval_wordpiece([model.module], eval_set, recog_params,
                                                           epoch=epoch)[0]
                                 logger.info('WER (%s): %.3f %%' % (eval_set.set, wer_test))
                             elif 'char' in args.unit:
-                                test_results = eval_char([model.module], eval_set, decode_params,
+                                test_results = eval_char([model.module], eval_set, recog_params,
                                                          epoch=epoch)
                                 cer_test = test_results[1][0]
                                 wer_test = test_results[0][0]
                                 logger.info('CER (%s): %.3f %%' % (eval_set.set, cer_test))
                                 logger.info('WER (%s): %.3f %%' % (eval_set.set, wer_test))
                             elif 'phone' in args.unit:
-                                per_test = eval_phone([model.module], eval_set, decode_params,
+                                per_test = eval_phone([model.module], eval_set, recog_params,
                                                       epoch=epoch)[0]
                                 logger.info('PER (%s): %.3f %%' % (eval_set.set, per_test))
                         elif args.metric == 'loss':
-                            loss_test = eval_loss([model.module], eval_set, decode_params)
+                            loss_test = eval_loss([model.module], eval_set, recog_params)
                             logger.info('Loss (%s): %.3f %%' % (eval_set.set, loss_test))
                         else:
                             raise NotImplementedError(args.metric)
@@ -490,16 +490,6 @@ def main():
                         'sgd',
                         learning_rate=float(args.learning_rate),  # back to start lr
                         weight_decay=float(args.weight_decay))
-
-                    lr_controller = Controller(
-                        learning_rate=float(args.learning_rate),  # back to start lr
-                        decay_type='epoch',
-                        decay_start_epoch=epoch,
-                        decay_rate=0.1,
-                        decay_patient_n_epochs=0,
-                        lower_better=True,
-                        best_value=metric_dev_best)
-                    lr = float(args.learning_rate)
                     logger.info('========== Convert to SGD ==========')
 
             pbar_epoch = tqdm(total=len(train_set))

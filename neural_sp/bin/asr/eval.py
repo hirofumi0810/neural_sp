@@ -40,7 +40,7 @@ def main():
     for k, v in conf.items():
         if 'recog' not in k:
             setattr(args, k, v)
-    decode_params = vars(args)
+    recog_params = vars(args)
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):
@@ -196,6 +196,8 @@ def main():
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
             logger.info('cache size: %d' % (args.recog_n_caches))
+            logger.info('cache theta: %d' % (args.recog_cache_theta))
+            logger.info('cache lambda: %d' % (args.recog_cache_lambda))
 
             # GPU setting
             model.cuda()
@@ -204,9 +206,9 @@ def main():
 
         if args.unit in ['word', 'word_char'] and not args.recog_unit:
             wer, n_sub, n_ins, n_del, n_oov_total = eval_word(
-                ensemble_models, dataset, decode_params,
+                ensemble_models, dataset, recog_params,
                 epoch=epoch - 1,
-                decode_dir=args.recog_dir,
+                recog_dir=args.recog_dir,
                 progressbar=True)
             wer_avg += wer
             logger.info('WER (%s): %.3f %%' % (dataset.set, wer))
@@ -215,9 +217,9 @@ def main():
 
         elif (args.unit == 'wp' and not args.recog_unit) or args.recog_unit == 'wp':
             wer, n_sub, n_ins, n_del = eval_wordpiece(
-                ensemble_models, dataset, decode_params,
+                ensemble_models, dataset, recog_params,
                 epoch=epoch - 1,
-                decode_dir=args.recog_dir,
+                recog_dir=args.recog_dir,
                 progressbar=True)
             wer_avg += wer
             logger.info('WER (%s): %.3f %%' % (dataset.set, wer))
@@ -225,9 +227,9 @@ def main():
 
         elif ('char' in args.unit and not args.recog_unit) or 'char' in args.recog_unit:
             (wer, n_sub, n_ins, n_del), (cer, _, _, _) = eval_char(
-                ensemble_models, dataset, decode_params,
+                ensemble_models, dataset, recog_params,
                 epoch=epoch - 1,
-                decode_dir=args.recog_dir,
+                recog_dir=args.recog_dir,
                 progressbar=True,
                 task_id=1 if args.recog_unit and 'char' in args.recog_unit else 0)
             wer_avg += wer
@@ -237,9 +239,9 @@ def main():
 
         elif 'phone' in args.unit:
             per, n_sub, n_ins, n_del = eval_phone(
-                ensemble_models, dataset, decode_params,
+                ensemble_models, dataset, recog_params,
                 epoch=epoch - 1,
-                decode_dir=args.recog_dir,
+                recog_dir=args.recog_dir,
                 progressbar=True)
             per_avg += per
             logger.info('PER (%s): %.3f %%' % (dataset.set, per))
