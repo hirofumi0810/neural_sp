@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 import numpy as np
 
 import torch
@@ -35,7 +34,6 @@ class SeqRNNLM(ModelBase):
         self.rnn_type = args.rnn_type
         assert args.rnn_type in ['lstm', 'gru']
         self.n_units = args.n_units
-        self.n_projs = args.n_projs
         self.n_layers = args.n_layers
         self.tie_embedding = args.tie_embedding
         self.residual = args.residual
@@ -61,7 +59,7 @@ class SeqRNNLM(ModelBase):
                                ignore_index=self.pad)
 
         self.fast_impl = False
-        if self.n_projs == 0 and not args.residual:
+        if args.n_projs == 0 and not args.residual:
             self.fast_impl = True
             if 'lstm' in args.rnn_type:
                 rnn = nn.LSTM
@@ -70,33 +68,33 @@ class SeqRNNLM(ModelBase):
             else:
                 raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
 
-            self.rnn = rnn(args.emb_dim, self.n_units, self.n_layers,
+            self.rnn = rnn(args.emb_dim, args.n_units, args.n_layers,
                            bias=True,
                            batch_first=True,
                            dropout=args.dropout_hidden,
                            bidirectional=False)
             # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
-            rnn_idim = self.n_units
+            rnn_idim = args.n_units
             self.dropout_top = nn.Dropout(p=args.dropout_hidden)
         else:
             self.rnn = torch.nn.ModuleList()
             self.dropout = torch.nn.ModuleList()
-            if self.n_projs > 0:
+            if args.n_projs > 0:
                 self.proj = torch.nn.ModuleList()
             rnn_idim = args.emb_dim
-            for l in range(self.n_layers):
+            for l in range(args.n_layers):
                 self.rnn += [getattr(nn, args.rnn_type.upper())(
-                    rnn_idim, self.n_units, 1,
+                    rnn_idim, args.n_units, 1,
                     bias=True,
                     batch_first=True,
                     dropout=0,
                     bidirectional=False)]
                 self.dropout += [nn.Dropout(p=args.dropout_hidden)]
-                rnn_idim = self.n_units
+                rnn_idim = args.n_units
 
-                if l != self.n_layers - 1 and self.n_projs > 0:
-                    self.proj += [LinearND(self.n_units, self.n_projs)]
-                    rnn_idim = self.n_projs
+                if l != self.n_layers - 1 and args.n_projs > 0:
+                    self.proj += [LinearND(args.n_units, args.n_projs)]
+                    rnn_idim = args.n_projs
 
         if self.use_glu:
             self.fc_glu = LinearND(rnn_idim, rnn_idim * 2,
@@ -113,7 +111,7 @@ class SeqRNNLM(ModelBase):
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
         if args.tie_embedding:
-            if self.n_units != args.emb_dim:
+            if args.n_units != args.emb_dim:
                 raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
             self.output.fc.weight = self.embed.embed.weight
 
@@ -217,9 +215,9 @@ class SeqRNNLM(ModelBase):
             self.cache_values = self.cache_values[-n_caches:]  # list of `[B, 1, n_units]`
 
             # Compute inner-product over caches
-            cache_dist = torch.matmul(torch.cat(self.cache_values, dim=1),
-                                      ys_in.transpose(1, 2)).squeeze(2)  # `[B, n_caches]`
-            cache_attn = F.softmax(self.cache_theta * cache_dist, dim=1)
+            cache_attn = F.softmax(self.cache_theta * torch.matmul(
+                torch.cat(self.cache_values, dim=1),
+                ys_in.transpose(1, 2)).squeeze(2), dim=1)
 
             # For visualization
             if len(self.cache_keys) == n_caches:
@@ -251,7 +249,7 @@ class SeqRNNLM(ModelBase):
 
         observation = {'loss.rnnlm': loss.item(),
                        'acc.rnnlm': acc,
-                       'ppl.rnnlm': math.exp(loss.item())}
+                       'ppl.rnnlm': np.exp(loss.item())}
 
         return loss, hidden, observation
 
