@@ -19,14 +19,14 @@ import random
 import os
 
 from neural_sp.datasets.base import Base
-from neural_sp.datasets.token_converter.character import Char2id
-from neural_sp.datasets.token_converter.character import Id2char
-from neural_sp.datasets.token_converter.phone import Id2phone
-from neural_sp.datasets.token_converter.phone import Phone2id
-from neural_sp.datasets.token_converter.word import Id2word
-from neural_sp.datasets.token_converter.word import Word2id
-from neural_sp.datasets.token_converter.wordpiece import Id2wp
-from neural_sp.datasets.token_converter.wordpiece import Wp2id
+from neural_sp.datasets.token_converter.character import Char2idx
+from neural_sp.datasets.token_converter.character import Idx2char
+from neural_sp.datasets.token_converter.phone import Idx2phone
+from neural_sp.datasets.token_converter.phone import Phone2idx
+from neural_sp.datasets.token_converter.word import Idx2word
+from neural_sp.datasets.token_converter.word import Word2idx
+from neural_sp.datasets.token_converter.wordpiece import Idx2wp
+from neural_sp.datasets.token_converter.wordpiece import Wp2idx
 
 random.seed(1)
 np.random.seed(1)
@@ -67,17 +67,17 @@ class Dataset(Base):
 
         # Set index converter
         if unit in ['word', 'word_char']:
-            self.id2word = Id2word(dict_path)
-            self.word2id = Word2id(dict_path, word_char_mix=(unit == 'word_char'))
+            self.idx2word = Idx2word(dict_path)
+            self.word2idx = Word2idx(dict_path, word_char_mix=(unit == 'word_char'))
         elif unit == 'wp':
-            self.id2wp = Id2wp(dict_path, wp_model)
-            self.wp2id = Wp2id(dict_path, wp_model)
+            self.idx2wp = Idx2wp(dict_path, wp_model)
+            self.wp2idx = Wp2idx(dict_path, wp_model)
         elif unit == 'char':
-            self.id2char = Id2char(dict_path)
-            self.char2id = Char2id(dict_path)
+            self.idx2char = Idx2char(dict_path)
+            self.char2idx = Char2idx(dict_path)
         elif 'phone' in unit:
-            self.id2phone = Id2phone(dict_path)
-            self.phone2id = Phone2id(dict_path)
+            self.idx2phone = Idx2phone(dict_path)
+            self.phone2idx = Phone2idx(dict_path)
         else:
             raise ValueError(unit)
 

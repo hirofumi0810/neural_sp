@@ -13,20 +13,19 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
 import numpy as np
 import os
 import pandas as pd
 
 from neural_sp.datasets.base import Base
-from neural_sp.datasets.token_converter.character import Char2id
-from neural_sp.datasets.token_converter.character import Id2char
-from neural_sp.datasets.token_converter.phone import Id2phone
-from neural_sp.datasets.token_converter.phone import Phone2id
-from neural_sp.datasets.token_converter.word import Id2word
-from neural_sp.datasets.token_converter.word import Word2id
-from neural_sp.datasets.token_converter.wordpiece import Id2wp
-from neural_sp.datasets.token_converter.wordpiece import Wp2id
+from neural_sp.datasets.token_converter.character import Char2idx
+from neural_sp.datasets.token_converter.character import Idx2char
+from neural_sp.datasets.token_converter.phone import Idx2phone
+from neural_sp.datasets.token_converter.phone import Phone2idx
+from neural_sp.datasets.token_converter.word import Idx2word
+from neural_sp.datasets.token_converter.word import Word2idx
+from neural_sp.datasets.token_converter.wordpiece import Idx2wp
+from neural_sp.datasets.token_converter.wordpiece import Wp2idx
 from utils import kaldi_io
 
 np.random.seed(1)
@@ -95,17 +94,17 @@ class Dataset(Base):
 
         # Set index converter
         if unit in ['word', 'word_char']:
-            self.id2word = Id2word(dict_path)
-            self.word2id = Word2id(dict_path, word_char_mix=(unit == 'word_char'))
+            self.idx2word = Idx2word(dict_path)
+            self.word2idx = Word2idx(dict_path, word_char_mix=(unit == 'word_char'))
         elif unit == 'wp':
-            self.id2wp = Id2wp(dict_path, wp_model)
-            self.wp2id = Wp2id(dict_path, wp_model)
+            self.idx2wp = Idx2wp(dict_path, wp_model)
+            self.wp2idx = Wp2idx(dict_path, wp_model)
         elif unit == 'char':
-            self.id2char = Id2char(dict_path)
-            self.char2id = Char2id(dict_path)
+            self.idx2char = Idx2char(dict_path)
+            self.char2idx = Char2idx(dict_path)
         elif 'phone' in unit:
-            self.id2phone = Id2phone(dict_path)
-            self.phone2id = Phone2id(dict_path)
+            self.idx2phone = Idx2phone(dict_path)
+            self.phone2idx = Phone2idx(dict_path)
         else:
             raise ValueError(unit)
 
@@ -115,14 +114,14 @@ class Dataset(Base):
             # Set index converter
             if unit_sub1:
                 if unit_sub1 == 'wp':
-                    self.id2wp_sub1 = Id2wp(dict_path_sub1, wp_model_sub1)
-                    self.wp2id_sub1 = Wp2id(dict_path_sub1, wp_model_sub1)
+                    self.idx2wp_sub1 = Idx2wp(dict_path_sub1, wp_model_sub1)
+                    self.wp2idx_sub1 = Wp2idx(dict_path_sub1, wp_model_sub1)
                 elif unit_sub1 == 'char':
-                    self.id2char_sub1 = Id2char(dict_path_sub1)
-                    self.char2id_sub1 = Char2id(dict_path_sub1)
+                    self.idx2char_sub1 = Idx2char(dict_path_sub1)
+                    self.char2idx_sub1 = Char2idx(dict_path_sub1)
                 elif 'phone' in unit_sub1:
-                    self.id2phone_sub1 = Id2phone(dict_path_sub1)
-                    self.phone2id_sub1 = Phone2id(dict_path_sub1)
+                    self.idx2phone_sub1 = Idx2phone(dict_path_sub1)
+                    self.phone2idx_sub1 = Phone2idx(dict_path_sub1)
                 else:
                     raise ValueError(unit_sub1)
         else:
@@ -134,14 +133,14 @@ class Dataset(Base):
             # Set index converter
             if unit_sub2:
                 if unit_sub2 == 'wp':
-                    self.id2wp_sub2 = Id2wp(dict_path_sub2, wp_model_sub2)
-                    self.wp2id_sub2 = Wp2id(dict_path_sub2, wp_model_sub2)
+                    self.idx2wp_sub2 = Idx2wp(dict_path_sub2, wp_model_sub2)
+                    self.wp2idx_sub2 = Wp2idx(dict_path_sub2, wp_model_sub2)
                 elif unit_sub2 == 'char':
-                    self.id2char_sub2 = Id2char(dict_path_sub2)
-                    self.char2id_sub2 = Char2id(dict_path_sub2)
+                    self.idx2char_sub2 = Idx2char(dict_path_sub2)
+                    self.char2idx_sub2 = Char2idx(dict_path_sub2)
                 elif 'phone' in unit_sub2:
-                    self.id2phone_sub2 = Id2phone(dict_path_sub2)
-                    self.phone2id_sub2 = Phone2id(dict_path_sub2)
+                    self.idx2phone_sub2 = Idx2phone(dict_path_sub2)
+                    self.phone2idx_sub2 = Phone2idx(dict_path_sub2)
                 else:
                     raise ValueError(unit_sub2)
         else:
@@ -153,14 +152,14 @@ class Dataset(Base):
             # Set index converter
             if unit_sub3:
                 if unit_sub3 == 'wp':
-                    self.id2wp_sub3 = Id2wp(dict_path_sub3, wp_model_sub3)
-                    self.wp2id_sub3 = Wp2id(dict_path_sub3, wp_model_sub3)
+                    self.idx2wp_sub3 = Idx2wp(dict_path_sub3, wp_model_sub3)
+                    self.wp2idx_sub3 = Wp2idx(dict_path_sub3, wp_model_sub3)
                 elif unit_sub3 == 'char':
-                    self.id2char_sub3 = Id2char(dict_path_sub3)
-                    self.char2id_sub3 = Char2id(dict_path_sub3)
+                    self.idx2char_sub3 = Idx2char(dict_path_sub3)
+                    self.char2idx_sub3 = Char2idx(dict_path_sub3)
                 elif 'phone' in unit_sub3:
-                    self.id2phone_sub3 = Id2phone(dict_path_sub3)
-                    self.phone2id_sub3 = Phone2id(dict_path_sub3)
+                    self.idx2phone_sub3 = Idx2phone(dict_path_sub3)
+                    self.phone2idx_sub3 = Phone2idx(dict_path_sub3)
                 else:
                     raise ValueError(unit_sub3)
         else:

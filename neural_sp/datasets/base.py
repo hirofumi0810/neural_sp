@@ -74,7 +74,7 @@ class Base(object):
         if batch_size is None:
             batch_size = self.batch_size
 
-        if self.nques is None:
+        if self.n_ques is None:
             if self.max_epoch is not None and self.epoch >= self.max_epoch:
                 raise StopIteration()
             # NOTE: max_epoch == None means infinite loop
@@ -99,20 +99,20 @@ class Base(object):
             if self.queue_size == 0:
                 self.data_indices_list = []
                 self.is_new_epoch_list = []
-                for _ in six.moves.range(self.nques):
+                for _ in six.moves.range(self.n_ques):
                     data_indices, is_new_epoch = self.sample_index(batch_size)
                     self.data_indices_list.append(data_indices)
                     self.is_new_epoch_list.append(is_new_epoch)
                 self.preloading_process = Process(self.preloading_loop,
                                                   args=(self.queue, self.data_indices_list))
                 self.preloading_process.start()
-                self.queue_size += self.nques
+                self.queue_size += self.n_ques
                 time.sleep(3)
 
             # print(self.queue.qsize())
             # print(self.queue_size)
 
-            self.iteration += len(self.data_indices_list[self.nques - self.queue_size])
+            self.iteration += len(self.data_indices_list[self.n_ques - self.queue_size])
             self.queue_size -= 1
             batch = self.queue.get()
             is_new_epoch = self.is_new_epoch_list.pop(0)
