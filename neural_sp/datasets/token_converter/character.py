@@ -13,7 +13,7 @@ from __future__ import print_function
 import codecs
 
 
-class Char2id(object):
+class Char2idx(object):
     """Class for converting character sequence into indices.
 
     Args:
@@ -27,13 +27,13 @@ class Char2id(object):
         self.remove_list = remove_list
 
         # Load a vocabulary file
-        self.token2id = {}
+        self.token2idx = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 c, idx = line.strip().split(' ')
                 if c in remove_list:
                     continue
-                self.token2id[c] = int(idx)
+                self.token2idx[c] = int(idx)
 
     def __call__(self, text):
         """Convert character sequence into indices.
@@ -45,27 +45,26 @@ class Char2id(object):
 
         """
         token_ids = []
-        text = text.replace(' ', '<space>')
-        words = text.split('<space>')
+        words = text.replace(' ', '<space>').split('<space>')
         for i,  w in enumerate(words):
             if w in self.nlsyms:
-                token_ids.append(self.token2id[w])
+                token_ids.append(self.token2idx[w])
             else:
                 for c in list(w):
-                    if c in self.token2id.keys():
-                        token_ids.append(self.token2id[c])
+                    if c in self.token2idx.keys():
+                        token_ids.append(self.token2idx[c])
                     else:
                         # Replace with <unk>
-                        token_ids.append(self.token2id['<unk>'])
+                        token_ids.append(self.token2idx['<unk>'])
                         # NOTE: OOV handling is prepared for Japanese and Chinese
 
             if not self.remove_space:
                 if i < len(words) - 1:
-                    token_ids.append(self.token2id['<space>'])
+                    token_ids.append(self.token2idx['<space>'])
         return token_ids
 
 
-class Id2char(object):
+class Idx2char(object):
     """Class for converting indices into character sequence.
 
     Args:
@@ -78,13 +77,13 @@ class Id2char(object):
         self.remove_list = remove_list
 
         # Load a vocabulary file
-        self.id2token = {0: '<blank>'}
+        self.idx2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 c, idx = line.strip().split(' ')
                 if c in remove_list:
                     continue
-                self.id2token[int(idx)] = c
+                self.idx2token[int(idx)] = c
 
     def __call__(self, token_ids, return_list=False):
         """Convert indices into character sequence.
@@ -95,10 +94,10 @@ class Id2char(object):
         Returns:
             text (str): character sequence
                 or
-            char_list (list): list of characters
+            characters (list): list of characters
 
         """
-        char_list = list(map(lambda c: self.id2token[c], token_ids))
+        characters = list(map(lambda c: self.idx2token[c], token_ids))
         if return_list:
-            return char_list
-        return ''.join(char_list).replace('<space>', ' ')
+            return characters
+        return ''.join(characters).replace('<space>', ' ')

@@ -14,7 +14,7 @@ import codecs
 import sentencepiece as spm
 
 
-class Wp2id(object):
+class Wp2idx(object):
     """Class for converting word-piece sequence into indices.
 
     Args:
@@ -24,11 +24,11 @@ class Wp2id(object):
 
     def __init__(self, dict_path, wp_model):
         # Load a dictionary file
-        self.token2id = {}
+        self.token2idx = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 wp, idx = line.strip().split(' ')
-                self.token2id[wp] = int(idx)
+                self.token2idx[wp] = int(idx)
 
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)
@@ -42,18 +42,18 @@ class Wp2id(object):
             token_ids (list): word-piece indices
 
         """
-        wp_list = self.sp.EncodeAsPieces(text)
         token_ids = []
-        for wp in wp_list:
-            if wp in self.token2id.keys():
-                token_ids.append(self.token2id[wp])
+        wordpieces = self.sp.EncodeAsPieces(text)
+        for wp in wordpieces:
+            if wp in self.token2idx.keys():
+                token_ids.append(self.token2idx[wp])
             else:
                 # Replace with <unk>
-                token_ids.append(self.token2id['<unk>'])
+                token_ids.append(self.token2idx['<unk>'])
         return token_ids
 
 
-class Id2wp(object):
+class Idx2wp(object):
     """Class for converting indices into word-piece sequence.
 
     Args:
@@ -63,11 +63,11 @@ class Id2wp(object):
 
     def __init__(self, dict_path, wp_model):
         # Load a dictionary file
-        self.id2token = {0: '<blank>'}
+        self.idx2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 wp, idx = line.strip().split(' ')
-                self.id2token[int(idx)] = wp
+                self.idx2token[int(idx)] = wp
 
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)
@@ -81,10 +81,10 @@ class Id2wp(object):
         Returns:
             text (str): word-piece sequence
                 or
-            wp_list (list): list of words
+            wordpieces (list): list of words
 
         """
-        wp_list = list(map(lambda wp: self.id2token[wp], token_ids))
+        wordpieces = list(map(lambda wp: self.idx2token[wp], token_ids))
         if return_list:
-            return wp_list
-        return self.sp.DecodePieces(wp_list)
+            return wordpieces
+        return self.sp.DecodePieces(wordpieces)
