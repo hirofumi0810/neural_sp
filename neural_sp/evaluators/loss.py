@@ -13,13 +13,13 @@ from __future__ import print_function
 from tqdm import tqdm
 
 
-def eval_loss(models, dataset, decode_params, progressbar=False):
+def eval_loss(models, dataset, recog_params, progressbar=False):
     """Evaluate a model by loss.
 
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
-        decode_params (dict):
+        recog_params (dict):
         progressbar (bool): if True, visualize the progressbar
     Returns:
         loss_avg (float): average loss
@@ -35,7 +35,7 @@ def eval_loss(models, dataset, decode_params, progressbar=False):
     if progressbar:
         pbar = tqdm(total=len(dataset))
     while True:
-        batch, is_new_ep = dataset.next(decode_params['recog_batch_size'])
+        batch, is_new_ep = dataset.next(recog_params['recog_batch_size'])
         bs = len(batch['utt_ids'])
 
         assert not dataset.is_test

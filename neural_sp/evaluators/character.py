@@ -19,18 +19,18 @@ from neural_sp.utils.general import mkdir_join
 logger = logging.getLogger("decoding").getChild('character')
 
 
-def eval_char(models, dataset, decode_params, epoch,
-              decode_dir=None, progressbar=False, task_id=0):
+def eval_char(models, dataset, recog_params, epoch,
+              recog_dir=None, progressbar=False, task_idx=0):
     """Evaluate the character-level model by WER & CER.
 
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
-        decode_params (dict):
+        recog_params (dict):
         epoch (int):
-        decode_dir (str):
+        recog_dir (str):
         progressbar (bool): if True, visualize the progressbar
-        task_id (int): the index of the target task in interest
+        task_idx (int): the index of the target task in interest
             0: main task
             1: sub task
             2: sub sub task
@@ -48,18 +48,18 @@ def eval_char(models, dataset, decode_params, epoch,
     # Reset data counter
     dataset.reset()
 
-    if decode_dir is None:
-        decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['recog_beam_width'])
-        decode_dir += '_lp' + str(decode_params['recog_length_penalty'])
-        decode_dir += '_cp' + str(decode_params['recog_coverage_penalty'])
-        decode_dir += '_' + str(decode_params['recog_min_len_ratio']) + '_' + str(decode_params['recog_max_len_ratio'])
-        decode_dir += '_rnnlm' + str(decode_params['recog_rnnlm_weight'])
+    if recog_dir is None:
+        recog_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
+        recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
+        recog_dir += '_cp' + str(recog_params['recog_coverage_penalty'])
+        recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
+        recog_dir += '_rnnlm' + str(recog_params['recog_rnnlm_weight'])
 
-        ref_trn_save_path = mkdir_join(models[0].save_path, decode_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(models[0].save_path, decode_dir, 'hyp.trn')
+        ref_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
     else:
-        ref_trn_save_path = mkdir_join(decode_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
+        ref_trn_save_path = mkdir_join(recog_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(recog_dir, 'hyp.trn')
 
     wer, cer = 0, 0
     n_sub_w, n_ins_w, n_del_w = 0, 0, 0
@@ -68,20 +68,20 @@ def eval_char(models, dataset, decode_params, epoch,
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
-    if task_id == 0:
+    if task_idx == 0:
         task = 'ys'
-    elif task_id == 1:
+    elif task_idx == 1:
         task = 'ys_sub1'
-    elif task_id == 2:
+    elif task_idx == 2:
         task = 'ys_sub2'
-    elif task_id == 3:
+    elif task_idx == 3:
         task = 'ys_sub3'
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
-            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
+            batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
             best_hyps, _, perm_ids, _ = models[0].decode(
-                batch['xs'], decode_params,
+                batch['xs'], recog_params,
                 exclude_eos=True,
                 task=task,
                 ensemble_models=models[1:] if len(models) > 1 else [],
@@ -102,7 +102,7 @@ def eval_char(models, dataset, decode_params, epoch,
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 150)
 
-                if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_id > 0 and dataset.unit_sub1 == 'char'):
+                if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub1 == 'char'):
                     # Compute WER
                     wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
                                                              hyp=hyp.split(' '),
@@ -135,7 +135,7 @@ def eval_char(models, dataset, decode_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_id > 0 and dataset.unit_sub1 == 'char'):
+    if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub1 == 'char'):
         wer /= n_word
         n_sub_w /= n_word
         n_ins_w /= n_word

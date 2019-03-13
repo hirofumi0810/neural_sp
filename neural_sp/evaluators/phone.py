@@ -19,16 +19,16 @@ from neural_sp.utils.general import mkdir_join
 logger = logging.getLogger("decoding").getChild('phone')
 
 
-def eval_phone(models, dataset, decode_params, epoch,
-               decode_dir=None, progressbar=False):
+def eval_phone(models, dataset, recog_params, epoch,
+               recog_dir=None, progressbar=False):
     """Evaluate a phone-level model by PER.
 
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
-        decode_params (dict):
+        recog_params (dict):
         epoch (int):
-        decode_dir (str):
+        recog_dir (str):
         progressbar (bool): if True, visualize the progressbar
     Returns:
         per (float): Phone error rate
@@ -40,17 +40,17 @@ def eval_phone(models, dataset, decode_params, epoch,
     # Reset data counter
     dataset.reset()
 
-    if decode_dir is None:
-        decode_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(decode_params['recog_beam_width'])
-        decode_dir += '_lp' + str(decode_params['recog_length_penalty'])
-        decode_dir += '_cp' + str(decode_params['recog_coverage_penalty'])
-        decode_dir += '_' + str(decode_params['recog_min_len_ratio']) + '_' + str(decode_params['recog_max_len_ratio'])
+    if recog_dir is None:
+        recog_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
+        recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
+        recog_dir += '_cp' + str(recog_params['recog_coverage_penalty'])
+        recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
 
-        ref_trn_save_path = mkdir_join(models[0].save_path, decode_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(models[0].save_path, decode_dir, 'hyp.trn')
+        ref_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
     else:
-        ref_trn_save_path = mkdir_join(decode_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(decode_dir, 'hyp.trn')
+        ref_trn_save_path = mkdir_join(recog_dir, 'ref.trn')
+        hyp_trn_save_path = mkdir_join(recog_dir, 'hyp.trn')
 
     per = 0
     n_sub, n_ins, n_del = 0, 0, 0
@@ -60,9 +60,9 @@ def eval_phone(models, dataset, decode_params, epoch,
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
-            batch, is_new_epoch = dataset.next(decode_params['recog_batch_size'])
+            batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
             best_hyps, _, perm_ids, _ = models[0].decode(
-                batch['xs'], decode_params,
+                batch['xs'], recog_params,
                 exclude_eos=True,
                 ensemble_models=models[1:] if len(models) > 1 else [],
                 speakers=batch['speakers'])
