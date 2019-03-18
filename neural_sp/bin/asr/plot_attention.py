@@ -46,10 +46,10 @@ def main():
         os.remove(os.path.join(args.recog_dir, 'plot.log'))
     logger = set_logger(os.path.join(args.recog_dir, 'plot.log'), key='decoding')
 
-    for i, set in enumerate(args.recog_sets):
+    for i, s in enumerate(args.recog_sets):
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
-                          tsv_path=set,
+                          tsv_path=s,
                           dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
                           dict_path_sub1=os.path.join(args.recog_model[0], 'dict_sub1.txt') if os.path.isfile(
                               os.path.join(args.recog_model[0], 'dict_sub1.txt')) else None,
@@ -66,7 +66,7 @@ def main():
 
             # Load the ASR model
             model = Seq2seq(args)
-            epoch, _, _, _ = model.load_checkpoint(args.recog_model[0])
+            epoch = model.load_checkpoint(args.recog_model[0])['epoch']
             model.save_path = args.recog_model[0]
 
             # ensemble (different models)
@@ -74,11 +74,11 @@ def main():
             if len(args.recog_model) > 1:
                 for recog_model_e in args.recog_model[1:]:
                     # Load a conf file
-                    config_e = load_config(os.path.join(recog_model_e, 'conf.yml'))
+                    conf_e = load_config(os.path.join(recog_model_e, 'conf.yml'))
 
                     # Overwrite conf
                     args_e = copy.deepcopy(args)
-                    for k, v in config_e.items():
+                    for k, v in conf_e.items():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
 
@@ -98,15 +98,12 @@ def main():
             if not args.rnnlm_cold_fusion:
                 if args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
                     # Load a RNNLM conf file
-                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm, 'conf.yml'))
+                    conf_rnnlm = load_config(os.path.join(args.recog_rnnlm, 'conf.yml'))
 
                     # Merge conf with args
                     args_rnnlm = argparse.Namespace()
-                    for k, v in config_rnnlm.items():
+                    for k, v in conf_rnnlm.items():
                         setattr(args_rnnlm, k, v)
-
-                    assert args.unit == args_rnnlm.unit
-                    args_rnnlm.vocab = dataset.vocab
 
                     # Load the pre-trianed RNNLM
                     seq_rnnlm = SeqRNNLM(args_rnnlm)
@@ -125,11 +122,11 @@ def main():
 
                 if args.recog_rnnlm_bwd is not None and args.recog_rnnlm_weight > 0 and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
                     # Load a RNNLM conf file
-                    config_rnnlm = load_config(os.path.join(args.recog_rnnlm_bwd, 'conf.yml'))
+                    conf_rnnlm = load_config(os.path.join(args.recog_rnnlm_bwd, 'conf.yml'))
 
                     # Merge conf with args
                     args_rnnlm_bwd = argparse.Namespace()
-                    for k, v in config_rnnlm.items():
+                    for k, v in conf_rnnlm.items():
                         setattr(args_rnnlm_bwd, k, v)
 
                     assert args.unit == args_rnnlm_bwd.unit
@@ -171,6 +168,7 @@ def main():
 
             # GPU setting
             model.cuda()
+            # TODO(hirofumi): move this
 
         save_path = mkdir_join(args.recog_dir, 'att_weights')
         if args.recog_n_caches > 0:

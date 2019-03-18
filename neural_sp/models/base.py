@@ -284,15 +284,15 @@ class ModelBase(nn.Module):
             os.mkdir(save_path_tmp)
         self.save_path = save_path_tmp
 
-    def save_checkpoint(self, save_path, epoch, step, lr, metric_dev_best,
+    def save_checkpoint(self, save_path, lr_controller, epoch, step, metric_dev_best,
                         remove_old_checkpoints=False):
         """Save checkpoint.
 
         Args:
             save_path (str): path to the directory to save a model
+            lr_controller ():
             epoch (int): the currnet epoch
             step (int): the current step
-            lr (float):
             metric_dev_best (float):
             remove_old_checkpoints (bool): if True, all checkpoints
                 other than the best one will be deleted
@@ -311,9 +311,9 @@ class ModelBase(nn.Module):
         checkpoint = {
             "state_dict": self.state_dict(),
             "optimizer": self.optimizer.state_dict(),
+            "lr_controller": lr_controller,
             "epoch": epoch,
             "step": step,
-            "lr": lr,
             "metric_dev_best": metric_dev_best
         }
         torch.save(checkpoint, model_path)
@@ -328,10 +328,10 @@ class ModelBase(nn.Module):
             epoch (int): negative values mean the offset from the last saved model
             resume (bool): if True, restore the save optimizer
         Returns:
-            epoch (int): the currnet epoch
-            step (int): the current step
-            lr (float):
-            metric_dev_best (float)
+            checkpoints (dict):
+                epoch (int): the currnet epoch
+                step (int): the current step
+                metric_dev_best (float): the current best performance
 
         """
         if not os.path.isfile(checkpoint_path):
@@ -366,5 +366,10 @@ class ModelBase(nn.Module):
         else:
             logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
 
-        return (epoch + 1, checkpoint['step'] + 1,
-                checkpoint['lr'], checkpoint['metric_dev_best'])
+        return_values = {
+            'lr_controller': checkpoint['lr_controller'],
+            'epoch': epoch + 1,
+            'step': checkpoint['step'] + 1,
+            'metric_dev_best': checkpoint['metric_dev_best']
+        }
+        return return_values

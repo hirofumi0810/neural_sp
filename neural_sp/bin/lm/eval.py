@@ -41,9 +41,9 @@ def main():
     logger = set_logger(os.path.join(args.recog_dir, 'decode.log'), key='decoding')
 
     ppl_avg = 0
-    for i, set in enumerate(args.recog_sets):
+    for i, s in enumerate(args.recog_sets):
         # Load dataset
-        dataset = Dataset(tsv_path=set,
+        dataset = Dataset(tsv_path=s,
                           dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
                           wp_model=os.path.join(args.recog_model[0], 'wp.model'),
                           unit=args.unit,
@@ -53,7 +53,7 @@ def main():
         if i == 0:
             # Load the RNNLM
             seq_rnnlm = SeqRNNLM(args)
-            epoch, _, _, _ = seq_rnnlm.load_checkpoint(args.recog_model[0])
+            epoch = seq_rnnlm.load_checkpoint(args.recog_model[0])['epoch']
             rnnlm = seq_rnnlm
 
             # Copy parameters

@@ -64,8 +64,8 @@ def main():
                       bptt=args.bptt,
                       shuffle=True)
     eval_sets = []
-    for set in args.eval_sets:
-        eval_sets += [Dataset(tsv_path=set,
+    for s in args.eval_sets:
+        eval_sets += [Dataset(tsv_path=s,
                               dict_path=args.dict,
                               unit=args.unit,
                               wp_model=args.wp_model,
@@ -128,8 +128,16 @@ def main():
                             weight_decay=float(args.weight_decay))
 
         epoch, step = 1, 1
-        lr = float(args.learning_rate)
         ppl_dev_best = 10000
+
+        # Set learning rate controller
+        lr_controller = Controller(learning_rate=float(args.learning_rate),
+                                   decay_type=args.decay_type,
+                                   decay_start_epoch=args.decay_start_epoch,
+                                   decay_rate=args.decay_rate,
+                                   decay_patient_n_epochs=args.decay_patient_n_epochs,
+                                   lower_better=True,
+                                   best_value=ppl_dev_best)
 
     train_set.epoch = epoch - 1  # start from index:0
 
@@ -149,15 +157,6 @@ def main():
         setproctitle(args.job_name)
     else:
         setproctitle(dir_name)
-
-    # Set learning rate controller
-    lr_controller = Controller(learning_rate=lr,
-                               decay_type=args.decay_type,
-                               decay_start_epoch=args.decay_start_epoch,
-                               decay_rate=args.decay_rate,
-                               decay_patient_n_epochs=args.decay_patient_n_epochs,
-                               lower_better=True,
-                               best_value=ppl_dev_best)
 
     # Set reporter
     reporter = Reporter(model.module.save_path, tensorboard=True)
@@ -199,7 +198,7 @@ def main():
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
                         (step, train_set.epoch_detail, loss_train, loss_dev,
                          math.exp(loss_train), math.exp(loss_dev),
-                         lr, len(ys_train), duration_step / 60))
+                         lr_controller.lr, len(ys_train), duration_step / 60))
             start_time_step = time.time()
         step += args.n_gpus
         pbar_epoch.update(np.prod(ys_train.shape))
@@ -215,8 +214,9 @@ def main():
 
             if epoch < args.eval_start_epoch:
                 # Save the model
-                model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
-                                             lr, ppl_dev_best)
+                model.module.save_checkpoint(
+                    model.module.save_path, lr_controller,
+                    epoch, step - 1, ppl_dev_best)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -225,8 +225,8 @@ def main():
                 logger.info('PPL (%s): %.3f' % (dev_set.set, ppl_dev))
 
                 # Update learning rate
-                model.module.optimizer, lr = lr_controller.decay_lr(
-                    model.module.optimizer, lr,
+                model.module.optimizer = lr_controller.decay(
+                    model.module.optimizer,
                     epoch=epoch, value=ppl_dev)
 
                 if ppl_dev < ppl_dev_best:
@@ -235,8 +235,9 @@ def main():
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
-                                                 lr, ppl_dev_best)
+                    model.module.save_checkpoint(
+                        model.module.save_path, lr_controller,
+                        epoch, step - 1, ppl_dev_best)
 
                     # test
                     ppl_test_avg = 0.
@@ -259,17 +260,14 @@ def main():
 
                 # Convert to fine-tuning stage
                 if epoch == args.convert_to_sgd_epoch:
-                    lr = args.learning_rate
-                    model.module.set_optimizer(
-                        'sgd',
-                        learning_rate=lr,
-                        weight_decay=float(args.weight_decay))
-                    lr_controller = Controller(learning_rate=lr,
+                    model.module.set_optimizer('sgd',
+                                               learning_rate=args.learning_rate,
+                                               weight_decay=float(args.weight_decay))
+                    lr_controller = Controller(learning_rate=args.learning_rate,
                                                decay_type='epoch',
                                                decay_start_epoch=epoch,
                                                decay_rate=0.5,
                                                lower_better=True)
-                    lr = float(args.learning_rate)
                     logger.info('========== Convert to SGD ==========')
 
             pbar_epoch = tqdm(total=len(train_set))

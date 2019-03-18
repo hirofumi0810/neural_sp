@@ -111,7 +111,8 @@ def main():
                         subsample_factor=subsample_factor,
                         subsample_factor_sub1=subsample_factor_sub1,
                         subsample_factor_sub2=subsample_factor_sub2,
-                        subsample_factor_sub3=subsample_factor_sub3)
+                        subsample_factor_sub3=subsample_factor_sub3,
+                        concat_prev_n_utterances=args.concat_prev_n_utterances)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
                       tsv_path_sub1=args.dev_set_sub1,
@@ -140,15 +141,17 @@ def main():
                       subsample_factor=subsample_factor,
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
-                      subsample_factor_sub3=subsample_factor_sub3)
+                      subsample_factor_sub3=subsample_factor_sub3,
+                      concat_prev_n_utterances=args.concat_prev_n_utterances)
     eval_sets = []
-    for set in args.eval_sets:
+    for s in args.eval_sets:
         eval_sets += [Dataset(corpus=args.corpus,
-                              tsv_path=set,
+                              tsv_path=s,
                               dict_path=args.dict,
                               unit=args.unit,
                               wp_model=args.wp_model,
                               batch_size=1,
+                              concat_prev_n_utterances=args.concat_prev_n_utterances,
                               is_test=True)]
 
     args.vocab = train_set.vocab
@@ -184,20 +187,22 @@ def main():
         logger = set_logger(os.path.join(os.path.dirname(args.resume), 'train.log'), key='training')
 
         # Set optimizer
-        model.set_optimizer(
-            optimizer=conf['optimizer'],
-            learning_rate=float(conf['learning_rate']),  # on-the-fly
-            weight_decay=float(conf['weight_decay']))
+        model.set_optimizer(optimizer=conf['optimizer'],
+                            learning_rate=float(conf['learning_rate']),  # on-the-fly
+                            weight_decay=float(conf['weight_decay']))
 
         # Restore the last saved model
-        epoch, step, lr, metric_dev_best = model.load_checkpoint(args.resume, resume=True)
+        checkpoints = model.load_checkpoint(args.resume, resume=True)
+        lr_controller = checkpoints['lr_controller']
+        epoch = checkpoints['epoch']
+        step = checkpoints['step']
+        metric_dev_best = checkpoints['metric_dev_best']
 
+        # Resume between convert_to_sgd_epoch and convert_to_sgd_epoch + 1
         if epoch == conf['convert_to_sgd_epoch'] + 1:
-            lr = args.learning_rate
-            model.set_optimizer(
-                optimizer='sgd',
-                learning_rate=lr,
-                weight_decay=float(conf['weight_decay']))
+            model.set_optimizer(optimizer='sgd',
+                                learning_rate=args.learning_rate,
+                                weight_decay=float(conf['weight_decay']))
             logger.info('========== Convert to SGD ==========')
     else:
         # Set save path
@@ -232,19 +237,19 @@ def main():
         # Initialize with pre-trained model's parameters
         if args.pretrained_model and os.path.isdir(args.pretrained_model):
             # Load a conf file
-            config_pt = load_config(os.path.join(args.pretrained_model, 'conf.yml'))
+            conf_pt = load_config(os.path.join(args.pretrained_model, 'conf.yml'))
 
             # Merge conf with args
-            for k, v in config_pt.items():
+            for k, v in conf_pt.items():
                 setattr(args_pt, k, v)
 
             # Load the ASR model
-            model_pre = Seq2seq(args_pt)
-            model_pre.load_checkpoint(args.pretrained_model)
+            model_pt = Seq2seq(args_pt)
+            model_pt.load_checkpoint(args.pretrained_model)
 
             # Overwrite parameters
             only_enc = (args.enc_n_layers != args_pt.enc_n_layers) or (args.unit != args_pt.unit)
-            param_dict = dict(model_pre.named_parameters())
+            param_dict = dict(model_pt.named_parameters())
             for n, p in model.named_parameters():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
                     if only_enc and 'enc' not in n:
@@ -260,8 +265,20 @@ def main():
             transformer=True if args.enc_type == 'transformer' or args.dec_type == 'transformer' else False)
 
         epoch, step = 1, 1
-        lr = float(args.learning_rate)
         metric_dev_best = 10000
+
+        # Set learning rate controller
+        lr_controller = Controller(learning_rate=float(args.learning_rate),
+                                   decay_type=args.decay_type,
+                                   decay_start_epoch=args.decay_start_epoch,
+                                   decay_rate=args.decay_rate,
+                                   decay_patient_n_epochs=args.decay_patient_n_epochs,
+                                   lower_better=True,
+                                   best_value=metric_dev_best,
+                                   model_size=args.d_model,
+                                   warmup_start_learning_rate=args.warmup_start_learning_rate,
+                                   warmup_n_steps=args.warmup_n_steps,
+                                   factor=1)
 
     train_set.epoch = epoch - 1  # start from index:0
 
@@ -281,21 +298,6 @@ def main():
         setproctitle(args.job_name)
     else:
         setproctitle(dir_name)
-
-    # Set learning rate controller
-    lr_controller = Controller(learning_rate=lr,
-                               decay_type=args.decay_type,
-                               decay_start_epoch=args.decay_start_epoch,
-                               decay_rate=args.decay_rate,
-                               decay_patient_n_epochs=args.decay_patient_n_epochs,
-                               lower_better=True,
-                               best_value=metric_dev_best,
-                               model_size=args.d_model,
-                               warmup_start_learning_rate=args.warmup_start_learning_rate,
-                               warmup_n_steps=args.warmup_n_steps,
-                               factor=1)
-    if not args.resume:
-        lr = lr_controller.lr_init
 
     # Set reporter
     reporter = Reporter(model.module.save_path, tensorboard=True)
@@ -354,8 +356,8 @@ def main():
 
         # Update learning rate
         if args.decay_type == 'warmup' and step < args.warmup_n_steps:
-            model.module.optimizer, lr = lr_controller.warmup_lr(
-                model.module.optimizer, lr, step=step)
+            model.module.optimizer = lr_controller.warmup(
+                model.module.optimizer, step=step)
 
         if step % args.print_step == 0:
             # Compute loss in the dev set
@@ -370,14 +372,14 @@ def main():
 
             duration_step = time.time() - start_time_step
             if args.input_type == 'speech':
-                x_len = max(len(x) for x in batch_train['xs'])
+                xlen = max(len(x) for x in batch_train['xs'])
             elif args.input_type == 'text':
-                x_len = max(len(x) for x in batch_train['ys'])
-            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/x_len:%d (%.2f min)" %
+                xlen = max(len(x) for x in batch_train['ys'])
+            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/xlen:%d (%.2f min)" %
                         (step, train_set.epoch_detail,
                          loss_train, loss_dev,
-                         lr, len(batch_train['utt_ids']),
-                         x_len, duration_step / 60))
+                         lr_controller.lr, len(batch_train['utt_ids']),
+                         xlen, duration_step / 60))
             start_time_step = time.time()
         step += args.n_gpus
         pbar_epoch.update(len(batch_train['utt_ids']))
@@ -393,8 +395,9 @@ def main():
 
             if epoch < args.eval_start_epoch:
                 # Save the model
-                model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
-                                             lr, metric_dev_best)
+                model.module.save_checkpoint(
+                    model.module.save_path, lr_controller,
+                    epoch, step - 1, metric_dev_best)
                 reporter._epoch += 1
                 # TODO(hirofumi): fix later
             else:
@@ -428,8 +431,8 @@ def main():
                 reporter.epoch(metric_dev)
 
                 # Update learning rate
-                model.module.optimizer, lr = lr_controller.decay_lr(
-                    model.module.optimizer, lr, epoch=epoch, value=metric_dev)
+                model.module.optimizer = lr_controller.decay(
+                    model.module.optimizer, epoch=epoch, value=metric_dev)
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
@@ -437,34 +440,35 @@ def main():
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    model.module.save_checkpoint(model.module.save_path, epoch, step - 1,
-                                                 lr, metric_dev_best)
+                    model.module.save_checkpoint(
+                        model.module.save_path, lr_controller,
+                        epoch, step - 1, metric_dev_best)
 
                     # test
-                    for eval_set in eval_sets:
+                    for s in eval_sets:
                         if args.metric == 'edit_distance':
                             if args.unit in ['word', 'word_char']:
-                                wer_test = eval_word([model.module], eval_set, recog_params,
+                                wer_test = eval_word([model.module], s, recog_params,
                                                      epoch=epoch)[0]
-                                logger.info('WER (%s): %.3f %%' % (eval_set.set, wer_test))
+                                logger.info('WER (%s): %.3f %%' % (s.set, wer_test))
                             elif args.unit == 'wp':
-                                wer_test = eval_wordpiece([model.module], eval_set, recog_params,
+                                wer_test = eval_wordpiece([model.module], s, recog_params,
                                                           epoch=epoch)[0]
-                                logger.info('WER (%s): %.3f %%' % (eval_set.set, wer_test))
+                                logger.info('WER (%s): %.3f %%' % (s.set, wer_test))
                             elif 'char' in args.unit:
-                                test_results = eval_char([model.module], eval_set, recog_params,
+                                test_results = eval_char([model.module], s, recog_params,
                                                          epoch=epoch)
                                 cer_test = test_results[1][0]
                                 wer_test = test_results[0][0]
-                                logger.info('CER (%s): %.3f %%' % (eval_set.set, cer_test))
-                                logger.info('WER (%s): %.3f %%' % (eval_set.set, wer_test))
+                                logger.info('CER (%s): %.3f %%' % (s.set, cer_test))
+                                logger.info('WER (%s): %.3f %%' % (s.set, wer_test))
                             elif 'phone' in args.unit:
-                                per_test = eval_phone([model.module], eval_set, recog_params,
+                                per_test = eval_phone([model.module], s, recog_params,
                                                       epoch=epoch)[0]
-                                logger.info('PER (%s): %.3f %%' % (eval_set.set, per_test))
+                                logger.info('PER (%s): %.3f %%' % (s.set, per_test))
                         elif args.metric == 'loss':
-                            loss_test = eval_loss([model.module], eval_set, recog_params)
-                            logger.info('Loss (%s): %.3f %%' % (eval_set.set, loss_test))
+                            loss_test = eval_loss([model.module], s, recog_params)
+                            logger.info('Loss (%s): %.3f %%' % (s.set, loss_test))
                         else:
                             raise NotImplementedError(args.metric)
                 else:
@@ -487,12 +491,10 @@ def main():
 
                 # Convert to fine-tuning stage
                 if epoch == args.convert_to_sgd_epoch:
-                    lr = args.learning_rate
-                    model.module.set_optimizer(
-                        'sgd',
-                        learning_rate=lr,
-                        weight_decay=float(args.weight_decay))
-                    lr_controller = Controller(learning_rate=lr,
+                    model.module.set_optimizer('sgd',
+                                               learning_rate=args.learning_rate,
+                                               weight_decay=float(args.weight_decay))
+                    lr_controller = Controller(learning_rate=args.learning_rate,
                                                decay_type='epoch',
                                                decay_start_epoch=epoch,
                                                decay_rate=0.5,
@@ -617,16 +619,20 @@ def make_model_name(args, subsample_factor):
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
-                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') -
+                                            getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
+
+    # contextualization
+    if args.concat_prev_n_utterances > 0:
+        dir_name += '_concat' + str(args.concat_prev_n_utterances) + 'utt'
 
     # Pre-training
     if args.pretrained_model and os.path.isdir(args.pretrained_model):
         # Load a conf file
-        config_pt = load_config(os.path.join(args.pretrained_model, 'conf.yml'))
-        dir_name += '_' + config_pt['unit'] + 'pt'
+        conf_pt = load_config(os.path.join(args.pretrained_model, 'conf.yml'))
+        dir_name += '_' + conf_pt['unit'] + 'pt'
 
     return dir_name
 

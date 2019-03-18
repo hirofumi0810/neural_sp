@@ -59,17 +59,17 @@ class Controller(object):
         self.warmup_start_lr = warmup_start_learning_rate
         self.warmup_n_steps = warmup_n_steps
 
-    def decay_lr(self, optimizer, lr, epoch, value):
+        self.lr = self.lr_init
+
+    def decay(self, optimizer, epoch, value):
         """Decay learning rate per epoch.
 
         Args:
-            optimizer:
-            lr (float): the current learning rete
+            optimizer ():
             epoch (int): the current epoch
-            value: (float) A value to evaluate
+            value: (float): A value to evaluate
         Returns:
-            optimizer:
-            lr (float): the decayed learning rate
+            optimizer ():
 
         """
         if not self.lower_better:
@@ -93,49 +93,47 @@ class Controller(object):
                 else:
                     # Not improved, and learning rate will be decayed
                     self.not_improved_n_epochs = 0
-                    lr *= self.decay_rate
+                    self.lr *= self.decay_rate
 
                     # Update optimizer
                     for param_group in optimizer.param_groups:
                         if isinstance(optimizer, torch.optim.Adadelta):
-                            param_group['eps'] = lr
+                            param_group['eps'] = self.lr
                         else:
-                            param_group['lr'] = lr
+                            param_group['lr'] = self.lr
 
             elif self.decay_type == 'epoch':
-                lr *= self.decay_rate
+                self.lr *= self.decay_rate
 
                 # Update optimizer
                 for param_group in optimizer.param_groups:
                     if isinstance(optimizer, torch.optim.Adadelta):
-                        param_group['eps'] = lr
+                        param_group['eps'] = self.lr
                     else:
-                        param_group['lr'] = lr
+                        param_group['lr'] = self.lr
 
-        return optimizer, lr
+        return optimizer
 
-    def warmup_lr(self, optimizer, lr, step):
+    def warmup(self, optimizer, step):
         """Warm up learning rate per step.
 
         Args:
-            optimizer:
-            lr (float): the current learning rete
+            optimizer ():
             epoch (int): the current epoch
         Returns:
-            optimizer:
-            lr (float): the decayed learning rate
+            optimizer ():
 
         """
         if self.warmup_start_lr > 0:
             # linearly increse
-            lr = (self.lr_max - self.warmup_start_lr) / self.warmup_n_steps * step + self.lr_init
+            self.lr = (self.lr_max - self.warmup_start_lr) / self.warmup_n_steps * step + self.lr_init
         else:
             # based on the original transformer paper
-            lr = self.lr_init * min(step ** (-0.5),
-                                    step * (self.warmup_n_steps ** (-1.5)))
+            self.lr = self.lr_init * min(step ** (-0.5),
+                                         step * (self.warmup_n_steps ** (-1.5)))
 
         # Update optimizer
         for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
+            param_group['lr'] = self.lr
 
-        return optimizer, lr
+        return optimizer

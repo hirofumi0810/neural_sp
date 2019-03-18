@@ -40,7 +40,7 @@ def main():
         os.remove(os.path.join(args.plot_dir, 'plot.log'))
     logger = set_logger(os.path.join(args.plot_dir, 'plot.log'), key='decoding')
 
-    for i, set in enumerate(args.recog_sets):
+    for i, s in enumerate(args.recog_sets):
         subsample_factor = 1
         subsample_factor_sub1 = 1
         subsample = [int(s) for s in args.subsample.split('_')]
@@ -55,7 +55,7 @@ def main():
 
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
-                          tsv_path=set,
+                          tsv_path=s,
                           dict_path=os.path.join(args.recog_model, 'dict.txt'),
                           dict_path_sub1=os.path.join(args.recog_model, 'dict_sub1.txt') if os.path.isfile(
                               os.path.join(args.recog_model, 'dict_sub1.txt')) else None,
@@ -72,8 +72,7 @@ def main():
 
             # Load the ASR model
             model = Seq2seq(args)
-            epoch, _, _, _ = model.load_checkpoint(args.recog_model)
-
+            epoch = model.load_checkpoint(args.recog_model)['epoch']
             model.save_path = args.recog_model
 
             # GPU setting
