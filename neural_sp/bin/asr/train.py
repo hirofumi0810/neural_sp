@@ -110,8 +110,7 @@ def main():
                         subsample_factor=subsample_factor,
                         subsample_factor_sub1=subsample_factor_sub1,
                         subsample_factor_sub2=subsample_factor_sub2,
-                        subsample_factor_sub3=subsample_factor_sub3,
-                        skip_speech=(args.input_type != 'speech'))
+                        subsample_factor_sub3=subsample_factor_sub3)
     dev_set = Dataset(tsv_path=args.dev_set,
                       tsv_path_sub1=args.dev_set_sub1,
                       tsv_path_sub2=args.dev_set_sub2,
@@ -139,8 +138,7 @@ def main():
                       subsample_factor=subsample_factor,
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
-                      subsample_factor_sub3=subsample_factor_sub3,
-                      skip_speech=(args.input_type != 'speech'))
+                      subsample_factor_sub3=subsample_factor_sub3)
     eval_sets = []
     for set in args.eval_sets:
         eval_sets += [Dataset(tsv_path=set,
@@ -148,8 +146,7 @@ def main():
                               unit=args.unit,
                               wp_model=args.wp_model,
                               batch_size=1,
-                              is_test=True,
-                              skip_speech=(args.input_type != 'speech'))]
+                              is_test=True)]
 
     args.vocab = train_set.vocab
     args.vocab_sub1 = train_set.vocab_sub1

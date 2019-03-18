@@ -39,7 +39,7 @@ class Dataset(Base):
                  shuffle=False, sort_by_input_length=False,
                  short2long=False, sort_stop_epoch=None,
                  n_ques=None, dynamic_batching=False,
-                 ctc=False, subsample_factor=1, skip_speech=False,
+                 ctc=False, subsample_factor=1,
                  wp_model=False,
                  tsv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
                  wp_model_sub1=False,
@@ -72,7 +72,6 @@ class Dataset(Base):
                 dynamically in training
             ctc (bool):
             subsample_factor (int):
-            skip_speech (bool): skip loading speech features
             wp_model ():
 
         """
@@ -89,7 +88,6 @@ class Dataset(Base):
         self.sort_stop_epoch = sort_stop_epoch
         self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
-        self.skip_speech = skip_speech
         self.vocab = self.count_vocab_size(dict_path)
 
         # Set index converter
@@ -208,8 +206,8 @@ class Dataset(Base):
 
             if df_sub1 is not None:
                 if ctc_sub1 and subsample_factor_sub1 > 1:
-                    df_sub1 = df_sub1[df_sub1.apply(lambda x: x['ylen'] <= x['xlen']
-                                                    // subsample_factor_sub1, axis=1)]
+                    df_sub1 = df_sub1[df_sub1.apply(lambda x: x['ylen'] <= x['xlen'] //
+                                                    subsample_factor_sub1, axis=1)]
 
                 if len(df) != len(df_sub1):
                     nutts = len(df)
@@ -219,8 +217,8 @@ class Dataset(Base):
 
             if df_sub2 is not None:
                 if ctc_sub2 and subsample_factor_sub2 > 1:
-                    df_sub2 = df_sub2[df_sub2.apply(lambda x: x['ylen'] <= x['xlen']
-                                                    // subsample_factor_sub2, axis=1)]
+                    df_sub2 = df_sub2[df_sub2.apply(lambda x: x['ylen'] <= x['xlen'] //
+                                                    subsample_factor_sub2, axis=1)]
 
                 if len(df) != len(df_sub2):
                     nutts = len(df)
@@ -231,8 +229,8 @@ class Dataset(Base):
 
             if df_sub3 is not None:
                 if ctc_sub3 and subsample_factor_sub3 > 1:
-                    df_sub3 = df_sub3[df_sub3.apply(lambda x: x['ylen'] <= x['xlen']
-                                                    // subsample_factor_sub3, axis=1)]
+                    df_sub3 = df_sub3[df_sub3.apply(lambda x: x['ylen'] <= x['xlen'] //
+                                                    subsample_factor_sub3, axis=1)]
 
                 if len(df) != len(df_sub3):
                     nutts = len(df)
@@ -279,11 +277,8 @@ class Dataset(Base):
 
         """
         # input
-        if not self.skip_speech:
-            xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in utt_indices]
-            xlens = [self.df['xlen'][i] for i in utt_indices]
-        else:
-            xs, xlens = [], []
+        xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in utt_indices]
+        xlens = [self.df['xlen'][i] for i in utt_indices]
 
         # output
         if self.is_test:
