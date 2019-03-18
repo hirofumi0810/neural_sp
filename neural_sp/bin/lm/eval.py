@@ -55,7 +55,7 @@ def main():
 
             # Load the RNNLM
             seq_rnnlm = SeqRNNLM(args)
-            epoch, _, _, _ = seq_rnnlm.load_checkpoint(args.recog_model[0], epoch=args.recog_epoch)
+            epoch, _, _, _ = seq_rnnlm.load_checkpoint(args.recog_model[0])
             rnnlm = seq_rnnlm
 
             # Copy parameters

@@ -289,7 +289,7 @@ class ModelBase(nn.Module):
         """Save checkpoint.
 
         Args:
-            save_path (str): path to save a model (directory)
+            save_path (str): path to the directory to save a model
             epoch (int): the currnet epoch
             step (int): the current step
             lr (float):
@@ -320,11 +320,11 @@ class ModelBase(nn.Module):
 
         logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))
 
-    def load_checkpoint(self, save_path, epoch=-1, resume=False):
+    def load_checkpoint(self, checkpoint_path, resume=False):
         """Load checkpoint.
 
         Args:
-            save_path (str): path to the saved models
+            checkpoint_path (str): path to the saved model (model..epoch-*)
             epoch (int): negative values mean the offset from the last saved model
             resume (bool): if True, restore the save optimizer
         Returns:
@@ -334,16 +334,10 @@ class ModelBase(nn.Module):
             metric_dev_best (float)
 
         """
-        if int(epoch) < 0:
-            models = [(int(os.path.basename(x).split('-')[-1]), x)
-                      for x in glob(os.path.join(save_path, 'model.*'))]
-            if len(models) == 0:
-                raise ValueError('There is no checkpoint')
+        if not os.path.isfile(checkpoint_path):
+            raise ValueError('There is no checkpoint')
 
-            # Sort in the discending order
-            epoch = sorted(models, key=lambda x: x[0])[epoch][0]
-
-        checkpoint_path = os.path.join(save_path, 'model.epoch-' + str(epoch))
+        epoch = int(os.path.basename(checkpoint_path).split('-')[-1])
 
         if os.path.isfile(checkpoint_path):
             checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)

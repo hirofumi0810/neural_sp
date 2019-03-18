@@ -121,8 +121,6 @@ def parse():
                         help='path to tsv files for the evaluation sets')
     parser.add_argument('--recog_model', type=str, default=None, nargs='+',
                         help='path to the model')
-    parser.add_argument('--recog_epoch', type=int, default=-1,
-                        help='epoch to restore')
     parser.add_argument('--recog_dir', type=str, default=None,
                         help='directory to save decoding results')
     parser.add_argument('--recog_batch_size', type=int, default=1,

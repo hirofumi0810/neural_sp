@@ -49,7 +49,7 @@ def main():
 
     # Load a conf file
     if args.resume:
-        conf = load_config(os.path.join(args.resume, 'conf.yml'))
+        conf = load_config(os.path.join(os.path.dirname(args.resume), 'conf.yml'))
         for k, v in conf.items():
             if k != 'resume':
                 setattr(args, k, v)
@@ -160,9 +160,9 @@ def main():
     # Load a RNNLM conf file for cold fusion & RNNLM initialization
     if args.rnnlm_cold_fusion:
         if args.model:
-            rnnlm_conf = load_config(os.path.join(args.rnnlm_cold_fusion, 'conf.yml'))
+            rnnlm_conf = load_config(os.path.join(os.path.dirname(args.rnnlm_cold_fusion), 'conf.yml'))
         elif args.resume:
-            rnnlm_conf = load_config(os.path.join(args.resume, 'conf_rnnlm.yml'))
+            rnnlm_conf = load_config(os.path.join(os.path.dirname(args.resume), 'conf_rnnlm.yml'))
         args.rnnlm_conf = argparse.Namespace()
         for k, v in rnnlm_conf.items():
             setattr(args.rnnlm_conf, k, v)
@@ -178,10 +178,10 @@ def main():
 
     if args.resume:
         # Set save path
-        model.save_path = args.resume
+        model.save_path = os.path.dirname(args.resume)
 
         # Setting for logging
-        logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
+        logger = set_logger(os.path.join(os.path.dirname(args.resume), 'train.log'), key='training')
 
         # Set optimizer
         model.set_optimizer(
@@ -190,8 +190,7 @@ def main():
             weight_decay=float(conf['weight_decay']))
 
         # Restore the last saved model
-        epoch, step, lr, metric_dev_best = model.load_checkpoint(
-            save_path=args.resume, epoch=-1, resume=True)
+        epoch, step, lr, metric_dev_best = model.load_checkpoint(args.resume, resume=True)
 
         if epoch >= conf['convert_to_sgd_epoch']:
             model.set_optimizer(
@@ -239,7 +238,7 @@ def main():
 
             # Load the ASR model
             model_pre = Seq2seq(args_pt)
-            model_pre.load_checkpoint(args.pretrained_model, epoch=-1)
+            model_pre.load_checkpoint(args.pretrained_model)
 
             # Overwrite parameters
             only_enc = (args.enc_n_layers != args_pt.enc_n_layers) or (args.unit != args_pt.unit)
@@ -486,10 +485,18 @@ def main():
 
                 # Convert to fine-tuning stage
                 if epoch == args.convert_to_sgd_epoch:
+                    # lr = args.learning_rate
                     model.module.set_optimizer(
-                        'sgd',
-                        learning_rate=float(args.learning_rate),  # back to start lr
+                        # 'sgd',
+                        'adam',
+                        learning_rate=lr,
                         weight_decay=float(args.weight_decay))
+                    lr_controller = Controller(learning_rate=lr,
+                                               decay_type='epoch',
+                                               decay_start_epoch=epoch,
+                                               #    decay_rate=0.1,
+                                               decay_rate=args.decay_rate,
+                                               lower_better=True)
                     logger.info('========== Convert to SGD ==========')
 
             pbar_epoch = tqdm(total=len(train_set))
@@ -611,8 +618,8 @@ def make_model_name(args, subsample_factor):
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
-                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') -
+                                            getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
 

@@ -10,8 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import argparse
-import copy
 import numpy as np
 import os
 import shutil
@@ -56,7 +54,7 @@ def main():
 
             # Load the RNNLM
             seq_rnnlm = SeqRNNLM(args)
-            epoch, _, _, _ = seq_rnnlm.load_checkpoint(args.recog_model[0], epoch=args.recog_epoch)
+            epoch, _, _, _ = seq_rnnlm.load_checkpoint(args.recog_model[0])
             rnnlm = seq_rnnlm
             rnnlm.save_path = args.recog_model[0]
 
@@ -68,6 +66,8 @@ def main():
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache theta: %d' % (args.recog_cache_theta))
             logger.info('cache lambda: %d' % (args.recog_cache_lambda))
+            rnnlm.cache_theta = args.recog_cache_theta
+            rnnlm.cache_lambda = args.recog_cache_lambda
 
             # GPU setting
             rnnlm.cuda()

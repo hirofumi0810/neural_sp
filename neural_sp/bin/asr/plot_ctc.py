@@ -75,7 +75,7 @@ def main():
 
             # Load the ASR model
             model = Seq2seq(args)
-            epoch, _, _, _ = model.load_checkpoint(args.recog_model, epoch=args.recog_epoch)
+            epoch, _, _, _ = model.load_checkpoint(args.recog_model)
 
             model.save_path = args.recog_model
 

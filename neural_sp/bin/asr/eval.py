@@ -93,7 +93,7 @@ def main():
 
             # Load the ASR model
             model = Seq2seq(args)
-            epoch, _, _, _ = model.load_checkpoint(args.recog_model[0], epoch=args.recog_epoch)
+            epoch, _, _, _ = model.load_checkpoint(args.recog_model[0])
             model.save_path = args.recog_model[0]
 
             # ensemble (different models)
@@ -110,14 +110,14 @@ def main():
                             setattr(args_e, k, v)
 
                     model_e = Seq2seq(args_e)
-                    model_e.load_checkpoint(recog_model_e, epoch=args.recog_epoch)
+                    model_e.load_checkpoint(recog_model_e)
                     model_e.cuda()
                     ensemble_models += [model_e]
             # checkpoint ensemble
             elif args.recog_checkpoint_ensemble > 1:
                 for i_e in range(1, args.recog_checkpoint_ensemble):
                     model_e = Seq2seq(args)
-                    model_e.load_checkpoint(args.recog_model[0], epoch=args.recog_epoch - i_e)
+                    model_e.load_checkpoint(args.recog_model[0])
                     model_e.cuda()
                     ensemble_models += [model_e]
 
@@ -137,7 +137,7 @@ def main():
 
                     # Load the pre-trianed RNNLM
                     seq_rnnlm = SeqRNNLM(args_rnnlm)
-                    seq_rnnlm.load_checkpoint(args.recog_rnnlm, epoch=-1)
+                    seq_rnnlm.load_checkpoint(args.recog_rnnlm)
 
                     # Copy parameters
                     # rnnlm = RNNLM(args_rnnlm)
@@ -164,7 +164,7 @@ def main():
 
                     # Load the pre-trianed RNNLM
                     seq_rnnlm_bwd = SeqRNNLM(args_rnnlm_bwd)
-                    seq_rnnlm_bwd.load_checkpoint(args.recog_rnnlm_bwd, epoch=-1)
+                    seq_rnnlm_bwd.load_checkpoint(args.recog_rnnlm_bwd)
 
                     # Copy parameters
                     rnnlm_bwd = RNNLM(args_rnnlm_bwd)
