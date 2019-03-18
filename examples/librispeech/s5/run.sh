@@ -385,6 +385,7 @@ if [ ${stage} -le 4 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
+        --corpus librispeech \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \

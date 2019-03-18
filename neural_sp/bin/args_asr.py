@@ -13,6 +13,8 @@ from distutils.util import strtobool
 def parse():
     parser = argparse.ArgumentParser()
     # general
+    parser.add_argument('--corpus', type=str,
+                        help='name of corpus')
     parser.add_argument('--n_gpus', type=int, default=1,
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--model', type=str, default=False,

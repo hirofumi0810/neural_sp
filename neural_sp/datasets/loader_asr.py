@@ -40,7 +40,8 @@ class Dataset(Base):
                  short2long=False, sort_stop_epoch=None,
                  n_ques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1,
-                 wp_model=False, concat_n_utterances=1, prev_n_tokens=0,
+                 wp_model=False, corpus='',
+                 concat_prev_n_utterances=1, prev_n_tokens=0,
                  tsv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
                  wp_model_sub1=False,
                  ctc_sub1=False, subsample_factor_sub1=1,
@@ -73,7 +74,8 @@ class Dataset(Base):
             ctc (bool):
             subsample_factor (int):
             wp_model ():
-            concat_n_utterances (int): number of utterances to concatenate
+            corpus (str): name of corpus
+            concat_prev_n_utterances (int): number of utterances to concatenate
             prev_n_tokens (int): number of previous tokens for cache (for training)
 
         """
@@ -90,7 +92,7 @@ class Dataset(Base):
         self.sort_stop_epoch = sort_stop_epoch
         self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
-        self.concat_n_utterances = concat_n_utterances
+        self.concat_prev_n_utterances = concat_prev_n_utterances
         self.prev_n_tokens = prev_n_tokens
         self.vocab = self.count_vocab_size(dict_path)
 
@@ -146,9 +148,10 @@ class Dataset(Base):
             else:
                 setattr(self, 'df_sub' + str(i), None)
 
-        if concat_n_utterances > 1:
+        if concat_prev_n_utterances > 1 or prev_n_tokens > 0:
             max_n_frames = 10000
             min_n_frames = 1
+            assert corpus in ['swbd', 'csj', 'librispeech']
 
         # Remove inappropriate utterances
         if self.is_test:

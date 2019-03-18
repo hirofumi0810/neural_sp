@@ -188,6 +188,7 @@ if [ ${stage} -le 4 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
+        --corpus timit \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}.tsv \
         --dev_set ${data}/dataset/${dev_set}.tsv \

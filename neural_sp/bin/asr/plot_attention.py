@@ -48,7 +48,8 @@ def main():
 
     for i, set in enumerate(args.recog_sets):
         # Load dataset
-        dataset = Dataset(tsv_path=set,
+        dataset = Dataset(corpus=args.corpus,
+                          tsv_path=set,
                           dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
                           dict_path_sub1=os.path.join(args.recog_model[0], 'dict_sub1.txt') if os.path.isfile(
                               os.path.join(args.recog_model[0], 'dict_sub1.txt')) else None,
