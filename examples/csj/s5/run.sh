@@ -119,8 +119,8 @@ lm_tie_embedding=true
 lm_residual=true
 lm_use_glu=true
 # optimization
-lm_batch_size=128
-lm_bptt=100
+lm_batch_size=64
+lm_bptt=200
 lm_optimizer=adam
 lm_learning_rate=1e-3
 lm_n_epochs=50
