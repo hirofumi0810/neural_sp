@@ -271,17 +271,13 @@ class ModelBase(nn.Module):
 
     def set_save_path(self, save_path):
         # Reset model directory
-        model_index = 0
+        model_idx = 0
         save_path_tmp = save_path
         while True:
-            if os.path.isfile(os.path.join(save_path_tmp, '.done_training')):
-                # Training of the first model have been finished
-                model_index += 1
-                save_path_tmp = save_path + '_' + str(model_index)
-            elif os.path.isfile(os.path.join(save_path_tmp, 'config.yml')):
+            if os.path.isfile(os.path.join(save_path_tmp, 'conf.yml')):
                 # Training of the first model have not been finished yet
-                model_index += 1
-                save_path_tmp = save_path + '_' + str(model_index)
+                model_idx += 1
+                save_path_tmp = save_path + '_' + str(model_idx)
             else:
                 break
         if not os.path.isdir(save_path_tmp):
