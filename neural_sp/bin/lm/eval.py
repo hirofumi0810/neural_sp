@@ -51,8 +51,6 @@ def main():
                           is_test=True)
 
         if i == 0:
-            args.vocab = dataset.vocab
-
             # Load the RNNLM
             seq_rnnlm = SeqRNNLM(args)
             epoch, _, _, _ = seq_rnnlm.load_checkpoint(args.recog_model[0])

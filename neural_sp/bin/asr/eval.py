@@ -70,12 +70,6 @@ def main():
                           is_test=True)
 
         if i == 0:
-            args.vocab = dataset.vocab
-            args.vocab_sub1 = dataset.vocab_sub1
-            args.vocab_sub2 = dataset.vocab_sub2
-            args.vocab_sub3 = dataset.vocab_sub3
-            args.input_dim = dataset.input_dim
-
             # For cold fusion
             # if args.rnnlm_cold_fusion:
             #     # Load a RNNLM conf file

@@ -65,10 +65,6 @@ def main():
                           is_test=True)
 
         if i == 0:
-            args.vocab = dataset.vocab
-            args.vocab_sub1 = dataset.vocab_sub1
-            args.input_dim = dataset.input_dim
-
             # TODO(hirofumi): For cold fusion
             args.rnnlm_cold_fusion = None
             args.rnnlm_init = None
