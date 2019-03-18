@@ -59,12 +59,12 @@ class Dataset(Base):
             batch_size (int): the size of mini-batch
             n_epochs (int): the max epoch. None means infinite loop.
             is_test (bool):
-            min_n_frames (int): Exclude utteraces shorter than this value
-            max_n_frames (int): Exclude utteraces longer than this value
+            min_n_frames (int): Exclude utterances shorter than this value
+            max_n_frames (int): Exclude utterances longer than this value
             shuffle (bool): if True, shuffle utterances.
                 This is disabled when sort_by_input_length is True.
             sort_by_input_length (bool): if True, sort all utterances in the ascending order
-            short2long (bool): if True, sort utteraces in the descending order
+            short2long (bool): if True, sort utterances in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
             n_ques (int): the number of elements to enqueue
@@ -73,8 +73,8 @@ class Dataset(Base):
             ctc (bool):
             subsample_factor (int):
             wp_model ():
-            concat_n_utterances (int):
-            prev_n_tokens (int):
+            concat_n_utterances (int): number of utterances to concatenate
+            prev_n_tokens (int): number of previous tokens for cache (for training)
 
         """
         super(Dataset, self).__init__()
@@ -110,62 +110,28 @@ class Dataset(Base):
         else:
             raise ValueError(unit)
 
-        if dict_path_sub1:
-            self.vocab_sub1 = self.count_vocab_size(dict_path_sub1)
+        for i in range(1, 4):
+            dict_path_sub = locals()['dict_path_sub' + str(i)]
+            wp_model_sub = locals()['wp_model_sub' + str(i)]
+            unit_sub = locals()['unit_sub' + str(i)]
+            if dict_path_sub:
+                setattr(self, 'vocab_sub' + str(i), self.count_vocab_size(dict_path_sub))
 
-            # Set index converter
-            if unit_sub1:
-                if unit_sub1 == 'wp':
-                    self.idx2wp_sub1 = Idx2wp(dict_path_sub1, wp_model_sub1)
-                    self.wp2idx_sub1 = Wp2idx(dict_path_sub1, wp_model_sub1)
-                elif unit_sub1 == 'char':
-                    self.idx2char_sub1 = Idx2char(dict_path_sub1)
-                    self.char2idx_sub1 = Char2idx(dict_path_sub1)
-                elif 'phone' in unit_sub1:
-                    self.idx2phone_sub1 = Idx2phone(dict_path_sub1)
-                    self.phone2idx_sub1 = Phone2idx(dict_path_sub1)
-                else:
-                    raise ValueError(unit_sub1)
-        else:
-            self.vocab_sub1 = -1
-
-        if dict_path_sub2:
-            self.vocab_sub2 = self.count_vocab_size(dict_path_sub2)
-
-            # Set index converter
-            if unit_sub2:
-                if unit_sub2 == 'wp':
-                    self.idx2wp_sub2 = Idx2wp(dict_path_sub2, wp_model_sub2)
-                    self.wp2idx_sub2 = Wp2idx(dict_path_sub2, wp_model_sub2)
-                elif unit_sub2 == 'char':
-                    self.idx2char_sub2 = Idx2char(dict_path_sub2)
-                    self.char2idx_sub2 = Char2idx(dict_path_sub2)
-                elif 'phone' in unit_sub2:
-                    self.idx2phone_sub2 = Idx2phone(dict_path_sub2)
-                    self.phone2idx_sub2 = Phone2idx(dict_path_sub2)
-                else:
-                    raise ValueError(unit_sub2)
-        else:
-            self.vocab_sub2 = -1
-
-        if dict_path_sub3:
-            self.vocab_sub3 = self.count_vocab_size(dict_path_sub3)
-
-            # Set index converter
-            if unit_sub3:
-                if unit_sub3 == 'wp':
-                    self.idx2wp_sub3 = Idx2wp(dict_path_sub3, wp_model_sub3)
-                    self.wp2idx_sub3 = Wp2idx(dict_path_sub3, wp_model_sub3)
-                elif unit_sub3 == 'char':
-                    self.idx2char_sub3 = Idx2char(dict_path_sub3)
-                    self.char2idx_sub3 = Char2idx(dict_path_sub3)
-                elif 'phone' in unit_sub3:
-                    self.idx2phone_sub3 = Idx2phone(dict_path_sub3)
-                    self.phone2idx_sub3 = Phone2idx(dict_path_sub3)
-                else:
-                    raise ValueError(unit_sub3)
-        else:
-            self.vocab_sub3 = -1
+                # Set index converter
+                if unit_sub:
+                    if unit_sub == 'wp':
+                        setattr(self, 'idx2wp_sub' + str(i), Idx2wp(dict_path_sub, wp_model_sub))
+                        setattr(self, 'wp2idx_sub' + str(i), Wp2idx(dict_path_sub, wp_model_sub))
+                    elif unit_sub == 'char':
+                        setattr(self, 'idx2char_sub' + str(i), Idx2char(dict_path_sub))
+                        setattr(self, 'char2idx_sub' + str(i), Char2idx(dict_path_sub))
+                    elif 'phone' in unit_sub:
+                        setattr(self, 'idx2phone_sub' + str(i),  Idx2phone(dict_path_sub))
+                        setattr(self, 'phone2idx_sub' + str(i),  Phone2idx(dict_path_sub))
+                    else:
+                        raise ValueError(unit_sub)
+            else:
+                setattr(self, 'vocab_sub' + str(i), -1)
 
         # Load dataset csv file
         self.df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
@@ -184,7 +150,7 @@ class Dataset(Base):
             max_n_frames = 10000
             min_n_frames = 1
 
-        # Remove inappropriate utteraces
+        # Remove inappropriate utterances
         if self.is_test:
             print('Original utterance num: %d' % len(self.df))
             n_utts = len(self.df)

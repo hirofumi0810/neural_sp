@@ -102,9 +102,9 @@ class Dataset(Base):
         # NOTE: <sos> and <eos> have the same index
 
         # Reshape
-        n_utt = len(concat_ids)
-        concat_ids = concat_ids[:n_utt // batch_size * batch_size]
-        print('Removed %d tokens / %d tokens' % (n_utt - len(concat_ids), n_utt))
+        n_utts = len(concat_ids)
+        concat_ids = concat_ids[:n_utts // batch_size * batch_size]
+        print('Removed %d tokens / %d tokens' % (n_utts - len(concat_ids), n_utts))
         self.concat_ids = np.array(concat_ids).reshape((batch_size, -1))
 
     def __len__(self):
