@@ -40,7 +40,7 @@ class Dataset(Base):
                  short2long=False, sort_stop_epoch=None,
                  n_ques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1,
-                 wp_model=False,
+                 wp_model=False, concat_n_utterances=1, prev_n_tokens=0,
                  tsv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
                  wp_model_sub1=False,
                  ctc_sub1=False, subsample_factor_sub1=1,
@@ -73,6 +73,8 @@ class Dataset(Base):
             ctc (bool):
             subsample_factor (int):
             wp_model ():
+            concat_n_utterances (int):
+            prev_n_tokens (int):
 
         """
         super(Dataset, self).__init__()
@@ -88,6 +90,8 @@ class Dataset(Base):
         self.sort_stop_epoch = sort_stop_epoch
         self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
+        self.concat_n_utterances = concat_n_utterances
+        self.prev_n_tokens = prev_n_tokens
         self.vocab = self.count_vocab_size(dict_path)
 
         # Set index converter
@@ -164,96 +168,66 @@ class Dataset(Base):
             self.vocab_sub3 = -1
 
         # Load dataset csv file
-        df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
-        df = df.loc[:, ['utt_id', 'speaker', 'feat_path',
-                        'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
-        if tsv_path_sub1:
-            df_sub1 = pd.read_csv(tsv_path_sub1, encoding='utf-8', delimiter='\t')
-            df_sub1 = df_sub1.loc[:, ['utt_id', 'speaker', 'feat_path',
-                                      'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
-        else:
-            df_sub1 = None
-        if tsv_path_sub2:
-            df_sub2 = pd.read_csv(tsv_path_sub2, encoding='utf-8', delimiter='\t')
-            df_sub2 = df_sub2.loc[:, ['utt_id', 'speaker', 'feat_path',
-                                      'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
-        else:
-            df_sub2 = None
-        if tsv_path_sub3:
-            df_sub3 = pd.read_csv(tsv_path_sub3, encoding='utf-8', delimiter='\t')
-            df_sub3 = df_sub3.loc[:, ['utt_id', 'speaker', 'feat_path',
-                                      'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
-        else:
-            df_sub3 = None
+        self.df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
+        self.df = self.df.loc[:, ['utt_id', 'speaker', 'feat_path',
+                                  'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+        for i in range(1, 4):
+            if locals()['tsv_path_sub' + str(i)]:
+                df_sub = pd.read_csv(locals()['tsv_path_sub' + str(i)], encoding='utf-8', delimiter='\t')
+                df_sub = df_sub.loc[:, ['utt_id', 'speaker', 'feat_path',
+                                        'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+                setattr(self, 'df_sub' + str(i), df_sub)
+            else:
+                setattr(self, 'df_sub' + str(i), None)
+
+        if concat_n_utterances > 1:
+            max_n_frames = 10000
+            min_n_frames = 1
 
         # Remove inappropriate utteraces
         if self.is_test:
-            print('Original utterance num: %d' % len(df))
-            nutts = len(df)
-            df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
-            print('Removed %d empty utterances' % (nutts - len(df)))
+            print('Original utterance num: %d' % len(self.df))
+            n_utts = len(self.df)
+            self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
+            print('Removed %d empty utterances' % (n_utts - len(self.df)))
         else:
-            print('Original utterance num: %d' % len(df))
-            nutts = len(df)
-            df = df[df.apply(lambda x: min_n_frames <= x['xlen'] <= max_n_frames, axis=1)]
-            df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
-            print('Removed %d utterances (threshold)' % (nutts - len(df)))
+            print('Original utterance num: %d' % len(self.df))
+            n_utts = len(self.df)
+            self.df = self.df[self.df.apply(lambda x: min_n_frames <= x['xlen'] <= max_n_frames, axis=1)]
+            self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
+            print('Removed %d utterances (threshold)' % (n_utts - len(self.df)))
 
             if ctc and subsample_factor > 1:
-                nutts = len(df)
-                df = df[df.apply(lambda x: x['ylen'] <= x['xlen'] // subsample_factor, axis=1)]
-                print('Removed %d utterances (for CTC)' % (nutts - len(df)))
+                n_utts = len(self.df)
+                self.df = self.df[self.df.apply(lambda x: x['ylen'] <= x['xlen'] // subsample_factor, axis=1)]
+                print('Removed %d utterances (for CTC)' % (n_utts - len(self.df)))
 
-            if df_sub1 is not None:
-                if ctc_sub1 and subsample_factor_sub1 > 1:
-                    df_sub1 = df_sub1[df_sub1.apply(lambda x: x['ylen'] <= x['xlen'] //
-                                                    subsample_factor_sub1, axis=1)]
+            for i in range(1, 4):
+                df_sub = getattr(self, 'df_sub' + str(i))
+                ctc_sub = locals()['ctc_sub' + str(i)]
+                subsample_factor_sub = locals()['subsample_factor_sub' + str(i)]
+                if df_sub is not None:
+                    if ctc_sub and subsample_factor_sub > 1:
+                        df_sub = df_sub[df_sub.apply(lambda x: x['ylen'] <= x['xlen'] // subsample_factor_sub, axis=1)]
 
-                if len(df) != len(df_sub1):
-                    nutts = len(df)
-                    df = df.drop(df.index.difference(df_sub1.index))
-                    print('Removed %d utterances (for CTC, sub1)' % (nutts - len(df)))
-                    df_sub1 = df_sub1.drop(df_sub1.index.difference(df.index))
-
-            if df_sub2 is not None:
-                if ctc_sub2 and subsample_factor_sub2 > 1:
-                    df_sub2 = df_sub2[df_sub2.apply(lambda x: x['ylen'] <= x['xlen'] //
-                                                    subsample_factor_sub2, axis=1)]
-
-                if len(df) != len(df_sub2):
-                    nutts = len(df)
-                    df = df.drop(df.index.difference(df_sub2.index))
-                    print('Removed %d utterances (for CTC, sub2)' % (nutts - len(df)))
-                    df_sub1 = df_sub1.drop(df_sub1.index.difference(df.index))
-                    df_sub2 = df_sub2.drop(df_sub2.index.difference(df.index))
-
-            if df_sub3 is not None:
-                if ctc_sub3 and subsample_factor_sub3 > 1:
-                    df_sub3 = df_sub3[df_sub3.apply(lambda x: x['ylen'] <= x['xlen'] //
-                                                    subsample_factor_sub3, axis=1)]
-
-                if len(df) != len(df_sub3):
-                    nutts = len(df)
-                    df = df.drop(df.index.difference(df_sub3.index))
-                    print('Removed %d utterances (for CTC, sub3)' % (nutts - len(df)))
-                    df_sub1 = df_sub1.drop(df_sub1.index.difference(df.index))
-                    df_sub2 = df_sub2.drop(df_sub2.index.difference(df.index))
-                    df_sub3 = df_sub3.drop(df_sub3.index.difference(df.index))
+                    if len(self.df) != len(df_sub):
+                        n_utts = len(self.df)
+                        self.df = self.df.drop(self.df.index.difference(df_sub.index))
+                        print('Removed %d utterances (for CTC, sub%d)' % (n_utts - len(self.df), i))
+                        for j in range(1, i + 1):
+                            setattr(self, 'df_sub' + str(j), getattr(self, 'df_sub' + str(j)
+                                                                     ).drop(getattr(self, 'df_sub' + str(j)).index.difference(self.df.index)))
 
         # Sort csv records
         if sort_by_input_length:
-            df = df.sort_values(by='xlen', ascending=short2long)
+            self.df = self.df.sort_values(by='xlen', ascending=short2long)
         else:
             if shuffle:
-                df = df.reindex(np.random.permutation(df.index))
+                self.df = self.df.reindex(np.random.permutation(self.df.index))
             else:
-                df = df.sort_values(by='utt_id', ascending=True)
+                self.df = self.df.sort_values(by='utt_id', ascending=True)
 
-        self.df = df
-        self.df_sub1 = df_sub1
-        self.df_sub2 = df_sub2
-        self.df_sub3 = df_sub3
-        self.rest = set(list(df.index))
+        self.rest = set(list(self.df.index))
         self.input_dim = kaldi_io.read_mat(self.df['feat_path'][0]).shape[-1]
 
     def make_batch(self, utt_indices):
