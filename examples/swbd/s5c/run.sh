@@ -72,7 +72,7 @@ decay_start_epoch=10
 decay_rate=0.9
 decay_patient_n_epochs=0
 decay_type=epoch
-not_improved_patient_epoch=5
+not_improved_patient_n_epochs=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
 warmup_n_steps=0
@@ -129,7 +129,7 @@ lm_print_step=20
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
-lm_not_improved_patient_epoch=10
+lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
 lm_param_init=0.1
@@ -404,7 +404,7 @@ if [ ${stage} -le 3 ]; then
         --decay_start_epoch ${lm_decay_start_epoch} \
         --decay_rate ${lm_decay_rate} \
         --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
-        --not_improved_patient_epoch ${lm_not_improved_patient_epoch} \
+        --not_improved_patient_n_epochs ${lm_not_improved_patient_n_epochs} \
         --eval_start_epoch ${lm_eval_start_epoch} \
         --param_init ${lm_param_init} \
         --param_init_dist ${lm_param_init_dist} \
@@ -476,7 +476,7 @@ if [ ${stage} -le 4 ]; then
         --decay_rate ${decay_rate} \
         --decay_type ${decay_type} \
         --decay_patient_n_epochs ${decay_patient_n_epochs} \
-        --not_improved_patient_epoch ${not_improved_patient_epoch} \
+        --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \
         --warmup_n_steps ${warmup_n_steps} \

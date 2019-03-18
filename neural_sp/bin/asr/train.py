@@ -15,7 +15,7 @@ import copy
 import cProfile
 import numpy as np
 import os
-# from setproctitle import setproctitle
+from setproctitle import setproctitle
 import shutil
 import time
 import torch
@@ -192,11 +192,16 @@ def main():
         # Restore the last saved model
         epoch, step, lr, metric_dev_best = model.load_checkpoint(args.resume, resume=True)
 
+        lr = 1e-3
         if epoch >= conf['convert_to_sgd_epoch']:
             model.set_optimizer(
                 optimizer='sgd',
-                learning_rate=float(conf['learning_rate']),  # on-the-fly
+                # optimizer='adam',
+                # learning_rate=float(conf['learning_rate']),  # on-the-fly
+                # learning_rate=lr,
+                learning_rate=1e-3,
                 weight_decay=float(conf['weight_decay']))
+
     else:
         # Set save path
         save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
@@ -275,16 +280,17 @@ def main():
     logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
-    # if args.job_name:
-    #     setproctitle(args.job_name)
-    # else:
-    #     setproctitle(dir_name)
+    if args.job_name:
+        setproctitle(args.job_name)
+    else:
+        setproctitle(dir_name)
 
     # Set learning rate controller
     lr_controller = Controller(learning_rate=lr,
                                decay_type=args.decay_type,
                                decay_start_epoch=args.decay_start_epoch,
-                               decay_rate=args.decay_rate,
+                               #    decay_rate=args.decay_rate,
+                               decay_rate=0.1,
                                decay_patient_n_epochs=args.decay_patient_n_epochs,
                                lower_better=True,
                                best_value=metric_dev_best,
@@ -325,7 +331,7 @@ def main():
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    not_improved_epoch = 0
+    not_improved_n_epochs = 0
     pbar_epoch = tqdm(total=len(train_set))
     while True:
         # Compute loss in the training set
@@ -431,7 +437,7 @@ def main():
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
-                    not_improved_epoch = 0
+                    not_improved_n_epochs = 0
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
@@ -466,7 +472,7 @@ def main():
                         else:
                             raise NotImplementedError(args.metric)
                 else:
-                    not_improved_epoch += 1
+                    not_improved_n_epochs += 1
 
                     # start scheduled sampling
                     if args.ss_prob > 0:
@@ -480,7 +486,7 @@ def main():
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
                 # Early stopping
-                if not_improved_epoch == args.not_improved_patient_epoch:
+                if not_improved_n_epochs == args.not_improved_patient_n_epochs:
                     break
 
                 # Convert to fine-tuning stage
@@ -587,7 +593,6 @@ def make_model_name(args, subsample_factor):
 
     # MTL
     if args.mtl_per_batch:
-        dir_name += '_mtlperbatch'
         if args.ctc_weight > 0:
             dir_name += '_' + args.unit + 'ctc'
         if args.bwd_weight > 0:
@@ -618,8 +623,8 @@ def make_model_name(args, subsample_factor):
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') -
-                                            getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
+                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
 

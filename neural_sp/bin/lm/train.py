@@ -14,7 +14,7 @@ import cProfile
 import math
 import numpy as np
 import os
-# from setproctitle import setproctitle
+from setproctitle import setproctitle
 import shutil
 import time
 import torch
@@ -146,17 +146,17 @@ def main():
     logger.info('USERNAME: %s' % os.uname()[1])
 
     # Set process name
-    # if args.job_name:
-    #     setproctitle(args.job_name)
-    # else:
-    #     setproctitle(dir_name)
+    if args.job_name:
+        setproctitle(args.job_name)
+    else:
+        setproctitle(dir_name)
 
     # Set learning rate controller
     lr_controller = Controller(learning_rate=lr,
                                decay_type=args.decay_type,
                                decay_start_epoch=args.decay_start_epoch,
                                decay_rate=args.decay_rate,
-                               decay_patient_epoch=args.decay_patient_epoch,
+                               decay_patient_n_epochs=args.decay_patient_n_epochs,
                                lower_better=True,
                                best_value=ppl_dev_best)
 
@@ -255,7 +255,7 @@ def main():
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
                 # Early stopping
-                if not_improved_epoch == args.not_improved_patient_epoch:
+                if not_improved_epoch == args.not_improved_patient_n_epochs:
                     break
 
                 if epoch == args.convert_to_sgd_epoch:
@@ -270,7 +270,7 @@ def main():
                         decay_type='epoch',
                         decay_start_epoch=epoch,
                         decay_rate=0.1,
-                        decay_patient_epoch=0,
+                        decay_patient_n_epochs=0,
                         lower_better=True,
                         best_value=ppl_dev_best)
                     lr = float(args.learning_rate)

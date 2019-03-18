@@ -81,11 +81,11 @@ def parse():
                         help='')
     parser.add_argument('--decay_rate', type=float, default=0.9,
                         help='')
-    parser.add_argument('--decay_patient_epoch', type=int, default=0,
+    parser.add_argument('--decay_patient_n_epochs', type=int, default=0,
                         help='')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
                         help='')
-    parser.add_argument('--not_improved_patient_epoch', type=int, default=5,
+    parser.add_argument('--not_improved_patient_n_epochs', type=int, default=5,
                         help='')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
                         help='')

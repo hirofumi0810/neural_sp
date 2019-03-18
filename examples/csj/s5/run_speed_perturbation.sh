@@ -72,7 +72,7 @@ decay_start_epoch=5
 decay_rate=0.8
 decay_patient_n_epochs=0
 decay_type=epoch
-not_improved_patient_epoch=5
+not_improved_patient_n_epochs=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
 warmup_n_steps=0
@@ -341,7 +341,7 @@ if [ ${stage} -le 4 ]; then
         --decay_rate ${decay_rate} \
         --decay_type ${decay_type} \
         --decay_patient_n_epochs ${decay_patient_n_epochs} \
-        --not_improved_patient_epoch ${not_improved_patient_epoch} \
+        --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \
         --warmup_n_steps ${warmup_n_steps} \

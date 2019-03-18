@@ -43,7 +43,7 @@ class Controller(object):
         self.decay_start_epoch = decay_start_epoch
         self.decay_rate = decay_rate
         self.decay_patient_n_epochs = decay_patient_n_epochs
-        self.not_improved_epoch = 0
+        self.not_improved_n_epochs = 0
         self.lower_better = lower_better
         self.best_value = best_value
 
@@ -86,13 +86,13 @@ class Controller(object):
                 if value < self.best_value:
                     # Improved
                     self.best_value = value
-                    self.not_improved_epoch = 0
-                elif self.not_improved_epoch < self.decay_patient_n_epochs:
+                    self.not_improved_n_epochs = 0
+                elif self.not_improved_n_epochs < self.decay_patient_n_epochs:
                     # Not improved, but learning rate will be not decayed
-                    self.not_improved_epoch += 1
+                    self.not_improved_n_epochs += 1
                 else:
                     # Not improved, and learning rate will be decayed
-                    self.not_improved_epoch = 0
+                    self.not_improved_n_epochs = 0
                     lr *= self.decay_rate
 
                     # Update optimizer
