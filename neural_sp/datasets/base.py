@@ -97,14 +97,14 @@ class Base(object):
 
             # Enqueue mini-batches
             if self.queue_size == 0:
-                self.data_indices_list = []
+                self.df_indices_list = []
                 self.is_new_epoch_list = []
                 for _ in six.moves.range(self.n_ques):
                     data_indices, is_new_epoch = self.sample_index(batch_size)
-                    self.data_indices_list.append(data_indices)
+                    self.df_indices_list.append(data_indices)
                     self.is_new_epoch_list.append(is_new_epoch)
                 self.preloading_process = Process(self.preloading_loop,
-                                                  args=(self.queue, self.data_indices_list))
+                                                  args=(self.queue, self.df_indices_list))
                 self.preloading_process.start()
                 self.queue_size += self.n_ques
                 time.sleep(3)
@@ -112,7 +112,7 @@ class Base(object):
             # print(self.queue.qsize())
             # print(self.queue_size)
 
-            self.iteration += len(self.data_indices_list[self.n_ques - self.queue_size])
+            self.iteration += len(self.df_indices_list[self.n_ques - self.queue_size])
             self.queue_size -= 1
             batch = self.queue.get()
             is_new_epoch = self.is_new_epoch_list.pop(0)
@@ -212,15 +212,15 @@ class Base(object):
         self.rest = set(list(self.df.index))
         self.offset = 0
 
-    def preloading_loop(self, queue, data_indices_list):
+    def preloading_loop(self, queue, df_indices_list):
         """.
 
         Args:
             queue ():
-            data_indices_list (np.ndarray):
+            df_indices_list (np.ndarray):
 
         """
         # print("Pre-loading started.")
-        for i in six.moves.range(len(data_indices_list)):
-            queue.put(self.make_batch(data_indices_list[i]))
+        for i in six.moves.range(len(df_indices_list)):
+            queue.put(self.make_batch(df_indices_list[i]))
         # print("Pre-loading done.")

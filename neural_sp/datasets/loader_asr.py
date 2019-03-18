@@ -199,11 +199,11 @@ class Dataset(Base):
         self.rest = set(list(self.df.index))
         self.input_dim = kaldi_io.read_mat(self.df['feat_path'][0]).shape[-1]
 
-    def make_batch(self, utt_indices):
+    def make_batch(self, df_indices):
         """Create mini-batch per step.
 
         Args:
-            utt_indices (np.ndarray):
+            df_indices (np.ndarray):
         Returns:
             batch (dict):
                 xs (list): input data of size `[B, T, input_dim]`
@@ -219,55 +219,50 @@ class Dataset(Base):
                 utt_ids (list): file names of input data of size `[B]`
 
         """
-        # input
-        xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in utt_indices]
-        xlens = [self.df['xlen'][i] for i in utt_indices]
-
         # output
         if self.is_test:
-            ys = [self.df['text'][i] for i in utt_indices]
+            ys = [self.df['text'][i] for i in df_indices]
         else:
-            ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in utt_indices]
-        ylens = [self.df['ylen'][i] for i in utt_indices]
-        text = [self.df['text'][i] for i in utt_indices]
+            ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in df_indices]
 
         if self.df_sub1 is not None:
             if self.is_test:
-                ys_sub1 = [self.df_sub1['text'][i] for i in utt_indices]
+                ys_sub1 = [self.df_sub1['text'][i] for i in df_indices]
             else:
-                ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in utt_indices]
-            ylens_sub1 = [self.df_sub1['ylen'][i] for i in utt_indices]
+                ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in df_indices]
         else:
-            ys_sub1, ylens_sub1 = [], []
+            ys_sub1 = []
 
         if self.df_sub2 is not None:
             if self.is_test:
-                ys_sub2 = [self.df_sub2['text'][i] for i in utt_indices]
+                ys_sub2 = [self.df_sub2['text'][i] for i in df_indices]
             else:
-                ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in utt_indices]
-            ylens_sub2 = [self.df_sub2['ylen'][i] for i in utt_indices]
+                ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in df_indices]
         else:
-            ys_sub2, ylens_sub2 = [], []
+            ys_sub2 = []
 
         if self.df_sub3 is not None:
             if self.is_test:
-                ys_sub3 = [self.df_sub3['text'][i] for i in utt_indices]
+                ys_sub3 = [self.df_sub3['text'][i] for i in df_indices]
             else:
-                ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in utt_indices]
-            ylens_sub3 = [self.df_sub3['ylen'][i] for i in utt_indices]
+                ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in df_indices]
         else:
-            ys_sub3, ylens_sub3 = [], []
+            ys_sub3 = []
 
-        utt_ids = [self.df['utt_id'][i] for i in utt_indices]
-        speakers = [self.df['speaker'][i] for i in utt_indices]
-
-        batch_dict = {'xs': xs, 'xlens': xlens,
-                      'ys': ys, 'ylens': ylens,
-                      'ys_sub1': ys_sub1, 'ylens_sub1': ylens_sub1,
-                      'ys_sub2': ys_sub2, 'ylens_sub2': ylens_sub2,
-                      'ys_sub3': ys_sub3, 'ylens_sub3': ylens_sub3,
-                      'utt_ids':  utt_ids, 'speakers': speakers,
-                      'text': text,
-                      'feat_path': [self.df['feat_path'][i] for i in utt_indices]}
+        batch_dict = {
+            'xs': [kaldi_io.read_mat(self.df['feat_path'][i]) for i in df_indices],
+            'xlens': [self.df['xlen'][i] for i in df_indices],
+            'ys': ys,
+            'ylens': [self.df['ylen'][i] for i in df_indices],
+            'ys_sub1': ys_sub1,
+            'ylens_sub1': [self.df_sub1['ylen'][i] for i in df_indices] if self.df_sub1 is not None else [],
+            'ys_sub2': ys_sub2,
+            'ylens_sub2': [self.df_sub1['ylen'][i] for i in df_indices] if self.df_sub2 is not None else [],
+            'ys_sub3': ys_sub3,
+            'ylens_sub3': [self.df_sub1['ylen'][i] for i in df_indices] if self.df_sub3 is not None else [],
+            'utt_ids':  [self.df['utt_id'][i] for i in df_indices],
+            'speakers': [self.df['speaker'][i] for i in df_indices],
+            'text': [self.df['text'][i] for i in df_indices],
+            'feat_path': [self.df['feat_path'][i] for i in df_indices]}
 
         return batch_dict
