@@ -206,15 +206,16 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
     touch ${data}/.done_stage_1_${data_size}_sp && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-nlsyms=${data}/dict/non_linguistic_symbols_${data_size}.txt
-wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}_sp.txt; mkdir -p ${data}/dict
+nlsyms=${data}/dict/non_linguistic_symbols_${data_size}_sp.txt
+wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}_sp
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
 
     cat ${data}/${train_set}/text | grep sp1.0 > ${data}/${train_set}/text.org
+    cat ${data}/${dev_set}/text > ${data}/${dev_set}/text.org
 
     echo "make a non-linguistic symbol list"
     cut -f 2- -d " " ${data}/${train_set}/text.org | tr " " "\n" | sort | uniq | grep "\[" > ${nlsyms}

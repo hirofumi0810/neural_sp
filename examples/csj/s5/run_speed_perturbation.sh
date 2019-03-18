@@ -222,14 +222,15 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
     touch ${data}/.done_stage_1_${data_size}_sp && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}_sp.txt; mkdir -p ${data}/dict
+wp_model=${data}/dict/${train_set}_${wp_type}_sp${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
 
     cat ${data}/${train_set}/text | grep sp1.0 > ${data}/${train_set}/text.org
+    cat ${data}/${dev_set}/text > ${data}/${dev_set}/text.org
 
     # Make a dictionary
     echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
