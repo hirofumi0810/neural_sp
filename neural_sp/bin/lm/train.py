@@ -77,9 +77,9 @@ def main():
     # Model setting
     model = SeqRNNLM(args)
     dir_name = args.rnn_type
-    dir_name += str(args.nunits) + 'H'
-    dir_name += str(args.nprojs) + 'P'
-    dir_name += str(args.nlayers) + 'L'
+    dir_name += str(args.n_units) + 'H'
+    dir_name += str(args.n_projs) + 'P'
+    dir_name += str(args.n_layers) + 'L'
     dir_name += '_emb' + str(args.emb_dim)
     dir_name += '_' + args.optimizer
     dir_name += '_lr' + str(args.learning_rate)
@@ -94,13 +94,15 @@ def main():
     if args.backward:
         dir_name += '_bwd'
 
-    if not args.resume:
+    if args.resume:
+        raise NotImplementedError
+    else:
         # Set save path
         save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
         model.set_save_path(save_path)  # avoid overwriting
 
         # Save the conf file as a yaml file
-        save_config(vars(args), model.save_path)
+        save_config(vars(args), os.path.join(model.save_path, 'conf.yml'))
 
         # Save the dictionary & wp_model
         shutil.copy(args.dict, os.path.join(model.save_path, 'dict.txt'))
@@ -128,9 +130,6 @@ def main():
         epoch, step = 1, 1
         lr = float(args.learning_rate)
         ppl_dev_best = 10000
-
-    else:
-        raise NotImplementedError()
 
     train_set.epoch = epoch - 1  # start from index:0
 
@@ -258,21 +257,18 @@ def main():
                 if not_improved_epoch == args.not_improved_patient_n_epochs:
                     break
 
+                # Convert to fine-tuning stage
                 if epoch == args.convert_to_sgd_epoch:
-                    # Convert to fine-tuning stage
+                    lr = args.learning_rate
                     model.module.set_optimizer(
                         'sgd',
-                        learning_rate=float(args.learning_rate),  # back to start lr
+                        learning_rate=lr,
                         weight_decay=float(args.weight_decay))
-
-                    lr_controller = Controller(
-                        learning_rate=float(args.learning_rate),  # back to start lr
-                        decay_type='epoch',
-                        decay_start_epoch=epoch,
-                        decay_rate=0.1,
-                        decay_patient_n_epochs=0,
-                        lower_better=True,
-                        best_value=ppl_dev_best)
+                    lr_controller = Controller(learning_rate=lr,
+                                               decay_type='epoch',
+                                               decay_start_epoch=epoch,
+                                               decay_rate=0.5,
+                                               lower_better=True)
                     lr = float(args.learning_rate)
                     logger.info('========== Convert to SGD ==========')
 
