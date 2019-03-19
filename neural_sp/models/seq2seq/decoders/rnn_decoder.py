@@ -342,8 +342,7 @@ class RNNDecoder(nn.Module):
                 if self.n_projs > 0:
                     self.cf_linear_dec_feat = LinearND(n_projs + enc_n_units, n_units)
                 else:
-                    # self.cf_linear_dec_feat = LinearND(n_units + enc_n_units, n_units)
-                    self.cf_linear_dec_feat = LinearND(n_units, n_units)
+                    self.cf_linear_dec_feat = LinearND(n_units + enc_n_units, n_units)
                 if cold_fusion_type == 'hidden':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                 elif cold_fusion_type == 'prob':
@@ -935,13 +934,11 @@ class RNNDecoder(nn.Module):
             elif self.cold_fusion_type == 'prob':
                 lm_feat = self.cf_linear_lm_feat(logits_lm_t)
             elif self.cold_fusion_type == 'hidden_attention':
-                # Score to history
                 self.score_cf.reset()
                 cv_cf, _ = self.score_cf(torch.cat(self.lm_outs, dim=1),
                                          [len(self.lm_outs)] * cv.size(0), dout, None)
                 lm_feat = self.cf_linear_lm_feat(cv_cf)
-            # dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
-            dec_feat = self.cf_linear_dec_feat(dout)
+            dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
             gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
             logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
@@ -1164,6 +1161,7 @@ class RNNDecoder(nn.Module):
             else:
                 rnnlm_hxs, rnnlm_cxs = self.rnnlm_final_state
                 self.rnnlm_final_state = None
+                rnnlm_hxs, rnnlm_cxs = None, None
             self.prev_speaker = speakers[b]
 
             complete = []
@@ -1253,7 +1251,6 @@ class RNNDecoder(nn.Module):
                         y_lm_emb = rnnlm.embed(y_lm)
                         logits_lm_t, lm_out, rnnlm_state = rnnlm.predict(
                             y_lm_emb, (beam[i_beam]['rnnlm_hxs'], beam[i_beam]['rnnlm_cxs']))
-                        # lm_out = rnnlm.embed(y_lm)  # tmp
                     else:
                         logits_lm_t, lm_out, rnnlm_state = None, None, None
 
@@ -1436,9 +1433,9 @@ class RNNDecoder(nn.Module):
                         not_complete += [cand]
 
                 # end detection
-                if end_detect(complete, t):
-                    logger.info('end detected at %d', t)
-                    break
+                # if end_detect(complete, t):
+                #     logger.info('end detected at %d', t)
+                #     break
 
                 # Pruning
                 if len(complete) >= beam_width:
@@ -1645,11 +1642,11 @@ def end_detect(ended_hyps, i, M=3, D_end=np.log(1 * np.exp(-10))):
     for m in range(M):
         # get ended_hyps with their length is i - m
         hyp_len = i - m
-        hyps_same_length = [x for x in ended_hyps if len(x['hyp']) - 1 == hyp_len]
+        hyps_same_len = [x for x in ended_hyps if len(x['hyp']) - 1 == hyp_len]
         # NOTE: key:hyp includes <sos>
-        if len(hyps_same_length) > 0:
-            best_hyp_same_length = sorted(hyps_same_length, key=lambda x: x['score'], reverse=True)[0]
-            if best_hyp_same_length['score'] - best_hyp['score'] < D_end:
+        if len(hyps_same_len) > 0:
+            best_hyp_same_len = sorted(hyps_same_len, key=lambda x: x['score'], reverse=True)[0]
+            if best_hyp_same_len['score'] - best_hyp['score'] < D_end:
                 count += 1
 
     if count == M:
