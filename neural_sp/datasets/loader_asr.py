@@ -54,26 +54,25 @@ class Dataset(Base):
         """A class for loading dataset.
 
         Args:
-            tsv_path (str):
-            dict_path (str):
+            tsv_path (str): path to the dataset tsv file
+            dict_path (str): path to the dictionary
             unit (str): word or wp or char or phone or word_char
-            batch_size (int): the size of mini-batch
-            n_epochs (int): the max epoch. None means infinite loop.
+            batch_size (int): size of mini-batch
+            n_epochs (int): max epoch. None means infinite loop.
             is_test (bool):
-            min_n_frames (int): Exclude utterances shorter than this value
-            max_n_frames (int): Exclude utterances longer than this value
-            shuffle (bool): if True, shuffle utterances.
+            min_n_frames (int): exclude utterances shorter than this value
+            max_n_frames (int): exclude utterances longer than this value
+            shuffle (bool): shuffle utterances.
                 This is disabled when sort_by_input_length is True.
-            sort_by_input_length (bool): if True, sort all utterances in the ascending order
-            short2long (bool): if True, sort utterances in the descending order
+            sort_by_input_length (bool): sort all utterances in the ascending order
+            short2long (bool): sort utterances in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
-            n_ques (int): the number of elements to enqueue
-            dynamic_batching (bool): if True, batch size will be chainged
-                dynamically in training
+            n_ques (int): number of elements to enqueue
+            dynamic_batching (bool): change batch size dynamically in training
             ctc (bool):
             subsample_factor (int):
-            wp_model ():
+            wp_model (): path to the word-piece model for sentencepiece
             corpus (str): name of corpus
             concat_prev_n_utterances (int): number of utterances to concatenate
             cache_prev_n_tokens (int): number of previous tokens for cache (for training)
