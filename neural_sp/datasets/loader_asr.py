@@ -156,12 +156,11 @@ class Dataset(Base):
                 setattr(self, 'df_sub' + str(i), None)
 
         if concat_prev_n_utterances > 0 or cache_prev_n_tokens > 0:
+            assert corpus in ['swbd', 'csj', 'librispeech']
             max_n_frames = 10000
             min_n_frames = 1
-            assert corpus in ['swbd', 'csj', 'librispeech']
-            assert not (concat_prev_n_utterances > 0 and cache_prev_n_tokens > 0)
 
-        if concat_prev_n_utterances > 0:
+            # Sort by contexts
             self.df = self.df.assign(line_no=list(range(len(self.df))))
             self.df = self.df.assign(prev_utt='')
             if corpus == 'swbd':
@@ -180,6 +179,8 @@ class Dataset(Base):
                 lambda x: [self.df.loc[i, 'line_no']
                            for i in groups[x['session']] if self.df.loc[i, 'onset'] < x['onset']], axis=1)
 
+        if concat_prev_n_utterances > 0:
+            assert cache_prev_n_tokens == 0
             # Truncate history
             self.df['prev_utt'] = self.df['prev_utt'].apply(lambda x: x[-concat_prev_n_utterances:])
 
@@ -196,7 +197,7 @@ class Dataset(Base):
                                     for i in x['prev_utt']] + [x['text']]) if len(x['prev_utt']) > 0 else x['text'], axis=1)
 
         if cache_prev_n_tokens > 0:
-            raise NotImplementedError
+            assert concat_prev_n_utterances == 0
 
         # Remove inappropriate utterances
         if self.is_test:
@@ -261,7 +262,8 @@ class Dataset(Base):
                 ylens_sub2 (list): lengths of each element in ys_sub2
                 ys_sub3 (list): reference labels in the 3rd auxiliary task of size `[L_sub3]`
                 ylens_sub3 (list): lengths of each element in ys_sub3
-                utt_ids (list): utterance names
+                utt_ids (list): name of utterances
+                speakers (list): name of speakers
 
         """
         # inputs
@@ -284,35 +286,43 @@ class Dataset(Base):
                         y_prev = list(map(int, str(self.df['token_id'][i_prev]).split()))
                         ys[j] = y_prev + [self.eos] + ys[j][:]
 
+        ys_cache = []
+        if self.cache_prev_n_tokens > 0:
+            for j, i in enumerate(df_indices):
+                for i_prev in self.df['prev_utt'][i][::-1]:
+                    y_prev = list(map(int, str(self.df['token_id'][i_prev]).split()))
+                    ys_cache[j] += y_prev + [self.eos]
+
+            # Truencate
+            ys_cache = [y[-self.cache_prev_n_tokens:] for y in ys_cache]
+
+        ys_sub1 = []
         if self.df_sub1 is not None:
             if self.is_test:
                 ys_sub1 = [self.df_sub1['text'][i] for i in df_indices]
             else:
                 ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in df_indices]
-        else:
-            ys_sub1 = []
 
+        ys_sub2 = []
         if self.df_sub2 is not None:
             if self.is_test:
                 ys_sub2 = [self.df_sub2['text'][i] for i in df_indices]
             else:
                 ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in df_indices]
-        else:
-            ys_sub2 = []
 
+        ys_sub3 = []
         if self.df_sub3 is not None:
             if self.is_test:
                 ys_sub3 = [self.df_sub3['text'][i] for i in df_indices]
             else:
                 ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in df_indices]
-        else:
-            ys_sub3 = []
 
         batch_dict = {
             'xs': xs,
             'xlens': [self.df['xlen'][i] for i in df_indices],
             'ys': ys,
             'ylens': [self.df['ylen'][i] for i in df_indices],
+            'ys_cache': ys_cache,
             'ys_sub1': ys_sub1,
             'ylens_sub1': [self.df_sub1['ylen'][i] for i in df_indices] if self.df_sub1 is not None else [],
             'ys_sub2': ys_sub2,
