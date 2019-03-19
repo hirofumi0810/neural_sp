@@ -1186,9 +1186,9 @@ class RNNDecoder(nn.Module):
                      'cache_key': [],
                      'cache_val_dec': [],
                      'cache_val_lm': [],
-                     'cache_key_history': [None],
-                     'cache_attn_dec_history': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.fifo_cache_keys) == 0 else [],
-                     'cache_attn_lm_history': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.fifo_cache_keys) == 0 else [],
+                     'cache_key_hist': [None],
+                     'cache_attn_dec_hist': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.fifo_cache_keys) == 0 else [],
+                     'cache_attn_lm_hist': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.fifo_cache_keys) == 0 else [],
                      }]
             ylen_max = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
             for t in range(ylen_max):
@@ -1417,9 +1417,9 @@ class RNNDecoder(nn.Module):
                              'cache_key': beam[i_beam]['cache_key'] + [top_idx],
                              'cache_val_dec': beam[i_beam]['cache_val_dec'] + [dstates['dout_gen']],
                              'cache_val_lm': beam[i_beam]['cache_val_lm'] + [lm_out],
-                             'cache_key_history': beam[i_beam]['cache_key_history'] + [cache_key] if is_cache else beam[i_beam]['cache_key_history'],
-                             'cache_attn_dec_history': beam[i_beam]['cache_attn_dec_history'] + [cache_attn_dec] if is_cache else beam[i_beam]['cache_attn_dec_history'],
-                             'cache_attn_lm_history': beam[i_beam]['cache_attn_lm_history'] + [cache_attn_lm] if is_cache else beam[i_beam]['cache_attn_lm_history'],
+                             'cache_key_hist': beam[i_beam]['cache_key_hist'] + [cache_key] if is_cache else beam[i_beam]['cache_key_hist'],
+                             'cache_attn_dec_hist': beam[i_beam]['cache_attn_dec_hist'] + [cache_attn_dec] if is_cache else beam[i_beam]['cache_attn_dec_hist'],
+                             'cache_attn_lm_hist': beam[i_beam]['cache_attn_lm_hist'] + [cache_attn_lm] if is_cache else beam[i_beam]['cache_attn_lm_hist'],
                              })
 
                 new_beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
@@ -1537,37 +1537,37 @@ class RNNDecoder(nn.Module):
             self.rnnlm_final_state = (complete[0]['rnnlm_hxs'], complete[0]['rnnlm_cxs'])
 
         # Store in cache
-        cache_key_history = None
-        cache_attn_dec_history = None
-        cache_attn_lm_history = None
+        cache_key_hist = None
+        cache_attn_dec_hist = None
+        cache_attn_lm_hist = None
         if n_caches > 0:
             hyp_len = len(complete[0]['hyp'][1:])
             self.store_cache(complete[0]['cache_key'],
                              complete[0]['cache_val_dec'],
                              complete[0]['cache_val_lm'],
                              n_caches)
-            cache_key_history = complete[0]['cache_key_history']
+            cache_key_hist = complete[0]['cache_key_hist']
             if cache_type in ['decoder', 'joint']:
-                cache_attn_dec_history = torch.zeros(
-                    (1, complete[0]['cache_attn_dec_history'][-1].size(1), hyp_len), dtype=torch.float32)
-                for i, p in enumerate(complete[0]['cache_attn_dec_history']):
+                cache_attn_dec_hist = torch.zeros(
+                    (1, complete[0]['cache_attn_dec_hist'][-1].size(1), hyp_len), dtype=torch.float32)
+                for i, p in enumerate(complete[0]['cache_attn_dec_hist']):
                     if p.size(1) < n_caches:
-                        cache_attn_dec_history[0, :p.size(1), i] = p[0, :, 0].cpu()
+                        cache_attn_dec_hist[0, :p.size(1), i] = p[0, :, 0].cpu()
                     else:
-                        cache_attn_dec_history[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
+                        cache_attn_dec_hist[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
             if rnnlm_weight > 0 and cache_type in ['lm', 'joint']:
-                cache_attn_lm_history = torch.zeros(
-                    (1, complete[0]['cache_attn_lm_history'][-1].size(1), hyp_len), dtype=torch.float32)
-                for i, p in enumerate(complete[0]['cache_attn_lm_history']):
+                cache_attn_lm_hist = torch.zeros(
+                    (1, complete[0]['cache_attn_lm_hist'][-1].size(1), hyp_len), dtype=torch.float32)
+                for i, p in enumerate(complete[0]['cache_attn_lm_hist']):
                     if p.size(1) < n_caches:
-                        cache_attn_lm_history[0, :p.size(1), i] = p[0, :, 0].cpu()
+                        cache_attn_lm_hist[0, :p.size(1), i] = p[0, :, 0].cpu()
                     else:
-                        cache_attn_lm_history[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
+                        cache_attn_lm_hist[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
 
         if cache_type in ['decoder', 'joint']:
-            return nbest_hyps, aws, scores, scores_cp, (cache_attn_dec_history, cache_key_history)
+            return nbest_hyps, aws, scores, scores_cp, (cache_attn_dec_hist, cache_key_hist)
         else:
-            return nbest_hyps, aws, scores, scores_cp, (cache_attn_lm_history, cache_key_history)
+            return nbest_hyps, aws, scores, scores_cp, (cache_attn_lm_hist, cache_key_hist)
 
     def store_cache(self, keys, values, values_lm, n_caches):
         self.fifo_cache_keys += keys
