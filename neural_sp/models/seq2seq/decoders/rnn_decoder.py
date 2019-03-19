@@ -85,8 +85,12 @@ class RNNDecoder(nn.Module):
         backward (bool): decode in the backward order
         rnnlm_cold_fusion (RNNLM):
         cold_fusion_type (str): the type of cold fusion
-            prob: probability from RNNLM
+            prob: logits of RNNLM
             hidden: hidden states of RNNLM
+            prob_attention:
+            hidden_attention:
+            prob_self_attention:
+            hidden_self_attention:
         rnnlm_init (RNNLM):
         lmobj_weight (float):
         share_lm_softmax (bool):
@@ -193,6 +197,7 @@ class RNNDecoder(nn.Module):
         self.fifo_cache_values_lm = []
         self.prev_speaker = ''
         self.rnnlm_final_state = (None, None)
+        self.fifo_cache_lm_outs = []
 
         if ctc_weight > 0:
             # Fully-connected layers for CTC
@@ -213,8 +218,8 @@ class RNNDecoder(nn.Module):
             # Attention layer
             if attn_n_heads > 1:
                 self.score = MultiheadAttentionMechanism(
-                    enc_n_units=self.enc_n_units,
-                    dec_n_units=n_units if n_projs == 0 else n_projs,
+                    key_dim=self.enc_n_units,
+                    query_dim=n_units if n_projs == 0 else n_projs,
                     attn_type=attn_type,
                     attn_dim=attn_dim,
                     sharpening_factor=attn_sharpening_factor,
@@ -225,8 +230,8 @@ class RNNDecoder(nn.Module):
                     dropout=dropout_att)
             else:
                 self.score = AttentionMechanism(
-                    enc_n_units=self.enc_n_units,
-                    dec_n_units=n_units if n_projs == 0 else n_projs,
+                    key_dim=self.enc_n_units,
+                    query_dim=n_units if n_projs == 0 else n_projs,
                     attn_type=attn_type,
                     attn_dim=attn_dim,
                     sharpening_factor=attn_sharpening_factor,
@@ -347,15 +352,23 @@ class RNNDecoder(nn.Module):
                     self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                 elif cold_fusion_type == 'prob':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units)
-                elif cold_fusion_type == 'hidden_attention':
+                elif cold_fusion_type in ['hidden_attention', 'prob_attention']:
+                    # query: ASR state
                     self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                     self.score_cf = AttentionMechanism(
-                        enc_n_units=self.rnnlm_cf.n_units,
-                        dec_n_units=n_units if n_projs == 0 else n_projs,
+                        key_dim=self.rnnlm_cf.n_units,
+                        query_dim=n_units if n_projs == 0 else n_projs,
                         attn_type='dot',
                         attn_dim=attn_dim,
-                        # sharpening_factor=attn_sharpening_factor,
-                        # sigmoid_smoothing=attn_sigmoid_smoothing,
+                        dropout=dropout_att)
+                elif cold_fusion_type == ['hidden_self_attention', 'prob_self_attention']:
+                    # query: RNNLM state
+                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
+                    self.score_cf = AttentionMechanism(
+                        key_dim=self.rnnlm_cf.n_units,
+                        query_dim=self.rnnlm_cf.n_units,
+                        attn_type='dot',
+                        attn_dim=attn_dim,
                         dropout=dropout_att)
                 else:
                     raise ValueError(cold_fusion_type)
@@ -596,7 +609,6 @@ class RNNDecoder(nn.Module):
             ys_lm_emb = self.rnnlm_cf.embed(ys_in_pad)
 
         logits = []
-        self.lm_outs = []
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
             is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob
@@ -619,12 +631,12 @@ class RNNDecoder(nn.Module):
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
                 logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm_emb, rnnlm_state)
-                self.lm_outs.append(lm_out)
+                self.fifo_cache_lm_outs.append(lm_out)
             else:
                 logits_lm_t, lm_out = None, None
 
             # Score
-            cv, aw = self.score(eouts, elens, dstates['dout_score'], aw)
+            cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
 
             # Recurrency (2nd, only for the internal decoder)
             if self.loop_type in ['conditional', 'rnmt']:
@@ -933,11 +945,22 @@ class RNNDecoder(nn.Module):
                 lm_feat = self.cf_linear_lm_feat(lm_out)
             elif self.cold_fusion_type == 'prob':
                 lm_feat = self.cf_linear_lm_feat(logits_lm_t)
-            elif self.cold_fusion_type == 'hidden_attention':
+            else:
                 self.score_cf.reset()
-                cv_cf, _ = self.score_cf(torch.cat(self.lm_outs, dim=1),
-                                         [len(self.lm_outs)] * cv.size(0), dout, None)
+                memory = torch.cat(self.fifo_cache_lm_outs, dim=1)
+                cache_lens = [len(self.fifo_cache_lm_outs)] * cv.size(0)
+                if self.cold_fusion_type == 'hidden_attention':
+                    cv_cf, _ = self.score_cf(memory, cache_lens, memory, dout, aw=None)
+                elif self.cold_fusion_type == 'prob_attention':
+                    raise NotImplementedError
+                    cv_cf, _ = self.score_cf(memory, cache_lens, memory_logits, dout, aw=None)
+                elif self.cold_fusion_type == 'hidden_self_attention':
+                    cv_cf, _ = self.score_cf(memory, cache_lens, memory, memory, aw=None)
+                elif self.cold_fusion_type == 'prob_self_attention':
+                    raise NotImplementedError
+                    cv_cf, _ = self.score_cf(memory, cache_lens, memory_logits, memory, aw=None)
                 lm_feat = self.cf_linear_lm_feat(cv_cf)
+
             dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
             gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat
@@ -980,7 +1003,6 @@ class RNNDecoder(nn.Module):
         best_hyps_tmp, aws_tmp = [], []
         ylens = np.zeros((bs,), dtype=np.int32)
         eos_flags = [False] * bs
-        self.lm_outs = []
         for t in range(int(math.floor(max_xlen * max_len_ratio)) + 1):
             # Recurrency (1st)
             y_emb = self.embed(y)
@@ -994,12 +1016,12 @@ class RNNDecoder(nn.Module):
             if self.rnnlm_cf is not None:
                 y_lm = self.rnnlm_cf.embed(y)
                 logits_lm_t, lm_out, rnnlm_state = self.rnnlm_cf.predict(y_lm, rnnlm_state)
-                self.lm_outs.append(lm_out)
+                self.fifo_cache_lm_outs.append(lm_out)
             else:
                 logits_lm_t, lm_out = None, None
 
             # Score
-            cv, aw = self.score(eouts, elens, dstates['dout_score'], aw)
+            cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
 
             # Recurrency (2nd, only for the internal decoder)
             if self.loop_type in ['conditional', 'rnmt']:
@@ -1225,6 +1247,7 @@ class RNNDecoder(nn.Module):
                     # Score for the main model
                     cv, aw = self.score(eouts[b:b + 1, :elens[b]],
                                         elens[b:b + 1],
+                                        eouts[b:b + 1, :elens[b]],
                                         dstates['dout_score'],
                                         beam[i_beam]['aws'][-1])
                     # Score for the ensemble
