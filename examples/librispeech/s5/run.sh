@@ -105,6 +105,8 @@ rnnlm_cold_fusion=
 rnnlm_init=
 lmobj_weight=0.0
 share_lm_softmax=
+# contextualization
+concat_prev_n_utterances=0
 
 #########################
 # RNNLM configuration
@@ -465,6 +467,7 @@ if [ ${stage} -le 4 ]; then
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
+        --concat_prev_n_utterances ${concat_prev_n_utterances} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

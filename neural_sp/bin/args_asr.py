@@ -333,6 +333,11 @@ def parse():
                         help='type of positional encoding')
     parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
                         help='')
+    # contextualization
+    parser.add_argument('--concat_prev_n_utterances', type=int, default=0,
+                        help='number of previous utterances to concatenate (for training)')
+    parser.add_argument('--cache_prev_n_tokens', type=int, default=0,
+                        help='number of previous tokens to cache (for training)')
     # decoding parameters
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='path to tsv files for the evaluation sets')
@@ -377,8 +382,6 @@ def parse():
                         help='backward attention decoding')
     parser.add_argument('--recog_reverse_lm_rescoring', type=strtobool, default=False,
                         help='rescore with another LM in the reverse direction')
-    parser.add_argument('--recog_checkpoint_ensemble', type=int, default=1,
-                        help='number of checkpoints to use')
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
     parser.add_argument('--recog_cache_theta', type=float, default=0.2,
@@ -388,6 +391,10 @@ def parse():
     parser.add_argument('--recog_cache_type', type=str, default='lm',
                         choices=['decoder', 'lm', 'joint'],
                         help='cache type')
+    parser.add_argument('--recog_concat_prev_n_utterances', type=int, default=0,
+                        help='number of previous utterances to concatenate (for inference)')
+    parser.add_argument('--recog_cache_prev_n_tokens', type=int, default=0,
+                        help='number of previous tokens to cache (for inference)')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')

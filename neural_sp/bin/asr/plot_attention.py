@@ -33,7 +33,8 @@ def main():
     args = parse()
 
     # Load a conf file
-    conf = load_config(os.path.join(args.recog_model[0], 'conf.yml'))
+    dir_name = os.path.dirname(args.recog_model[0])
+    conf = load_config(os.path.join(dir_name, 'conf.yml'))
 
     # Overwrite conf
     for k, v in conf.items():
@@ -50,13 +51,14 @@ def main():
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
                           tsv_path=s,
-                          dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
-                          dict_path_sub1=os.path.join(args.recog_model[0], 'dict_sub1.txt') if os.path.isfile(
-                              os.path.join(args.recog_model[0], 'dict_sub1.txt')) else None,
-                          wp_model=os.path.join(args.recog_model[0], 'wp.model'),
+                          dict_path=os.path.join(dir_name, 'dict.txt'),
+                          dict_path_sub1=os.path.join(dir_name, 'dict_sub1.txt') if os.path.isfile(
+                              os.path.join(dir_name, 'dict_sub1.txt')) else None,
+                          wp_model=os.path.join(dir_name, 'wp.model'),
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
                           batch_size=args.recog_batch_size,
+                          concat_prev_n_utterances=args.recog_concat_prev_n_utterances,
                           is_test=True)
 
         if i == 0:
@@ -67,14 +69,14 @@ def main():
             # Load the ASR model
             model = Seq2seq(args)
             epoch = model.load_checkpoint(args.recog_model[0])['epoch']
-            model.save_path = args.recog_model[0]
+            model.save_path = dir_name
 
             # ensemble (different models)
             ensemble_models = [model]
             if len(args.recog_model) > 1:
                 for recog_model_e in args.recog_model[1:]:
                     # Load a conf file
-                    conf_e = load_config(os.path.join(recog_model_e, 'conf.yml'))
+                    conf_e = load_config(os.path.join(os.path.dirname(recog_model_e), 'conf.yml'))
 
                     # Overwrite conf
                     args_e = copy.deepcopy(args)
@@ -86,19 +88,12 @@ def main():
                     model_e.load_checkpoint(recog_model_e)
                     model_e.cuda()
                     ensemble_models += [model_e]
-            # checkpoint ensemble
-            elif args.recog_checkpoint_ensemble > 1:
-                for i_e in range(1, args.recog_checkpoint_ensemble):
-                    model_e = Seq2seq(args)
-                    model_e.load_checkpoint(args.recog_model[0])
-                    model_e.cuda()
-                    ensemble_models += [model_e]
 
             # For shallow fusion
             if not args.rnnlm_cold_fusion:
                 if args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
                     # Load a RNNLM conf file
-                    conf_rnnlm = load_config(os.path.join(args.recog_rnnlm, 'conf.yml'))
+                    conf_rnnlm = load_config(os.path.join(os.path.dirname(args.recog_rnnlm), 'conf.yml'))
 
                     # Merge conf with args
                     args_rnnlm = argparse.Namespace()
@@ -129,12 +124,9 @@ def main():
                     for k, v in conf_rnnlm.items():
                         setattr(args_rnnlm_bwd, k, v)
 
-                    assert args.unit == args_rnnlm_bwd.unit
-                    args_rnnlm_bwd.vocab = dataset.vocab
-
                     # Load the pre-trianed RNNLM
                     seq_rnnlm_bwd = SeqRNNLM(args_rnnlm_bwd)
-                    seq_rnnlm_bwd.load_checkpoint(args.recog_rnnlm_bwd, epoch=-1)
+                    seq_rnnlm_bwd.load_checkpoint(args.recog_rnnlm_bwd)
 
                     # Copy parameters
                     rnnlm_bwd = RNNLM(args_rnnlm_bwd)
@@ -142,6 +134,9 @@ def main():
 
                     # Resister to the ASR model
                     model.rnnlm_bwd = rnnlm_bwd
+
+            if not args.recog_unit:
+                args.recog_unit = args.unit
 
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
@@ -161,10 +156,10 @@ def main():
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))
-            logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache theta: %d' % (args.recog_cache_theta))
             logger.info('cache lambda: %d' % (args.recog_cache_lambda))
+            logger.info('concat_prev_n_utterances: %d' % (args.recog_concat_prev_n_utterances))
 
             # GPU setting
             model.cuda()
@@ -183,7 +178,7 @@ def main():
                 os.mkdir(save_path_cache)
 
         if args.unit == 'word':
-            idx2token = dataset.id2xword
+            idx2token = dataset.idx2word
         elif args.unit == 'wp':
             idx2token = dataset.idx2wp
         elif args.unit == 'char':

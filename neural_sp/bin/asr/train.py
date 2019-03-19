@@ -141,8 +141,7 @@ def main():
                       subsample_factor=subsample_factor,
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
-                      subsample_factor_sub3=subsample_factor_sub3,
-                      concat_prev_n_utterances=args.concat_prev_n_utterances)
+                      subsample_factor_sub3=subsample_factor_sub3)
     eval_sets = []
     for s in args.eval_sets:
         eval_sets += [Dataset(corpus=args.corpus,
@@ -151,7 +150,6 @@ def main():
                               unit=args.unit,
                               wp_model=args.wp_model,
                               batch_size=1,
-                              concat_prev_n_utterances=args.concat_prev_n_utterances,
                               is_test=True)]
 
     args.vocab = train_set.vocab

@@ -1107,6 +1107,7 @@ class RNNDecoder(nn.Module):
         cache_theta = params['recog_cache_theta']  # smoothing parameter
         cache_lambda = params['recog_cache_lambda']  # cache weight
         cache_type = params['recog_cache_type']
+        concat_prev_n_utterances = params['recog_concat_prev_n_utterances']
 
         # For cold fusion
         if self.rnnlm_cf is not None:
@@ -1169,7 +1170,7 @@ class RNNDecoder(nn.Module):
                      'score': 0,
                      'scores': [0],
                      'scores_cp': [0],
-                     'score_att': 0,
+                     'score_attn': 0,
                      'score_ctc': 0,
                      'score_lm': 0,
                      'dstates': dstates,
@@ -1324,8 +1325,8 @@ class RNNDecoder(nn.Module):
                     # Pick up the top-k scores
                     log_probs_topk, ids_topk = torch.topk(
                         log_probs, k=beam_width, dim=1, largest=True, sorted=True)
-                    scores_att = beam[i_beam]['score_att'] + log_probs_topk
-                    local_scores = scores_att.clone()
+                    scores_attn = beam[i_beam]['score_attn'] + log_probs_topk
+                    local_scores = scores_attn.clone()
 
                     # Add length penalty
                     lp = 1
@@ -1388,10 +1389,10 @@ class RNNDecoder(nn.Module):
                         if top_idx == eos and len(beam[i_beam]['hyp']) - 1 < elens[b] * params['recog_min_len_ratio']:
                             continue
 
-                        score_att = scores_att[0, k].item()
+                        score_attn = scores_attn[0, k].item()
                         score_ctc = scores_ctc[k].item()
                         score_lm = scores_lm[k].item()
-                        score_t = score_att * (1 - ctc_weight) + score_ctc * ctc_weight + score_lm * rnnlm_weight
+                        score_t = score_attn * (1 - ctc_weight) + score_ctc * ctc_weight + score_lm * rnnlm_weight
 
                         new_beam.append(
                             {'hyp': beam[i_beam]['hyp'] + [top_idx],
@@ -1399,10 +1400,10 @@ class RNNDecoder(nn.Module):
                              #  'scores': beam[i_beam]['scores'] + [score_t],
                              'scores': beam[i_beam]['scores'] + [local_scores[0, k].item()],
                              'scores_cp': beam[i_beam]['scores_cp'] + [cp * cp_weight],
-                             'score_att': score_att,  # NOTE: total score
+                             'score_attn': score_attn,  # total score
                              'score_cp': cp,
-                             'score_ctc': score_ctc,  # NOTE: total score
-                             'score_lm': score_lm,  # NOTE: total score
+                             'score_ctc': score_ctc,  # total score
+                             'score_lm': score_lm,  # total score
                              'dstates': dstates,
                              'cv': attn_v if self.input_feeding else cv,
                              'aws': beam[i_beam]['aws'] + [aw],
@@ -1427,7 +1428,7 @@ class RNNDecoder(nn.Module):
                 # Remove complete hypotheses
                 not_complete = []
                 for cand in new_beam[:beam_width]:
-                    if cand['hyp'][-1] == eos:
+                    if cand['hyp'][-1] == eos and cand['hyp'].count(eos) >= concat_prev_n_utterances + 2:
                         complete += [cand]
                     else:
                         not_complete += [cand]
@@ -1509,7 +1510,7 @@ class RNNDecoder(nn.Module):
                 logger.info('log prob (ref): ')
             for n in range(nbest):
                 logger.info('log prob (hyp): %.7f' % complete[n]['score'])
-                logger.info('log prob (hyp, att): %.7f' % (complete[n]['score_att'] * (1 - ctc_weight)))
+                logger.info('log prob (hyp, att): %.7f' % (complete[n]['score_attn'] * (1 - ctc_weight)))
                 logger.info('log prob (hyp, cp): %.7f' % (complete[n]['score_cp'] * cp_weight))
                 if ctc_weight > 0 and ctc_log_probs is not None:
                     logger.info('log prob (hyp, ctc): %.7f' % (complete[n]['score_ctc'] * ctc_weight))

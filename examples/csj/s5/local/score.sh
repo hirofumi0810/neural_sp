@@ -17,7 +17,7 @@ gpu=
 ### path to save preproecssed data
 data=/n/sd8/inaguma/corpus/csj
 
-epoch=-1
+recog_unit=
 batch_size=1
 beam_width=5
 min_len_ratio=0.0
@@ -34,9 +34,10 @@ resolving_unk=false
 fwd_bwd_attention=false
 bwd_attention=false
 reverse_lm_rescoring=false
-checkpoint_ensemble=1  # the number of checkpoints to use
 n_caches=0
-recog_unit=
+cache_theta=0.2
+cache_lambda=0.2
+concat_prev_n_utterances=0
 
 . ./cmd.sh
 . ./path.sh
@@ -54,7 +55,7 @@ fi
 gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in eval1 eval2 eval3; do
-    recog_dir=${model}/decode_${set}_ep${epoch}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
+    recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
     if [ ! -z ${recog_unit} ]; then
         recog_dir=${recog_dir}_${recog_unit}
     fi
@@ -73,11 +74,8 @@ for set in eval1 eval2 eval3; do
     if ${reverse_lm_rescoring}; then
         recog_dir=${recog_dir}_revLM
     fi
-    if [ ${checkpoint_ensemble} != 1 ]; then
-        recog_dir=${recog_dir}_checkpoint${checkpoint_ensemble}
-    fi
     if [ ${n_caches} != 0 ]; then
-        recog_dir=${recog_dir}_cache${n_caches}
+        recog_dir=${recog_dir}_cache${n_caches}_theta${cache_theta}_lambda${cache_lambda}
     fi
     if [ ! -z ${model7} ]; then
         recog_dir=${recog_dir}_ensemble8
@@ -112,9 +110,10 @@ for set in eval1 eval2 eval3; do
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
         --recog_sets ${recog_set} \
+        --recog_dir ${recog_dir} \
+        --recog_unit ${recog_unit} \
         --recog_model ${model} ${model1} ${model2} ${model3} ${model4} ${model5} ${model6} ${model7} \
         --recog_model_bwd ${model_bwd} \
-        --recog_epoch ${epoch} \
         --recog_batch_size ${batch_size} \
         --recog_beam_width ${beam_width} \
         --recog_max_len_ratio ${max_len_ratio} \
@@ -131,10 +130,11 @@ for set in eval1 eval2 eval3; do
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
         --recog_bwd_attention ${bwd_attention} \
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
-        --recog_checkpoint_ensemble ${checkpoint_ensemble} \
         --recog_n_caches ${n_caches} \
-        --recog_unit ${recog_unit} \
-        --recog_dir ${recog_dir} || exit 1;
+        --recog_cache_theta ${cache_theta} \
+        --recog_cache_lambda ${cache_lambda} \
+        --recog_concat_prev_n_utterances ${concat_prev_n_utterances} \
+        || exit 1;
 
     echo ${set}
     sclite -r ${recog_dir}/ref.trn trn -h ${recog_dir}/hyp.trn trn -i rm -o all stdout > ${recog_dir}/result.txt
