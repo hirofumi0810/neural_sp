@@ -71,11 +71,15 @@ def main():
             epoch = model.load_checkpoint(args.recog_model[0])['epoch']
             model.save_path = dir_name
 
-            # GPU setting
-            model.cuda()
+            if not args.recog_unit:
+                args.recog_unit = args.unit
 
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
+
+            # GPU setting
+            model.cuda()
+            # TODO(hirofumi): move this
 
         save_path = mkdir_join(args.plot_dir, 'ctc_probs')
 

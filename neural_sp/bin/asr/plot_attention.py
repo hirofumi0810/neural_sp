@@ -110,7 +110,8 @@ def main():
 
                     # Register to the ASR model
                     if args_rnnlm.backward:
-                        model.rnnlm_bwd = rnnlm
+                        # model.rnnlm_bwd = rnnlm
+                        model.rnnlm_bwd = seq_rnnlm
                     else:
                         # model.rnnlm_fwd = rnnlm
                         model.rnnlm_fwd = seq_rnnlm
@@ -177,16 +178,16 @@ def main():
                 shutil.rmtree(save_path_cache)
                 os.mkdir(save_path_cache)
 
-        if args.unit == 'word':
+        if args.recog_unit == 'word':
             idx2token = dataset.idx2word
-        elif args.unit == 'wp':
+        elif args.recog_unit == 'wp':
             idx2token = dataset.idx2wp
-        elif args.unit == 'char':
+        elif args.recog_unit == 'char':
             idx2token = dataset.idx2char
-        elif args.unit == 'phone':
+        elif args.recog_unit == 'phone':
             idx2token = dataset.idx2phone
         else:
-            raise NotImplementedError(args.unit)
+            raise NotImplementedError(args.recog_unit)
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])

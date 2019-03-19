@@ -188,7 +188,7 @@ def main():
 
         start_time = time.time()
 
-        if args.unit in ['word', 'word_char'] and not args.recog_unit:
+        if args.recog_unit in ['word', 'word_char']:
             wer, n_sub, n_ins, n_del, n_oov_total = eval_word(
                 ensemble_models, dataset, recog_params,
                 epoch=epoch - 1,
@@ -199,7 +199,7 @@ def main():
             logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
             logger.info('OOV (total): %d' % (n_oov_total))
 
-        elif (args.unit == 'wp' and not args.recog_unit) or args.recog_unit == 'wp':
+        elif args.recog_unit == 'wp':
             wer, n_sub, n_ins, n_del = eval_wordpiece(
                 ensemble_models, dataset, recog_params,
                 epoch=epoch - 1,
@@ -209,7 +209,7 @@ def main():
             logger.info('WER (%s): %.3f %%' % (dataset.set, wer))
             logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
 
-        elif ('char' in args.unit and not args.recog_unit) or 'char' in args.recog_unit:
+        elif 'char' in args.recog_unit:
             (wer, n_sub, n_ins, n_del), (cer, _, _, _) = eval_char(
                 ensemble_models, dataset, recog_params,
                 epoch=epoch - 1,
@@ -221,7 +221,7 @@ def main():
             logger.info('WER / CER (%s): %.3f / %.3f %%' % (dataset.set, wer, cer))
             logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
 
-        elif 'phone' in args.unit:
+        elif 'phone' in args.recog_unit:
             per, n_sub, n_ins, n_del = eval_phone(
                 ensemble_models, dataset, recog_params,
                 epoch=epoch - 1,
@@ -232,18 +232,18 @@ def main():
             logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
 
         else:
-            raise ValueError(args.unit)
+            raise ValueError(args.recog_unit)
 
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
-    if args.unit == 'word':
+    if args.recog_unit == 'word':
         logger.info('WER (avg.): %.3f %%\n' % (wer_avg / len(args.recog_sets)))
-    if args.unit == 'wp':
+    if args.recog_unit == 'wp':
         logger.info('WER (avg.): %.3f %%\n' % (wer_avg / len(args.recog_sets)))
-    elif 'char' in args.unit:
+    elif 'char' in args.recog_unit:
         logger.info('WER / CER (avg.): %.3f / %.3f %%\n' %
                     (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
-    elif 'phone' in args.unit:
+    elif 'phone' in args.recog_unit:
         logger.info('PER (avg.): %.3f %%\n' % (per_avg / len(args.recog_sets)))
 
 
