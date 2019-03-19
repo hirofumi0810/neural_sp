@@ -42,11 +42,14 @@ def main():
 
     for i, s in enumerate(args.recog_sets):
         # Load dataset
-        dataset = Dataset(tsv_path=s,
+        dataset = Dataset(corpus=args.corpus,
+                          tsv_path=s,
                           dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
                           wp_model=os.path.join(args.recog_model[0], 'wp.model'),
                           unit=args.unit,
                           batch_size=args.recog_batch_size,
+                          bptt=args.bptt,
+                          serialize=args.serialize,
                           is_test=True)
 
         if i == 0:
@@ -60,7 +63,6 @@ def main():
             logger.info('batch size: %d' % args.recog_batch_size)
             # logger.info('recog unit: %s' % args.recog_unit)
             # logger.info('ensemble: %d' % (len(ensemble_models)))
-            # logger.info('checkpoint ensemble: %d' % (args.recog_checkpoint_ensemble))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache theta: %d' % (args.recog_cache_theta))
             logger.info('cache lambda: %d' % (args.recog_cache_lambda))

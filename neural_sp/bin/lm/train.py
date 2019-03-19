@@ -48,29 +48,33 @@ def main():
             setattr(args, k, v)
 
     # Load dataset
-    train_set = Dataset(tsv_path=args.train_set,
+    train_set = Dataset(corpus=args.corpus,
+                        tsv_path=args.train_set,
                         dict_path=args.dict,
                         unit=args.unit,
                         wp_model=args.wp_model,
                         batch_size=args.batch_size * args.n_gpus,
                         n_epochs=args.n_epochs,
                         bptt=args.bptt,
-                        shuffle=False)
-    dev_set = Dataset(tsv_path=args.dev_set,
+                        serialize=args.serialize)
+    dev_set = Dataset(corpus=args.corpus,
+                      tsv_path=args.dev_set,
                       dict_path=args.dict,
                       unit=args.unit,
                       wp_model=args.wp_model,
                       batch_size=args.batch_size * args.n_gpus,
                       bptt=args.bptt,
-                      shuffle=True)
+                      serialize=args.serialize)
     eval_sets = []
     for s in args.eval_sets:
-        eval_sets += [Dataset(tsv_path=s,
+        eval_sets += [Dataset(corpus=args.corpus,
+                              tsv_path=s,
                               dict_path=args.dict,
                               unit=args.unit,
                               wp_model=args.wp_model,
                               batch_size=1,
-                              bptt=args.bptt)]
+                              bptt=args.bptt,
+                              serialize=args.serialize)]
 
     args.vocab = train_set.vocab
 
@@ -93,6 +97,8 @@ def main():
         dir_name += '_glu'
     if args.backward:
         dir_name += '_bwd'
+    if args.serialize:
+        dir_name += '_serialize'
 
     if args.resume:
         raise NotImplementedError

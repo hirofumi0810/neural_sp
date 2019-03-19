@@ -144,6 +144,8 @@ lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_weight_decay=1e-6
 lm_backward=
+# contextualization
+lm_serialize=true
 
 ### path to save the model
 model=/n/sd8/inaguma/result/swbd
@@ -381,6 +383,7 @@ if [ ${stage} -le 3 ]; then
 
     # NOTE: support only a single GPU for RNNLM training
     CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
+        --corpus swbd \
         --n_gpus 1 \
         --train_set ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
@@ -416,7 +419,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_out ${lm_dropout_out} \
         --dropout_emb ${lm_dropout_emb} \
         --weight_decay ${lm_weight_decay} \
-        --backward ${lm_backward} || exit 1;
+        --backward ${lm_backward} \
+        --serialize ${lm_serialize} || exit 1;
     # --resume ${rnnlm_resume} || exit 1;
 
     echo "Finish RNNLM training (stage: 3)." && exit 1;

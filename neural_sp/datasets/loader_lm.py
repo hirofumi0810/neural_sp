@@ -36,19 +36,22 @@ class Dataset(Base):
 
     def __init__(self, tsv_path, dict_path,
                  unit, batch_size, n_epochs=None,
-                 is_test=False, bptt=2, shuffle=False, wp_model=None):
+                 is_test=False, bptt=2, wp_model=None, corpus='',
+                 shuffle=False, serialize=False):
         """A class for loading dataset.
 
         Args:
-            tsv_path (str):
-            dict_path (str):
+            tsv_path (str): path to the dataset tsv file
+            dict_path (str): path to the dictionary
             unit (str): word or wp or char or phone or word_char
-            batch_size (int): the size of mini-batch
-            bptt (int):
-            n_epochs (int): the max epoch. None means infinite loop.
-            shuffle (bool): if True, shuffle utterances.
+            batch_size (int): size of mini-batch
+            bptt (int): BPTT length
+            n_epochs (int): max epoch. None means infinite loop.
+            wp_model (): path to the word-piece model for sentencepiece
+            corpus (str): name of corpus
+            shuffle (bool): shuffle utterances.
                 This is disabled when sort_by_input_length is True.
-            wp_model ():
+            serialize (bool): serialize text according to contexts in dialogue
 
         """
         super(Dataset, self).__init__()
@@ -90,6 +93,9 @@ class Dataset(Base):
         # Sort csv records
         if shuffle:
             self.df = df.reindex(np.random.permutation(df.index))
+        elif serialize:
+            assert corpus == 'swbd'
+            raise NotImplementedError
         else:
             self.df = df.sort_values(by='utt_id', ascending=True)
 

@@ -13,6 +13,8 @@ from distutils.util import strtobool
 def parse():
     parser = argparse.ArgumentParser()
     # general
+    parser.add_argument('--corpus', type=str,
+                        help='name of corpus')
     parser.add_argument('--n_gpus', type=int, default=1,
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--model', type=str, default=False,
@@ -116,6 +118,9 @@ def parse():
                         help='')
     parser.add_argument('--backward', type=bool, default=False, nargs='?',
                         help='')
+    # contextualization
+    parser.add_argument('--serialize', type=bool, default=False, nargs='?',
+                        help='serialize text according to onset in dialogue')
     # evaluation
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='path to tsv files for the evaluation sets')

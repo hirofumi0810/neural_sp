@@ -374,6 +374,7 @@ if [ ${stage} -le 3 ]; then
 
     # NOTE: support only a single GPU for RNNLM training
     CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
+        --corpus wsj \
         --n_gpus 1 \
         --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
