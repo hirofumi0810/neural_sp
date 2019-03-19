@@ -165,7 +165,7 @@ class Dataset(Base):
             self.df = self.df.assign(line_no=list(range(len(self.df))))
             self.df = self.df.assign(prev_utt='')
             if corpus == 'swbd':
-                self.df['session'] = self.df['speaker'].apply(lambda x: x.split('-')[0])
+                self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
             elif corpus == 'csj':
                 raise NotImplementedError
             else:

@@ -95,7 +95,7 @@ class Dataset(Base):
             self.df = self.df.reindex(np.random.permutation(self.df.index))
         elif serialize:
             assert corpus == 'swbd'
-            self.df['session'] = self.df['speaker'].apply(lambda x: x.split('-')[0])
+            self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
             self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
             self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
         else:
