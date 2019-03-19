@@ -9,7 +9,6 @@ gpu=
 ### path to save preproecssed data
 data=/n/sd8/inaguma/corpus/timit
 
-epoch=-1
 batch_size=1
 
 . ./cmd.sh
@@ -28,13 +27,13 @@ fi
 gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in dev test; do
-    recog_dir=${model}/plot_${set}_ep${epoch}
+    recog_dir=$(dirname ${model})/plot_${set}
     mkdir -p ${recog_dir}
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_ctc.py \
         --recog_sets ${data}/dataset/${set}.csv \
+        --recog_dir ${recog_dir} \
         --recog_model ${model} \
-        --recog_epoch ${epoch} \
         --recog_batch_size ${batch_size} \
-        --recog_dir ${recog_dir} || exit 1;
+        || exit 1;
 done

@@ -28,52 +28,48 @@ def main():
     args = parse()
 
     # Load a conf file
-    conf = load_config(os.path.join(args.recog_model, 'conf.yml'))
+    dir_name = os.path.dirname(args.recog_model[0])
+    conf = load_config(os.path.join(dir_name, 'conf.yml'))
 
     # Overwrite conf
     for k, v in conf.items():
-        setattr(args, k, v)
+        if 'recog' not in k:
+            setattr(args, k, v)
     recog_params = vars(args)
 
     # Setting for logging
-    if os.path.isfile(os.path.join(args.plot_dir, 'plot.log')):
-        os.remove(os.path.join(args.plot_dir, 'plot.log'))
-    logger = set_logger(os.path.join(args.plot_dir, 'plot.log'), key='decoding')
+    if os.path.isfile(os.path.join(args.recog_dir, 'plot.log')):
+        os.remove(os.path.join(args.recog_dir, 'plot.log'))
+    logger = set_logger(os.path.join(args.recog_dir, 'plot.log'), key='decoding')
 
     for i, s in enumerate(args.recog_sets):
         subsample_factor = 1
-        subsample_factor_sub1 = 1
         subsample = [int(s) for s in args.subsample.split('_')]
         if args.conv_poolings:
             for p in args.conv_poolings.split('_'):
                 p = int(p.split(',')[0].replace('(', ''))
                 if p > 1:
                     subsample_factor *= p
-        if args.train_set_sub1 is not None:
-            subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
         subsample_factor *= np.prod(subsample)
 
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
                           tsv_path=s,
-                          dict_path=os.path.join(args.recog_model, 'dict.txt'),
-                          dict_path_sub1=os.path.join(args.recog_model, 'dict_sub1.txt') if os.path.isfile(
-                              os.path.join(args.recog_model, 'dict_sub1.txt')) else None,
-                          wp_model=os.path.join(args.recog_model, 'wp.model'),
+                          dict_path=os.path.join(dir_name, 'dict.txt'),
+                          dict_path_sub1=os.path.join(dir_name, 'dict_sub1.txt') if os.path.isfile(
+                              os.path.join(dir_name, 'dict_sub1.txt')) else None,
+                          wp_model=os.path.join(dir_name, 'wp.model'),
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
                           batch_size=args.recog_batch_size,
+                          concat_prev_n_utterances=args.concat_prev_n_utterances,
                           is_test=True)
 
         if i == 0:
-            # TODO(hirofumi): For cold fusion
-            args.rnnlm_cold_fusion = None
-            args.rnnlm_init = None
-
             # Load the ASR model
             model = Seq2seq(args)
-            epoch = model.load_checkpoint(args.recog_model)['epoch']
-            model.save_path = args.recog_model
+            epoch = model.load_checkpoint(args.recog_model[0])['epoch']
+            model.save_path = dir_name
 
             # GPU setting
             model.cuda()
@@ -81,7 +77,7 @@ def main():
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
 
-        save_path = mkdir_join(args.plot_dir, 'att_weights')
+        save_path = mkdir_join(args.plot_dir, 'ctc_probs')
 
         # Clean directory
         if save_path is not None and os.path.isdir(save_path):

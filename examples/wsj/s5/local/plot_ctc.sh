@@ -9,9 +9,8 @@ gpu=
 ### path to save preproecssed data
 data=/n/sd8/inaguma/corpus/wsj
 
-epoch=-1
-batch_size=1
 recog_unit=
+batch_size=1
 
 . ./cmd.sh
 . ./path.sh
@@ -29,7 +28,7 @@ fi
 gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in test_dev93 test_eval92; do
-    recog_dir=${model}/plot_${set}_ep${epoch}
+    recog_dir=$(dirname ${model})/plot_${set}
     if [ ! -z ${recog_unit} ]; then
         recog_dir=${recog_dir}_${recog_unit}
     fi
@@ -37,9 +36,9 @@ for set in test_dev93 test_eval92; do
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_ctc.py \
         --recog_sets ${data}/dataset/${set}_char.csv \
-        --recog_model ${model} \
-        --recog_epoch ${epoch} \
-        --recog_batch_size ${batch_size} \
+        --recog_dir ${recog_dir} \
         --recog_unit ${recog_unit} \
-        --recog_dir ${recog_dir} || exit 1;
+        --recog_model ${model} \
+        --recog_batch_size ${batch_size} \
+        || exit 1;
 done
