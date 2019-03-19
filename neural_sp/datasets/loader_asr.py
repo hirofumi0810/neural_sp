@@ -289,7 +289,8 @@ class Dataset(Base):
         ys_cache = []
         if self.cache_prev_n_tokens > 0:
             for j, i in enumerate(df_indices):
-                for i_prev in self.df['prev_utt'][i][::-1]:
+                ys_cache[j] = [self.eos]
+                for i_prev in self.df['prev_utt'][i]:
                     y_prev = list(map(int, str(self.df['token_id'][i_prev]).split()))
                     ys_cache[j] += y_prev + [self.eos]
 
