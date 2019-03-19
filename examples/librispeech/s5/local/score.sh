@@ -120,7 +120,11 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_cache_theta ${cache_theta} \
         --recog_cache_lambda ${cache_lambda} \
         --recog_concat_prev_n_utterances ${concat_prev_n_utterances} \
- exit 1;
+        || exit 1;
+
+    # remove <unk>
+    cp ${recog_dir}/hyp.trn ${recog_dir}/hyp.trn.bk
+    cat ${recog_dir}/hyp.trn.bk | grep -i -v -E '<unk>' > ${recog_dir}/hyp.trn
 
     echo ${set}
     sclite -r ${recog_dir}/ref.trn trn -h ${recog_dir}/hyp.trn trn -i rm -o all stdout > ${recog_dir}/result.txt

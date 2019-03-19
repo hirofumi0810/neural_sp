@@ -121,6 +121,10 @@ for set in test_dev93 test_eval92; do
         --recog_concat_prev_n_utterances ${concat_prev_n_utterances} \
         || exit 1;
 
+    # remove <unk>
+    cp ${recog_dir}/hyp.trn ${recog_dir}/hyp.trn.bk
+    cat ${recog_dir}/hyp.trn.bk | grep -i -v -E '<unk>' > ${recog_dir}/hyp.trn
+
     echo ${set}
     sclite -r ${recog_dir}/ref.trn trn -h ${recog_dir}/hyp.trn trn -i rm -o all stdout > ${recog_dir}/result.txt
     grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS
