@@ -85,19 +85,21 @@ class Dataset(Base):
             raise ValueError(unit)
 
         # Load dataset csv file
-        df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
-        df = df.loc[:, ['utt_id', 'speaker', 'feat_path',
-                        'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
-        df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
+        self.df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
+        self.df = self.df.loc[:, ['utt_id', 'speaker', 'feat_path',
+                                  'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+        self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
 
         # Sort csv records
         if shuffle:
-            self.df = df.reindex(np.random.permutation(df.index))
+            self.df = self.df.reindex(np.random.permutation(self.df.index))
         elif serialize:
             assert corpus == 'swbd'
-            raise NotImplementedError
+            self.df['session'] = self.df['speaker'].apply(lambda x: x.split('-')[0])
+            self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
+            self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
         else:
-            self.df = df.sort_values(by='utt_id', ascending=True)
+            self.df = self.df.sort_values(by='utt_id', ascending=True)
 
         # Concatenate into a single sentence
         concat_ids = []
