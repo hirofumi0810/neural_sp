@@ -119,24 +119,24 @@ lm_tie_embedding=true
 lm_residual=true
 lm_use_glu=true
 # optimization
-lm_batch_size=128
-lm_bptt=100
+lm_batch_size=64
+lm_bptt=200
 lm_optimizer=adam
 lm_learning_rate=1e-3
-lm_n_epochs=20
-lm_convert_to_sgd_epoch=20
-lm_print_step=100
-lm_decay_start_epoch=5
-lm_decay_rate=0.8
-lm_decay_patient_epoch=0
-lm_not_improved_patient_n_epochs=10
+lm_n_epochs=40
+lm_convert_to_sgd_epoch=40
+lm_print_step=50
+lm_decay_start_epoch=10
+lm_decay_rate=0.9
+lm_decay_patient_n_epochs=0
+lm_not_improved_patient_n_epochs=5
 lm_eval_start_epoch=1
 # initialization
-lm_param_init=0.1
+lm_param_init=0.05
 lm_param_init_dist=uniform
 lm_pretrained_model=
 # regularization
-lm_clip_grad_norm=5.0
+lm_clip_grad_norm=1.0
 lm_dropout_hidden=0.5
 lm_dropout_out=0.0
 lm_dropout_emb=0.2
@@ -227,14 +227,14 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
         ${data}/train_fisher ${data}/log/make_fbank/train_fisher ${data}/fbank || exit 1;
 
-    # utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_swbd ${data}/train_fisher || exit 1;
+    utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_swbd ${data}/train_fisher || exit 1;
     cp -rf ${data}/dev_swbd ${data}/${dev_set}
 
     # Compute global CMVN
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 400 \
+    dump_feat.sh --cmd "$train_cmd" --nj 2000 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
     dump_feat.sh --cmd "$train_cmd" --nj 32 \
         ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
@@ -374,7 +374,7 @@ if [ ${stage} -le 3 ]; then
         --print_step ${lm_print_step} \
         --decay_start_epoch ${lm_decay_start_epoch} \
         --decay_rate ${lm_decay_rate} \
-        --decay_patient_n_epochs ${lm_decay_patient_epoch} \
+        --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
         --not_improved_patient_n_epochs ${lm_not_improved_patient_n_epochs} \
         --eval_start_epoch ${lm_eval_start_epoch} \
         --param_init ${lm_param_init} \

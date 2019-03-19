@@ -84,9 +84,9 @@ pretrained_model=
 ### regularization
 clip_grad_norm=5.0
 dropout_in=0.0
-dropout_enc=0.2
-dropout_dec=0.2
-dropout_emb=0.2
+dropout_enc=0.4
+dropout_dec=0.4
+dropout_emb=0.4
 dropout_att=0.0
 weight_decay=1e-6
 ss_prob=0.2
@@ -119,24 +119,24 @@ lm_tie_embedding=true
 lm_residual=true
 lm_use_glu=true
 # optimization
-lm_batch_size=256
-lm_bptt=100
+lm_batch_size=128
+lm_bptt=200
 lm_optimizer=adam
 lm_learning_rate=1e-3
-lm_n_epochs=50
-lm_convert_to_sgd_epoch=50
-lm_print_step=20
-lm_decay_start_n_epochs=10
+lm_n_epochs=40
+lm_convert_to_sgd_epoch=40
+lm_print_step=50
+lm_decay_start_epoch=10
 lm_decay_rate=0.9
-lm_decay_patient_epoch=0
-lm_not_improved_patient_n_epochs=10
+lm_decay_patient_n_epochs=0
+lm_not_improved_patient_n_epochs=5
 lm_eval_start_epoch=1
 # initialization
-lm_param_init=0.1
+lm_param_init=0.05
 lm_param_init_dist=uniform
 lm_pretrained_model=
 # regularization
-lm_clip_grad_norm=5.0
+lm_clip_grad_norm=1.0
 lm_dropout_hidden=0.5
 lm_dropout_out=0.0
 lm_dropout_emb=0.2
@@ -396,9 +396,9 @@ if [ ${stage} -le 3 ]; then
         --n_epochs ${lm_n_epochs} \
         --convert_to_sgd_epoch ${lm_convert_to_sgd_epoch} \
         --print_step ${lm_print_step} \
-        --decay_start_epoch ${lm_decay_start_n_epochs} \
+        --decay_start_epoch ${lm_decay_start_epoch} \
         --decay_rate ${lm_decay_rate} \
-        --decay_patient_n_epochs ${lm_decay_patient_epoch} \
+        --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
         --not_improved_patient_n_epochs ${lm_not_improved_patient_n_epochs} \
         --eval_start_epoch ${lm_eval_start_epoch} \
         --param_init ${lm_param_init} \

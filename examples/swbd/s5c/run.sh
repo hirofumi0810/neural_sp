@@ -105,6 +105,8 @@ rnnlm_cold_fusion=
 rnnlm_init=
 lmobj_weight=0.0
 share_lm_softmax=
+# contextualization
+concat_prev_n_utterances=0
 
 #########################
 # RNNLM configuration
@@ -123,20 +125,20 @@ lm_batch_size=128
 lm_bptt=200
 lm_optimizer=adam
 lm_learning_rate=1e-3
-lm_n_epochs=50
-lm_convert_to_sgd_epoch=50
-lm_print_step=20
+lm_n_epochs=40
+lm_convert_to_sgd_epoch=40
+lm_print_step=50
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
-lm_not_improved_patient_n_epochs=10
+lm_not_improved_patient_n_epochs=5
 lm_eval_start_epoch=1
 # initialization
-lm_param_init=0.1
+lm_param_init=0.05
 lm_param_init_dist=uniform
 lm_pretrained_model=
 # regularization
-lm_clip_grad_norm=5.0
+lm_clip_grad_norm=1.0
 lm_dropout_hidden=0.5
 lm_dropout_out=0.0
 lm_dropout_emb=0.2
@@ -379,7 +381,6 @@ if [ ${stage} -le 3 ]; then
 
     # NOTE: support only a single GPU for RNNLM training
     CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
-        --corpus swbd \
         --n_gpus 1 \
         --train_set ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
@@ -427,6 +428,7 @@ if [ ${stage} -le 4 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
+        --corpus swbd \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
@@ -506,6 +508,7 @@ if [ ${stage} -le 4 ]; then
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
+        --concat_prev_n_utterances ${concat_prev_n_utterances} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."
