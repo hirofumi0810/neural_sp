@@ -22,25 +22,11 @@ for f in $data/$set/stm $data/$set/glm; do
   [ ! -f $f ] && echo "$0: expecting file $f to exist" && exit 1;
 done
 
-# Remove some stuff we don't want to score, from the ctm.
-# the big expression in parentheses contains all the things that get mapped
-# by the glm file, into hesitations.
-# The -$ expression removes partial words.
-# the aim here is to remove all the things that appear in the reference as optionally
-# deletable (inside parentheses), as if we delete these there is no loss, while
-# if we get them correct there is no gain.
-cat $dir/hyp.trn | sed -e 's/\[noise\]//g' | sed -e 's/\[laughter\]//g' | sed -e 's/\[vocalized-noise\]//g' | \
-  sed -e 's/\s\+/ /g' | sed 's/^[ \t]*//' | sed -e 's/[ \t]*$//' \
-  > $dir/hyp.trn.clean
-# sed -e 's/<unk>//g' | \
-# grep -i -v -E ' (uh|um|eh|mm|hm|ah|huh|ha|er|oof|hee|ach|eee|ew)$' | \
-# grep -v -- '-$' | \
-
-python local/map_acronyms_transcripts.py -i $dir/hyp.trn.clean -o $dir/hyp.trn.clean.mapped -M $data/local/dict_nosp/acronyms.map
+python local/map_acronyms_transcripts.py -i $dir/hyp.trn -o $dir/hyp.trn.mapped -M $data/local/dict_nosp/acronyms.map
 # NOTE: inputs for map_acronyms_transcripts must be lowercase
 
 # Convert to uppercase
-awk '{ print toupper($0); }' $dir/hyp.trn.clean.mapped | sed -e 's/(SW/(sw/g' | sed -e 's/(EN/(en/g' > $dir/hyp.trn.clean.mapped.upper
+awk '{ print toupper($0); }' $dir/hyp.trn.mapped | sed -e 's/(SW/(sw/g' | sed -e 's/(EN/(en/g' > $dir/hyp.trn.mapped.upper
 
 # Fix stm
 cat $data/$set/stm | sed -e 's/_A1/_A/g' | sed -e 's/_B1/_B/g' > $dir/stm
@@ -48,6 +34,18 @@ cat $data/$set/stm | sed -e 's/_A1/_A/g' | sed -e 's/_B1/_B/g' > $dir/stm
 # Convert trn to ctm for hypothesis
 trn2ctm.py $dir/hyp.trn.clean.mapped.upper --stm $dir/stm > $dir/hyp.ctm
 
+# Remove some stuff we don't want to score, from the ctm.
+# the big expression in parentheses contains all the things that get mapped
+# by the glm file, into hesitations.
+# The -$ expression removes partial words.
+# the aim here is to remove all the things that appear in the reference as optionally
+# deletable (inside parentheses), as if we delete these there is no loss, while
+# if we get them correct there is no gain.
+cp $dir/hyp.ctm $dir/tmpf;
+cat $dir/tmpf | grep -i -v -E '\[NOISE|LAUGHTER|VOCALIZED-NOISE\]' | \
+  grep -i -v -E '<UNK>' | \
+  grep -i -v -E ' (UH|UM|EH|MM|HM|AH|HUH|HA|ER|OOF|HEE|ACH|EEE|EW)$' | \
+  grep -v -- '-$' > $dir/hyp.ctm;
 
 # For eval2000 score the subsets
 case "$set" in
