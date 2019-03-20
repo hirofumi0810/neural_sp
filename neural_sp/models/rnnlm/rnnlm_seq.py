@@ -285,15 +285,15 @@ class SeqRNNLM(ModelBase):
         logits = self.output(hidden)
         return logits
 
-    def initialize_hidden(self, bs):
+    def initialize_hidden(self, batch_size):
         """Initialize hidden states."""
         w = next(self.parameters())
 
         if self.fast_impl:
             # return None
-            h_n = w.new_zeros(self.n_layers, bs, self.n_units)
+            h_n = w.new_zeros(self.n_layers, batch_size, self.n_units)
             if self.rnn_type == 'lstm':
-                c_n = w.new_zeros(self.n_layers, bs, self.n_units)
+                c_n = w.new_zeros(self.n_layers, batch_size, self.n_units)
             elif self.rnn_type == 'gru':
                 c_n = None
             return (h_n, c_n)
@@ -301,9 +301,9 @@ class SeqRNNLM(ModelBase):
             hxs, cxs = [], []
             for l in range(self.n_layers):
                 # h_l = None
-                h_l = w.new_zeros(1, bs, self.n_units)
+                h_l = w.new_zeros(1, batch_size, self.n_units)
                 if self.rnn_type == 'lstm':
-                    c_l = w.new_zeros(1, bs, self.n_units)
+                    c_l = w.new_zeros(1, batch_size, self.n_units)
                 elif self.rnn_type == 'gru':
                     c_l = None
                 hxs.append(h_l)

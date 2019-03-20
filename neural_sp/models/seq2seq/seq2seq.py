@@ -682,8 +682,7 @@ class Seq2seq(ModelBase):
                 if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                        params['recog_max_len_ratio'], exclude_eos,
-                        speakers)
+                        params['recog_max_len_ratio'], exclude_eos, speakers)
                     cache_info = (None, None)
                 else:
                     if params['recog_ctc_weight'] > 0:
@@ -789,8 +788,7 @@ class Seq2seq(ModelBase):
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm, rnnlm_rev, ctc_log_probs,
                             nbest, exclude_eos, idx2token, refs,
-                            ensemble_eouts, ensemble_elens, ensemble_decs,
-                            speakers)
+                            ensemble_eouts, ensemble_elens, ensemble_decs, speakers)
 
                         if nbest == 1:
                             best_hyps = [hyp[0] for hyp in nbest_hyps]

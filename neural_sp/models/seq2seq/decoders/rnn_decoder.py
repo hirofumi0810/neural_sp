@@ -197,9 +197,9 @@ class RNNDecoder(nn.Module):
         # for cache
         self.fifo_cache_ids = []
         self.fifo_cache_values_dec = []
-        self.fifo_cache_keys_lm = []
         self.fifo_cache_values_lm = []
-        self.prev_speaker = ''
+        self.fifo_cache_keys_lm = None
+        self.prev_spk = ''
         self.rnnlm_final_state = (None, None)
 
         if ctc_weight > 0:
@@ -547,10 +547,8 @@ class RNNDecoder(nn.Module):
 
         logits = []
         for t in range(ys_in_pad.size(1)):
-            y_emb = ys_emb[:, t:t + 1]
-
             # Recurrency
-            dstates = self.recurrency(y_emb, cv, dstates['dstate'])
+            dstates = self.recurrency(ys_emb[:, t:t + 1], cv, dstates['dstate'])
 
             # Generate
             if self.loop_type == 'lmdecoder':
@@ -629,15 +627,27 @@ class RNNDecoder(nn.Module):
             ylens_cache = [len(y) for y in ys_cache]
 
             assert self.rnnlm_cf is not None
-            for t_c in range(ys_cache_pad.size(1)):
-                for b in range(bs):
-                    logits_lm_t, lm_out, lm_state = self.rnnlm_cf.decode(
-                        ys_lm_emb_cache[b:b + 1, t_c:t_c + 1], lm_state)
-                    self.fifo_cache_keys_lm.append(lm_out)
-                    if self.cold_fusion_type in ['prob_attention', 'prob_self_attention']:
-                        self.fifo_cache_values_lm.append(logits_lm_t)
-                    # NOTE: this batch loop is not effective but very important because RNNLM are not trained
-                    # so as to decode <pad> tokens
+            lm_outs_list = []
+            lm_state_list = []
+            for b in range(bs):
+                lm_outs_b = []
+                lm_state_b = self.rnnlm_cf.initialize_hidden(batch_size=1)
+                for t_c in range(ylens_cache[b]):
+                    lm_out_b, lm_state_b = self.rnnlm_cf.decode(
+                        ys_lm_emb_cache[b:b + 1, t_c:t_c + 1], lm_state_b)
+                    lm_outs_b.append(lm_out_b)
+                if ylens_cache[b] < self.cache_prev_n_tokens:
+                    lm_outs_b = [ys_lm_emb_cache.new_zeros(1, self.cache_prev_n_tokens - ylens_cache[b],
+                                                           self.rnnlm_cf.n_units)] + lm_outs_b
+                lm_outs_b = torch.cat(lm_outs_b, dim=1)  # `[1, ylens_cache[b], lm_n_units]`
+
+                lm_outs_list.append(lm_outs_b)
+                lm_state_list.append(lm_state_b)
+
+            lm_outs = torch.cat(lm_outs_list, dim=0)  # `[B, cache_prev_n_tokens, lm_n_units]`
+            self.fifo_cache_keys_lm = lm_outs
+            # NOTE: this batch loop is not effective but very important because RNNLM are not trained
+            # so as to decode <pad> tokens
 
         logits = []
         for t in range(ys_in_pad.size(1)):
@@ -662,11 +672,14 @@ class RNNDecoder(nn.Module):
                     y_lm_emb = self.rnnlm_cf.encode(logits[-1].detach().argmax(-1))
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
-                lm_out, lm_state = self.rnnlm_cf.decode(y_lm_emb, lm_state)
-                if self.cold_fusion_type in ['hidden_attention', 'hidden_self_attention',
-                                             'prob_attention', 'prob_self_attention']:
-                    self.fifo_cache_keys_lm.append(lm_out)
-                    self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[-self.cache_prev_n_tokens:]
+
+                if self.cache_prev_n_tokens > 0 and self.cold_fusion_type in ['hidden_attention', 'hidden_self_attention',
+                                                                              'prob_attention', 'prob_self_attention']:
+                    lm_out, lm_state = self.rnnlm_cf.decode(y_lm_emb, lm_state)
+                    self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
+                    self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
+                else:
+                    lm_out, lm_state = self.rnnlm_cf.decode(y_lm_emb, lm_state)
 
             # Score
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
@@ -980,16 +993,16 @@ class RNNDecoder(nn.Module):
                 lm_feat = self.cf_linear_lm_feat(self.rnnlm_cf.generate(lm_out))
             else:
                 self.score_cf.reset()
-                memory = torch.cat(self.fifo_cache_keys_lm, dim=1)  # `[B, cache_prev_n_tokens, lm_n_units]`
-                cache_lens = [memory.size(1)] * cv.size(0)
+                memory = self.fifo_cache_keys_lm
+                memory_lens = [memory.size(1)] * cv.size(0)
                 if self.cold_fusion_type == 'hidden_attention':
-                    cv_cf, aw_cf = self.score_cf(memory, cache_lens, memory, dout, aw=None)
+                    cv_cf, aw_cf = self.score_cf(memory, memory_lens, memory, dout, aw=None)
                 elif self.cold_fusion_type == 'prob_attention':
-                    cv_cf, aw_cf = self.score_cf(memory, cache_lens, self.rnnlm_cf.generate(memory), dout, aw=None)
+                    cv_cf, aw_cf = self.score_cf(memory, memory_lens, self.rnnlm_cf.generate(memory), dout, aw=None)
                 elif self.cold_fusion_type == 'hidden_self_attention':
-                    cv_cf, aw_cf = self.score_cf(memory, cache_lens, memory, memory, aw=None)
+                    cv_cf, aw_cf = self.score_cf(memory, memory_lens, memory, memory, aw=None)
                 elif self.cold_fusion_type == 'prob_self_attention':
-                    cv_cf, aw_cf = self.score_cf(memory, cache_lens, self.rnnlm_cf.generate(memory), memory, aw=None)
+                    cv_cf, aw_cf = self.score_cf(memory, memory_lens, self.rnnlm_cf.generate(memory), memory, aw=None)
                 lm_feat = self.cf_linear_lm_feat(cv_cf)
 
             dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
@@ -1034,9 +1047,9 @@ class RNNDecoder(nn.Module):
 
         if self.cache_prev_n_tokens > 0:
             assert bs == 1
-            if speakers[0] != self.prev_speaker:
+            if speakers[0] != self.prev_spk:
                 self.reset_global_cache()
-            self.prev_speaker = speakers[0]
+            self.prev_spk = speakers[0]
 
         best_hyps_tmp, aws_tmp = [], []
         aws_cf = []
@@ -1054,10 +1067,13 @@ class RNNDecoder(nn.Module):
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf is not None:
                 lm_out, lm_state = self.rnnlm_cf.decode(self.rnnlm_cf.encode(y), lm_state)
-                if self.cold_fusion_type in ['hidden_attention', 'hidden_self_attention',
-                                             'prob_attention', 'prob_self_attention']:
-                    self.fifo_cache_keys_lm.append(lm_out)
-                    self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[-self.cache_prev_n_tokens:]
+                if self.cache_prev_n_tokens > 0 and self.cold_fusion_type in ['hidden_attention', 'hidden_self_attention',
+                                                                              'prob_attention', 'prob_self_attention']:
+                    if self.fifo_cache_keys_lm is None:
+                        self.fifo_cache_keys_lm = lm_out.new_zeros(bs, 1, self.rnnlm_cf.n_units)
+                    else:
+                        self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
+                    self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
             else:
                 lm_out = None
 
@@ -1223,14 +1239,13 @@ class RNNDecoder(nn.Module):
                         ensemble_cv += [eouts.new_zeros(1, 1, dec.enc_n_units)]
                     dec.score.reset()
 
-            if speakers[b] != self.prev_speaker:
+            rnnlm_hxs, rnnlm_cxs = None, None
+            if speakers[b] != self.prev_spk:
                 self.reset_global_cache()
-                rnnlm_hxs, rnnlm_cxs = None, None
             else:
                 rnnlm_hxs, rnnlm_cxs = self.rnnlm_final_state
                 self.rnnlm_final_state = None
-                rnnlm_hxs, rnnlm_cxs = None, None
-            self.prev_speaker = speakers[b]
+            self.prev_spk = speakers[b]
 
             complete = []
             beam = [{'hyp': [sos],
@@ -1525,7 +1540,7 @@ class RNNDecoder(nn.Module):
             if rnnlm_rev is not None and rnnlm_weight > 0:
                 for cand in complete:
                     # Initialize
-                    rnnlm_hxs, rnnlm_cxs = None, None
+                    rnnlm_rev_hxs, rnnlm_rev_cxs = None, None
                     score_lm_rev = 0
                     lp = 1
 
@@ -1537,10 +1552,9 @@ class RNNDecoder(nn.Module):
                         lp = (math.pow(5 + (len(cand['hyp']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
                     for t in range(len(cand['hyp'][1:])):
                         y_lm = eouts.new_zeros(1, 1).fill_(cand['hyp'][-1 - t]).long()
-                        y_lm_emb = rnnlm_rev.encode(y_lm)
-                        logits_lm_t, _, (rnnlm_hxs, rnnlm_cxs) = rnnlm_rev.decode(
-                            y_lm_emb, (rnnlm_hxs, rnnlm_cxs))
-                        lm_log_probs = F.log_softmax(logits_lm_t.squeeze(1), dim=1)
+                        lm_out_rev, (rnnlm_rev_hxs, rnnlm_rev_cxs) = rnnlm_rev.decode(
+                            rnnlm_rev.encode(y_lm), (rnnlm_hxs, rnnlm_rev_cxs))
+                        lm_log_probs = F.log_softmax(rnnlm_rev.generate(lm_out_rev).squeeze(1), dim=-1)
                         score_lm_rev += lm_log_probs[0, cand['hyp'][-2 - t]]
                     score_lm_rev /= lp  # normalize
                     cand['score'] += score_lm_rev * rnnlm_weight
@@ -1589,6 +1603,8 @@ class RNNDecoder(nn.Module):
                     logger.info('log prob (hyp, lm): %.7f' % (complete[n]['score_lm'] * rnnlm_weight))
                     if rnnlm_rev is not None:
                         logger.info('log prob (hyp, lm rev): %.7f' % (complete[n]['score_lm_rev']))
+                if n_caches > 0:
+                    logger.info('Cache: %d' % (len(self.fifo_cache_ids) + len(complete[0]['cache_idx'])))
 
         # Concatenate in L dimension
         for b in range(len(aws)):
@@ -1656,8 +1672,8 @@ class RNNDecoder(nn.Module):
         """Reset global cache when the speaker/session is changed."""
         self.fifo_cache_ids = []
         self.fifo_cache_values_dec = []
-        self.fifo_cache_keys_lm = []
         self.fifo_cache_values_lm = []
+        self.fifo_cache_keys_lm = None
 
     def decode_ctc(self, eouts, xlens, beam_width=1, rnnlm=None):
         """Decoding by the CTC layer in the inference stage.
