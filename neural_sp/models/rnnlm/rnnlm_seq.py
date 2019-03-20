@@ -169,38 +169,9 @@ class SeqRNNLM(ModelBase):
         ys_in = ys[:, :-1]
         ys_out = ys[:, 1:]
 
-        # Path through embedding
-        ys_in = self.embed(ys_in)
-
-        if hidden is None:
-            hidden = self.initialize_hidden(ys.size(0))
-
-        residual = None
-        if self.fast_impl:
-            ys_in, hidden = self.rnn(ys_in, hx=hidden)
-            ys_in = self.dropout_top(ys_in)
-        else:
-            for l in range(self.n_layers):
-                # Path through RNN
-                if self.rnn_type == 'lstm':
-                    ys_in, (hidden[0][l], hidden[1][l]) = self.rnn[l](ys_in, hx=(hidden[0][l], hidden[1][l]))
-                elif self.rnn_type == 'gru':
-                    ys_in, hidden[0][l] = self.rnn[l](ys_in, hx=hidden[0][l])
-                ys_in = self.dropout[l](ys_in)
-
-                # Residual connection
-                if self.residual and l > 0:
-                    ys_in += residual
-                residual = ys_in
-                # NOTE: Exclude residual connection from the raw inputs
-
-        if self.use_glu:
-            if self.residual:
-                residual = ys_in
-            ys_in = F.glu(self.fc_glu(ys_in), dim=-1)
-            if self.residual:
-                ys_in += residual
-        logits = self.output(ys_in)
+        ys_in = self.encode(ys_in)
+        lm_out, hidden = self.decode(ys_in, hidden)
+        logits = self.generate(lm_out)
 
         # Compute XE sequence loss
         if n_caches > 0 and len(self.cache_keys) > 0:
@@ -253,49 +224,66 @@ class SeqRNNLM(ModelBase):
 
         return loss, hidden, observation
 
-    def predict(self, y, hidden):
-        """Predict a token per step for ASR decoding.
-
+    def encode(self, ys):
+        """Encode function.
         Args:
-            y (FloatTensor): `[B, 1, emb_dim]`
+            ys (LongTensor):
+        Returns:
+            ys (FloatTensor):
+        """
+        ys_emb = self.embed(ys)
+        return ys_emb
+
+    def decode(self, ys_emb, hidden):
+        """Decode function.
+        Args:
+            ys_emb (FloatTensor): `[B, L, emb_dim]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
         Returns:
-            logits_step (FloatTensor): `[B, 1, vocab]`
-            y (FloatTensor): `[B, 1, n_units]`
+            ys_emb (FloatTensor): `[B, L, n_units]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
-
         """
-        if hidden[0] is None:
-            hidden = self.initialize_hidden(y.size(0))
+        if hidden is None or hidden[0] is None:
+            hidden = self.initialize_hidden(ys_emb.size(0))
 
         residual = None
         if self.fast_impl:
-            y, hidden = self.rnn(y, hx=hidden)
-            y = self.dropout_top(y)
+            ys_emb, hidden = self.rnn(ys_emb, hx=hidden)
+            ys_emb = self.dropout_top(ys_emb)
         else:
             for l in range(self.n_layers):
                 # Path through RNN
                 if self.rnn_type == 'lstm':
-                    y, (hidden[0][l], hidden[1][l]) = self.rnn[l](y, hx=(hidden[0][:][l], hidden[1][:][l]))
+                    ys_emb, (hidden[0][l], hidden[1][l]) = self.rnn[l](
+                        ys_emb, hx=(hidden[0][l], hidden[1][l]))
                 elif self.rnn_type == 'gru':
-                    y, hidden[0][l] = self.rnn[l](y, hx=hidden[0][:][l])
-                y = self.dropout[l](y)
+                    ys_emb, hidden[0][l] = self.rnn[l](
+                        ys_emb, hx=hidden[0][l])
+                ys_emb = self.dropout[l](ys_emb)
 
                 # Residual connection
                 if self.residual and l > 0:
-                    y += residual
-                residual = y
+                    ys_emb += residual
+                residual = ys_emb
                 # NOTE: Exclude residual connection from the raw inputs
 
         if self.use_glu:
             if self.residual:
-                residual = y
-            y = F.glu(self.fc_glu(y), dim=-1)
+                residual = ys_emb
+            ys_emb = F.glu(self.fc_glu(ys_emb), dim=-1)
             if self.residual:
-                y += residual
-        logits_step = self.output(y)
+                ys_emb += residual
+        return ys_emb, hidden
 
-        return logits_step, y, hidden
+    def generate(self, hidden):
+        """Generate function.
+        Args:
+            hidden (FloatTensor):
+        Returns:
+            logits (FloatTensor):
+        """
+        logits = self.output(hidden)
+        return logits
 
     def initialize_hidden(self, bs):
         """Initialize hidden states."""
