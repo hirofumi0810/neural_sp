@@ -68,7 +68,7 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
                 idx2token=dataset.idx2wp,
                 refs=batch['ys'],
                 ensemble_models=models[1:] if len(models) > 1 else [],
-                speakers=batch['speakers'])
+                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
             ys = [batch['text'][i] for i in perm_id]
 
             for b in range(len(batch['xs'])):

@@ -91,6 +91,7 @@ class Dataset(Base):
         self.sort_stop_epoch = sort_stop_epoch
         self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
+        self.corpus = corpus
         self.concat_prev_n_utterances = concat_prev_n_utterances
         self.cache_prev_n_tokens = cache_prev_n_tokens
         self.vocab = self.count_vocab_size(dict_path)
@@ -156,30 +157,40 @@ class Dataset(Base):
             else:
                 setattr(self, 'df_sub' + str(i), None)
 
+        # For cache decoding
+        if corpus == 'swbd':
+            self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
+        else:
+            self.df['session'] = self.df['speaker'].apply(lambda x: str(x))
+
         if concat_prev_n_utterances > 0 or cache_prev_n_tokens > 0:
             assert corpus in ['swbd', 'csj', 'librispeech']
             max_n_frames = 10000
             min_n_frames = 1
 
-            # Sort by contexts
-            self.df = self.df.assign(line_no=list(range(len(self.df))))
+            # Sort by onset
             self.df = self.df.assign(prev_utt='')
             if corpus == 'swbd':
-                self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
                 self.df['onset'] = self.df['utt_id'].apply(
                     lambda x: int(x.split('_')[-1].split('-')[0]))
             elif corpus == 'csj':
-                self.df['session'] = self.df['speaker'].apply(lambda x: str(x))
                 self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[1]))
             else:
                 raise NotImplementedError
+            self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
 
             # Extract previous utterances
+            if not (is_test and cache_prev_n_tokens > 0):
+                self.df = self.df.assign(line_no=list(range(len(self.df))))
+                groups = self.df.groupby('session').groups  # dict
+                self.df['prev_utt'] = self.df.apply(
+                    lambda x: [self.df.loc[i, 'line_no']
+                               for i in groups[x['session']] if self.df.loc[i, 'onset'] < x['onset']], axis=1)
+        elif is_test and corpus == 'swbd':
+            # Sort by onset
+            self.df['onset'] = self.df['utt_id'].apply(
+                lambda x: int(x.split('_')[-1].split('-')[0]))
             self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
-            groups = self.df.groupby('session').groups  # dict
-            self.df['prev_utt'] = self.df.apply(
-                lambda x: [self.df.loc[i, 'line_no']
-                           for i in groups[x['session']] if self.df.loc[i, 'onset'] < x['onset']], axis=1)
 
         if concat_prev_n_utterances > 0:
             assert cache_prev_n_tokens == 0
@@ -202,7 +213,7 @@ class Dataset(Base):
             assert concat_prev_n_utterances == 0
 
         # Remove inappropriate utterances
-        if self.is_test:
+        if is_test:
             print('Original utterance num: %d' % len(self.df))
             n_utts = len(self.df)
             self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
@@ -239,13 +250,14 @@ class Dataset(Base):
                                                                      ).drop(getattr(self, 'df_sub' + str(j)).index.difference(self.df.index)))
 
         # Sort csv records
-        if sort_by_input_length:
-            self.df = self.df.sort_values(by='xlen', ascending=short2long)
-        else:
-            if shuffle:
-                self.df = self.df.reindex(np.random.permutation(self.df.index))
+        if not (is_test and corpus == 'swbd'):
+            if sort_by_input_length:
+                self.df = self.df.sort_values(by='xlen', ascending=short2long)
             else:
-                self.df = self.df.sort_values(by='utt_id', ascending=True)
+                if shuffle:
+                    self.df = self.df.reindex(np.random.permutation(self.df.index))
+                else:
+                    self.df = self.df.sort_values(by='utt_id', ascending=True)
 
         self.rest = set(list(self.df.index))
         self.input_dim = kaldi_io.read_mat(self.df['feat_path'][0]).shape[-1]
@@ -263,8 +275,9 @@ class Dataset(Base):
                 ys_sub1 (list): reference labels in the 1st auxiliary task of size `[L_sub1]`
                 ys_sub2 (list): reference labels in the 2nd auxiliary task of size `[L_sub2]`
                 ys_sub3 (list): reference labels in the 3rd auxiliary task of size `[L_sub3]`
-                utt_ids (list): name of utterances
-                speakers (list): name of speakers
+                utt_ids (list): name of each utterance
+                speakers (list): name of each speaker
+                sessions (list): name of each session
 
         """
         # inputs
@@ -329,6 +342,7 @@ class Dataset(Base):
             'ys_sub3': ys_sub3,
             'utt_ids':  [self.df['utt_id'][i] for i in df_indices],
             'speakers': [self.df['speaker'][i] for i in df_indices],
+            'sessions': [self.df['session'][i] for i in df_indices],
             'text': [self.df['text'][i] for i in df_indices],
             'feat_path': [self.df['feat_path'][i] for i in df_indices]  # for plot
         }

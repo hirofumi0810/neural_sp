@@ -32,7 +32,7 @@ awk '{ print toupper($0); }' $dir/hyp.trn.mapped | sed -e 's/(SW/(sw/g' | sed -e
 cat $data/$set/stm | sed -e 's/_A1/_A/g' | sed -e 's/_B1/_B/g' > $dir/stm
 
 # Convert trn to ctm for hypothesis
-trn2ctm.py $dir/hyp.trn.clean.mapped.upper --stm $dir/stm > $dir/hyp.ctm
+trn2ctm.py $dir/hyp.trn.mapped.upper --stm $dir/stm > $dir/hyp.ctm
 
 # Remove some stuff we don't want to score, from the ctm.
 # the big expression in parentheses contains all the things that get mapped

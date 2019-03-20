@@ -65,7 +65,7 @@ def eval_phone(models, dataset, recog_params, epoch,
                 batch['xs'], recog_params,
                 exclude_eos=True,
                 ensemble_models=models[1:] if len(models) > 1 else [],
-                speakers=batch['speakers'])
+                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
             ys = [batch['text'][i] for i in perm_ids]
 
             for b in range(len(batch['xs'])):
