@@ -23,7 +23,7 @@ class GreedyDecoder(object):
         """
 
         Args:
-            log_probs (torch.FloatTensor): `[B, T, vocab]`
+            log_probs (FloatTensor): `[B, T, vocab]`
             xlens (np.ndarray): `[B]`
         Returns:
             best_hyps (np.ndarray): Best path hypothesis. `[B, labels_max_seq_len]`
@@ -37,15 +37,14 @@ class GreedyDecoder(object):
             indices = []
             time = xlens[b]
             for t in range(time):
-                argmax = np.argmax(log_probs[b, t], axis=0).item()
+                argmax = log_probs[b, t].argmax(0).item()
                 indices.append(argmax)
 
             # Step 1. Collapse repeated labels
             collapsed_indices = [x[0] for x in groupby(indices)]
 
             # Step 2. Remove all blank labels
-            best_hyp = [x for x in filter(
-                lambda x: x != self.blank, collapsed_indices)]
+            best_hyp = [x for x in filter(lambda x: x != self.blank, collapsed_indices)]
             best_hyps.append(np.array(best_hyp))
 
         return np.array(best_hyps)
