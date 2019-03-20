@@ -251,14 +251,15 @@ class SeqRNNLM(ModelBase):
             ys_emb, hidden = self.rnn(ys_emb, hx=hidden)
             ys_emb = self.dropout_top(ys_emb)
         else:
+            new_hxs, new_cxs = [], []
             for l in range(self.n_layers):
                 # Path through RNN
                 if self.rnn_type == 'lstm':
-                    ys_emb, (hidden[0][l], hidden[1][l]) = self.rnn[l](
-                        ys_emb, hx=(hidden[0][l], hidden[1][l]))
+                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(hidden[0][l:l + 1], hidden[1][l:l + 1]))
+                    new_cxs.append(c_l)
                 elif self.rnn_type == 'gru':
-                    ys_emb, hidden[0][l] = self.rnn[l](
-                        ys_emb, hx=hidden[0][l])
+                    ys_emb, h_l = self.rnn[l](ys_emb, hx=hidden[0][l:l + 1])
+                new_hxs.append(h_l)
                 ys_emb = self.dropout[l](ys_emb)
 
                 # Residual connection
@@ -266,6 +267,12 @@ class SeqRNNLM(ModelBase):
                     ys_emb += residual
                 residual = ys_emb
                 # NOTE: Exclude residual connection from the raw inputs
+
+            # Repackage
+            new_hxs = torch.cat(new_hxs, dim=0)
+            if self.rnn_type == 'lstm':
+                new_cxs = torch.cat(new_cxs, dim=0)
+            hidden = (new_hxs, new_cxs)
 
         if self.use_glu:
             if self.residual:
@@ -286,36 +293,45 @@ class SeqRNNLM(ModelBase):
         return logits
 
     def initialize_hidden(self, batch_size):
-        """Initialize hidden states."""
+        """Initialize hidden states.
+        Args:
+            batch_size (int):
+        Returns:
+            hidden (tuple):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
+        """
         w = next(self.parameters())
-
         if self.fast_impl:
-            # return None
             h_n = w.new_zeros(self.n_layers, batch_size, self.n_units)
+            c_n = None
             if self.rnn_type == 'lstm':
                 c_n = w.new_zeros(self.n_layers, batch_size, self.n_units)
-            elif self.rnn_type == 'gru':
-                c_n = None
             return (h_n, c_n)
         else:
             hxs, cxs = [], []
             for l in range(self.n_layers):
-                # h_l = None
-                h_l = w.new_zeros(1, batch_size, self.n_units)
                 if self.rnn_type == 'lstm':
-                    c_l = w.new_zeros(1, batch_size, self.n_units)
-                elif self.rnn_type == 'gru':
-                    c_l = None
-                hxs.append(h_l)
-                cxs.append(c_l)
+                    cxs.append(w.new_zeros(1, batch_size, self.n_units))
+                hxs.append(w.new_zeros(1, batch_size, self.n_units))
+            hxs = torch.cat(hxs, dim=0)
+            if self.rnn_type == 'lstm':
+                cxs = torch.cat(cxs, dim=0)
             return (hxs, cxs)
 
     def repackage_hidden(self, hidden):
-        """Wraps hidden states in new Tensors, to detach them from their history."""
-        if self.fast_impl:
-            return hidden.detach()
-        else:
-            if self.rnn_type == 'lstm':
-                return ([h.detach() for h in hidden[0]], [c.detach() for c in hidden[1]])
-            else:
-                return ([h.detach() for h in hidden[0]], hidden[1])
+        """Wraps hidden states in new Tensors, to detach them from their history.
+        Args:
+            hidden (tuple):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
+        Returns:
+            hidden (tuple):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
+        """
+        hxs, cxs = hidden
+        hxs = hxs.detach()
+        if self.rnn_type == 'lstm':
+            cxs = cxs.detach()
+        return (hxs, cxs)
