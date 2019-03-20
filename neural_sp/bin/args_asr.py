@@ -385,9 +385,9 @@ def parse():
                         help='rescore with another LM in the reverse direction')
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
-    parser.add_argument('--recog_cache_theta', type=float, default=0.2,
+    parser.add_argument('--recog_cache_theta', type=float, default=0.1,
                         help='theta paramter for cache')
-    parser.add_argument('--recog_cache_lambda', type=float, default=0.2,
+    parser.add_argument('--recog_cache_lambda', type=float, default=0.1,
                         help='lambda paramter for cache')
     parser.add_argument('--recog_cache_type', type=str, default='lm',
                         choices=['decoder', 'lm', 'joint'],

@@ -35,8 +35,8 @@ fwd_bwd_attention=false
 bwd_attention=false
 reverse_lm_rescoring=false
 n_caches=0
-cache_theta=0.2
-cache_lambda=0.2
+cache_theta=0.1
+cache_lambda=0.1
 concat_prev_n_utterances=0
 
 . ./cmd.sh
