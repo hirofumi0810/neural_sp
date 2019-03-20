@@ -74,9 +74,9 @@ learning_rate=1e-3
 n_epochs=30
 convert_to_sgd_epoch=25
 print_step=200
-decay_start_n_epochs=10
+decay_start_epoch=10
 decay_rate=0.9
-decay_patient_epoch=0
+decay_patient_n_epochs=0
 decay_type=epoch
 not_improved_patient_n_epochs=5
 eval_start_epoch=1
@@ -328,10 +328,11 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     # Make datset tsv files for the ASR task
     echo "Making dataset tsv files for ASR ..."
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
-        ${data}/${train_set} ${dict_sub1} > ${data}/dataset/${train_set}_${unit_sub1}${wp_type}${vocab_size_sub1}.tsv || exit 1;
+        ${data}/${train_set} ${dict_sub1} > ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;
     make_dataset.sh --feat ${data}/dump/${dev_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
-        ${data}/${dev_set} ${dict_sub1} > ${data}/dataset/${dev_set}_${unit_sub1}${wp_type}${vocab_size_sub1}.tsv || exit 1;
+        ${data}/${dev_set} ${dict_sub1} > ${data}/dataset/${dev_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;
     for x in ${test_set}; do
+        dump_dir=${data}/dump/${x}_${data_size}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
             ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;
     done
@@ -402,10 +403,10 @@ if [ ${stage} -le 4 ]; then
         --n_epochs ${n_epochs} \
         --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
         --print_step ${print_step} \
-        --decay_start_n_epochs ${decay_start_n_epochs} \
+        --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
         --decay_type ${decay_type} \
-        --decay_patient_epoch ${decay_patient_epoch} \
+        --decay_patient_n_epochs ${decay_patient_n_epochs} \
         --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \

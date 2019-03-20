@@ -344,10 +344,11 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     # Make datset tsv files for the ASR task
     echo "Making dataset tsv files for ASR ..."
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
-        ${data}/${train_set} ${dict_sub1} > ${data}/dataset/${train_set}_${unit_sub1}${wp_type}${vocab_size_sub1}.tsv || exit 1;
+        ${data}/${train_set} ${dict_sub1} > ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;
     make_dataset.sh --feat ${data}/dump/${dev_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
-        ${data}/${dev_set} ${dict_sub1} > ${data}/dataset/${dev_set}_${unit_sub1}${wp_type}${vocab_size_sub1}.tsv || exit 1;
+        ${data}/${dev_set} ${dict_sub1} > ${data}/dataset/${dev_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;
     for x in ${test_set}; do
+        dump_dir=${data}/dump/${x}_${data_size}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
             ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;
     done
@@ -388,10 +389,11 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub2}$
     # Make datset tsv files for the ASR task
     echo "Making dataset tsv files for ASR ..."
     make_dataset.sh --feat {data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub2} \
-        ${data}/${train_set} ${dict_sub2} > ${data}/dataset/${train_set}_${unit_sub2}${wp_type}${vocab_size_sub2}.tsv || exit 1;
+        ${data}/${train_set} ${dict_sub2} > ${data}/dataset/${train_set}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.tsv || exit 1;
     make_dataset.sh --feat {data}/dump/${dev_set}/feats.scp --unit ${unit_sub2} --wp_model ${wp_model_sub2} \
-        ${data}/${dev_set} ${dict_sub2} > ${data}/dataset/${dev_set}_${unit_sub2}${wp_type}${vocab_size_sub2}.tsv || exit 1;
+        ${data}/${dev_set} ${dict_sub2} > ${data}/dataset/${dev_set}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.tsv || exit 1;
     for x in ${test_set}; do
+        dump_dir=${data}/dump/${x}_${data_size}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub2} --wp_model ${wp_model_sub2} \
             ${data}/${x} ${dict_sub2} > ${data}/dataset/${x}_${data_size}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.tsv || exit 1;
     done
