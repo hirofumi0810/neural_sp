@@ -148,7 +148,8 @@ class Dataset(Base):
                                   'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         for i in range(1, 4):
             if locals()['tsv_path_sub' + str(i)]:
-                df_sub = pd.read_csv(locals()['tsv_path_sub' + str(i)], encoding='utf-8', delimiter='\t')
+                df_sub = pd.read_csv(locals()['tsv_path_sub' + str(i)],
+                                     encoding='utf-8', delimiter='\t')
                 df_sub = df_sub.loc[:, ['utt_id', 'speaker', 'feat_path',
                                         'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
                 setattr(self, 'df_sub' + str(i), df_sub)
@@ -165,7 +166,8 @@ class Dataset(Base):
             self.df = self.df.assign(prev_utt='')
             if corpus == 'swbd':
                 self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
-                self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
+                self.df['onset'] = self.df['utt_id'].apply(
+                    lambda x: int(x.split('_')[-1].split('-')[0]))
             elif corpus == 'csj':
                 self.df['session'] = self.df['speaker'].apply(lambda x: str(x))
                 self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[1]))
@@ -208,13 +210,15 @@ class Dataset(Base):
         else:
             print('Original utterance num: %d' % len(self.df))
             n_utts = len(self.df)
-            self.df = self.df[self.df.apply(lambda x: min_n_frames <= x['xlen'] <= max_n_frames, axis=1)]
+            self.df = self.df[self.df.apply(lambda x: min_n_frames <= x[
+                                            'xlen'] <= max_n_frames, axis=1)]
             self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
             print('Removed %d utterances (threshold)' % (n_utts - len(self.df)))
 
             if ctc and subsample_factor > 1:
                 n_utts = len(self.df)
-                self.df = self.df[self.df.apply(lambda x: x['ylen'] <= x['xlen'] // subsample_factor, axis=1)]
+                self.df = self.df[self.df.apply(lambda x: x['ylen'] <= x[
+                                                'xlen'] // subsample_factor, axis=1)]
                 print('Removed %d utterances (for CTC)' % (n_utts - len(self.df)))
 
             for i in range(1, 4):
@@ -223,7 +227,8 @@ class Dataset(Base):
                 subsample_factor_sub = locals()['subsample_factor_sub' + str(i)]
                 if df_sub is not None:
                     if ctc_sub and subsample_factor_sub > 1:
-                        df_sub = df_sub[df_sub.apply(lambda x: x['ylen'] <= x['xlen'] // subsample_factor_sub, axis=1)]
+                        df_sub = df_sub[df_sub.apply(lambda x: x['ylen'] <= x[
+                                                     'xlen'] // subsample_factor_sub, axis=1)]
 
                     if len(self.df) != len(df_sub):
                         n_utts = len(self.df)
@@ -255,13 +260,9 @@ class Dataset(Base):
                 xs (list): input data of size `[T, input_dim]`
                 xlens (list): lengths of each element in xs
                 ys (list): reference labels in the main task of size `[L]`
-                ylens (list): lengths of each element in ys
                 ys_sub1 (list): reference labels in the 1st auxiliary task of size `[L_sub1]`
-                ylens_sub1 (list): lengths of each element in ys_sub1
                 ys_sub2 (list): reference labels in the 2nd auxiliary task of size `[L_sub2]`
-                ylens_sub2 (list): lengths of each element in ys_sub2
                 ys_sub3 (list): reference labels in the 3rd auxiliary task of size `[L_sub3]`
-                ylens_sub3 (list): lengths of each element in ys_sub3
                 utt_ids (list): name of utterances
                 speakers (list): name of speakers
 
@@ -288,11 +289,11 @@ class Dataset(Base):
 
         ys_cache = []
         if self.cache_prev_n_tokens > 0:
+            ys_cache = [[] for _ in range(len(df_indices))]
             for j, i in enumerate(df_indices):
-                ys_cache[j] = [self.eos]
                 for i_prev in self.df['prev_utt'][i]:
                     y_prev = list(map(int, str(self.df['token_id'][i_prev]).split()))
-                    ys_cache[j] += y_prev + [self.eos]
+                    ys_cache[j] += [self.eos] + y_prev
 
             # Truencate
             ys_cache = [y[-self.cache_prev_n_tokens:] for y in ys_cache]

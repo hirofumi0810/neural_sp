@@ -262,7 +262,7 @@ def parse():
     parser.add_argument('--lsm_prob', type=float, default=0.0,
                         help='')
     parser.add_argument('--layer_norm', default=False, nargs='?',
-                        help='If true, apply layer normalization (see https://arxiv.org/abs/1607.06450)')
+                        help='apply layer normalization (see https://arxiv.org/abs/1607.06450)')
     parser.add_argument('--focal_loss_weight', type=float, default=0.0,
                         help='')
     parser.add_argument('--focal_loss_gamma', type=float, default=2.0,
@@ -297,8 +297,9 @@ def parse():
                         help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     # cold fusion
     parser.add_argument('--cold_fusion_type', type=str, default='hidden', nargs='?',
-                        choices=['hidden', 'prob', 'hidden_attention'],
-                        help='')
+                        choices=['hidden', 'prob', 'hidden_attention', 'prob_attention',
+                                 'hidden_self_attention', 'prob_self_attention'],
+                        help='type of cold fusion')
     parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',
                         help='RNNLM parameters for cold fusion')
     # RNNLM initialization, objective

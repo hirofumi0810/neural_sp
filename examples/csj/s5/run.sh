@@ -107,6 +107,7 @@ lmobj_weight=0.0
 share_lm_softmax=
 # contextualization
 concat_prev_n_utterances=0
+cache_prev_n_tokens=0
 
 #########################
 # RNNLM configuration
@@ -484,6 +485,7 @@ if [ ${stage} -le 4 ]; then
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
         --concat_prev_n_utterances ${concat_prev_n_utterances} \
+        --cache_prev_n_tokens ${cache_prev_n_tokens} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

@@ -44,12 +44,13 @@ def np2tensor(array, device_id=-1):
     return var.cuda(device_id)
 
 
-def pad_list(xs, pad_value=0.0):
+def pad_list(xs, pad_value=0.0, pad_left=False):
     """Convert list of Tensors to a single Tensor with padding.
 
     Args:
         xs (list): A list of length `[B]`, which concains Tensors of size `[T, input_size]`
         pad_value (float):
+        pad_left (bool):
     Returns:
         xs_pad (FloatTensor): `[B, T, input_size]`
 
@@ -58,5 +59,32 @@ def pad_list(xs, pad_value=0.0):
     max_time = max(x.size(0) for x in xs)
     xs_pad = xs[0].new_zeros(bs, max_time, * xs[0].size()[1:]).fill_(pad_value)
     for b in range(bs):
-        xs_pad[b, :xs[b].size(0)] = xs[b]
+        if len(xs[b]) == 0:
+            continue
+
+        if pad_left:
+            xs_pad[b, -xs[b].size(0):] = xs[b]
+        else:
+            xs_pad[b, :xs[b].size(0)] = xs[b]
     return xs_pad
+
+
+def to_onehot(ys, vocab, ylens=None):
+    """
+    Args:
+        ys (LongTensor): Indices of labels. `[B, L]`
+        ylens (list): A list of length `[B]`
+    Returns:
+
+    """
+    bs, max_ylen = ys.size()[:2]
+
+    ys_onehot = torch.zeros_like(ys).expand(ys.size(0), ys.size(1), vocab)
+    for b in range(bs):
+        if ylens is None:
+            for t in range(max_ylen):
+                ys_onehot[b, t, ys[b, t]] = 1
+        else:
+            for t in range(ylens[b]):
+                ys_onehot[b, t, ys[b, t]] = 1
+    return ys_onehot

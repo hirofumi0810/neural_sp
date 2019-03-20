@@ -112,7 +112,8 @@ def main():
                         subsample_factor_sub1=subsample_factor_sub1,
                         subsample_factor_sub2=subsample_factor_sub2,
                         subsample_factor_sub3=subsample_factor_sub3,
-                        concat_prev_n_utterances=args.concat_prev_n_utterances)
+                        concat_prev_n_utterances=args.concat_prev_n_utterances,
+                        cache_prev_n_tokens=args.cache_prev_n_tokens)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
                       tsv_path_sub1=args.dev_set_sub1,
@@ -141,7 +142,8 @@ def main():
                       subsample_factor=subsample_factor,
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
-                      subsample_factor_sub3=subsample_factor_sub3)
+                      subsample_factor_sub3=subsample_factor_sub3,
+                      cache_prev_n_tokens=args.cache_prev_n_tokens)
     eval_sets = []
     for s in args.eval_sets:
         eval_sets += [Dataset(corpus=args.corpus,
@@ -150,6 +152,7 @@ def main():
                               unit=args.unit,
                               wp_model=args.wp_model,
                               batch_size=1,
+                              cache_prev_n_tokens=args.cache_prev_n_tokens,
                               is_test=True)]
 
     args.vocab = train_set.vocab
@@ -233,9 +236,9 @@ def main():
         logger.info(model)
 
         # Initialize with pre-trained model's parameters
-        if args.pretrained_model and os.path.isdir(args.pretrained_model):
+        if args.pretrained_model and os.path.isfile(args.pretrained_model):
             # Load a conf file
-            conf_pt = load_config(os.path.join(args.pretrained_model, 'conf.yml'))
+            conf_pt = load_config(os.path.join(os.path.dirname(args.pretrained_model), 'conf.yml'))
 
             # Merge conf with args
             for k, v in conf_pt.items():
@@ -583,7 +586,9 @@ def make_model_name(args, subsample_factor):
 
     # LM integration
     if args.rnnlm_cold_fusion:
-        dir_name += '_coldfusion'
+        dir_name += '_cf' + args.cold_fusion_type
+        if args.cache_prev_n_tokens > 0:
+            dir_name += '_cache' + str(args.cache_prev_n_tokens)
 
     # MTL
     if args.mtl_per_batch:
@@ -627,9 +632,9 @@ def make_model_name(args, subsample_factor):
         dir_name += '_concat' + str(args.concat_prev_n_utterances) + 'utt'
 
     # Pre-training
-    if args.pretrained_model and os.path.isdir(args.pretrained_model):
+    if args.pretrained_model and os.path.isfile(args.pretrained_model):
         # Load a conf file
-        conf_pt = load_config(os.path.join(args.pretrained_model, 'conf.yml'))
+        conf_pt = load_config(os.path.join(os.path.dirname(args.pretrained_model), 'conf.yml'))
         dir_name += '_' + conf_pt['unit'] + 'pt'
 
     return dir_name

@@ -91,7 +91,7 @@ class Seq2seq(ModelBase):
         self.fwd_weight_sub2 = self.sub2_weight - self.bwd_weight_sub2 - self.ctc_weight_sub2
         self.fwd_weight_sub3 = self.sub3_weight - self.bwd_weight_sub3 - self.ctc_weight_sub3
 
-        # regularization
+        # for regularization
         self.gaussian_noise_std = args.gaussian_noise_std
         self._gaussian_noise = True if args.gaussian_noise_std > 0 and args.gaussian_noise_timing == 'constant' else False
 
@@ -177,7 +177,7 @@ class Seq2seq(ModelBase):
             # Cold fusion
             if args.rnnlm_cold_fusion and dir == 'fwd':
                 rnnlm = SeqRNNLM(args.rnnlm_conf)
-                rnnlm.load_checkpoint(save_path=args.rnnlm_cold_fusion, epoch=-1)
+                rnnlm.load_checkpoint(args.rnnlm_cold_fusion)
 
                 # Fix RNNLM parameters
                 for param in rnnlm.parameters():
@@ -254,8 +254,9 @@ class Seq2seq(ModelBase):
                     input_feeding=args.input_feeding,
                     backward=(dir == 'bwd'),
                     # rnnlm_cold_fusion=args.rnnlm_conf,
-                    rnnlm_cold_fusion=rnnlm,
+                    rnnlm_cold_fusion=rnnlm,  # TODO(hirofumi): load RNNLM in the model init.
                     cold_fusion_type=args.cold_fusion_type,
+                    cache_prev_n_tokens=args.cache_prev_n_tokens,
                     rnnlm_init=args.rnnlm_init,
                     lmobj_weight=args.lmobj_weight,
                     share_lm_softmax=args.share_lm_softmax,
@@ -314,7 +315,8 @@ class Seq2seq(ModelBase):
                             input_feeding=args.input_feeding,
                             backward=(dir_sub == 'bwd'),
                             rnnlm_cold_fusion=None,
-                            cold_fusion_type=None,
+                            cold_fusion_type='',
+                            cache_prev_n_tokens=0,
                             rnnlm_init=None,
                             lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
                             share_lm_softmax=args.share_lm_softmax,
@@ -402,13 +404,16 @@ class Seq2seq(ModelBase):
 
         Args:
             batch (dict):
-                xs (list): A list of length `[B]`, which contains arrays of size `[T, input_dim]`
-                ys (list): A list of length `[B]`, which contains arrays of size `[L]`
-                ys_sub1 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub1]`
-                ys_sub2 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub2]`
-                ys_sub3 (list): A list of lenght `[B]`, which contains arrays of size `[L_sub3]`
+                xs (list): input data of size `[T, input_dim]`
+                xlens (list): lengths of each element in xs
+                ys (list): reference labels in the main task of size `[L]`
+                ys_sub1 (list): reference labels in the 1st auxiliary task of size `[L_sub1]`
+                ys_sub2 (list): reference labels in the 2nd auxiliary task of size `[L_sub2]`
+                ys_sub3 (list): reference labels in the 3rd auxiliary task of size `[L_sub3]`
+                utt_ids (list): name of utterances
+                speakers (list): name of speakers
             reporter ():
-            task (str): all or ys* or ys_sub1* or ys_sub2* or ys_sub3*
+            task (str): all or ys* or ys_sub*
             is_eval (bool): the history will not be saved.
                 This should be used in inference model for memory efficiency.
         Returns:
@@ -447,12 +452,15 @@ class Seq2seq(ModelBase):
 
         # for the forward decoder in the main task
         if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
+            ys_cache = []
             if perm_ids is None:
                 ys = batch['ys'][:]  # for lmobj
             else:
                 ys = [batch['ys'][:][i] for i in perm_ids]
+                if len(batch['ys_cache']) > 0:
+                    ys_cache = [batch['ys_cache'][:][i] for i in perm_ids]
             loss_fwd, obs_fwd = self.dec_fwd(
-                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
+                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, ys_cache)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
@@ -665,7 +673,7 @@ class Seq2seq(ModelBase):
                 best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
                     params['recog_beam_width'], rnnlm)
-                return best_hyps, None, perm_ids, None
+                return best_hyps, None, perm_ids, (None, None)
 
             #########################
             # Attention
@@ -674,8 +682,9 @@ class Seq2seq(ModelBase):
                 if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                        params['recog_max_len_ratio'], exclude_eos)
-                    cache_info = None
+                        params['recog_max_len_ratio'], exclude_eos,
+                        speakers)
+                    cache_info = (None, None)
                 else:
                     if params['recog_ctc_weight'] > 0:
                         ctc_log_probs = self.dec_fwd.ctc_log_probs(enc_outs[task]['xs'])
@@ -694,20 +703,20 @@ class Seq2seq(ModelBase):
                         # ensemble (forward)
                         ensemble_eouts_fwd = []
                         ensemble_elens_fwd = []
-                        ensemble_decoders_fwd = []
+                        ensemble_decs_fwd = []
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
                                 enc_outs_e_fwd, _ = model.encode(xs, task, flip=False)
                                 ensemble_eouts_fwd += [enc_outs_e_fwd[task]['xs']]
                                 ensemble_elens_fwd += [enc_outs_e_fwd[task]['xlens']]
-                                ensemble_decoders_fwd += [model.dec_fwd]
+                                ensemble_decs_fwd += [model.dec_fwd]
                                 # NOTE: only support for the main task now
 
                         nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd, cache_info = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm_fwd, rnnlm_bwd, ctc_log_probs,
                             params['recog_beam_width'], False, idx2token, refs,
-                            ensemble_eouts_fwd, ensemble_elens_fwd, ensemble_decoders_fwd)
+                            ensemble_eouts_fwd, ensemble_elens_fwd, ensemble_decs_fwd)
 
                         # backward decoder
                         rnnlm_bwd, rnnlm_fwd = None, None
