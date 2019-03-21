@@ -73,21 +73,6 @@ def main():
                           is_test=True)
 
         if i == 0:
-            # For cold fusion
-            # if args.rnnlm_cold_fusion:
-            #     # Load a RNNLM conf file
-            #     conf['rnnlm_config'] = load_config(os.path.join(args.recog_model[0], 'conf_rnnlm.yml'))
-            #
-            #     assert args.unit == conf['rnnlm_config']['unit']
-            #     rnnlm_args.vocab = dataset.vocab
-            #     logger.info('RNNLM path: %s' % conf['rnnlm'])
-            #     logger.info('RNNLM weight: %.3f' % args.rnnlm_weight)
-            # else:
-            #     pass
-
-            args.rnnlm_cold_fusion = False
-            args.rnnlm_init = False
-
             # Load the ASR model
             model = Seq2seq(args)
             epoch = model.load_checkpoint(args.recog_model[0])['epoch']
