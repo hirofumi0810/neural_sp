@@ -368,6 +368,8 @@ class RNNDecoder(nn.Module):
                         attn_type='dot',
                         attn_dim=attn_dim,
                         dropout=dropout_att)
+
+                    self.dropout_cache = nn.Dropout(p=dropout)
                 else:
                     raise ValueError(cold_fusion_type)
                 self.cf_linear_lm_gate = LinearND(n_units * 2, n_units,
@@ -651,7 +653,7 @@ class RNNDecoder(nn.Module):
                     lm_outs_b = ys_lm_emb_cache.new_zeros(1, pad_len, self.rnnlm_cf.n_units)
                     lm_outs[b:b + 1, -pad_len:] = lm_outs_b
 
-            self.fifo_cache_keys_lm = lm_outs
+            self.fifo_cache_keys_lm = self.dropout_cache(lm_outs)
             # NOTE:RNNLM are not trained so as to decode <pad> tokens
 
         logits = []
@@ -680,7 +682,8 @@ class RNNDecoder(nn.Module):
 
                 if self.cache_prev_n_tokens > 0 and self.cold_fusion_type in ['hidden_dot_attention', 'prob_dot_attention']:
                     lm_out, lm_state = self.rnnlm_cf.decode(y_lm_emb, lm_state)
-                    self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
+                    cache = self.dropout_cache(lm_out)
+                    self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, cache], dim=1)
                     self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
                 else:
                     lm_out, lm_state = self.rnnlm_cf.decode(y_lm_emb, lm_state)
@@ -1075,7 +1078,8 @@ class RNNDecoder(nn.Module):
                     if self.fifo_cache_keys_lm is None:
                         self.fifo_cache_keys_lm = lm_out.new_zeros(bs, 1, self.rnnlm_cf.n_units)
                     else:
-                        self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
+                        cache = self.dropout_cache(lm_out)
+                        self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, cache], dim=1)
                     self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
             else:
                 lm_out = None
