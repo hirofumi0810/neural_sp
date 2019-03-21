@@ -87,8 +87,8 @@ class Dataset(Base):
         self.batch_size = batch_size
         self.max_epoch = n_epochs
         self.shuffle = shuffle
-        self.sort_by_input_length = sort_by_input_length
         self.sort_stop_epoch = sort_stop_epoch
+        self.sort_by_input_length = sort_by_input_length
         self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
         self.corpus = corpus
@@ -143,14 +143,13 @@ class Dataset(Base):
             else:
                 setattr(self, 'vocab_sub' + str(i), -1)
 
-        # Load dataset csv file
+        # Load dataset tsv file
         self.df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
         self.df = self.df.loc[:, ['utt_id', 'speaker', 'feat_path',
                                   'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         for i in range(1, 4):
             if locals()['tsv_path_sub' + str(i)]:
-                df_sub = pd.read_csv(locals()['tsv_path_sub' + str(i)],
-                                     encoding='utf-8', delimiter='\t')
+                df_sub = pd.read_csv(locals()['tsv_path_sub' + str(i)], encoding='utf-8', delimiter='\t')
                 df_sub = df_sub.loc[:, ['utt_id', 'speaker', 'feat_path',
                                         'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
                 setattr(self, 'df_sub' + str(i), df_sub)
@@ -171,8 +170,7 @@ class Dataset(Base):
             # Sort by onset
             self.df = self.df.assign(prev_utt='')
             if corpus == 'swbd':
-                self.df['onset'] = self.df['utt_id'].apply(
-                    lambda x: int(x.split('_')[-1].split('-')[0]))
+                self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
             elif corpus == 'csj':
                 self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[1]))
             else:
@@ -188,8 +186,7 @@ class Dataset(Base):
                                for i in groups[x['session']] if self.df.loc[i, 'onset'] < x['onset']], axis=1)
         elif is_test and corpus == 'swbd':
             # Sort by onset
-            self.df['onset'] = self.df['utt_id'].apply(
-                lambda x: int(x.split('_')[-1].split('-')[0]))
+            self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
             self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
 
         if concat_prev_n_utterances > 0:
@@ -228,8 +225,7 @@ class Dataset(Base):
 
             if ctc and subsample_factor > 1:
                 n_utts = len(self.df)
-                self.df = self.df[self.df.apply(lambda x: x['ylen'] <= x[
-                                                'xlen'] // subsample_factor, axis=1)]
+                self.df = self.df[self.df.apply(lambda x: x['ylen'] <= x['xlen'] // subsample_factor, axis=1)]
                 print('Removed %d utterances (for CTC)' % (n_utts - len(self.df)))
 
             for i in range(1, 4):
@@ -238,26 +234,24 @@ class Dataset(Base):
                 subsample_factor_sub = locals()['subsample_factor_sub' + str(i)]
                 if df_sub is not None:
                     if ctc_sub and subsample_factor_sub > 1:
-                        df_sub = df_sub[df_sub.apply(lambda x: x['ylen'] <= x[
-                                                     'xlen'] // subsample_factor_sub, axis=1)]
+                        df_sub = df_sub[df_sub.apply(lambda x: x['ylen'] <= x['xlen'] // subsample_factor_sub, axis=1)]
 
                     if len(self.df) != len(df_sub):
                         n_utts = len(self.df)
                         self.df = self.df.drop(self.df.index.difference(df_sub.index))
                         print('Removed %d utterances (for CTC, sub%d)' % (n_utts - len(self.df), i))
                         for j in range(1, i + 1):
-                            setattr(self, 'df_sub' + str(j), getattr(self, 'df_sub' + str(j)
-                                                                     ).drop(getattr(self, 'df_sub' + str(j)).index.difference(self.df.index)))
+                            setattr(self, 'df_sub' + str(j),
+                                    getattr(self, 'df_sub' + str(j)).drop(getattr(self, 'df_sub' + str(j)).index.difference(self.df.index)))
 
-        # Sort csv records
-        if not (is_test and corpus == 'swbd'):
+        # Sort tsv records
+        if not is_test:
             if sort_by_input_length:
                 self.df = self.df.sort_values(by='xlen', ascending=short2long)
-            else:
-                if shuffle:
-                    self.df = self.df.reindex(np.random.permutation(self.df.index))
-                else:
-                    self.df = self.df.sort_values(by='utt_id', ascending=True)
+            elif shuffle:
+                self.df = self.df.reindex(np.random.permutation(self.df.index))
+            elif not (concat_prev_n_utterances > 0 or cache_prev_n_tokens > 0):
+                self.df = self.df.sort_values(by='utt_id', ascending=True)
 
         self.rest = set(list(self.df.index))
         self.input_dim = kaldi_io.read_mat(self.df['feat_path'][0]).shape[-1]

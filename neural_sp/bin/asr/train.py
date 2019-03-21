@@ -134,7 +134,7 @@ def main():
                       batch_size=args.batch_size * args.n_gpus,
                       min_n_frames=args.min_n_frames,
                       max_n_frames=args.max_n_frames,
-                      shuffle=True,
+                      shuffle=True if args.cache_prev_n_tokens == 0 else False,
                       ctc=args.ctc_weight > 0,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
                       ctc_sub2=args.ctc_weight_sub2 > 0,
