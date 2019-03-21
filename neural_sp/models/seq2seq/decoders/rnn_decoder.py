@@ -620,34 +620,46 @@ class RNNDecoder(nn.Module):
         # Pre-computation of RNNLM states for history
         if self.cache_prev_n_tokens > 0:
             # NOTE: ys_cache already includes <sos> and <eos>
-            # NOTE: pad the left most
             ys_cache_pad = pad_list([np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long()
-                                     for y in ys_cache], self.pad, pad_left=True)
+                                     for y in ys_cache], self.pad)
             ys_lm_emb_cache = self.rnnlm_cf.encode(ys_cache_pad)
             ylens_cache = [len(y) for y in ys_cache]
 
             assert self.rnnlm_cf is not None
-            lm_outs_list = []
-            lm_state_list = []
+
+            lm_outs = []
+            hxs = [None] * bs
+            cxs = [None] * bs
+            for t_c in range(max(ylens_cache)):
+                lm_out, lm_state = self.rnnlm_cf.decode(ys_lm_emb_cache[:, t_c:t_c + 1], lm_state)
+                for b in [i for i, ylen in enumerate(ylens_cache) if ylen == t_c + 1]:
+                    hxs[b] = lm_state[0][:, b:b + 1]
+                    if self.rnnlm_cf.rnn_type == 'lstm':
+                        cxs[b] = lm_state[1][:, b:b + 1]
+                lm_outs.append(lm_out)
+
+            # ylens_cache[b] == 0 case
+            for b in [i for i, ylen in enumerate(ylens_cache) if ylen == 0]:
+                hxs_b, cxs_b = self.rnnlm_cf.initialize_hidden(batch_size=1)
+                hxs[b] = hxs_b
+                if self.rnnlm_cf.rnn_type == 'lstm':
+                    cxs[b] = cxs_b
+
+            # Concatenate lm_state, lm_outs
+            hxs = torch.cat(hxs, dim=1)  # `[lm_n_layers, B, lm_n_units]`
+            if self.rnnlm_cf.rnn_type == 'lstm':
+                cxs = torch.cat(cxs, dim=1)
+            lm_outs = torch.cat(lm_outs, dim=1)  # `[B, cache_prev_n_tokens, lm_n_units]`
+
+            # Pad the leftmost lm_outs
             for b in range(bs):
-                lm_outs_b = []
-                lm_state_b = self.rnnlm_cf.initialize_hidden(batch_size=1)
-                for t_c in range(ylens_cache[b]):
-                    lm_out_b, lm_state_b = self.rnnlm_cf.decode(
-                        ys_lm_emb_cache[b:b + 1, t_c:t_c + 1], lm_state_b)
-                    lm_outs_b.append(lm_out_b)
                 if ylens_cache[b] < self.cache_prev_n_tokens:
-                    lm_outs_b = [ys_lm_emb_cache.new_zeros(1, self.cache_prev_n_tokens - ylens_cache[b],
-                                                           self.rnnlm_cf.n_units)] + lm_outs_b
-                lm_outs_b = torch.cat(lm_outs_b, dim=1)  # `[1, ylens_cache[b], lm_n_units]`
+                    pad_len = self.cache_prev_n_tokens - ylens_cache[b]
+                    lm_outs_b = ys_lm_emb_cache.new_zeros(1, pad_len, self.rnnlm_cf.n_units)
+                    lm_outs[b:b + 1, -pad_len:] = lm_outs_b
 
-                lm_outs_list.append(lm_outs_b)
-                lm_state_list.append(lm_state_b)
-
-            lm_outs = torch.cat(lm_outs_list, dim=0)  # `[B, cache_prev_n_tokens, lm_n_units]`
             self.fifo_cache_keys_lm = lm_outs
-            # NOTE: this batch loop is not effective but very important because RNNLM are not trained
-            # so as to decode <pad> tokens
+            # NOTE:RNNLM are not trained so as to decode <pad> tokens
 
         logits = []
         for t in range(ys_in_pad.size(1)):
