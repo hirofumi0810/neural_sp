@@ -201,7 +201,7 @@ class ModelBase(nn.Module):
         """
         optimizer = optimizer.lower()
         parameters = [p for p in self.parameters() if p.requires_grad]
-        logger.info("===== Fixed parameters =====")
+        logger.info("===== Freezed parameters =====")
         for n in [n for n, p in self.named_parameters() if not p.requires_grad]:
             logger.info("%s" % n)
 

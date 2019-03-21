@@ -86,10 +86,8 @@ class RNNDecoder(nn.Module):
         cold_fusion_type (str): the type of cold fusion
             prob: logits of RNNLM
             hidden: hidden states of RNNLM
-            prob_attention:
-            hidden_attention:
-            prob_self_attention:
-            hidden_self_attention:
+            prob_dot_attention:
+            hidden_dot_attention:
         cache_prev_n_tokens (int):
         rnnlm_init (RNNLM):
         lmobj_weight (float):
@@ -346,41 +344,34 @@ class RNNDecoder(nn.Module):
 
             # cold fusion
             if self.rnnlm_cf is not None:
-                if self.n_projs > 0:
-                    self.cf_linear_dec_feat = LinearND(n_projs + enc_n_units, n_units)
-                else:
-                    self.cf_linear_dec_feat = LinearND(n_units + enc_n_units, n_units)
+                dropout_cf = dropout
+                dout_dim = n_projs if self.n_projs > 0 else n_units
+                self.cf_linear_dec_feat = LinearND(dout_dim + enc_n_units, n_units,
+                                                   dropout=dropout_cf)
                 if cold_fusion_type == 'hidden':
-                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
+                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units,
+                                                      dropout=dropout_cf)
                 elif cold_fusion_type == 'prob':
-                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units)
-                elif cold_fusion_type in ['hidden_attention', 'prob_attention']:
-                    # query: ASR state
-                    if self.cold_fusion_type == 'hidden_attention':
-                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
-                    elif self.cold_fusion_type == 'prob_attention':
-                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units)
+                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units,
+                                                      dropout=dropout_cf)
+                elif cold_fusion_type in ['hidden_dot_attention', 'prob_dot_attention']:
+                    # query: ASR state, context vector
+                    if self.cold_fusion_type == 'hidden_dot_attention':
+                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units,
+                                                          dropout=dropout_cf)
+                    elif self.cold_fusion_type == 'prob_dot_attention':
+                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units,
+                                                          dropout=dropout_cf)
                     self.score_cf = AttentionMechanism(
                         key_dim=self.rnnlm_cf.n_units,
-                        query_dim=n_units if n_projs == 0 else n_projs,
-                        attn_type='dot',
-                        attn_dim=attn_dim,
-                        dropout=dropout_att)
-                elif cold_fusion_type in ['hidden_self_attention', 'prob_self_attention']:
-                    # query: RNNLM state
-                    if self.cold_fusion_type == 'hidden_self_attention':
-                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
-                    elif self.cold_fusion_type == 'prob_self_attention':
-                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units)
-                    self.score_cf = AttentionMechanism(
-                        key_dim=self.rnnlm_cf.n_units,
-                        query_dim=self.rnnlm_cf.n_units,
+                        query_dim=n_units,
                         attn_type='dot',
                         attn_dim=attn_dim,
                         dropout=dropout_att)
                 else:
                     raise ValueError(cold_fusion_type)
-                self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
+                self.cf_linear_lm_gate = LinearND(n_units * 2, n_units,
+                                                  dropout=dropout_cf)
                 self.output_bn = LinearND(n_units * 2, n_units)
 
                 # fix RNNLM parameters
@@ -435,6 +426,9 @@ class RNNDecoder(nn.Module):
                        'acc_att': None, 'acc_lmobj': None,
                        'ppl_att': None, 'ppl_lmobj': None}
         loss = eouts.new_zeros((1,))
+
+        if self.rnnlm_cf is not None:
+            self.rnnlm_cf.eval()
 
         # CTC loss
         if self.ctc_weight > 0 and (not self.mtl_per_batch or (self.mtl_per_batch and 'ctc' in task)):
@@ -684,8 +678,7 @@ class RNNDecoder(nn.Module):
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
 
-                if self.cache_prev_n_tokens > 0 and self.cold_fusion_type in ['hidden_attention', 'hidden_self_attention',
-                                                                              'prob_attention', 'prob_self_attention']:
+                if self.cache_prev_n_tokens > 0 and self.cold_fusion_type in ['hidden_dot_attention', 'prob_dot_attention']:
                     lm_out, lm_state = self.rnnlm_cf.decode(y_lm_emb, lm_state)
                     self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
                     self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
@@ -858,7 +851,7 @@ class RNNDecoder(nn.Module):
         return dstates_new
 
     def recurrency_step1(self, y_emb, cv, dstates):
-        """Recurrency function for the internal deocder (before attention scoring).
+        """Recurrency function for the internal decoder (before attention scoring).
 
         Args:
             y_emb (FloatTensor): `[B, 1, emb_dim]`
@@ -909,7 +902,7 @@ class RNNDecoder(nn.Module):
         return dstates_new
 
     def recurrency_step2(self, cv, dstates):
-        """Recurrency function for the internal deocder (after attention scoring).
+        """Recurrency function for the internal decoder (after attention scoring).
 
         Args:
             cv (FloatTensor): `[B, 1, enc_n_units]`
@@ -992,7 +985,8 @@ class RNNDecoder(nn.Module):
             dout (FloatTensor): `[B, 1, dec_n_units]`
             lm_out (FloatTensor): `[B, 1, lm_n_units]`
         Returns:
-            logits_t (FloatTensor): `[B, 1, vocab]`
+            attn_v (FloatTensor): `[B, 1, vocab]`
+            aw_cf (FloatTensor):
 
         """
         aw_cf = None
@@ -1006,23 +1000,22 @@ class RNNDecoder(nn.Module):
                 self.score_cf.reset()
                 memory = self.fifo_cache_keys_lm
                 memory_lens = [memory.size(1)] * cv.size(0)
-                if self.cold_fusion_type == 'hidden_attention':
-                    cv_cf, aw_cf = self.score_cf(memory, memory_lens, memory, dout, aw=None)
-                elif self.cold_fusion_type == 'prob_attention':
-                    cv_cf, aw_cf = self.score_cf(memory, memory_lens, self.rnnlm_cf.generate(memory), dout, aw=None)
-                elif self.cold_fusion_type == 'hidden_self_attention':
-                    cv_cf, aw_cf = self.score_cf(memory, memory_lens, memory, memory, aw=None)
-                elif self.cold_fusion_type == 'prob_self_attention':
-                    cv_cf, aw_cf = self.score_cf(memory, memory_lens, self.rnnlm_cf.generate(memory), memory, aw=None)
+                if self.cold_fusion_type == 'hidden_dot_attention':
+                    cv_cf, aw_cf = self.score_cf(memory, memory_lens,
+                                                 memory, dout, aw=None)
+                elif self.cold_fusion_type == 'prob_dot_attention':
+                    cv_cf, aw_cf = self.score_cf(memory, memory_lens,
+                                                 self.rnnlm_cf.generate(memory), dout, aw=None)
                 lm_feat = self.cf_linear_lm_feat(cv_cf)
 
             dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
             gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
-            gated_lm_feat = gate * lm_feat
-            logits_t = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
+            gated_lm_feat = gate * lm_feat  # element-wise
+            out = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
-            logits_t = self.output_bn(torch.cat([dout, cv], dim=-1))
-        return torch.tanh(logits_t), aw_cf
+            out = self.output_bn(torch.cat([dout, cv], dim=-1))
+        attn_v = torch.tanh(out)
+        return attn_v, aw_cf
 
     def greedy(self, eouts, elens, max_len_ratio, exclude_eos=False, speakers=None):
         """Greedy decoding in the inference stage.
@@ -1078,8 +1071,7 @@ class RNNDecoder(nn.Module):
             # Update RNNLM states for cold fusion
             if self.rnnlm_cf is not None:
                 lm_out, lm_state = self.rnnlm_cf.decode(self.rnnlm_cf.encode(y), lm_state)
-                if self.cache_prev_n_tokens > 0 and self.cold_fusion_type in ['hidden_attention', 'hidden_self_attention',
-                                                                              'prob_attention', 'prob_self_attention']:
+                if self.cache_prev_n_tokens > 0 and self.cold_fusion_type in ['hidden_dot_attention', 'prob_dot_attention']:
                     if self.fifo_cache_keys_lm is None:
                         self.fifo_cache_keys_lm = lm_out.new_zeros(bs, 1, self.rnnlm_cf.n_units)
                     else:
