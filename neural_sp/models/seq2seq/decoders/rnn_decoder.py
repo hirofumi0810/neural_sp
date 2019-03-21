@@ -992,6 +992,7 @@ class RNNDecoder(nn.Module):
         aw_cf = None
         if self.rnnlm_cf is not None:
             # cold fusion
+            dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
             if self.cold_fusion_type == 'hidden':
                 lm_feat = self.cf_linear_lm_feat(lm_out)
             elif self.cold_fusion_type == 'prob':
@@ -1002,13 +1003,12 @@ class RNNDecoder(nn.Module):
                 memory_lens = [memory.size(1)] * cv.size(0)
                 if self.cold_fusion_type == 'hidden_dot_attention':
                     cv_cf, aw_cf = self.score_cf(memory, memory_lens,
-                                                 memory, dout, aw=None)
+                                                 memory, dec_feat, aw=None)
                 elif self.cold_fusion_type == 'prob_dot_attention':
                     cv_cf, aw_cf = self.score_cf(memory, memory_lens,
-                                                 self.rnnlm_cf.generate(memory), dout, aw=None)
+                                                 self.rnnlm_cf.generate(memory), dec_feat, aw=None)
                 lm_feat = self.cf_linear_lm_feat(cv_cf)
 
-            dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
             gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
             gated_lm_feat = gate * lm_feat  # element-wise
             out = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
