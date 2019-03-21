@@ -19,7 +19,7 @@ from neural_sp.bin.asr.plot_utils import plot_cache_weights
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_lm import Dataset
-from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
+from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.utils.general import mkdir_join
 
 
@@ -54,9 +54,8 @@ def main():
 
         if i == 0:
             # Load the RNNLM
-            seq_rnnlm = SeqRNNLM(args)
-            epoch = seq_rnnlm.load_checkpoint(args.recog_model[0])['epoch']
-            rnnlm = seq_rnnlm
+            rnnlm = RNNLM(args)
+            epoch = rnnlm.load_checkpoint(args.recog_model[0])['epoch']
             rnnlm.save_path = args.recog_model[0]
 
             logger.info('epoch: %d' % (epoch - 1))
@@ -81,18 +80,18 @@ def main():
             os.mkdir(save_path)
 
         if args.unit == 'word':
-            id2token = dataset.id2word
+            idx2token = dataset.idx2word
         elif args.unit == 'wp':
-            id2token = dataset.id2wp
+            idx2token = dataset.idx2wp
         elif args.unit == 'char':
-            id2token = dataset.id2char
+            idx2token = dataset.idx2char
         elif args.unit == 'phone':
-            id2token = dataset.id2phone
+            idx2token = dataset.idx2phone
         else:
             raise NotImplementedError(args.unit)
 
         hidden = None
-        counter = 0
+        count = 0
         n_tokens = 30
         while True:
             ys, is_new_epoch = dataset.next()
@@ -101,13 +100,13 @@ def main():
                 loss, hidden = rnnlm(ys[:, t:t + 2], hidden, is_eval=True, n_caches=args.recog_n_caches)[:2]
 
                 if len(rnnlm.cache_attn) > 0:
-                    if counter == n_tokens:
-                        token_list_keys = id2token(rnnlm.cache_keys[:args.recog_n_caches], return_list=True)
-                        token_list_query = id2token(rnnlm.cache_keys[-n_tokens:], return_list=True)
+                    if count == n_tokens:
+                        tokens_keys = idx2token(rnnlm.cache_keys[:args.recog_n_caches], return_list=True)
+                        tokens_query = idx2token(rnnlm.cache_keys[-n_tokens:], return_list=True)
 
                         # Slide attention matrix
-                        n_keys = len(token_list_keys)
-                        n_queries = len(token_list_query)
+                        n_keys = len(tokens_keys)
+                        n_queries = len(tokens_query)
                         cache_probs = np.zeros((n_keys, n_queries))  # `[n_keys, n_queries]`
                         mask = np.zeros((n_keys, n_queries))
                         for i, aw in enumerate(rnnlm.cache_attn[-n_tokens:]):
@@ -116,14 +115,14 @@ def main():
 
                         plot_cache_weights(
                             cache_probs,
-                            keys=token_list_keys,
-                            queries=token_list_query,
-                            save_path=mkdir_join(save_path, ''.join(token_list_keys[:5]) + '.png'),
+                            keys=tokens_keys,
+                            queries=tokens_query,
+                            save_path=mkdir_join(save_path, ''.join(tokens_keys[:5]) + '.png'),
                             figsize=(40, 16),
                             mask=mask)
-                        counter = 0
+                        count = 0
                     else:
-                        counter += 1
+                        count += 1
 
             if is_new_epoch:
                 break

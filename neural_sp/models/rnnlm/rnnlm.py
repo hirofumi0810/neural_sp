@@ -4,14 +4,14 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""RNN language model."""
+"""Recurrent neural network language model (RNNLM)."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,7 +24,7 @@ from neural_sp.models.torch_utils import pad_list
 
 
 class RNNLM(ModelBase):
-    """RNN language model implemented by torch.nn.LSTMCell (or GRUCell)."""
+    """RNN language model."""
 
     def __init__(self, args):
 
@@ -33,8 +33,8 @@ class RNNLM(ModelBase):
         self.emb_dim = args.emb_dim
         self.rnn_type = args.rnn_type
         assert args.rnn_type in ['lstm', 'gru']
-        self.nunits = args.nunits
-        self.nlayers = args.nlayers
+        self.n_units = args.n_units
+        self.n_layers = args.n_layers
         self.tie_embedding = args.tie_embedding
         self.residual = args.residual
         self.use_glu = args.use_glu
@@ -46,13 +46,20 @@ class RNNLM(ModelBase):
         self.pad = 3
         # NOTE: reserved in advance
 
+        # for cache
+        self.cache_theta = 0.2  # smoothing parameter
+        self.cache_lambda = 0.2  # cache weight
+        self.cache_keys = []
+        self.cache_values = []
+        self.cache_attn = []
+
         self.embed = Embedding(vocab=self.vocab,
                                emb_dim=args.emb_dim,
                                dropout=args.dropout_emb,
                                ignore_index=self.pad)
 
         self.fast_impl = False
-        if args.nprojs == 0 and not args.residual:
+        if args.n_projs == 0 and not args.residual:
             self.fast_impl = True
             if 'lstm' in args.rnn_type:
                 rnn = nn.LSTM
@@ -61,41 +68,41 @@ class RNNLM(ModelBase):
             else:
                 raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
 
-            self.rnn = rnn(args.emb_dim, args.nunits, args.nlayers,
+            self.rnn = rnn(args.emb_dim, args.n_units, args.n_layers,
                            bias=True,
                            batch_first=True,
                            dropout=args.dropout_hidden,
-                           bidirectional=self.bidirectional)
+                           bidirectional=False)
             # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
-            rnn_idim = args.nunits
+            rnn_idim = args.n_units
             self.dropout_top = nn.Dropout(p=args.dropout_hidden)
         else:
             self.rnn = torch.nn.ModuleList()
             self.dropout = torch.nn.ModuleList()
-            if args.nprojs > 0:
+            if args.n_projs > 0:
                 self.proj = torch.nn.ModuleList()
-            rnn_idim = args.nunits
-            for l in range(args.nlayers):
-                if args.rnn_type == 'lstm':
-                    rnn_cell = nn.LSTMCell
-                elif args.rnn_type == 'gru':
-                    rnn_cell = nn.GRUCell
-
-                self.rnn += [rnn_cell(rnn_idim, args.nunits, 1)]
+            rnn_idim = args.emb_dim
+            for l in range(args.n_layers):
+                self.rnn += [getattr(nn, args.rnn_type.upper())(
+                    rnn_idim, args.n_units, 1,
+                    bias=True,
+                    batch_first=True,
+                    dropout=0,
+                    bidirectional=False)]
                 self.dropout += [nn.Dropout(p=args.dropout_hidden)]
-                rnn_idim = args.nunits
+                rnn_idim = args.n_units
 
-                if l != self.nlayers - 1 and args.nprojs > 0:
-                    self.proj += [LinearND(args.nunits * self.ndirs, args.nprojs)]
-                    rnn_idim = args.nprojs
+                if l != self.n_layers - 1 and args.n_projs > 0:
+                    self.proj += [LinearND(args.n_units, args.n_projs)]
+                    rnn_idim = args.n_projs
 
         if self.use_glu:
             self.fc_glu = LinearND(rnn_idim, rnn_idim * 2,
                                    dropout=args.dropout_hidden)
 
         self.output = LinearND(rnn_idim, self.vocab,
-                               bias=not args.tie_embedding,
                                dropout=args.dropout_out)
+        # NOTE: include bias even when tying weights
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -104,8 +111,8 @@ class RNNLM(ModelBase):
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
         if args.tie_embedding:
-            if args.nunits != args.emb_dim:
-                raise ValueError('When using the tied flag, nunits must be equal to emb_dim.')
+            if args.n_units != args.emb_dim:
+                raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
             self.output.fc.weight = self.embed.embed.weight
 
         # Initialize weight matrices
@@ -122,220 +129,209 @@ class RNNLM(ModelBase):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-    def forward(self, ys, hidden, reporter=None, is_eval=False):
+    def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0):
         """Forward computation.
 
         Args:
-            ys (np.array): A tensor of of size `[B, 2]`
-            hidden (list): list of (hxs, cxs)
-                hxs (list of FloatTensor):
-                cxs (list of FloatTensor):
+            ys (list): A list of length `[B]`, which contains arrays of size `[L]`
+            hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
             reporter ():
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
+            n_caches (int):
         Returns:
             loss (FloatTensor): `[1]`
-            hidden (list): list of (hxs, cxs)
-                hxs (list of FloatTensor):
-                cxs (list of FloatTensor):
+            hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
             reporter ():
 
         """
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, observation = self._forward(ys, hidden)
+                loss, hidden, observation = self._forward(ys, hidden, n_caches)
         else:
             self.train()
-            loss, observation = self._forward(ys, hidden)
+            loss, hidden, observation = self._forward(ys, hidden)
 
         # Report here
         if reporter is not None:
             reporter.add(observation, is_eval)
 
-        return loss, observation
+        return loss, hidden, reporter
 
-    def _forward(self, ys, hidden):
+    def _forward(self, ys, hidden, n_caches=0):
         if self.backward:
-            raise NotImplementedError()
-            # TODO(hirofumi): reverse the order out of the model
+            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
         else:
             ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
-            ys = pad_list(ys, self.pad)
 
-            ys_in = ys[:, :-1]  # `[B, 1]`
-            ys_out = ys[:, 1:]  # `[B, 1]`
+        ys = pad_list(ys, self.pad)
+        ys_in = ys[:, :-1]
+        ys_out = ys[:, 1:]
 
-        # Path through embedding
-        ys_in = self.embed(ys_in)
-
-        if hidden is None:
-            hxs, cxs = self.initialize_hidden(bs=ys.shape[0])
-        else:
-            hxs, cxs = hidden
-
-        # Path through RNN
-        residual = None
-        if self.fast_impl:
-            if self.rnn_type == 'lstm':
-                hxs[-1], cxs[-1] = self.rnn(ys_in, (hxs[0], cxs[0]))
-            elif self.rnn_type == 'gru':
-                hxs[-1] = self.rnn(ys_in, hxs[0])
-            hxs[-1] = self.dropout_top(hxs[-1])
-        else:
-            for l in range(self.nlayers):
-                if self.rnn_type == 'lstm':
-                    if l == 0:
-                        hxs[0], cxs[0] = self.rnn[l](ys_in, (hxs[0], cxs[0]))
-                    else:
-                        hxs[l], cxs[l] = self.rnn[l](hxs[l - 1], (hxs[l], cxs[l]))
-                elif self.rnn_type == 'gru':
-                    if l == 0:
-                        hxs[0] = self.rnn[l](ys_in, hxs[0])
-                    else:
-                        hxs[l] = self.rnn[l](hxs[l - 1], hxs[l])
-                hxs[l] = self.dropout[l](hxs[l])
-
-                # Residual connection
-                if self.residual and l > 0:
-                    hxs[l] += residual
-                    residual = hxs[l]
-        output = hxs[-1].unsqueeze(1)
-
-        if self.use_glu:
-            if self.residual:
-                residual = output
-            output = F.glu(self.fc_glu(output), dim=-1)
-            if self.residual:
-                output += residual
-        logits = self.output(output)
+        ys_in = self.encode(ys_in)
+        lm_out, hidden = self.decode(ys_in, hidden)
+        logits = self.generate(lm_out)
 
         # Compute XE sequence loss
-        loss = F.cross_entropy(logits.view((-1, logits.size(2))),
-                               ys_out.contiguous().view(-1),
-                               ignore_index=self.pad, size_average=True)
+        if n_caches > 0 and len(self.cache_keys) > 0:
+            assert ys_out.size(1) == 1
+            assert ys_out.size(0) == 1
+            probs = F.softmax(logits, dim=-1)
+
+            cache_probs = torch.zeros_like(probs)
+
+            # Truncate cache
+            self.cache_keys = self.cache_keys[-n_caches:]  # list of `[B, 1]`
+            self.cache_values = self.cache_values[-n_caches:]  # list of `[B, 1, n_units]`
+
+            # Compute inner-product over caches
+            cache_attn = F.softmax(self.cache_theta * torch.matmul(
+                torch.cat(self.cache_values, dim=1),
+                ys_in.transpose(1, 2)).squeeze(2), dim=1)
+
+            # For visualization
+            if len(self.cache_keys) == n_caches:
+                self.cache_attn += [cache_attn.cpu().numpy()]
+                self.cache_attn = self.cache_attn[-n_caches:]
+
+            # Sum all probabilities
+            for offset, idx in enumerate(self.cache_keys):
+                cache_probs[:, :, idx] += cache_attn[:, offset]
+            probs = (1 - self.cache_lambda) * probs + self.cache_lambda * cache_probs
+            loss = (-torch.log(probs[:, :, ys_out[:, -1]]))
+        else:
+            loss = F.cross_entropy(logits.view((-1, logits.size(2))),
+                                   ys_out.contiguous().view(-1),
+                                   ignore_index=self.pad, size_average=True)
+
+        if n_caches > 0:
+            # Register to cache
+            # self.cache_keys += [ys_out[:, -1].cpu().numpy()]
+            self.cache_keys += [ys_out[0, -1].item()]
+            self.cache_values += [ys_in]
 
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits.view(ys_out.size(0), ys_out.size(1), logits.size(-1)).argmax(2)
         mask = ys_out != self.pad
-        numerator = torch.sum(pad_pred.masked_select(mask) == ys_out.masked_select(mask))
-        denominator = torch.sum(mask)
+        numerator = (pad_pred.masked_select(mask) == ys_out.masked_select(mask)).sum()
+        denominator = mask.sum()
         acc = float(numerator) * 100 / float(denominator)
 
-        observation = {'loss': loss.item(),
-                       'acc': acc,
-                       'ppl': math.exp(loss.item())}
+        observation = {'loss.rnnlm': loss.item(),
+                       'acc.rnnlm': acc,
+                       'ppl.rnnlm': np.exp(loss.item())}
 
-        return loss, (hxs, cxs), observation
+        return loss, hidden, observation
 
-    def predict(self, y, hidden):
-        """Predict a token per step for ASR decoding.
-
+    def encode(self, ys):
+        """Encode function.
         Args:
-            y (FloatTensor): `[B, emb_dim]`
-            hidden (tuple): A tuple of (hxs, cxs)
-                hxs (list of FloatTensor):
-                cxs (list of FloatTensor):
+            ys (LongTensor):
         Returns:
-            logits_step (FloatTensor):
-            y (FloatTensor): `[B, nunits]`
-            hidden (tuple): A tuple of (hxs, cxs)
-                hxs (list of FloatTensor):
-                cxs (list of FloatTensor):
-
+            ys (FloatTensor):
         """
-        if hidden[0] is None:
-            hxs, cxs = self.initialize_hidden(bs=1)
-        else:
-            hxs, cxs = hidden
+        ys_emb = self.embed(ys)
+        return ys_emb
 
-        # Path through RNN
+    def decode(self, ys_emb, hidden):
+        """Decode function.
+        Args:
+            ys_emb (FloatTensor): `[B, L, emb_dim]`
+            hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
+        Returns:
+            ys_emb (FloatTensor): `[B, L, n_units]`
+            hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
+        """
+        if hidden is None or hidden[0] is None:
+            hidden = self.initialize_hidden(ys_emb.size(0))
+
         residual = None
-        for l in range(self.nlayers):
+        if self.fast_impl:
+            ys_emb, hidden = self.rnn(ys_emb, hx=hidden)
+            ys_emb = self.dropout_top(ys_emb)
+        else:
+            new_hxs, new_cxs = [], []
+            for l in range(self.n_layers):
+                # Path through RNN
+                if self.rnn_type == 'lstm':
+                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(hidden[0][l:l + 1], hidden[1][l:l + 1]))
+                    new_cxs.append(c_l)
+                elif self.rnn_type == 'gru':
+                    ys_emb, h_l = self.rnn[l](ys_emb, hx=hidden[0][l:l + 1])
+                new_hxs.append(h_l)
+                ys_emb = self.dropout[l](ys_emb)
+
+                # Residual connection
+                if self.residual and l > 0:
+                    ys_emb += residual
+                residual = ys_emb
+                # NOTE: Exclude residual connection from the raw inputs
+
+            # Repackage
+            new_hxs = torch.cat(new_hxs, dim=0)
             if self.rnn_type == 'lstm':
-                if l == 0:
-                    hxs[0], cxs[0] = self.rnn[l](y, (hxs[0], cxs[0]))
-                else:
-                    hxs[l], cxs[l] = self.rnn[l](hxs[l - 1], (hxs[l], cxs[l]))
-            elif self.rnn_type == 'gru':
-                if l == 0:
-                    hxs[0] = self.rnn[l](y, hxs[0])
-                else:
-                    hxs[l] = self.rnn[l](hxs[l - 1], hxs[l])
-
-            # Dropout for hidden-hidden or hidden-output connection
-            hxs[l] = self.dropout[l](hxs[l])
-
-            # Residual connection
-            if self.residual and residual is not None:
-                hxs[l] += residual
-            residual = hxs[l]
-        output = hxs[-1].unsqueeze(1)
+                new_cxs = torch.cat(new_cxs, dim=0)
+            hidden = (new_hxs, new_cxs)
 
         if self.use_glu:
             if self.residual:
-                residual = output
-            output = F.glu(self.fc_glu(output), dim=-1)
+                residual = ys_emb
+            ys_emb = F.glu(self.fc_glu(ys_emb), dim=-1)
             if self.residual:
-                output += residual
-        logits_step = self.output(output)
+                ys_emb += residual
+        return ys_emb, hidden
 
-        return logits_step, y, (hxs, cxs)
-
-    def initialize_hidden(self, bs):
-        """Initialize hidden states.
-
+    def generate(self, hidden):
+        """Generate function.
         Args:
-            bs (int): the size of mini-batch
+            hidden (FloatTensor):
         Returns:
-            hxs (list of FloatTensor):
-            cxs (list of FloatTensor):
+            logits (FloatTensor):
+        """
+        logits = self.output(hidden)
+        return logits
 
+    def initialize_hidden(self, batch_size):
+        """Initialize hidden states.
+        Args:
+            batch_size (int):
+        Returns:
+            hidden (tuple):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
         """
         w = next(self.parameters())
-
-        if self.rnn_type == 'lstm':
-            hxs = [w.new_zeros(bs, self.nunits)] * self.nlayers
-            cxs = [w.new_zeros(bs, self.nunits)] * self.nlayers
-        elif self.rnn_type == 'gru':
-            hxs = [w.new_zeros(bs, self.nunits)] * self.nlayers
-            cxs = None
-
-        return hxs, cxs
+        if self.fast_impl:
+            h_n = w.new_zeros(self.n_layers, batch_size, self.n_units)
+            c_n = None
+            if self.rnn_type == 'lstm':
+                c_n = w.new_zeros(self.n_layers, batch_size, self.n_units)
+            return (h_n, c_n)
+        else:
+            hxs, cxs = [], []
+            for l in range(self.n_layers):
+                if self.rnn_type == 'lstm':
+                    cxs.append(w.new_zeros(1, batch_size, self.n_units))
+                hxs.append(w.new_zeros(1, batch_size, self.n_units))
+            hxs = torch.cat(hxs, dim=0)
+            if self.rnn_type == 'lstm':
+                cxs = torch.cat(cxs, dim=0)
+            return (hxs, cxs)
 
     def repackage_hidden(self, hidden):
-        """Initialize hidden states.
-
+        """Wraps hidden states in new Tensors, to detach them from their history.
         Args:
-            hidden (list):
-                hxs (list of FloatTensor):
-                cxs (list of FloatTensor):
+            hidden (tuple):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
         Returns:
-            hidden (list):
-                hxs (list of FloatTensor):
-                cxs (list of FloatTensor):
-
+            hidden (tuple):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
         """
         hxs, cxs = hidden
+        hxs = hxs.detach()
         if self.rnn_type == 'lstm':
-            hxs = [h.detach() for h in hxs]
-            cxs = [c.detach() for c in cxs]
-        else:
-            hxs = [h.detach() for h in hxs]
+            cxs = cxs.detach()
         return (hxs, cxs)
-
-    def copy_from_seqrnnlm(self, rnnlm):
-        """Copy parameters from sequene-level RNNLM.
-
-        Args:
-            rnnlm ():
-
-        """
-        for l in range(self.nlayers):
-            self.rnn[l].weight_ih.data = rnnlm.rnn[l].weight_ih_l0.data
-            self.rnn[l].weight_hh.data = rnnlm.rnn[l].weight_hh_l0.data
-            self.rnn[l].bias_ih.data = rnnlm.rnn[l].bias_ih_l0.data
-            self.rnn[l].bias_hh.data = rnnlm.rnn[l].bias_hh_l0.data
-        self.output.fc.weight.data = rnnlm.output.fc.weight.data
-        if not self.tie_embedding:
-            self.output.fc.bias.data = rnnlm.output.fc.bias.data

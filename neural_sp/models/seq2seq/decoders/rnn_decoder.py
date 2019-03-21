@@ -29,7 +29,6 @@ from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
 from neural_sp.models.model_utils import ResidualFeedForward
-from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import CTCPrefixScore

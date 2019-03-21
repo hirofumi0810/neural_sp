@@ -25,7 +25,6 @@ from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.rnnlm.rnnlm import RNNLM
-from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 
 
@@ -108,19 +107,12 @@ def main():
                         setattr(args_rnnlm, k, v)
 
                     # Load the pre-trianed RNNLM
-                    seq_rnnlm = SeqRNNLM(args_rnnlm)
-                    seq_rnnlm.load_checkpoint(args.recog_rnnlm)
-
-                    # Copy parameters
-                    # rnnlm = RNNLM(args_rnnlm)
-                    # rnnlm.copy_from_seqrnnlm(seq_rnnlm)
-
-                    # Register to the ASR model
+                    rnnlm = RNNLM(args_rnnlm)
+                    rnnlm.load_checkpoint(args.recog_rnnlm)
                     if args_rnnlm.backward:
                         model.rnnlm_bwd = rnnlm
                     else:
-                        # model.rnnlm_fwd = rnnlm
-                        model.rnnlm_fwd = seq_rnnlm
+                        model.rnnlm_fwd = rnnlm
 
                 if args.recog_rnnlm_bwd is not None and args.recog_rnnlm_weight > 0 and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
                     # Load a RNNLM conf file
@@ -132,14 +124,8 @@ def main():
                         setattr(args_rnnlm_bwd, k, v)
 
                     # Load the pre-trianed RNNLM
-                    seq_rnnlm_bwd = SeqRNNLM(args_rnnlm_bwd)
-                    seq_rnnlm_bwd.load_checkpoint(args.recog_rnnlm_bwd)
-
-                    # Copy parameters
                     rnnlm_bwd = RNNLM(args_rnnlm_bwd)
-                    rnnlm_bwd.copy_from_seqrnnlm(seq_rnnlm_bwd)
-
-                    # Resister to the ASR model
+                    rnnlm_bwd.load_checkpoint(args.recog_rnnlm_bwd)
                     model.rnnlm_bwd = rnnlm_bwd
 
             if not args.recog_unit:

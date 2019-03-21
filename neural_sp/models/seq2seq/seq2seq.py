@@ -27,7 +27,7 @@ from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
-from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
+from neural_sp.models.rnnlm.rnnlm import RNNLM
 
 
 logger = logging.getLogger("training")
@@ -176,7 +176,7 @@ class Seq2seq(ModelBase):
         for dir in directions:
             # Cold fusion
             if args.rnnlm_cold_fusion and dir == 'fwd':
-                rnnlm = SeqRNNLM(args.rnnlm_conf)
+                rnnlm = RNNLM(args.rnnlm_conf)
                 rnnlm.load_checkpoint(args.rnnlm_cold_fusion)
 
                 # Fix RNNLM parameters

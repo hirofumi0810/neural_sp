@@ -20,7 +20,6 @@ from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.rnnlm.rnnlm import RNNLM
-from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
 
 
 def main():
@@ -55,13 +54,8 @@ def main():
 
         if i == 0:
             # Load the RNNLM
-            seq_rnnlm = SeqRNNLM(args)
-            epoch = seq_rnnlm.load_checkpoint(args.recog_model[0])['epoch']
-            rnnlm = seq_rnnlm
-
-            # Copy parameters
-            # rnnlm = RNNLM(args)
-            # rnnlm.copy_from_seqrnnlm(seq_rnnlm)
+            rnnlm = RNNLM(args)
+            epoch = rnnlm.load_checkpoint(args.recog_model[0])['epoch']
             rnnlm.save_path = args.recog_model[0]
 
             logger.info('epoch: %d' % (epoch - 1))

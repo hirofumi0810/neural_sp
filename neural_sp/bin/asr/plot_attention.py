@@ -15,16 +15,18 @@ import copy
 import numpy as np
 import os
 import shutil
+import torch
 
 from neural_sp.bin.args_asr import parse
 from neural_sp.bin.asr.plot_utils import plot_attention_weights
 from neural_sp.bin.asr.plot_utils import plot_cache_weights
+# from neural_sp.bin.asr.plot_utils import plot_cache_fusion_weights
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.models.rnnlm.rnnlm import RNNLM
-from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
+from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils.general import mkdir_join
 
 
@@ -59,13 +61,10 @@ def main():
                           unit_sub1=args.unit_sub1,
                           batch_size=args.recog_batch_size,
                           concat_prev_n_utterances=args.recog_concat_prev_n_utterances,
+                          #   cache_prev_n_tokens=args.cache_prev_n_tokens,  # oracle
                           is_test=True)
 
         if i == 0:
-            # TODO(hirofumi): For cold fusion
-            args.rnnlm_cold_fusion = False
-            args.rnnlm_init = False
-
             # Load the ASR model
             model = Seq2seq(args)
             epoch = model.load_checkpoint(args.recog_model[0])['epoch']
@@ -101,20 +100,12 @@ def main():
                         setattr(args_rnnlm, k, v)
 
                     # Load the pre-trianed RNNLM
-                    seq_rnnlm = SeqRNNLM(args_rnnlm)
-                    seq_rnnlm.load_checkpoint(args.recog_rnnlm)
-
-                    # Copy parameters
-                    # rnnlm = RNNLM(args_rnnlm)
-                    # rnnlm.copy_from_seqrnnlm(seq_rnnlm)
-
-                    # Register to the ASR model
+                    rnnlm = RNNLM(args_rnnlm)
+                    rnnlm.load_checkpoint(args.recog_rnnlm)
                     if args_rnnlm.backward:
-                        # model.rnnlm_bwd = rnnlm
-                        model.rnnlm_bwd = seq_rnnlm
+                        model.rnnlm_bwd = rnnlm
                     else:
-                        # model.rnnlm_fwd = rnnlm
-                        model.rnnlm_fwd = seq_rnnlm
+                        model.rnnlm_fwd = rnnlm
 
                 if args.recog_rnnlm_bwd is not None and args.recog_rnnlm_weight > 0 and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
                     # Load a RNNLM conf file
@@ -126,14 +117,8 @@ def main():
                         setattr(args_rnnlm_bwd, k, v)
 
                     # Load the pre-trianed RNNLM
-                    seq_rnnlm_bwd = SeqRNNLM(args_rnnlm_bwd)
-                    seq_rnnlm_bwd.load_checkpoint(args.recog_rnnlm_bwd)
-
-                    # Copy parameters
                     rnnlm_bwd = RNNLM(args_rnnlm_bwd)
-                    rnnlm_bwd.copy_from_seqrnnlm(seq_rnnlm_bwd)
-
-                    # Resister to the ASR model
+                    rnnlm_bwd.load_checkpoint(args.recog_rnnlm_bwd)
                     model.rnnlm_bwd = rnnlm_bwd
 
             if not args.recog_unit:
@@ -167,14 +152,14 @@ def main():
             # TODO(hirofumi): move this
 
         save_path = mkdir_join(args.recog_dir, 'att_weights')
-        if args.recog_n_caches > 0:
+        if args.recog_n_caches > 0 or args.cache_prev_n_tokens > 0:
             save_path_cache = mkdir_join(args.recog_dir, 'cache')
 
         # Clean directory
         if save_path is not None and os.path.isdir(save_path):
             shutil.rmtree(save_path)
             os.mkdir(save_path)
-            if args.recog_n_caches > 0:
+            if args.recog_n_caches > 0 or args.cache_prev_n_tokens > 0:
                 shutil.rmtree(save_path_cache)
                 os.mkdir(save_path_cache)
 
@@ -191,7 +176,7 @@ def main():
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps, aws, perm_id, (cache_probs_history, cache_keys_history) = model.decode(
+            best_hyps, aws, perm_id, (cache_probs_hist, cache_keys_hist) = model.decode(
                 batch['xs'], recog_params,
                 exclude_eos=False,
                 idx2token=idx2token,
@@ -206,35 +191,50 @@ def main():
                 aws = [aw[::-1] for aw in aws]
 
             for b in range(len(batch['xs'])):
-                token_list = idx2token(best_hyps[b], return_list=True)
-                speaker = batch['speakers'][b]
+                tokens = idx2token(best_hyps[b], return_list=True)
+                spk = batch['speakers'][b]
 
                 plot_attention_weights(
-                    aws[b][:len(token_list)],
-                    token_list,
+                    aws[b][:len(tokens)],
+                    tokens,
                     spectrogram=batch['xs'][b][:, :dataset.input_dim] if args.input_type == 'speech' else None,
-                    save_path=mkdir_join(save_path, speaker, batch['utt_ids'][b] + '.png'),
+                    save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8))
 
-                if args.recog_n_caches > 0 and cache_keys_history is not None:
-                    n_keys, n_queries = cache_probs_history[0].shape
+                if args.recog_n_caches > 0 and cache_keys_hist is not None:
+                    n_keys, n_queries = cache_probs_hist[0].shape
                     mask = np.ones((n_keys, n_queries))
                     for i in range(n_queries):
                         mask[:n_keys - i, -(i + 1)] = 0
 
                     plot_cache_weights(
-                        cache_probs_history[0],
-                        idx2token(cache_keys_history[-1], return_list=True),
-                        token_list,
-                        save_path=mkdir_join(save_path_cache, speaker, batch['utt_ids'][b] + '.png'),
+                        cache_probs_hist[0],
+                        keys=idx2token(cache_keys_hist[-1], return_list=True),
+                        queries=tokens,
+                        save_path=mkdir_join(save_path_cache, spk, batch['utt_ids'][b] + '.png'),
+                        figsize=(40, 16),
+                        mask=mask)
+
+                elif args.cache_prev_n_tokens > 0:
+                    n_keys = len(model.dec_fwd.fifo_cache_ids)
+                    n_queries = len(tokens[-1:])
+                    mask = np.ones((n_keys, n_queries))
+                    for i in range(n_queries):
+                        mask[:n_keys - i, -(i + 1)] = 0
+
+                    plot_cache_weights(
+                        model.dec_fwd.aws_cf[-2].transpose(1, 0),
+                        keys=idx2token(tensor2np(torch.cat(model.dec_fwd.fifo_cache_ids, dim=1)[b]), return_list=True),
+                        queries=tokens[-1:],
+                        save_path=mkdir_join(save_path_cache, spk, batch['utt_ids'][b] + '.png'),
                         figsize=(40, 16),
                         mask=mask)
 
                 ref = ys[b]
                 if model.bwd_weight > 0.5:
-                    hyp = ' '.join(token_list[::-1])
+                    hyp = ' '.join(tokens[::-1])
                 else:
-                    hyp = ' '.join(token_list)
+                    hyp = ' '.join(tokens)
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
                 logger.info('Ref: %s' % ref.lower())
                 logger.info('Hyp: %s' % hyp)
