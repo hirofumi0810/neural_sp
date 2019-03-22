@@ -29,7 +29,7 @@ from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
-from neural_sp.models.rnnlm.rnnlm_seq import SeqRNNLM
+from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.utils.general import mkdir_join
 
 
@@ -79,7 +79,7 @@ def main():
     args.vocab = train_set.vocab
 
     # Model setting
-    model = SeqRNNLM(args)
+    model = RNNLM(args)
     dir_name = args.rnn_type
     dir_name += str(args.n_units) + 'H'
     dir_name += str(args.n_projs) + 'P'

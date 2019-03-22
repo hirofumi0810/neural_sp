@@ -326,7 +326,7 @@ if [ ${stage} -le 3 ]; then
     echo "                      RNNLM Training stage (stage:3)                       "
     echo ============================================================================
 
-    if [ ! -e ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} ]; then
+    if [ ! -e ${data}/.done_stage_3_${data_size}${lm_data_size}_${unit}${wp_type}${vocab_size} ]; then
         if [ ! -e ${data}/.done_stage_1_${data_size} ]; then
             echo "run ./run.sh --data_size ${lm_data_size} first" && exit 1
         fi
@@ -345,7 +345,7 @@ if [ ${stage} -le 3 ]; then
             fi
         done
 
-        touch ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
+        touch ${data}/.done_stage_3_${data_size}${lm_data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
     lm_test_set="${data}/dataset_lm/eval1_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
