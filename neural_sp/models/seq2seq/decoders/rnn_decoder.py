@@ -1555,11 +1555,6 @@ class RNNDecoder(nn.Module):
                     else:
                         not_complete += [cand]
 
-                # end detection
-                # if end_detect(complete, t):
-                #     logger.info('end detected at %d', t)
-                #     break
-
                 # Pruning
                 if len(complete) >= beam_width:
                     complete = complete[:beam_width]
@@ -1740,41 +1735,3 @@ class RNNDecoder(nn.Module):
             topk = ctc_probs.size(-1)
         _, ids_topk = torch.topk(ctc_probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
         return tensor2np(ctc_probs), tensor2np(ids_topk)
-
-
-def end_detect(ended_hyps, i, M=3, D_end=np.log(1 * np.exp(-10))):
-    """End detection for joint CTC-attention
-
-    desribed in Eq. (50) of S. Watanabe et al
-    "Hybrid CTC/Attention Architecture for End-to-End Speech Recognition"
-
-    Args:
-        ended_hyps (list):
-        i (int):
-        M (int):
-        D_end (float):
-    Returns:
-        bool
-
-    [Reference]:
-        https://github.com/espnet/espnet
-
-    """
-    if len(ended_hyps) == 0:
-        return False
-    count = 0
-    best_hyp = sorted(ended_hyps, key=lambda x: x['score'], reverse=True)[0]
-    for m in range(M):
-        # get ended_hyps with their length is i - m
-        hyp_len = i - m
-        hyps_same_len = [x for x in ended_hyps if len(x['hyp']) - 1 == hyp_len]
-        # NOTE: key:hyp includes <sos>
-        if len(hyps_same_len) > 0:
-            best_hyp_same_len = sorted(hyps_same_len, key=lambda x: x['score'], reverse=True)[0]
-            if best_hyp_same_len['score'] - best_hyp['score'] < D_end:
-                count += 1
-
-    if count == M:
-        return True
-    else:
-        return False
