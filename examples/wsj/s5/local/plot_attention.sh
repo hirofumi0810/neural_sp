@@ -35,8 +35,12 @@ fwd_bwd_attention=false
 bwd_attention=false
 reverse_lm_rescoring=false
 n_caches=0
-cache_theta=0.1
-cache_lambda=0.1
+cache_theta_speech=1.5
+cache_lambda_speech=0.1
+cache_theta_lm=0.1
+cache_lambda_lm=0.1
+cache_type=speech
+concat_prev_n_utterances=0
 
 . ./cmd.sh
 . ./path.sh
@@ -54,9 +58,12 @@ fi
 gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in test_dev93 test_eval92; do
-    recog_dir=$(dirname ${model})/plot_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}_rnnlm${rnnlm_weight}
+    recog_dir=$(dirname ${model})/plot_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${recog_unit} ]; then
         recog_dir=${recog_dir}_${recog_unit}
+    fi
+    if [ ${rnnlm_weight} != 0.0 ]; then
+        recog_dir=${recog_dir}_rnnlm${rnnlm_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
@@ -74,7 +81,10 @@ for set in test_dev93 test_eval92; do
         recog_dir=${recog_dir}_revLM
     fi
     if [ ${n_caches} != 0 ]; then
-        recog_dir=${recog_dir}_cache${n_caches}_theta${cache_theta}_lambda${cache_lambda}
+        recog_dir=${recog_dir}_cache${n_caches}_${cache_type}_theta${cache_theta_speech}_lambda${cache_lambda_speech}
+        if [ ${rnnlm_weight} != 0.0 ]; then
+            recog_dir=${recog_dir}_theta${cache_theta_lm}_lambda${cache_lambda_lm}
+        fi
     fi
     if [ ! -z ${model7} ]; then
         recog_dir=${recog_dir}_ensemble8
@@ -116,8 +126,12 @@ for set in test_dev93 test_eval92; do
         --recog_bwd_attention ${bwd_attention} \
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_n_caches ${n_caches} \
-        --recog_cache_theta ${cache_theta} \
-        --recog_cache_lambda ${cache_lambda} \
+        --recog_cache_theta_speech ${cache_theta_speech} \
+        --recog_cache_lambda_speech ${cache_lambda_speech} \
+        --recog_cache_theta_lm ${cache_theta_lm} \
+        --recog_cache_lambda_lm ${cache_lambda_lm} \
+        --recog_cache_type ${cache_type} \
+        --recog_concat_prev_n_utterances ${concat_prev_n_utterances} \
         || exit 1;
 
 done
