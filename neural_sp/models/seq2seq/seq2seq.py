@@ -18,6 +18,7 @@ import torch
 from neural_sp.models.base import ModelBase
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
+from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.rnn_decoder import RNNDecoder
 from neural_sp.models.seq2seq.decoders.transformer_decoder import TransformerDecoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
@@ -26,8 +27,6 @@ from neural_sp.models.seq2seq.encoders.splicing import splice
 from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
-
-from neural_sp.models.rnnlm.rnnlm import RNNLM
 
 
 logger = logging.getLogger("training")
@@ -776,7 +775,7 @@ class Seq2seq(ModelBase):
                                 # NOTE: only support for the main task now
 
                         rnnlm, rnnlm_rev = None, None
-                        if params['recog_rnnlm_weight'] > 0:
+                        if params['recog_rnnlm_weight'] > 0 and getattr(self, 'dec_' + dir).rnnlm_cf is None:
                             rnnlm = getattr(self, 'rnnlm_' + dir)
                             if params['recog_reverse_lm_rescoring']:
                                 if dir == 'fwd':
