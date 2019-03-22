@@ -344,36 +344,39 @@ class RNNDecoder(nn.Module):
 
             # cold fusion
             if self.rnnlm_cf is not None:
-                dropout_cf = dropout
                 dout_dim = n_projs if self.n_projs > 0 else n_units
-                self.cf_linear_dec_feat = LinearND(dout_dim + enc_n_units, n_units,
-                                                   dropout=dropout_cf)
+                self.cf_linear_dec_feat = LinearND(dout_dim + enc_n_units, n_units)
                 if cold_fusion_type == 'hidden':
-                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units,
-                                                      dropout=dropout_cf)
+                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                 elif cold_fusion_type == 'prob':
-                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units,
-                                                      dropout=dropout_cf)
+                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units)
                 elif cold_fusion_type in ['hidden_dot_attention', 'prob_dot_attention']:
                     # query: ASR state, context vector
                     if self.cold_fusion_type == 'hidden_dot_attention':
-                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units,
-                                                          dropout=dropout_cf)
+                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                     elif self.cold_fusion_type == 'prob_dot_attention':
-                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units,
-                                                          dropout=dropout_cf)
+                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units)
                     self.score_cf = AttentionMechanism(
                         key_dim=self.rnnlm_cf.n_units,
                         query_dim=n_units,
                         attn_type='dot',
                         attn_dim=attn_dim,
                         dropout=dropout_att)
-
-                    self.dropout_cache = nn.Dropout(p=dropout)
+                elif cold_fusion_type in ['hidden_add_attention', 'prob_add_attention']:
+                    # query: ASR state, context vector
+                    if self.cold_fusion_type == 'hidden_add_attention':
+                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
+                    elif self.cold_fusion_type == 'prob_add_attention':
+                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units)
+                    self.score_cf = AttentionMechanism(
+                        key_dim=self.rnnlm_cf.n_units,
+                        query_dim=n_units,
+                        attn_type='add',
+                        attn_dim=attn_dim,
+                        dropout=dropout_att)
                 else:
                     raise ValueError(cold_fusion_type)
-                self.cf_linear_lm_gate = LinearND(n_units * 2, n_units,
-                                                  dropout=dropout_cf)
+                self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
                 self.output_bn = LinearND(n_units * 2, n_units)
 
                 # fix RNNLM parameters
@@ -429,8 +432,8 @@ class RNNDecoder(nn.Module):
                        'ppl_att': None, 'ppl_lmobj': None}
         loss = eouts.new_zeros((1,))
 
-        if self.rnnlm_cf is not None:
-            self.rnnlm_cf.eval()
+        # if self.rnnlm_cf is not None:
+        #     self.rnnlm_cf.eval()
 
         # CTC loss
         if self.ctc_weight > 0 and (not self.mtl_per_batch or (self.mtl_per_batch and 'ctc' in task)):
@@ -646,15 +649,22 @@ class RNNDecoder(nn.Module):
                 cxs = torch.cat(cxs, dim=1)
             lm_outs = torch.cat(lm_outs, dim=1)  # `[B, cache_prev_n_tokens, lm_n_units]`
 
-            # Pad the leftmost lm_outs
+            # Pad the leftmost in lm_outs
+            lm_outs_list = []
             for b in range(bs):
-                if ylens_cache[b] < self.cache_prev_n_tokens:
-                    pad_len = self.cache_prev_n_tokens - ylens_cache[b]
-                    lm_outs_b = ys_lm_emb_cache.new_zeros(1, pad_len, self.rnnlm_cf.n_units)
-                    lm_outs[b:b + 1, -pad_len:] = lm_outs_b
+                pad_len = self.cache_prev_n_tokens - ylens_cache[b]
+                if pad_len > 0:
+                    lm_outs_list.append(lm_outs[b, :ylens_cache[b]])
+                else:
+                    lm_outs_list.append(ys_lm_emb_cache.new_zeros(pad_len, self.rnnlm_cf.n_units))
+                # if ylens_cache[b] < self.cache_prev_n_tokens:
+                #     pad_len = self.cache_prev_n_tokens - ylens_cache[b]
+                #     lm_outs_b = ys_lm_emb_cache.new_zeros(1, pad_len, self.rnnlm_cf.n_units)
+                #     lm_outs[b:b + 1, -pad_len:] = lm_outs_b
+            lm_outs = pad_list(lm_outs_list, pad_left=True)
 
-            self.fifo_cache_keys_lm = self.dropout_cache(lm_outs)
-            # NOTE:RNNLM are not trained so as to decode <pad> tokens
+            self.fifo_cache_keys_lm = lm_outs
+            # NOTE: RNNLM are not trained so as to decode <pad> tokens
 
         logits = []
         for t in range(ys_in_pad.size(1)):
@@ -679,14 +689,16 @@ class RNNDecoder(nn.Module):
                     y_lm_emb = self.rnnlm_cf.encode(logits[-1].detach().argmax(-1))
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
-
-                if self.cache_prev_n_tokens > 0 and self.cold_fusion_type in ['hidden_dot_attention', 'prob_dot_attention']:
-                    lm_out, lm_state = self.rnnlm_cf.decode(y_lm_emb, lm_state)
-                    cache = self.dropout_cache(lm_out)
-                    self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, cache], dim=1)
-                    self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
-                else:
-                    lm_out, lm_state = self.rnnlm_cf.decode(y_lm_emb, lm_state)
+                lm_out, lm_state = self.rnnlm_cf.decode(y_lm_emb, lm_state)
+                if self.cold_fusion_type not in ['hidden', 'prob']:
+                    if self.cache_prev_n_tokens > 0:
+                        self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
+                        self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
+                    else:
+                        if self.fifo_cache_keys_lm is None:
+                            self.fifo_cache_keys_lm = lm_out
+                        else:
+                            self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
 
             # Score
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
@@ -698,6 +710,9 @@ class RNNDecoder(nn.Module):
             # Generate
             attn_v, _ = self.generate(cv, dstates['dout_gen'], lm_out)
             logits.append(self.output(attn_v))
+
+        # Reset cache
+        self.fifo_cache_keys_lm = None
 
         # Compute XE sequence loss
         logits = torch.cat(logits, dim=1)
@@ -1072,17 +1087,21 @@ class RNNDecoder(nn.Module):
                 dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
 
             # Update RNNLM states for cold fusion
+            lm_out = None
             if self.rnnlm_cf is not None:
                 lm_out, lm_state = self.rnnlm_cf.decode(self.rnnlm_cf.encode(y), lm_state)
-                if self.cache_prev_n_tokens > 0 and self.cold_fusion_type in ['hidden_dot_attention', 'prob_dot_attention']:
-                    if self.fifo_cache_keys_lm is None:
-                        self.fifo_cache_keys_lm = lm_out.new_zeros(bs, 1, self.rnnlm_cf.n_units)
+                if self.cold_fusion_type not in ['hidden', 'prob']:
+                    if self.cache_prev_n_tokens > 0:
+                        if self.fifo_cache_keys_lm is None:
+                            self.fifo_cache_keys_lm = lm_out
+                        else:
+                            self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
+                        self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
                     else:
-                        cache = self.dropout_cache(lm_out)
-                        self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, cache], dim=1)
-                    self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
-            else:
-                lm_out = None
+                        if self.fifo_cache_keys_lm is None:
+                            self.fifo_cache_keys_lm = lm_out
+                        else:
+                            self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
 
             # Score
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
@@ -1253,6 +1272,7 @@ class RNNDecoder(nn.Module):
                 rnnlm_hxs, rnnlm_cxs = self.rnnlm_final_state
                 self.rnnlm_final_state = None
             self.prev_spk = speakers[b]
+            # rnnlm_hxs, rnnlm_cxs = None, None  # tmp
 
             complete = []
             beam = [{'hyp': [sos],
@@ -1416,8 +1436,7 @@ class RNNDecoder(nn.Module):
                         # TODO(hirofumi): cache
 
                     # Pick up the top-k scores
-                    log_probs_topk, ids_topk = torch.topk(
-                        log_probs, k=beam_width, dim=1, largest=True, sorted=True)
+                    log_probs_topk, ids_topk = torch.topk(log_probs, k=beam_width, dim=1, largest=True, sorted=True)
                     scores_attn = beam[i_beam]['score_attn'] + log_probs_topk
                     local_scores = scores_attn.clone()
 
