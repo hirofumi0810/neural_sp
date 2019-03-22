@@ -35,7 +35,7 @@ def plot_cache_weights(cache_probs, keys=[], queries=[],
         cache_probs (np.ndarray): A tensor of size `[n_keys, n_queries]`
         keys (list):
         queries (list):
-        save_path (str): path to save a figure of CTC posterior (utterance)
+        save_path (str): path to save a figure
         figsize (tuple):
 
     """
@@ -71,7 +71,7 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
         tokens (list):
         spectrogram (np.ndarray): A tensor of size `[T, feature_dim]`
         ref (str):
-        save_path (str): path to save a figure of CTC posterior (utterance)
+        save_path (str): path to save a figure
         figsize (tuple):
 
     """
@@ -121,7 +121,7 @@ def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
         tokens_sub (list):
         spectrogram (np.ndarray): A tensor of size `[T, feature_dim]`
         ref (str):
-        save_path (str): path to save a figure of CTC posterior (utterance)
+        save_path (str): path to save a figure
         figsize (tuple):
 
     """
@@ -183,7 +183,7 @@ def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_id=
         subsample_factor (int): the number of frames to stack
         space_id (int):
         hyp (str):
-        save_path (str): path to save a figure of CTC posterior (utterance)
+        save_path (str): path to save a figure
         figsize (tuple):
         topk (int):
 
@@ -254,7 +254,7 @@ def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, nframes, subsample_fac
         ctc_probs_sub (np.ndarray): A tensor of size `[T, num_classes_sub]`
         nframes (int):
         subsample_factor (int):
-        save_path (str): path to save a figure of CTC posterior (utterance)
+        save_path (str): path to save a figure
         figsize (tuple):
         space_id (int):
 

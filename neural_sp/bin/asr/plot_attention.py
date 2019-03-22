@@ -143,8 +143,11 @@ def main():
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('cache size: %d' % (args.recog_n_caches))
-            logger.info('cache theta: %d' % (args.recog_cache_theta))
-            logger.info('cache lambda: %d' % (args.recog_cache_lambda))
+            logger.info('cache type: %s' % (args.recog_cache_type))
+            logger.info('cache theta (speech): %d' % (args.recog_cache_theta_speech))
+            logger.info('cache lambda (speech): %d' % (args.recog_cache_lambda_speech))
+            logger.info('cache theta (lm): %d' % (args.recog_cache_theta_lm))
+            logger.info('cache lambda (lm): %d' % (args.recog_cache_lambda_lm))
             logger.info('concat_prev_n_utterances: %d' % (args.recog_concat_prev_n_utterances))
 
             # GPU setting

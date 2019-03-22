@@ -297,8 +297,9 @@ def parse():
                         help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     # cold fusion
     parser.add_argument('--cold_fusion_type', type=str, default='hidden', nargs='?',
-                        choices=['hidden', 'prob', 'hidden_attention', 'prob_attention',
-                                 'hidden_self_attention', 'prob_self_attention'],
+                        choices=['hidden', 'prob',
+                                 'hidden_dot_attention', 'prob_dot_attention',
+                                 'hidden_add_attention', 'prob_add_attention'],
                         help='type of cold fusion')
     parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',
                         help='RNNLM parameters for cold fusion')
@@ -385,12 +386,16 @@ def parse():
                         help='rescore with another LM in the reverse direction')
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
-    parser.add_argument('--recog_cache_theta', type=float, default=0.1,
-                        help='theta paramter for cache')
-    parser.add_argument('--recog_cache_lambda', type=float, default=0.1,
-                        help='lambda paramter for cache')
-    parser.add_argument('--recog_cache_type', type=str, default='lm',
-                        choices=['decoder', 'lm', 'joint'],
+    parser.add_argument('--recog_cache_theta_speech', type=float, default=0.1,
+                        help='theta paramter for acoustic cache')
+    parser.add_argument('--recog_cache_lambda_speech', type=float, default=0.1,
+                        help='lambda paramter for acoustic cache')
+    parser.add_argument('--recog_cache_theta_lm', type=float, default=0.1,
+                        help='theta paramter for LM cache')
+    parser.add_argument('--recog_cache_lambda_lm', type=float, default=0.1,
+                        help='lambda paramter for LM cache')
+    parser.add_argument('--recog_cache_type', type=str, default='speech',
+                        choices=['speech', 'lm', 'joint'],
                         help='cache type')
     parser.add_argument('--recog_concat_prev_n_utterances', type=int, default=0,
                         help='number of previous utterances to concatenate (for inference)')
