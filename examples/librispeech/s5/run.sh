@@ -190,7 +190,7 @@ if [ ${unit} != wp ]; then
     wp_type=
 fi
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
+if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
@@ -218,7 +218,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
         rm ${data}/${x}/text.tmp
     done
 
-    touch ${data}/.done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
+    touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
 if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
