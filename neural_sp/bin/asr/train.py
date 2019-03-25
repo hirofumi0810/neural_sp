@@ -188,7 +188,7 @@ def main():
         logger = set_logger(os.path.join(os.path.dirname(args.resume), 'train.log'), key='training')
 
         # Set optimizer
-        model.set_optimizer(optimizer=conf['optimizer'],
+        model.set_optimizer(optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] + 1 else conf['optimizer'],
                             learning_rate=float(conf['learning_rate']),  # on-the-fly
                             weight_decay=float(conf['weight_decay']))
 
