@@ -169,8 +169,8 @@ def main():
                 recog_dir=args.recog_dir,
                 progressbar=True)
             wer_avg += wer
-            logger.info('WER (%s): %.3f %%' % (dataset.set, wer))
-            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
+            logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
+            logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
             logger.info('OOV (total): %d' % (n_oov_total))
 
         elif args.recog_unit == 'wp':
@@ -180,8 +180,8 @@ def main():
                 recog_dir=args.recog_dir,
                 progressbar=True)
             wer_avg += wer
-            logger.info('WER (%s): %.3f %%' % (dataset.set, wer))
-            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
+            logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
+            logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
 
         elif 'char' in args.recog_unit:
             (wer, n_sub, n_ins, n_del), (cer, _, _, _) = eval_char(
@@ -192,8 +192,8 @@ def main():
                 task_id=1 if args.recog_unit and 'char' in args.recog_unit else 0)
             wer_avg += wer
             cer_avg += cer
-            logger.info('WER / CER (%s): %.3f / %.3f %%' % (dataset.set, wer, cer))
-            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
+            logger.info('WER / CER (%s): %.2f / %.2f %%' % (dataset.set, wer, cer))
+            logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
 
         elif 'phone' in args.recog_unit:
             per, n_sub, n_ins, n_del = eval_phone(
@@ -202,22 +202,22 @@ def main():
                 recog_dir=args.recog_dir,
                 progressbar=True)
             per_avg += per
-            logger.info('PER (%s): %.3f %%' % (dataset.set, per))
-            logger.info('SUB: %.3f / INS: %.3f / DEL: %.3f' % (n_sub, n_ins, n_del))
+            logger.info('PER (%s): %.2f %%' % (dataset.set, per))
+            logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
 
         else:
             raise ValueError(args.recog_unit)
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
     if args.recog_unit == 'word':
-        logger.info('WER (avg.): %.3f %%\n' % (wer_avg / len(args.recog_sets)))
+        logger.info('WER (avg.): %.2f %%\n' % (wer_avg / len(args.recog_sets)))
     if args.recog_unit == 'wp':
-        logger.info('WER (avg.): %.3f %%\n' % (wer_avg / len(args.recog_sets)))
+        logger.info('WER (avg.): %.2f %%\n' % (wer_avg / len(args.recog_sets)))
     elif 'char' in args.recog_unit:
-        logger.info('WER / CER (avg.): %.3f / %.3f %%\n' %
+        logger.info('WER / CER (avg.): %.2f / %.2f %%\n' %
                     (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
     elif 'phone' in args.recog_unit:
-        logger.info('PER (avg.): %.3f %%\n' % (per_avg / len(args.recog_sets)))
+        logger.info('PER (avg.): %.2f %%\n' % (per_avg / len(args.recog_sets)))
 
 
 if __name__ == '__main__':

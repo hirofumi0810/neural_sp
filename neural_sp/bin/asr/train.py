@@ -408,25 +408,25 @@ def main():
                     if args.unit in ['word', 'word_char']:
                         metric_dev = eval_word([model.module], dev_set, recog_params,
                                                epoch=epoch)[0]
-                        logger.info('WER (%s): %.3f %%' % (dev_set.set, metric_dev))
+                        logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
                     elif args.unit == 'wp':
                         metric_dev = eval_wordpiece([model.module], dev_set, recog_params,
                                                     epoch=epoch)[0]
-                        logger.info('WER (%s): %.3f %%' % (dev_set.set, metric_dev))
+                        logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
                     elif 'char' in args.unit:
                         dev_results = eval_char([model.module], dev_set, recog_params,
                                                 epoch=epoch)
                         metric_dev = dev_results[1][0]
                         wer_dev = dev_results[0][0]
-                        logger.info('CER (%s): %.3f %%' % (dev_set.set, metric_dev))
-                        logger.info('WER (%s): %.3f %%' % (dev_set.set, wer_dev))
+                        logger.info('CER (%s): %.2f %%' % (dev_set.set, metric_dev))
+                        logger.info('WER (%s): %.2f %%' % (dev_set.set, wer_dev))
                     elif 'phone' in args.unit:
                         metric_dev = eval_phone([model.module], dev_set, recog_params,
                                                 epoch=epoch)[0]
-                        logger.info('PER (%s): %.3f %%' % (dev_set.set, metric_dev))
+                        logger.info('PER (%s): %.2f %%' % (dev_set.set, metric_dev))
                 elif args.metric == 'loss':
                     metric_dev = eval_loss([model.module], dev_set, recog_params)
-                    logger.info('Loss (%s): %.3f %%' % (dev_set.set, metric_dev))
+                    logger.info('Loss (%s): %.2f %%' % (dev_set.set, metric_dev))
                 else:
                     raise NotImplementedError(args.metric)
                 reporter.epoch(metric_dev)
@@ -451,25 +451,25 @@ def main():
                             if args.unit in ['word', 'word_char']:
                                 wer_test = eval_word([model.module], s, recog_params,
                                                      epoch=epoch)[0]
-                                logger.info('WER (%s): %.3f %%' % (s.set, wer_test))
+                                logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
                             elif args.unit == 'wp':
                                 wer_test = eval_wordpiece([model.module], s, recog_params,
                                                           epoch=epoch)[0]
-                                logger.info('WER (%s): %.3f %%' % (s.set, wer_test))
+                                logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
                             elif 'char' in args.unit:
                                 test_results = eval_char([model.module], s, recog_params,
                                                          epoch=epoch)
                                 cer_test = test_results[1][0]
                                 wer_test = test_results[0][0]
-                                logger.info('CER (%s): %.3f %%' % (s.set, cer_test))
-                                logger.info('WER (%s): %.3f %%' % (s.set, wer_test))
+                                logger.info('CER (%s): %.2f %%' % (s.set, cer_test))
+                                logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
                             elif 'phone' in args.unit:
                                 per_test = eval_phone([model.module], s, recog_params,
                                                       epoch=epoch)[0]
-                                logger.info('PER (%s): %.3f %%' % (s.set, per_test))
+                                logger.info('PER (%s): %.2f %%' % (s.set, per_test))
                         elif args.metric == 'loss':
                             loss_test = eval_loss([model.module], s, recog_params)
-                            logger.info('Loss (%s): %.3f %%' % (s.set, loss_test))
+                            logger.info('Loss (%s): %.2f %%' % (s.set, loss_test))
                         else:
                             raise NotImplementedError(args.metric)
                 else:

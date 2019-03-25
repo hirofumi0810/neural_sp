@@ -228,7 +228,7 @@ def main():
                 # dev
                 ppl_dev = eval_ppl([model.module], dev_set,
                                    batch_size=1, bptt=args.bptt)
-                logger.info('PPL (%s): %.3f' % (dev_set.set, ppl_dev))
+                logger.info('PPL (%s): %.2f' % (dev_set.set, ppl_dev))
 
                 # Update learning rate
                 model.module.optimizer = lr_controller.decay(
@@ -250,10 +250,10 @@ def main():
                     for eval_set in eval_sets:
                         ppl_test = eval_ppl([model.module], eval_set,
                                             batch_size=1, bptt=args.bptt)
-                        logger.info('PPL (%s): %.3f' % (eval_set.set, ppl_test))
+                        logger.info('PPL (%s): %.2f' % (eval_set.set, ppl_test))
                         ppl_test_avg += ppl_test
                     if len(eval_sets) > 0:
-                        logger.info('PPL (avg.): %.3f' % (ppl_test_avg / len(eval_sets)))
+                        logger.info('PPL (avg.): %.2f' % (ppl_test_avg / len(eval_sets)))
                 else:
                     not_improved_epoch += 1
 
