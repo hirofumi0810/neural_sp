@@ -11,8 +11,8 @@ data=/n/sd8/inaguma/corpus/swbd
 
 batch_size=1
 n_caches=0
-cache_theta=0.2
-cache_lambda=0.2
+cache_theta=1.0
+cache_lambda=0.1
 
 . ./cmd.sh
 . ./path.sh
@@ -29,7 +29,7 @@ if [ -z ${gpu} ]; then
 fi
 gpu=$(echo ${gpu} | cut -d "," -f 1)
 
-for set in dev; do
+for set in dev eval2000_swbd eval2000_ch; do
     recog_dir=$(dirname ${model})/decode_${set}
     if [ ${n_caches} != 0 ]; then
         recog_dir=${recog_dir}_cache${n_caches}_theta${cache_theta}_lambda${cache_lambda}
@@ -37,11 +37,11 @@ for set in dev; do
     mkdir -p ${recog_dir}
 
     if [ $(echo ${model} | grep 'fisher_swbd_train_fisher_swbd') ]; then
-        recog_set=${data}/dataset_lm/${set}_fisher_swbd_train_fisher_swbd_wpbpe30000.tsv
+        recog_set=${data}/dataset_lm/${set}_fisher_swbd_train_fisher_swbd_word30000.tsv
     elif [ $(echo ${model} | grep 'fisher_swbd_train_swbd') ]; then
-        recog_set=${data}/dataset_lm/${set}_fisher_swbd_train_swbd_wpbpe10000.tsv
+        recog_set=${data}/dataset_lm/${set}_fisher_swbd_train_swbd_word10000.tsv
     elif [ $(echo ${model} | grep 'fisher_swbd_train_fisher_swbd') ]; then
-        recog_set=${data}/dataset_lm/${set}_swbd_train_swbd_wpbpe10000.tsv
+        recog_set=${data}/dataset_lm/${set}_swbd_train_swbd_word10000.tsv
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/eval.py \

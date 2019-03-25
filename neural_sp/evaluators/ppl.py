@@ -51,7 +51,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1, n_caches=0, progressbar=Fal
             ntokens += bs
 
             if progressbar:
-                pbar.update(np.sum([len(y) for y in ys[:, t:t + 2]]))
+                pbar.update(sum([len(y) for y in ys[:, t:t + 1]]))
 
         if is_new_epoch:
             break

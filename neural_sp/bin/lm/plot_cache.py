@@ -28,7 +28,8 @@ def main():
     args = parse()
 
     # Load a conf file
-    conf = load_config(os.path.join(args.recog_model[0], 'conf.yml'))
+    dir_name = os.path.dirname(args.recog_model[0])
+    conf = load_config(os.path.join(dir_name, 'conf.yml'))
 
     # Overwrite conf
     for k, v in conf.items():
@@ -44,8 +45,8 @@ def main():
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
                           tsv_path=s,
-                          dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
-                          wp_model=os.path.join(args.recog_model[0], 'wp.model'),
+                          dict_path=os.path.join(dir_name, 'dict.txt'),
+                          wp_model=os.path.join(dir_name, 'wp.model'),
                           unit=args.unit,
                           batch_size=args.recog_batch_size,
                           bptt=args.bptt,
@@ -56,15 +57,16 @@ def main():
             # Load the RNNLM
             rnnlm = RNNLM(args)
             epoch = rnnlm.load_checkpoint(args.recog_model[0])['epoch']
-            rnnlm.save_path = args.recog_model[0]
+            rnnlm.save_path = dir_name
 
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
             # logger.info('recog unit: %s' % args.recog_unit)
             # logger.info('ensemble: %d' % (len(ensemble_models)))
+            logger.info('BPTT: %d' % (args.bptt))
             logger.info('cache size: %d' % (args.recog_n_caches))
-            logger.info('cache theta: %d' % (args.recog_cache_theta))
-            logger.info('cache lambda: %d' % (args.recog_cache_lambda))
+            logger.info('cache theta: %.3f' % (args.recog_cache_theta))
+            logger.info('cache lambda: %.3f' % (args.recog_cache_lambda))
             rnnlm.cache_theta = args.recog_cache_theta
             rnnlm.cache_lambda = args.recog_cache_lambda
 
@@ -72,7 +74,7 @@ def main():
             rnnlm.cuda()
 
         assert args.recog_n_caches > 0
-        save_path = mkdir_join(args.recog_dir, 'cache_dist')
+        save_path = mkdir_join(args.recog_dir, 'cache')
 
         # Clean directory
         if save_path is not None and os.path.isdir(save_path):
@@ -91,8 +93,9 @@ def main():
             raise NotImplementedError(args.unit)
 
         hidden = None
-        count = 0
-        n_tokens = 30
+        fig_count = 0
+        toknen_count = 0
+        n_tokens = args.recog_n_caches
         while True:
             ys, is_new_epoch = dataset.next()
 
@@ -100,7 +103,7 @@ def main():
                 loss, hidden = rnnlm(ys[:, t:t + 2], hidden, is_eval=True, n_caches=args.recog_n_caches)[:2]
 
                 if len(rnnlm.cache_attn) > 0:
-                    if count == n_tokens:
+                    if toknen_count == n_tokens:
                         tokens_keys = idx2token(rnnlm.cache_keys[:args.recog_n_caches], return_list=True)
                         tokens_query = idx2token(rnnlm.cache_keys[-n_tokens:], return_list=True)
 
@@ -117,12 +120,13 @@ def main():
                             cache_probs,
                             keys=tokens_keys,
                             queries=tokens_query,
-                            save_path=mkdir_join(save_path, ''.join(tokens_keys[:5]) + '.png'),
+                            save_path=mkdir_join(save_path, str(fig_count) + '.png'),
                             figsize=(40, 16),
                             mask=mask)
-                        count = 0
+                        toknen_count = 0
+                        fig_count += 1
                     else:
-                        count += 1
+                        toknen_count += 1
 
             if is_new_epoch:
                 break

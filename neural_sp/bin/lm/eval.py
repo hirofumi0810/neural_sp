@@ -27,7 +27,8 @@ def main():
     args = parse()
 
     # Load a conf file
-    conf = load_config(os.path.join(args.recog_model[0], 'conf.yml'))
+    dir_name = os.path.dirname(args.recog_model[0])
+    conf = load_config(os.path.join(dir_name, 'conf.yml'))
 
     # Overwrite conf
     for k, v in conf.items():
@@ -44,8 +45,8 @@ def main():
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
                           tsv_path=s,
-                          dict_path=os.path.join(args.recog_model[0], 'dict.txt'),
-                          wp_model=os.path.join(args.recog_model[0], 'wp.model'),
+                          dict_path=os.path.join(dir_name, 'dict.txt'),
+                          wp_model=os.path.join(dir_name, 'wp.model'),
                           unit=args.unit,
                           batch_size=args.recog_batch_size,
                           bptt=args.bptt,
@@ -56,7 +57,7 @@ def main():
             # Load the RNNLM
             rnnlm = RNNLM(args)
             epoch = rnnlm.load_checkpoint(args.recog_model[0])['epoch']
-            rnnlm.save_path = args.recog_model[0]
+            rnnlm.save_path = dir_name
 
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
@@ -64,8 +65,8 @@ def main():
             # logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('BPTT: %d' % (args.bptt))
             logger.info('cache size: %d' % (args.recog_n_caches))
-            logger.info('cache theta: %d' % (args.recog_cache_theta))
-            logger.info('cache lambda: %d' % (args.recog_cache_lambda))
+            logger.info('cache theta: %.3f' % (args.recog_cache_theta))
+            logger.info('cache lambda: %.3f' % (args.recog_cache_lambda))
             rnnlm.cache_theta = args.recog_cache_theta
             rnnlm.cache_lambda = args.recog_cache_lambda
 
@@ -78,8 +79,8 @@ def main():
         ppl = eval_ppl([rnnlm], dataset, batch_size=1, bptt=args.bptt,
                        n_caches=args.recog_n_caches, progressbar=True)
         ppl_avg += ppl
+        print('PPL (%s): %.3f' % (dataset.set, ppl))
         logger.info('PPL (%s): %.3f' % (dataset.set, ppl))
-
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
     logger.info('PPL (avg.): %.3f\n' % (ppl_avg / len(args.recog_sets)))
