@@ -151,10 +151,10 @@ def main():
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache type: %s' % (args.recog_cache_type))
-            logger.info('cache theta (speech): %d' % (args.recog_cache_theta_speech))
-            logger.info('cache lambda (speech): %d' % (args.recog_cache_lambda_speech))
-            logger.info('cache theta (lm): %d' % (args.recog_cache_theta_lm))
-            logger.info('cache lambda (lm): %d' % (args.recog_cache_lambda_lm))
+            logger.info('cache theta (speech): %.3f' % (args.recog_cache_theta_speech))
+            logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
+            logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
+            logger.info('cache lambda (lm): %.3f' % (args.recog_cache_lambda_lm))
             logger.info('concat_prev_n_utterances: %d' % (args.recog_concat_prev_n_utterances))
 
             # GPU setting
@@ -207,7 +207,6 @@ def main():
 
         else:
             raise ValueError(args.recog_unit)
-
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
     if args.recog_unit == 'word':

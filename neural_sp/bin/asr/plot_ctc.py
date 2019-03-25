@@ -111,9 +111,9 @@ def main():
             # NOTE: ctc_probs: '[B, T, topk]'
 
             for b in range(len(batch['xs'])):
-                token_list = idx2token(best_hyps[b], return_list=True)
-                token_list = [unicode(t, 'utf-8') for t in token_list]
-                speaker = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
+                tokens = idx2token(best_hyps[b], return_list=True)
+                tokens = [unicode(t, 'utf-8') for t in tokens]
+                spk = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
 
                 plot_ctc_probs(
                     ctc_probs[b, :xlens[b]],
@@ -121,11 +121,11 @@ def main():
                     nframes=xlens[b],
                     subsample_factor=subsample_factor,
                     spectrogram=batch['xs'][b][:, :dataset.input_dim],
-                    save_path=mkdir_join(save_path, speaker, batch['utt_ids'][b] + '.png'),
+                    save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8))
 
                 ref = ys[b]
-                hyp = ' '.join(token_list)
+                hyp = ' '.join(tokens)
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
                 logger.info('Ref: %s' % ref.lower())
                 logger.info('Hyp: %s' % hyp)
