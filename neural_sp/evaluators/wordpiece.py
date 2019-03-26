@@ -112,4 +112,7 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     n_ins /= n_word
     n_del /= n_word
 
+    logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
+    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
+
     return wer, n_sub, n_ins, n_del

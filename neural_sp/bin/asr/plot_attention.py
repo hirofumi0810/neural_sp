@@ -124,6 +124,7 @@ def main():
             if not args.recog_unit:
                 args.recog_unit = args.unit
 
+            logger.info('recog unit: %s' % args.recog_unit)
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
             logger.info('beam width: %d' % args.recog_beam_width)
@@ -140,8 +141,9 @@ def main():
             logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
             logger.info('reverse LM rescoring: %s' % args.recog_reverse_lm_rescoring)
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
-            logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))
+            logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))
+            logger.info('RNNLM state carry over: %s' % (args.recog_rnnlm_state_carry_over))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache type: %s' % (args.recog_cache_type))
             logger.info('cache theta (speech): %.3f' % (args.recog_cache_theta_speech))

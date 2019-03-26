@@ -148,4 +148,7 @@ def eval_char(models, dataset, recog_params, epoch,
     n_ins_c /= n_char
     n_del_c /= n_char
 
+    logger.info('WER / CER (%s): %.2f / %.2f %%' % (dataset.set, wer, cer))
+    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
+
     return (wer, n_sub_w, n_ins_w, n_del_w), (cer, n_sub_c, n_ins_c, n_del_c)

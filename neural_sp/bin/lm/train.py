@@ -220,14 +220,13 @@ def main():
 
             if epoch < args.eval_start_epoch:
                 # Save the model
-                model.module.save_checkpoint(
-                    model.module.save_path, lr_controller,
-                    epoch, step - 1, ppl_dev_best)
+                model.module.save_checkpoint(model.module.save_path, lr_controller,
+                                             epoch, step - 1, ppl_dev_best)
             else:
                 start_time_eval = time.time()
                 # dev
-                ppl_dev = eval_ppl([model.module], dev_set,
-                                   batch_size=1, bptt=args.bptt)
+                ppl_dev, _ = eval_ppl([model.module], dev_set,
+                                      batch_size=1, bptt=args.bptt)
                 logger.info('PPL (%s): %.2f' % (dev_set.set, ppl_dev))
 
                 # Update learning rate
@@ -241,15 +240,14 @@ def main():
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    model.module.save_checkpoint(
-                        model.module.save_path, lr_controller,
-                        epoch, step - 1, ppl_dev_best)
+                    model.module.save_checkpoint(model.module.save_path, lr_controller,
+                                                 epoch, step - 1, ppl_dev_best)
 
                     # test
                     ppl_test_avg = 0.
                     for eval_set in eval_sets:
-                        ppl_test = eval_ppl([model.module], eval_set,
-                                            batch_size=1, bptt=args.bptt)
+                        ppl_test, _ = eval_ppl([model.module], eval_set,
+                                               batch_size=1, bptt=args.bptt)
                         logger.info('PPL (%s): %.2f' % (eval_set.set, ppl_test))
                         ppl_test_avg += ppl_test
                     if len(eval_sets) > 0:

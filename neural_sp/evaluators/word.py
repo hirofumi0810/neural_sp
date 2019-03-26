@@ -108,7 +108,6 @@ def eval_word(models, dataset, recog_params, epoch,
                 n_ins += ins_b
                 n_del += del_b
                 n_word += len(ref.split(' '))
-                # logger.info('WER: %d%%' % (wer_b / len(ref.split(' '))))
 
                 if progressbar:
                     pbar.update(1)
@@ -126,5 +125,9 @@ def eval_word(models, dataset, recog_params, epoch,
     n_sub /= n_word
     n_ins /= n_word
     n_del /= n_word
+
+    logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
+    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
+    logger.info('OOV (total): %d' % (n_oov_total))
 
     return wer, n_sub, n_ins, n_del, n_oov_total

@@ -76,11 +76,10 @@ def main():
         start_time = time.time()
 
         # TODO(hirofumi): ensemble
-        ppl = eval_ppl([rnnlm], dataset, batch_size=1, bptt=args.bptt,
-                       n_caches=args.recog_n_caches, progressbar=True)
+        ppl, _ = eval_ppl([rnnlm], dataset, batch_size=1, bptt=args.bptt,
+                          n_caches=args.recog_n_caches, progressbar=True)
         ppl_avg += ppl
         print('PPL (%s): %.2f' % (dataset.set, ppl))
-        logger.info('PPL (%s): %.2f' % (dataset.set, ppl))
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
     logger.info('PPL (avg.): %.2f\n' % (ppl_avg / len(args.recog_sets)))

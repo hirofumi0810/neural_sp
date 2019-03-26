@@ -62,7 +62,7 @@ def main():
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
                           batch_size=args.recog_batch_size,
-                          concat_prev_n_utterances=args.concat_prev_n_utterances,
+                          concat_prev_n_utterances=args.recog_concat_prev_n_utterances,
                           is_test=True)
 
         if i == 0:
@@ -74,6 +74,7 @@ def main():
             if not args.recog_unit:
                 args.recog_unit = args.unit
 
+            logger.info('recog unit: %s' % args.recog_unit)
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
 

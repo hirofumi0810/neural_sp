@@ -22,6 +22,7 @@ from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
+from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.rnnlm.rnnlm import RNNLM
@@ -48,6 +49,7 @@ def main():
     logger = set_logger(os.path.join(args.recog_dir, 'decode.log'), key='decoding')
 
     wer_avg, cer_avg, per_avg = 0, 0, 0
+    ppl_avg, loss_avg = 0, 0
     for i, s in enumerate(args.recog_sets):
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
@@ -69,7 +71,7 @@ def main():
                           unit_sub3=args.unit_sub3,
                           batch_size=args.recog_batch_size,
                           concat_prev_n_utterances=args.recog_concat_prev_n_utterances,
-                          is_test=True)
+                          is_test=True if args.recog_metric not in ['acc', 'ppl', 'loss'] else False)
 
         if i == 0:
             # Load the ASR model
@@ -131,6 +133,8 @@ def main():
             if not args.recog_unit:
                 args.recog_unit = args.unit
 
+            logger.info('recog unit: %s' % args.recog_unit)
+            logger.info('recog metric: %s' % args.recog_metric)
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
             logger.info('beam width: %d' % args.recog_beam_width)
@@ -147,8 +151,9 @@ def main():
             logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
             logger.info('reverse LM rescoring: %s' % args.recog_reverse_lm_rescoring)
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
-            logger.info('recog unit: %s' % args.recog_unit)
             logger.info('ensemble: %d' % (len(ensemble_models)))
+            logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))
+            logger.info('RNNLM state carry over: %s' % (args.recog_rnnlm_state_carry_over))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache type: %s' % (args.recog_cache_type))
             logger.info('cache theta (speech): %.3f' % (args.recog_cache_theta_speech))
@@ -162,62 +167,65 @@ def main():
 
         start_time = time.time()
 
-        if args.recog_unit in ['word', 'word_char']:
-            wer, n_sub, n_ins, n_del, n_oov_total = eval_word(
-                ensemble_models, dataset, recog_params,
-                epoch=epoch - 1,
-                recog_dir=args.recog_dir,
-                progressbar=True)
-            wer_avg += wer
-            logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
-            logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
-            logger.info('OOV (total): %d' % (n_oov_total))
-
-        elif args.recog_unit == 'wp':
-            wer, n_sub, n_ins, n_del = eval_wordpiece(
-                ensemble_models, dataset, recog_params,
-                epoch=epoch - 1,
-                recog_dir=args.recog_dir,
-                progressbar=True)
-            wer_avg += wer
-            logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
-            logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
-
-        elif 'char' in args.recog_unit:
-            (wer, n_sub, n_ins, n_del), (cer, _, _, _) = eval_char(
-                ensemble_models, dataset, recog_params,
-                epoch=epoch - 1,
-                recog_dir=args.recog_dir,
-                progressbar=True,
-                task_id=1 if args.recog_unit and 'char' in args.recog_unit else 0)
-            wer_avg += wer
-            cer_avg += cer
-            logger.info('WER / CER (%s): %.2f / %.2f %%' % (dataset.set, wer, cer))
-            logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
-
-        elif 'phone' in args.recog_unit:
-            per, n_sub, n_ins, n_del = eval_phone(
-                ensemble_models, dataset, recog_params,
-                epoch=epoch - 1,
-                recog_dir=args.recog_dir,
-                progressbar=True)
-            per_avg += per
-            logger.info('PER (%s): %.2f %%' % (dataset.set, per))
-            logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
-
+        if args.recog_metric == 'edit_distance':
+            if args.recog_unit in ['word', 'word_char']:
+                wer = eval_word(ensemble_models, dataset, recog_params,
+                                epoch=epoch - 1,
+                                recog_dir=args.recog_dir,
+                                progressbar=True)[0]
+                wer_avg += wer
+            elif args.recog_unit == 'wp':
+                wer, _, _, _ = eval_wordpiece(ensemble_models, dataset, recog_params,
+                                              epoch=epoch - 1,
+                                              recog_dir=args.recog_dir,
+                                              progressbar=True)
+                wer_avg += wer
+            elif 'char' in args.recog_unit:
+                (wer, _, _, _), (cer, _, _, _) = eval_char(
+                    ensemble_models, dataset, recog_params,
+                    epoch=epoch - 1,
+                    recog_dir=args.recog_dir,
+                    progressbar=True,
+                    task_id=1 if args.recog_unit and 'char' in args.recog_unit else 0)
+                wer_avg += wer
+                cer_avg += cer
+            elif 'phone' in args.recog_unit:
+                per = eval_phone(ensemble_models, dataset, recog_params,
+                                 epoch=epoch - 1,
+                                 recog_dir=args.recog_dir,
+                                 progressbar=True)[0]
+                per_avg += per
+            else:
+                raise ValueError(args.recog_unit)
+        elif args.recog_metric == 'acc':
+            raise NotImplementedError
+        elif args.recog_metric in ['ppl', 'loss']:
+            ppl, loss = eval_ppl(ensemble_models, dataset,
+                                 recog_params=recog_params,
+                                 progressbar=True)
+            ppl_avg += ppl
+            loss_avg += loss
+        elif args.recog_metric == 'bleu':
+            raise NotImplementedError
         else:
-            raise ValueError(args.recog_unit)
+            raise NotImplementedError
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
-    if args.recog_unit == 'word':
-        logger.info('WER (avg.): %.2f %%\n' % (wer_avg / len(args.recog_sets)))
-    if args.recog_unit == 'wp':
-        logger.info('WER (avg.): %.2f %%\n' % (wer_avg / len(args.recog_sets)))
-    elif 'char' in args.recog_unit:
-        logger.info('WER / CER (avg.): %.2f / %.2f %%\n' %
-                    (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
-    elif 'phone' in args.recog_unit:
-        logger.info('PER (avg.): %.2f %%\n' % (per_avg / len(args.recog_sets)))
+    if args.recog_metric == 'edit_distance':
+        if args.recog_unit == 'word':
+            logger.info('WER (avg.): %.2f %%\n' % (wer_avg / len(args.recog_sets)))
+        if args.recog_unit == 'wp':
+            logger.info('WER (avg.): %.2f %%\n' % (wer_avg / len(args.recog_sets)))
+        elif 'char' in args.recog_unit:
+            logger.info('WER / CER (avg.): %.2f / %.2f %%\n' %
+                        (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
+        elif 'phone' in args.recog_unit:
+            logger.info('PER (avg.): %.2f %%\n' % (per_avg / len(args.recog_sets)))
+    elif args.recog_metric in ['ppl', 'loss']:
+        logger.info('PPL (avg.): %.2f\n' % (ppl_avg / len(args.recog_sets)))
+        print('PPL (avg.): %.2f' % (ppl_avg / len(args.recog_sets)))
+        logger.info('Loss (avg.): %.2f\n' % (loss_avg / len(args.recog_sets)))
+        print('Loss (avg.): %.2f' % (loss_avg / len(args.recog_sets)))
 
 
 if __name__ == '__main__':

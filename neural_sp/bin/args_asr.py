@@ -200,7 +200,7 @@ def parse():
                         help='step to print log')
     parser.add_argument('--metric', type=str, default='edit_distance',
                         choices=['edit_distance', 'loss', 'acc', 'ppl', 'bleu'],
-                        help='')
+                        help='metric for evaluation during training')
     parser.add_argument('--decay_type', type=str, default='epoch',
                         choices=['epoch', 'metric', 'warmup'],
                         help='')
@@ -352,6 +352,9 @@ def parse():
     parser.add_argument('--recog_unit', type=str, default=False, nargs='?',
                         choices=['word', 'wp', 'char', 'phone', 'word_char'],
                         help='')
+    parser.add_argument('--recog_metric', type=str, default='edit_distance',
+                        choices=['edit_distance', 'loss', 'acc', 'ppl', 'bleu'],
+                        help='metric for evaluation')
     parser.add_argument('--recog_batch_size', type=int, default=1,
                         help='size of mini-batch in evaluation')
     parser.add_argument('--recog_beam_width', type=int, default=1,
@@ -384,6 +387,10 @@ def parse():
                         help='backward attention decoding')
     parser.add_argument('--recog_reverse_lm_rescoring', type=strtobool, default=False,
                         help='rescore with another LM in the reverse direction')
+    parser.add_argument('--recog_asr_state_carry_over', type=strtobool, default=False,
+                        help='carry over ASR decoder state')
+    parser.add_argument('--recog_rnnlm_state_carry_over', type=strtobool, default=False,
+                        help='carry over RNNLM state')
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
     parser.add_argument('--recog_cache_theta_speech', type=float, default=0.1,

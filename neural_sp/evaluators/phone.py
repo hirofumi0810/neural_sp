@@ -109,4 +109,7 @@ def eval_phone(models, dataset, recog_params, epoch,
     n_ins /= n_phone
     n_del /= n_phone
 
+    logger.info('PER (%s): %.2f %%' % (dataset.set, per))
+    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
+
     return per, n_sub, n_ins, n_del
