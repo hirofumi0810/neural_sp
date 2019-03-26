@@ -29,8 +29,8 @@ from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
-from neural_sp.evaluators.loss import eval_loss
 from neural_sp.evaluators.phone import eval_phone
+from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
@@ -424,8 +424,11 @@ def main():
                         metric_dev = eval_phone([model.module], dev_set, recog_params,
                                                 epoch=epoch)[0]
                         logger.info('PER (%s): %.2f %%' % (dev_set.set, metric_dev))
+                elif args.metric == 'ppl':
+                    metric_dev = eval_ppl([model.module], dev_set, recog_params)[0]
+                    logger.info('PPL (%s): %.2f %%' % (dev_set.set, metric_dev))
                 elif args.metric == 'loss':
-                    metric_dev = eval_loss([model.module], dev_set, recog_params)
+                    metric_dev = eval_ppl([model.module], dev_set, recog_params)[1]
                     logger.info('Loss (%s): %.2f %%' % (dev_set.set, metric_dev))
                 else:
                     raise NotImplementedError(args.metric)
@@ -467,8 +470,11 @@ def main():
                                 per_test = eval_phone([model.module], s, recog_params,
                                                       epoch=epoch)[0]
                                 logger.info('PER (%s): %.2f %%' % (s.set, per_test))
+                        elif args.metric == 'ppl':
+                            ppl_test = eval_ppl([model.module], s, recog_params)[0]
+                            logger.info('PPL (%s): %.2f %%' % (s.set, ppl_test))
                         elif args.metric == 'loss':
-                            loss_test = eval_loss([model.module], s, recog_params)
+                            loss_test = eval_ppl([model.module], s, recog_params)[1]
                             logger.info('Loss (%s): %.2f %%' % (s.set, loss_test))
                         else:
                             raise NotImplementedError(args.metric)
