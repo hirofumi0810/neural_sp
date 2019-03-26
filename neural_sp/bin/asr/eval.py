@@ -135,6 +135,7 @@ def main():
 
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('recog metric: %s' % args.recog_metric)
+            logger.info('recog oracle: %s' % args.recog_oracle)
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
             logger.info('beam width: %d' % args.recog_beam_width)
@@ -175,11 +176,13 @@ def main():
                                 progressbar=True)[0]
                 wer_avg += wer
             elif args.recog_unit == 'wp':
-                wer, _, _, _ = eval_wordpiece(ensemble_models, dataset, recog_params,
-                                              epoch=epoch - 1,
-                                              recog_dir=args.recog_dir,
-                                              progressbar=True)
+                (wer, _, _, _), (cer, _, _, _) = eval_wordpiece(
+                    ensemble_models, dataset, recog_params,
+                    epoch=epoch - 1,
+                    recog_dir=args.recog_dir,
+                    progressbar=True)
                 wer_avg += wer
+                cer_avg += cer
             elif 'char' in args.recog_unit:
                 (wer, _, _, _), (cer, _, _, _) = eval_char(
                     ensemble_models, dataset, recog_params,
@@ -215,7 +218,8 @@ def main():
         if args.recog_unit == 'word':
             logger.info('WER (avg.): %.2f %%\n' % (wer_avg / len(args.recog_sets)))
         if args.recog_unit == 'wp':
-            logger.info('WER (avg.): %.2f %%\n' % (wer_avg / len(args.recog_sets)))
+            logger.info('WER / CER (avg.): %.2f / %.2f %%\n' %
+                        (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
         elif 'char' in args.recog_unit:
             logger.info('WER / CER (avg.): %.2f / %.2f %%\n' %
                         (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))

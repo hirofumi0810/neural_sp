@@ -114,6 +114,9 @@ def eval_char(models, dataset, recog_params, epoch,
                     n_word += len(ref.split(' '))
 
                 # Compute CER
+                if dataset.corpus == 'csj':
+                    ref = ref.replace(' ', '')
+                    hyp = hyp.replace(' ', '')
                 cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref),
                                                          hyp=list(hyp),
                                                          normalize=False)
@@ -148,7 +151,9 @@ def eval_char(models, dataset, recog_params, epoch,
     n_ins_c /= n_char
     n_del_c /= n_char
 
-    logger.info('WER / CER (%s): %.2f / %.2f %%' % (dataset.set, wer, cer))
+    logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
     logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
+    logger.info('CER (%s): %.2f %%' % (dataset.set, cer))
+    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
 
     return (wer, n_sub_w, n_ins_w, n_del_w), (cer, n_sub_c, n_ins_c, n_del_c)

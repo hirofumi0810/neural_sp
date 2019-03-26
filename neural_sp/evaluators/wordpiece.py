@@ -32,9 +32,13 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
         progressbar (bool): if True, visualize the progressbar
     Returns:
         wer (float): Word error rate
-        n_sub (int): the number of substitution errors
-        n_ins (int): the number of insertion errors
-        n_del (int): the number of deletion errors
+        n_sub_w (int): the number of substitution errors for WER
+        n_ins_w (int): the number of insertion errors for WER
+        n_del_w (int): the number of deletion errors for WER
+        cer (float): Character error rate
+        n_sub_w (int): the number of substitution errors for CER
+        n_ins_c (int): the number of insertion errors for CER
+        n_del_c (int): the number of deletion errors for CER
 
     """
     # Reset data counter
@@ -53,9 +57,10 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
         ref_trn_save_path = mkdir_join(recog_dir, 'ref.trn')
         hyp_trn_save_path = mkdir_join(recog_dir, 'hyp.trn')
 
-    wer = 0
-    n_sub, n_ins, n_del = 0, 0, 0
-    n_word = 0
+    wer, cer = 0, 0
+    n_sub_w, n_ins_w, n_del_w = 0, 0, 0
+    n_sub_c, n_ins_c, n_del_c = 0, 0, 0
+    n_word, n_char = 0, 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
@@ -90,10 +95,23 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
                                                          hyp=hyp.split(' '),
                                                          normalize=False)
                 wer += wer_b
-                n_sub += sub_b
-                n_ins += ins_b
-                n_del += del_b
+                n_sub_w += sub_b
+                n_ins_w += ins_b
+                n_del_w += del_b
                 n_word += len(ref.split(' '))
+
+                # Compute CER
+                if dataset.corpus == 'csj':
+                    ref = ref.replace(' ', '')
+                    hyp = hyp.replace(' ', '')
+                cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref),
+                                                         hyp=list(hyp),
+                                                         normalize=False)
+                cer += cer_b
+                n_sub_c += sub_b
+                n_ins_c += ins_b
+                n_del_c += del_b
+                n_char += len(ref)
 
                 if progressbar:
                     pbar.update(1)
@@ -108,11 +126,18 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     dataset.reset()
 
     wer /= n_word
-    n_sub /= n_word
-    n_ins /= n_word
-    n_del /= n_word
+    n_sub_w /= n_word
+    n_ins_w /= n_word
+    n_del_w /= n_word
+
+    cer /= n_char
+    n_sub_c /= n_char
+    n_ins_c /= n_char
+    n_del_c /= n_char
 
     logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
-    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
+    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
+    logger.info('CER (%s): %.2f %%' % (dataset.set, cer))
+    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
 
-    return wer, n_sub, n_ins, n_del
+    return (wer, n_sub_w, n_ins_w, n_del_w), (cer, n_sub_c, n_ins_c, n_del_c)
