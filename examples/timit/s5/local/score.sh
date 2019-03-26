@@ -42,7 +42,6 @@ for set in dev test; do
     if ${gnmt_decoding}; then
         recog_dir=${recog_dir}_gnmt
     fi
-    fi
     mkdir -p ${recog_dir}
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
