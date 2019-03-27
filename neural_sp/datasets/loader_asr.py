@@ -284,15 +284,12 @@ class Dataset(Base):
                         [x_prev, np.zeros((self.pad_xlen, self.input_dim), dtype=np.float32), xs[j]], axis=0)
 
         # outputs
-        if self.is_test:
-            ys = [self.df['text'][i] for i in df_indices]
-        else:
-            ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in df_indices]
-            if self.concat_prev_n_utterances > 0:
-                for j, i in enumerate(df_indices):
-                    for i_prev in self.df['prev_utt'][i][::-1]:
-                        y_prev = list(map(int, str(self.df['token_id'][i_prev]).split()))
-                        ys[j] = y_prev + [self.eos] + ys[j][:]
+        ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in df_indices]
+        if self.concat_prev_n_utterances > 0:
+            for j, i in enumerate(df_indices):
+                for i_prev in self.df['prev_utt'][i][::-1]:
+                    y_prev = list(map(int, str(self.df['token_id'][i_prev]).split()))
+                    ys[j] = y_prev + [self.eos] + ys[j][:]
 
         ys_cache = []
         if self.cache_prev_n_tokens > 0:
@@ -307,24 +304,15 @@ class Dataset(Base):
 
         ys_sub1 = []
         if self.df_sub1 is not None:
-            if self.is_test:
-                ys_sub1 = [self.df_sub1['text'][i] for i in df_indices]
-            else:
-                ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in df_indices]
+            ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in df_indices]
 
         ys_sub2 = []
         if self.df_sub2 is not None:
-            if self.is_test:
-                ys_sub2 = [self.df_sub2['text'][i] for i in df_indices]
-            else:
-                ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in df_indices]
+            ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in df_indices]
 
         ys_sub3 = []
         if self.df_sub3 is not None:
-            if self.is_test:
-                ys_sub3 = [self.df_sub3['text'][i] for i in df_indices]
-            else:
-                ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in df_indices]
+            ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in df_indices]
 
         batch_dict = {
             'xs': xs,
