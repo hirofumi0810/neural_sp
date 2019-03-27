@@ -100,13 +100,14 @@ bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
 ### LM integration
-cold_fusion_type=hidden
-rnnlm_cold_fusion=
+lm_fusion_type=hidden
+rnnlm_fusion=
 rnnlm_init=
 lmobj_weight=0.0
 share_lm_softmax=
 # contextualization
 concat_prev_n_utterances=0
+n_caches=0
 
 #########################
 # RNNLM configuration
@@ -144,6 +145,8 @@ lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_weight_decay=1e-6
 lm_backward=
+# contextualization
+lm_serialize=true
 
 ### path to save the model
 model=/n/sd8/inaguma/result/librispeech
@@ -376,7 +379,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_out ${lm_dropout_out} \
         --dropout_emb ${lm_dropout_emb} \
         --weight_decay ${lm_weight_decay} \
-        --backward ${lm_backward} || exit 1;
+        --backward ${lm_backward} \
+        --serialize ${lm_serialize} || exit 1;
     # --resume ${rnnlm_resume} || exit 1;
 
     echo "Finish RNNLM training (stage: 3)." && exit 1;
@@ -463,12 +467,13 @@ if [ ${stage} -le 4 ]; then
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \
-        --cold_fusion_type ${cold_fusion_type} \
-        --rnnlm_cold_fusion ${rnnlm_cold_fusion} \
+        --lm_fusion_type ${lm_fusion_type} \
+        --rnnlm_fusion ${rnnlm_fusion} \
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
         --concat_prev_n_utterances ${concat_prev_n_utterances} \
+        --n_caches ${n_caches} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

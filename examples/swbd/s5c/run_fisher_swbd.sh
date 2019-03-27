@@ -100,14 +100,14 @@ bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
 ### LM integration
-cold_fusion_type=hidden
-rnnlm_cold_fusion=
+lm_fusion_type=hidden
+rnnlm_fusion=
 rnnlm_init=
 lmobj_weight=0.0
 share_lm_softmax=
 # contextualization
 concat_prev_n_utterances=0
-cache_prev_n_tokens=0
+n_caches=0
 
 #########################
 # RNNLM configuration
@@ -502,13 +502,13 @@ if [ ${stage} -le 4 ]; then
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \
-        --cold_fusion_type ${cold_fusion_type} \
-        --rnnlm_cold_fusion ${rnnlm_cold_fusion} \
+        --lm_fusion_type ${lm_fusion_type} \
+        --rnnlm_fusion ${rnnlm_fusion} \
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
         --concat_prev_n_utterances ${concat_prev_n_utterances} \
-        --cache_prev_n_tokens ${cache_prev_n_tokens} \
+        --n_caches ${n_caches} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

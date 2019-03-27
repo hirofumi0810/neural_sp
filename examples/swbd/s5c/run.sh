@@ -100,14 +100,14 @@ bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
 ### LM integration
-cold_fusion_type=hidden
-rnnlm_cold_fusion=
+lm_fusion_type=hidden
+rnnlm_fusion=
 rnnlm_init=
 lmobj_weight=0.0
 share_lm_softmax=
 # contextualization
 concat_prev_n_utterances=0
-cache_prev_n_tokens=0
+n_caches=0
 
 #########################
 # RNNLM configuration
@@ -420,25 +420,6 @@ if [ ${stage} -le 3 ]; then
         touch ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    # normlization for evasl2000 sets
-    for x in ${test_set}; do
-        cp ${data}/${test_set}/text ${data}/${test_set}/text.tmp.0
-        cut -f 2- -d " " ${data}/${test_set}/text.tmp.0 | awk '{ print tolower($0) }' | \
-            perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' \
-            > ${data}/${test_set}/text.tmp.1
-        paste -d " " <(cut -f 1 -d " " ${data}/${test_set}/text.tmp.0) \
-            <(cat ${data}/${test_set}/text.tmp.1) > ${data}/${test_set}/text.lm
-        rm ${data}/${test_set}/text.tmp*
-
-        grep -v en ${data}/${test_set}/text.lm > ${data}/${test_set}/text.lm.swbd
-        grep -v sw ${data}/${test_set}/text.lm > ${data}/${test_set}/text.lm.ch
-
-        make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.lm.swbd \
-            ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_swbd_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-        make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.lm.ch \
-            ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_ch_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-    done
-
     lm_test_set="${data}/dataset_lm/${test_set}_swbd_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
                  ${data}/dataset_lm/${test_set}_ch_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv"
 
@@ -569,13 +550,13 @@ if [ ${stage} -le 4 ]; then
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \
-        --cold_fusion_type ${cold_fusion_type} \
-        --rnnlm_cold_fusion ${rnnlm_cold_fusion} \
+        --lm_fusion_type ${lm_fusion_type} \
+        --rnnlm_fusion ${rnnlm_fusion} \
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
         --concat_prev_n_utterances ${concat_prev_n_utterances} \
-        --cache_prev_n_tokens ${cache_prev_n_tokens} \
+        --n_caches ${n_caches} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."
