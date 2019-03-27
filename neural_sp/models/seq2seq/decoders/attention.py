@@ -106,7 +106,7 @@ class AttentionMechanism(nn.Module):
         self.key_a = None
         self.mask = None
 
-    def forward(self, key, key_lens, value, query, aw=None):
+    def forward(self, key, key_lens, value, query, aw=None, return_logits=False):
         """Forward computation.
 
         Args:
@@ -115,6 +115,7 @@ class AttentionMechanism(nn.Module):
             value (FloatTensor): `[B, T, value_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
             aw (FloatTensor): `[B, T]`
+            return_logits (bool): return logits before the softmax
         Returns:
             cv (FloatTensor): `[B, 1, value_dim]`
             aw (FloatTensor): `[B, T]`
@@ -165,6 +166,10 @@ class AttentionMechanism(nn.Module):
 
         # Compute attention weights
         e = e.masked_fill_(self.mask == 0, -float('inf'))  # `[B, T]`
+
+        if return_logits:
+            return e
+
         if self.sigmoid_smoothing:
             aw = F.sigmoid(e) / F.sigmoid(e).sum(-1).unsqueeze(-1)
         else:
