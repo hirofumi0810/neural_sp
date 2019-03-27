@@ -86,8 +86,6 @@ class RNNDecoder(nn.Module):
         cold_fusion_type (str): the type of cold fusion
             prob: logits of RNNLM
             hidden: hidden states of RNNLM
-            prob_dot_attention:
-            hidden_dot_attention:
         cache_prev_n_tokens (int):
         rnnlm_init (RNNLM):
         lmobj_weight (float):
@@ -178,8 +176,8 @@ class RNNDecoder(nn.Module):
             assert loop_type == 'normal'
         self.backward = backward
         self.rnnlm_cf = rnnlm_cold_fusion
-        self.cold_fusion_type = cold_fusion_type
-        self.cache_prev_n_tokens = cache_prev_n_tokens
+        self.lm_fusion_type = cold_fusion_type
+        self.n_caches = cache_prev_n_tokens
         self.rnnlm_init = rnnlm_init
         if rnnlm_init:
             assert loop_type == 'lmdecoder'
@@ -193,11 +191,12 @@ class RNNDecoder(nn.Module):
 
         # for cache
         self.fifo_cache_ids = []
-        self.fifo_cache_values_asr = []
-        self.fifo_cache_values_lm = []
-        self.fifo_cache_keys_lm = None
+        self.fifo_sp_cache_values = []
+        self.fifo_lm_cache_values = []
+        self.fifo_lm_cache_keys = None
         self.prev_spk = ''
-        self.lm_final_state = (None, None)
+        self.dstates_final = None
+        self.lmstate_final = (None, None)
 
         if ctc_weight > 0:
             # Fully-connected layers for CTC
@@ -267,6 +266,8 @@ class RNNDecoder(nn.Module):
 
             if loop_type == 'normal':
                 dec_idim = n_units if input_feeding else enc_n_units
+                if cold_fusion_type in ['hidden_update', 'hidden_dot_attention_update', 'hidden_add_attention_update']:
+                    dec_idim += n_units
                 self.rnn += [rnn_cell(emb_dim + dec_idim, n_units)]
                 dec_idim = n_units
                 if self.n_projs > 0:
@@ -345,29 +346,24 @@ class RNNDecoder(nn.Module):
             # cold fusion
             dout_dim = n_projs if self.n_projs > 0 else n_units
             if self.rnnlm_cf is not None:
-                # self.cf_linear_dec_feat = LinearND(dout_dim + enc_n_units, n_units)
+                self.cf_linear_dec_feat = LinearND(dout_dim + enc_n_units, n_units)
+
                 if cold_fusion_type == 'hidden':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                 elif cold_fusion_type == 'prob':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units)
-                elif cold_fusion_type in ['hidden_dot_attention', 'prob_dot_attention']:
-                    # query: ASR state, context vector
-                    if self.cold_fusion_type == 'hidden_dot_attention':
-                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
-                    elif self.cold_fusion_type == 'prob_dot_attention':
-                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units)
+                elif cold_fusion_type == 'hidden_update':
+                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
+                elif cold_fusion_type in ['hidden_dot_attention', 'hidden_dot_attention_update']:
+                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                     self.score_cf = AttentionMechanism(
                         key_dim=self.rnnlm_cf.n_units,
                         query_dim=n_units,
                         attn_type='dot',
                         attn_dim=attn_dim,
                         dropout=dropout_att)
-                elif cold_fusion_type in ['hidden_add_attention', 'prob_add_attention']:
-                    # query: ASR state, context vector
-                    if self.cold_fusion_type == 'hidden_add_attention':
-                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
-                    elif self.cold_fusion_type == 'prob_add_attention':
-                        self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.vocab, n_units)
+                elif cold_fusion_type in ['hidden_add_attention', 'hidden_add_attention_update']:
+                    self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                     self.score_cf = AttentionMechanism(
                         key_dim=self.rnnlm_cf.n_units,
                         query_dim=n_units,
@@ -377,12 +373,15 @@ class RNNDecoder(nn.Module):
                 else:
                     raise ValueError(cold_fusion_type)
                 self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
-                # self.output_bn = LinearND(n_units * 2, n_units)
-                self.output_bn = LinearND(n_units * 2 + enc_n_units, n_units)
+                if cold_fusion_type in ['hidden_update', 'hidden_dot_attention_update', 'hidden_add_attention_update']:
+                    self.output_bn = LinearND(n_units + enc_n_units, n_units)
+                else:
+                    self.output_bn = LinearND(n_units * 2, n_units)
 
                 # fix RNNLM parameters
                 for p in self.rnnlm_cf.parameters():
                     p.requires_grad = False
+                # TODO(hirofumi): add joint training option
             else:
                 self.output_bn = LinearND(dout_dim + enc_n_units, n_units)
 
@@ -606,7 +605,8 @@ class RNNDecoder(nn.Module):
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
-        lm_state = (None, None)
+        lmstate = (None, None)
+        lm_feat = eouts.new_zeros(bs, 1, self.dec_n_units)
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
@@ -614,25 +614,25 @@ class RNNDecoder(nn.Module):
             ys_lm_emb = self.rnnlm_cf.encode(ys_in_pad)
 
         # Pre-computation of RNNLM states for history
-        if self.cache_prev_n_tokens > 0:
+        if self.n_caches > 0:
             # NOTE: ys_cache already includes <sos> and <eos>
             ys_cache_pad = pad_list([np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long()
                                      for y in ys_cache], self.pad)
             ys_lm_emb_cache = self.rnnlm_cf.encode(ys_cache_pad)
             ylens_cache = [len(y) for y in ys_cache]
-
             assert self.rnnlm_cf is not None
 
-            lm_outs = []
+            lmouts = []
             hxs = [None] * bs
             cxs = [None] * bs
             for t_c in range(max(ylens_cache)):
-                lm_out, lm_state = self.rnnlm_cf.decode(ys_lm_emb_cache[:, t_c:t_c + 1], lm_state)
+                lmout, lmstate = self.rnnlm_cf.decode(ys_lm_emb_cache[:, t_c:t_c + 1], lmstate)
                 for b in [i for i, ylen in enumerate(ylens_cache) if ylen == t_c + 1]:
-                    hxs[b] = lm_state[0][:, b:b + 1]
+                    hxs[b] = lmstate[0][:, b:b + 1]
                     if self.rnnlm_cf.rnn_type == 'lstm':
-                        cxs[b] = lm_state[1][:, b:b + 1]
-                lm_outs.append(lm_out)
+                        cxs[b] = lmstate[1][:, b:b + 1]
+                if self.lm_fusion_type not in ['hidden', 'prob', 'hidden_update']:
+                    lmouts.append(lmout)
 
             # ylens_cache[b] == 0 case
             for b in [i for i, ylen in enumerate(ylens_cache) if ylen == 0]:
@@ -641,28 +641,27 @@ class RNNDecoder(nn.Module):
                 if self.rnnlm_cf.rnn_type == 'lstm':
                     cxs[b] = cxs_b
 
-            # Concatenate lm_state, lm_outs
+            # Concatenate lmstate, lmouts
             hxs = torch.cat(hxs, dim=1)  # `[lm_n_layers, B, lm_n_units]`
             if self.rnnlm_cf.rnn_type == 'lstm':
                 cxs = torch.cat(cxs, dim=1)
-            lm_outs = torch.cat(lm_outs, dim=1)  # `[B, cache_prev_n_tokens, lm_n_units]`
+            lmstate = (hxs, cxs)
 
-            # Pad the leftmost in lm_outs
-            lm_outs_list = []
-            for b in range(bs):
-                pad_len = self.cache_prev_n_tokens - ylens_cache[b]
-                if pad_len > 0:
-                    lm_outs_list.append(lm_outs[b, :ylens_cache[b]])
-                else:
-                    lm_outs_list.append(ys_lm_emb_cache.new_zeros(pad_len, self.rnnlm_cf.n_units))
-                # if ylens_cache[b] < self.cache_prev_n_tokens:
-                #     pad_len = self.cache_prev_n_tokens - ylens_cache[b]
-                #     lm_outs_b = ys_lm_emb_cache.new_zeros(1, pad_len, self.rnnlm_cf.n_units)
-                #     lm_outs[b:b + 1, -pad_len:] = lm_outs_b
-            lm_outs = pad_list(lm_outs_list, pad_left=True)
+            if self.lm_fusion_type not in ['hidden', 'prob', 'hidden_update']:
+                lmouts = torch.cat(lmouts, dim=1)  # `[B, cache_size, lm_n_units]`
 
-            self.fifo_cache_keys_lm = lm_outs
-            # NOTE: RNNLM are not trained so as to decode <pad> tokens
+                # Pad the leftmost in lmouts
+                lm_outs_list = []
+                for b in range(bs):
+                    pad_len = self.n_caches - ylens_cache[b]
+                    if pad_len > 0:
+                        lm_outs_list.append(lmouts[b, :ylens_cache[b]])
+                    else:
+                        lm_outs_list.append(ys_lm_emb_cache.new_zeros(pad_len, self.rnnlm_cf.n_units))
+                lmouts = pad_list(lm_outs_list, pad_left=True)
+
+                self.fifo_lm_cache_keys = lmouts
+                # NOTE: RNNLM are not trained so as to decode <pad> tokens
 
         logits = []
         for t in range(ys_in_pad.size(1)):
@@ -675,29 +674,31 @@ class RNNDecoder(nn.Module):
 
             # Recurrency (1st)
             dec_in = attn_v if self.input_feeding else cv
+            if self.lm_fusion_type in ['hidden_update', 'hidden_dot_attention_update', 'hidden_add_attention_update']:
+                dec_in = torch.cat([dec_in, lm_feat], dim=-1)
             if self.loop_type in ['conditional', 'rnmt']:
                 dstates = self.recurrency_step1(y_emb, dec_in, dstates)
             elif self.loop_type in ['normal', 'lmdecoder']:
                 dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
 
             # Update RNNLM states for cold fusion
-            lm_out = None
+            lmout = None
             if self.rnnlm_cf is not None:
                 if is_sample:
                     y_lm_emb = self.rnnlm_cf.encode(logits[-1].detach().argmax(-1))
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
-                lm_out, lm_state = self.rnnlm_cf.decode(y_lm_emb, lm_state)
-                if self.cold_fusion_type not in ['hidden', 'prob']:
-                    if self.cache_prev_n_tokens > 0:
-                        self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
+                lmout, lmstate = self.rnnlm_cf.decode(y_lm_emb, lmstate)
+                if self.lm_fusion_type not in ['hidden', 'prob', 'hidden_update']:
+                    if self.n_caches > 0:
+                        self.fifo_lm_cache_keys = torch.cat([self.fifo_lm_cache_keys, lmout], dim=1)
                         # Truncate
-                        # self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
+                        self.fifo_lm_cache_keys = self.fifo_lm_cache_keys[:, -self.n_caches:]
                     else:
-                        if self.fifo_cache_keys_lm is None:
-                            self.fifo_cache_keys_lm = lm_out
+                        if self.fifo_lm_cache_keys is None:
+                            self.fifo_lm_cache_keys = lmout
                         else:
-                            self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
+                            self.fifo_lm_cache_keys = torch.cat([self.fifo_lm_cache_keys, lmout], dim=1)
 
             # Score
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
@@ -707,11 +708,11 @@ class RNNDecoder(nn.Module):
                 dstates = self.recurrency_step2(cv, dstates)
 
             # Generate
-            attn_v, _ = self.generate(cv, dstates['dout_gen'], lm_out)
+            attn_v, _, lm_feat = self.generate(cv, dstates['dout_gen'], lmout)
             logits.append(self.output(attn_v))
 
         # Reset cache
-        self.fifo_cache_keys_lm = None
+        self.fifo_lm_cache_keys = None
 
         # Compute XE sequence loss
         logits = torch.cat(logits, dim=1)
@@ -994,47 +995,58 @@ class RNNDecoder(nn.Module):
         dstates_new['dstate2'] = (hxs[:], cxs[:])
         return dstates_new
 
-    def generate(self, cv, dout, lm_out):
+    def generate(self, cv, dout, lmout):
         """Generate function.
 
         Args:
             cv (FloatTensor): `[B, 1, enc_n_units]`
             dout (FloatTensor): `[B, 1, dec_n_units]`
-            lm_out (FloatTensor): `[B, 1, lm_n_units]`
+            lmout (FloatTensor): `[B, 1, lm_n_units]`
         Returns:
             attn_v (FloatTensor): `[B, 1, vocab]`
             aw_cf (FloatTensor):
+            lm_feat (FloatTensor):
 
         """
         aw_cf = None
+        gated_lm_feat = None
         if self.rnnlm_cf is not None:
             # cold fusion
-            # dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
-            dec_feat = dout
-            if self.cold_fusion_type == 'hidden':
-                lm_feat = self.cf_linear_lm_feat(lm_out)
-            elif self.cold_fusion_type == 'prob':
-                lm_feat = self.cf_linear_lm_feat(self.rnnlm_cf.generate(lm_out))
-            else:
+            dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
+            if self.lm_fusion_type in ['hidden_update']:
+                lm_feat = self.cf_linear_lm_feat(lmout)
+                gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+                gated_lm_feat = gate * lm_feat  # element-wise
+                out = self.output_bn(torch.cat([dout, cv], dim=-1))
+            elif self.lm_fusion_type in ['hidden_dot_attention_update', 'hidden_add_attention_update']:
                 self.score_cf.reset()
-                memory = self.fifo_cache_keys_lm
+                memory = self.fifo_lm_cache_keys
                 memory_lens = [memory.size(1)] * dout.size(0)
-                if self.cold_fusion_type == 'hidden_dot_attention':
+                cv_cf, aw_cf = self.score_cf(memory, memory_lens,
+                                             memory, dec_feat, aw=None)
+                lm_feat = self.cf_linear_lm_feat(cv_cf)
+                gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+                gated_lm_feat = gate * lm_feat  # element-wise
+                out = self.output_bn(torch.cat([dout, cv], dim=-1))
+            else:
+                if self.lm_fusion_type == 'hidden':
+                    lm_feat = self.cf_linear_lm_feat(lmout)
+                elif self.lm_fusion_type == 'prob':
+                    lm_feat = self.cf_linear_lm_feat(self.rnnlm_cf.generate(lmout))
+                elif self.lm_fusion_type in ['hidden_dot_attention', 'hidden_add_attention']:
+                    self.score_cf.reset()
+                    memory = self.fifo_lm_cache_keys
+                    memory_lens = [memory.size(1)] * dout.size(0)
                     cv_cf, aw_cf = self.score_cf(memory, memory_lens,
                                                  memory, dec_feat, aw=None)
-                elif self.cold_fusion_type == 'prob_dot_attention':
-                    cv_cf, aw_cf = self.score_cf(memory, memory_lens,
-                                                 self.rnnlm_cf.generate(memory), dec_feat, aw=None)
-                lm_feat = self.cf_linear_lm_feat(cv_cf)
-
-            gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
-            gated_lm_feat = gate * lm_feat  # element-wise
-            # out = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
-            out = self.output_bn(torch.cat([dec_feat, cv, gated_lm_feat], dim=-1))
+                    lm_feat = self.cf_linear_lm_feat(cv_cf)
+                gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+                gated_lm_feat = gate * lm_feat  # element-wise
+                out = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
             out = self.output_bn(torch.cat([dout, cv], dim=-1))
         attn_v = torch.tanh(out)
-        return attn_v, aw_cf
+        return attn_v, aw_cf, gated_lm_feat
 
     def greedy(self, eouts, elens, max_len_ratio, exclude_eos=False, speakers=None):
         """Greedy decoding in the inference stage.
@@ -1058,7 +1070,8 @@ class RNNDecoder(nn.Module):
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
-        lm_state = (None, None)
+        lmstate = (None, None)
+        lm_feat = eouts.new_zeros(bs, 1, self.dec_n_units)
 
         if self.backward:
             sos, eos = self.eos, self.sos
@@ -1068,10 +1081,13 @@ class RNNDecoder(nn.Module):
         # Start from <sos> (<eos> in case of the backward decoder)
         y = eouts.new_zeros(bs, 1).fill_(sos).long()
 
-        if self.cache_prev_n_tokens > 0:
+        if self.n_caches > 0:
             assert bs == 1
             if speakers[0] != self.prev_spk:
                 self.reset_global_cache()
+            else:
+                lmstate = self.lmstate_final
+            # NOTE: speech cache is not used here
             self.prev_spk = speakers[0]
 
         best_hyps_tmp, aws_tmp = [], []
@@ -1082,28 +1098,24 @@ class RNNDecoder(nn.Module):
             # Recurrency (1st)
             y_emb = self.embed(y)
             dec_in = attn_v if self.input_feeding else cv
+            if 'update' in self.lm_fusion_type:
+                dec_in = torch.cat([dec_in, lm_feat], dim=-1)
             if self.loop_type in ['conditional', 'rnmt']:
                 dstates = self.recurrency_step1(y_emb, dec_in, dstates)
             elif self.loop_type in ['normal', 'lmdecoder']:
                 dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
 
             # Update RNNLM states for cold fusion
-            lm_out = None
+            lmout = None
             if self.rnnlm_cf is not None:
-                lm_out, lm_state = self.rnnlm_cf.decode(self.rnnlm_cf.encode(y), lm_state)
-                if self.cold_fusion_type not in ['hidden', 'prob']:
-                    if self.cache_prev_n_tokens > 0:
-                        if self.fifo_cache_keys_lm is None:
-                            self.fifo_cache_keys_lm = lm_out
-                        else:
-                            self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
-                        # Truncate
-                        # self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
+                lmout, lmstate = self.rnnlm_cf.decode(self.rnnlm_cf.encode(y), lmstate)
+                if self.n_caches > 0 and 'attention' in self.lm_fusion_type:
+                    if self.fifo_lm_cache_keys is None:
+                        self.fifo_lm_cache_keys = lmout
                     else:
-                        if self.fifo_cache_keys_lm is None:
-                            self.fifo_cache_keys_lm = lm_out
-                        else:
-                            self.fifo_cache_keys_lm = torch.cat([self.fifo_cache_keys_lm, lm_out], dim=1)
+                        self.fifo_lm_cache_keys = torch.cat([self.fifo_lm_cache_keys, lmout], dim=1)
+                    # Truncate
+                    self.fifo_lm_cache_keys = self.fifo_lm_cache_keys[:, -self.n_caches:]
 
             # Score
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
@@ -1113,7 +1125,7 @@ class RNNDecoder(nn.Module):
                 dstates = self.recurrency_step2(cv, dstates)
 
             # Generate
-            attn_v, aw_cf = self.generate(cv, dstates['dout_gen'], lm_out)
+            attn_v, aw_cf, lm_feat = self.generate(cv, dstates['dout_gen'], lmout)
             logits_t = self.output(attn_v)
 
             # Pick up 1-best
@@ -1124,11 +1136,11 @@ class RNNDecoder(nn.Module):
             else:
                 aws_tmp += [aw]
 
-            if self.cache_prev_n_tokens > 0:
+            if self.n_caches > 0 and 'attention' in self.lm_fusion_type:
                 aws_cf += [aw_cf]
                 self.fifo_cache_ids += [y]
                 # Truncate
-                self.fifo_cache_ids = self.fifo_cache_ids[-self.cache_prev_n_tokens:]
+                self.fifo_cache_ids = self.fifo_cache_ids[-self.n_caches:]
 
             # Count lengths of hypotheses
             for b in range(bs):
@@ -1142,13 +1154,14 @@ class RNNDecoder(nn.Module):
             if sum(eos_flags) == bs:
                 break
 
-        # Truncate
-        self.fifo_cache_keys_lm = self.fifo_cache_keys_lm[:, -self.cache_prev_n_tokens:]
+        # RNNLM state carry over
+        if self.rnnlm_cf is not None and self.n_caches > 0:
+            self.lmstate_final = lmstate
 
         # Concatenate in L dimension
         best_hyps_tmp = tensor2np(torch.cat(best_hyps_tmp, dim=1))
         aws_tmp = tensor2np(torch.stack(aws_tmp, dim=1))
-        if self.cache_prev_n_tokens > 0:
+        if len(aws_cf) > 0 and aws_cf[0] is not None:
             self.aws_cf = [tensor2np(a) for a in aws_cf]
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
@@ -1210,6 +1223,7 @@ class RNNDecoder(nn.Module):
         n_models = len(ensemble_decoders) + 1
 
         # TODO(hirofumi): fix later
+        oracle = params['recog_oracle']
         beam_width = params['recog_beam_width']
         ctc_weight = params['recog_ctc_weight']
         lp_weight = params['recog_length_penalty']
@@ -1217,6 +1231,8 @@ class RNNDecoder(nn.Module):
         cp_threshold = params['recog_coverage_threshold']
         lm_weight = params['recog_rnnlm_weight']
         gnmt_decoding = params['recog_gnmt_decoding']
+        asr_state_carry_over = params['recog_asr_state_carry_over']
+        lm_state_carry_over = params['recog_rnnlm_state_carry_over']
         n_caches = params['recog_n_caches']
         cache_theta_sp = params['recog_cache_theta_speech']
         cache_lambda_sp = params['recog_cache_lambda_speech']
@@ -1252,12 +1268,9 @@ class RNNDecoder(nn.Module):
         for b in range(bs):
             # Initialization per utterance
             dstates = self.init_dec_state(1, self.n_layers, eouts[b:b + 1], elens[b:b + 1])
-            if self.input_feeding:
-                cv = eouts.new_zeros(1, 1, self.dec_n_units)
-                # NOTE: this is equivalent to attn_v
-            else:
-                cv = eouts.new_zeros(1, 1, self.enc_n_units)
+            cv = eouts.new_zeros(1, 1, self.dec_n_units if self.input_feeding else self.enc_n_units)
             self.score.reset()
+            lm_hxs, lm_cxs = None, None
 
             # Ensemble initialization
             ensemble_dstates = []
@@ -1272,14 +1285,14 @@ class RNNDecoder(nn.Module):
                         ensemble_cv += [eouts.new_zeros(1, 1, dec.enc_n_units)]
                     dec.score.reset()
 
-            lm_hxs, lm_cxs = None, None
             if speakers[b] != self.prev_spk:
                 self.reset_global_cache()
             else:
-                lm_hxs, lm_cxs = self.lm_final_state
-                self.lm_final_state = None
+                if lm_state_carry_over:
+                    lm_hxs, lm_cxs = self.lmstate_final
+                if asr_state_carry_over:
+                    dstates = self.dstates_final
             self.prev_spk = speakers[b]
-            # lm_hxs, lm_cxs = None, None  # tmp
 
             complete = []
             beam = [{'hyp': [sos],
@@ -1301,18 +1314,24 @@ class RNNDecoder(nn.Module):
                      'ctc_state':  ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
                      'ctc_score': 0,
                      'cache_idx': [],
-                     'cache_val_sp': [],
-                     'cache_val_lm': [],
+                     'sp_cache_val': [],
+                     'lm_cache_val': [],
                      'cache_key_hist': [None],
-                     'cache_attn_sp_hist': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.fifo_cache_ids) == 0 else [],
-                     'cache_attn_lm_hist': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.fifo_cache_ids) == 0 else [],
+                     'sp_cache_attn_hist': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.fifo_cache_ids) == 0 else [],
+                     'lm_cache_attn_hist': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.fifo_cache_ids) == 0 else [],
                      }]
-            ylen_max = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
+            if oracle:
+                assert refs is not None
+                ylen_max = len(refs[b])
+            else:
+                ylen_max = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
             for t in range(ylen_max):
                 new_beam = []
                 for i_beam in range(len(beam)):
+                    prev_idx = ([self.sos] + refs[b])[t] if oracle else beam[i_beam]['hyp'][-1]
+
                     # Recurrency (1st) for the main model
-                    y = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
+                    y = eouts.new_zeros(1, 1).fill_(prev_idx).long()
                     y_emb = self.embed(y)
                     if self.loop_type in ['conditional', 'rnmt']:
                         dstates = self.recurrency_step1(y_emb,
@@ -1357,20 +1376,19 @@ class RNNDecoder(nn.Module):
                             ensemble_cv += [con_vec_e]
                             ensemble_aws += [aw_e]
 
+                    lmout, lmstate = None, None
                     if self.rnnlm_cf is not None:
                         # Update RNNLM states for cold fusion
-                        y_lm = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
-                        lm_out, lm_state = self.rnnlm_cf.decode(
+                        y_lm = eouts.new_zeros(1, 1).fill_(prev_idx).long()
+                        lmout, lmstate = self.rnnlm_cf.decode(
                             self.rnnlm_cf.encode(y_lm),
                             (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
                     elif lm_weight > 0:
                         # Update RNNLM states for shallow fusion
-                        y_lm = eouts.new_zeros(1, 1).fill_(beam[i_beam]['hyp'][-1]).long()
-                        lm_out, lm_state = rnnlm.decode(
+                        y_lm = eouts.new_zeros(1, 1).fill_(prev_idx).long()
+                        lmout, lmstate = rnnlm.decode(
                             rnnlm.encode(y_lm),
                             (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
-                    else:
-                        lm_out, lm_state = None, None
 
                     # Recurrency (2nd, only for the internal decoder) for the main model
                     if self.loop_type in ['conditional', 'rnmt']:
@@ -1388,49 +1406,48 @@ class RNNDecoder(nn.Module):
                     ensemble_dstates = ensemble_dstates_tmp[:]
 
                     # Generate for the main model
-                    attn_v, _ = self.generate(cv, dstates['dout_gen'], lm_out)
+                    attn_v, _, lm_feat = self.generate(cv, dstates['dout_gen'], lmout)
                     probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
-                    # NOTE: `[1 (B), 1, vocab]` -> `[1 (B), vocab]`
 
                     # Generate for RNNLM
                     if lm_weight > 0:
                         if self.rnnlm_cf is not None:
-                            lm_probs = F.softmax(self.rnnlm_cf.generate(lm_out).squeeze(1), dim=-1)
+                            lm_probs = F.softmax(self.rnnlm_cf.generate(lmout).squeeze(1), dim=-1)
                         else:
-                            lm_probs = F.softmax(rnnlm.generate(lm_out).squeeze(1), dim=-1)
+                            lm_probs = F.softmax(rnnlm.generate(lmout).squeeze(1), dim=-1)
 
                     # Cache decoding
                     is_cache = len(self.fifo_cache_ids + beam[i_beam]['cache_idx']) > 0
                     cache_idx = None
-                    cache_attn_sp = None
-                    cache_attn_lm = None
+                    sp_cache_attn = None
+                    lm_cache_attn = None
                     cache_probs_sp = torch.zeros_like(probs)
                     cache_probs_lm = torch.zeros_like(probs)
                     if n_caches > 0 and is_cache:
                         # Compute inner-product over caches
                         cache_idx = (self.fifo_cache_ids + beam[i_beam]['cache_idx'])[-n_caches:]
                         if cache_type in ['speech', 'joint']:
-                            cache_val_sp = (self.fifo_cache_values_asr + beam[i_beam]['cache_val_sp'])[-n_caches:]
-                            cache_val_sp = torch.cat(cache_val_sp, dim=1)  # `[1, L, dec_n_units]`
-                            # cache_attn_sp = F.softmax(cache_theta_sp * torch.matmul(
-                            #     cache_val_sp, dstates['dout_gen'].transpose(2, 1)), dim=1)  # `[1, L, 1]`
-                            cache_attn_sp = F.softmax(cache_theta_sp * torch.matmul(
-                                cache_val_sp, cv.transpose(2, 1)), dim=1)  # `[1, L, 1]`
+                            sp_cache_val = (self.fifo_sp_cache_values + beam[i_beam]['sp_cache_val'])[-n_caches:]
+                            sp_cache_val = torch.cat(sp_cache_val, dim=1)  # `[1, L, enc_n_units]`
+                            sp_cache_attn = F.softmax(cache_theta_sp * torch.matmul(
+                                sp_cache_val, cv.transpose(2, 1)), dim=1)  # `[1, L, 1]`
+                            # sp_cache_attn = F.softmax(cache_theta_sp * torch.matmul(
+                            #     sp_cache_val, dstates['dout_gen'].transpose(2, 1)), dim=1)  # `[1, L, 1]`
                             # Sum all probabilities
                             for c in set(beam[i_beam]['cache_idx']):
                                 for offset in [i for i, key in enumerate(cache_idx) if key == c]:
-                                    cache_probs_sp[0, c] += cache_attn_sp[0, offset, 0]
+                                    cache_probs_sp[0, c] += sp_cache_attn[0, offset, 0]
                             probs = (1 - cache_lambda_sp) * probs + cache_lambda_sp * cache_probs_sp
                         if cache_type in ['lm', 'joint']:
                             assert lm_weight > 0
-                            cache_val_lm = (self.fifo_cache_values_lm + beam[i_beam]['cache_val_lm'])[-n_caches:]
-                            cache_val_lm = torch.cat(cache_val_lm, dim=1)  # `[1, L, lm_n_units]`
-                            cache_attn_lm = F.softmax(cache_theta_lm * torch.matmul(
-                                cache_val_lm, lm_out.transpose(2, 1)), dim=1)  # `[1, L, 1]`
+                            lm_cache_val = (self.fifo_lm_cache_values + beam[i_beam]['lm_cache_val'])[-n_caches:]
+                            lm_cache_val = torch.cat(lm_cache_val, dim=1)  # `[1, L, lm_n_units]`
+                            lm_cache_attn = F.softmax(cache_theta_lm * torch.matmul(
+                                lm_cache_val, lmout.transpose(2, 1)), dim=1)  # `[1, L, 1]`
                             # Sum all probabilities
                             for c in set(beam[i_beam]['cache_idx']):
                                 for offset in [i for i, key in enumerate(cache_idx) if key == c]:
-                                    cache_probs_lm[0, c] += cache_attn_lm[0, offset, 0]
+                                    cache_probs_lm[0, c] += lm_cache_attn[0, offset, 0]
                             lm_probs = (1 - cache_lambda_lm) * lm_probs + cache_lambda_lm * cache_probs_lm
 
                     log_probs = torch.log(probs)
@@ -1439,7 +1456,7 @@ class RNNDecoder(nn.Module):
                         for i_e, dec in enumerate(ensemble_decoders):
                             attn_v, _ = dec.generate(ensemble_cv[i_e],
                                                      ensemble_dstates[i_e]['dout_gen'],
-                                                     lm_out)
+                                                     lmout)
                             log_probs += F.log_softmax(dec.output(attn_v).squeeze(1), dim=1)
                         # re-normalize
                         log_probs /= (n_models + 1)
@@ -1528,8 +1545,8 @@ class RNNDecoder(nn.Module):
                              'dstates': dstates,
                              'cv': attn_v if self.input_feeding else cv,
                              'aws': beam[i_beam]['aws'] + [aw],
-                             'lm_hxs': lm_state[0][:] if lm_state is not None else None,
-                             'lm_cxs': lm_state[1][:] if lm_state is not None else None,
+                             'lm_hxs': lmstate[0][:] if lmstate is not None else None,
+                             'lm_cxs': lmstate[1][:] if lmstate is not None else None,
                              'cp_prev': cp,
                              'ensemble_dstates': ensemble_dstates,
                              'ensemble_cv': ensemble_cv,
@@ -1537,12 +1554,12 @@ class RNNDecoder(nn.Module):
                              'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
                              'ctc_score': ctc_scores[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
                              'cache_idx': beam[i_beam]['cache_idx'] + [top_idx],
-                             #  'cache_val_sp': beam[i_beam]['cache_val_sp'] + [dstates['dout_gen']],
-                             'cache_val_sp': beam[i_beam]['cache_val_sp'] + [cv],
-                             'cache_val_lm': beam[i_beam]['cache_val_lm'] + [lm_out],
+                             'sp_cache_val': beam[i_beam]['sp_cache_val'] + [cv],
+                             #  'sp_cache_val': beam[i_beam]['sp_cache_val'] + [dstates['dout_gen']],
+                             'lm_cache_val': beam[i_beam]['lm_cache_val'] + [lmout],
                              'cache_key_hist': beam[i_beam]['cache_key_hist'] + [cache_idx] if is_cache else beam[i_beam]['cache_key_hist'],
-                             'cache_attn_sp_hist': beam[i_beam]['cache_attn_sp_hist'] + [cache_attn_sp] if is_cache else beam[i_beam]['cache_attn_sp_hist'],
-                             'cache_attn_lm_hist': beam[i_beam]['cache_attn_lm_hist'] + [cache_attn_lm] if is_cache else beam[i_beam]['cache_attn_lm_hist'],
+                             'sp_cache_attn_hist': beam[i_beam]['sp_cache_attn_hist'] + [sp_cache_attn] if is_cache else beam[i_beam]['sp_cache_attn_hist'],
+                             'lm_cache_attn_hist': beam[i_beam]['lm_cache_attn_hist'] + [lm_cache_attn] if is_cache else beam[i_beam]['lm_cache_attn_hist'],
                              })
 
                 new_beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
@@ -1550,10 +1567,16 @@ class RNNDecoder(nn.Module):
                 # Remove complete hypotheses
                 not_complete = []
                 for cand in new_beam[:beam_width]:
-                    if cand['hyp'][-1] == eos and cand['hyp'].count(eos) >= concat_prev_n_utterances + 2:
-                        complete += [cand]
+                    if oracle:
+                        if t == len(refs[b]):
+                            complete += [cand]
+                        else:
+                            not_complete += [cand]
                     else:
-                        not_complete += [cand]
+                        if cand['hyp'][-1] == eos and cand['hyp'].count(eos) >= concat_prev_n_utterances + 2:
+                            complete += [cand]
+                        else:
+                            not_complete += [cand]
 
                 # Pruning
                 if len(complete) >= beam_width:
@@ -1617,14 +1640,11 @@ class RNNDecoder(nn.Module):
             eos_flag = [True if complete[n]['hyp'][-1] == eos else False for n in range(nbest)]
             eos_flags.append(eos_flag)
 
-            if idx2token is not None:
-                if refs is not None:
-                    logger.info('Ref: %s' % refs[b])
-                for n in range(nbest):
-                    logger.info('Hyp: %s' % idx2token(nbest_hyps[0][n]))
-            if refs is not None:
-                logger.info('log prob (ref): ')
+            if refs is not None and idx2token is not None:
+                logger.info('Ref: %s' % idx2token(refs[b]))
             for n in range(nbest):
+                if idx2token is not None:
+                    logger.info('Hyp: %s' % idx2token(nbest_hyps[0][n]))
                 logger.info('log prob (hyp): %.7f' % complete[n]['score'])
                 logger.info('log prob (hyp, att): %.7f' % (complete[n]['score_attn'] * (1 - ctc_weight)))
                 logger.info('log prob (hyp, cp): %.7f' % (complete[n]['score_cp'] * cp_weight))
@@ -1651,61 +1671,61 @@ class RNNDecoder(nn.Module):
                 nbest_hyps = [[nbest_hyps[b][n][:-1] if eos_flags[b][n]
                                else nbest_hyps[b][n] for n in range(nbest)] for b in range(bs)]
 
-        # Store RNNLM state
-        if self.lm_final_state is None:
-            self.lm_final_state = (complete[0]['lm_hxs'], complete[0]['lm_cxs'])
+        # Store ASR/RNNLM state
+        self.dstates_final = complete[0]['dstates']
+        self.lmstate_final = (complete[0]['lm_hxs'], complete[0]['lm_cxs'])
 
         # Store in cache
         cache_key_hist = None
-        cache_attn_sp_hist = None
-        cache_attn_lm_hist = None
+        sp_cache_attn_hist = None
+        lm_cache_attn_hist = None
         if n_caches > 0:
             hyp_len = len(complete[0]['hyp'][1:])
             self.store_cache(complete[0]['cache_idx'],
-                             complete[0]['cache_val_sp'],
-                             complete[0]['cache_val_lm'],
+                             complete[0]['sp_cache_val'],
+                             complete[0]['lm_cache_val'],
                              n_caches)
             cache_key_hist = complete[0]['cache_key_hist']
             if cache_type in ['speech', 'joint']:
-                cache_attn_sp_hist = torch.zeros(
-                    (1, complete[0]['cache_attn_sp_hist'][-1].size(1), hyp_len), dtype=torch.float32)
-                for i, p in enumerate(complete[0]['cache_attn_sp_hist']):
+                sp_cache_attn_hist = torch.zeros(
+                    (1, complete[0]['sp_cache_attn_hist'][-1].size(1), hyp_len), dtype=torch.float32)
+                for i, p in enumerate(complete[0]['sp_cache_attn_hist']):
                     if p.size(1) < n_caches:
-                        cache_attn_sp_hist[0, :p.size(1), i] = p[0, :, 0].cpu()
+                        sp_cache_attn_hist[0, :p.size(1), i] = p[0, :, 0].cpu()
                     else:
-                        cache_attn_sp_hist[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
+                        sp_cache_attn_hist[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
             if cache_type in ['lm', 'joint']:
                 assert lm_weight > 0
-                cache_attn_lm_hist = torch.zeros(
-                    (1, complete[0]['cache_attn_lm_hist'][-1].size(1), hyp_len), dtype=torch.float32)
-                for i, p in enumerate(complete[0]['cache_attn_lm_hist']):
+                lm_cache_attn_hist = torch.zeros(
+                    (1, complete[0]['lm_cache_attn_hist'][-1].size(1), hyp_len), dtype=torch.float32)
+                for i, p in enumerate(complete[0]['lm_cache_attn_hist']):
                     if p.size(1) < n_caches:
-                        cache_attn_lm_hist[0, :p.size(1), i] = p[0, :, 0].cpu()
+                        lm_cache_attn_hist[0, :p.size(1), i] = p[0, :, 0].cpu()
                     else:
-                        cache_attn_lm_hist[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
+                        lm_cache_attn_hist[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
 
         if cache_type in ['speech', 'joint']:
-            return nbest_hyps, aws, scores, scores_cp, (cache_attn_sp_hist, cache_key_hist)
+            return nbest_hyps, aws, scores, scores_cp, (sp_cache_attn_hist, cache_key_hist)
         else:
-            return nbest_hyps, aws, scores, scores_cp, (cache_attn_lm_hist, cache_key_hist)
+            return nbest_hyps, aws, scores, scores_cp, (lm_cache_attn_hist, cache_key_hist)
 
-    def store_cache(self, ids, values, values_lm, n_caches):
+    def store_cache(self, ids, values_sp, values_lm, n_caches):
         self.fifo_cache_ids += ids
-        self.fifo_cache_values_asr += values
-        self.fifo_cache_values_lm += values_lm
+        self.fifo_sp_cache_values += values_sp
+        self.fifo_lm_cache_values += values_lm
 
         # Truncate cache
         if len(self.fifo_cache_ids) > n_caches:
             self.fifo_cache_ids = self.fifo_cache_ids[:n_caches]
-            self.fifo_cache_values_asr = self.fifo_cache_values_asr[:n_caches]
-            self.fifo_cache_values_lm = self.fifo_cache_values_lm[:n_caches]
+            self.fifo_sp_cache_values = self.fifo_sp_cache_values[:n_caches]
+            self.fifo_lm_cache_values = self.fifo_lm_cache_values[:n_caches]
 
     def reset_global_cache(self):
         """Reset global cache when the speaker/session is changed."""
         self.fifo_cache_ids = []
-        self.fifo_cache_values_asr = []
-        self.fifo_cache_values_lm = []
-        self.fifo_cache_keys_lm = None
+        self.fifo_sp_cache_values = []
+        self.fifo_lm_cache_values = []
+        self.fifo_lm_cache_keys = None
 
     def decode_ctc(self, eouts, xlens, beam_width=1, rnnlm=None):
         """Decoding by the CTC layer in the inference stage.
