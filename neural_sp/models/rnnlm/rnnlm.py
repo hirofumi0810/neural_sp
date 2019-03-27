@@ -41,7 +41,6 @@ class RNNLM(ModelBase):
         self.backward = args.backward
 
         self.vocab = args.vocab
-        self.sos = 2   # NOTE: the same as <eos>
         self.eos = 2
         self.pad = 3
         # NOTE: reserved in advance
@@ -49,8 +48,8 @@ class RNNLM(ModelBase):
         # for cache
         self.cache_theta = 0.2  # smoothing parameter
         self.cache_lambda = 0.2  # cache weight
-        self.cache_keys = []
-        self.cache_values = []
+        self.cache_ids = []
+        self.cache_key = []
         self.cache_attn = []
 
         self.embed = Embedding(vocab=self.vocab,
@@ -174,32 +173,31 @@ class RNNLM(ModelBase):
         logits = self.generate(lm_out)
 
         # Compute XE sequence loss
-        if n_caches > 0 and len(self.cache_keys) > 0:
+        if n_caches > 0 and len(self.cache_ids) > 0:
             assert ys_out.size(1) == 1
             assert ys_out.size(0) == 1
             probs = F.softmax(logits, dim=-1)
-
             cache_probs = torch.zeros_like(probs)
 
             # Truncate cache
-            self.cache_keys = self.cache_keys[-n_caches:]  # list of `[B, 1]`
-            self.cache_values = self.cache_values[-n_caches:]  # list of `[B, 1, n_units]`
+            self.cache_ids = self.cache_ids[-n_caches:]  # list of `[B, 1]`
+            self.cache_key = self.cache_key[-n_caches:]  # list of `[B, 1, n_units]`
 
             # Compute inner-product over caches
             cache_attn = F.softmax(self.cache_theta * torch.matmul(
-                torch.cat(self.cache_values, dim=1),
+                torch.cat(self.cache_key, dim=1),
                 ys_in.transpose(1, 2)).squeeze(2), dim=1)
 
             # For visualization
-            if len(self.cache_keys) == n_caches:
+            if len(self.cache_ids) == n_caches:
                 self.cache_attn += [cache_attn.cpu().numpy()]
                 self.cache_attn = self.cache_attn[-n_caches:]
 
             # Sum all probabilities
-            for offset, idx in enumerate(self.cache_keys):
+            for offset, idx in enumerate(self.cache_ids):
                 cache_probs[:, :, idx] += cache_attn[:, offset]
             probs = (1 - self.cache_lambda) * probs + self.cache_lambda * cache_probs
-            loss = (-torch.log(probs[:, :, ys_out[:, -1]]))
+            loss = -torch.log(probs[:, :, ys_out[:, -1]])
         else:
             loss = F.cross_entropy(logits.view((-1, logits.size(2))),
                                    ys_out.contiguous().view(-1),
@@ -207,9 +205,9 @@ class RNNLM(ModelBase):
 
         if n_caches > 0:
             # Register to cache
-            # self.cache_keys += [ys_out[:, -1].cpu().numpy()]
-            self.cache_keys += [ys_out[0, -1].item()]
-            self.cache_values += [ys_in]
+            # self.cache_ids += [ys_out[:, -1].cpu().numpy()]
+            self.cache_ids += [ys_out[0, -1].item()]
+            self.cache_key += [ys_in]
 
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits.view(ys_out.size(0), ys_out.size(1), logits.size(-1)).argmax(2)
