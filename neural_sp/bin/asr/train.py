@@ -315,6 +315,8 @@ def main():
             tasks = ['ys.ctc'] + tasks
         if args.lmobj_weight > 0:
             tasks = ['ys.lmobj'] + tasks
+        if args.rnnlm_fusion is not None and 'unfreeze' in args.lm_fusion_type:
+            tasks = ['ys.rnnlm'] + tasks
         for sub in ['sub1', 'sub2', 'sub3']:
             if getattr(args, 'train_set_' + sub):
                 if getattr(args, sub + '_weight') - getattr(args, 'bwd_weight_' + sub) - getattr(args, 'ctc_weight_' + sub) > 0:
@@ -643,6 +645,8 @@ def make_model_name(args, subsample_factor):
         # Load a conf file
         conf_pt = load_config(os.path.join(os.path.dirname(args.pretrained_model), 'conf.yml'))
         dir_name += '_' + conf_pt['unit'] + 'pt'
+    if args.freeze_encoder:
+        dir_name += '_encfreeze'
 
     return dir_name
 

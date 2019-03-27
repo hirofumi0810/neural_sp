@@ -148,6 +148,10 @@ class Seq2seq(ModelBase):
                 task_specific_layer=args.task_specific_layer)
             # NOTE: pure CNN encoder is also included
 
+        if args.freeze_encoder:
+            for p in self.enc.parameters():
+                p.requires_grad = False
+
         # Bridge layer between the encoder and decoder
         self.is_bridge = False
         if args.enc_type in ['cnn', 'transformer'] or args.dec_type == 'transformer' or args.bridge_layer:
@@ -423,18 +427,14 @@ class Seq2seq(ModelBase):
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, observation = self._forward(batch, task)
+                loss, reporter = self._forward(batch, task, reporter)
         else:
             self.train()
-            loss, observation = self._forward(batch, task)
-
-        # Report here
-        if reporter is not None:
-            reporter.add(observation, is_eval)
+            loss, reporter = self._forward(batch, task, reporter)
 
         return loss, reporter
 
-    def _forward(self, batch, task):
+    def _forward(self, batch, task, reporter):
         # Encode input features
         if self.input_type == 'speech':
             if self.mtl_per_batch:
@@ -450,7 +450,8 @@ class Seq2seq(ModelBase):
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
 
         # for the forward decoder in the main task
-        if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
+        if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc',
+                                                                     'ys.lmobj', 'ys.rnnlm']:
             ys_cache = []
             if perm_ids is None:
                 ys = batch['ys'][:]  # for lmobj
@@ -464,10 +465,12 @@ class Seq2seq(ModelBase):
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
             observation['loss.lmobj'] = obs_fwd['loss_lmobj']
+            observation['loss.rnnlm'] = obs_fwd['loss_rnnlm']
             observation['acc.att'] = obs_fwd['acc_att']
             observation['acc.lmobj'] = obs_fwd['acc_lmobj']
             observation['ppl.att'] = obs_fwd['ppl_att']
             observation['ppl.lmobj'] = obs_fwd['ppl_lmobj']
+            observation['ppl.rnnlm'] = obs_fwd['ppl_rnnlm']
 
         # for the backward decoder in the main task
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
@@ -519,7 +522,11 @@ class Seq2seq(ModelBase):
                 observation['ppl.att-bwd-' + sub] = obs_bwd_sub['ppl_att']
                 observation['ppl.lmobj-bwd-' + sub] = obs_bwd_sub['ppl_lmobj']
 
-        return loss, observation
+        if reporter is not None:
+            is_eval = not self.training
+            reporter.add(observation, is_eval)
+
+        return loss, reporter
 
     def encode(self, xs, task='all', flip=False):
         """Encode acoustic or text features.

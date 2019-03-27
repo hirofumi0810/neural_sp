@@ -353,7 +353,8 @@ class RNNDecoder(nn.Module):
                 elif lm_fusion_type == 'hidden_update':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                 elif lm_fusion_type in ['hidden_dot_attention', 'hidden_dot_attention_update',
-                                        'hidden_add_attention', 'hidden_add_attention_update']:
+                                        'hidden_add_attention', 'hidden_add_attention_update',
+                                        'hidden_dot_attention_unfreeze', 'hidden_add_attention_unfreeze']:
                     self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                     self.score_cf = AttentionMechanism(
                         key_dim=self.rnnlm_cf.n_units,
@@ -370,9 +371,12 @@ class RNNDecoder(nn.Module):
                     self.output_bn = LinearND(n_units * 2, n_units)
 
                 # fix RNNLM parameters
-                for p in self.rnnlm_cf.parameters():
-                    p.requires_grad = False
-                # TODO(hirofumi): add joint training option
+                if 'unfreeze' in lm_fusion_type:
+                    for p in self.rnnlm_cf.parameters():
+                        p.requires_grad = True
+                else:
+                    for p in self.rnnlm_cf.parameters():
+                        p.requires_grad = False
             else:
                 self.output_bn = LinearND(dout_dim + enc_n_units, n_units)
 
@@ -415,16 +419,17 @@ class RNNDecoder(nn.Module):
 
         """
         observation = {'loss': None,
-                       'loss_att': None, 'loss_ctc': None, 'loss_lmobj': None,
+                       'loss_att': None, 'loss_ctc': None,
+                       'loss_lmobj': None, 'loss_rnnlm': None,
                        'acc_att': None, 'acc_lmobj': None,
-                       'ppl_att': None, 'ppl_lmobj': None}
+                       'ppl_att': None, 'ppl_lmobj': None, 'ppl_rnnlm': None}
         loss = eouts.new_zeros((1,))
 
         # if self.rnnlm_cf is not None:
         #     self.rnnlm_cf.eval()
 
         # CTC loss
-        if self.ctc_weight > 0 and (not self.mtl_per_batch or (self.mtl_per_batch and 'ctc' in task)):
+        if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
             loss_ctc = self.forward_ctc(eouts, elens, ys)
             observation['loss_ctc'] = loss_ctc.item()
             if self.mtl_per_batch:
@@ -432,8 +437,8 @@ class RNNDecoder(nn.Module):
             else:
                 loss += loss_ctc * self.ctc_weight
 
-        # LM objective
-        if self.lmobj_weight > 0 and 'lmobj' in task:
+        # LM objective for the decoder
+        if self.lmobj_weight > 0 and (task == 'all' or 'lmobj' in task):
             loss_lmobj, acc_lmobj, ppl_lmobj = self.forward_lmobj(ys)
             observation['loss_lmobj'] = loss_lmobj.item()
             observation['acc_lmobj'] = acc_lmobj
@@ -443,8 +448,15 @@ class RNNDecoder(nn.Module):
             else:
                 loss += loss_lmobj * self.lmobj_weight
 
+        # RNNLM joint training
+        if self.rnnlm_cf is not None and 'unfreeze' in self.lm_fusion_type and (task == 'all' or 'rnnlm' in task):
+            loss_rnnlm, ppl_rnnlm = self.forward_rnnlm(ys, ys_cache)
+            observation['loss_rnnlm'] = loss_rnnlm.item()
+            observation['ppl_rnnlm'] = ppl_rnnlm
+            loss += loss_rnnlm
+
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and 'ctc' not in task and 'lmobj' not in task:
+        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task and 'lmobj' not in task and 'rnnlm' not in task)):
             loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys, ys_cache)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
@@ -549,7 +561,6 @@ class RNNDecoder(nn.Module):
         loss = F.cross_entropy(logits.view((-1, logits.size(2))),
                                ys_out_pad.view(-1),
                                ignore_index=-1, size_average=False) / bs
-        ppl = np.exp(loss.item())
 
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits.view(ys_out_pad.size(0), ys_out_pad.size(1), logits.size(-1)).argmax(2)
@@ -557,8 +568,26 @@ class RNNDecoder(nn.Module):
         numerator = torch.sum(pad_pred.masked_select(mask) == ys_out_pad.masked_select(mask))
         denominator = torch.sum(mask)
         acc = float(numerator) * 100 / float(denominator)
+        ppl = np.exp(loss.item())
 
         return loss, acc, ppl
+
+    def forward_rnnlm(self, ys, ys_cache):
+        """Compute XE loss for RNNLM during LM fusion.
+
+        Args:
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            ys_cache (list):
+        Returns:
+            loss (FloatTensor): `[1]`
+            ppl (float):
+
+        """
+        if len(ys_cache) > 0:
+            ys = [ys_cache[b] + y for b, y in enumerate(ys)]
+        loss, _, _ = self.rnnlm_cf(ys)
+        ppl = np.exp(loss.item())
+        return loss, ppl
 
     def forward_att(self, eouts, elens, ys, ys_cache):
         """Compute XE loss for the attention-based sequence-to-sequence model.
@@ -1023,7 +1052,8 @@ class RNNDecoder(nn.Module):
                 elif self.lm_fusion_type == 'prob':
                     lm_feat = self.cf_linear_lm_feat(self.rnnlm_cf.generate(lmout))
                     gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
-                elif self.lm_fusion_type in ['hidden_dot_attention', 'hidden_add_attention']:
+                elif self.lm_fusion_type in ['hidden_dot_attention', 'hidden_add_attention',
+                                             'hidden_dot_attention_unfreeze', 'hidden_add_attention_unfreeze']:
                     self.score_cf.reset()
                     cache_lens = [cache_keys.size(1)] * dout.size(0)
                     e_cache = self.score_cf(cache_keys, cache_lens,

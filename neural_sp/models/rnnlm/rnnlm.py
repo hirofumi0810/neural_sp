@@ -147,18 +147,14 @@ class RNNLM(ModelBase):
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, hidden, observation = self._forward(ys, hidden, n_caches)
+                loss, hidden, reporter = self._forward(ys, hidden, reporter, n_caches)
         else:
             self.train()
-            loss, hidden, observation = self._forward(ys, hidden)
-
-        # Report here
-        if reporter is not None:
-            reporter.add(observation, is_eval)
+            loss, hidden, reporter = self._forward(ys, hidden, reporter)
 
         return loss, hidden, reporter
 
-    def _forward(self, ys, hidden, n_caches=0):
+    def _forward(self, ys, hidden, reporter, n_caches=0):
         if self.backward:
             ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
         else:
@@ -220,7 +216,12 @@ class RNNLM(ModelBase):
                        'acc.rnnlm': acc,
                        'ppl.rnnlm': np.exp(loss.item())}
 
-        return loss, hidden, observation
+        # Report here
+        if reporter is not None:
+            is_eval = not self.training
+            reporter.add(observation, is_eval)
+
+        return loss, hidden, reporter
 
     def encode(self, ys):
         """Encode function.

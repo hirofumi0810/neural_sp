@@ -125,6 +125,8 @@ def parse():
     parser.add_argument('--subsample_type', type=str, default='drop',
                         choices=['drop', 'concat', 'max_pool'],
                         help='')
+    parser.add_argument('--freeze_encoder', type=strtobool, default=False,
+                        help='freeze the encoder parameter')
     # topology (decoder)
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['location', 'add', 'dot',
@@ -300,6 +302,7 @@ def parse():
                         choices=['hidden', 'prob',
                                  'hidden_dot_attention', 'hidden_dot_attention_update',
                                  'hidden_add_attention', 'hidden_add_attention_update',
+                                 'hidden_dot_attention_unfreeze', 'hidden_add_attention_unfreeze',
                                  'hidden_update'],
                         help='type of cold fusion')
     parser.add_argument('--rnnlm_fusion', type=str, default=False, nargs='?',
