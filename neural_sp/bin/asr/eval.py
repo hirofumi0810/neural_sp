@@ -98,7 +98,7 @@ def main():
                     ensemble_models += [model_e]
 
             # For shallow fusion
-            if not args.rnnlm_cold_fusion:
+            if not args.rnnlm_fusion:
                 if args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
                     # Load a RNNLM conf file
                     conf_rnnlm = load_config(os.path.join(os.path.dirname(args.recog_rnnlm), 'conf.yml'))

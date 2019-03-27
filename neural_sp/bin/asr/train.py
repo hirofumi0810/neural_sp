@@ -113,7 +113,7 @@ def main():
                         subsample_factor_sub2=subsample_factor_sub2,
                         subsample_factor_sub3=subsample_factor_sub3,
                         concat_prev_n_utterances=args.concat_prev_n_utterances,
-                        cache_prev_n_tokens=args.cache_prev_n_tokens)
+                        n_caches=args.n_caches)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
                       tsv_path_sub1=args.dev_set_sub1,
@@ -134,7 +134,7 @@ def main():
                       batch_size=args.batch_size * args.n_gpus,
                       min_n_frames=args.min_n_frames,
                       max_n_frames=args.max_n_frames,
-                      shuffle=True if args.cache_prev_n_tokens == 0 else False,
+                      shuffle=True if args.n_caches == 0 else False,
                       ctc=args.ctc_weight > 0,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
                       ctc_sub2=args.ctc_weight_sub2 > 0,
@@ -143,7 +143,7 @@ def main():
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
                       subsample_factor_sub3=subsample_factor_sub3,
-                      cache_prev_n_tokens=args.cache_prev_n_tokens)
+                      n_caches=args.n_caches)
     eval_sets = []
     for s in args.eval_sets:
         eval_sets += [Dataset(corpus=args.corpus,
@@ -152,7 +152,7 @@ def main():
                               unit=args.unit,
                               wp_model=args.wp_model,
                               batch_size=1,
-                              cache_prev_n_tokens=args.cache_prev_n_tokens,
+                              n_caches=args.n_caches,
                               is_test=True)]
 
     args.vocab = train_set.vocab
@@ -162,9 +162,9 @@ def main():
     args.input_dim = train_set.input_dim
 
     # Load a RNNLM conf file for cold fusion & RNNLM initialization
-    if args.rnnlm_cold_fusion:
+    if args.rnnlm_fusion:
         if args.model:
-            rnnlm_conf = load_config(os.path.join(os.path.dirname(args.rnnlm_cold_fusion), 'conf.yml'))
+            rnnlm_conf = load_config(os.path.join(os.path.dirname(args.rnnlm_fusion), 'conf.yml'))
         elif args.resume:
             rnnlm_conf = load_config(os.path.join(os.path.dirname(args.resume), 'conf_rnnlm.yml'))
         args.rnnlm_conf = argparse.Namespace()
@@ -188,6 +188,7 @@ def main():
         logger = set_logger(os.path.join(os.path.dirname(args.resume), 'train.log'), key='training')
 
         # Set optimizer
+        epoch = int(args.resume.split('-')[-1])
         model.set_optimizer(optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] + 1 else conf['optimizer'],
                             learning_rate=float(conf['learning_rate']),  # on-the-fly
                             weight_decay=float(conf['weight_decay']))
@@ -212,7 +213,7 @@ def main():
 
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(model.save_path, 'conf.yml'))
-        if args.rnnlm_cold_fusion:
+        if args.rnnlm_fusion:
             save_config(args.rnnlm_conf, os.path.join(model.save_path, 'conf_rnnlm.yml'))
 
         # Save the dictionary & wp_model
@@ -591,10 +592,10 @@ def make_model_name(args, subsample_factor):
         dir_name += '_ln'
 
     # LM integration
-    if args.rnnlm_cold_fusion:
-        dir_name += '_cf' + args.cold_fusion_type
-        if args.cache_prev_n_tokens > 0:
-            dir_name += '_cache' + str(args.cache_prev_n_tokens)
+    if args.rnnlm_fusion:
+        dir_name += '_cf' + args.lm_fusion_type
+        if args.n_caches > 0:
+            dir_name += '_cache' + str(args.n_caches)
 
     # MTL
     if args.mtl_per_batch:

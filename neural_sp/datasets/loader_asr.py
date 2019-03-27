@@ -41,7 +41,7 @@ class Dataset(Base):
                  n_ques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1,
                  wp_model=False, corpus='',
-                 concat_prev_n_utterances=0, cache_prev_n_tokens=0,
+                 concat_prev_n_utterances=0, n_caches=0,
                  tsv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
                  wp_model_sub1=False,
                  ctc_sub1=False, subsample_factor_sub1=1,
@@ -75,7 +75,7 @@ class Dataset(Base):
             wp_model (): path to the word-piece model for sentencepiece
             corpus (str): name of corpus
             concat_prev_n_utterances (int): number of utterances to concatenate
-            cache_prev_n_tokens (int): number of previous tokens for cache (for training)
+            n_caches (int): number of previous tokens for cache (for training)
 
         """
         super(Dataset, self).__init__()
@@ -93,7 +93,7 @@ class Dataset(Base):
         self.dynamic_batching = dynamic_batching
         self.corpus = corpus
         self.concat_prev_n_utterances = concat_prev_n_utterances
-        self.cache_prev_n_tokens = cache_prev_n_tokens
+        self.n_caches = n_caches
         self.vocab = self.count_vocab_size(dict_path)
 
         self.eos = 2
@@ -138,7 +138,7 @@ class Dataset(Base):
                         raise ValueError(unit_sub)
 
                 assert concat_prev_n_utterances == 0
-                assert cache_prev_n_tokens == 0
+                assert n_caches == 0
                 # TODO(hirofumi): fix later
             else:
                 setattr(self, 'vocab_sub' + str(i), -1)
@@ -162,7 +162,7 @@ class Dataset(Base):
         else:
             self.df['session'] = self.df['speaker'].apply(lambda x: str(x))
 
-        if concat_prev_n_utterances > 0 or cache_prev_n_tokens > 0:
+        if concat_prev_n_utterances > 0 or n_caches > 0:
             assert corpus in ['swbd', 'csj', 'librispeech']
             max_n_frames = 10000
             min_n_frames = 1
@@ -178,7 +178,7 @@ class Dataset(Base):
             self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
 
             # Extract previous utterances
-            if not (is_test and cache_prev_n_tokens > 0):
+            if not (is_test and n_caches > 0):
                 self.df = self.df.assign(line_no=list(range(len(self.df))))
                 groups = self.df.groupby('session').groups  # dict
                 self.df['prev_utt'] = self.df.apply(
@@ -190,7 +190,7 @@ class Dataset(Base):
             self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
 
         if concat_prev_n_utterances > 0:
-            assert cache_prev_n_tokens == 0
+            assert n_caches == 0
             # Truncate history
             self.df['prev_utt'] = self.df['prev_utt'].apply(lambda x: x[-concat_prev_n_utterances:])
 
@@ -206,7 +206,7 @@ class Dataset(Base):
                 lambda x: ' '.join([self.df.loc[i, 'text']
                                     for i in x['prev_utt']] + [x['text']]) if len(x['prev_utt']) > 0 else x['text'], axis=1)
 
-        if cache_prev_n_tokens > 0:
+        if n_caches > 0:
             assert concat_prev_n_utterances == 0
 
         # Remove inappropriate utterances
@@ -250,7 +250,7 @@ class Dataset(Base):
                 self.df = self.df.sort_values(by='xlen', ascending=short2long)
             elif shuffle:
                 self.df = self.df.reindex(np.random.permutation(self.df.index))
-            elif not (concat_prev_n_utterances > 0 or cache_prev_n_tokens > 0):
+            elif not (concat_prev_n_utterances > 0 or n_caches > 0):
                 self.df = self.df.sort_values(by='utt_id', ascending=True)
 
         self.rest = set(list(self.df.index))
@@ -292,7 +292,7 @@ class Dataset(Base):
                     ys[j] = y_prev + [self.eos] + ys[j][:]
 
         ys_cache = []
-        if self.cache_prev_n_tokens > 0:
+        if self.n_caches > 0:
             ys_cache = [[] for _ in range(len(df_indices))]
             for j, i in enumerate(df_indices):
                 for i_prev in self.df['prev_utt'][i]:
@@ -300,7 +300,7 @@ class Dataset(Base):
                     ys_cache[j] += [self.eos] + y_prev
 
             # Truencate
-            ys_cache = [y[-self.cache_prev_n_tokens:] for y in ys_cache]
+            ys_cache = [y[-self.n_caches:] for y in ys_cache]
 
         ys_sub1 = []
         if self.df_sub1 is not None:

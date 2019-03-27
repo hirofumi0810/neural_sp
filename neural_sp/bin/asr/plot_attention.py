@@ -15,18 +15,15 @@ import copy
 import numpy as np
 import os
 import shutil
-import torch
 
 from neural_sp.bin.args_asr import parse
 from neural_sp.bin.asr.plot_utils import plot_attention_weights
 from neural_sp.bin.asr.plot_utils import plot_cache_weights
-# from neural_sp.bin.asr.plot_utils import plot_cache_fusion_weights
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
-from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils.general import mkdir_join
 
 
@@ -89,7 +86,7 @@ def main():
                     ensemble_models += [model_e]
 
             # For shallow fusion
-            if not args.rnnlm_cold_fusion:
+            if not args.rnnlm_fusion:
                 if args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
                     # Load a RNNLM conf file
                     conf_rnnlm = load_config(os.path.join(os.path.dirname(args.recog_rnnlm), 'conf.yml'))
@@ -212,7 +209,6 @@ def main():
                     for i in range(n_queries):
                         mask[:n_keys - i, -(i + 1)] = 0
 
-                    print(idx2token(cache_id_hist[-1], return_list=True))
                     plot_cache_weights(
                         cache_atnn_hist[0],
                         keys=idx2token(cache_id_hist[-1], return_list=True),

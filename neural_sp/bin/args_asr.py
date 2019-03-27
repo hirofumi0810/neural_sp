@@ -296,14 +296,14 @@ def parse():
     parser.add_argument('--bwd_weight_sub3', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     # cold fusion
-    parser.add_argument('--cold_fusion_type', type=str, default='hidden', nargs='?',
+    parser.add_argument('--lm_fusion_type', type=str, default='hidden', nargs='?',
                         choices=['hidden', 'prob',
                                  'hidden_dot_attention', 'hidden_dot_attention_update',
                                  'hidden_add_attention', 'hidden_add_attention_update',
                                  'hidden_update'],
                         help='type of cold fusion')
-    parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',
-                        help='RNNLM parameters for cold fusion')
+    parser.add_argument('--rnnlm_fusion', type=str, default=False, nargs='?',
+                        help='RNNLM for LM fusion during training')
     # RNNLM initialization, objective
     parser.add_argument('--rnnlm_init', type=str, default=False, nargs='?',
                         help='')
@@ -339,7 +339,7 @@ def parse():
     # contextualization
     parser.add_argument('--concat_prev_n_utterances', type=int, default=0,
                         help='number of previous utterances to concatenate (for training)')
-    parser.add_argument('--cache_prev_n_tokens', type=int, default=0,
+    parser.add_argument('--n_caches', type=int, default=0,
                         help='number of previous tokens to cache (for training)')
     # decoding parameters
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',

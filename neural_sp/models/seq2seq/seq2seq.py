@@ -174,9 +174,9 @@ class Seq2seq(ModelBase):
             directions.append('bwd')
         for dir in directions:
             # Cold fusion
-            if args.rnnlm_cold_fusion and dir == 'fwd':
+            if args.rnnlm_fusion and dir == 'fwd':
                 rnnlm = RNNLM(args.rnnlm_conf)
-                rnnlm.load_checkpoint(args.rnnlm_cold_fusion)
+                rnnlm.load_checkpoint(args.rnnlm_fusion)
 
                 # Fix RNNLM parameters
                 for param in rnnlm.parameters():
@@ -252,10 +252,10 @@ class Seq2seq(ModelBase):
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                     input_feeding=args.input_feeding,
                     backward=(dir == 'bwd'),
-                    # rnnlm_cold_fusion=args.rnnlm_conf,
-                    rnnlm_cold_fusion=rnnlm,  # TODO(hirofumi): load RNNLM in the model init.
-                    cold_fusion_type=args.cold_fusion_type,
-                    cache_prev_n_tokens=args.cache_prev_n_tokens,
+                    # rnnlm=args.rnnlm_conf,
+                    rnnlm=rnnlm,  # TODO(hirofumi): load RNNLM in the model init.
+                    lm_fusion_type=args.lm_fusion_type,
+                    n_caches=args.n_caches,
                     rnnlm_init=args.rnnlm_init,
                     lmobj_weight=args.lmobj_weight,
                     share_lm_softmax=args.share_lm_softmax,
@@ -313,9 +313,9 @@ class Seq2seq(ModelBase):
                                          ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
                             input_feeding=args.input_feeding,
                             backward=(dir_sub == 'bwd'),
-                            rnnlm_cold_fusion=None,
-                            cold_fusion_type='',
-                            cache_prev_n_tokens=0,
+                            rnnlm=None,
+                            lm_fusion_type='',
+                            n_caches=0,
                             rnnlm_init=None,
                             lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
                             share_lm_softmax=args.share_lm_softmax,
@@ -374,7 +374,7 @@ class Seq2seq(ModelBase):
         self.init_forget_gate_bias_with_one()
 
         # Initialize bias in gating with -1 for cold fusion
-        if args.rnnlm_cold_fusion:
+        if args.rnnlm_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
 
     def scheduled_sampling_trigger(self):
