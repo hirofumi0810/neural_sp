@@ -181,14 +181,14 @@ def main():
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps, aws, perm_id, (cache_probs_hist, cache_keys_hist) = model.decode(
+            best_hyps, aws, perm_id, (cache_atnn_hist, cache_id_hist) = model.decode(
                 batch['xs'], recog_params,
                 exclude_eos=False,
                 idx2token=idx2token,
                 refs=batch['ys'],
                 ensemble_models=ensemble_models[1:] if len(ensemble_models) > 1 else [],
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
-            ys = [batch['ys'][i] for i in perm_id]
+            refs = [batch['text'][i] for i in perm_id]
 
             if model.bwd_weight > 0.5:
                 # Reverse the order
@@ -206,42 +206,27 @@ def main():
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8))
 
-                if args.recog_n_caches > 0 and cache_keys_hist is not None:
-                    n_keys, n_queries = cache_probs_hist[0].shape
+                if args.recog_n_caches > 0 and cache_id_hist is not None:
+                    n_keys, n_queries = cache_atnn_hist[0].shape
                     mask = np.ones((n_keys, n_queries))
                     for i in range(n_queries):
                         mask[:n_keys - i, -(i + 1)] = 0
 
+                    print(idx2token(cache_id_hist[-1], return_list=True))
                     plot_cache_weights(
-                        cache_probs_hist[0],
-                        keys=idx2token(cache_keys_hist[-1], return_list=True),
+                        cache_atnn_hist[0],
+                        keys=idx2token(cache_id_hist[-1], return_list=True),
                         queries=tokens,
                         save_path=mkdir_join(save_path_cache, spk, batch['utt_ids'][b] + '.png'),
                         figsize=(40, 16),
                         mask=mask)
 
-                elif args.cache_prev_n_tokens > 0:
-                    n_keys = len(model.dec_fwd.fifo_cache_ids)
-                    n_queries = len(tokens[-1:])
-                    mask = np.ones((n_keys, n_queries))
-                    for i in range(n_queries):
-                        mask[:n_keys - i, -(i + 1)] = 0
-
-                    plot_cache_weights(
-                        model.dec_fwd.aws_cf[-2].transpose(1, 0),
-                        keys=idx2token(tensor2np(torch.cat(model.dec_fwd.fifo_cache_ids, dim=1)[b]), return_list=True),
-                        queries=tokens[-1:],
-                        save_path=mkdir_join(save_path_cache, spk, batch['utt_ids'][b] + '.png'),
-                        figsize=(40, 16),
-                        mask=mask)
-
-                ref = ys[b]
                 if model.bwd_weight > 0.5:
                     hyp = ' '.join(tokens[::-1])
                 else:
                     hyp = ' '.join(tokens)
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
-                logger.info('Ref: %s' % ref.lower())
+                logger.info('Ref: %s' % refs[b].lower())
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 50)
 

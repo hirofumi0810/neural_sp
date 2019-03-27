@@ -113,7 +113,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.key_a = None
         self.mask = None
 
-    def forward(self, key, key_lens, value, query, aw):
+    def forward(self, key, key_lens, value, query, aw=None):
         """Forward computation.
 
         Args:
