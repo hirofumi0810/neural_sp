@@ -44,6 +44,7 @@ cache_theta_lm=1.0
 cache_lambda_lm=0.1
 cache_type=lm
 concat_prev_n_utterances=0
+oracle=false
 
 . ./cmd.sh
 . ./path.sh
@@ -101,6 +102,9 @@ for set in eval1 eval2 eval3; do
             recog_dir=${recog_dir}_lmtheta${cache_theta_lm}_lmlambda${cache_lambda_lm}
         fi
     fi
+    if ${oracle}; then
+        recog_dir=${recog_dir}_oracle
+    fi
     if [ ! -z ${model7} ]; then
         recog_dir=${recog_dir}_ensemble8
     elif [ ! -z ${model6} ]; then
@@ -120,15 +124,15 @@ for set in eval1 eval2 eval3; do
 
     if [ $(echo ${model} | grep 'train_sp') ]; then
         if [ $(echo ${model} | grep 'all') ]; then
-            recog_set=${data}/dataset/${set}_sp_all_wpbpe30000.tsv
+            recog_set=${data}/dataset/${set}_sp_all_word30000.tsv
         elif [ $(echo ${model} | grep 'aps_other') ]; then
-            recog_set=${data}/dataset/${set}_sp_aps_other_wpbpe10000.tsv
+            recog_set=${data}/dataset/${set}_sp_aps_other_word10000.tsv
         fi
     else
         if [ $(echo ${model} | grep 'all') ]; then
-            recog_set=${data}/dataset/${set}_all_wpbpe30000.tsv
+            recog_set=${data}/dataset/${set}_all_word30000.tsv
         elif [ $(echo ${model} | grep 'aps_other') ]; then
-            recog_set=${data}/dataset/${set}_aps_other_wpbpe10000.tsv
+            recog_set=${data}/dataset/${set}_aps_other_word10000.tsv
         fi
     fi
 
@@ -164,6 +168,7 @@ for set in eval1 eval2 eval3; do
         --recog_cache_lambda_lm ${cache_lambda_lm} \
         --recog_cache_type ${cache_type} \
         --recog_concat_prev_n_utterances ${concat_prev_n_utterances} \
+        --recog_oracle ${oracle} \
         || exit 1;
 
     # remove <unk>

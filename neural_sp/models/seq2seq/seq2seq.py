@@ -678,7 +678,7 @@ class Seq2seq(ModelBase):
             # Attention
             #########################
             else:
-                if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
+                if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention'] and not params['recog_oracle']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
                         params['recog_max_len_ratio'], exclude_eos, speakers)

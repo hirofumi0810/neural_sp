@@ -298,8 +298,9 @@ def parse():
     # cold fusion
     parser.add_argument('--cold_fusion_type', type=str, default='hidden', nargs='?',
                         choices=['hidden', 'prob',
-                                 'hidden_dot_attention', 'prob_dot_attention',
-                                 'hidden_add_attention', 'prob_add_attention'],
+                                 'hidden_dot_attention', 'hidden_dot_attention_update',
+                                 'hidden_add_attention', 'hidden_add_attention_update',
+                                 'hidden_update'],
                         help='type of cold fusion')
     parser.add_argument('--rnnlm_cold_fusion', type=str, default=False, nargs='?',
                         help='RNNLM parameters for cold fusion')
@@ -355,6 +356,8 @@ def parse():
     parser.add_argument('--recog_metric', type=str, default='edit_distance',
                         choices=['edit_distance', 'loss', 'acc', 'ppl', 'bleu'],
                         help='metric for evaluation')
+    parser.add_argument('--recog_oracle', type=strtobool, default=False,
+                        help='recognize by teacher-forcing')
     parser.add_argument('--recog_batch_size', type=int, default=1,
                         help='size of mini-batch in evaluation')
     parser.add_argument('--recog_beam_width', type=int, default=1,

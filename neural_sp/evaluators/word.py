@@ -68,6 +68,7 @@ def eval_word(models, dataset, recog_params, epoch,
             best_hyps, aws, perm_ids, _ = models[0].decode(
                 batch['xs'], recog_params,
                 exclude_eos=True,
+                refs=batch['ys'],
                 ensemble_models=models[1:] if len(models) > 1 else [],
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
             ys = [batch['text'][i] for i in perm_ids]

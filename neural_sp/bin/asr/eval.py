@@ -71,7 +71,7 @@ def main():
                           unit_sub3=args.unit_sub3,
                           batch_size=args.recog_batch_size,
                           concat_prev_n_utterances=args.recog_concat_prev_n_utterances,
-                          is_test=True if args.recog_metric not in ['acc', 'ppl', 'loss'] else False)
+                          is_test=True)
 
         if i == 0:
             # Load the ASR model

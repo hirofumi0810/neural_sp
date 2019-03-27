@@ -44,6 +44,7 @@ cache_theta_lm=1.0
 cache_lambda_lm=0.1
 cache_type=lm
 concat_prev_n_utterances=0
+oracle=false
 
 . ./cmd.sh
 . ./path.sh
@@ -101,6 +102,9 @@ for set in dev_clean dev_other test_clean test_other; do
             recog_dir=${recog_dir}_lmtheta${cache_theta_lm}_lmlambda${cache_lambda_lm}
         fi
     fi
+    if ${oracle}; then
+        recog_dir=${recog_dir}_oracle
+    fi
     if [ ! -z ${model7} ]; then
         recog_dir=${recog_dir}_ensemble8
     elif [ ! -z ${model6} ]; then
@@ -119,7 +123,7 @@ for set in dev_clean dev_other test_clean test_other; do
     mkdir -p ${recog_dir}
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
-        --recog_sets ${data}/dataset/${set}_960_wpbpe30000.csv \
+        --recog_sets ${data}/dataset/${set}_960_word30000.csv \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
@@ -150,6 +154,7 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_cache_lambda_lm ${cache_lambda_lm} \
         --recog_cache_type ${cache_type} \
         --recog_concat_prev_n_utterances ${concat_prev_n_utterances} \
+        --recog_oracle ${oracle} \
         || exit 1;
 
     # remove <unk>
