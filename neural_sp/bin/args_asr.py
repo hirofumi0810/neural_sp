@@ -304,6 +304,7 @@ def parse():
                                  'cache_add_ganerate', 'cache_add_recurrency',
                                  'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze',
                                  'cache_dot_generate_unfreeze_mtl', 'cache_add_generate_unfreeze_mtl',
+                                 'cache_cold_dot_generate',
                                  'cold_hidden_recurrency'],
                         help='type of cold fusion')
     parser.add_argument('--rnnlm_fusion', type=str, default=False, nargs='?',

@@ -595,7 +595,7 @@ def make_model_name(args, subsample_factor):
 
     # LM integration
     if args.rnnlm_fusion:
-        dir_name += '_cf' + args.lm_fusion_type
+        dir_name += '_' + args.lm_fusion_type
         if args.n_caches > 0:
             dir_name += '_cache' + str(args.n_caches)
 

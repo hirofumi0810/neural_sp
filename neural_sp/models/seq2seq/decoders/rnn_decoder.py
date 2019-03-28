@@ -193,7 +193,7 @@ class RNNDecoder(nn.Module):
         self.prev_spk = ''
         self.dstates_final = None
         self.lmstate_final = (None, None)
-        self.cache_fusion = (self.rnnlm is not None and 'attention' in self.lm_fusion_type)
+        self.cache_fusion = (self.rnnlm is not None and 'cache' in self.lm_fusion_type)
 
         if ctc_weight > 0:
             # Fully-connected layers for CTC
@@ -350,13 +350,17 @@ class RNNDecoder(nn.Module):
 
                 if lm_fusion_type == 'cold_hidden_generate':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm.n_units, n_units)
+                    self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
                 elif lm_fusion_type == 'cold_prob_generate':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm.vocab, n_units)
+                    self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
                 elif lm_fusion_type == 'cold_hidden_recurrency':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm.n_units, n_units)
+                    self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
                 elif lm_fusion_type in ['cache_dot_generate', 'cache_dot_recurrency',
                                         'cache_add_generate', 'cache_add_recurrency',
-                                        'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze']:
+                                        'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze',
+                                        'cache_cold_dot_generate']:
                     self.cf_linear_lm_feat = LinearND(self.rnnlm.n_units, n_units)
                     self.score_cf = AttentionMechanism(
                         key_dim=self.rnnlm.n_units,
@@ -364,11 +368,14 @@ class RNNDecoder(nn.Module):
                         attn_type='dot' if 'dot' in lm_fusion_type else 'add',
                         attn_dim=n_units)
                     self.sentinel = LinearND(n_units, 1, bias=False)
+                    if lm_fusion_type == 'cache_cold_dot_generate':
+                        self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
                 else:
                     raise ValueError(lm_fusion_type)
-                self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
                 if lm_fusion_type in ['cold_hidden_recurrency', 'cache_dot_recurrency', 'cache_add_recurrency']:
                     self.output_bn = LinearND(n_units + enc_n_units, n_units)
+                elif lm_fusion_type == 'cache_cold_dot_generate':
+                    self.output_bn = LinearND(n_units * 3, n_units)
                 else:
                     self.output_bn = LinearND(n_units * 2, n_units)
 
@@ -1031,11 +1038,14 @@ class RNNDecoder(nn.Module):
                 if self.lm_fusion_type == 'cold_hidden_generate':
                     lm_feat = self.cf_linear_lm_feat(lmout)
                     gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+                    gated_lm_feat = gate * lm_feat
                 elif self.lm_fusion_type == 'cold_prob_generate':
                     lm_feat = self.cf_linear_lm_feat(self.rnnlm.generate(lmout))
                     gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+                    gated_lm_feat = gate * lm_feat
                 elif self.lm_fusion_type in ['cache_dot_generate', 'cache_add_generate',
-                                             'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze']:
+                                             'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze',
+                                             'cache_cold_dot_generate']:
                     self.score_cf.reset()
                     cache_lens = [cache_keys.size(1)] * dout.size(0)
                     e_cache = self.score_cf(cache_keys, cache_lens,
@@ -1045,12 +1055,17 @@ class RNNDecoder(nn.Module):
                     sentinel_vec = self.sentinel(dec_feat)  # `[B, 1, 1]`
                     e_cache = torch.cat([e_cache, sentinel_vec.squeeze(2)], dim=1)
                     aw_cache = F.softmax(e_cache, dim=-1)  # `[B, n_caches + 1]`
-                    gate = aw_cache[:, -1].unsqueeze(1).unsqueeze(2)
+                    gate_cache = aw_cache[:, -1].unsqueeze(1).unsqueeze(2)
                     aw_cache = aw_cache[:, :-1]
                     cv_cache = torch.matmul(aw_cache.unsqueeze(1), cache_keys)
                     aw_cache = aw_cache.unsqueeze(2)
-                    lm_feat = self.cf_linear_lm_feat(cv_cache)
-                gated_lm_feat = gate * lm_feat
+                    lm_feat_cache = self.cf_linear_lm_feat(cv_cache)
+                    gated_lm_feat = gate_cache * lm_feat_cache
+                    if self.lm_fusion_type == 'cache_cold_dot_generate':
+                        lm_feat = self.cf_linear_lm_feat(lmout)
+                        gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+                        gated_lm_feat = torch.cat([gate * lm_feat, gated_lm_feat], dim=-1)
+
                 out = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
             out = self.output_bn(torch.cat([dout, cv], dim=-1))
