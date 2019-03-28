@@ -83,9 +83,7 @@ class RNNDecoder(nn.Module):
         input_feeding (bool):
         backward (bool): decode in the backward order
         rnnlm (RNNLM):
-        lm_fusion_type (str): the type of cold fusion
-            prob: logits of RNNLM
-            hidden: hidden states of RNNLM
+        lm_fusion_type (str): the type of RNNLM fusion
         n_caches (int):
         rnnlm_init (RNNLM):
         lmobj_weight (float):
@@ -265,7 +263,7 @@ class RNNDecoder(nn.Module):
 
             if loop_type == 'normal':
                 dec_idim = n_units if input_feeding else enc_n_units
-                if lm_fusion_type in ['hidden_update', 'hidden_dot_attention_update', 'hidden_add_attention_update']:
+                if lm_fusion_type in ['cold_hidden_recurrency', 'cache_dot_recurrency', 'cache_add_recurrency']:
                     dec_idim += n_units
                 self.rnn += [rnn_cell(emb_dim + dec_idim, n_units)]
                 dec_idim = n_units
@@ -347,18 +345,18 @@ class RNNDecoder(nn.Module):
             if self.rnnlm is not None:
                 self.cf_linear_dec_feat = LinearND(dout_dim + enc_n_units, n_units)
 
-                if 'attention' in self.lm_fusion_type:
+                if 'cache' in self.lm_fusion_type:
                     assert n_caches > 0
 
-                if lm_fusion_type == 'hidden':
+                if lm_fusion_type == 'cold_hidden_generate':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm.n_units, n_units)
-                elif lm_fusion_type == 'prob':
+                elif lm_fusion_type == 'cold_prob_generate':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm.vocab, n_units)
-                elif lm_fusion_type == 'hidden_update':
+                elif lm_fusion_type == 'cold_hidden_recurrency':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm.n_units, n_units)
-                elif lm_fusion_type in ['hidden_dot_attention', 'hidden_dot_attention_update',
-                                        'hidden_add_attention', 'hidden_add_attention_update',
-                                        'hidden_dot_attention_unfreeze', 'hidden_add_attention_unfreeze']:
+                elif lm_fusion_type in ['cache_dot_generate', 'cache_dot_recurrency',
+                                        'cache_add_generate', 'cache_add_recurrency',
+                                        'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze']:
                     self.cf_linear_lm_feat = LinearND(self.rnnlm.n_units, n_units)
                     self.score_cf = AttentionMechanism(
                         key_dim=self.rnnlm.n_units,
@@ -369,7 +367,7 @@ class RNNDecoder(nn.Module):
                 else:
                     raise ValueError(lm_fusion_type)
                 self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
-                if lm_fusion_type in ['hidden_update', 'hidden_dot_attention_update', 'hidden_add_attention_update']:
+                if lm_fusion_type in ['cold_hidden_recurrency', 'cache_dot_recurrency', 'cache_add_recurrency']:
                     self.output_bn = LinearND(n_units + enc_n_units, n_units)
                 else:
                     self.output_bn = LinearND(n_units * 2, n_units)
@@ -628,7 +626,7 @@ class RNNDecoder(nn.Module):
             ys_lm_emb = self.rnnlm.encode(ys_in_pad)
 
         # Pre-computation of RNNLM states for history
-        if self.cache_fusion:
+        if self.cache_fusion or self.n_caches > 0:
             # NOTE: ys_cache already includes <sos> and <eos>
             ys_cache_pad = pad_list([np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long()
                                      for y in ys_cache], self.pad)
@@ -660,16 +658,17 @@ class RNNDecoder(nn.Module):
             lmstate = (hxs, cxs)
 
             # Pad the leftmost in lmouts
-            lmouts = torch.cat(lmouts, dim=1)  # `[B, cache_size, lm_n_units]`
-            lmouts_list = []
-            for b in range(bs):
-                pad_len = self.n_caches - ylens_cache[b]
-                if pad_len > 0:
-                    lmouts_list.append(lmouts[b, :ylens_cache[b]])
-                else:
-                    lmouts_list.append(ys_lm_emb_cache.new_zeros(pad_len, self.rnnlm.n_units))
-            self.fifo_cache_lm_key = pad_list(lmouts_list, pad_left=True)[:, -self.n_caches:]
-            # NOTE: RNNLM are not trained so as to decode <pad> tokens
+            if self.cache_fusion:
+                lmouts = torch.cat(lmouts, dim=1)  # `[B, cache_size, lm_n_units]`
+                lmouts_list = []
+                for b in range(bs):
+                    pad_len = self.n_caches - ylens_cache[b]
+                    if pad_len > 0:
+                        lmouts_list.append(lmouts[b, :ylens_cache[b]])
+                    else:
+                        lmouts_list.append(ys_lm_emb_cache.new_zeros(pad_len, self.rnnlm.n_units))
+                self.fifo_cache_lm_key = pad_list(lmouts_list, pad_left=True)[:, -self.n_caches:]
+                # NOTE: RNNLM are not trained so as to decode <pad> tokens
 
         logits = []
         for t in range(ys_in_pad.size(1)):
@@ -682,7 +681,7 @@ class RNNDecoder(nn.Module):
 
             # Recurrency (1st)
             dec_in = attn_v if self.input_feeding else cv
-            if self.lm_fusion_type in ['hidden_update', 'hidden_dot_attention_update', 'hidden_add_attention_update']:
+            if self.lm_fusion_type in ['cold_hidden_recurrency', 'cache_dot_recurrency', 'cache_add_recurrency']:
                 dec_in = torch.cat([dec_in, lm_feat], dim=-1)
             if self.loop_type in ['conditional', 'rnmt']:
                 dstates = self.recurrency_step1(y_emb, dec_in, dstates)
@@ -1006,12 +1005,12 @@ class RNNDecoder(nn.Module):
         if self.rnnlm is not None:
             # cold fusion
             dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
-            if self.lm_fusion_type in ['hidden_update']:
+            if self.lm_fusion_type in ['cold_hidden_recurrency']:
                 lm_feat = self.cf_linear_lm_feat(lmout)
                 gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
                 gated_lm_feat = gate * lm_feat  # element-wise
                 out = self.output_bn(torch.cat([dout, cv], dim=-1))
-            elif self.lm_fusion_type in ['hidden_dot_attention_update', 'hidden_add_attention_update']:
+            elif self.lm_fusion_type in ['cache_dot_recurrency', 'cache_add_recurrency']:
                 self.score_cf.reset()
                 cache_lens = [cache_keys.size(1)] * dout.size(0)
                 e_cache = self.score_cf(cache_keys, cache_lens,
@@ -1029,14 +1028,14 @@ class RNNDecoder(nn.Module):
                 gated_lm_feat = gate * lm_feat
                 out = self.output_bn(torch.cat([dout, cv], dim=-1))
             else:
-                if self.lm_fusion_type == 'hidden':
+                if self.lm_fusion_type == 'cold_hidden_generate':
                     lm_feat = self.cf_linear_lm_feat(lmout)
                     gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
-                elif self.lm_fusion_type == 'prob':
+                elif self.lm_fusion_type == 'cold_prob_generate':
                     lm_feat = self.cf_linear_lm_feat(self.rnnlm.generate(lmout))
                     gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
-                elif self.lm_fusion_type in ['hidden_dot_attention', 'hidden_add_attention',
-                                             'hidden_dot_attention_unfreeze', 'hidden_add_attention_unfreeze']:
+                elif self.lm_fusion_type in ['cache_dot_generate', 'cache_add_generate',
+                                             'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze']:
                     self.score_cf.reset()
                     cache_lens = [cache_keys.size(1)] * dout.size(0)
                     e_cache = self.score_cf(cache_keys, cache_lens,

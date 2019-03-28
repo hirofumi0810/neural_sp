@@ -298,13 +298,13 @@ def parse():
     parser.add_argument('--bwd_weight_sub3', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     # cold fusion
-    parser.add_argument('--lm_fusion_type', type=str, default='hidden', nargs='?',
-                        choices=['hidden', 'prob',
-                                 'hidden_dot_attention', 'hidden_dot_attention_update',
-                                 'hidden_add_attention', 'hidden_add_attention_update',
-                                 'hidden_dot_attention_unfreeze', 'hidden_add_attention_unfreeze',
-                                 'hidden_dot_attention_unfreeze_mtl', 'hidden_add_attention_unfreeze_mtl',
-                                 'hidden_update'],
+    parser.add_argument('--lm_fusion_type', type=str, default='cold_hidden_generate', nargs='?',
+                        choices=['cold_hidden_generate', 'cold_prob_generate',
+                                 'cache_dot_generate', 'cache_dot_recurrency',
+                                 'cache_add_ganerate', 'cache_add_recurrency',
+                                 'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze',
+                                 'cache_dot_generate_unfreeze_mtl', 'cache_add_generate_unfreeze_mtl',
+                                 'cold_hidden_recurrency'],
                         help='type of cold fusion')
     parser.add_argument('--rnnlm_fusion', type=str, default=False, nargs='?',
                         help='RNNLM for LM fusion during training')
