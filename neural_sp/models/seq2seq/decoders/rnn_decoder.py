@@ -195,6 +195,7 @@ class RNNDecoder(nn.Module):
         self.prev_spk = ''
         self.dstates_final = None
         self.lmstate_final = (None, None)
+        self.cache_fusion = (self.rnnlm is not None and 'attention' in self.lm_fusion_type)
 
         if ctc_weight > 0:
             # Fully-connected layers for CTC
@@ -345,6 +346,9 @@ class RNNDecoder(nn.Module):
             dout_dim = n_projs if self.n_projs > 0 else n_units
             if self.rnnlm is not None:
                 self.cf_linear_dec_feat = LinearND(dout_dim + enc_n_units, n_units)
+
+                if 'attention' in self.lm_fusion_type:
+                    assert n_caches > 0
 
                 if lm_fusion_type == 'hidden':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm.n_units, n_units)
@@ -624,13 +628,12 @@ class RNNDecoder(nn.Module):
             ys_lm_emb = self.rnnlm.encode(ys_in_pad)
 
         # Pre-computation of RNNLM states for history
-        if self.n_caches > 0:
+        if self.cache_fusion:
             # NOTE: ys_cache already includes <sos> and <eos>
             ys_cache_pad = pad_list([np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long()
                                      for y in ys_cache], self.pad)
             ys_lm_emb_cache = self.rnnlm.encode(ys_cache_pad)
             ylens_cache = [len(y) for y in ys_cache]
-            assert self.rnnlm is not None
 
             lmouts = []
             hxs = [None] * bs
@@ -641,8 +644,7 @@ class RNNDecoder(nn.Module):
                     hxs[b] = lmstate[0][:, b:b + 1]
                     if self.rnnlm.rnn_type == 'lstm':
                         cxs[b] = lmstate[1][:, b:b + 1]
-                if 'attention' in self.lm_fusion_type:
-                    lmouts.append(lmout)
+                lmouts.append(lmout)
 
             # ylens_cache[b] == 0 case
             for b in [i for i, ylen in enumerate(ylens_cache) if ylen == 0]:
@@ -657,18 +659,17 @@ class RNNDecoder(nn.Module):
                 cxs = torch.cat(cxs, dim=1)
             lmstate = (hxs, cxs)
 
-            if 'attention' in self.lm_fusion_type:
-                # Pad the leftmost in lmouts
-                lmouts = torch.cat(lmouts, dim=1)  # `[B, cache_size, lm_n_units]`
-                lmouts_list = []
-                for b in range(bs):
-                    pad_len = self.n_caches - ylens_cache[b]
-                    if pad_len > 0:
-                        lmouts_list.append(lmouts[b, :ylens_cache[b]])
-                    else:
-                        lmouts_list.append(ys_lm_emb_cache.new_zeros(pad_len, self.rnnlm.n_units))
-                self.fifo_cache_lm_key = pad_list(lmouts_list, pad_left=True)
-                # NOTE: RNNLM are not trained so as to decode <pad> tokens
+            # Pad the leftmost in lmouts
+            lmouts = torch.cat(lmouts, dim=1)  # `[B, cache_size, lm_n_units]`
+            lmouts_list = []
+            for b in range(bs):
+                pad_len = self.n_caches - ylens_cache[b]
+                if pad_len > 0:
+                    lmouts_list.append(lmouts[b, :ylens_cache[b]])
+                else:
+                    lmouts_list.append(ys_lm_emb_cache.new_zeros(pad_len, self.rnnlm.n_units))
+            self.fifo_cache_lm_key = pad_list(lmouts_list, pad_left=True)[:, -self.n_caches:]
+            # NOTE: RNNLM are not trained so as to decode <pad> tokens
 
         logits = []
         for t in range(ys_in_pad.size(1)):
@@ -696,11 +697,6 @@ class RNNDecoder(nn.Module):
                 else:
                     y_lm_emb = ys_lm_emb[:, t:t + 1]
                 lmout, lmstate = self.rnnlm.decode(y_lm_emb, lmstate)
-                if 'attention' in self.lm_fusion_type:
-                    if self.fifo_cache_lm_key is None:
-                        self.fifo_cache_lm_key = lmout
-                    if self.n_caches > 0:
-                        self.fifo_cache_lm_key = torch.cat([self.fifo_cache_lm_key, lmout], dim=1)[:, -self.n_caches:]
 
             # Score
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
@@ -769,24 +765,19 @@ class RNNDecoder(nn.Module):
                    'dstate': None,
                    'dstate1': None, 'dstate2': None}
         w = next(self.parameters())
+        zero_state = w.new_zeros((bs, self.dec_n_units))
         dstates['dout_score'] = w.new_zeros((bs, 1, self.dec_n_units))
         dstates['dout_gen'] = w.new_zeros((bs, 1, self.dec_n_units))
         if self.loop_type in ['conditional', 'rnmt']:
-            hxs1 = [w.new_zeros((bs, self.dec_n_units))
-                    for l in range(1)]
-            cxs1 = [w.new_zeros((bs, self.dec_n_units))
-                    for l in range(1)] if self.rnn_type == 'lstm' else []
+            hxs1 = [zero_state for l in range(1)]
+            cxs1 = [zero_state for l in range(1)] if self.rnn_type == 'lstm' else []
             dstates['dstate1'] = (hxs1, cxs1)
-            hxs2 = [w.new_zeros((bs, self.dec_n_units))
-                    for l in range(self.n_layers - 1)]
-            cxs2 = [w.new_zeros((bs, self.dec_n_units))
-                    for l in range(self.n_layers - 1)] if self.rnn_type == 'lstm' else []
+            hxs2 = [zero_state for l in range(self.n_layers - 1)]
+            cxs2 = [zero_state for l in range(self.n_layers - 1)] if self.rnn_type == 'lstm' else []
             dstates['dstate2'] = (hxs2, cxs2)
         else:
-            hxs = [w.new_zeros((bs, self.dec_n_units))
-                   for l in range(self.n_layers)]
-            cxs = [w.new_zeros((bs, self.dec_n_units))
-                   for l in range(self.n_layers)] if self.rnn_type == 'lstm' else []
+            hxs = [zero_state for l in range(self.n_layers)]
+            cxs = [zero_state for l in range(self.n_layers)] if self.rnn_type == 'lstm' else []
             dstates['dstate'] = (hxs, cxs)
         return dstates
 
@@ -1068,7 +1059,7 @@ class RNNDecoder(nn.Module):
         return attn_v, aw_cache, gated_lm_feat
 
     def greedy(self, eouts, elens, max_len_ratio, exclude_eos=False, speakers=None):
-        """Greedy decoding in the inference stage.
+        """Greedy decoding in the inference stage (used only for evaluation during training).
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
@@ -1107,6 +1098,8 @@ class RNNDecoder(nn.Module):
         best_hyps_tmp, aws_tmp = [], []
         ylens = np.zeros((bs,), dtype=np.int64)
         eos_flags = [False] * bs
+        fifo_cache_ids_local = []
+        fifo_cache_lm_key_local = []
         for t in range(int(math.floor(max_xlen * max_len_ratio)) + 1):
             # Recurrency (1st)
             y_emb = self.embed(y)
@@ -1122,11 +1115,8 @@ class RNNDecoder(nn.Module):
             lmout = None
             if self.rnnlm is not None:
                 lmout, lmstate = self.rnnlm.decode(self.rnnlm.encode(y), lmstate)
-                if 'attention' in self.lm_fusion_type:
-                    if self.fifo_cache_lm_key is None:
-                        self.fifo_cache_lm_key = lmout
-                    if self.n_caches > 0:
-                        self.fifo_cache_lm_key = torch.cat([self.fifo_cache_lm_key, lmout], dim=1)[:, -self.n_caches:]
+                if self.cache_fusion:
+                    fifo_cache_lm_key_local.append(lmout)  # features for prediction
 
             # Score
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
@@ -1136,8 +1126,13 @@ class RNNDecoder(nn.Module):
                 dstates = self.recurrency_step2(cv, dstates)
 
             # Generate
-            attn_v, _, lm_feat = self.generate(cv, dstates['dout_gen'], lmout,
-                                               cache_keys=self.fifo_cache_lm_key)
+            memory = None
+            if self.cache_fusion:
+                if self.fifo_cache_lm_key is None:
+                    memory = eouts.new_zeros(1, 1, self.rnnlm.n_units)
+                else:
+                    memory = self.fifo_cache_lm_key
+            attn_v, _, lm_feat = self.generate(cv, dstates['dout_gen'], lmout, cache_keys=memory)
             logits_t = self.output(attn_v)
 
             # Pick up 1-best
@@ -1148,9 +1143,8 @@ class RNNDecoder(nn.Module):
             else:
                 aws_tmp += [aw]
 
-            if self.n_caches > 0 and 'attention' in self.lm_fusion_type:
-                self.fifo_cache_ids += [y]
-                self.fifo_cache_ids = self.fifo_cache_ids[-self.n_caches:]
+            if self.cache_fusion:
+                fifo_cache_ids_local += [y]  # predicted label (not previous label)
 
             # Count lengths of hypotheses
             for b in range(bs):
@@ -1165,12 +1159,15 @@ class RNNDecoder(nn.Module):
                 break
 
         # RNNLM state carry over
-        if self.rnnlm is not None and self.n_caches > 0:
-            self.lmstate_final = lmstate
+        self.lmstate_final = lmstate
 
-        # Reset cache
-        if self.n_caches == 0:
-            self.fifo_cache_lm_key = None
+        if self.cache_fusion:
+            fifo_cache_lm_key_local = torch.cat(fifo_cache_lm_key_local, dim=1)
+            self.fifo_cache_lm_key = torch.cat([self.fifo_cache_lm_key, fifo_cache_lm_key_local], dim=1)
+            self.fifo_cache_ids += fifo_cache_ids_local
+            # Truncate
+            self.fifo_cache_lm_key = self.fifo_cache_lm_key[:, -self.n_caches:]
+            self.fifo_cache_ids = self.fifo_cache_ids[-self.n_caches:]
 
         # Concatenate in L dimension
         best_hyps_tmp = tensor2np(torch.cat(best_hyps_tmp, dim=1))
@@ -1254,9 +1251,6 @@ class RNNDecoder(nn.Module):
             rnnlm.eval()
         if rnnlm_rev is not None:
             rnnlm_rev.eval()
-        # if self.rnnlm is not None:
-        #     self.rnnlm.eval()
-        # TODO(hirofumi): remove after check
 
         # For joint CTC-Attention decoding
         if ctc_weight > 0 and ctc_log_probs is not None:
@@ -1319,9 +1313,7 @@ class RNNDecoder(nn.Module):
                      'cache_sp_key': [],
                      'cache_lm_key': [],
                      'cache_id_hist': [],
-                     #  'cache_sp_attn_hist': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.fifo_cache_ids) == 0 else [],
                      'cache_sp_attn_hist': [],
-                     #  'cache_lm_attn_hist': [torch.zeros((1, 1, 1), dtype=torch.float32)] if len(self.fifo_cache_ids) == 0 else [],
                      'cache_lm_attn_hist': [],
                      }]
             if oracle:
@@ -1411,15 +1403,11 @@ class RNNDecoder(nn.Module):
 
                     # Generate for the main model
                     memory = None
-                    if self.rnnlm is not None and 'attention' in self.lm_fusion_type:
+                    if self.cache_fusion:
                         if self.fifo_cache_lm_key is None:
-                            if len(beam[i_beam]['cache_lm_key']) == 0:
-                                memory = [eouts.new_zeros(1, 1, self.rnnlm.n_units)]
-                            else:
-                                memory = beam[i_beam]['cache_lm_key'][-n_caches:]
+                            memory = eouts.new_zeros(1, 1, self.rnnlm.n_units)
                         else:
-                            memory = (self.fifo_cache_lm_key + beam[i_beam]['cache_lm_key'])[-n_caches:]
-                        memory = torch.cat(memory, dim=1)  # `[1, L, lm_n_units]`
+                            memory = self.fifo_cache_lm_key
                     attn_v, aw_cache, lm_feat = self.generate(cv, dstates['dout_gen'], lmout, cache_keys=memory)
                     probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
 
@@ -1441,11 +1429,16 @@ class RNNDecoder(nn.Module):
                         # Compute inner-product over caches
                         cache_idx = (self.fifo_cache_ids + beam[i_beam]['cache_idx'])[-n_caches:]
                         if cache_type in ['speech', 'joint']:
-                            if self.fifo_cache_sp_key is None:
-                                cache_sp_key = beam[i_beam]['cache_sp_key'][-n_caches:]
+                            cache_sp_key = beam[i_beam]['cache_sp_key'][-n_caches:]
+                            if len(cache_sp_key) > 0:
+                                cache_sp_key = torch.cat(cache_sp_key, dim=1)
+                                if self.fifo_cache_sp_key is not None:
+                                    cache_sp_key = torch.cat([self.fifo_cache_sp_key, cache_sp_key], dim=1)
                             else:
-                                cache_sp_key = (self.fifo_cache_sp_key + beam[i_beam]['cache_sp_key'])[-n_caches:]
-                            cache_sp_key = torch.cat(cache_sp_key, dim=1)  # `[1, L, enc_n_units]`
+                                # For the first token
+                                cache_sp_key = self.fifo_cache_sp_key
+                            # Truncate
+                            cache_sp_key = cache_sp_key[:, -n_caches:]  # `[1, L, enc_n_units]`
                             cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
                                 cache_sp_key, cv.transpose(2, 1)), dim=1)  # `[1, L, 1]`
                             # cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
@@ -1455,12 +1448,18 @@ class RNNDecoder(nn.Module):
                                 for offset in [i for i, key in enumerate(cache_idx) if key == c]:
                                     cache_probs_sp[0, c] += cache_sp_attn[0, offset, 0]
                             probs = (1 - cache_lambda_sp) * probs + cache_lambda_sp * cache_probs_sp
+
                         if cache_type in ['lm', 'joint'] and lm_weight > 0:
-                            if self.fifo_cache_lm_key is None:
-                                cache_lm_key = beam[i_beam]['cache_lm_key'][-n_caches:]
+                            cache_lm_key = beam[i_beam]['cache_lm_key'][-n_caches:]
+                            if len(cache_lm_key) > 0:
+                                cache_lm_key = torch.cat(cache_lm_key, dim=1)
+                                if self.fifo_cache_lm_key is not None:
+                                    cache_lm_key = torch.cat([self.fifo_cache_lm_key, cache_lm_key], dim=1)
                             else:
-                                cache_lm_key = (self.fifo_cache_lm_key + beam[i_beam]['cache_lm_key'])[-n_caches:]
-                            cache_lm_key = torch.cat(cache_lm_key, dim=1)  # `[1, L, lm_n_units]`
+                                # For the first token
+                                cache_lm_key = self.fifo_cache_lm_key
+                            # Truncate
+                            cache_lm_key = cache_lm_key[:, -n_caches:]  # `[1, L, lm_n_units]`
                             cache_lm_attn = F.softmax(cache_theta_lm * torch.matmul(
                                 cache_lm_key, lmout.transpose(2, 1)), dim=1)  # `[1, L, 1]`
                             # Sum all probabilities
@@ -1468,7 +1467,8 @@ class RNNDecoder(nn.Module):
                                 for offset in [i for i, key in enumerate(cache_idx) if key == c]:
                                     cache_probs_lm[0, c] += cache_lm_attn[0, offset, 0]
                             lm_probs = (1 - cache_lambda_lm) * lm_probs + cache_lambda_lm * cache_probs_lm
-                        if self.rnnlm is not None and 'attention' in self.lm_fusion_type:
+
+                        if self.cache_fusion:
                             cache_lm_attn = aw_cache
 
                     log_probs = torch.log(probs)
@@ -1700,17 +1700,19 @@ class RNNDecoder(nn.Module):
         cache_id_hist = None
         cache_sp_attn_hist = None
         cache_lm_attn_hist = None
-        is_cache = len(self.fifo_cache_ids + complete[0]['cache_idx']) > 0
-        if n_caches > 0 and is_cache:
+        is_local_cache = len(complete[0]['cache_idx']) > 0
+        if n_caches > 0 and is_local_cache:
             hyp_len = len(complete[0]['hyp'][1:])
             self.fifo_cache_ids = (self.fifo_cache_ids + complete[0]['cache_idx'])[:n_caches]
 
             cache_id_hist = complete[0]['cache_id_hist']
             if cache_type in ['speech', 'joint']:
-                if self.fifo_cache_sp_key is None:
-                    self.fifo_cache_sp_key = complete[0]['cache_sp_key']
-                else:
-                    self.fifo_cache_sp_key = (self.fifo_cache_sp_key + complete[0]['cache_sp_key'])[:n_caches]
+                cache_sp_key = complete[0]['cache_sp_key'][-n_caches:]
+                cache_sp_key = torch.cat(cache_sp_key, dim=1)
+                if self.fifo_cache_sp_key is not None:
+                    cache_sp_key = torch.cat([self.fifo_cache_sp_key, cache_sp_key], dim=1)
+                # Truncate
+                self.fifo_cache_sp_key = cache_sp_key[:, -n_caches:]  # `[1, L, enc_n_units]`
                 cache_sp_attn_hist = torch.zeros(
                     (1, complete[0]['cache_sp_attn_hist'][-1].size(1), hyp_len), dtype=torch.float32)
                 for i, p in enumerate(complete[0]['cache_sp_attn_hist']):
@@ -1718,12 +1720,15 @@ class RNNDecoder(nn.Module):
                         cache_sp_attn_hist[0, :p.size(1), i] = p[0, :, 0].cpu()
                     else:
                         cache_sp_attn_hist[0, :n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
+
             if cache_type in ['lm', 'joint']:
-                assert lm_weight > 0 or 'attention' in self.lm_fusion_type
-                if self.fifo_cache_lm_key is None:
-                    self.fifo_cache_lm_key = complete[0]['cache_lm_key']
-                else:
-                    self.fifo_cache_lm_key = (self.fifo_cache_lm_key + complete[0]['cache_lm_key'])[:n_caches]
+                assert lm_weight > 0 or self.cache_fusion
+                cache_lm_key = complete[0]['cache_lm_key'][-n_caches:]
+                cache_lm_key = torch.cat(cache_lm_key, dim=1)
+                if self.fifo_cache_lm_key is not None:
+                    cache_lm_key = torch.cat([self.fifo_cache_lm_key, cache_lm_key], dim=1)
+                # Truncate
+                self.fifo_cache_lm_key = cache_lm_key[:, -n_caches:]  # `[1, L, lm_n_units]`
                 cache_lm_attn_hist = torch.zeros((1, complete[0]['cache_lm_attn_hist'][-1].size(1), hyp_len),
                                                  dtype=torch.float32)  # `[B, n_keys, n_values]`
                 for i, p in enumerate(complete[0]['cache_lm_attn_hist']):
