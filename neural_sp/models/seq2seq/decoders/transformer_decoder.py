@@ -100,7 +100,6 @@ class TransformerDecoder(nn.Module):
 
         super(TransformerDecoder, self).__init__()
 
-        self.sos = sos
         self.eos = eos
         self.pad = pad
         self.blank = blank
@@ -253,16 +252,11 @@ class TransformerDecoder(nn.Module):
 
         """
         # Append <sos> and <eos>
-        sos = eouts.new_zeros((1,)).fill_(self.sos).long()
         eos = eouts.new_zeros((1,)).fill_(self.eos).long()
-        if self.backward:
-            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
-            ys_in = [torch.cat([eos, y], dim=0) for y in ys]
-            ys_out = [torch.cat([y, sos], dim=0) for y in ys]
-        else:
-            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
-            ys_in = [torch.cat([sos, y], dim=0) for y in ys]
-            ys_out = [torch.cat([y, eos], dim=0) for y in ys]
+        ys = [np2tensor(np.fromiter(y[::-1] if self.backward else y, dtype=np.int64), self.device_id).long()
+              for y in ys]
+        ys_in = [torch.cat([eos, y], dim=0) for y in ys]
+        ys_out = [torch.cat([y, eos], dim=0) for y in ys]
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, -1)
 
@@ -290,19 +284,19 @@ class TransformerDecoder(nn.Module):
             ys_emb, yy_aw, xy_aw = self.layers[l](eouts, ys_emb, yx_mask, yy_mask)
 
         ys_emb = self.layer_norm_top(ys_emb)
+        logits = self.output(ys_emb)
 
         # Compute XE sequence loss
-        logits = self.output(ys_emb)
         if self.lsm_prob > 0:
             # Label smoothing
-            ylens = [y.size(0) for y in ys_out]
-            loss = cross_entropy_lsm(logits, ys=ys_out_pad, ylens=ylens,
+            loss = cross_entropy_lsm(logits,
+                                     ys=ys_out_pad,
+                                     ylens=[y.size(0) for y in ys_out],
                                      lsm_prob=self.lsm_prob, size_average=True)
         else:
             loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
                                    target=ys_out_pad.view(-1),  # long
                                    ignore_index=-1, size_average=False) / bs
-        ppl = np.exp(loss.item())
 
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits.view(ys_out_pad.size(0), ys_out_pad.size(1), logits.size(-1)).argmax(2)
@@ -310,6 +304,7 @@ class TransformerDecoder(nn.Module):
         numerator = (pad_pred.masked_select(mask) == ys_out_pad.masked_select(mask)).sum()
         denominator = mask.sum()
         acc = float(numerator) * 100 / float(denominator)
+        ppl = np.exp(loss.item())
 
         return loss, acc, ppl
 
@@ -328,13 +323,8 @@ class TransformerDecoder(nn.Module):
         """
         bs, max_xlen, d_model = eouts.size()
 
-        if self.backward:
-            sos, eos = self.eos, self.sos
-        else:
-            sos, eos = self.sos, self.eos
-
         # Start from <sos> (<eos> in case of the backward decoder)
-        ys = eouts.new_zeros(bs, 1).fill_(sos).long()
+        ys = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
         yy_mask = None
 
@@ -368,7 +358,7 @@ class TransformerDecoder(nn.Module):
             # Count lengths of hypotheses
             for b in range(bs):
                 if not eos_flags[b]:
-                    if y[b].item() == eos:
+                    if y[b].item() == self.eos:
                         eos_flags[b] = True
                         yy_aws_tmp[b] = yy_aw[b:b + 1]  # TODO: fix this
                         xy_aws_tmp[b] = xy_aw[b:b + 1]

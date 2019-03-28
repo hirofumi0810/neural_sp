@@ -522,16 +522,11 @@ class RNNDecoder(nn.Module):
         w = next(self.parameters())
 
         # Append <sos> and <eos>
-        sos = w.new_zeros((1,)).fill_(self.eos).long()
         eos = w.new_zeros((1,)).fill_(self.eos).long()
-        if self.backward:
-            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
-            ys_in = [torch.cat([eos, y], dim=0) for y in ys]
-            ys_out = [torch.cat([y, sos], dim=0) for y in ys]
-        else:
-            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
-            ys_in = [torch.cat([sos, y], dim=0) for y in ys]
-            ys_out = [torch.cat([y, eos], dim=0) for y in ys]
+        ys = [np2tensor(np.fromiter(y[::-1] if self.backward else y, dtype=np.int64),
+                        self.device_id).long() for y in ys]
+        ys_in = [torch.cat([eos, y], dim=0) for y in ys]
+        ys_out = [torch.cat([y, eos], dim=0) for y in ys]
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, -1)
 
@@ -606,16 +601,11 @@ class RNNDecoder(nn.Module):
         bs = eouts.size(0)
 
         # Append <sos> and <eos>
-        sos = eouts.new_zeros(1).fill_(self.eos).long()
         eos = eouts.new_zeros(1).fill_(self.eos).long()
-        if self.backward:
-            _ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
-            ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
-            ys_out = [torch.cat([y, sos], dim=0) for y in _ys]
-        else:
-            _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
-            ys_in = [torch.cat([sos, y], dim=0) for y in _ys]
-            ys_out = [torch.cat([y, eos], dim=0) for y in _ys]
+        _ys = [np2tensor(np.fromiter(y[::-1] if self.backward else y, dtype=np.int64),
+                         self.device_id).long() for y in ys]
+        ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
+        ys_out = [torch.cat([y, eos], dim=0) for y in _ys]
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, -1)
 
@@ -723,17 +713,18 @@ class RNNDecoder(nn.Module):
             attn_v, _, lm_feat = self.generate(cv, dstates['dout_gen'], lmout,
                                                cache_keys=self.fifo_cache_lm_key)
             logits.append(self.output(attn_v))
+        logits = torch.cat(logits, dim=1)
 
         # Reset cache
         self.fifo_cache_lm_key = None
 
         # Compute XE sequence loss
-        logits = torch.cat(logits, dim=1)
         if self.lsm_prob > 0:
             # Label smoothing
-            ylens = [y.size(0) for y in ys_out]
             loss = cross_entropy_lsm(
-                logits, ys=ys_out_pad, ylens=ylens,
+                logits,
+                ys=ys_out_pad,
+                ylens=[y.size(0) for y in ys_out],
                 lsm_prob=self.lsm_prob, size_average=True)
         else:
             loss = F.cross_entropy(
