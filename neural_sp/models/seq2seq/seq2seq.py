@@ -181,10 +181,6 @@ class Seq2seq(ModelBase):
             if args.rnnlm_fusion and dir == 'fwd':
                 rnnlm = RNNLM(args.rnnlm_conf)
                 rnnlm.load_checkpoint(args.rnnlm_fusion)
-
-                # Fix RNNLM parameters
-                for param in rnnlm.parameters():
-                    param.requires_grad = False
             else:
                 args.rnnlm_conf = False
                 rnnlm = None
