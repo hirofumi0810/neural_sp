@@ -303,6 +303,7 @@ def parse():
                                  'hidden_dot_attention', 'hidden_dot_attention_update',
                                  'hidden_add_attention', 'hidden_add_attention_update',
                                  'hidden_dot_attention_unfreeze', 'hidden_add_attention_unfreeze',
+                                 'hidden_dot_attention_unfreeze_mtl', 'hidden_add_attention_unfreeze_mtl',
                                  'hidden_update'],
                         help='type of cold fusion')
     parser.add_argument('--rnnlm_fusion', type=str, default=False, nargs='?',

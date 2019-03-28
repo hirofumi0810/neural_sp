@@ -315,7 +315,7 @@ def main():
             tasks = ['ys.ctc'] + tasks
         if args.lmobj_weight > 0:
             tasks = ['ys.lmobj'] + tasks
-        if args.rnnlm_fusion is not None and 'unfreeze' in args.lm_fusion_type:
+        if args.rnnlm_fusion is not None and 'mtl' in args.lm_fusion_type:
             tasks = ['ys.rnnlm'] + tasks
         for sub in ['sub1', 'sub2', 'sub3']:
             if getattr(args, 'train_set_' + sub):

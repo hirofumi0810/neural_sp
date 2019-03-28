@@ -449,7 +449,7 @@ class RNNDecoder(nn.Module):
                 loss += loss_lmobj * self.lmobj_weight
 
         # RNNLM joint training
-        if self.rnnlm_cf is not None and 'unfreeze' in self.lm_fusion_type and (task == 'all' or 'rnnlm' in task):
+        if self.rnnlm_cf is not None and 'mtl' in self.lm_fusion_type and (task == 'all' or 'rnnlm' in task):
             loss_rnnlm, ppl_rnnlm = self.forward_rnnlm(ys, ys_cache)
             observation['loss_rnnlm'] = loss_rnnlm.item()
             observation['ppl_rnnlm'] = ppl_rnnlm
