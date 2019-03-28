@@ -361,10 +361,10 @@ class RNNDecoder(nn.Module):
                                         'cache_add_generate', 'cache_add_recurrency',
                                         'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze',
                                         'cache_cold_dot_generate']:
-                    self.cf_linear_lm_feat = LinearND(self.rnnlm.n_units, n_units)
+                    self.cache_enc = LinearND(self.rnnlm.n_units, n_units)
                     self.score_cf = AttentionMechanism(
-                        key_dim=self.rnnlm.n_units,
-                        query_dim=n_units + self.rnnlm.n_units,
+                        key_dim=n_units,
+                        query_dim=n_units * 2,
                         attn_type='dot' if 'dot' in lm_fusion_type else 'add',
                         attn_dim=n_units)
                     self.sentinel = LinearND(n_units, 1, bias=False)
@@ -640,7 +640,7 @@ class RNNDecoder(nn.Module):
             ys_lm_emb_cache = self.rnnlm.encode(ys_cache_pad)
             ylens_cache = [len(y) for y in ys_cache]
 
-            lmouts = []
+            memory = []
             hxs = [None] * bs
             cxs = [None] * bs
             for t_c in range(max(ylens_cache)):
@@ -649,7 +649,8 @@ class RNNDecoder(nn.Module):
                     hxs[b] = lmstate[0][:, b:b + 1]
                     if self.rnnlm.rnn_type == 'lstm':
                         cxs[b] = lmstate[1][:, b:b + 1]
-                lmouts.append(lmout)
+                if self.cache_fusion:
+                    memory.append(self.cache_enc(lmout))
 
             # ylens_cache[b] == 0 case
             for b in [i for i, ylen in enumerate(ylens_cache) if ylen == 0]:
@@ -658,23 +659,23 @@ class RNNDecoder(nn.Module):
                 if self.rnnlm.rnn_type == 'lstm':
                     cxs[b] = cxs_b
 
-            # Concatenate lmstate, lmouts
+            # Concatenate lmstate, memory
             hxs = torch.cat(hxs, dim=1)  # `[lm_n_layers, B, lm_n_units]`
             if self.rnnlm.rnn_type == 'lstm':
                 cxs = torch.cat(cxs, dim=1)
             lmstate = (hxs, cxs)
 
-            # Pad the leftmost in lmouts
+            # Pad the leftmost in memory
             if self.cache_fusion:
-                lmouts = torch.cat(lmouts, dim=1)  # `[B, cache_size, lm_n_units]`
-                lmouts_list = []
+                memory = torch.cat(memory, dim=1)  # `[B, cache_size, lm_n_units]`
+                memory_list = []
                 for b in range(bs):
                     pad_len = self.n_caches - ylens_cache[b]
                     if pad_len > 0:
-                        lmouts_list.append(lmouts[b, :ylens_cache[b]])
+                        memory_list.append(memory[b, :ylens_cache[b]])
                     else:
-                        lmouts_list.append(ys_lm_emb_cache.new_zeros(pad_len, self.rnnlm.n_units))
-                self.fifo_cache_lm_key = pad_list(lmouts_list, pad_left=True)[:, -self.n_caches:]
+                        memory_list.append(ys_lm_emb_cache.new_zeros(pad_len, self.n_units))
+                self.fifo_cache_lm_key = pad_list(memory_list, pad_left=True)[:, -self.n_caches:]
                 # NOTE: RNNLM are not trained so as to decode <pad> tokens
 
         logits = []
@@ -1018,11 +1019,12 @@ class RNNDecoder(nn.Module):
                 gated_lm_feat = gate * lm_feat  # element-wise
                 out = self.output_bn(torch.cat([dout, cv], dim=-1))
             elif self.lm_fusion_type in ['cache_dot_recurrency', 'cache_add_recurrency']:
+                lm_feat = self.cf_linear_lm_feat(lmout)
                 self.score_cf.reset()
                 cache_lens = [cache_keys.size(1)] * dout.size(0)
                 e_cache = self.score_cf(cache_keys, cache_lens,
                                         value=cache_keys,
-                                        query=torch.cat([dec_feat, lmout], dim=-1),
+                                        query=torch.cat([dec_feat, lm_feat], dim=-1),
                                         return_logits=True)  # `[B, n_caches]`
                 sentinel_vec = self.sentinel(dec_feat)  # `[B, 1, 1]`
                 e_cache = torch.cat([e_cache, sentinel_vec.squeeze(2)], dim=1)
@@ -1031,8 +1033,7 @@ class RNNDecoder(nn.Module):
                 aw_cache = aw_cache[:, :-1]
                 cv_cache = torch.matmul(aw_cache.unsqueeze(1), cache_keys)
                 aw_cache = aw_cache.unsqueeze(2)
-                lm_feat = self.cf_linear_lm_feat(cv_cache)
-                gated_lm_feat = gate * lm_feat
+                gated_lm_feat = gate * cv_cache
                 out = self.output_bn(torch.cat([dout, cv], dim=-1))
             else:
                 if self.lm_fusion_type == 'cold_hidden_generate':
@@ -1046,11 +1047,12 @@ class RNNDecoder(nn.Module):
                 elif self.lm_fusion_type in ['cache_dot_generate', 'cache_add_generate',
                                              'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze',
                                              'cache_cold_dot_generate']:
+                    lm_feat = self.cf_linear_lm_feat(lmout)
                     self.score_cf.reset()
                     cache_lens = [cache_keys.size(1)] * dout.size(0)
                     e_cache = self.score_cf(cache_keys, cache_lens,
                                             value=cache_keys,
-                                            query=torch.cat([dec_feat, lmout], dim=-1),
+                                            query=torch.cat([dec_feat, lm_feat], dim=-1),
                                             return_logits=True)  # `[B, n_caches]`
                     sentinel_vec = self.sentinel(dec_feat)  # `[B, 1, 1]`
                     e_cache = torch.cat([e_cache, sentinel_vec.squeeze(2)], dim=1)
@@ -1059,10 +1061,8 @@ class RNNDecoder(nn.Module):
                     aw_cache = aw_cache[:, :-1]
                     cv_cache = torch.matmul(aw_cache.unsqueeze(1), cache_keys)
                     aw_cache = aw_cache.unsqueeze(2)
-                    lm_feat_cache = self.cf_linear_lm_feat(cv_cache)
-                    gated_lm_feat = gate_cache * lm_feat_cache
+                    gated_lm_feat = gate_cache * cv_cache
                     if self.lm_fusion_type == 'cache_cold_dot_generate':
-                        lm_feat = self.cf_linear_lm_feat(lmout)
                         gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
                         gated_lm_feat = torch.cat([gate * lm_feat, gated_lm_feat], dim=-1)
 
@@ -1118,7 +1118,7 @@ class RNNDecoder(nn.Module):
             # Recurrency (1st)
             y_emb = self.embed(y)
             dec_in = attn_v if self.input_feeding else cv
-            if 'update' in self.lm_fusion_type:
+            if 'recurrency' in self.lm_fusion_type:
                 dec_in = torch.cat([dec_in, lm_feat], dim=-1)
             if self.loop_type in ['conditional', 'rnmt']:
                 dstates = self.recurrency_step1(y_emb, dec_in, dstates)
@@ -1130,7 +1130,7 @@ class RNNDecoder(nn.Module):
             if self.rnnlm is not None:
                 lmout, lmstate = self.rnnlm.decode(self.rnnlm.encode(y), lmstate)
                 if self.cache_fusion:
-                    fifo_cache_lm_key_local.append(lmout)  # features for prediction
+                    fifo_cache_lm_key_local.append(self.cache_enc(lmout))  # features for prediction
 
             # Score
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
@@ -1339,6 +1339,9 @@ class RNNDecoder(nn.Module):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     prev_idx = ([self.eos] + refs[b])[t] if oracle else beam[i_beam]['hyp'][-1]
+
+                    if 'recurrency' in self.lm_fusion_type:
+                        raise NotImplementedError
 
                     # Recurrency (1st) for the main model
                     y = eouts.new_zeros(1, 1).fill_(prev_idx).long()
