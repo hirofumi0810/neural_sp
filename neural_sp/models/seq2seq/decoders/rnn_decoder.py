@@ -358,7 +358,7 @@ class RNNDecoder(nn.Module):
                     self.cf_linear_lm_feat = LinearND(self.rnnlm_cf.n_units, n_units)
                     self.score_cf = AttentionMechanism(
                         key_dim=self.rnnlm_cf.n_units,
-                        query_dim=n_units,
+                        query_dim=n_units + self.rnnlm_cf.n_units,
                         attn_type='dot' if 'dot' in lm_fusion_type else 'add',
                         attn_dim=n_units)
                     self.sentinel = LinearND(n_units, 1, bias=False)
@@ -1033,7 +1033,8 @@ class RNNDecoder(nn.Module):
                 self.score_cf.reset()
                 cache_lens = [cache_keys.size(1)] * dout.size(0)
                 e_cache = self.score_cf(cache_keys, cache_lens,
-                                        value=cache_keys, query=dec_feat,
+                                        value=cache_keys,
+                                        query=torch.cat([dec_feat, lmout], dim=-1),
                                         return_logits=True)  # `[B, n_caches]`
                 sentinel_vec = self.sentinel(dec_feat)  # `[B, 1, 1]`
                 e_cache = torch.cat([e_cache, sentinel_vec.squeeze(2)], dim=1)
@@ -1057,7 +1058,8 @@ class RNNDecoder(nn.Module):
                     self.score_cf.reset()
                     cache_lens = [cache_keys.size(1)] * dout.size(0)
                     e_cache = self.score_cf(cache_keys, cache_lens,
-                                            value=cache_keys, query=dec_feat,
+                                            value=cache_keys,
+                                            query=torch.cat([dec_feat, lmout], dim=-1),
                                             return_logits=True)  # `[B, n_caches]`
                     sentinel_vec = self.sentinel(dec_feat)  # `[B, 1, 1]`
                     e_cache = torch.cat([e_cache, sentinel_vec.squeeze(2)], dim=1)
