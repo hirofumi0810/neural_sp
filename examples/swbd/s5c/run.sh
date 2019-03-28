@@ -81,6 +81,7 @@ warmup_n_epochs=0
 param_init=0.1
 param_init_dist=uniform
 pretrained_model=
+freeze_encoder=false
 ### regularization
 clip_grad_norm=5.0
 dropout_in=0.0
@@ -100,7 +101,7 @@ bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
 ### LM integration
-lm_fusion_type=hidden
+lm_fusion_type=cold_hidden_generate
 rnnlm_fusion=
 rnnlm_init=
 lmobj_weight=0.0
@@ -534,6 +535,7 @@ if [ ${stage} -le 4 ]; then
         --param_init ${param_init} \
         --param_init_dist ${param_init_dist} \
         --pretrained_model ${pretrained_model} \
+        --freeze_encoder ${freeze_encoder} \
         --clip_grad_norm ${clip_grad_norm} \
         --dropout_in ${dropout_in} \
         --dropout_enc ${dropout_enc} \

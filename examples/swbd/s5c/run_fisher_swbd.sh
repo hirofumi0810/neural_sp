@@ -100,7 +100,7 @@ bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
 ### LM integration
-lm_fusion_type=hidden
+lm_fusion_type=cold_hidden_generate
 rnnlm_fusion=
 rnnlm_init=
 lmobj_weight=0.0
