@@ -255,6 +255,19 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     fi
     echo "vocab size:" $(cat ${dict} | wc -l)
 
+    # normalize eval2000
+    # 1) convert upper to lower
+    # 2) remove tags (%AH) (%HESITATION) (%UH)
+    # 3) remove <B_ASIDE> <E_ASIDE>
+    # 4) remove "(" or ")"
+    paste -d " " <(awk '{print $1}' ${data}/${test_set}/text) <(cat ${data}/${test_set}/text | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
+        perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g') \
+        > ${data}/${test_set}/text.tmp
+    mv ${data}/${test_set}/text.tmp ${data}/${test_set}/text
+
+    grep -v en ${data}/${test_set}/text > ${data}/${test_set}/text.swbd
+    grep -v sw ${data}/${test_set}/text > ${data}/${test_set}/text.ch
+
     # Compute OOV rate
     if [ ${unit} = word ]; then
         mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
@@ -266,27 +279,20 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
                 >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
         done
 
-        # 1) convert upper to lower
-        # 2) remove tags (%AH) (%HESITATION) (%UH)
-        # 3) remove <B_ASIDE> <E_ASIDE>
-        # 4) remove "(" or ")"
         # swichboard
-        grep -v en ${data}/${test_set}/text | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
-            perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' | \
-            tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+        cut -f 2- -d " " ${data}/${test_set}/text.swbd | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
             > ${data}/dict/word_count/${test_set}_swbd.txt || exit 1;
         compute_oov_rate.py ${data}/dict/word_count/${test_set}_swbd.txt ${dict} ${test_set}_swbd \
             >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
         # callhome
-        grep -v sw ${data}/${test_set}/text | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
-            perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' | \
-            tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+        cut -f 2- -d " " ${data}/${test_set}/text.ch | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
             > ${data}/dict/word_count/${test_set}_callhm.txt || exit 1;
         compute_oov_rate.py ${data}/dict/word_count/${test_set}_callhm.txt ${dict} ${test_set}_callhm \
             >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
         cat ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
     fi
 
+    echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
     for x in ${train_set} ${dev_set}; do
         dump_dir=${data}/dump/${x}

@@ -285,6 +285,19 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     fi
     echo "vocab size:" $(cat ${dict} | wc -l)
 
+    # normalize eval2000
+    # 1) convert upper to lower
+    # 2) remove tags (%AH) (%HESITATION) (%UH)
+    # 3) remove <B_ASIDE> <E_ASIDE>
+    # 4) remove "(" or ")"
+    paste -d " " <(awk '{print $1}' ${data}/${test_set}/text) <(cat ${data}/${test_set}/text | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
+        perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g') \
+        > ${data}/${test_set}/text.tmp
+    mv ${data}/${test_set}/text.tmp ${data}/${test_set}/text
+
+    grep -v en ${data}/${test_set}/text > ${data}/${test_set}/text.swbd
+    grep -v sw ${data}/${test_set}/text > ${data}/${test_set}/text.ch
+
     # Compute OOV rate
     if [ ${unit} = word ]; then
         mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
@@ -296,21 +309,13 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
                 >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
         done
 
-        # 1) convert upper to lower
-        # 2) remove tags (%AH) (%HESITATION) (%UH)
-        # 3) remove <B_ASIDE> <E_ASIDE>
-        # 4) remove "(" or ")"
         # swichboard
-        grep -v en ${data}/${test_set}/text | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
-            perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' | \
-            tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+        cut -f 2- -d " " ${data}/${test_set}/text.swbd | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
             > ${data}/dict/word_count/${test_set}_swbd.txt || exit 1;
         compute_oov_rate.py ${data}/dict/word_count/${test_set}_swbd.txt ${dict} ${test_set}_swbd \
             >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
         # callhome
-        grep -v sw ${data}/${test_set}/text | cut -f 2- -d " " | awk '{ print tolower($0) }' | \
-            perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' | \
-            tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+        cut -f 2- -d " " ${data}/${test_set}/text.ch | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
             > ${data}/dict/word_count/${test_set}_callhm.txt || exit 1;
         compute_oov_rate.py ${data}/dict/word_count/${test_set}_callhm.txt ${dict} ${test_set}_callhm \
             >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
@@ -377,22 +382,10 @@ if [ ${stage} -le 3 ]; then
         cp ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
             ${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
 
-        # normalization for evasl2000 sets
         for x in ${test_set}; do
-            cp ${data}/${test_set}/text ${data}/${test_set}/text.tmp.0
-            cut -f 2- -d " " ${data}/${test_set}/text.tmp.0 | awk '{ print tolower($0) }' | \
-                perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' \
-                > ${data}/${test_set}/text.tmp.1
-            paste -d " " <(cut -f 1 -d " " ${data}/${test_set}/text.tmp.0) \
-                <(cat ${data}/${test_set}/text.tmp.1) > ${data}/${test_set}/text.lm
-            rm ${data}/${test_set}/text.tmp*
-
-            grep -v en ${data}/${test_set}/text.lm > ${data}/${test_set}/text.lm.swbd
-            grep -v sw ${data}/${test_set}/text.lm > ${data}/${test_set}/text.lm.ch
-
-            make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.lm.swbd \
+            make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.swbd \
                 ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_swbd_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-            make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.lm.ch \
+            make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.ch \
                 ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_ch_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
         done
 
