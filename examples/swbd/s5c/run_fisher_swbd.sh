@@ -350,7 +350,7 @@ if [ ${stage} -le 3 ]; then
                 ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
         done
 
-        # normlization for evasl2000 sets
+        # normalization for evasl2000 sets
         for x in ${test_set}; do
             cp ${data}/${test_set}/text ${data}/${test_set}/text.tmp.0
             cut -f 2- -d " " ${data}/${test_set}/text.tmp.0 | awk '{ print tolower($0) }' | \

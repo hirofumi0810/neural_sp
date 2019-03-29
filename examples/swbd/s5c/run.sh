@@ -366,25 +366,6 @@ if [ ${stage} -le 3 ]; then
             rm ${data}/train_fisher/text.tmp*
         fi
 
-        # normlization for evasl2000 sets
-        for x in ${test_set}; do
-            cp ${data}/${test_set}/text ${data}/${test_set}/text.tmp.0
-            cut -f 2- -d " " ${data}/${test_set}/text.tmp.0 | awk '{ print tolower($0) }' | \
-                perl -pe 's| \(\%.*\)||g' | perl -pe 's| \<.*\>||g' | sed -e "s/(//g" -e "s/)//g" | sed -e 's/\s\+/ /g' \
-                > ${data}/${test_set}/text.tmp.1
-            paste -d " " <(cut -f 1 -d " " ${data}/${test_set}/text.tmp.0) \
-                <(cat ${data}/${test_set}/text.tmp.1) > ${data}/${test_set}/text.lm
-            rm ${data}/${test_set}/text.tmp*
-
-            grep -v en ${data}/${test_set}/text.lm > ${data}/${test_set}/text.lm.swbd
-            grep -v sw ${data}/${test_set}/text.lm > ${data}/${test_set}/text.lm.ch
-
-            make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.lm.swbd \
-                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_swbd_${data_size}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-            make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.lm.ch \
-                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_ch_${data_size}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-        done
-
         # Make datset tsv files for the LM task
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
@@ -399,7 +380,7 @@ if [ ${stage} -le 3 ]; then
         cp ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
             ${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
 
-        # normlization for evasl2000 sets
+        # normalization for evasl2000 sets
         for x in ${test_set}; do
             cp ${data}/${test_set}/text ${data}/${test_set}/text.tmp.0
             cut -f 2- -d " " ${data}/${test_set}/text.tmp.0 | awk '{ print tolower($0) }' | \
