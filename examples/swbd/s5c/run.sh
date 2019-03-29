@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/swbd
 
 ### vocabulary
-unit=wp      # or word or char or word_char or phone
+unit=word    # word/wp/char/word_char/phone
 vocab_size=10000
 wp_type=bpe  # or unigram (for wordpiece)
 

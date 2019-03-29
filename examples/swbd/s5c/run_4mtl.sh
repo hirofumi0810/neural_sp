@@ -14,9 +14,9 @@ gpu=
 export data=/n/sd8/inaguma/corpus/swbd
 
 ### vocabulary
-unit=wp      # or word or word_char
+unit=word         # word/wp/word_char
 vocab_size=10000
-wp_type=bpe  # or unigram (for wordpiece)
+wp_type=bpe       # or unigram (for wordpiece)
 unit_sub1=wp
 wp_type_sub1=bpe  # or unigram (for wordpiece)
 vocab_size_sub1=1000
@@ -80,7 +80,7 @@ ctc_fc_list_sub1="320"
 ctc_fc_list_sub2=""
 ctc_fc_list_sub3=""
 ### optimization
-batch_size=50
+batch_size=40
 optimizer=adam
 learning_rate=1e-3
 n_epochs=30
@@ -114,9 +114,9 @@ layer_norm=
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
-ctc_weight_sub1=0.2
-ctc_weight_sub2=0.2
-ctc_weight_sub3=0.2
+ctc_weight_sub1=0.0
+ctc_weight_sub2=0.0
+ctc_weight_sub3=0.0
 bwd_weight=0.0
 bwd_weight_sub1=0.0
 bwd_weight_sub2=0.0
