@@ -414,7 +414,7 @@ def main():
                         logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
                     elif args.unit == 'wp':
                         metric_dev = eval_wordpiece([model.module], dev_set, recog_params,
-                                                    epoch=epoch)[0]
+                                                    epoch=epoch)[0][0]
                         logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
                     elif 'char' in args.unit:
                         dev_results = eval_char([model.module], dev_set, recog_params,
