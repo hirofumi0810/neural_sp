@@ -14,9 +14,9 @@ gpu=
 export data=/n/sd8/inaguma/corpus/csj
 
 ### vocabulary
-unit=wp      # or word or word_char
+unit=word         # word/wp/word_char
 vocab_size=30000
-wp_type=bpe  # or unigram (for wordpiece)
+wp_type=bpe       # or unigram (for wordpiece)
 unit_sub1=char
 wp_type_sub1=bpe  # or unigram (for wordpiece)
 vocab_size_sub1=
@@ -68,7 +68,7 @@ tie_embedding=
 ctc_fc_list="320"
 ctc_fc_list_sub1="320"
 ### optimization
-batch_size=50
+batch_size=40
 optimizer=adam
 learning_rate=1e-3
 n_epochs=30
@@ -102,7 +102,7 @@ layer_norm=
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
-ctc_weight_sub1=0.2
+ctc_weight_sub1=0.0
 bwd_weight=0.0
 bwd_weight_sub1=0.0
 sub1_weight=0.2
@@ -114,6 +114,9 @@ rnnlm_fusion=
 rnnlm_init=
 lmobj_weight=0.0
 share_lm_softmax=
+# contextualization
+concat_prev_n_utterances=0
+n_caches=0
 
 ### path to save the model
 model=/n/sd8/inaguma/result/csj
@@ -439,6 +442,8 @@ if [ ${stage} -le 4 ]; then
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
+        --concat_prev_n_utterances ${concat_prev_n_utterances} \
+        --n_caches ${n_caches} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."
