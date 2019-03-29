@@ -56,23 +56,25 @@ def main():
                 nlsyms.append(line.strip())
 
     utt2featpath = {}
-    utt2num_frames = {}
-    utt2spk = {}
     if args.feat:
         with codecs.open(args.feat, 'r', encoding="utf-8") as f:
             for line in f:
                 utt_id, feat_path = line.strip().split(' ')
                 utt2featpath[utt_id] = feat_path
 
+    utt2num_frames = {}
+    if args.utt2num_frames:
         with codecs.open(args.utt2num_frames, 'r', encoding="utf-8") as f:
             for line in f:
                 utt_id, xlen = line.strip().split(' ')
                 utt2num_frames[utt_id] = int(xlen)
 
+    utt2spk = {}
+    if args.utt2spk:
         with codecs.open(args.utt2spk, 'r', encoding="utf-8") as f:
             for line in f:
                 utt_id, speaker = line.strip().split(' ')
-                utt2spk[utt_id] = speaker
+                utt2spk[str(utt_id)] = speaker
 
     token2idx = {}
     idx2token = {}
