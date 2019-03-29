@@ -53,36 +53,32 @@ def main():
             for line in f:
                 nlsyms.append(line.strip())
 
-    utt2feat = {}
-    utt2frame = {}
-    utt2speaker = {}
+    utt2featpath = {}
+    utt2num_frames = {}
+    utt2spk = {}
     if args.feat:
         with codecs.open(args.feat, 'r', encoding="utf-8") as f:
             for line in f:
                 utt_id, feat_path = line.strip().split(' ')
-                utt2feat[utt_id] = feat_path
+                utt2featpath[utt_id] = feat_path
 
         with codecs.open(args.utt2num_frames, 'r', encoding="utf-8") as f:
             for line in f:
                 utt_id, xlen = line.strip().split(' ')
-                utt2frame[utt_id] = int(xlen)
+                utt2num_frames[utt_id] = int(xlen)
 
         with codecs.open(args.utt2spk, 'r', encoding="utf-8") as f:
             for line in f:
                 utt_id, speaker = line.strip().split(' ')
-                utt2speaker[utt_id] = speaker
+                utt2spk[utt_id] = speaker
 
-    token2id = {}
+    token2idx = {}
+    idx2token = {}
     with codecs.open(args.dict, 'r', encoding="utf-8") as f:
         for line in f:
-            token, id = line.strip().split(' ')
-            token2id[token] = str(id)
-
-    id2token = {}
-    with codecs.open(args.dict, 'r', encoding="utf-8") as f:
-        for line in f:
-            token, id = line.strip().split(' ')
-            id2token[str(id)] = token
+            token, idx = line.strip().split(' ')
+            token2idx[token] = str(idx)
+            idx2token[str(idx)] = token
 
     if args.unit == 'wp':
         sp = spm.SentencePieceProcessor()
@@ -93,89 +89,97 @@ def main():
     xdim = None
     with codecs.open(args.text, 'r', encoding="utf-8") as f:
         pbar = tqdm(total=len(codecs.open(args.text, 'r', encoding="utf-8").readlines()))
-        for line in f:
-            # Remove succesive spaces
-            line = re.sub(r'[\s]+', ' ', line.strip())
-            utt_id = line.split(' ')[0]
-            words = line.split(' ')[1:]
-            if '' in words:
-                words.remove('')
+        texts = [line.strip() for line in f]
 
-            text = ' '.join(words)
-            if args.feat:
-                feat_path = utt2feat[utt_id]
-                xlen = utt2frame[utt_id]
-                speaker = utt2speaker[utt_id]
+    # Sort by onset
+    if corpus == 'swbd':
+        texts = sorted(texts, key=lambda x:)
+    else:
+        raise ValueError
 
-                if not os.path.isfile(feat_path.split(':')[0]):
-                    raise ValueError('There is no file: %s' % feat_path)
-            else:
-                # dummy for LM
-                feat_path = ''
-                xlen = 0
-                speaker = ''
+    for text in texts:
+        # Remove succesive spaces
+        line = re.sub(r'[\s]+', ' ', line.strip())
+        utt_id = line.split(' ')[0]
+        words = line.split(' ')[1:]
+        if '' in words:
+            words.remove('')
 
-            # Convert strings into the corresponding indices
-            token_ids = []
-            if args.unit in ['word', 'word_char']:
-                for w in words:
-                    if w in token2id.keys():
-                        token_ids.append(token2id[w])
-                    else:
-                        # Replace with <unk>
-                        if args.unit == 'word_char':
-                            for c in list(w):
-                                if c in token2id.keys():
-                                    token_ids.append(token2id[c])
-                                else:
-                                    token_ids.append(token2id[args.unk])
-                        else:
-                            token_ids.append(token2id[args.unk])
+        text = ' '.join(words)
+        if args.feat:
+            feat_path = utt2featpath[utt_id]
+            xlen = utt2num_frames[utt_id]
+            speaker = utt2spk[utt_id]
 
-            elif args.unit == 'wp':
-                wps = sp.EncodeAsPieces(text)
-                for wp in wps:
-                    if wp in token2id.keys():
-                        token_ids.append(token2id[wp])
-                    else:
-                        # Replace with <unk>
-                        token_ids.append(token2id[args.unk])
-            elif args.unit == 'char':
-                for i,  w in enumerate(words):
-                    if w in nlsyms:
-                        token_ids.append(token2id[w])
-                    else:
-                        for c in list(w):
-                            if c in token2id.keys():
-                                token_ids.append(token2id[c])
-                            else:
-                                # Replace with <unk>
-                                token_ids.append(token2id[args.unk])
+            if not os.path.isfile(feat_path.split(':')[0]):
+                raise ValueError('There is no file: %s' % feat_path)
+        else:
+            # dummy for LM
+            feat_path = ''
+            xlen = 0
+            speaker = ''
 
-                    # Remove whitespaces
-                    if not args.remove_space:
-                        if i < len(words) - 1:
-                            token_ids.append(token2id[args.space])
-
-            elif args.unit == 'phone':
-                for p in words:
-                    token_ids.append(token2id[p])
-
-            else:
-                raise ValueError(args.unit)
-            token_id = ' '.join(token_ids)
-            ylen = len(token_ids)
-
-            if xdim is None:
-                if args.feat:
-                    xdim = kaldi_io.read_mat(feat_path).shape[-1]
+        # Convert strings into the corresponding indices
+        token_ids = []
+        if args.unit in ['word', 'word_char']:
+            for w in words:
+                if w in token2idx.keys():
+                    token_ids.append(token2idx[w])
                 else:
-                    xdim = 0
-            ydim = len(token2id.keys())
+                    # Replace with <unk>
+                    if args.unit == 'word_char':
+                        for c in list(w):
+                            if c in token2idx.keys():
+                                token_ids.append(token2idx[c])
+                            else:
+                                token_ids.append(token2idx[args.unk])
+                    else:
+                        token_ids.append(token2idx[args.unk])
 
-            print('%s\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d' %
-                  (utt_id, speaker, feat_path, xlen, xdim, text, token_id, ylen, ydim))
-            pbar.update(1)
+        elif args.unit == 'wp':
+            wps = sp.EncodeAsPieces(text)
+            for wp in wps:
+                if wp in token2idx.keys():
+                    token_ids.append(token2idx[wp])
+                else:
+                    # Replace with <unk>
+                    token_ids.append(token2idx[args.unk])
+        elif args.unit == 'char':
+            for i,  w in enumerate(words):
+                if w in nlsyms:
+                    token_ids.append(token2idx[w])
+                else:
+                    for c in list(w):
+                        if c in token2idx.keys():
+                            token_ids.append(token2idx[c])
+                        else:
+                            # Replace with <unk>
+                            token_ids.append(token2idx[args.unk])
+
+                # Remove whitespaces
+                if not args.remove_space:
+                    if i < len(words) - 1:
+                        token_ids.append(token2idx[args.space])
+
+        elif args.unit == 'phone':
+            for p in words:
+                token_ids.append(token2idx[p])
+
+        else:
+            raise ValueError(args.unit)
+        token_id = ' '.join(token_ids)
+        ylen = len(token_ids)
+
+        if xdim is None:
+            if args.feat:
+                xdim = kaldi_io.read_mat(feat_path).shape[-1]
+            else:
+                xdim = 0
+        ydim = len(token2idx.keys())
+
+        print('%s\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d' %
+              (utt_id, speaker, feat_path, xlen, xdim, text, token_id, ylen, ydim))
+        pbar.update(1)
 
 
 if __name__ == '__main__':
