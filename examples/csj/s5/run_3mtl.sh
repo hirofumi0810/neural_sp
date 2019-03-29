@@ -260,7 +260,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     echo "                      Dataset preparation (stage:2, main)                  "
     echo ============================================================================
 
-    # Make a dictionary
+    echo "Making a dictionary..."
     echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict}
@@ -268,7 +268,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
         echo "<space> 4" >> ${dict}
     fi
     offset=$(cat ${dict} | wc -l)
-    echo "Making a dictionary..."
     if [ ${unit} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
@@ -295,7 +294,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
         cat ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
     fi
 
-    # Make datset tsv files for the ASR task
     echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
@@ -319,7 +317,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     echo "                      Dataset preparation (stage:2, sub1)                  "
     echo ============================================================================
 
-    # Make a dictionary
+    echo "Making a dictionary..."
     echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict_sub1}
@@ -327,7 +325,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
         echo "<space> 4" >> ${dict_sub1}
     fi
     offset=$(cat ${dict_sub1} | wc -l)
-    echo "Making a dictionary..."
     if [ ${unit_sub1} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} \
@@ -341,7 +338,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     fi
     echo "vocab size:" $(cat ${dict_sub1} | wc -l)
 
-    # Make datset tsv files for the ASR task
     echo "Making dataset tsv files for ASR ..."
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
         ${data}/${train_set} ${dict_sub1} > ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv || exit 1;
@@ -364,7 +360,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub2}$
     echo "                      Dataset preparation (stage:2, sub2)                  "
     echo ============================================================================
 
-    # Make a dictionary
+    echo "Making a dictionary..."
     echo "<unk> 1" > ${dict_sub2}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict_sub2}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict_sub2}
@@ -372,7 +368,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub2}$
         echo "<space> 4" >> ${dict_sub2}
     fi
     offset=$(cat ${dict_sub2} | wc -l)
-    echo "Making a dictionary..."
     if [ ${unit_sub2} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub2} \
@@ -386,7 +381,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub2}$
     fi
     echo "vocab size:" $(cat ${dict_sub2} | wc -l)
 
-    # Make datset tsv files for the ASR task
     echo "Making dataset tsv files for ASR ..."
     make_dataset.sh --feat {data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub2} \
         ${data}/${train_set} ${dict_sub2} > ${data}/dataset/${train_set}_${unit_sub2}${wp_type_sub2}${vocab_size_sub2}.tsv || exit 1;

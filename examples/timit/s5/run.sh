@@ -157,17 +157,15 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2 ]; then
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
 
-    # Make a dictionary
+    echo "Making a dictionary..."
     echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict}
     offset=$(cat ${dict} | wc -l)
-    echo "Making a dictionary..."
     text2dict.py ${data}/${train_set}/text --unit phone | \
         sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     echo "vocab size:" $(cat ${dict} | wc -l)
 
-    # Make datset tsv files
     echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
     for x in ${train_set} ${dev_set} ${test_set}; do

@@ -304,7 +304,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
         cat ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
     fi
 
-    # Make datset tsv files for the ASR task
     echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
@@ -331,7 +330,6 @@ if [ ${stage} -le 3 ]; then
             echo "run ./run.sh --data_size ${lm_data_size} first" && exit 1
         fi
 
-        # Make datset tsv files for the LM task
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
         for x in train dev ${test_set}; do

@@ -260,7 +260,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
 
-    # Make a dictionary
+    echo "Making a dictionary..."
     echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict}
@@ -268,7 +268,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
         echo "<space> 4" >> ${dict}
     fi
     offset=$(cat ${dict} | wc -l)
-    echo "Making a dictionary..."
     if [ ${unit} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
@@ -295,7 +294,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
         cat ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
     fi
 
-    # Make datset tsv files for the ASR task
     echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
@@ -322,7 +320,6 @@ if [ ${stage} -le 3 ]; then
             echo "run ./run.sh --data_size ${lm_data_size} first" && exit 1
         fi
 
-        # Make datset tsv files for the LM task
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
         for x in train_${lm_data_size} dev_${lm_data_size}; do
