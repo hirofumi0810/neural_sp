@@ -83,6 +83,7 @@ def eval_char(models, dataset, recog_params, epoch,
             best_hyps, _, perm_ids, _ = models[0].decode(
                 batch['xs'], recog_params,
                 exclude_eos=True,
+                idx2token=dataset.idx2char,
                 refs=batch['ys'],
                 task=task,
                 ensemble_models=models[1:] if len(models) > 1 else [],
