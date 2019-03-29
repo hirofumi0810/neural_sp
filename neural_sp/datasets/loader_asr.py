@@ -136,10 +136,6 @@ class Dataset(Base):
                         setattr(self, 'phone2idx_sub' + str(i),  Phone2idx(dict_path_sub))
                     else:
                         raise ValueError(unit_sub)
-
-                assert concat_prev_n_utterances == 0
-                assert n_caches == 0
-                # TODO(hirofumi): fix later
             else:
                 setattr(self, 'vocab_sub' + str(i), -1)
 
@@ -156,14 +152,12 @@ class Dataset(Base):
             else:
                 setattr(self, 'df_sub' + str(i), None)
 
-        # For cache decoding
         if corpus == 'swbd':
             self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
         else:
             self.df['session'] = self.df['speaker'].apply(lambda x: str(x))
 
         if concat_prev_n_utterances > 0 or n_caches > 0:
-            assert corpus in ['swbd', 'csj', 'librispeech']
             max_n_frames = 10000
             min_n_frames = 1
 
@@ -191,6 +185,8 @@ class Dataset(Base):
 
         if concat_prev_n_utterances > 0:
             assert n_caches == 0
+            self.pad_xlen = 20
+
             # Truncate history
             self.df['prev_utt'] = self.df['prev_utt'].apply(lambda x: x[-concat_prev_n_utterances:])
 
@@ -199,12 +195,9 @@ class Dataset(Base):
             self.df['xlen'] = self.df.apply(
                 lambda x: sum([self.df.loc[i, 'xlen'] + self.pad_xlen
                                for i in x['prev_utt']] + [x['xlen']]) if len(x['prev_utt']) > 0 else x['xlen'], axis=1)
-            self.df['ylen'] = self.df.apply(
-                lambda x: sum([self.df.loc[i, 'ylen'] + 1
-                               for i in x['prev_utt']] + [x['ylen']]) if len(x['prev_utt']) > 0 else x['ylen'], axis=1)
-            self.df['text'] = self.df.apply(
-                lambda x: ' '.join([self.df.loc[i, 'text']
-                                    for i in x['prev_utt']] + [x['text']]) if len(x['prev_utt']) > 0 else x['text'], axis=1)
+            # self.df['text'] = self.df.apply(
+            #     lambda x: ' '.join([self.df.loc[i, 'text']
+            #                         for i in x['prev_utt']] + [x['text']]) if len(x['prev_utt']) > 0 else x['text'], axis=1)
 
         if n_caches > 0:
             assert concat_prev_n_utterances == 0
@@ -250,8 +243,6 @@ class Dataset(Base):
                 self.df = self.df.sort_values(by='xlen', ascending=short2long)
             elif shuffle:
                 self.df = self.df.reindex(np.random.permutation(self.df.index))
-            elif not (concat_prev_n_utterances > 0 or n_caches > 0):
-                self.df = self.df.sort_values(by='utt_id', ascending=True)
 
         self.rest = set(list(self.df.index))
         self.input_dim = kaldi_io.read_mat(self.df['feat_path'][0]).shape[-1]
@@ -278,8 +269,8 @@ class Dataset(Base):
         xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in df_indices]
         if self.concat_prev_n_utterances > 0:
             for j, i in enumerate(df_indices):
-                for i_prev in self.df['prev_utt'][i][::-1]:
-                    x_prev = kaldi_io.read_mat(self.df['feat_path'][i_prev])
+                for idx in self.df['prev_utt'][i][::-1]:
+                    x_prev = kaldi_io.read_mat(self.df['feat_path'][idx])
                     xs[j] = np.concatenate(
                         [x_prev, np.zeros((self.pad_xlen, self.input_dim), dtype=np.float32), xs[j]], axis=0)
 
@@ -287,16 +278,16 @@ class Dataset(Base):
         ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in df_indices]
         if self.concat_prev_n_utterances > 0:
             for j, i in enumerate(df_indices):
-                for i_prev in self.df['prev_utt'][i][::-1]:
-                    y_prev = list(map(int, str(self.df['token_id'][i_prev]).split()))
+                for idx in self.df['prev_utt'][i][::-1]:
+                    y_prev = list(map(int, str(self.df['token_id'][idx]).split()))
                     ys[j] = y_prev + [self.eos] + ys[j][:]
 
         ys_cache = []
         if self.n_caches > 0:
             ys_cache = [[] for _ in range(len(df_indices))]
             for j, i in enumerate(df_indices):
-                for i_prev in self.df['prev_utt'][i]:
-                    y_prev = list(map(int, str(self.df['token_id'][i_prev]).split()))
+                for idx in self.df['prev_utt'][i]:
+                    y_prev = list(map(int, str(self.df['token_id'][idx]).split()))
                     ys_cache[j] += [self.eos] + y_prev
 
             # Truencate
@@ -305,14 +296,23 @@ class Dataset(Base):
         ys_sub1 = []
         if self.df_sub1 is not None:
             ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in df_indices]
+            if self.concat_prev_n_utterances > 0:
+                for j, i in enumerate(df_indices):
+                    for idx in self.df['prev_utt'][i][::-1]:
+                        y_prev = list(map(int, str(self.df_sub1['token_id'][idx]).split()))
+                        ys_sub1[j] = y_prev + [self.eos] + ys_sub1[j][:]
 
         ys_sub2 = []
         if self.df_sub2 is not None:
             ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in df_indices]
+            if self.concat_prev_n_utterances > 0:
+                raise NotImplementedError
 
         ys_sub3 = []
         if self.df_sub3 is not None:
             ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in df_indices]
+            if self.concat_prev_n_utterances > 0:
+                raise NotImplementedError
 
         batch_dict = {
             'xs': xs,
