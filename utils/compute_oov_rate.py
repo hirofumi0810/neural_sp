@@ -25,15 +25,15 @@ args = parser.parse_args()
 
 def main():
 
-    token_set = set([])
+    vocab = set([])
     with codecs.open(args.dict, 'r', encoding="utf-8") as f:
-        token_set = set([])
+        vocab = set([])
         for line in f:
-            token, id = line.strip().split(' ')
-            token_set.add(token)
+            v, idx = line.strip().split(' ')
+            vocab.add(v)
 
-    oov_count = 0
-    num_words = 0
+    n_oovs = 0
+    n_words = 0
     with codecs.open(args.word_count, 'r', encoding="utf-8") as f:
         for line in f:
             count, w = line.strip().split(' ')
@@ -42,11 +42,11 @@ def main():
             if w == '(%hesitation)':
                 continue
 
-            num_words += int(count)
-            if w not in token_set:
-                oov_count += int(count)
+            n_words += int(count)
+            if w not in vocab:
+                n_oovs += int(count)
 
-    oov_rate = float(oov_count * 100) / float(num_words)
+    oov_rate = float(n_oovs * 100) / float(n_words)
     print("%s: %.3f%%" % (args.set, oov_rate))
 
 

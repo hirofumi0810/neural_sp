@@ -42,6 +42,8 @@ parser.add_argument('--nlsyms', type=str, default='', nargs='?',
                     help='path to non-linguistic symbols, e.g., [noise] etc.')
 parser.add_argument('--wp_model', type=str, default=False, nargs='?',
                     help='prefix of the wordpiece model')
+parser.add_argument('--update', action='store_true',
+                    help='')
 args = parser.parse_args()
 
 
@@ -84,23 +86,24 @@ def main():
         sp = spm.SentencePieceProcessor()
         sp.Load(args.wp_model + '.model')
 
-    print('utt_id\tspeaker\tfeat_path\txlen\txdim\ttext\ttoken_id\tylen\tydim')
+    if not args.update:
+        print('utt_id\tspeaker\tfeat_path\txlen\txdim\ttext\ttoken_id\tylen\tydim\tprev_utt')
 
     xdim = None
-    with codecs.open(args.text, 'r', encoding="utf-8") as f:
-        pbar = tqdm(total=len(codecs.open(args.text, 'r', encoding="utf-8").readlines()))
-        texts = [line.strip() for line in f]
+    pbar = tqdm(total=len(codecs.open(args.text, 'r', encoding="utf-8").readlines()))
 
-    # Sort by onset
-    if corpus == 'swbd':
-        texts = sorted(texts, key=lambda x:)
+    # Sort by 1.session and 2.onset
+    if 'swbd' in args.text and not args.update:
+        lines = [line.strip() for line in codecs.open(args.text, 'r', encoding="utf-8")]
+        lines = sorted(lines, key=lambda x: (str(utt2spk[x.split(' ')[0]]).split('-')[0],
+                                             int(x.split(' ')[0].split('_')[-1].split('-')[0])))
     else:
-        raise ValueError
+        lines = codecs.open(args.text, 'r', encoding="utf-8")
 
-    for text in texts:
+    for line in lines:
         # Remove succesive spaces
         line = re.sub(r'[\s]+', ' ', line.strip())
-        utt_id = line.split(' ')[0]
+        utt_id = str(line.split(' ')[0])
         words = line.split(' ')[1:]
         if '' in words:
             words.remove('')

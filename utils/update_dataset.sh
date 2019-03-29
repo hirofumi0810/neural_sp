@@ -35,7 +35,8 @@ make_tsv.py --text ${text} \
     --unk ${unk} \
     --space ${space} \
     --nlsyms ${nlsyms} \
-    --wp_model ${wp_model}  | sed -e '1d' >> ${tmpdir}/tmp.tsv
+    --wp_model ${wp_model} \
+    --update  >> ${tmpdir}/tmp.tsv
 
 cat ${tmpdir}/tmp.tsv
 
