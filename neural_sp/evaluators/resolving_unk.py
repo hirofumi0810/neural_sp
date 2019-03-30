@@ -13,63 +13,69 @@ from __future__ import print_function
 import numpy as np
 
 
-def resolve_unk(hyp, best_hyps_sub, aw, aw_sub, id2char, diff_time_resolution=1):
+def resolve_unk(hyp_word, best_hyps_char, aw_word, aw_char, idx2char,
+                subsample_factor_word, subsample_factor_char):
     """Revolving UNK.
 
     Args:
-        hyp:
-        best_hyps_sub:
-        aw:
-        aw_sub:
-        id2char:
-        diff_time_resolution:
+        hyp_word:
+        best_hyps_char:
+        aw_word:
+        aw_char:
+        idx2char ():
+        subsample_factor_word (int):
+        subsample_factor_char (int):
+    Returns:
+        hyp_no_unk (str):
 
     """
     oov_info = []
     # [[id_oov_0, t_sub_0], ...]
 
+    diff_time_resolution = subsample_factor_word // subsample_factor_char
+
     if diff_time_resolution > 1:
         assert diff_time_resolution == 2
-        aw_sub_1 = aw_sub[:, ::diff_time_resolution]
-        aw_sub_1 = aw_sub_1[:, :aw.shape[1]]
-        aw_sub_2 = aw_sub[:, 1::diff_time_resolution]
-        aw_sub_2 = aw_sub_2[:, :aw.shape[1]]
-        aw_sub = (aw_sub_1 + aw_sub_2) / 2
+        aw_sub1 = aw_char[:, ::diff_time_resolution]
+        aw_sub1 = aw_sub1[:, :aw_word.shape[1]]
+        aw_sub2 = aw_char[:, 1::diff_time_resolution]
+        aw_sub2 = aw_sub2[:, :aw_word.shape[1]]
+        aw_char = (aw_sub1 + aw_sub2) / 2
 
     # Store places for <unk>
-    for id_oov, w in enumerate(hyp.split('_')):
+    for offset, w in enumerate(hyp_word.split(' ')):
         if w == '<unk>':
-            oov_info.append([id_oov, -1])
+            oov_info.append([offset, -1])
 
     # Point to characters
     for i in range(len(oov_info)):
         max_attn_overlap = 0
-        for t_sub in range(len(aw_sub)):
-            # print(np.sum(aw[oov_info[i][0]] * aw_sub[t_sub]))
-            if np.sum(aw[oov_info[i][0]] * aw_sub[t_sub]) > max_attn_overlap:
+        for t_char in range(len(aw_char)):
+            # print(np.sum(aw_word[oov_info[i][0]] * aw_char[t_char]))
+            if np.sum(aw_word[oov_info[i][0]] * aw_char[t_char]) > max_attn_overlap:
                 # Check if the correcsponding character is space
-                max_char = id2char(best_hyps_sub[t_sub: t_sub + 1])
-                if max_char == '_':
+                max_char = idx2char(best_hyps_char[t_char: t_char + 1])
+                if max_char == ' ':
                     continue
 
                 max_attn_overlap = np.sum(
-                    aw[oov_info[i][0]] * aw_sub[t_sub])
-                oov_info[i][1] = t_sub
+                    aw_word[oov_info[i][0]] * aw_char[t_char])
+                oov_info[i][1] = t_char
 
     hyp_no_unk = ''
-    oov_count = 0
-    for id_oov, w in enumerate(hyp.split('_')):
+    n_oovs = 0
+    for offset, w in enumerate(hyp_word.split(' ')):
         if w == '<unk>':
-            t_sub = oov_info[oov_count][1]
-            covered_word = id2char(best_hyps_sub[t_sub: t_sub + 1])
+            t_char = oov_info[n_oovs][1]
+            covered_word = idx2char(best_hyps_char[t_char: t_char + 1])
 
             # Search until space (forward pass)
             fwd = 1
             while True:
-                if t_sub - fwd < 0:
+                if t_char - fwd < 0:
                     break
-                elif id2char(best_hyps_sub[t_sub - fwd: t_sub - fwd + 1]) not in ['_', '>']:
-                    covered_word = id2char(best_hyps_sub[t_sub - fwd: t_sub - fwd + 1]) + covered_word
+                elif idx2char(best_hyps_char[t_char - fwd: t_char - fwd + 1]) not in [' ', '>']:
+                    covered_word = idx2char(best_hyps_char[t_char - fwd: t_char - fwd + 1]) + covered_word
                     fwd += 1
                 else:
                     break
@@ -77,20 +83,24 @@ def resolve_unk(hyp, best_hyps_sub, aw, aw_sub, id2char, diff_time_resolution=1)
             # Search until space (backward pass)
             bwd = 1
             while True:
-                if t_sub + bwd > len(best_hyps_sub) - 1:
+                if t_char + bwd > len(best_hyps_char) - 1:
                     break
-                elif id2char(best_hyps_sub[t_sub + bwd: t_sub + bwd + 1]) not in ['_', '>']:
-                    covered_word += id2char(best_hyps_sub[t_sub + bwd: t_sub + bwd + 1])
+                elif idx2char(best_hyps_char[t_char + bwd: t_char + bwd + 1]) not in [' ', '>']:
+                    covered_word += idx2char(best_hyps_char[t_char + bwd: t_char + bwd + 1])
                     bwd += 1
                 else:
                     break
 
-            hyp_no_unk += '_**' + covered_word + '**'
-            oov_count += 1
+            if offset == 0:
+                # First word in a sentence
+                hyp_no_unk += '***' + covered_word + '***'
+            else:
+                hyp_no_unk += ' ***' + covered_word + '***'
+            n_oovs += 1
         else:
-            hyp_no_unk += '_' + w
+            hyp_no_unk += ' ' + w
 
-    if hyp_no_unk[0] == '_':
+    if hyp_no_unk[0] == ' ':
         hyp_no_unk = hyp_no_unk[1:]
 
     return hyp_no_unk
