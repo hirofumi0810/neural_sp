@@ -14,9 +14,9 @@ gpu=
 export data=/n/sd8/inaguma/corpus/librispeech
 
 ### vocabulary
-unit=wp      # or word or word_char
+unit=word         # word/wp/word_char
 vocab_size=30000
-wp_type=bpe  # or unigram (for wordpiece)
+wp_type=bpe       # or unigram (for wordpiece)
 unit_sub1=char
 wp_type_sub1=bpe  # or unigram (for wordpiece)
 vocab_size_sub1=
@@ -68,7 +68,7 @@ tie_embedding=
 ctc_fc_list="320"
 ctc_fc_list_sub1=""
 ### optimization
-batch_size=50
+batch_size=40
 optimizer=adam
 learning_rate=1e-3
 n_epochs=30
@@ -102,14 +102,14 @@ layer_norm=
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
-ctc_weight_sub1=0.2
+ctc_weight_sub1=0.0
 bwd_weight=0.0
 bwd_weight_sub1=0.0
 sub1_weight=0.2
 mtl_per_batch=true
 task_specific_layer=true
 ### LM integration
-lm_fusion_type=cold_hidden_generate
+lm_fusion_type=cold
 rnnlm_fusion=
 rnnlm_init=
 lmobj_weight=0.0
@@ -206,8 +206,18 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
             ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
     done
 
-    utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-        ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
+    if [ ${data_size} == '100' ]; then
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+            ${data}/train_clean_100 || exit 1;
+    elif [ ${data_size} == '460' ]; then
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+            ${data}/train_clean_100 ${data}/train_clean_360 || exit 1;
+    elif [ ${data_size} == '960' ]; then
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+            ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
+    else
+        echo "data_size is 100 or 460 or 960." && exit 1;
+    fi
     cp -rf ${data}/dev_clean ${data}/${dev_set}
 
     # Compute global CMVN

@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/librispeech
 
 ### vocabulary
-unit=wp      # or word or char or word_char
+unit=word    # word/wp/char/word_char
 vocab_size=30000
 wp_type=bpe  # or unigram (for wordpiece)
 
@@ -100,7 +100,7 @@ bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
 ### LM integration
-lm_fusion_type=cold_hidden_generate
+lm_fusion_type=cold
 rnnlm_fusion=
 rnnlm_init=
 lmobj_weight=0.0
@@ -157,7 +157,7 @@ rnnlm_resume=
 data_download_path=/n/rd21/corpora_7/librispeech/
 
 ### data size
-data_size=960  # or 100 or 460
+data_size=960     # 100/460/969
 lm_data_size=960  # default is the same data as ASR
 
 . ./cmd.sh
@@ -232,8 +232,18 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
             ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
     done
 
-    utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-        ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
+    if [ ${data_size} == '100' ]; then
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+            ${data}/train_clean_100 || exit 1;
+    elif [ ${data_size} == '460' ]; then
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+            ${data}/train_clean_100 ${data}/train_clean_360 || exit 1;
+    elif [ ${data_size} == '960' ]; then
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+            ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
+    else
+        echo "data_size is 100 or 460 or 960." && exit 1;
+    fi
     cp -rf ${data}/dev_clean ${data}/${dev_set}
 
     # Compute global CMVN
@@ -327,7 +337,6 @@ if [ ${stage} -le 3 ]; then
                 cp ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv \
                     ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
             else
-                dump_dir=${data}/dump/${x}
                 make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
                     ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
             fi

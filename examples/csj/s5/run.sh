@@ -100,7 +100,7 @@ bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=
 ### LM integration
-lm_fusion_type=cold_hidden_generate
+lm_fusion_type=cold
 rnnlm_fusion=
 rnnlm_init=
 lmobj_weight=0.0
@@ -269,7 +269,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
 
-    # Make a dictionary
+    echo "Making a dictionary..."
     echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict}
@@ -277,7 +277,6 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
         echo "<space> 4" >> ${dict}
     fi
     offset=$(cat ${dict} | wc -l)
-    echo "Making a dictionary..."
     if [ ${unit} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
@@ -332,12 +331,20 @@ if [ ${stage} -le 3 ]; then
 
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
-        for x in train dev ${test_set}; do
+        for x in train dev; do
             if [ ${lm_data_size} = ${data_size} ]; then
-                cp ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.tsv \
-                    ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv
+                cp ${data}/dataset/${x}_${lm_data_size}_${unit}${wp_type}${vocab_size}.tsv \
+                    ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv  || exit 1;
             else
-                dump_dir=${data}/dump/${x}_${lm_data_size}
+                make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
+                    ${data}/${x}_${lm_data_size} ${dict} > ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+            fi
+        done
+        for x in ${test_set}; do
+            if [ ${lm_data_size} = ${data_size} ]; then
+                cp ${data}/dataset/${x}_${lm_data_size}_${unit}${wp_type}${vocab_size}.tsv \
+                    ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv  || exit 1;
+            else
                 make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
                     ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
             fi
