@@ -64,7 +64,7 @@ def eval_phone(models, dataset, recog_params, epoch,
             best_hyps, _, perm_ids, _ = models[0].decode(
                 batch['xs'], recog_params,
                 exclude_eos=True,
-                idx2token=dataset.idx2phone,
+                idx2token=dataset.idx2token[0],
                 refs=batch['ys'],
                 ensemble_models=models[1:] if len(models) > 1 else [],
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
@@ -72,7 +72,7 @@ def eval_phone(models, dataset, recog_params, epoch,
 
             for b in range(len(batch['xs'])):
                 ref = ys[b]
-                hyp = dataset.idx2phone(best_hyps[b])
+                hyp = dataset.idx2token[0](best_hyps[b])
 
                 # Write to trn
                 utt_id = str(batch['utt_ids'][b])

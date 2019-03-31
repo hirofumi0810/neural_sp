@@ -57,7 +57,7 @@ def main():
                           tsv_path=s,
                           dict_path=os.path.join(dir_name, 'dict.txt'),
                           dict_path_sub1=os.path.join(dir_name, 'dict_sub1.txt') if os.path.isfile(
-                              os.path.join(dir_name, 'dict_sub1.txt')) else None,
+                              os.path.join(dir_name, 'dict_sub1.txt')) else False,
                           wp_model=os.path.join(dir_name, 'wp.model'),
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
@@ -89,22 +89,11 @@ def main():
             shutil.rmtree(save_path)
             os.mkdir(save_path)
 
-        if args.unit == 'word':
-            idx2token = dataset.idx2word
-        elif args.unit == 'wp':
-            idx2token = dataset.idx2wp
-        elif args.unit == 'char':
-            idx2token = dataset.idx2char
-        elif args.unit == 'phone':
-            idx2token = dataset.idx2phone
-        else:
-            raise NotImplementedError(args.unit)
-
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps, aws, perm_id, _ = model.decode(batch['xs'], recog_params,
-                                                      exclude_eos=False)
-            ys = [batch['ys'][i] for i in perm_id]
+            best_hyps, aws, perm_ids, _ = model.decode(batch['xs'], recog_params,
+                                                       exclude_eos=False)
+            ys = [batch['ys'][i] for i in perm_ids]
 
             # Get CTC probs
             ctc_probs, indices_topk, xlens = model.get_ctc_posteriors(
@@ -112,7 +101,7 @@ def main():
             # NOTE: ctc_probs: '[B, T, topk]'
 
             for b in range(len(batch['xs'])):
-                tokens = idx2token(best_hyps[b], return_list=True)
+                tokens = dataset.idx2token[0](best_hyps[b], return_list=True)
                 tokens = [unicode(t, 'utf-8') for t in tokens]
                 spk = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
 

@@ -52,7 +52,7 @@ def main():
                           tsv_path=s,
                           dict_path=os.path.join(dir_name, 'dict.txt'),
                           dict_path_sub1=os.path.join(dir_name, 'dict_sub1.txt') if os.path.isfile(
-                              os.path.join(dir_name, 'dict_sub1.txt')) else None,
+                              os.path.join(dir_name, 'dict_sub1.txt')) else False,
                           wp_model=os.path.join(dir_name, 'wp.model'),
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
@@ -165,27 +165,16 @@ def main():
                 shutil.rmtree(save_path_cache)
                 os.mkdir(save_path_cache)
 
-        if args.recog_unit == 'word':
-            idx2token = dataset.idx2word
-        elif args.recog_unit == 'wp':
-            idx2token = dataset.idx2wp
-        elif args.recog_unit == 'char':
-            idx2token = dataset.idx2char
-        elif args.recog_unit == 'phone':
-            idx2token = dataset.idx2phone
-        else:
-            raise NotImplementedError(args.recog_unit)
-
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps, aws, perm_id, (cache_atnn_hist, cache_id_hist) = model.decode(
+            best_hyps, aws, perm_ids, (cache_atnn_hist, cache_id_hist) = model.decode(
                 batch['xs'], recog_params,
                 exclude_eos=False,
-                idx2token=idx2token,
+                idx2token=dataset.idx2token[0],
                 refs=batch['ys'],
                 ensemble_models=ensemble_models[1:] if len(ensemble_models) > 1 else [],
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
-            refs = [batch['text'][i] for i in perm_id]
+            refs = [batch['text'][i] for i in perm_ids]
 
             if model.bwd_weight > 0.5:
                 # Reverse the order
@@ -193,7 +182,7 @@ def main():
                 aws = [aw[::-1] for aw in aws]
 
             for b in range(len(batch['xs'])):
-                tokens = idx2token(best_hyps[b], return_list=True)
+                tokens = dataset.idx2token[0](best_hyps[b], return_list=True)
                 spk = batch['speakers'][b]
 
                 plot_attention_weights(
@@ -205,13 +194,15 @@ def main():
 
                 if args.recog_n_caches > 0 and cache_id_hist is not None:
                     n_keys, n_queries = cache_atnn_hist[0].shape
-                    mask = np.ones((n_keys, n_queries))
-                    for i in range(n_queries):
-                        mask[:n_keys - i, -(i + 1)] = 0
+                    # mask = np.ones((n_keys, n_queries))
+                    # for i in range(n_queries):
+                    #     mask[:n_keys - i, -(i + 1)] = 0
+                    mask = np.zeros((n_keys, n_queries))
 
                     plot_cache_weights(
                         cache_atnn_hist[0],
-                        keys=idx2token(cache_id_hist[-1], return_list=True),
+                        # keys=dataset.idx2token[0](cache_id_hist[-1], return_list=True),
+                        keys=dataset.idx2token[0](cache_id_hist, return_list=True),
                         queries=tokens,
                         save_path=mkdir_join(save_path_cache, spk, batch['utt_ids'][b] + '.png'),
                         figsize=(40, 16),

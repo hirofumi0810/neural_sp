@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import logging
 import numpy as np
 from tqdm import tqdm
@@ -69,7 +70,7 @@ def eval_word(models, dataset, recog_params, epoch,
             best_hyps, aws, perm_ids, _ = models[0].decode(
                 batch['xs'], recog_params,
                 exclude_eos=True,
-                idx2token=dataset.idx2word,
+                idx2token=dataset.idx2token[0],
                 refs=batch['ys'],
                 ensemble_models=models[1:] if len(models) > 1 else [],
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
@@ -77,19 +78,26 @@ def eval_word(models, dataset, recog_params, epoch,
 
             for b in range(len(batch['xs'])):
                 ref = ys[b]
-                hyp = dataset.idx2word(best_hyps[b])
+                hyp = dataset.idx2token[0](best_hyps[b])
 
                 n_oov_total += hyp.count('<unk>')
 
                 # Resolving UNK
                 if recog_params['recog_resolving_unk'] and '<unk>' in hyp:
+                    recog_params_char = copy.deepcopy(recog_params)
+                    recog_params_char['recog_rnnlm_weight'] = 0
+                    # TODO: beam=5になっている
                     best_hyps_char, aw_char, _, _ = models[0].decode(
-                        batch['xs'][b:b + 1], recog_params, exclude_eos=True,
+                        batch['xs'][b:b + 1], recog_params_char,
+                        exclude_eos=True,
+                        idx2token=dataset.idx2token[1],
+                        refs=batch['ys_sub1'],
                         task='ys_sub1',
                         speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
+                    # TODO(hirofumi): support ys_sub2 and ys_sub3
 
                     hyp = resolve_unk(
-                        hyp, best_hyps_char[0], aws[b], aw_char[0], dataset.idx2char_sub1,
+                        hyp, best_hyps_char[0], aws[b], aw_char[0], dataset.idx2token[1],
                         subsample_factor_word=np.prod(models[0].subsample),
                         subsample_factor_char=np.prod(models[0].subsample[:models[0].enc_n_layers_sub1 - 1]))
                     hyp = hyp.replace('*', '')

@@ -56,11 +56,11 @@ def main():
                           tsv_path=s,
                           dict_path=os.path.join(dir_name, 'dict.txt'),
                           dict_path_sub1=os.path.join(dir_name, 'dict_sub1.txt') if os.path.isfile(
-                              os.path.join(dir_name, 'dict_sub1.txt')) else None,
+                              os.path.join(dir_name, 'dict_sub1.txt')) else False,
                           dict_path_sub2=os.path.join(dir_name, 'dict_sub2.txt') if os.path.isfile(
-                              os.path.join(dir_name, 'dict_sub2.txt')) else None,
+                              os.path.join(dir_name, 'dict_sub2.txt')) else False,
                           dict_path_sub3=os.path.join(dir_name, 'dict_sub3.txt') if os.path.isfile(
-                              os.path.join(dir_name, 'dict_sub3.txt')) else None,
+                              os.path.join(dir_name, 'dict_sub3.txt')) else False,
                           wp_model=os.path.join(dir_name, 'wp.model'),
                           wp_model_sub1=os.path.join(dir_name, 'wp_sub1.model'),
                           wp_model_sub2=os.path.join(dir_name, 'wp_sub2.model'),
@@ -189,7 +189,7 @@ def main():
                     epoch=epoch - 1,
                     recog_dir=args.recog_dir,
                     progressbar=True,
-                    task_id=1 if args.recog_unit and 'char' in args.recog_unit else 0)
+                    task_idx=1 if args.recog_unit and 'char' in args.recog_unit else 0)
                 wer_avg += wer
                 cer_avg += cer
             elif 'phone' in args.recog_unit:

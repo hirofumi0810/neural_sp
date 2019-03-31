@@ -100,19 +100,22 @@ class Dataset(Base):
         self.pad = 3
         # NOTE: reserved in advance
 
+        self.idx2token = []
+        self.token2idx = []
+
         # Set index converter
         if unit in ['word', 'word_char']:
-            self.idx2word = Idx2word(dict_path)
-            self.word2idx = Word2idx(dict_path, word_char_mix=(unit == 'word_char'))
+            self.idx2token += [Idx2word(dict_path)]
+            self.token2idx += [Word2idx(dict_path, word_char_mix=(unit == 'word_char'))]
         elif unit == 'wp':
-            self.idx2wp = Idx2wp(dict_path, wp_model)
-            self.wp2idx = Wp2idx(dict_path, wp_model)
+            self.idx2token += [Idx2wp(dict_path, wp_model)]
+            self.token2idx += [Wp2idx(dict_path, wp_model)]
         elif unit == 'char':
-            self.idx2char = Idx2char(dict_path)
-            self.char2idx = Char2idx(dict_path)
+            self.idx2token += [Idx2char(dict_path)]
+            self.token2idx += [Char2idx(dict_path)]
         elif 'phone' in unit:
-            self.idx2phone = Idx2phone(dict_path)
-            self.phone2idx = Phone2idx(dict_path)
+            self.idx2token += [Idx2phone(dict_path)]
+            self.token2idx += [Phone2idx(dict_path)]
         else:
             raise ValueError(unit)
 
@@ -126,14 +129,14 @@ class Dataset(Base):
                 # Set index converter
                 if unit_sub:
                     if unit_sub == 'wp':
-                        setattr(self, 'idx2wp_sub' + str(i), Idx2wp(dict_path_sub, wp_model_sub))
-                        setattr(self, 'wp2idx_sub' + str(i), Wp2idx(dict_path_sub, wp_model_sub))
+                        self.idx2token += [Idx2wp(dict_path_sub, wp_model_sub)]
+                        self.token2idx += [Wp2idx(dict_path_sub, wp_model_sub)]
                     elif unit_sub == 'char':
-                        setattr(self, 'idx2char_sub' + str(i), Idx2char(dict_path_sub))
-                        setattr(self, 'char2idx_sub' + str(i), Char2idx(dict_path_sub))
+                        self.idx2token += [Idx2char(dict_path_sub)]
+                        self.token2idx += [Char2idx(dict_path_sub)]
                     elif 'phone' in unit_sub:
-                        setattr(self, 'idx2phone_sub' + str(i),  Idx2phone(dict_path_sub))
-                        setattr(self, 'phone2idx_sub' + str(i),  Phone2idx(dict_path_sub))
+                        self.idx2token += [Idx2phone(dict_path_sub)]
+                        self.token2idx += [Phone2idx(dict_path_sub)]
                     else:
                         raise ValueError(unit_sub)
             else:
@@ -218,7 +221,7 @@ class Dataset(Base):
 
             if ctc and subsample_factor > 1:
                 n_utts = len(self.df)
-                self.df = self.df[self.df.apply(lambda x: x['ylen'] <= x['xlen'] // subsample_factor, axis=1)]
+                self.df = self.df[self.df.apply(lambda x: x['ylen'] <= (x['xlen'] // subsample_factor), axis=1)]
                 print('Removed %d utterances (for CTC)' % (n_utts - len(self.df)))
 
             for i in range(1, 4):
@@ -227,7 +230,8 @@ class Dataset(Base):
                 subsample_factor_sub = locals()['subsample_factor_sub' + str(i)]
                 if df_sub is not None:
                     if ctc_sub and subsample_factor_sub > 1:
-                        df_sub = df_sub[df_sub.apply(lambda x: x['ylen'] <= x['xlen'] // subsample_factor_sub, axis=1)]
+                        df_sub = df_sub[df_sub.apply(
+                            lambda x: x['ylen'] <= (x['xlen'] // subsample_factor_sub), axis=1)]
 
                     if len(self.df) != len(df_sub):
                         n_utts = len(self.df)
@@ -301,18 +305,24 @@ class Dataset(Base):
                     for idx in self.df['prev_utt'][i][::-1]:
                         y_prev = list(map(int, str(self.df_sub1['token_id'][idx]).split()))
                         ys_sub1[j] = y_prev + [self.eos] + ys_sub1[j][:]
+        elif self.vocab_sub1 > 0:
+            ys_sub1 = [self.token2idx[1](self.df['text'][i]) for i in df_indices]
 
         ys_sub2 = []
         if self.df_sub2 is not None:
             ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in df_indices]
             if self.concat_prev_n_utterances > 0:
                 raise NotImplementedError
+        elif self.vocab_sub2 > 0:
+            ys_sub2 = [self.token2idx[2](self.df['text'][i]) for i in df_indices]
 
         ys_sub3 = []
         if self.df_sub3 is not None:
             ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in df_indices]
             if self.concat_prev_n_utterances > 0:
                 raise NotImplementedError
+        elif self.vocab_sub3 > 0:
+            ys_sub3 = [self.token2idx[3](self.df['text'][i]) for i in df_indices]
 
         batch_dict = {
             'xs': xs,

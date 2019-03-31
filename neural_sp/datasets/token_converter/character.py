@@ -23,6 +23,7 @@ class Char2idx(object):
     """
 
     def __init__(self, dict_path, nlsyms=None, remove_space=False, remove_list=[]):
+        self.nlsyms = nlsyms
         self.remove_space = remove_space
         self.remove_list = remove_list
 
@@ -47,7 +48,7 @@ class Char2idx(object):
         token_ids = []
         words = text.replace(' ', '<space>').split('<space>')
         for i,  w in enumerate(words):
-            if w in self.nlsyms:
+            if self.nlsyms is not None and w in self.nlsyms:
                 token_ids.append(self.token2idx[w])
             else:
                 for c in list(w):
