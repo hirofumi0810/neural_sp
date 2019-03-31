@@ -24,17 +24,17 @@ def eval_phone(models, dataset, recog_params, epoch,
     """Evaluate a phone-level model by PER.
 
     Args:
-        models (list): the models to evaluate
+        models (list): models to evaluate
         dataset: An instance of a `Dataset' class
         recog_params (dict):
         epoch (int):
         recog_dir (str):
-        progressbar (bool): if True, visualize the progressbar
+        progressbar (bool): visualize the progressbar
     Returns:
         per (float): Phone error rate
-        n_sub (int): the number of substitution errors
-        n_ins (int): the number of insertion errors
-        n_del (int): the number of deletion errors
+        n_sub (int): number of substitution errors
+        n_ins (int): number of insertion errors
+        n_del (int): number of deletion errors
 
     """
     # Reset data counter

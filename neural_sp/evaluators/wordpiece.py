@@ -24,21 +24,21 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     """Evaluate the wordpiece-level model by WER.
 
     Args:
-        models (list): the models to evaluate
+        models (list): models to evaluate
         dataset: An instance of a `Dataset' class
         recog_params (recog_dict):
         epoch (int):
         recog_dir (str):
-        progressbar (bool): if True, visualize the progressbar
+        progressbar (bool): visualize the progressbar
     Returns:
         wer (float): Word error rate
-        n_sub_w (int): the number of substitution errors for WER
-        n_ins_w (int): the number of insertion errors for WER
-        n_del_w (int): the number of deletion errors for WER
+        n_sub_w (int): number of substitution errors for WER
+        n_ins_w (int): number of insertion errors for WER
+        n_del_w (int): number of deletion errors for WER
         cer (float): Character error rate
-        n_sub_w (int): the number of substitution errors for CER
-        n_ins_c (int): the number of insertion errors for CER
-        n_del_c (int): the number of deletion errors for CER
+        n_sub_w (int): number of substitution errors for CER
+        n_ins_c (int): number of insertion errors for CER
+        n_del_c (int): number of deletion errors for CER
 
     """
     # Reset data counter

@@ -413,7 +413,7 @@ def main():
                 if args.metric == 'edit_distance':
                     if args.unit in ['word', 'word_char']:
                         metric_dev = eval_word([model.module], dev_set, recog_params,
-                                               epoch=epoch)[0]
+                                               epoch=epoch)[0][0]
                         logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
                     elif args.unit == 'wp':
                         metric_dev = eval_wordpiece([model.module], dev_set, recog_params,
@@ -459,7 +459,7 @@ def main():
                         if args.metric == 'edit_distance':
                             if args.unit in ['word', 'word_char']:
                                 wer_test = eval_word([model.module], s, recog_params,
-                                                     epoch=epoch)[0]
+                                                     epoch=epoch)[0][0]
                                 logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
                             elif args.unit == 'wp':
                                 wer_test = eval_wordpiece([model.module], s, recog_params,

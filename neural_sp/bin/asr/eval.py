@@ -171,10 +171,10 @@ def main():
 
         if args.recog_metric == 'edit_distance':
             if args.recog_unit in ['word', 'word_char']:
-                wer = eval_word(ensemble_models, dataset, recog_params,
-                                epoch=epoch - 1,
-                                recog_dir=args.recog_dir,
-                                progressbar=True)[0]
+                (wer, _, _, _), (cer, _, _, _) = eval_word(ensemble_models, dataset, recog_params,
+                                                           epoch=epoch - 1,
+                                                           recog_dir=args.recog_dir,
+                                                           progressbar=True)[0]
                 wer_avg += wer
             elif args.recog_unit == 'wp':
                 (wer, _, _, _), (cer, _, _, _) = eval_wordpiece(
@@ -216,16 +216,11 @@ def main():
         logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
 
     if args.recog_metric == 'edit_distance':
-        if args.recog_unit == 'word':
-            logger.info('WER (avg.): %.2f %%\n' % (wer_avg / len(args.recog_sets)))
-        if args.recog_unit == 'wp':
-            logger.info('WER / CER (avg.): %.2f / %.2f %%\n' %
-                        (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
-        elif 'char' in args.recog_unit:
-            logger.info('WER / CER (avg.): %.2f / %.2f %%\n' %
-                        (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
-        elif 'phone' in args.recog_unit:
+        if 'phone' in args.recog_unit:
             logger.info('PER (avg.): %.2f %%\n' % (per_avg / len(args.recog_sets)))
+        else:
+            logger.info('WER / CER (avg.): %.2f / %.2f %%\n' %
+                        (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
     elif args.recog_metric in ['ppl', 'loss']:
         logger.info('PPL (avg.): %.2f\n' % (ppl_avg / len(args.recog_sets)))
         print('PPL (avg.): %.2f' % (ppl_avg / len(args.recog_sets)))

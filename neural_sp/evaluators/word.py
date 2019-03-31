@@ -27,18 +27,22 @@ def eval_word(models, dataset, recog_params, epoch,
     """Evaluate the word-level model by WER.
 
     Args:
-        models (list): the models to evaluate
+        models (list): models to evaluate
         dataset: An instance of a `Dataset' class
         recog_params (dict):
         epoch (int):
         recog_dir (str):
-        progressbar (bool): if True, visualize the progressbar
+        progressbar (bool): visualize the progressbar
     Returns:
         wer (float): Word error rate
-        n_sub (int): the number of substitution errors
-        n_ins (int): the number of insertion errors
-        n_del (int): the number of deletion errors
-        n_oov_total (int):
+        n_sub_w (int): number of substitution errors for WER
+        n_ins_w (int): number of insertion errors for WER
+        n_del_w (int): number of deletion errors for WER
+        cer (float): Character error rate
+        n_sub_w (int): number of substitution errors for CER
+        n_ins_c (int): number of insertion errors for CER
+        n_del_c (int): number of deletion errors for CER
+        n_oov_total (int): totol number of OOV
 
     """
     # Reset data counter
@@ -57,9 +61,10 @@ def eval_word(models, dataset, recog_params, epoch,
         ref_trn_save_path = mkdir_join(recog_dir, 'ref.trn')
         hyp_trn_save_path = mkdir_join(recog_dir, 'hyp.trn')
 
-    wer = 0
-    n_sub, n_ins, n_del = 0, 0, 0
-    n_word = 0
+    wer, cer = 0, 0
+    n_sub_w, n_ins_w, n_del_w = 0, 0, 0
+    n_sub_c, n_ins_c, n_del_c = 0, 0, 0
+    n_word, n_char = 0, 0
     n_oov_total = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))  # TODO(hirofumi): fix this
@@ -86,7 +91,7 @@ def eval_word(models, dataset, recog_params, epoch,
                 if recog_params['recog_resolving_unk'] and '<unk>' in hyp:
                     recog_params_char = copy.deepcopy(recog_params)
                     recog_params_char['recog_rnnlm_weight'] = 0
-                    # TODO: beam=5になっている
+                    recog_params_char['recog_beam_width'] = 1
                     best_hyps_char, aw_char, _, _ = models[0].decode(
                         batch['xs'][b:b + 1], recog_params_char,
                         exclude_eos=True,
@@ -100,7 +105,23 @@ def eval_word(models, dataset, recog_params, epoch,
                         hyp, best_hyps_char[0], aws[b], aw_char[0], dataset.idx2token[1],
                         subsample_factor_word=np.prod(models[0].subsample),
                         subsample_factor_char=np.prod(models[0].subsample[:models[0].enc_n_layers_sub1 - 1]))
+                    logger.info('Hyp (after OOV resolution): %s' % hyp)
                     hyp = hyp.replace('*', '')
+
+                    # Compute CER
+                    ref_char = ref
+                    hyp_char = hyp
+                    if dataset.corpus == 'csj':
+                        ref_char = ref.replace(' ', '')
+                        hyp_char = hyp.replace(' ', '')
+                    cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref_char),
+                                                             hyp=list(hyp_char),
+                                                             normalize=False)
+                    cer += cer_b
+                    n_sub_c += sub_b
+                    n_ins_c += ins_b
+                    n_del_c += del_b
+                    n_char += len(ref_char)
 
                 # Write to trn
                 utt_id = str(batch['utt_ids'][b])
@@ -117,9 +138,9 @@ def eval_word(models, dataset, recog_params, epoch,
                                                          hyp=hyp.split(' '),
                                                          normalize=False)
                 wer += wer_b
-                n_sub += sub_b
-                n_ins += ins_b
-                n_del += del_b
+                n_sub_w += sub_b
+                n_ins_w += ins_b
+                n_del_w += del_b
                 n_word += len(ref.split(' '))
 
                 if progressbar:
@@ -135,12 +156,19 @@ def eval_word(models, dataset, recog_params, epoch,
     dataset.reset()
 
     wer /= n_word
-    n_sub /= n_word
-    n_ins /= n_word
-    n_del /= n_word
+    n_sub_w /= n_word
+    n_ins_w /= n_word
+    n_del_w /= n_word
+
+    cer /= n_char
+    n_sub_c /= n_char
+    n_ins_c /= n_char
+    n_del_c /= n_char
 
     logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
-    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
+    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
+    logger.info('CER (%s): %.2f %%' % (dataset.set, cer))
+    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
     logger.info('OOV (total): %d' % (n_oov_total))
 
-    return wer, n_sub, n_ins, n_del, n_oov_total
+    return wer, n_sub_w, n_ins_w, n_del_w, n_oov_total, cer

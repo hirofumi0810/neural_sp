@@ -24,25 +24,25 @@ def eval_char(models, dataset, recog_params, epoch,
     """Evaluate the character-level model by WER & CER.
 
     Args:
-        models (list): the models to evaluate
+        models (list): models to evaluate
         dataset: An instance of a `Dataset' class
         recog_params (dict):
         epoch (int):
         recog_dir (str):
-        progressbar (bool): if True, visualize the progressbar
+        progressbar (bool): visualize the progressbar
         task_idx (int): the index of the target task in interest
             0: main task
             1: sub task
             2: sub sub task
     Returns:
         wer (float): Word error rate
-        n_sub_w (int): the number of substitution errors for WER
-        n_ins_w (int): the number of insertion errors for WER
-        n_del_w (int): the number of deletion errors for WER
+        n_sub_w (int): number of substitution errors for WER
+        n_ins_w (int): number of insertion errors for WER
+        n_del_w (int): number of deletion errors for WER
         cer (float): Character error rate
-        n_sub_w (int): the number of substitution errors for CER
-        n_ins_c (int): the number of insertion errors for CER
-        n_del_c (int): the number of deletion errors for CER
+        n_sub_w (int): number of substitution errors for CER
+        n_ins_c (int): number of insertion errors for CER
+        n_del_c (int): number of deletion errors for CER
 
     """
     # Reset data counter
