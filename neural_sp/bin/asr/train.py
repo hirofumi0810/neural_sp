@@ -88,6 +88,7 @@ def main():
                         dict_path_sub1=args.dict_sub1,
                         dict_path_sub2=args.dict_sub2,
                         dict_path_sub3=args.dict_sub3,
+                        nlsyms=args.nlsyms,
                         unit=args.unit,
                         unit_sub1=args.unit_sub1,
                         unit_sub2=args.unit_sub2,
@@ -216,7 +217,9 @@ def main():
         if args.rnnlm_fusion:
             save_config(args.rnnlm_conf, os.path.join(model.save_path, 'conf_rnnlm.yml'))
 
-        # Save the dictionary & wp_model
+        # Save the nlsyms, dictionar, and wp_model
+        if args.nlsyms:
+            shutil.copy(args.nlsyms, os.path.join(model.save_path, 'nlsyms.txt'))
         for sub in ['', '_sub1', '_sub2', '_sub3']:
             if getattr(args, 'dict' + sub):
                 shutil.copy(getattr(args, 'dict' + sub), os.path.join(model.save_path, 'dict' + sub + '.txt'))
@@ -460,7 +463,7 @@ def main():
                                 logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
                             elif args.unit == 'wp':
                                 wer_test = eval_wordpiece([model.module], s, recog_params,
-                                                          epoch=epoch)[0]
+                                                          epoch=epoch)[0][0]
                                 logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
                             elif 'char' in args.unit:
                                 test_results = eval_char([model.module], s, recog_params,

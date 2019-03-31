@@ -58,6 +58,7 @@ def main():
                           dict_path=os.path.join(dir_name, 'dict.txt'),
                           dict_path_sub1=os.path.join(dir_name, 'dict_sub1.txt') if os.path.isfile(
                               os.path.join(dir_name, 'dict_sub1.txt')) else False,
+                          nlsyms=args.nlsyms,
                           wp_model=os.path.join(dir_name, 'wp.model'),
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,

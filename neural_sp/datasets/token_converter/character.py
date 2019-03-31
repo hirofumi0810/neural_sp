@@ -22,8 +22,7 @@ class Char2idx(object):
 
     """
 
-    def __init__(self, dict_path, nlsyms=None, remove_space=False, remove_list=[]):
-        self.nlsyms = nlsyms
+    def __init__(self, dict_path, nlsyms=False, remove_space=False, remove_list=[]):
         self.remove_space = remove_space
         self.remove_list = remove_list
 
@@ -35,6 +34,12 @@ class Char2idx(object):
                 if c in remove_list:
                     continue
                 self.token2idx[c] = int(idx)
+
+        self.nlsyms_list = []
+        if nlsyms:
+            with codecs.open(nlsyms, 'r', 'utf-8') as f:
+                for line in f:
+                    self.nlsyms_list.append(line.strip())
 
     def __call__(self, text):
         """Convert character sequence into indices.
@@ -48,7 +53,7 @@ class Char2idx(object):
         token_ids = []
         words = text.replace(' ', '<space>').split('<space>')
         for i,  w in enumerate(words):
-            if self.nlsyms is not None and w in self.nlsyms:
+            if w in self.nlsyms_list:
                 token_ids.append(self.token2idx[w])
             else:
                 for c in list(w):

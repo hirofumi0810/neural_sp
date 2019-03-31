@@ -61,6 +61,7 @@ def main():
                               os.path.join(dir_name, 'dict_sub2.txt')) else False,
                           dict_path_sub3=os.path.join(dir_name, 'dict_sub3.txt') if os.path.isfile(
                               os.path.join(dir_name, 'dict_sub3.txt')) else False,
+                          nlsyms=os.path.join(dir_name, 'nlsyms.txt'),
                           wp_model=os.path.join(dir_name, 'wp.model'),
                           wp_model_sub1=os.path.join(dir_name, 'wp_sub1.model'),
                           wp_model_sub2=os.path.join(dir_name, 'wp_sub2.model'),

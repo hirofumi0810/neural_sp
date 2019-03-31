@@ -34,7 +34,7 @@ np.random.seed(1)
 class Dataset(Base):
 
     def __init__(self, tsv_path, dict_path,
-                 unit, batch_size, n_epochs=None,
+                 unit, batch_size, nlsyms=False, n_epochs=None,
                  is_test=False, min_n_frames=40, max_n_frames=2000,
                  shuffle=False, sort_by_input_length=False,
                  short2long=False, sort_stop_epoch=None,
@@ -58,6 +58,7 @@ class Dataset(Base):
             dict_path (str): path to the dictionary
             unit (str): word or wp or char or phone or word_char
             batch_size (int): size of mini-batch
+            nlsyms (str): path to the non-linguistic symbols file
             n_epochs (int): max epoch. None means infinite loop.
             is_test (bool):
             min_n_frames (int): exclude utterances shorter than this value
@@ -112,7 +113,7 @@ class Dataset(Base):
             self.token2idx += [Wp2idx(dict_path, wp_model)]
         elif unit == 'char':
             self.idx2token += [Idx2char(dict_path)]
-            self.token2idx += [Char2idx(dict_path)]
+            self.token2idx += [Char2idx(dict_path, nlsyms=nlsyms)]
         elif 'phone' in unit:
             self.idx2token += [Idx2phone(dict_path)]
             self.token2idx += [Phone2idx(dict_path)]
@@ -133,7 +134,7 @@ class Dataset(Base):
                         self.token2idx += [Wp2idx(dict_path_sub, wp_model_sub)]
                     elif unit_sub == 'char':
                         self.idx2token += [Idx2char(dict_path_sub)]
-                        self.token2idx += [Char2idx(dict_path_sub)]
+                        self.token2idx += [Char2idx(dict_path_sub, nlsyms=nlsyms)]
                     elif 'phone' in unit_sub:
                         self.idx2token += [Idx2phone(dict_path_sub)]
                         self.token2idx += [Phone2idx(dict_path_sub)]
