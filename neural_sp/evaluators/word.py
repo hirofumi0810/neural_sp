@@ -160,10 +160,11 @@ def eval_word(models, dataset, recog_params, epoch,
     n_ins_w /= n_word
     n_del_w /= n_word
 
-    cer /= n_char
-    n_sub_c /= n_char
-    n_ins_c /= n_char
-    n_del_c /= n_char
+    if n_char > 0:
+        cer /= n_char
+        n_sub_c /= n_char
+        n_ins_c /= n_char
+        n_del_c /= n_char
 
     logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
     logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
