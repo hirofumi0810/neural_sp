@@ -32,9 +32,6 @@ def eval_phone(models, dataset, recog_params, epoch,
         progressbar (bool): visualize the progressbar
     Returns:
         per (float): Phone error rate
-        n_sub (int): number of substitution errors
-        n_ins (int): number of insertion errors
-        n_del (int): number of deletion errors
 
     """
     # Reset data counter
@@ -114,4 +111,4 @@ def eval_phone(models, dataset, recog_params, epoch,
     logger.info('PER (%s): %.2f %%' % (dataset.set, per))
     logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
 
-    return per, n_sub, n_ins, n_del
+    return per

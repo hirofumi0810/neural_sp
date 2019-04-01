@@ -171,26 +171,25 @@ def main():
 
         if args.recog_metric == 'edit_distance':
             if args.recog_unit in ['word', 'word_char']:
-                (wer, _, _, _), (cer, _, _, _) = eval_word(ensemble_models, dataset, recog_params,
-                                                           epoch=epoch - 1,
-                                                           recog_dir=args.recog_dir,
-                                                           progressbar=True)[0]
+                wer, cer, _ = eval_word(ensemble_models, dataset, recog_params,
+                                        epoch=epoch - 1,
+                                        recog_dir=args.recog_dir,
+                                        progressbar=True)
                 wer_avg += wer
+                cer_avg += cer
             elif args.recog_unit == 'wp':
-                (wer, _, _, _), (cer, _, _, _) = eval_wordpiece(
-                    ensemble_models, dataset, recog_params,
-                    epoch=epoch - 1,
-                    recog_dir=args.recog_dir,
-                    progressbar=True)
+                wer, cer = eval_wordpiece(ensemble_models, dataset, recog_params,
+                                          epoch=epoch - 1,
+                                          recog_dir=args.recog_dir,
+                                          progressbar=True)
                 wer_avg += wer
                 cer_avg += cer
             elif 'char' in args.recog_unit:
-                (wer, _, _, _), (cer, _, _, _) = eval_char(
-                    ensemble_models, dataset, recog_params,
-                    epoch=epoch - 1,
-                    recog_dir=args.recog_dir,
-                    progressbar=True,
-                    task_idx=1 if args.recog_unit and 'char' in args.recog_unit else 0)
+                wer, cer = eval_char(ensemble_models, dataset, recog_params,
+                                     epoch=epoch - 1,
+                                     recog_dir=args.recog_dir,
+                                     progressbar=True,
+                                     task_idx=1 if args.recog_unit and 'char' in args.recog_unit else 0)
                 wer_avg += wer
                 cer_avg += cer
             elif 'phone' in args.recog_unit:

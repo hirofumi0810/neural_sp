@@ -32,13 +32,7 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
         progressbar (bool): visualize the progressbar
     Returns:
         wer (float): Word error rate
-        n_sub_w (int): number of substitution errors for WER
-        n_ins_w (int): number of insertion errors for WER
-        n_del_w (int): number of deletion errors for WER
         cer (float): Character error rate
-        n_sub_w (int): number of substitution errors for CER
-        n_ins_c (int): number of insertion errors for CER
-        n_del_c (int): number of deletion errors for CER
 
     """
     # Reset data counter
@@ -140,4 +134,4 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     logger.info('CER (%s): %.2f %%' % (dataset.set, cer))
     logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
 
-    return (wer, n_sub_w, n_ins_w, n_del_w), (cer, n_sub_c, n_ins_c, n_del_c)
+    return wer, cer
