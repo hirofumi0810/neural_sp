@@ -42,6 +42,8 @@ def parse():
                         help='path to a tsv file for the development set for the 3rd auxiliary task')
     parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
                         help='path to tsv files for the evaluation sets')
+    parser.add_argument('--nlsyms', type=str, nargs='?',
+                        help='path to a non-linguistic symbols file')
     parser.add_argument('--dict', type=str,
                         help='path to a dictionary file')
     parser.add_argument('--dict_sub1', type=str, default=False,
@@ -298,15 +300,17 @@ def parse():
     parser.add_argument('--bwd_weight_sub3', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     # cold fusion
-    parser.add_argument('--lm_fusion_type', type=str, default='cold_hidden_generate', nargs='?',
-                        choices=['cold_hidden_generate', 'cold_prob_generate',
-                                 'cache_dot_generate', 'cache_dot_recurrency',
-                                 'cache_add_ganerate', 'cache_add_recurrency',
-                                 'cache_dot_generate_unfreeze', 'cache_add_generate_unfreeze',
-                                 'cache_dot_generate_unfreeze_mtl', 'cache_add_generate_unfreeze_mtl',
-                                 'cache_cold_dot_generate',
-                                 'cold_hidden_recurrency'],
-                        help='type of cold fusion')
+    parser.add_argument('--lm_fusion_type', type=str, default='cold_generate', nargs='?',
+                        choices=['cold', 'cold_prob', 'cold_recurrency',
+                                 'deep_original', 'deep',
+                                 'cache', 'cache_recurrency',
+                                 'cache_add', 'cache_add_recurrency',
+                                 'cache_unfreeze', 'cache_add_unfreeze',
+                                 'cache_unfreeze_mtl', 'cache_add_unfreeze_mtl',
+                                 'cache_cold',
+                                 'cache_bi',
+                                 ],
+                        help='type of RNNLM fusion')
     parser.add_argument('--rnnlm_fusion', type=str, default=False, nargs='?',
                         help='RNNLM for LM fusion during training')
     # RNNLM initialization, objective
@@ -410,12 +414,15 @@ def parse():
     parser.add_argument('--recog_cache_lambda_lm', type=float, default=0.1,
                         help='lambda paramter for LM cache')
     parser.add_argument('--recog_cache_type', type=str, default='speech',
-                        choices=['speech', 'lm', 'joint'],
+                        choices=['speech_fifo', 'speech_dict', 'speech_dict_overwrite',
+                                 'lm_fifo', 'lm_dict', 'lm_dict_overwrite',
+                                 'joint_fifo', 'joint_dict', 'joint_dict_overwrite',
+                                 'speech_dict_oov_oracle'],
                         help='cache type')
+    parser.add_argument('--recog_second_pass', type=bool, default=False,
+                        help='')
     parser.add_argument('--recog_concat_prev_n_utterances', type=int, default=0,
                         help='number of previous utterances to concatenate (for inference)')
-    parser.add_argument('--recog_cache_prev_n_tokens', type=int, default=0,
-                        help='number of previous tokens to cache (for inference)')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')

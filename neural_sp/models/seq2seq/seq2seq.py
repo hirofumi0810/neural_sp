@@ -18,6 +18,7 @@ import torch
 from neural_sp.models.base import ModelBase
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
+from neural_sp.models.rnnlm.brnnlm import BRNNLM
 from neural_sp.models.rnnlm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.rnn_decoder import RNNDecoder
 from neural_sp.models.seq2seq.decoders.transformer_decoder import TransformerDecoder
@@ -50,6 +51,11 @@ class Seq2seq(ModelBase):
         if args.enc_type in ['blstm', 'bgru']:
             self.enc_n_units *= 2
         self.bridge_layer = args.bridge_layer
+
+        # for OOV resolution
+        self.enc_n_layers = args.enc_n_layers
+        self.enc_n_layers_sub1 = args.enc_n_layers_sub1
+        self.subsample = [int(s) for s in args.subsample.split('_')]
 
         # for attention layer
         self.attn_n_heads = args.attn_n_heads
@@ -179,8 +185,11 @@ class Seq2seq(ModelBase):
         for dir in directions:
             # Cold fusion
             if args.rnnlm_fusion and dir == 'fwd':
-                rnnlm = RNNLM(args.rnnlm_conf)
-                rnnlm.load_checkpoint(args.rnnlm_fusion)
+                if 'bi' in args.lm_fusion_type:
+                    rnnlm = BRNNLM(args.rnnlm_conf)
+                else:
+                    rnnlm = RNNLM(args.rnnlm_conf)
+                    rnnlm.load_checkpoint(args.rnnlm_fusion)
             else:
                 args.rnnlm_conf = False
                 rnnlm = None
@@ -361,12 +370,10 @@ class Seq2seq(ModelBase):
 
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
-            # encoder
             if args.enc_type != 'cnn':
                 self.init_weights(args.param_init, dist='orthogonal',
                                   keys=[args.enc_type, 'weight'])
             # TODO(hirofumi): in case of CNN + LSTM
-            # decoder
             self.init_weights(args.param_init, dist='orthogonal',
                               keys=[args.dec_type, 'weight'])
 
@@ -376,6 +383,13 @@ class Seq2seq(ModelBase):
         # Initialize bias in gating with -1 for cold fusion
         if args.rnnlm_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
+
+        if args.lm_fusion_type in ['deep', 'deep_original'] and args.rnnlm_fusion:
+            for n, p in self.named_parameters():
+                if 'output' in n or 'output_bn' in n or 'cf_linear' in n:
+                    p.requires_grad = True
+                else:
+                    p.requires_grad = False
 
     def scheduled_sampling_trigger(self):
         # main task
@@ -681,10 +695,11 @@ class Seq2seq(ModelBase):
             # Attention
             #########################
             else:
-                if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention'] and not params['recog_oracle']:
+                if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
                     best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                        params['recog_max_len_ratio'], exclude_eos, speakers)
+                        params['recog_max_len_ratio'], exclude_eos, idx2token, refs,
+                        speakers, params['recog_oracle'])
                     cache_info = (None, None)
                 else:
                     if params['recog_ctc_weight'] > 0:
@@ -778,19 +793,25 @@ class Seq2seq(ModelBase):
                                 # NOTE: only support for the main task now
 
                         rnnlm, rnnlm_rev = None, None
-                        if params['recog_rnnlm_weight'] > 0 and getattr(self, 'dec_' + dir).rnnlm_cf is None:
+                        if params['recog_rnnlm_weight'] > 0 and hasattr(self, 'rnnlm_' + dir) and getattr(self, 'rnnlm_' + dir) is not None:
                             rnnlm = getattr(self, 'rnnlm_' + dir)
                             if params['recog_reverse_lm_rescoring']:
                                 if dir == 'fwd':
                                     rnnlm_rev = self.rnnlm_bwd
                                 else:
-                                    raise NotImplementedError()
+                                    raise NotImplementedError
 
                         nbest_hyps, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, rnnlm, rnnlm_rev, ctc_log_probs,
                             nbest, exclude_eos, idx2token, refs,
                             ensemble_eouts, ensemble_elens, ensemble_decs, speakers)
+                        if params['recog_second_pass']:
+                            nbest_hyps, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
+                                enc_outs[task]['xs'], enc_outs[task]['xlens'],
+                                params, rnnlm, rnnlm_rev, ctc_log_probs,
+                                nbest, exclude_eos, idx2token, refs,
+                                ensemble_eouts, ensemble_elens, ensemble_decs, speakers, second_pass=True)
 
                         if nbest == 1:
                             best_hyps = [hyp[0] for hyp in nbest_hyps]
