@@ -47,8 +47,8 @@ class RNNDecoder(nn.Module):
     """RNN decoder.
 
     Args:
-        sos (int): index for <sos>
-        eos (int): index for <eos>
+        eos (int): index for <eos> (shared with <sos>)
+        unk (int): index for <unk>
         pad (int): index for <pad>
         blank (int): index for <blank>
         enc_n_units (int):
@@ -93,8 +93,8 @@ class RNNDecoder(nn.Module):
     """
 
     def __init__(self,
-                 sos,
                  eos,
+                 unk,
                  pad,
                  blank,
                  enc_n_units,
@@ -141,6 +141,7 @@ class RNNDecoder(nn.Module):
         super(RNNDecoder, self).__init__()
 
         self.eos = eos
+        self.unk = unk
         self.pad = pad
         self.blank = blank
         self.rnn_type = rnn_type
@@ -190,6 +191,7 @@ class RNNDecoder(nn.Module):
         self.fifo_cache_sp_key = None
         self.fifo_cache_lm_key = None
         self.dict_cache_sp = {}
+        self.dict_oov_cache_sp = {}
         self.dict_cache_lm = {}
         self.prev_spk = ''
         self.total_step = 0
@@ -1123,7 +1125,7 @@ class RNNDecoder(nn.Module):
         return attn_v, aw_cache, gated_lm_feat
 
     def greedy(self, eouts, elens, max_len_ratio,
-               exclude_eos=False, idx2token=None, refs=None,
+               exclude_eos=False, idx2token=None, refs_id=None,
                speakers=None, oracle=False):
         """Greedy decoding in the inference stage (used only for evaluation during training).
 
@@ -1133,7 +1135,7 @@ class RNNDecoder(nn.Module):
             max_len_ratio (int): maximum sequence length of tokens
             exclude_eos (bool):
             idx2token ():
-            refs (list):
+            refs_id (list):
             speakers (list):
             oracle (bool):
         Returns:
@@ -1170,15 +1172,15 @@ class RNNDecoder(nn.Module):
         fifo_cache_ids_local = []
         fifo_cache_lm_key_local = []
         if oracle:
-            assert refs is not None
-            ylen_max = max([len(refs[b]) for b in range(bs)]) + 1
+            assert refs_id is not None
+            ylen_max = max([len(refs_id[b]) for b in range(bs)]) + 1
         else:
             ylen_max = int(math.floor(max_xlen * max_len_ratio)) + 1
         for t in range(ylen_max):
             if oracle:
                 y = eouts.new_zeros(bs, 1).long()
                 for b in range(bs):
-                    y[b] = ([self.eos] + refs[b])[t]
+                    y[b] = ([self.eos] + refs_id[b])[t]
 
             # Recurrency (1st)
             y_emb = self.embed(y)
@@ -1275,10 +1277,11 @@ class RNNDecoder(nn.Module):
 
         return best_hyps, aws
 
-    def beam_search(self, eouts, elens, params, rnnlm, rnnlm_rev=None, ctc_log_probs=None,
-                    nbest=1, exclude_eos=False, idx2token=None, refs=None,
+    def beam_search(self, eouts, elens, params, idx2token,
+                    rnnlm=None, rnnlm_rev=None, ctc_log_probs=None,
+                    nbest=1, exclude_eos=False, refs_id=None,
                     ensemble_eouts=None, ensemble_elens=None, ensemble_decoders=[],
-                    speakers=None, second_pass=False):
+                    speakers=None, second_pass=False, store_cache=False, refs_text=None):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -1293,20 +1296,22 @@ class RNNDecoder(nn.Module):
                 coverage_threshold (float): threshold for coverage penalty
                 lm_weight (float): weight of RNNLM score
                 n_caches (int):
+            idx2token (): converter from index to token
             rnnlm (torch.nn.Module):
             rnnlm_rev (torch.nn.Module):
             ctc_log_probs (torch.FloatTensor):
             nbest (int):
             exclude_eos (bool):
-            idx2token (): converter from index to token
-            refs (list):
+            refs_id (list):
             ensemble_eouts (list): list of FloatTensor
             ensemble_elens (list) list of list
             ensemble_decoders (list): list of torch.nn.Module
             speakers (list):
             second_pass (bool):
+            store_cache (bool):
+            refs_text (list):
         Returns:
-            nbest_hyps (list): A list of length `[B]`, which contains list of n hypotheses
+            nbest_hyps_id (list): A list of length `[B]`, which contains list of n hypotheses
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
             scores (list):
 
@@ -1344,7 +1349,7 @@ class RNNDecoder(nn.Module):
             else:
                 ctc_prefix_score = CTCPrefixScore(tensor2np(ctc_log_probs)[0], self.blank, self.eos)
 
-        nbest_hyps, aws, scores, scores_cp = [], [], [], []
+        nbest_hyps_id, nbest_hyps_str, aws, scores, scores_cp = [], [], [], [], []
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
@@ -1382,7 +1387,10 @@ class RNNDecoder(nn.Module):
             self.prev_spk = speakers[b]
 
             complete = []
-            beam = [{'hyp': [self.eos],
+            beam = [{'hyp_id': [self.eos],
+                     'hyp_str': ['<eos>'],
+                     'ref_id': [self.eos],
+                     'ref_str': ['<eos>'],
                      'score': 0,
                      'scores': [0],
                      'scores_cp': [0],
@@ -1409,14 +1417,16 @@ class RNNDecoder(nn.Module):
                      'cache_lm_attn_hist': [],
                      }]
             if oracle:
-                assert refs is not None
-                ylen_max = len(refs[b]) + 1
+                assert refs_id is not None
+                if store_cache:
+                    assert refs_text is not None
+                ylen_max = len(refs_id[b]) + 1
             else:
                 ylen_max = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
             for t in range(ylen_max):
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    prev_idx = ([self.eos] + refs[b])[t] if oracle else beam[i_beam]['hyp'][-1]
+                    prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam[i_beam]['hyp_id'][-1]
 
                     if 'recurrency' in self.lm_fusion_type:
                         raise NotImplementedError
@@ -1519,6 +1529,7 @@ class RNNDecoder(nn.Module):
                     cache_lm_attn = None
                     cache_probs_sp = torch.zeros_like(probs)
                     cache_probs_lm = torch.zeros_like(probs)
+                    oov_from_cache = ''
                     if n_caches > 0:
                         # Compute inner-product over caches
                         if cache_type in ['speech_fifo', 'joint_fifo'] and len(self.fifo_cache_ids + beam[i_beam]['cache_ids']) > 0:
@@ -1534,7 +1545,7 @@ class RNNDecoder(nn.Module):
                             # Truncate
                             cache_sp_key = cache_sp_key[:, -n_caches:]  # `[1, L, enc_n_units]`
                             cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
-                                cache_sp_key, cv.transpose(2, 1)), dim=1)  # `[1, L, 1]`
+                                cache_sp_key, torch.cat([cv, dstates['dout_gen']], dim=-1).transpose(2, 1)), dim=1)  # `[1, L, 1]`
                             # Sum all probabilities
                             for c in set(beam[i_beam]['cache_ids']):
                                 for offset in [i for i, key in enumerate(cache_ids) if key == c]:
@@ -1614,10 +1625,11 @@ class RNNDecoder(nn.Module):
                     lp = 1
                     if lp_weight > 0:
                         if gnmt_decoding:
-                            lp = (math.pow(5 + (len(beam[i_beam]['hyp']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
+                            lp = (math.pow(5 + (len(beam[i_beam]['hyp_id']) - 1 + 1),
+                                           lp_weight)) / math.pow(6, lp_weight)
                             local_scores /= lp
                         else:
-                            local_scores += (len(beam[i_beam]['hyp']) - 1 + 1) * lp_weight
+                            local_scores += (len(beam[i_beam]['hyp_id']) - 1 + 1) * lp_weight
 
                     # Add coverage penalty
                     if cp_weight > 0:
@@ -1653,7 +1665,7 @@ class RNNDecoder(nn.Module):
                     # CTC score
                     if ctc_weight > 0 and ctc_log_probs is not None:
                         ctc_scores, ctc_states = ctc_prefix_score(
-                            beam[i_beam]['hyp'], topk_ids[0], beam[i_beam]['ctc_state'])
+                            beam[i_beam]['hyp_id'], topk_ids[0], beam[i_beam]['ctc_state'])
                         scores_ctc = beam[i_beam]['score_ctc'] + torch.from_numpy(
                             ctc_scores - beam[i_beam]['ctc_score']).cuda(self.device_id)
                         scores_ctc_norm = scores_ctc / lp  # normalize
@@ -1664,10 +1676,10 @@ class RNNDecoder(nn.Module):
                         scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
 
                     for k in range(beam_width):
-                        top_idx = topk_ids[0, k].item()
+                        idx = topk_ids[0, k].item()
 
                         # Exclude short hypotheses
-                        if top_idx == self.eos and len(beam[i_beam]['hyp']) - 1 < elens[b] * params['recog_min_len_ratio']:
+                        if idx == self.eos and len(beam[i_beam]['hyp_id']) - 1 < elens[b] * params['recog_min_len_ratio']:
                             continue
 
                         score_attn = scores_attn[0, k].item()
@@ -1675,8 +1687,29 @@ class RNNDecoder(nn.Module):
                         score_lm = scores_lm[k].item()
                         score_t = score_attn * (1 - ctc_weight) + score_ctc * ctc_weight + score_lm * lm_weight
 
+                        # Recover from OOV cache
+                        oov = '<unk>'
+                        if not store_cache and idx == self.unk and cache_type == 'speech_dict_oov_oracle' and len(self.dict_oov_cache_sp.keys()) > 0:
+                            cache_words = sorted(list(self.dict_oov_cache_sp.keys()))
+                            cache_sp_key = [v['key']
+                                            for k, v in sorted(self.dict_oov_cache_sp.items(), key=lambda x: x[0])]
+                            cache_sp_key = torch.cat(cache_sp_key, dim=1)
+                            cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
+                                cache_sp_key, torch.cat([cv, dstates['dout_gen']], dim=-1).transpose(2, 1)), dim=1)  # `[1, L, 1]`
+                            # cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
+                            #     cache_sp_key, cv.transpose(2, 1)), dim=1)  # `[1, L, 1]`
+                            # cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
+                            #     cache_sp_key, dstates['dout_gen'].transpose(2, 1)), dim=1)  # `[1, L, 1]`
+                            # Copy form OOV cache
+                            if cache_sp_attn.max(1)[0].item() > 0.5:
+                                offset = cache_sp_attn.argmax(1)
+                                oov = cache_words[offset]
+
                         new_beam.append(
-                            {'hyp': beam[i_beam]['hyp'] + [top_idx],
+                            {'hyp_id': beam[i_beam]['hyp_id'] + [idx],
+                             'hyp_str': beam[i_beam]['hyp_str'] + [idx2token([idx]) if oov == '<unk>' else oov],
+                             'ref_id': beam[i_beam]['ref_id'] + refs_id[b][t:t + 1] if oracle else [],
+                             'ref_str': beam[i_beam]['ref_str'] + refs_text[b].split(' ')[t:t + 1] if store_cache else [],
                              'score': local_scores[0, k].item(),
                              #  'scores': beam[i_beam]['scores'] + [score_t],
                              'scores': beam[i_beam]['scores'] + [local_scores[0, k].item()],
@@ -1696,7 +1729,7 @@ class RNNDecoder(nn.Module):
                              'ensemble_aws': ensemble_aws,
                              'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
                              'ctc_score': ctc_scores[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
-                             'cache_ids': beam[i_beam]['cache_ids'] + [top_idx],
+                             'cache_ids': beam[i_beam]['cache_ids'] + [idx],
                              'cache_sp_key': beam[i_beam]['cache_sp_key'] + [torch.cat([cv, dstates['dout_gen']], dim=-1)],
                              #  'cache_sp_key': beam[i_beam]['cache_sp_key'] + [cv],
                              #  'cache_sp_key': beam[i_beam]['cache_sp_key'] + [dstates['dout_gen']],
@@ -1712,12 +1745,12 @@ class RNNDecoder(nn.Module):
                 not_complete = []
                 for cand in new_beam[:beam_width]:
                     if oracle:
-                        if t == len(refs[b]):
+                        if t == len(refs_id[b]):
                             complete += [cand]
                         else:
                             not_complete += [cand]
                     else:
-                        if cand['hyp'][-1] == self.eos and cand['hyp'].count(self.eos) >= concat_prev_n_utterances + 2:
+                        if cand['hyp_id'][-1] == self.eos and cand['hyp_id'].count(self.eos) >= concat_prev_n_utterances + 2:
                             complete += [cand]
                         else:
                             not_complete += [cand]
@@ -1743,17 +1776,17 @@ class RNNDecoder(nn.Module):
                     lp = 1
 
                     # Append <eos>
-                    if cand['hyp'][-1] != self.eos:
-                        cand['hyp'].append(self.eos)
+                    if cand['hyp_id'][-1] != self.eos:
+                        cand['hyp_id'].append(self.eos)
 
                     if lp_weight > 0 and gnmt_decoding:
-                        lp = (math.pow(5 + (len(cand['hyp']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
-                    for t in range(len(cand['hyp'][1:])):
-                        y_lm = eouts.new_zeros(1, 1).fill_(cand['hyp'][-1 - t]).long()
+                        lp = (math.pow(5 + (len(cand['hyp_id']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
+                    for t in range(len(cand['hyp_id'][1:])):
+                        y_lm = eouts.new_zeros(1, 1).fill_(cand['hyp_id'][-1 - t]).long()
                         lm_out_rev, (lm_rev_hxs, lm_rev_cxs) = rnnlm_rev.decode(
                             rnnlm_rev.encode(y_lm), (lm_hxs, lm_rev_cxs))
                         lm_log_probs = F.log_softmax(rnnlm_rev.generate(lm_out_rev).squeeze(1), dim=-1)
-                        score_lm_rev += lm_log_probs[0, cand['hyp'][-2 - t]]
+                        score_lm_rev += lm_log_probs[0, cand['hyp_id'][-2 - t]]
                     score_lm_rev /= lp  # normalize
                     cand['score'] += score_lm_rev * lm_weight
                     cand['score_lm_rev'] = score_lm_rev * lm_weight
@@ -1764,7 +1797,8 @@ class RNNDecoder(nn.Module):
             # N-best list
             if self.backward:
                 # Reverse the order
-                nbest_hyps += [[np.array(complete[n]['hyp'][1:][::-1]) for n in range(nbest)]]
+                nbest_hyps_id += [[np.array(complete[n]['hyp_id'][1:][::-1]) for n in range(nbest)]]
+                nbest_hyps_str += [[' '.join(complete[n]['hyp_str'][1:][::-1]) for n in range(nbest)]]
                 if self.score.n_heads > 1:
                     aws += [[complete[n]['aws'][0, 1:][::-1] for n in range(nbest)]]
                 else:
@@ -1772,7 +1806,8 @@ class RNNDecoder(nn.Module):
                 scores += [[complete[n]['scores'][1:][::-1] for n in range(nbest)]]
                 scores_cp += [[complete[n]['scores_cp'][1:][::-1] for n in range(nbest)]]
             else:
-                nbest_hyps += [[np.array(complete[n]['hyp'][1:]) for n in range(nbest)]]
+                nbest_hyps_id += [[np.array(complete[n]['hyp_id'][1:]) for n in range(nbest)]]
+                nbest_hyps_str += [[' '.join(complete[n]['hyp_str'][1:]) for n in range(nbest)]]
                 if self.score.n_heads > 1:
                     aws += [[complete[n]['aws'][0, 1:] for n in range(nbest)]]
                 else:
@@ -1781,14 +1816,14 @@ class RNNDecoder(nn.Module):
                 scores_cp += [[complete[n]['scores_cp'][1:] for n in range(nbest)]]
 
             # Check <eos>
-            eos_flag = [True if complete[n]['hyp'][-1] == self.eos else False for n in range(nbest)]
+            eos_flag = [True if complete[n]['hyp_id'][-1] == self.eos else False for n in range(nbest)]
             eos_flags.append(eos_flag)
 
-            if refs is not None and idx2token is not None:
-                logger.info('Ref: %s' % idx2token(refs[b]))
+            if refs_id is not None:
+                logger.info('Ref: %s' % idx2token(refs_id[b]))
             for n in range(nbest):
-                if idx2token is not None:
-                    logger.info('Hyp: %s' % idx2token(nbest_hyps[0][n]))
+                logger.info('Hyp: %s' % idx2token(nbest_hyps_id[0][n]))
+                logger.info('Hyp (from text): %s' % nbest_hyps_str[0][n])
                 logger.info('log prob (hyp): %.7f' % complete[n]['score'])
                 logger.info('log prob (hyp, att): %.7f' % (complete[n]['score_attn'] * (1 - ctc_weight)))
                 logger.info('log prob (hyp, cp): %.7f' % (complete[n]['score_cp'] * cp_weight))
@@ -1809,11 +1844,13 @@ class RNNDecoder(nn.Module):
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
             if self.backward:
-                nbest_hyps = [[nbest_hyps[b][n][1:] if eos_flags[b][n]
-                               else nbest_hyps[b][n] for n in range(nbest)] for b in range(bs)]
+                nbest_hyps_id = [[nbest_hyps_id[b][n][1:] if eos_flags[b][n]
+                                  else nbest_hyps_id[b][n] for n in range(nbest)] for b in range(bs)]
+                nbest_hyps_str = [[nbest_hyps_str[b][n].split('<eos> ')[-1] for n in range(nbest)] for b in range(bs)]
             else:
-                nbest_hyps = [[nbest_hyps[b][n][:-1] if eos_flags[b][n]
-                               else nbest_hyps[b][n] for n in range(nbest)] for b in range(bs)]
+                nbest_hyps_id = [[nbest_hyps_id[b][n][:-1] if eos_flags[b][n]
+                                  else nbest_hyps_id[b][n] for n in range(nbest)] for b in range(bs)]
+                nbest_hyps_str = [[nbest_hyps_str[b][n].split(' <eos>')[0] for n in range(nbest)] for b in range(bs)]
 
         # Store ASR/RNNLM state
         self.dstates_final = complete[0]['dstates']
@@ -1826,7 +1863,7 @@ class RNNDecoder(nn.Module):
         cache_sp_attn_hist = None
         cache_lm_attn_hist = None
         if n_caches > 0:
-            hyp_len = len(complete[0]['hyp'][1:])
+            hyp_len = len(complete[0]['hyp_id'][1:])
 
             if cache_type in ['speech_fifo', 'joint_fifo'] and len(complete[0]['cache_ids']) > 0:
                 self.fifo_cache_ids = (self.fifo_cache_ids + complete[0]['cache_ids'])[: n_caches]
@@ -1852,11 +1889,13 @@ class RNNDecoder(nn.Module):
                     cache_sp_key = torch.cat(cache_sp_key, dim=1)
                     cache_sp_attn_hist = torch.cat(complete[0]['cache_sp_attn_hist'], dim=-1).cpu().numpy()
 
-                for t, idx in enumerate(complete[0]['hyp'][1:]):
+                for t, idx in enumerate(complete[0]['hyp_id'][1:]):
                     if idx in self.dict_cache_sp.keys():
                         if cache_type in ['speech_dict_overwrite', 'joint_dict_overwrite']:
+                            # self.dict_cache_sp[idx]['value'] = (
+                            #     self.dict_cache_sp[idx]['value'] * self.dict_cache_sp[idx]['appearance'] + complete[0]['cache_sp_key'][t]) / (self.dict_cache_sp[idx]['appearance'] + 1)
                             self.dict_cache_sp[idx]['value'] = (
-                                self.dict_cache_sp[idx]['value'] * self.dict_cache_sp[idx]['appearance'] + complete[0]['cache_sp_key'][t]) / (self.dict_cache_sp[idx]['appearance'] + 1)
+                                self.dict_cache_sp[idx]['value'] + complete[0]['cache_sp_key'][t]) / 2
                         else:
                             self.dict_cache_sp[idx]['value'] = complete[0]['cache_sp_key'][t]
                         self.dict_cache_sp[idx]['time'] = self.total_step + t + 1
@@ -1871,7 +1910,7 @@ class RNNDecoder(nn.Module):
                         if len(self.dict_cache_sp.keys()) > n_caches:
                             oldest_id = sorted(self.dict_cache_sp.items(), key=lambda x: x[1]['time'])[0][0]
                             self.dict_cache_sp.pop(oldest_id)
-                self.total_step += len(complete[0]['hyp'][1:])
+                self.total_step += len(complete[0]['hyp_id'][1:])
 
             if cache_type in ['lm_fifo', 'joint_fifo'] and len(complete[0]['cache_ids']) > 0:
                 assert lm_weight > 0 or self.cache_fusion
@@ -1898,7 +1937,7 @@ class RNNDecoder(nn.Module):
                     cache_lm_key = torch.cat(cache_lm_key, dim=1)
                     cache_lm_attn_hist = torch.cat(complete[0]['cache_lm_attn_hist'], dim=-1).cpu().numpy()
 
-                for t, idx in enumerate(complete[0]['hyp'][1:]):
+                for t, idx in enumerate(complete[0]['hyp_id'][1:]):
                     if idx in self.dict_cache_lm.keys():
                         if cache_type in ['lm_dict_overwrite', 'joint_dict_overwrite']:
                             # self.dict_cache_lm[idx]['value'] = (
@@ -1919,12 +1958,22 @@ class RNNDecoder(nn.Module):
                         if len(self.dict_cache_lm.keys()) > n_caches:
                             oldest_id = sorted(self.dict_cache_lm.items(), key=lambda x: x[1]['time'])[0][0]
                             self.dict_cache_lm.pop(oldest_id)
-                self.total_step += len(complete[0]['hyp'][1:])
+                self.total_step += len(complete[0]['hyp_id'][1:])
+        elif store_cache:
+            assert oracle
+            for t, idx in enumerate(complete[0]['ref_id'][1:]):
+                if idx != self.unk:
+                    continue
+                self.dict_oov_cache_sp[complete[0]['ref_str'][t + 1]] = {
+                    'key': complete[0]['cache_sp_key'][t],
+                    'value': complete[0]['cache_sp_key'][t],
+                    'appearance': 1,
+                    'time': 1}
 
-        if cache_type in ['speech_fifo', 'speech_dict', 'speech_dict_overwrite']:
-            return nbest_hyps, aws, scores, scores_cp, (cache_sp_attn_hist, cache_id_hist)
+        if cache_type in ['speech_fifo', 'speech_dict', 'speech_dict_overwrite', 'speech_dict_oov_oracle']:
+            return nbest_hyps_id, nbest_hyps_str, aws, scores, scores_cp, (cache_sp_attn_hist, cache_id_hist)
         else:
-            return nbest_hyps, aws, scores, scores_cp, (cache_lm_attn_hist, cache_id_hist)
+            return nbest_hyps_id, nbest_hyps_str, aws, scores, scores_cp, (cache_lm_attn_hist, cache_id_hist)
 
     def reset_global_cache(self):
         """Reset global cache when the speaker/session is changed."""

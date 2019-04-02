@@ -74,8 +74,8 @@ class TransformerDecoder(nn.Module):
     """
 
     def __init__(self,
-                 sos,
                  eos,
+                 unk,
                  pad,
                  blank,
                  enc_nunits,
@@ -101,6 +101,7 @@ class TransformerDecoder(nn.Module):
         super(TransformerDecoder, self).__init__()
 
         self.eos = eos
+        self.unk = unk
         self.pad = pad
         self.blank = blank
         self.enc_nunits = enc_nunits

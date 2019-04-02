@@ -66,18 +66,18 @@ def eval_word(models, dataset, recog_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps, aws, perm_ids, _ = models[0].decode(
-                batch['xs'], recog_params,
+            best_hyps_id, best_hyps_str, aws, perm_ids, _ = models[0].decode(
+                batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=True,
-                idx2token=dataset.idx2token[0],
-                refs=batch['ys'],
+                refs_id=batch['ys'],
                 ensemble_models=models[1:] if len(models) > 1 else [],
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
             ys = [batch['text'][i] for i in perm_ids]
 
             for b in range(len(batch['xs'])):
                 ref = ys[b]
-                hyp = dataset.idx2token[0](best_hyps[b])
+                hyp = dataset.idx2token[0](best_hyps_id[b])
+                # hyp = best_hyps_str[b]
 
                 n_oov_total += hyp.count('<unk>')
 
@@ -86,17 +86,17 @@ def eval_word(models, dataset, recog_params, epoch,
                     recog_params_char = copy.deepcopy(recog_params)
                     recog_params_char['recog_rnnlm_weight'] = 0
                     recog_params_char['recog_beam_width'] = 1
-                    best_hyps_char, aw_char, _, _ = models[0].decode(
+                    best_hyps_id_char, _, aw_char, _, _ = models[0].decode(
                         batch['xs'][b:b + 1], recog_params_char,
+                        dataset.idx2token[1], dataset.token2idx[1],
                         exclude_eos=True,
-                        idx2token=dataset.idx2token[1],
-                        refs=batch['ys_sub1'],
+                        refs_id=batch['ys_sub1'],
                         task='ys_sub1',
                         speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
                     # TODO(hirofumi): support ys_sub2 and ys_sub3
 
                     hyp = resolve_unk(
-                        hyp, best_hyps_char[0], aws[b], aw_char[0], dataset.idx2token[1],
+                        hyp, best_hyps_id_char[0], aws[b], aw_char[0], dataset.idx2token[1],
                         subsample_factor_word=np.prod(models[0].subsample),
                         subsample_factor_char=np.prod(models[0].subsample[:models[0].enc_n_layers_sub1 - 1]))
                     logger.info('Hyp (after OOV resolution): %s' % hyp)

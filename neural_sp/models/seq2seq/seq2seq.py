@@ -199,8 +199,8 @@ class Seq2seq(ModelBase):
             # Decoder
             if args.dec_type == 'transformer':
                 dec = TransformerDecoder(
-                    sos=self.sos,
                     eos=self.eos,
+                    unk=self.unk,
                     pad=self.pad,
                     blank=self.blank,
                     enc_n_units=args.d_model,
@@ -225,8 +225,8 @@ class Seq2seq(ModelBase):
                     mtl_per_batch=args.mtl_per_batch)
             else:
                 dec = RNNDecoder(
-                    sos=self.sos,
                     eos=self.eos,
+                    unk=self.unk,
                     pad=self.pad,
                     blank=self.blank,
                     enc_n_units=self.enc_n_units,
@@ -286,8 +286,8 @@ class Seq2seq(ModelBase):
                         raise NotImplementedError
                     else:
                         dec_sub = RNNDecoder(
-                            sos=self.sos,
                             eos=self.eos,
+                            unk=self.unk,
                             pad=self.pad,
                             blank=self.blank,
                             enc_n_units=self.enc_n_units,
@@ -628,8 +628,9 @@ class Seq2seq(ModelBase):
                 enc_outs[task]['xs'], enc_outs[task]['xlens'], temperature, topk)
             return ctc_probs, indices_topk, enc_outs[task]['xlens']
 
-    def decode(self, xs, params, nbest=1, exclude_eos=False,
-               idx2token=None, refs=None, task='ys', ensemble_models=[], speakers=None):
+    def decode(self, xs, params, idx2token, nbest=1, exclude_eos=False,
+               refs_id=None, refs_text=None, task='ys', ensemble_models=[], speakers=None,
+               store_cache=False, word_list=[]):
         """Decoding in the inference stage.
 
         Args:
@@ -644,15 +645,16 @@ class Seq2seq(ModelBase):
                 rnnlm_weight (float): the weight of RNNLM score
                 resolving_unk (bool): not used (to make compatible)
                 fwd_bwd_attention (bool):
-            nbest (int):
-            exclude_eos (bool): exclude <eos> from best_hyps
             idx2token (): converter from index to token
-            refs (list): gold transcriptions to compute log likelihood
+            nbest (int):
+            exclude_eos (bool): exclude <eos> from best_hyps_id
+            refs_id (list): gold token IDs to compute log likelihood
+            refs_text (list): gold transcriptions
             task (str): ys* or ys_sub1* or ys_sub2* or ys_sub3*
             ensemble_models (list): list of Seq2seq classes
             speakers (list):
         Returns:
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
+            best_hyps_id (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
             perm_ids (list): A list of length `[B]`
 
@@ -687,22 +689,26 @@ class Seq2seq(ModelBase):
                 if params['recog_rnnlm_weight'] > 0:
                     rnnlm = getattr(self, 'rnnlm_' + dir)
 
-                best_hyps = getattr(self, 'dec_' + dir).decode_ctc(
+                best_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
                     params['recog_beam_width'], rnnlm)
-                return best_hyps, None, perm_ids, (None, None)
+                return best_hyps_id, None, perm_ids, (None, None)
 
             #########################
             # Attention
             #########################
             else:
-                if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
-                    best_hyps, aws = getattr(self, 'dec_' + dir).greedy(
+                best_hyps_str = None
+                cache_info = (None, None)
+
+                if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention'] and not store_cache:
+                    best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                        params['recog_max_len_ratio'], exclude_eos, idx2token, refs,
+                        params['recog_max_len_ratio'], exclude_eos, idx2token, refs_id,
                         speakers, params['recog_oracle'])
-                    cache_info = (None, None)
                 else:
+                    assert params['recog_batch_size'] == 1
+
                     if params['recog_ctc_weight'] > 0:
                         ctc_log_probs = self.dec_fwd.ctc_log_probs(enc_outs[task]['xs'])
                     else:
@@ -729,10 +735,10 @@ class Seq2seq(ModelBase):
                                 ensemble_decs_fwd += [model.dec_fwd]
                                 # NOTE: only support for the main task now
 
-                        nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd, cache_info = self.dec_fwd.beam_search(
+                        nbest_hyps_id_fwd, nbest_hyps_str_fwd, aws_fwd, scores_fwd, scores_cp_fwd, cache_info = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            params, rnnlm_fwd, rnnlm_bwd, ctc_log_probs,
-                            params['recog_beam_width'], False, idx2token, refs,
+                            params, idx2token, rnnlm_fwd, rnnlm_bwd, ctc_log_probs,
+                            params['recog_beam_width'], False, refs_id,
                             ensemble_eouts_fwd, ensemble_elens_fwd, ensemble_decs_fwd)
 
                         # backward decoder
@@ -764,18 +770,18 @@ class Seq2seq(ModelBase):
                             enc_outs_bwd, _ = self.encode(xs, task, flip=True)
                         else:
                             enc_outs_bwd = enc_outs
-                        nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd, _ = self.dec_bwd.beam_search(
+                        nbest_hyps_id_bwd, nbest_hyps_str_bwd, aws_bwd, scores_bwd, scores_cp_bwd, _ = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
-                            params, rnnlm_bwd, rnnlm_fwd, ctc_log_probs,
-                            params['recog_beam_width'], False, idx2token, refs,
+                            params, idx2token, rnnlm_bwd, rnnlm_fwd, ctc_log_probs,
+                            params['recog_beam_width'], False, refs_id,
                             ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decs_bwd)
 
                         # forward-backward attention
-                        best_hyps = fwd_bwd_attention(
-                            nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
-                            nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd,
+                        best_hyps_id = fwd_bwd_attention(
+                            nbest_hyps_id_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
+                            nbest_hyps_id_bwd, aws_bwd, scores_bwd, scores_cp_bwd,
                             flip, self.eos, params['recog_gnmt_decoding'], params['recog_length_penalty'],
-                            idx2token, refs)
+                            idx2token, refs_id)
                         aws = None
                     else:
                         # ensemble
@@ -802,23 +808,25 @@ class Seq2seq(ModelBase):
                                 else:
                                     raise NotImplementedError
 
-                        nbest_hyps, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
+                        nbest_hyps_id, nbest_hyps_str, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            params, rnnlm, rnnlm_rev, ctc_log_probs,
-                            nbest, exclude_eos, idx2token, refs,
-                            ensemble_eouts, ensemble_elens, ensemble_decs, speakers)
+                            params, idx2token, rnnlm, rnnlm_rev, ctc_log_probs,
+                            nbest, exclude_eos, refs_id,
+                            ensemble_eouts, ensemble_elens, ensemble_decs, speakers,
+                            store_cache=store_cache, refs_text=refs_text)
                         if params['recog_second_pass']:
-                            nbest_hyps, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
+                            nbest_hyps_id, nbest_hyps_str, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
                                 enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                                params, rnnlm, rnnlm_rev, ctc_log_probs,
-                                nbest, exclude_eos, idx2token, refs,
+                                params, idx2token, rnnlm, rnnlm_rev, ctc_log_probs,
+                                nbest, exclude_eos, refs_id,
                                 ensemble_eouts, ensemble_elens, ensemble_decs, speakers, second_pass=True)
 
                         if nbest == 1:
-                            best_hyps = [hyp[0] for hyp in nbest_hyps]
+                            best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
+                            best_hyps_str = [hyp[0] for hyp in nbest_hyps_str]
                             aws = [aw[0] for aw in aws]
                         else:
-                            return nbest_hyps, aws, scores, perm_ids
+                            return nbest_hyps_id, nbest_hyps_str, aws, scores, perm_ids, cache_info
                         # NOTE: nbest >= 2 is used for MWER training only
 
-                return best_hyps, aws, perm_ids, cache_info
+                return best_hyps_id, best_hyps_str, aws, perm_ids, cache_info

@@ -23,6 +23,7 @@ from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
+from neural_sp.evaluators.cache import store_cache
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.rnnlm.rnnlm import RNNLM
@@ -168,6 +169,11 @@ def main():
             model.cuda()
 
         start_time = time.time()
+
+        # Store oracle cache in advance
+        if args.recog_cache_type == 'speech_dict_oov_oracle':
+            store_cache(ensemble_models, dataset, recog_params,
+                        progressbar=True)
 
         if args.recog_metric == 'edit_distance':
             if args.recog_unit in ['word', 'word_char']:
