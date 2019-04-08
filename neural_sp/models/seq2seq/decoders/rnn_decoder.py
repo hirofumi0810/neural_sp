@@ -635,11 +635,11 @@ class RNNDecoder(nn.Module):
         lmstate = (None, None)
         lm_feat = eouts.new_zeros(bs, 1, self.dec_n_units)
 
+        cv_cache = eouts.new_zeros(bs, 1, self.dec_n_units)
         if self.cache_fusion:
             self.score_cache.reset()
             hxs_cache = eouts.new_zeros((bs, self.dec_n_units))
             cxs_cache = eouts.new_zeros((bs, self.dec_n_units))
-            cv_cache = eouts.new_zeros(bs, 1, self.dec_n_units)
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
@@ -1067,11 +1067,11 @@ class RNNDecoder(nn.Module):
         lmstate = (None, None)
         lm_feat = eouts.new_zeros(bs, 1, self.dec_n_units)
 
+        cv_cache = eouts.new_zeros(bs, 1, self.dec_n_units)
         if self.cache_fusion:
             self.score_cache.reset()
             hxs_cache = eouts.new_zeros((bs, self.dec_n_units))
             cxs_cache = eouts.new_zeros((bs, self.dec_n_units))
-            cv_cache = eouts.new_zeros(bs, 1, self.dec_n_units)
 
         # Start from <sos> (<eos> in case of the backward decoder)
         y = eouts.new_zeros(bs, 1).fill_(self.eos).long()
@@ -1786,11 +1786,8 @@ class RNNDecoder(nn.Module):
                 logger.info('Utt-id: %s' % utt_ids[b])
             if refs_id is not None:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
-            for k in range(beam_width):
-                if len(complete[k]['hyp_id']) > 1:
-                    logger.info('Hyp: %s' % idx2token(complete[k]['hyp_id'][1:]))
-                else:
-                    logger.info('Hyp: <empty>.')
+            for k in range(len(complete)):
+                logger.info('Hyp: %s' % idx2token(complete[k]['hyp_id'][1:]))
                 logger.info('log prob (hyp): %.7f' % complete[k]['score'])
                 logger.info('log prob (hyp, att): %.7f' % (complete[k]['score_attn'] * (1 - ctc_weight)))
                 logger.info('log prob (hyp, cp): %.7f' % (complete[k]['score_cp'] * cp_weight))
@@ -1891,10 +1888,11 @@ class RNNDecoder(nn.Module):
                                 'count': 1,
                                 'time': self.total_step + t + 1}
                         else:
-                            self.dict_cache_sp[idx] = {'key': complete[0]['cache_sp_key'][t],
-                                                       'value': complete[0]['cache_sp_key'][t],
-                                                       'count': 1,
-                                                       'time': self.total_step + t + 1}
+                            self.dict_cache_sp[idx] = {
+                                'key': complete[0]['cache_sp_key'][t],
+                                'value': complete[0]['cache_sp_key'][t],
+                                'count': 1,
+                                'time': self.total_step + t + 1}
                         if len(self.dict_cache_sp.keys()) > n_caches:
                             oldest_id = sorted(self.dict_cache_sp.items(), key=lambda x: x[1]['time'])[0][0]
                             self.dict_cache_sp.pop(oldest_id)
@@ -1921,10 +1919,11 @@ class RNNDecoder(nn.Module):
                         self.dict_cache_lm[idx]['time'] = self.total_step + t + 1
                         self.dict_cache_lm[idx]['count'] += 1
                     else:
-                        self.dict_cache_lm[idx] = {'key': complete[0]['cache_lm_key'][t],
-                                                   'value': complete[0]['cache_lm_key'][t],
-                                                   'count': 1,
-                                                   'time': self.total_step + t + 1}
+                        self.dict_cache_lm[idx] = {
+                            'key': complete[0]['cache_lm_key'][t],
+                            'value': complete[0]['cache_lm_key'][t],
+                            'count': 1,
+                            'time': self.total_step + t + 1}
                         if len(self.dict_cache_lm.keys()) > n_caches:
                             oldest_id = sorted(self.dict_cache_lm.items(), key=lambda x: x[1]['time'])[0][0]
                             self.dict_cache_lm.pop(oldest_id)
