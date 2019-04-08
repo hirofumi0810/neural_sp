@@ -259,6 +259,8 @@ def main():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
                     if only_enc and 'enc' not in n:
                         continue
+                    if args.lm_fusion_type == 'cache' and 'output' in n:
+                        continue
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
@@ -548,8 +550,6 @@ def make_model_name(args, subsample_factor):
         dir_name += str(args.enc_n_layers) + 'L'
         if args.enc_residual:
             dir_name += 'res'
-        if args.enc_add_ffl:
-            dir_name += 'ffl'
     if args.n_stacks > 1:
         dir_name += '_stack' + str(args.n_stacks)
     else:
@@ -568,8 +568,6 @@ def make_model_name(args, subsample_factor):
         dir_name += '_' + args.dec_loop_type
         if args.dec_residual:
             dir_name += 'res'
-        if args.dec_add_ffl:
-            dir_name += 'ffl'
         if args.input_feeding:
             dir_name += '_inputfeed'
         dir_name += '_' + args.attn_type
@@ -630,8 +628,8 @@ def make_model_name(args, subsample_factor):
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') -
-                                            getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
+                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
 

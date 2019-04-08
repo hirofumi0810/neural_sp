@@ -23,10 +23,9 @@ from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
-from neural_sp.evaluators.cache import store_cache
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
-from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 
 
@@ -159,6 +158,7 @@ def main():
             logger.info('RNNLM state carry over: %s' % (args.recog_rnnlm_state_carry_over))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache type: %s' % (args.recog_cache_type))
+            logger.info('cache word frequency threshold: %s' % (args.recog_cache_word_freq))
             logger.info('cache theta (speech): %.3f' % (args.recog_cache_theta_speech))
             logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
             logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
@@ -169,11 +169,6 @@ def main():
             model.cuda()
 
         start_time = time.time()
-
-        # Store oracle cache in advance
-        if args.recog_cache_type == 'speech_dict_oov_oracle':
-            store_cache(ensemble_models, dataset, recog_params,
-                        progressbar=True)
 
         if args.recog_metric == 'edit_distance':
             if args.recog_unit in ['word', 'word_char']:
@@ -195,7 +190,8 @@ def main():
                                      epoch=epoch - 1,
                                      recog_dir=args.recog_dir,
                                      progressbar=True,
-                                     task_idx=1 if args.recog_unit and 'char' in args.recog_unit else 0)
+                                     task_idx=0)
+                #  task_idx=1 if args.recog_unit and 'char' in args.recog_unit else 0)
                 wer_avg += wer
                 cer_avg += cer
             elif 'phone' in args.recog_unit:

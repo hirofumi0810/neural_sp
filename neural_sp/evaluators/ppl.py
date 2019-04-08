@@ -14,7 +14,7 @@ import logging
 import numpy as np
 from tqdm import tqdm
 
-from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.lm.rnnlm import RNNLM
 
 logger = logging.getLogger("decoding").getChild('ppl')
 

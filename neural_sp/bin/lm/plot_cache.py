@@ -19,7 +19,7 @@ from neural_sp.bin.asr.plot_utils import plot_cache_weights
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_lm import Dataset
-from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.utils.general import mkdir_join
 
 
@@ -104,8 +104,8 @@ def main():
 
                 if len(rnnlm.cache_attn) > 0:
                     if toknen_count == n_tokens:
-                        tokens_keys = idx2token(rnnlm.cache_keys[:args.recog_n_caches], return_list=True)
-                        tokens_query = idx2token(rnnlm.cache_keys[-n_tokens:], return_list=True)
+                        tokens_keys = idx2token(rnnlm.cache_ids[:args.recog_n_caches], return_list=True)
+                        tokens_query = idx2token(rnnlm.cache_ids[-n_tokens:], return_list=True)
 
                         # Slide attention matrix
                         n_keys = len(tokens_keys)

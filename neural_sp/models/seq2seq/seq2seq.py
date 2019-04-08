@@ -18,8 +18,8 @@ import torch
 from neural_sp.models.base import ModelBase
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
-from neural_sp.models.rnnlm.brnnlm import BRNNLM
-from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.lm.brnnlm import BRNNLM
+from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.fwd_bwd_decoding import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn_decoder import RNNDecoder
 from neural_sp.models.seq2seq.decoders.transformer_decoder import TransformerDecoder

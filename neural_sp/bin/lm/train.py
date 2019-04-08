@@ -29,7 +29,7 @@ from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
-from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.utils.general import mkdir_join
 
 

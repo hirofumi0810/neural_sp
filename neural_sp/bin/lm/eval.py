@@ -19,7 +19,7 @@ from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
-from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.lm.rnnlm import RNNLM
 
 
 def main():

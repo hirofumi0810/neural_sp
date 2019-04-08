@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import codecs
 import copy
 import numpy as np
 import os
@@ -22,7 +23,7 @@ from neural_sp.bin.asr.plot_utils import plot_cache_weights
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_asr import Dataset
-from neural_sp.models.rnnlm.rnnlm import RNNLM
+from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.utils.general import mkdir_join
 
@@ -58,8 +59,6 @@ def main():
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
                           batch_size=args.recog_batch_size,
-                          concat_prev_n_utterances=args.recog_concat_prev_n_utterances,
-                          #   cache_prev_n_tokens=args.cache_prev_n_tokens,  # oracle
                           is_test=True)
 
         if i == 0:
@@ -123,6 +122,8 @@ def main():
                 args.recog_unit = args.unit
 
             logger.info('recog unit: %s' % args.recog_unit)
+            logger.info('recog metric: %s' % args.recog_metric)
+            logger.info('recog oracle: %s' % args.recog_oracle)
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
             logger.info('beam width: %d' % args.recog_beam_width)
@@ -144,6 +145,7 @@ def main():
             logger.info('RNNLM state carry over: %s' % (args.recog_rnnlm_state_carry_over))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache type: %s' % (args.recog_cache_type))
+            logger.info('cache word frequency threshold: %s' % (args.recog_cache_word_freq))
             logger.info('cache theta (speech): %.3f' % (args.recog_cache_theta_speech))
             logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
             logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
@@ -153,6 +155,15 @@ def main():
             # GPU setting
             model.cuda()
             # TODO(hirofumi): move this
+
+        word_list = set([])
+        if args.recog_word_count_list and args.recog_unit == 'word':
+            with codecs.open(args.recog_word_count_list, 'r', 'utf-8') as f:
+                for line in f:
+                    count, w = line.strip().split()
+                    if int(count) <= args.recog_cache_word_freq:
+                        word_list |= set(dataset.token2idx[0](w))
+                word_list = list(word_list)
 
         save_path = mkdir_join(args.recog_dir, 'att_weights')
         if args.recog_n_caches > 0 or args.cache_prev_n_tokens > 0:
@@ -168,22 +179,22 @@ def main():
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps, aws, perm_ids, (cache_atnn_hist, cache_id_hist) = model.decode(
-                batch['xs'], recog_params,
+            best_hyps_id, _, aws, perm_ids, (cache_attn_hist, cache_id_hist) = model.decode(
+                batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=False,
-                idx2token=dataset.idx2token[0],
-                refs=batch['ys'],
+                refs_id=batch['ys'],
                 ensemble_models=ensemble_models[1:] if len(ensemble_models) > 1 else [],
-                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
-            refs = [batch['text'][i] for i in perm_ids]
+                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
+                word_list=word_list)
+            refs_text = [batch['text'][i] for i in perm_ids]
 
             if model.bwd_weight > 0.5:
                 # Reverse the order
-                best_hyps = [hyp[::-1] for hyp in best_hyps]
+                best_hyps_id = [hyp[::-1] for hyp in best_hyps_id]
                 aws = [aw[::-1] for aw in aws]
 
             for b in range(len(batch['xs'])):
-                tokens = dataset.idx2token[0](best_hyps[b], return_list=True)
+                tokens = dataset.idx2token[0](best_hyps_id[b], return_list=True)
                 spk = batch['speakers'][b]
 
                 plot_attention_weights(
@@ -193,17 +204,17 @@ def main():
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8))
 
-                if args.recog_n_caches > 0 and cache_id_hist is not None:
-                    n_keys, n_queries = cache_atnn_hist[0].shape
+                if args.recog_n_caches > 0 and cache_id_hist is not None and cache_attn_hist is not None:
+                    n_keys, n_queries = cache_attn_hist[0].shape
                     # mask = np.ones((n_keys, n_queries))
                     # for i in range(n_queries):
                     #     mask[:n_keys - i, -(i + 1)] = 0
                     mask = np.zeros((n_keys, n_queries))
 
                     plot_cache_weights(
-                        cache_atnn_hist[0],
-                        # keys=dataset.idx2token[0](cache_id_hist[-1], return_list=True),
-                        keys=dataset.idx2token[0](cache_id_hist, return_list=True),
+                        cache_attn_hist[0],
+                        keys=dataset.idx2token[0](cache_id_hist[-1], return_list=True),  # fifo
+                        # keys=dataset.idx2token[0](cache_id_hist, return_list=True),  # dict
                         queries=tokens,
                         save_path=mkdir_join(save_path_cache, spk, batch['utt_ids'][b] + '.png'),
                         figsize=(40, 16),
@@ -214,7 +225,7 @@ def main():
                 else:
                     hyp = ' '.join(tokens)
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
-                logger.info('Ref: %s' % refs[b].lower())
+                logger.info('Ref: %s' % refs_text[b].lower())
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 50)
 
