@@ -46,7 +46,6 @@ class RNNEncoder(nn.Module):
         conv_batch_norm (bool): apply batch normalization only in the CNN layers
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and RNN layers
         residual (bool): add residual connections between the consecutive layers
-        add_ffl (bool):
         n_layers_sub1 (int): number of layers in the 1st auxiliary task
         n_layers_sub2 (int): number of layers in the 2nd auxiliary task
         n_layers_sub3 (int): number of layers in the 3rd auxiliary task
@@ -77,7 +76,6 @@ class RNNEncoder(nn.Module):
                  conv_batch_norm,
                  conv_bottleneck_dim,
                  residual,
-                 add_ffl,
                  n_layers_sub1=0,
                  n_layers_sub2=0,
                  n_layers_sub3=0,
@@ -106,7 +104,6 @@ class RNNEncoder(nn.Module):
         self.n_layers = n_layers
         self.layer_norm = layer_norm
         self.residual = residual
-        self.add_ffl = add_ffl
 
         # Setting for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -171,7 +168,7 @@ class RNNEncoder(nn.Module):
         if rnn_type != 'cnn':
             self.fast_impl = False
             # Fast implementation without processes between each layer
-            if np.prod(self.subsample) == 1 and self.n_projs == 0 and not residual and not add_ffl and n_layers_sub1 == 0 and (not conv_batch_norm) and nin == 0:
+            if np.prod(self.subsample) == 1 and self.n_projs == 0 and not residual and n_layers_sub1 == 0 and (not conv_batch_norm) and nin == 0:
                 self.fast_impl = True
                 if 'lstm' in rnn_type:
                     rnn = nn.LSTM
@@ -193,8 +190,6 @@ class RNNEncoder(nn.Module):
                 self.dropout = nn.ModuleList()
                 if self.n_projs > 0:
                     self.proj = nn.ModuleList()
-                if add_ffl:
-                    self.ffl = nn.ModuleList()
                 if subsample_type == 'max_pool' and np.prod(self.subsample) > 1:
                     self.max_pool = nn.ModuleList()
                     for l in range(n_layers):
@@ -232,15 +227,6 @@ class RNNEncoder(nn.Module):
                     if n_projs > 0:
                         self.proj += [LinearND(n_units * self.n_dirs, n_projs)]
                         self._output_dim = n_projs
-
-                    # Residual feed-forward fully-connected layer
-                    if add_ffl:
-                        # self.ffl += [ResidualFeedForward(self._output_dim, self._output_dim * 4, dropout, layer_norm)]
-                        self.ffl += [ResidualFeedForward(self._output_dim, self._output_dim * 4, dropout)]
-                        # NOTE: upscaling as Transformer
-                        # TODO(hirofumi): layer normalization is not supported for the RNN encoder
-                        # because layer normalization cannot be applied to per step with nn.LSTM
-                        # (using nn.LSTMCell does not support pad_packed_sequence)
 
                     # Task specific layer
                     if l == n_layers_sub1 - 1 and task_specific_layer:
@@ -395,10 +381,6 @@ class RNNEncoder(nn.Module):
                 if self.n_projs > 0:
                     # xs = torch.tanh(self.proj[l](xs))
                     xs = self.proj[l](xs)
-
-                # Residual feed-forward fully-connected layer
-                if self.add_ffl:
-                    xs = self.ffl[l](xs)
 
                 # NOTE: Exclude the last layer
                 if l != len(self.rnn) - 1:

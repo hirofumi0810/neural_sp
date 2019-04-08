@@ -34,6 +34,7 @@ from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearch
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.ctc_greedy_decoder import GreedyDecoder
 from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
+from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import tensor2np
@@ -63,7 +64,7 @@ class RNNDecoder(nn.Module):
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of RNN layers
-        loop_type (str): normal or lmdecoder or conditional or rnmt
+        loop_type (str): normal or lmdecoder
         residual (bool):
         add_ffl (bool):
         layerwise_attention (bool):
@@ -151,7 +152,7 @@ class RNNDecoder(nn.Module):
         self.n_projs = n_projs
         self.n_layers = n_layers
         self.loop_type = loop_type
-        if loop_type in ['conditional', 'lmdecoder', 'rnmt']:
+        if loop_type == 'lmdecoder':
             assert n_layers >= 2
         self.residual = residual
         self.add_ffl = add_ffl
@@ -180,7 +181,7 @@ class RNNDecoder(nn.Module):
             assert loop_type == 'lmdecoder'
         self.lmobj_weight = lmobj_weight
         if lmobj_weight > 0:
-            assert loop_type in ['normal', 'lmdecoder']
+            assert loop_type == 'lmdecoder'
             assert not input_feeding
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
@@ -305,41 +306,6 @@ class RNNDecoder(nn.Module):
                     else:
                         self.rnn += [rnn_cell(n_units, n_units)]
                     self.dropout += [nn.Dropout(p=dropout)]
-            elif loop_type == 'conditional':
-                if add_ffl:
-                    raise ValueError
-                # 1st layer
-                self.rnn += [rnn_cell(emb_dim, n_units)]
-                if self.n_projs > 0:
-                    self.proj += [LinearND(n_units, n_projs)]
-                self.dropout += [nn.Dropout(p=dropout)]
-                # 2nd layer
-                self.rnn += [rnn_cell(enc_n_units, n_units)]
-                if self.n_projs > 0:
-                    self.proj += [LinearND(n_units, n_projs)]
-                self.dropout += [nn.Dropout(p=dropout)]
-                for l in range(n_layers - 2):
-                    if self.n_projs > 0:
-                        self.rnn += [rnn_cell(n_projs, n_units)]
-                        self.proj += [LinearND(n_units, n_projs)]
-                    else:
-                        self.rnn += [rnn_cell(n_units, n_units)]
-                    self.dropout += [nn.Dropout(p=dropout)]
-            elif loop_type == 'rnmt':
-                if add_ffl:
-                    raise ValueError
-                assert residual
-                self.rnn += [rnn_cell(emb_dim, n_units)]
-                if self.n_projs > 0:
-                    self.proj += [LinearND(n_units, n_projs)]
-                self.dropout += [nn.Dropout(p=dropout)]
-                for l in range(n_layers - 1):
-                    if self.n_projs > 0:
-                        self.rnn += [rnn_cell(n_projs + enc_n_units, n_units)]
-                        self.proj += [LinearND(n_units, n_projs)]
-                    else:
-                        self.rnn += [rnn_cell(n_units + enc_n_units, n_units)]
-                    self.dropout += [nn.Dropout(p=dropout)]
             else:
                 raise NotImplementedError(loop_type)
 
@@ -360,9 +326,6 @@ class RNNDecoder(nn.Module):
                 elif lm_fusion_type == 'cold_prob':
                     self.cf_linear_lm_feat = LinearND(self.rnnlm.vocab, n_units)
                     self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
-                elif lm_fusion_type == 'cold_recurrency':
-                    self.cf_linear_lm_feat = LinearND(self.rnnlm.n_units, n_units)
-                    self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
                 elif lm_fusion_type == 'cache':
                     self.cache_bridge = LinearND(self.rnnlm.n_units, n_units)
                     self.score_cache = AttentionMechanism(key_dim=n_units,
@@ -377,9 +340,7 @@ class RNNDecoder(nn.Module):
                     self.dropout_cache_controller = nn.Dropout(p=dropout)
                 else:
                     raise ValueError(lm_fusion_type)
-                if 'recurrency' in lm_fusion_type:
-                    self.output_bn = LinearND(n_units + enc_n_units, n_units)
-                elif lm_fusion_type == 'deep_original':
+                if lm_fusion_type == 'deep_original':
                     self.output_bn = LinearND(n_units + enc_n_units + self.rnnlm.n_units, n_units)
                 elif lm_fusion_type == 'cache':
                     self.output_bn = LinearND(n_units + enc_n_units + n_units, n_units)
@@ -575,11 +536,7 @@ class RNNDecoder(nn.Module):
                                ignore_index=-1, size_average=False) / bs
 
         # Compute token-level accuracy in teacher-forcing
-        pad_pred = logits.view(ys_out_pad.size(0), ys_out_pad.size(1), logits.size(-1)).argmax(2)
-        mask = ys_out_pad != -1
-        numerator = torch.sum(pad_pred.masked_select(mask) == ys_out_pad.masked_select(mask))
-        denominator = torch.sum(mask)
-        acc = float(numerator) * 100 / float(denominator)
+        acc = compute_accuracy(logits, ys_out_pad)
         ppl = np.exp(loss.item())
 
         return loss, acc, ppl
@@ -666,27 +623,16 @@ class RNNDecoder(nn.Module):
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
             is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob
-            if is_sample:
-                y_emb = self.embed(logits[-1].detach().argmax(-1))
-            else:
-                y_emb = ys_emb[:, t:t + 1]
+            y_emb = self.embed(logits[-1].detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
 
-            # Recurrency (1st)
+            # Recurrency
             dec_in = attn_v if self.input_feeding else cv
-            if 'recurrency' in self.lm_fusion_type:
-                dec_in = torch.cat([dec_in, lm_feat], dim=-1)
-            if self.loop_type in ['conditional', 'rnmt']:
-                dstates = self.recurrency_step1(y_emb, dec_in, dstates)
-            elif self.loop_type in ['normal', 'lmdecoder']:
-                dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
+            dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
 
             # Update RNNLM states for cold fusion
             lmout = None
             if self.rnnlm is not None and not self.cache_fusion:
-                if is_sample:
-                    y_lm_emb = self.rnnlm.encode(logits[-1].detach().argmax(-1))
-                else:
-                    y_lm_emb = ys_lm_emb[:, t:t + 1]
+                y_lm_emb = self.rnnlm.encode(logits[-1].detach().argmax(-1)) if is_sample else ys_lm_emb[:, t:t + 1]
                 lmout, lmstate = self.rnnlm.decode(y_lm_emb, lmstate)
 
             # Score
@@ -704,10 +650,6 @@ class RNNDecoder(nn.Module):
                 cv_cache, aw_cache = self.score_cache(memory, ylens_cache,
                                                       value=memory,
                                                       query=dout_cache)  # `[B, n_caches]`
-
-            # Recurrency (2nd, only for the internal decoder)
-            if self.loop_type in ['conditional', 'rnmt']:
-                dstates = self.recurrency_step2(cv, dstates)
 
             # Generate
             attn_v, _, lm_feat = self.generate(cv, dstates['dout_gen'], lmout,
@@ -731,17 +673,14 @@ class RNNDecoder(nn.Module):
 
         # Focal loss
         if self.fl_weight > 0:
-            ylens = [y.size(0) for y in ys_out]
-            fl = focal_loss(logits, ys=ys_out_pad, ylens=ylens,
+            fl = focal_loss(logits,
+                            ys=ys_out_pad,
+                            ylens=[y.size(0) for y in ys_out],
                             gamma=self.fl_gamma, size_average=True)
             loss = loss * (1 - self.fl_weight) + fl * self.fl_weight
 
         # Compute token-level accuracy in teacher-forcing
-        pad_pred = logits.view(ys_out_pad.size(0), ys_out_pad.size(1), logits.size(-1)).argmax(2)
-        mask = ys_out_pad != -1
-        numerator = (pad_pred.masked_select(mask) == ys_out_pad.masked_select(mask)).sum()
-        denominator = mask.sum()
-        acc = float(numerator) * 100 / float(denominator)
+        acc = compute_accuracy(logits, ys_out_pad)
         ppl = np.exp(loss.item())
 
         return loss, acc, ppl
@@ -763,23 +702,14 @@ class RNNDecoder(nn.Module):
         """
         dstates = {'dout_score': None,  # for attention scoring
                    'dout_gen': None,  # for token generation
-                   'dstate': None,
-                   'dstate1': None, 'dstate2': None}
+                   'dstate': None}
         w = next(self.parameters())
         zero_state = w.new_zeros((bs, self.dec_n_units))
         dstates['dout_score'] = w.new_zeros((bs, 1, self.dec_n_units))
         dstates['dout_gen'] = w.new_zeros((bs, 1, self.dec_n_units))
-        if self.loop_type in ['conditional', 'rnmt']:
-            hxs1 = [zero_state for l in range(1)]
-            cxs1 = [zero_state for l in range(1)] if self.rnn_type == 'lstm' else []
-            dstates['dstate1'] = (hxs1, cxs1)
-            hxs2 = [zero_state for l in range(self.n_layers - 1)]
-            cxs2 = [zero_state for l in range(self.n_layers - 1)] if self.rnn_type == 'lstm' else []
-            dstates['dstate2'] = (hxs2, cxs2)
-        else:
-            hxs = [zero_state for l in range(self.n_layers)]
-            cxs = [zero_state for l in range(self.n_layers)] if self.rnn_type == 'lstm' else []
-            dstates['dstate'] = (hxs, cxs)
+        hxs = [zero_state for l in range(self.n_layers)]
+        cxs = [zero_state for l in range(self.n_layers)] if self.rnn_type == 'lstm' else []
+        dstates['dstate'] = (hxs, cxs)
         return dstates
 
     def recurrency(self, y_emb, cv, dstate):
@@ -862,132 +792,6 @@ class RNNDecoder(nn.Module):
         dstates_new['dstate'] = (hxs[:], cxs[:])
         return dstates_new
 
-    def recurrency_step1(self, y_emb, cv, dstates):
-        """Recurrency function for the internal decoder (before attention scoring).
-
-        Args:
-            y_emb (FloatTensor): `[B, 1, emb_dim]`
-            cv (FloatTensor): `[B, 1, enc_n_units]`
-            dstates (dict):
-                dstates1 (tuple): A tuple of (hxs, cxs)
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
-                dstates2 (tuple): A tuple of (hxs, cxs)
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
-        Returns:
-            dstates_new (dict):
-                dout_score (FloatTensor): `[B, 1, n_units]`
-                dstate1 (tuple): A tuple of (hxs, cxs)
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
-                dstate2 (tuple): A tuple of (hxs, cxs)
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
-
-        """
-        hxs, cxs = dstates['dstate1']
-        y_emb = y_emb.squeeze(1)
-        cv = cv.squeeze(1)
-
-        dstates_new = {'dout_score': None,  # for attention score
-                       'dstate1': None,
-                       'dstate2': dstates['dstate2']}
-        if self.loop_type == 'conditional':
-            if self.rnn_type == 'lstm':
-                hxs[0], cxs[0] = self.rnn[0](y_emb, (hxs[0], cxs[0]))
-            elif self.rnn_type == 'gru':
-                hxs[0] = self.rnn[0](y_emb, hxs[0])
-        elif self.loop_type == 'rnmt':
-            if self.rnn_type == 'lstm':
-                hxs[0], cxs[0] = self.rnn[0](y_emb, (hxs[0], cxs[0]))
-            elif self.rnn_type == 'gru':
-                hxs[0] = self.rnn[0](y_emb, hxs[0])
-        dout = hxs[0]
-        if self.n_projs > 0:
-            dout = torch.tanh(self.proj[0](dout))
-        dout = self.dropout[0](dout)
-
-        # the bottom layer
-        dstates_new['dout_score'] = dout.unsqueeze(1)
-        dstates_new['dstate1'] = (hxs[:], cxs[:])
-        return dstates_new
-
-    def recurrency_step2(self, cv, dstates):
-        """Recurrency function for the internal decoder (after attention scoring).
-
-        Args:
-            cv (FloatTensor): `[B, 1, enc_n_units]`
-            dstates (dict):
-                dout_score (FloatTensor): `[B, 1, n_units]`
-                dstate1 (tuple): A tuple of (hxs, cxs),
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
-                dstate2 (tuple): A tuple of (hxs, cxs),
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
-        Returns:
-            dstates_new (dict):
-                dout_gen (FloatTensor): `[B, 1, n_units]`
-                dstate1 (tuple): A tuple of (hxs, cxs),
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
-                dstate2 (tuple): A tuple of (hxs, cxs),
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
-
-        """
-        hxs, cxs = dstates['dstate2']
-        cv = cv.squeeze(1)
-
-        dstates_new = {'dout_gen': None,  # for token generation
-                       'dstate1': None, 'dstate2': None}
-
-        dout = dstates['dout_score'].squeeze(1)
-        for l in range(1, self.n_layers):
-            if self.loop_type == 'conditional':
-                if l == 1:
-                    if self.rnn_type == 'lstm':
-                        dstates['dstate1'][0][0], dstates['dstate1'][1][0] = self.rnn[l](
-                            cv, (dstates['dstate1'][0][0], dstates['dstate1'][1][0]))
-                    elif self.rnn_type == 'gru':
-                        dstates['dstate1'][0][0] = self.rnn[l](cv, dstates['dstate1'][0][0])
-                else:
-                    if self.rnn_type == 'lstm':
-                        hxs[l - 1], cxs[l - 1] = self.rnn[l](dout, (hxs[l - 1], cxs[l - 1]))
-                    elif self.rnn_type == 'gru':
-                        hxs[l - 1] = self.rnn[l](dout, hxs[l - 1])
-            elif self.loop_type == 'rnmt':
-                if self.rnn_type == 'lstm':
-                    hxs[l - 1], cxs[l - 1] = self.rnn[l](torch.cat([dout, cv], dim=-1), (hxs[l - 1], cxs[l - 1]))
-                elif self.rnn_type == 'gru':
-                    hxs[l - 1] = self.rnn[l](torch.cat([dout, cv], dim=-1), hxs[l - 1])
-
-            if self.loop_type == 'conditional' and l == 1:
-                dout_tmp = dstates['dstate1'][0][0]
-                if self.n_projs > 0:
-                    dout_tmp = torch.tanh(self.proj[l](dout_tmp))
-                dout_tmp = self.dropout[l](dout_tmp)
-                if self.residual:
-                    dout = dout_tmp + dout
-                else:
-                    dout = dout_tmp
-            else:
-                dout_tmp = hxs[l - 1]
-                if self.n_projs > 0:
-                    dout_tmp = torch.tanh(self.proj[l](dout_tmp))
-                dout_tmp = self.dropout[l](dout_tmp)
-                if self.residual:
-                    dout = dout_tmp + dout
-                else:
-                    dout = dout_tmp
-
-        # the top layer
-        dstates_new['dout_gen'] = dout.unsqueeze(1)
-        dstates_new['dstate1'] = (dstates['dstate1'][0][:], dstates['dstate1'][1][:])
-        dstates_new['dstate2'] = (hxs[:], cxs[:])
-        return dstates_new
-
     def generate(self, cv, dout, lmout, cv_cache=None, dout_cache=None):
         """Generate function.
 
@@ -1010,28 +814,23 @@ class RNNDecoder(nn.Module):
             # RNNLM fusion
             if self.lm_fusion_type != 'deep_original':
                 dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
-            if self.lm_fusion_type in ['cold_recurrency']:
+
+            if self.lm_fusion_type in ['cold', 'deep']:
                 lm_feat = self.cf_linear_lm_feat(lmout)
                 gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
-                gated_lm_feat = gate * lm_feat  # element-wise
-                out = self.output_bn(torch.cat([dout, cv], dim=-1))
-            else:
-                if self.lm_fusion_type in ['cold', 'deep']:
-                    lm_feat = self.cf_linear_lm_feat(lmout)
-                    gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
-                    gated_lm_feat = gate * lm_feat
-                elif self.lm_fusion_type == 'cold_prob':
-                    lm_feat = self.cf_linear_lm_feat(self.rnnlm.generate(lmout))
-                    gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
-                    gated_lm_feat = gate * lm_feat
-                elif self.lm_fusion_type == 'deep_original':
-                    gate = torch.sigmoid(self.cf_linear_lm_gate(lmout))
-                    gated_lm_feat = gate * lmout
+                gated_lm_feat = gate * lm_feat
+            elif self.lm_fusion_type == 'cold_prob':
+                lm_feat = self.cf_linear_lm_feat(self.rnnlm.generate(lmout))
+                gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+                gated_lm_feat = gate * lm_feat
+            elif self.lm_fusion_type == 'deep_original':
+                gate = torch.sigmoid(self.cf_linear_lm_gate(lmout))
+                gated_lm_feat = gate * lmout
 
-                if self.lm_fusion_type == 'deep_original':
-                    out = self.output_bn(torch.cat([dout, cv, gated_lm_feat], dim=-1))
-                else:
-                    out = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
+            if self.lm_fusion_type == 'deep_original':
+                out = self.output_bn(torch.cat([dout, cv, gated_lm_feat], dim=-1))
+            else:
+                out = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
         else:
             out = self.output_bn(torch.cat([dout, cv], dim=-1))
         attn_v = torch.tanh(out)
@@ -1102,12 +901,7 @@ class RNNDecoder(nn.Module):
             # Recurrency (1st)
             y_emb = self.embed(y)
             dec_in = attn_v if self.input_feeding else cv
-            if 'recurrency' in self.lm_fusion_type:
-                dec_in = torch.cat([dec_in, lm_feat], dim=-1)
-            if self.loop_type in ['conditional', 'rnmt']:
-                dstates = self.recurrency_step1(y_emb, dec_in, dstates)
-            elif self.loop_type in ['normal', 'lmdecoder']:
-                dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
+            dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
 
             # Update RNNLM states for cold fusion
             lmout = None
@@ -1137,10 +931,6 @@ class RNNDecoder(nn.Module):
                 cv_cache, aw_cache = self.score_cache(memory, cache_lens,
                                                       value=memory,
                                                       query=dout_cache)  # `[B, n_caches]`
-
-            # Recurrency (2nd, only for the internal decoder)
-            if self.loop_type in ['conditional', 'rnmt']:
-                dstates = self.recurrency_step2(cv, dstates)
 
             # Generate
             attn_v, _, lm_feat = self.generate(cv, dstates['dout_gen'], lmout,
@@ -1365,29 +1155,18 @@ class RNNDecoder(nn.Module):
                     # Recurrency (1st) for the main model
                     y = eouts.new_zeros(1, 1).fill_(prev_idx).long()
                     y_emb = self.embed(y)
-                    if self.loop_type in ['conditional', 'rnmt']:
-                        dstates = self.recurrency_step1(y_emb,
-                                                        beam[i_beam]['cv'],
-                                                        beam[i_beam]['dstates'])
-                    elif self.loop_type in ['normal', 'lmdecoder']:
-                        dstates = self.recurrency(y_emb,
-                                                  beam[i_beam]['cv'],
-                                                  beam[i_beam]['dstates']['dstate'])
+                    dstates = self.recurrency(y_emb,
+                                              beam[i_beam]['cv'],
+                                              beam[i_beam]['dstates']['dstate'])
                     # Recurrency (1st) for the ensemble
                     ensemble_dstates = []
                     if n_models > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
                             y_emb = dec.embed(y)
-                            if dec.loop_type in ['conditional', 'rnmt']:
-                                ensemble_dstates += [dec.recurrency_step1(
-                                    y_emb,
-                                    beam[i_beam]['ensemble_cv'][i_e],
-                                    beam[i_beam]['ensemble_dstates'][i_e])]
-                            elif dec.loop_type in ['normal', 'lmdecoder']:
-                                ensemble_dstates += [dec.recurrency(
-                                    y_emb,
-                                    beam[i_beam]['ensemble_cv'][i_e],
-                                    beam[i_beam]['ensemble_dstates'][i_e]['dstate'])]
+                            ensemble_dstates += [dec.recurrency(
+                                y_emb,
+                                beam[i_beam]['ensemble_cv'][i_e],
+                                beam[i_beam]['ensemble_dstates'][i_e]['dstate'])]
 
                     # Score for the main model
                     cv, aw = self.score(eouts[b:b + 1, :elens[b]],
@@ -1441,21 +1220,6 @@ class RNNDecoder(nn.Module):
                         cv_cache, aw_cache = self.score_cache(memory, cache_lens,
                                                               value=memory,
                                                               query=dout_cache)  # `[B, n_caches]`
-
-                    # Recurrency (2nd, only for the internal decoder) for the main model
-                    if self.loop_type in ['conditional', 'rnmt']:
-                        dstates = self.recurrency_step2(cv, dstates)
-                    # Recurrency (2nd, only for the internal decoder) for the ensemble
-                    ensemble_dstates_tmp = []
-                    if n_models > 0:
-                        for i_e, dec in enumerate(ensemble_decoders):
-                            if dec.loop_type in ['conditional', 'rnmt']:
-                                ensemble_dstates_tmp += [dec.recurrency_step2(
-                                    ensemble_cv[i_e],
-                                    ensemble_dstates[i_e])]
-                            else:
-                                ensemble_dstates_tmp += [ensemble_dstates[i_e]]
-                    ensemble_dstates = ensemble_dstates_tmp[:]
 
                     # Generate for the main model
                     attn_v, _, lm_feat = self.generate(cv, dstates['dout_gen'], lmout,

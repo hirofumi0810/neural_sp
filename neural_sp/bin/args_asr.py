@@ -119,9 +119,7 @@ def parse():
     parser.add_argument('--enc_n_layers_sub3', type=int, default=0,
                         help='number of encoder RNN layers in the 3rd auxiliary task')
     parser.add_argument('--enc_residual', type=bool, default=False, nargs='?',
-                        help='Residual connection between each encoder layer')
-    parser.add_argument('--enc_add_ffl', type=bool, default=False, nargs='?',
-                        help='Add a residual feed-forward fully-connected layer between each encoder layer')
+                        help='residual connection between each encoder layer')
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
@@ -135,7 +133,7 @@ def parse():
                                  'luong_dot', 'luong_general', 'luong_concat'],
                         help='type of attention for RNN sequence-to-sequence models')
     parser.add_argument('--attn_dim', type=int, default=128,
-                        help='')
+                        help='dimension of the attention layer')
     parser.add_argument('--attn_conv_n_channels', type=int, default=10,
                         help='')
     parser.add_argument('--attn_conv_width', type=int, default=100,
@@ -164,14 +162,10 @@ def parse():
     parser.add_argument('--dec_n_layers_sub3', type=int, default=1,
                         help='')
     parser.add_argument('--dec_loop_type', type=str, default='normal', nargs='?',
-                        choices=['normal', 'lmdecoder', 'conditional', 'rnmt'],
+                        choices=['normal', 'lmdecoder'],
                         help='')
     parser.add_argument('--dec_residual', type=bool, default=False, nargs='?',
-                        help='Residual connection between each decoder layer')
-    parser.add_argument('--dec_add_ffl', type=bool, default=False, nargs='?',
-                        help='Add a residual feed-forward fully-connected layer between each decoder layer')
-    parser.add_argument('--dec_layerwise_attention', type=bool, default=False, nargs='?',
-                        help='Compute attention weights in each decoder layer')
+                        help='residual connection between each decoder layer')
     parser.add_argument('--input_feeding', type=bool, default=False, nargs='?',
                         help='')
     parser.add_argument('--emb_dim', type=int, default=320,
@@ -300,16 +294,10 @@ def parse():
     parser.add_argument('--bwd_weight_sub3', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     # cold fusion
-    parser.add_argument('--lm_fusion_type', type=str, default='cold_generate', nargs='?',
+    parser.add_argument('--lm_fusion_type', type=str, default='cold', nargs='?',
                         choices=['cold', 'cold_prob', 'cold_recurrency',
                                  'deep_original', 'deep',
-                                 'cache', 'cache_recurrency',
-                                 'cache_add', 'cache_add_recurrency',
-                                 'cache_unfreeze', 'cache_add_unfreeze',
-                                 'cache_unfreeze_mtl', 'cache_add_unfreeze_mtl',
-                                 'cache_cold',
-                                 'cache_bi',
-                                 ],
+                                 'cache',  'cache_bi'],
                         help='type of RNNLM fusion')
     parser.add_argument('--rnnlm_fusion', type=str, default=False, nargs='?',
                         help='RNNLM for LM fusion during training')
@@ -403,6 +391,8 @@ def parse():
                         help='carry over ASR decoder state')
     parser.add_argument('--recog_rnnlm_state_carry_over', type=strtobool, default=False,
                         help='carry over RNNLM state')
+    parser.add_argument('--recog_concat_prev_n_utterances', type=int, default=0,
+                        help='number of previous utterances to concatenate (for inference)')
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
     parser.add_argument('--recog_cache_theta_speech', type=float, default=0.1,
@@ -414,15 +404,18 @@ def parse():
     parser.add_argument('--recog_cache_lambda_lm', type=float, default=0.1,
                         help='lambda paramter for LM cache')
     parser.add_argument('--recog_cache_type', type=str, default='speech',
-                        choices=['speech_fifo', 'speech_dict', 'speech_dict_overwrite',
-                                 'lm_fifo', 'lm_dict', 'lm_dict_overwrite',
-                                 'joint_fifo', 'joint_dict', 'joint_dict_overwrite',
-                                 'speech_dict_oov_oracle'],
+                        choices=['speech_fifo', 'speech_fifo_online',
+                                 'speech_dict', 'speech_dict_overwrite',
+                                 'lm_fifo', 'lm_fifo_online'],
                         help='cache type')
-    parser.add_argument('--recog_second_pass', type=bool, default=False,
+    parser.add_argument('--recog_second_pass', type=strtobool, default=False,
                         help='')
-    parser.add_argument('--recog_concat_prev_n_utterances', type=int, default=0,
-                        help='number of previous utterances to concatenate (for inference)')
+    parser.add_argument('--recog_word_count_list', type=str, default=False, nargs='?',
+                        help='path to the word count list file')
+    parser.add_argument('--recog_cache_word_freq', type=int, default=10000, nargs='?',
+                        help='threshold of word frequency for the dynamic cache')
+    parser.add_argument('--recog_static_cache_set', type=str, default=False, nargs='?',
+                        help='path to a tsv file for the training set')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')

@@ -149,7 +149,6 @@ class Seq2seq(ModelBase):
                 conv_batch_norm=args.conv_batch_norm,
                 conv_bottleneck_dim=args.conv_bottleneck_dim,
                 residual=args.enc_residual,
-                add_ffl=args.enc_add_ffl,
                 nin=0,
                 # layer_norm=args.layer_norm,
                 task_specific_layer=args.task_specific_layer)
@@ -243,8 +242,6 @@ class Seq2seq(ModelBase):
                     n_layers=args.dec_n_layers,
                     loop_type=args.dec_loop_type,
                     residual=args.dec_residual,
-                    add_ffl=args.dec_add_ffl,
-                    layerwise_attention=args.dec_layerwise_attention,
                     emb_dim=args.emb_dim,
                     tie_embedding=args.tie_embedding,
                     vocab=self.vocab,
@@ -304,8 +301,6 @@ class Seq2seq(ModelBase):
                             n_layers=args.dec_n_layers,
                             loop_type=args.dec_loop_type,
                             residual=args.dec_residual,
-                            add_ffl=args.dec_add_ffl,
-                            layerwise_attention=args.dec_layerwise_attention,
                             emb_dim=args.emb_dim,
                             tie_embedding=args.tie_embedding,
                             vocab=getattr(self, 'vocab_' + sub),
@@ -388,6 +383,13 @@ class Seq2seq(ModelBase):
         if args.lm_fusion_type in ['deep', 'deep_original'] and args.rnnlm_fusion:
             for n, p in self.named_parameters():
                 if 'output' in n or 'output_bn' in n or 'cf_linear' in n:
+                    p.requires_grad = True
+                else:
+                    p.requires_grad = False
+
+        if args.lm_fusion_type in ['cache'] and args.rnnlm_fusion:
+            for n, p in self.named_parameters():
+                if 'output' in n or 'output_bn' in n or 'cache' in n or 'rnnlm' in n:
                     p.requires_grad = True
                 else:
                     p.requires_grad = False
@@ -629,7 +631,8 @@ class Seq2seq(ModelBase):
             return ctc_probs, indices_topk, enc_outs[task]['xlens']
 
     def decode(self, xs, params, idx2token, nbest=1, exclude_eos=False,
-               refs_id=None, refs_text=None, task='ys', ensemble_models=[], speakers=None,
+               refs_id=None, refs_text=None, utt_ids=None, speakers=None,
+               task='ys', ensemble_models=[],
                store_cache=False, word_list=[]):
         """Decoding in the inference stage.
 
@@ -650,9 +653,11 @@ class Seq2seq(ModelBase):
             exclude_eos (bool): exclude <eos> from best_hyps_id
             refs_id (list): gold token IDs to compute log likelihood
             refs_text (list): gold transcriptions
+            utt_ids (list):
+            speakers (list):
             task (str): ys* or ys_sub1* or ys_sub2* or ys_sub3*
             ensemble_models (list): list of Seq2seq classes
-            speakers (list):
+            word_list (list):
         Returns:
             best_hyps_id (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -738,7 +743,7 @@ class Seq2seq(ModelBase):
                         nbest_hyps_id_fwd, nbest_hyps_str_fwd, aws_fwd, scores_fwd, scores_cp_fwd, cache_info = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, rnnlm_fwd, rnnlm_bwd, ctc_log_probs,
-                            params['recog_beam_width'], False, refs_id,
+                            params['recog_beam_width'], False, refs_id, utt_ids, speakers,
                             ensemble_eouts_fwd, ensemble_elens_fwd, ensemble_decs_fwd)
 
                         # backward decoder
@@ -773,7 +778,7 @@ class Seq2seq(ModelBase):
                         nbest_hyps_id_bwd, nbest_hyps_str_bwd, aws_bwd, scores_bwd, scores_cp_bwd, _ = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, rnnlm_bwd, rnnlm_fwd, ctc_log_probs,
-                            params['recog_beam_width'], False, refs_id,
+                            params['recog_beam_width'], False, refs_id, utt_ids, speakers,
                             ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decs_bwd)
 
                         # forward-backward attention
@@ -811,15 +816,16 @@ class Seq2seq(ModelBase):
                         nbest_hyps_id, nbest_hyps_str, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, rnnlm, rnnlm_rev, ctc_log_probs,
-                            nbest, exclude_eos, refs_id,
-                            ensemble_eouts, ensemble_elens, ensemble_decs, speakers,
-                            store_cache=store_cache, refs_text=refs_text)
+                            nbest, exclude_eos, refs_id, utt_ids, speakers,
+                            ensemble_eouts, ensemble_elens, ensemble_decs,
+                            store_cache=store_cache, refs_text=refs_text, word_list=word_list)
                         if params['recog_second_pass']:
                             nbest_hyps_id, nbest_hyps_str, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
                                 enc_outs[task]['xs'], enc_outs[task]['xlens'],
                                 params, idx2token, rnnlm, rnnlm_rev, ctc_log_probs,
-                                nbest, exclude_eos, refs_id,
-                                ensemble_eouts, ensemble_elens, ensemble_decs, speakers, second_pass=True)
+                                nbest, exclude_eos, refs_id, utt_ids, speakers,
+                                ensemble_eouts, ensemble_elens, ensemble_decs,
+                                second_pass=True, word_list=word_list)
 
                         if nbest == 1:
                             best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
