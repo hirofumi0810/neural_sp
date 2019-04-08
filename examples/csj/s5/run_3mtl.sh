@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/csj
 
 ### vocabulary
-unit=word         # word/wp/word_char
+unit=wp           # word/wp/word_char
 vocab_size=30000
 wp_type=bpe       # or unigram (for wordpiece)
 unit_sub1=wp
@@ -45,34 +45,31 @@ subsample="1_2_2_2_1"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 # subsample="1_1_1_1_1"
 enc_type=blstm
-enc_n_units=320
+enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_n_layers_sub1=4
 enc_n_layers_sub2=3
 enc_residual=
-enc_add_ffl=
 subsample_type=drop
 attn_type=location
-attn_dim=320
+attn_dim=512
 attn_n_heads=1
 attn_sigmoid=
 dec_type=lstm
-dec_n_units=320
+dec_n_units=1024
 dec_n_projs=0
 dec_n_layers=1
 dec_n_layers_sub1=1
 dec_n_layers_sub2=1
 dec_loop_type=normal
 dec_residual=
-dec_add_ffl=
-dec_layerwise_attention=
 input_feeding=
-emb_dim=320
+emb_dim=512
 tie_embedding=
-ctc_fc_list="320"
-ctc_fc_list_sub1="320"
-ctc_fc_list_sub2="320"
+ctc_fc_list="512"
+ctc_fc_list_sub1="512"
+ctc_fc_list_sub2="512"
 ### optimization
 batch_size=40
 optimizer=adam
@@ -108,7 +105,7 @@ layer_norm=
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
-ctc_weight_sub1=0.0
+ctc_weight_sub1=0.2
 ctc_weight_sub2=0.0
 bwd_weight=0.0
 bwd_weight_sub1=0.0
@@ -144,10 +141,6 @@ CSJVER=dvd  ## Set your CSJ format (dvd or usb).
 
 ### data size
 data_size=all
-# data_size=aps
-# data_size=sps
-# data_size=all_except_dialog
-# data_size=all
 # NOTE: aps_other=default using "Academic lecture" and "other" data,
 #       aps=using "Academic lecture" data,
 #       sps=using "Academic lecture" data,
@@ -437,7 +430,6 @@ if [ ${stage} -le 4 ]; then
         --enc_n_layers_sub1 ${enc_n_layers_sub1} \
         --enc_n_layers_sub2 ${enc_n_layers_sub2} \
         --enc_residual ${enc_residual} \
-        --enc_add_ffl ${enc_add_ffl} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
@@ -452,8 +444,6 @@ if [ ${stage} -le 4 ]; then
         --dec_n_layers_sub2 ${dec_n_layers_sub2} \
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
-        --dec_add_ffl ${dec_add_ffl} \
-        --dec_layerwise_attention ${dec_layerwise_attention} \
         --input_feeding ${input_feeding} \
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \

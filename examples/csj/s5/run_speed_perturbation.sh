@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/csj
 
 ### vocabulary
-unit=word    # word/wp/char/word_char
+unit=wp      # word/wp/char/word_char
 vocab_size=30000
 wp_type=bpe  # or unigram (for wordpiece)
 
@@ -39,28 +39,25 @@ subsample="1_2_2_2_1"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 # subsample="1_1_1_1_1"
 enc_type=blstm
-enc_n_units=320
+enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_residual=
-enc_add_ffl=
 subsample_type=drop
 attn_type=location
-attn_dim=320
+attn_dim=512
 attn_n_heads=1
 attn_sigmoid=
 dec_type=lstm
-dec_n_units=320
+dec_n_units=1024
 dec_n_projs=0
 dec_n_layers=1
 dec_loop_type=normal
 dec_residual=
-dec_add_ffl=
-dec_layerwise_attention=
 input_feeding=
-emb_dim=320
+emb_dim=512
 tie_embedding=
-ctc_fc_list="320"
+ctc_fc_list="512"
 ### optimization
 batch_size=50
 optimizer=adam
@@ -94,8 +91,6 @@ ss_type=constant
 lsm_prob=0.1
 layer_norm=
 focal_loss=0.0
-gaussian_noise_std=0.0
-gaussian_noise_timing=constant
 ### MTL
 ctc_weight=0.0
 bwd_weight=0.0
@@ -128,10 +123,6 @@ CSJVER=dvd  ## Set your CSJ format (dvd or usb).
 
 ### data size
 data_size=all
-# data_size=aps
-# data_size=sps
-# data_size=all_except_dialog
-# data_size=all
 # NOTE: aps_other=default using "Academic lecture" and "other" data,
 #       aps=using "Academic lecture" data,
 #       sps=using "Academic lecture" data,
@@ -311,7 +302,6 @@ if [ ${stage} -le 4 ]; then
         --enc_n_projs ${enc_n_projs} \
         --enc_n_layers ${enc_n_layers} \
         --enc_residual ${enc_residual} \
-        --enc_add_ffl ${enc_add_ffl} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
@@ -324,8 +314,6 @@ if [ ${stage} -le 4 ]; then
         --dec_n_layers ${dec_n_layers} \
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
-        --dec_add_ffl ${dec_add_ffl} \
-        --dec_layerwise_attention ${dec_layerwise_attention} \
         --input_feeding ${input_feeding} \
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \
@@ -360,8 +348,6 @@ if [ ${stage} -le 4 ]; then
         --lsm_prob ${lsm_prob} \
         --layer_norm ${layer_norm} \
         --focal_loss_weight ${focal_loss} \
-        --gaussian_noise_std ${gaussian_noise_std} \
-        --gaussian_noise_timing ${gaussian_noise_timing} \
         --ctc_weight ${ctc_weight} \
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \

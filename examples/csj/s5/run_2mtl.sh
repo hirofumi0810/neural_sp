@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/csj
 
 ### vocabulary
-unit=word         # word/wp/word_char
+unit=wp           # word/wp/word_char
 vocab_size=30000
 wp_type=bpe       # or unigram (for wordpiece)
 unit_sub1=char
@@ -42,31 +42,28 @@ subsample="1_2_2_2_1"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 # subsample="1_1_1_1_1"
 enc_type=blstm
-enc_n_units=320
+enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_n_layers_sub1=4
 enc_residual=
-enc_add_ffl=
 subsample_type=drop
 attn_type=location
-attn_dim=320
+attn_dim=512
 attn_n_heads=1
 attn_sigmoid=
 dec_type=lstm
-dec_n_units=320
+dec_n_units=1024
 dec_n_projs=0
 dec_n_layers=1
 dec_n_layers_sub1=1
 dec_loop_type=normal
 dec_residual=
-dec_add_ffl=
-dec_layerwise_attention=
 input_feeding=
-emb_dim=320
+emb_dim=512
 tie_embedding=
-ctc_fc_list="320"
-ctc_fc_list_sub1="320"
+ctc_fc_list="512"
+ctc_fc_list_sub1="512"
 ### optimization
 batch_size=40
 optimizer=adam
@@ -102,7 +99,7 @@ layer_norm=
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
-ctc_weight_sub1=0.0
+ctc_weight_sub1=0.2
 bwd_weight=0.0
 bwd_weight_sub1=0.0
 sub1_weight=0.2
@@ -115,7 +112,6 @@ rnnlm_init=
 lmobj_weight=0.0
 share_lm_softmax=
 # contextualization
-concat_prev_n_utterances=0
 n_caches=0
 
 ### path to save the model
@@ -138,10 +134,6 @@ CSJVER=dvd  ## Set your CSJ format (dvd or usb).
 
 ### data size
 data_size=all
-# data_size=aps
-# data_size=sps
-# data_size=all_except_dialog
-# data_size=all
 # NOTE: aps_other=default using "Academic lecture" and "other" data,
 #       aps=using "Academic lecture" data,
 #       sps=using "Academic lecture" data,
@@ -297,33 +289,34 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
 fi
 
 # sub1
-dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
+# dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
+dict_sub1=${data}/dict/train_all_char.txt
 wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2, sub1)                  "
     echo ============================================================================
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict_sub1}
-    if [ ${unit_sub1} = char ]; then
-        echo "<space> 4" >> ${dict_sub1}
-    fi
-    offset=$(cat ${dict_sub1} | wc -l)
-    if [ ${unit_sub1} = wp ]; then
-        cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} \
-            --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
-    else
-        text2dict.py ${data}/${train_set}/text --unit ${unit_sub1} --vocab_size ${vocab_size_sub1} \
-            --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} | \
-            sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
-    fi
-    echo "vocab size:" $(cat ${dict_sub1} | wc -l)
+    # echo "Making a dictionary..."
+    # echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
+    # echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
+    # echo "<pad> 3" >> ${dict_sub1}
+    # if [ ${unit_sub1} = char ]; then
+    #     echo "<space> 4" >> ${dict_sub1}
+    # fi
+    # offset=$(cat ${dict_sub1} | wc -l)
+    # if [ ${unit_sub1} = wp ]; then
+    #     cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    #     spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} \
+    #         --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
+    #     spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+    #         sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
+    # else
+    #     text2dict.py ${data}/${train_set}/text --unit ${unit_sub1} --vocab_size ${vocab_size_sub1} \
+    #         --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} | \
+    #         sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
+    # fi
+    # echo "vocab size:" $(cat ${dict_sub1} | wc -l)
 
     echo "Making dataset tsv files for ASR ..."
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
@@ -375,7 +368,6 @@ if [ ${stage} -le 4 ]; then
         --enc_n_layers ${enc_n_layers} \
         --enc_n_layers_sub1 ${enc_n_layers_sub1} \
         --enc_residual ${enc_residual} \
-        --enc_add_ffl ${enc_add_ffl} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
@@ -389,8 +381,6 @@ if [ ${stage} -le 4 ]; then
         --dec_n_layers_sub1 ${dec_n_layers_sub1} \
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
-        --dec_add_ffl ${dec_add_ffl} \
-        --dec_layerwise_attention ${dec_layerwise_attention} \
         --input_feeding ${input_feeding} \
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \
@@ -438,7 +428,6 @@ if [ ${stage} -le 4 ]; then
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
-        --concat_prev_n_utterances ${concat_prev_n_utterances} \
         --n_caches ${n_caches} \
         --resume ${resume} || exit 1;
 
