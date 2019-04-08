@@ -28,7 +28,6 @@ from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
-from neural_sp.models.model_utils import ResidualFeedForward
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import CTCPrefixScore
@@ -66,8 +65,6 @@ class RNNDecoder(nn.Module):
         n_layers (int): number of RNN layers
         loop_type (str): normal or lmdecoder
         residual (bool):
-        add_ffl (bool):
-        layerwise_attention (bool):
         emb_dim (int): dimension of the embedding in target spaces.
         tie_embedding (bool):
         vocab (int): number of nodes in softmax layer
@@ -111,8 +108,6 @@ class RNNDecoder(nn.Module):
                  n_projs,
                  n_layers,
                  residual,
-                 add_ffl,
-                 layerwise_attention,
                  loop_type,
                  emb_dim,
                  tie_embedding,
@@ -155,8 +150,6 @@ class RNNDecoder(nn.Module):
         if loop_type == 'lmdecoder':
             assert n_layers >= 2
         self.residual = residual
-        self.add_ffl = add_ffl
-        self.layerwise_attn = layerwise_attention
         self.ss_prob = ss_prob
         self.ss_type = ss_type
         if ss_type == 'constant':
@@ -224,10 +217,6 @@ class RNNDecoder(nn.Module):
                     query_dim=n_units if n_projs == 0 else n_projs,
                     attn_type=attn_type,
                     attn_dim=attn_dim,
-                    sharpening_factor=attn_sharpening_factor,
-                    sigmoid_smoothing=attn_sigmoid_smoothing,
-                    conv_out_channels=attn_conv_out_channels,
-                    conv_kernel_size=attn_conv_kernel_size,
                     n_heads=attn_n_heads,
                     dropout=dropout_att)
             else:
@@ -260,8 +249,6 @@ class RNNDecoder(nn.Module):
             self.dropout = nn.ModuleList()
             if self.n_projs > 0:
                 self.proj = nn.ModuleList()
-            if add_ffl:
-                self.ffl = nn.ModuleList()
             if rnn_type == 'lstm':
                 rnn_cell = nn.LSTMCell
             elif rnn_type == 'gru':
@@ -275,18 +262,12 @@ class RNNDecoder(nn.Module):
                     self.proj += [LinearND(n_units, n_projs)]
                     dec_idim = n_projs
                 self.dropout += [nn.Dropout(p=dropout)]
-                if add_ffl:
-                    self.ffl += [ResidualFeedForward(dec_idim, dec_idim * 4, dropout, layer_norm)]
                 for l in range(n_layers - 1):
                     self.rnn += [rnn_cell(dec_idim, n_units)]
                     if self.n_projs > 0:
                         self.proj += [LinearND(n_units, n_projs)]
                     self.dropout += [nn.Dropout(p=dropout)]
-                    if add_ffl:
-                        self.ffl += [ResidualFeedForward(dec_idim, dec_idim * 4, dropout, layer_norm)]
             elif loop_type == 'lmdecoder':
-                if add_ffl:
-                    raise ValueError
                 # 1st layer
                 self.rnn += [rnn_cell(emb_dim, n_units)]
                 if self.n_projs > 0:
@@ -750,8 +731,6 @@ class RNNDecoder(nn.Module):
         if self.n_projs > 0:
             dout = torch.tanh(self.proj[0](dout))
         dout = self.dropout[0](dout)
-        if self.add_ffl:
-            dout = self.ffl[0](dout)
 
         if self.loop_type == 'lmdecoder' and self.lmobj_weight > 0:
             dstates_new['dout_lmdec'] = dout.unsqueeze(1)
@@ -775,8 +754,6 @@ class RNNDecoder(nn.Module):
             if self.n_projs > 0:
                 dout_tmp = torch.tanh(self.proj[l](dout_tmp))
             dout_tmp = self.dropout[l](dout_tmp)
-            if self.add_ffl:
-                dout_tmp = self.ffl[l](dout_tmp)
 
             if self.loop_type == 'lmdecoder' and l == 1:
                 # the bottom layer

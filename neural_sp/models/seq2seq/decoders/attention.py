@@ -55,7 +55,7 @@ class AttentionMechanism(nn.Module):
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
         self.n_heads = 1
-        self.key_a = None
+        self.key = None
         self.mask = None
 
         # attention dropout applied AFTER the softmax layer
@@ -70,12 +70,6 @@ class AttentionMechanism(nn.Module):
             self.w_enc = LinearND(key_dim, attn_dim)
             self.w_dec = LinearND(query_dim, attn_dim, bias=False)
             self.w_conv = LinearND(conv_out_channels, attn_dim, bias=False)
-            # self.conv = nn.Conv1d(in_channels=1,
-            #                       out_channels=conv_out_channels,
-            #                       kernel_size=conv_kernel_size * 2 + 1,
-            #                       stride=1,
-            #                       padding=conv_kernel_size,
-            #                       bias=False)
             self.conv = nn.Conv2d(in_channels=1,
                                   out_channels=conv_out_channels,
                                   kernel_size=(1, conv_kernel_size * 2 + 1),
@@ -103,22 +97,22 @@ class AttentionMechanism(nn.Module):
             raise ValueError(attn_type)
 
     def reset(self):
-        self.key_a = None
+        self.key = None
         self.mask = None
 
     def forward(self, key, key_lens, value, query, aw=None, return_logits=False):
         """Forward computation.
 
         Args:
-            key (FloatTensor): `[B, T, key_dim]`
+            key (FloatTensor): `[B, key_len, key_dim]`
             key_lens (list): A list of length `[B]`
-            value (FloatTensor): `[B, T, value_dim]`
+            value (FloatTensor): `[B, key_len, value_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
-            aw (FloatTensor): `[B, T]`
+            aw (FloatTensor): `[B, key_len]`
             return_logits (bool): return logits before the softmax
         Returns:
             cv (FloatTensor): `[B, 1, value_dim]`
-            aw (FloatTensor): `[B, T]`
+            aw (FloatTensor): `[B, key_len]`
 
         """
         bs, key_len = key.size()[:2]
@@ -127,9 +121,11 @@ class AttentionMechanism(nn.Module):
             aw = key.new_zeros(bs, key_len)
 
         # Pre-computation of encoder-side features for computing scores
-        if self.key_a is None:
+        if self.key is None:
             if self.attn_type in ['add', 'location', 'dot', 'luong_general']:
-                self.key_a = self.w_enc(key)
+                self.key = self.w_enc(key)
+            else:
+                self.key = key
 
         # Mask attention distribution
         if self.mask is None:
@@ -140,32 +136,29 @@ class AttentionMechanism(nn.Module):
 
         if self.attn_type == 'add':
             query = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
-            e = self.v(F.tanh(self.key_a + self.w_dec(query))).squeeze(2)
+            e = self.v(F.tanh(self.key + self.w_dec(query))).squeeze(2)
 
         elif self.attn_type == 'location':
             query = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
-            # For 1D conv
-            # conv_feat = self.conv(aw[:, :].contiguous().unsqueeze(1))
-            # For 2D conv
-            conv_feat = self.conv(aw.view(bs, 1, 1, key_len)).squeeze(2)  # `[B, conv_out_channels, T]`
-            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, T, conv_out_channels]`
-            e = self.v(F.tanh(self.key_a + self.w_dec(query) + self.w_conv(conv_feat))).squeeze(2)
+            conv_feat = self.conv(aw.view(bs, 1, 1, key_len)).squeeze(2)  # `[B, conv_out_channels, key_len]`
+            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, key_len, conv_out_channels]`
+            e = self.v(F.tanh(self.key + self.w_dec(query) + self.w_conv(conv_feat))).squeeze(2)
 
         elif self.attn_type == 'dot':
-            e = torch.matmul(self.key_a, self.w_dec(query).transpose(-1, -2)).squeeze(2)
+            e = torch.matmul(self.key, self.w_dec(query).transpose(-1, -2)).squeeze(2)
 
         elif self.attn_type == 'luong_dot':
-            e = torch.matmul(key, query.transpose(-1, -2)).squeeze(2)
+            e = torch.matmul(self.key, query.transpose(-1, -2)).squeeze(2)
 
         elif self.attn_type == 'luong_general':
-            e = torch.matmul(self.key_a, query.transpose(-1, -2)).squeeze(2)
+            e = torch.matmul(self.key, query.transpose(-1, -2)).squeeze(2)
 
         elif self.attn_type == 'luong_concat':
             query = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
-            e = self.v(F.tanh(self.w(torch.cat([key, query], dim=-1)))).squeeze(2)
+            e = self.v(F.tanh(self.w(torch.cat([self.key, query], dim=-1)))).squeeze(2)
 
         # Compute attention weights
-        e = e.masked_fill_(self.mask == 0, -float('inf'))  # `[B, T]`
+        e = e.masked_fill_(self.mask == 0, -1024)  # `[B, key_len]`
 
         if return_logits:
             return e
@@ -173,7 +166,7 @@ class AttentionMechanism(nn.Module):
         if self.sigmoid_smoothing:
             aw = F.sigmoid(e) / F.sigmoid(e).sum(-1).unsqueeze(-1)
         else:
-            aw = F.softmax(e * self.sharpening_factor, dim=-1)  # `[B, T]`
+            aw = F.softmax(e * self.sharpening_factor, dim=-1)
 
         # attention dropout
         aw = self.attn_dropout(aw)

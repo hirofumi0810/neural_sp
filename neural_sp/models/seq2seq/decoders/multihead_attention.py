@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -43,10 +44,6 @@ class MultiheadAttentionMechanism(nn.Module):
                  query_dim,
                  attn_type,
                  attn_dim,
-                 sharpening_factor=1,
-                 sigmoid_smoothing=False,
-                 conv_out_channels=10,
-                 conv_kernel_size=100,
                  dropout=0,
                  n_heads=4):
 
@@ -54,144 +51,72 @@ class MultiheadAttentionMechanism(nn.Module):
 
         self.attn_type = attn_type
         self.attn_dim = attn_dim
-        self.sharpening_factor = sharpening_factor
-        self.sigmoid_smoothing = sigmoid_smoothing
         self.n_heads = n_heads
-        self.key_a = None
+        self.scale = attn_dim ** -0.5
+        self.key = None
         self.mask = None
 
         # attention dropout applied AFTER the softmax layer
-        if dropout > 0:
-            self.dropout = nn.ModuleList([nn.Dropout(p=dropout)] * n_heads)
-        else:
-            self.dropout = None
+        self.attn_dropout = nn.Dropout(p=dropout)
 
-        if attn_type == 'add':
-            self.w_enc = nn.ModuleList([LinearND(key_dim, attn_dim)] * n_heads)
-            self.w_dec = nn.ModuleList([LinearND(query_dim, attn_dim, bias=False)] * n_heads)
-            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * n_heads)
+        assert attn_type == 'dot'
 
-        elif attn_type == 'location':
-            self.w_enc = nn.ModuleList([LinearND(key_dim, attn_dim)] * n_heads)
-            self.w_dec = nn.ModuleList([LinearND(query_dim, attn_dim, bias=False)] * n_heads)
-            self.w_conv = nn.ModuleList([LinearND(conv_out_channels, attn_dim, bias=False)] * n_heads)
-            # self.conv = nn.ModuleList([nn.Conv1d(in_channels=1,
-            #                                       out_channels=conv_out_channels,
-            #                                       kernel_size=conv_kernel_size * 2 + 1,
-            #                                       stride=1,
-            #                                       padding=conv_kernel_size,
-            #                                       bias=False) for _ in range(n_heads)] * n_heads)
-            self.conv = nn.ModuleList([nn.Conv2d(in_channels=1,
-                                                 out_channels=conv_out_channels,
-                                                 kernel_size=(1, conv_kernel_size * 2 + 1),
-                                                 stride=1,
-                                                 padding=(0, conv_kernel_size),
-                                                 bias=False) for _ in range(n_heads)] * n_heads)
-            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * n_heads)
-
-        elif attn_type == 'dot':
-            self.w_enc = nn.ModuleList([LinearND(key_dim, attn_dim, bias=False)] * n_heads)
-            self.w_dec = nn.ModuleList([LinearND(query_dim, attn_dim, bias=False)] * n_heads)
-
-        elif attn_type == 'luong_dot':
-            pass
-            # NOTE: no additional parameters
-
-        elif attn_type == 'luong_general':
-            self.w_enc = nn.ModuleList([LinearND(key_dim, query_dim, bias=False)] * n_heads)
-
-        elif attn_type == 'luong_concat':
-            self.w = nn.ModuleList([LinearND(key_dim + query_dim, attn_dim, bias=False)] * n_heads)
-            self.v = nn.ModuleList([LinearND(attn_dim, 1, bias=False)] * n_heads)
-
-        else:
-            raise ValueError(attn_type)
-
-        self.w_out = LinearND(key_dim * n_heads, key_dim)
+        self.w_key = LinearND(key_dim, attn_dim * n_heads, bias=False)
+        self.w_value = LinearND(key_dim, attn_dim * n_heads, bias=False)
+        self.w_query = LinearND(query_dim, attn_dim * n_heads, bias=False)
+        self.w_out = LinearND(attn_dim * n_heads, key_dim, bias=False)
 
     def reset(self):
-        self.key_a = None
+        self.key = None
         self.mask = None
 
     def forward(self, key, key_lens, value, query, aw=None):
         """Forward computation.
 
         Args:
-            key (FloatTensor): `[B, T, key_dim]`
+            key (FloatTensor): `[B, key_len, key_dim]`
             key_lens (list): A list of length `[B]`
-            value (FloatTensor): `[B, T, value_dim]`
+            value (FloatTensor): `[B, key_len, value_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
-            aw (FloatTensor): `[B, T, n_heads]`
+            aw (FloatTensor): not used
         Returns:
-            context (FloatTensor): `[B, 1, value_dim]`
-            aw (FloatTensor): `[n_heads, B, T]`
+            cv (FloatTensor): `[B, 1, value_dim]`
+            aw (FloatTensor): `[B, key_len, n_heads]`
 
         """
         bs, key_len = key.size()[:2]
 
-        if aw is None:
-            aw = key.new_ones(self.n_heads, bs, key_len)
-
         # Pre-computation of encoder-side features for computing scores
-        if self.key_a is None:
-            if self.attn_type in ['add', 'location', 'dot', 'luong_general']:
-                self.key_a = [self.w_enc[h](key) for h in range(self.n_heads)]
+        if self.key is None:
+            self.key = self.w_key(key).view(bs, key_len, self.n_heads, self.attn_dim).transpose(2, 1).transpose(3, 2)
+            # `[B, n_heads, attn_dim, key_len]`
+            self.value = self.w_value(value).view(bs, key_len, self.n_heads, self.attn_dim).transpose(2, 1)
+            # `[B, n_heads, key_len, attn_dim]`
 
         # Mask attention distribution
         if self.mask is None:
-            self.mask = key.new_ones(bs, key_len)
+            self.mask = key.new_ones(bs, self.n_heads, 1, key_len)
             for b in range(bs):
                 if key_lens[b] < key_len:
-                    self.mask[b, key_lens[b]:] = 0
-            # TODO(hirofumi): prepare mask per attention
+                    self.mask[b, :, :, key_lens[b]:] = 0
 
-        # Compute per head
-        cvs = []
-        aws = []
-        for h in range(self.n_heads):
-            if self.attn_type == 'add':
-                query_h = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
-                e_h = self.v[h](F.tanh(self.key_a[h] + self.w_dec[h](query_h))).squeeze(2)
+        query = self.w_query(query).view(bs, 1, self.n_heads, self.attn_dim).transpose(2, 1)
+        e = torch.matmul(query, self.key) * self.scale
+        # B, H, 1, key_len
 
-            elif self.attn_type == 'location':
-                query_h = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
-                # For 1D conv
-                # conv_feat = self.conv[h](aw[h][:, :].contiguous().unsqueeze(1))
-                # For 2D conv
-                conv_feat_h = self.conv[h](aw[h].view(bs, 1, 1, key_len)
-                                           ).squeeze(2)  # `[B, conv_out_channels, T]`
-                conv_feat_h = conv_feat_h.transpose(2, 1).contiguous()  # `[B, T, conv_out_channels]`
-                e_h = self.v[h](F.tanh(self.key_a[h] + self.w_dec[h]
-                                       (query_h) + self.w_conv[h](conv_feat_h))).squeeze(2)
+        # Compute attention weights
+        e = e.masked_fill_(self.mask == 0, -1024)  # `[B, n_heads, 1, key_len]`
+        aw = F.softmax(e, dim=1)
 
-            elif self.attn_type == 'dot':
-                e_h = torch.matmul(self.key_a[h], self.w_dec[h](query).transpose(-1, -2)).squeeze(2)
+        # attention dropout
+        aw = self.attn_dropout(aw)
 
-            elif self.attn_type == 'luong_dot':
-                e_h = torch.matmul(key, query.transpose(-1, -2)).squeeze(2)
+        # Compute context vector (weighted sum of encoder outputs)
+        cv = torch.matmul(aw, self.value)  # `[B, n_heads, 1, attn_dim]`
+        cv = cv.transpose(2, 1).view(bs, 1, self.n_heads * self.attn_dim)
+        cv = self.w_out(cv)
 
-            elif self.attn_type == 'luong_general':
-                e_h = torch.matmul(self.key_a[h], query.transpose(-1, -2)).squeeze(2)
-
-            elif self.attn_type == 'luong_concat':
-                query_h = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
-                e_h = self.v[h](F.tanh(self.w[h](torch.cat([key, query_h], dim=-1)))).squeeze(2)
-
-            # Compute attention weights
-            e_h = e_h.masked_fill_(self.mask == 0, -float('inf'))  # `[B, T]`
-            if self.sigmoid_smoothing:
-                aw_h = F.sigmoid(e_h) / F.sigmoid(e_h).sum(-1).unsqueeze(-1)
-            else:
-                aw_h = F.softmax(e_h * self.sharpening_factor, dim=-1)  # `[B, T]`
-            # attention dropout
-            if self.dropout is not None:
-                aw_h = self.dropout[h](aw_h)
-            aws.append(aw_h)
-
-            # Compute context vector (weighted sum of encoder outputs)
-            cvs.append(torch.matmul(aw[h].unsqueeze(1), value))
-
-        return self.w_out(torch.cat(cvs, dim=-1)), torch.stack(aws, dim=0)
+        return cv, aw
 
 
 class TransformerMultiheadAttentionMechanism(nn.Module):
@@ -211,6 +136,7 @@ class TransformerMultiheadAttentionMechanism(nn.Module):
         self.d_model = d_model
         self.d_k = d_model // n_heads
         self.n_heads = n_heads
+        self.scale = self.d_k ** -0.5
 
         self.w_key = LinearND(d_model, d_model, bias=False)
         self.w_value = LinearND(d_model, d_model, bias=False)
@@ -225,29 +151,28 @@ class TransformerMultiheadAttentionMechanism(nn.Module):
         """Forward computation.
 
         Args:
-            key (FloatTensor): `[B, key_time, d_model]`
-            value (FloatTensor): `[B, key_time, d_model]`
-            query (FloatTensor): `[B, query_time, d_model]`
-            mask (): `[B, query_time, key_time]`
+            key (FloatTensor): `[B, key_len, d_model]`
+            value (FloatTensor): `[B, key_len, d_model]`
+            query (FloatTensor): `[B, query_len, d_model]`
+            mask (): `[B, query_len, key_len]`
                 0: place to pad with -1024
                 1: otherwise
         Returns:
-            cv (FloatTensor): `[B, query_time, key_time]`
-            aw (FloatTensor): `[B, n_heads, query_time, key_time]`
+            cv (FloatTensor): `[B, query_len, key_len]`
+            aw (FloatTensor): `[B, n_heads, query_len, key_len]`
 
         """
         bs = query.size(0)
 
         # 1) Do all the linear projections in batch from d_model => head x d_k
-        key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1)
+        key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1).transpose(3, 2)
         value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1)
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1)
 
         # 2) Apply attention on all the projected vectors in batch.
-        e = torch.matmul(query, key.transpose(3, 2)) * (self.d_k ** -0.5)
+        e = torch.matmul(query, key) * self.scale
         if mask is not None:
             mask = mask.unsqueeze(1)  # Same mask applied to all heads.
-            # e = e.masked_fill(mask == 0, -float('inf'))  # this is buggy
             e = e.masked_fill(mask == 0, -10e9)  # this is ok
             # e = e.masked_fill(mask == 0, -1024)
         aw = self.dropout(F.softmax(e, dim=-1))
