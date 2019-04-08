@@ -49,7 +49,7 @@ class RNNLM(ModelBase):
         self.cache_theta = 0.2  # smoothing parameter
         self.cache_lambda = 0.2  # cache weight
         self.cache_ids = []
-        self.cache_key = []
+        self.cache_keys = []
         self.cache_attn = []
 
         self.embed = Embedding(vocab=self.vocab,
@@ -92,7 +92,7 @@ class RNNLM(ModelBase):
                 rnn_idim = args.n_units
 
                 if l != self.n_layers - 1 and args.n_projs > 0:
-                    self.proj += [LinearND(args.n_units, args.n_projs)]
+                    self.proj += [LinearND(rnn_idim, args.n_projs)]
                     rnn_idim = args.n_projs
 
         if self.use_glu:
@@ -128,7 +128,8 @@ class RNNLM(ModelBase):
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
-    def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0):
+    def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0,
+                ylens=[]):
         """Forward computation.
 
         Args:
@@ -138,6 +139,7 @@ class RNNLM(ModelBase):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
             n_caches (int):
+            ylens (list): not used
         Returns:
             loss (FloatTensor): `[1]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
@@ -155,11 +157,8 @@ class RNNLM(ModelBase):
         return loss, hidden, reporter
 
     def _forward(self, ys, hidden, reporter, n_caches=0):
-        if self.backward:
-            ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64), self.device_id).long() for y in ys]
-        else:
-            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
-
+        ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64) if self.backward else y, self.device_id).long()
+              for y in ys]
         ys = pad_list(ys, self.pad)
         ys_in = ys[:, :-1]
         ys_out = ys[:, 1:]
@@ -177,11 +176,11 @@ class RNNLM(ModelBase):
 
             # Truncate cache
             self.cache_ids = self.cache_ids[-n_caches:]  # list of `[B, 1]`
-            self.cache_key = self.cache_key[-n_caches:]  # list of `[B, 1, n_units]`
+            self.cache_keys = self.cache_keys[-n_caches:]  # list of `[B, 1, n_units]`
 
             # Compute inner-product over caches
             cache_attn = F.softmax(self.cache_theta * torch.matmul(
-                torch.cat(self.cache_key, dim=1),
+                torch.cat(self.cache_keys, dim=1),
                 ys_in.transpose(1, 2)).squeeze(2), dim=1)
 
             # For visualization
@@ -203,7 +202,7 @@ class RNNLM(ModelBase):
             # Register to cache
             # self.cache_ids += [ys_out[:, -1].cpu().numpy()]
             self.cache_ids += [ys_out[0, -1].item()]
-            self.cache_key += [ys_in]
+            self.cache_keys += [ys_in]
 
         # Compute token-level accuracy in teacher-forcing
         pad_pred = logits.view(ys_out.size(0), ys_out.size(1), logits.size(-1)).argmax(2)
@@ -225,28 +224,33 @@ class RNNLM(ModelBase):
 
     def encode(self, ys):
         """Encode function.
+
         Args:
             ys (LongTensor):
         Returns:
-            ys (FloatTensor):
+            ys (FloatTensor): `[B, L, emb_dim]`
+
         """
         ys_emb = self.embed(ys)
         return ys_emb
 
     def decode(self, ys_emb, hidden):
         """Decode function.
+
         Args:
             ys_emb (FloatTensor): `[B, L, emb_dim]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
         Returns:
             ys_emb (FloatTensor): `[B, L, n_units]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
+
         """
         if hidden is None or hidden[0] is None:
             hidden = self.initialize_hidden(ys_emb.size(0))
 
         residual = None
         if self.fast_impl:
+            # Path through RNN
             ys_emb, hidden = self.rnn(ys_emb, hx=hidden)
             ys_emb = self.dropout_top(ys_emb)
         else:
@@ -279,26 +283,31 @@ class RNNLM(ModelBase):
             ys_emb = F.glu(self.fc_glu(ys_emb), dim=-1)
             if self.residual:
                 ys_emb += residual
+
         return ys_emb, hidden
 
     def generate(self, hidden):
         """Generate function.
+
         Args:
             hidden (FloatTensor):
         Returns:
             logits (FloatTensor):
+
         """
         logits = self.output(hidden)
         return logits
 
     def initialize_hidden(self, batch_size):
         """Initialize hidden states.
+
         Args:
             batch_size (int):
         Returns:
             hidden (tuple):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
+
         """
         w = next(self.parameters())
         if self.fast_impl:
@@ -320,6 +329,7 @@ class RNNLM(ModelBase):
 
     def repackage_hidden(self, hidden):
         """Wraps hidden states in new Tensors, to detach them from their history.
+
         Args:
             hidden (tuple):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
@@ -328,6 +338,7 @@ class RNNLM(ModelBase):
             hidden (tuple):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
+
         """
         hxs, cxs = hidden
         hxs = hxs.detach()
