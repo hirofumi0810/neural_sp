@@ -62,8 +62,9 @@ def eval_phone(models, dataset, recog_params, epoch,
                 batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=True,
                 refs_id=batch['ys'],
-                ensemble_models=models[1:] if len(models) > 1 else [],
-                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
+                utt_ids=batch['utt_ids'],
+                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
+                ensemble_models=models[1:] if len(models) > 1 else [])
             ys = [batch['text'][i] for i in perm_ids]
 
             for b in range(len(batch['xs'])):

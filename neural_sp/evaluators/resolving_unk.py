@@ -18,10 +18,10 @@ def resolve_unk(hyp_word, best_hyps_char, aw_word, aw_char, idx2char,
     """Revolving UNK.
 
     Args:
-        hyp_word:
-        best_hyps_char:
-        aw_word:
-        aw_char:
+        hyp_word ():
+        best_hyps_char ():
+        aw_word ():
+        aw_char ():
         idx2char ():
         subsample_factor_word (int):
         subsample_factor_char (int):
@@ -36,11 +36,11 @@ def resolve_unk(hyp_word, best_hyps_char, aw_word, aw_char, idx2char,
 
     if diff_time_resolution > 1:
         assert diff_time_resolution == 2
-        aw_sub1 = aw_char[:, ::diff_time_resolution]
-        aw_sub1 = aw_sub1[:, :aw_word.shape[1]]
-        aw_sub2 = aw_char[:, 1::diff_time_resolution]
-        aw_sub2 = aw_sub2[:, :aw_word.shape[1]]
-        aw_char = (aw_sub1 + aw_sub2) / 2
+        aw_char1 = aw_char[:, ::diff_time_resolution]
+        aw_char1 = aw_char1[:, :aw_word.shape[1]]
+        aw_char2 = aw_char[:, 1::diff_time_resolution]
+        aw_char2 = aw_char2[:, :aw_word.shape[1]]
+        aw_char = (aw_char1 + aw_char2) / 2
 
     # Store places for <unk>
     for offset, w in enumerate(hyp_word.split(' ')):

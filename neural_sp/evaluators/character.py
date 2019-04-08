@@ -78,9 +78,10 @@ def eval_char(models, dataset, recog_params, epoch,
                 batch['xs'], recog_params, dataset.idx2token[task_idx],
                 exclude_eos=True,
                 refs_id=batch['ys'] if task_idx == 0 else batch['ys_sub' + str(task_idx)],
+                utt_ids=batch['utt_ids'],
+                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
                 task=task,
-                ensemble_models=models[1:] if len(models) > 1 else [],
-                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
+                ensemble_models=models[1:] if len(models) > 1 else [])
             ys = [batch['text'][i] for i in perm_ids]
 
             for b in range(len(batch['xs'])):

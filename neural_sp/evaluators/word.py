@@ -23,7 +23,7 @@ logger = logging.getLogger("decoding").getChild('word')
 
 
 def eval_word(models, dataset, recog_params, epoch,
-              recog_dir=None, progressbar=False):
+              recog_dir=None, word_list=[], progressbar=False):
     """Evaluate the word-level model by WER.
 
     Args:
@@ -32,6 +32,7 @@ def eval_word(models, dataset, recog_params, epoch,
         recog_params (dict):
         epoch (int):
         recog_dir (str):
+        word_list (list):
         progressbar (bool): visualize the progressbar
     Returns:
         wer (float): Word error rate
@@ -70,8 +71,10 @@ def eval_word(models, dataset, recog_params, epoch,
                 batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=True,
                 refs_id=batch['ys'],
+                utt_ids=batch['utt_ids'],
+                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
                 ensemble_models=models[1:] if len(models) > 1 else [],
-                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
+                word_list=word_list)
             ys = [batch['text'][i] for i in perm_ids]
 
             for b in range(len(batch['xs'])):
@@ -88,11 +91,12 @@ def eval_word(models, dataset, recog_params, epoch,
                     recog_params_char['recog_beam_width'] = 1
                     best_hyps_id_char, _, aw_char, _, _ = models[0].decode(
                         batch['xs'][b:b + 1], recog_params_char,
-                        dataset.idx2token[1], dataset.token2idx[1],
+                        dataset.idx2token[1],
                         exclude_eos=True,
                         refs_id=batch['ys_sub1'],
-                        task='ys_sub1',
-                        speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
+                        utt_ids=batch['utt_ids'],
+                        speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
+                        task='ys_sub1')
                     # TODO(hirofumi): support ys_sub2 and ys_sub3
 
                     hyp = resolve_unk(
