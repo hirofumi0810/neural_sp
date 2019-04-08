@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/swbd
 
 ### vocabulary
-unit=word    # word/wp/char/word_char/phone
+unit=wp      # word/wp/char/word_char/phone
 vocab_size=10000
 wp_type=bpe  # or unigram (for wordpiece)
 
@@ -39,28 +39,25 @@ subsample="1_2_2_2_1"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 # subsample="1_1_1_1_1"
 enc_type=blstm
-enc_n_units=320
+enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_residual=
-enc_add_ffl=
 subsample_type=drop
 attn_type=location
-attn_dim=320
+attn_dim=512
 attn_n_heads=1
 attn_sigmoid=
 dec_type=lstm
-dec_n_units=320
+dec_n_units=1024
 dec_n_projs=0
 dec_n_layers=1
 dec_loop_type=normal
 dec_residual=
-dec_add_ffl=
-dec_layerwise_attention=
 input_feeding=
-emb_dim=320
+emb_dim=512
 tie_embedding=
-ctc_fc_list="320"
+ctc_fc_list="512"
 ### optimization
 batch_size=50
 optimizer=adam
@@ -81,7 +78,6 @@ warmup_n_epochs=0
 param_init=0.1
 param_init_dist=uniform
 pretrained_model=
-freeze_encoder=false
 ### regularization
 clip_grad_norm=5.0
 dropout_in=0.0
@@ -107,7 +103,6 @@ rnnlm_init=
 lmobj_weight=0.0
 share_lm_softmax=
 # contextualization
-concat_prev_n_utterances=0
 n_caches=0
 
 #########################
@@ -402,6 +397,7 @@ if [ ${stage} -le 3 ]; then
         --train_set ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --eval_sets ${lm_test_set} \
+        --nlsyms ${nlsyms} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model ${model}/rnnlm \
@@ -451,6 +447,7 @@ if [ ${stage} -le 4 ]; then
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --nlsyms ${nlsyms} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model ${model}/asr \
@@ -469,7 +466,6 @@ if [ ${stage} -le 4 ]; then
         --enc_n_projs ${enc_n_projs} \
         --enc_n_layers ${enc_n_layers} \
         --enc_residual ${enc_residual} \
-        --enc_add_ffl ${enc_add_ffl} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
@@ -482,8 +478,6 @@ if [ ${stage} -le 4 ]; then
         --dec_n_layers ${dec_n_layers} \
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
-        --dec_add_ffl ${dec_add_ffl} \
-        --dec_layerwise_attention ${dec_layerwise_attention} \
         --input_feeding ${input_feeding} \
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \
@@ -506,7 +500,6 @@ if [ ${stage} -le 4 ]; then
         --param_init ${param_init} \
         --param_init_dist ${param_init_dist} \
         --pretrained_model ${pretrained_model} \
-        --freeze_encoder ${freeze_encoder} \
         --clip_grad_norm ${clip_grad_norm} \
         --dropout_in ${dropout_in} \
         --dropout_enc ${dropout_enc} \
@@ -528,7 +521,6 @@ if [ ${stage} -le 4 ]; then
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
-        --concat_prev_n_utterances ${concat_prev_n_utterances} \
         --n_caches ${n_caches} \
         --resume ${resume} || exit 1;
 

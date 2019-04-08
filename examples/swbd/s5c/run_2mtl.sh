@@ -14,7 +14,7 @@ gpu=
 export data=/n/sd8/inaguma/corpus/swbd
 
 ### vocabulary
-unit=word         # word/wp/word_char
+unit=wp           # word/wp/word_char
 vocab_size=10000
 wp_type=bpe       # or unigram (for wordpiece)
 unit_sub1=char
@@ -42,30 +42,27 @@ subsample="1_2_2_2_1"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 # subsample="1_1_1_1_1"
 enc_type=blstm
-enc_n_units=320
+enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_n_layers_sub1=4
 enc_residual=
-enc_add_ffl=
 subsample_type=drop
 attn_type=location
-attn_dim=320
+attn_dim=512
 attn_n_heads=1
 attn_sigmoid=
 dec_type=lstm
-dec_n_units=320
+dec_n_units=1024
 dec_n_projs=0
 dec_n_layers=1
 dec_n_layers_sub1=1
 dec_loop_type=normal
 dec_residual=
-dec_add_ffl=
-dec_layerwise_attention=
 input_feeding=
-emb_dim=320
+emb_dim=512
 tie_embedding=
-ctc_fc_list="320"
+ctc_fc_list="512"
 ctc_fc_list_sub1=""
 ### optimization
 batch_size=40
@@ -102,7 +99,7 @@ layer_norm=
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
-ctc_weight_sub1=0.0
+ctc_weight_sub1=0.2
 bwd_weight=0.0
 bwd_weight_sub1=0.0
 sub1_weight=0.2
@@ -115,7 +112,6 @@ rnnlm_init=
 lmobj_weight=0.0
 share_lm_softmax=
 # contextualization
-concat_prev_n_utterances=0
 n_caches=0
 
 ### path to save the model
@@ -380,6 +376,7 @@ if [ ${stage} -le 4 ]; then
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set_sub1 ${data}/dataset/${dev_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.tsv \
+        --nlsyms ${nlsyms} \
         --dict ${dict} \
         --dict_sub1 ${dict_sub1} \
         --wp_model ${wp_model}.model \
@@ -402,7 +399,6 @@ if [ ${stage} -le 4 ]; then
         --enc_n_layers ${enc_n_layers} \
         --enc_n_layers_sub1 ${enc_n_layers_sub1} \
         --enc_residual ${enc_residual} \
-        --enc_add_ffl ${enc_add_ffl} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
@@ -416,8 +412,6 @@ if [ ${stage} -le 4 ]; then
         --dec_n_layers_sub1 ${dec_n_layers_sub1} \
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
-        --dec_add_ffl ${dec_add_ffl} \
-        --dec_layerwise_attention ${dec_layerwise_attention} \
         --input_feeding ${input_feeding} \
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \
@@ -465,7 +459,6 @@ if [ ${stage} -le 4 ]; then
         --rnnlm_init ${rnnlm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
-        --concat_prev_n_utterances ${concat_prev_n_utterances} \
         --n_caches ${n_caches} \
         --resume ${resume} || exit 1;
 
