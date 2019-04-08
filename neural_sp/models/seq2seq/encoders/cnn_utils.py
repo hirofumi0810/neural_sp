@@ -10,12 +10,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
+import numpy as np
 import torch.nn as nn
 
 
 class ConvOutSize(object):
-    """TODO."""
+    """Return the size of outputs for CNN layers."""
 
     def __init__(self, conv):
         super(ConvOutSize, self).__init__()
@@ -39,38 +39,13 @@ class ConvOutSize(object):
             if type(m) in [nn.Conv2d, nn.MaxPool2d]:
                 if type(m) == nn.MaxPool2d:
                     if m.ceil_mode:
-                        size = int(math.ceil(
+                        size = int(np.ceil(
                             (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1))
                     else:
-                        size = int(math.floor(
+                        size = int(np.floor(
                             (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1))
                 else:
-                    size = int(math.floor(
+                    size = int(np.floor(
                         (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1))
                 # assert size >= 1
         return size
-
-
-class Maxout(nn.Module):
-
-    def __init__(self, d_in, d_out, pool_size):
-        super(Maxout, self).__init__()
-
-        self.d_in = d_in
-        self.d_out = d_out
-        self.pool_size = pool_size
-        self.lin = nn.Linear(d_in, d_out * pool_size)
-
-    def forward(self, inputs):
-        # print(inputs.size())
-        shape = list(inputs.size())
-        shape[-1] = self.d_out
-        shape.append(self.pool_size)
-        max_dim = len(shape) - 1
-        out = self.lin(inputs)
-        # print(out.size())
-        m, i = out.view(*shape).max(max_dim)
-        return m
-
-    def __repr__(self):
-        return 'maxout'

@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import copy
 import numpy as np
 import torch
 import torch.nn as nn
@@ -162,7 +161,6 @@ class RNNEncoder(nn.Module):
                                    strides=strides,
                                    poolings=poolings,
                                    dropout=dropout,
-                                   activation='relu',
                                    batch_norm=conv_batch_norm,
                                    bottleneck_dim=conv_bottleneck_dim)
             self._output_dim = self.conv.output_dim
@@ -299,11 +297,11 @@ class RNNEncoder(nn.Module):
             task (str): all or ys or ys_sub1 or ys_sub2 or ys_sub3
         Returns:
             eouts (dict):
-                xs (FloatTensor): `[B, T // prod(subsample), n_units (* n_dirs)]`
+                xs (FloatTensor): `[B, T // prod(subsample), n_units (*n_dirs)]`
                 xlens (list): `[B]`
-                xs_sub1 (FloatTensor): `[B, T // prod(subsample), n_units (* n_dirs)]`
+                xs_sub1 (FloatTensor): `[B, T // prod(subsample), n_units (*n_dirs)]`
                 xlens_sub1 (list): `[B]`
-                xs_sub2 (FloatTensor): `[B, T // prod(subsample), n_units (* n_dirs)]`
+                xs_sub2 (FloatTensor): `[B, T // prod(subsample), n_units (*n_dirs)]`
                 xlens_sub2 (list): `[B]`
 
         """
@@ -354,7 +352,7 @@ class RNNEncoder(nn.Module):
                         xs_sub1 = self.dropout_sub1_tsl(xs_sub1)
                     else:
                         xs_sub1 = xs.clone()
-                    xlens_sub1 = copy.deepcopy(xlens)
+                    xlens_sub1 = xlens[:]
 
                     if task == 'ys_sub1':
                         eouts[task]['xs'] = xs_sub1
@@ -370,7 +368,7 @@ class RNNEncoder(nn.Module):
                         xs_sub2 = self.dropout_sub2_tsl(xs_sub2)
                     else:
                         xs_sub2 = xs.clone()
-                    xlens_sub2 = copy.deepcopy(xlens)
+                    xlens_sub2 = xlens[:]
 
                     if task == 'ys_sub2':
                         eouts[task]['xs'] = xs_sub2
@@ -386,7 +384,7 @@ class RNNEncoder(nn.Module):
                         xs_sub3 = self.dropout_sub3_tsl(xs_sub3)
                     else:
                         xs_sub3 = xs.clone()
-                    xlens_sub3 = copy.deepcopy(xlens)
+                    xlens_sub3 = xlens[:]
 
                     if task == 'ys_sub3':
                         eouts[task]['xs'] = xs_sub3

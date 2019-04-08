@@ -11,12 +11,11 @@ from __future__ import division
 from __future__ import print_function
 
 from collections import OrderedDict
-import math
+import numpy as np
 import torch.nn as nn
 
 from neural_sp.models.model_utils import LinearND
 from neural_sp.models.seq2seq.encoders.cnn_utils import ConvOutSize
-from neural_sp.models.seq2seq.encoders.cnn_utils import Maxout
 
 
 class CNNEncoder(nn.Module):
@@ -30,7 +29,6 @@ class CNNEncoder(nn.Module):
         strides (list): strides in CNN layers
         poolings (list) size of poolings in CNN layers
         dropout (float) probability to drop nodes in hidden-hidden connection
-        activation (str): relu or prelu or hard_tanh or maxout
         batch_norm (bool): if True, apply batch normalization
         bottleneck_dim (int): dimension of the bottleneck layer after the last layer
 
@@ -44,7 +42,6 @@ class CNNEncoder(nn.Module):
                  strides,
                  poolings,
                  dropout,
-                 activation='relu',
                  batch_norm=False,
                  bottleneck_dim=0):
 
@@ -64,34 +61,21 @@ class CNNEncoder(nn.Module):
         in_ch = self.in_channel
         in_freq = self.input_freq
         for l in range(len(channels)):
-
             # Conv
             conv = nn.Conv2d(in_channels=in_ch,
                              out_channels=channels[l],
                              kernel_size=tuple(kernel_sizes[l]),
                              stride=tuple(strides[l]),
-                             #  padding=tuple(strides[l]),
-                             padding=0,
+                             padding=tuple(strides[l]),
                              bias=not batch_norm)
             layers['conv' + str(channels[l]) + '_l' + str(l)] = conv
-            in_freq = int(math.floor((in_freq + 2 * conv.padding[0] - conv.kernel_size[0]) / conv.stride[0] + 1))
+            in_freq = int(np.floor((in_freq + 2 * conv.padding[0] - conv.kernel_size[0]) / conv.stride[0] + 1))
 
             # Activation
-            if activation == 'relu':
-                act = nn.ReLU()
-            elif activation == 'prelu':
-                act = nn.PReLU(num_parameters=1, init=0.2)
-            elif activation == 'hard_tanh':
-                act = nn.Hardtanh(min_val=0, max_val=20, inplace=True)
-            elif activation == 'maxout':
-                raise NotImplementedError(activation)
-                # act = Maxout(1, 1, 2)
-            else:
-                raise NotImplementedError(activation)
-            layers[activation + '_' + str(l)] = act
+            layers['relu_' + str(l)] = nn.ReLU()
 
-            # Max Pooling
-            if len(poolings[l]) > 0 and poolings[l][0] * poolings[l][1] > 1:
+            # # Max Pooling
+            if len(poolings[l]) > 0 and np.prod(poolings[l]) > 1:
                 pool = nn.MaxPool2d(kernel_size=tuple(poolings[l]),
                                     stride=tuple(poolings[l]),
                                     padding=(0, 0),  # default
@@ -100,8 +84,7 @@ class CNNEncoder(nn.Module):
                 # NOTE: If ceil_mode is False, remove last feature when the
                 # dimension of features are odd.
 
-                in_freq = int(math.ceil(
-                    (in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1))
+                in_freq = int(np.ceil((in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1))
 
             # Batch Normalization
             if batch_norm:
@@ -139,22 +122,23 @@ class CNNEncoder(nn.Module):
         """
         bs, max_xlen, input_dim = xs.size()
 
-        # Reshape to 4D tensor `[B, in_ch, freq // in_ch, max_xlen]`
-        xs = xs.contiguous().view(bs, max_xlen, input_dim // self.in_channel, self.in_channel)
-        xs = xs.transpose(1, 3)
+        # Reshape to 4D tensor `[B, in_ch, T, input_dim // in_ch]`
+        xs = xs.contiguous().transpose(2, 1)
+        xs = xs.view(bs, self.in_channel, input_dim // self.in_channel, max_xlen)
 
         xs = self.layers(xs)
-        # NOTE: xs: `[B, out_ch, new_freq, new_time]`
+        # NOTE: xs: `[B, out_ch, feature_dim, T]`
 
         # Collapse feature dimension
         bs, out_ch, freq, time = xs.size()
-        xs = xs.transpose(1, 2).contiguous().view(bs, time, -1)
+        xs = xs.view(bs, -1, time)
+        xs = xs.contiguous().transpose(2, 1)
 
         # Reduce dimension
         if self.bottleneck_dim > 0:
             xs = self.bottleneck(xs)
 
         # Update xlens
-        xlens = [self.get_conv_out_size(xlen, 1) for xlen in xlens]
+        xlens = [self.get_conv_out_size(xlen, dim=1) for xlen in xlens]  # (freq, time)
 
         return xs, xlens
