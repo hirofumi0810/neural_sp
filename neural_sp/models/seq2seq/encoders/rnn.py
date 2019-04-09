@@ -18,7 +18,6 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.model_utils import LinearND
-from neural_sp.models.model_utils import ResidualFeedForward
 from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
 
 

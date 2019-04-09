@@ -69,16 +69,17 @@ def pad_list(xs, pad_value=0.0, pad_left=False):
     return xs_pad
 
 
-def compute_accuracy(logits, ys_ref):
+def compute_accuracy(logits, ys_ref, pad):
     """Compute accuracy.
     Args:
         logits (FloatTensor): `[B, T, vocab]`
         ys_ref (LongTensor): `[B, T]`
+        pad (int): index for padding
     Returns:
         acc (float): teacher-forcing accuracy
     """
     pad_pred = logits.view(ys_ref.size(0), ys_ref.size(1), logits.size(-1)).argmax(2)
-    mask = ys_ref != -1
+    mask = ys_ref != pad
     numerator = torch.sum(pad_pred.masked_select(mask) == ys_ref.masked_select(mask))
     denominator = torch.sum(mask)
     acc = float(numerator) * 100 / float(denominator)

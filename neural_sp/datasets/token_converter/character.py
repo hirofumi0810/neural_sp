@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import codecs
+import os
 
 
 class Char2idx(object):
@@ -36,7 +37,7 @@ class Char2idx(object):
                 self.token2idx[c] = int(idx)
 
         self.nlsyms_list = []
-        if nlsyms:
+        if nlsyms and os.path.isfile(nlsyms):
             with codecs.open(nlsyms, 'r', 'utf-8') as f:
                 for line in f:
                     self.nlsyms_list.append(line.strip())
