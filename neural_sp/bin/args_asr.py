@@ -238,7 +238,7 @@ def parse():
     parser.add_argument('--dropout_in', type=float, default=0.0,
                         help='dropout probability for the input')
     parser.add_argument('--dropout_enc', type=float, default=0.0,
-                        help='dropout probability for the')
+                        help='dropout probability for the encoder')
     parser.add_argument('--dropout_dec', type=float, default=0.0,
                         help='dropout probability for the decoder')
     parser.add_argument('--dropout_emb', type=float, default=0.0,
@@ -247,11 +247,6 @@ def parse():
                         help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='')
-    parser.add_argument('--gaussian_noise_std', type=float, default=0,
-                        help='standard deviation of Gaussian noise')
-    parser.add_argument('--gaussian_noise_timing', type=str, default='saturation',
-                        choices=['constant', 'saturation'],
-                        help='timing to start Gaussian noise injection')
     parser.add_argument('--ss_prob', type=float, default=0.0,
                         help='')
     parser.add_argument('--ss_type', type=str, default='constant',

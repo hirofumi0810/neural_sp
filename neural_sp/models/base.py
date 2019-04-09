@@ -135,37 +135,6 @@ class ModelBase(nn.Module):
                 start, end = n // 4, n // 2
                 p.data[start:end].fill_(1.)
 
-    def gaussian_noise_trigger(self):
-        self._gaussian_noise = True
-
-    def gaussian_noise(self, mean=0., std=0.0625):
-        """Inject Gaussian noise to weight matrices.
-
-        Args:
-            mean (float): mean
-            std (float): standard deviation
-
-        """
-        if self._gaussian_noise:
-            for n, p in self.named_parameters():
-                # NOTE: skip bias parameters
-                if p.data.dim() == 1:
-                    continue
-
-                noise = np.random.normal(loc=mean, scale=std, size=p.size())
-                noise = torch.FloatTensor(noise)
-                if self.use_cuda:
-                    noise = noise.cuda(self.device_id)
-                p.data += noise
-
-            # m = torch.distributions.Normal(
-            #     torch.Tensor([mean]), torch.Tensor([std]))
-            # for n, p in self.named_parameters():
-            #     noise = m.sample()
-            #     if self.use_cuda:
-            #         noise = noise.cuda(self.device_id)
-            #     p.data += noise
-
     def set_cuda(self, deterministic=True, benchmark=False):
         """Set model to the GPU version.
 
