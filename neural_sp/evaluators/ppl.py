@@ -14,6 +14,7 @@ import logging
 import numpy as np
 from tqdm import tqdm
 
+from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 
 logger = logging.getLogger("decoding").getChild('ppl')
@@ -40,9 +41,9 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1,
     dataset.reset()
 
     model = models[0]
-    is_rnnlm = False
-    if isinstance(model, RNNLM):
-        is_rnnlm = True
+    is_lm = False
+    if isinstance(model, RNNLM) or isinstance(model, GatedConvLM):
+        is_lm = True
 
     # Change to the evaluation mode
     model.eval()
@@ -53,7 +54,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1,
     if progressbar:
         pbar = tqdm(total=len(dataset))
     while True:
-        if is_rnnlm:
+        if is_lm:
             ys, is_new_epoch = dataset.next(batch_size)
             bs = len(ys)
 
