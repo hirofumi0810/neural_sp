@@ -39,30 +39,27 @@ subsample="1_2_2_1_1"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 # subsample="1_1_1_1_1"
 enc_type=blstm
-enc_n_units=320
+enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_residual=
-enc_add_ffl=
 subsample_type=drop
 attn_type=location
-attn_dim=320
+attn_dim=512
 attn_n_heads=1
 attn_sigmoid=
 dec_type=lstm
-dec_n_units=320
+dec_n_units=1024
 dec_n_projs=0
 dec_n_layers=1
 dec_loop_type=normal
 dec_residual=
-dec_add_ffl=
-dec_layerwise_attention=
 input_feeding=
-emb_dim=320
+emb_dim=512
 tie_embedding=
-ctc_fc_list="320"
+ctc_fc_list="512"
 ### optimization
-batch_size=50
+batch_size=30
 optimizer=adam
 learning_rate=1e-3
 n_epochs=30
@@ -210,57 +207,15 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
 
     # lowercasing
     for x in ${train_set} ${dev_set} ${test_set}; do
-        cp ${data}/${x}/text ${data}/${x}/text.tmp
-        paste -d "" <(cut -f 1 -d " " ${data}/${x}/text.tmp) \
-            <(cut -f 2- -d " " ${data}/${x}/text.tmp | awk '{$1=""; print tolower($0)}') > ${data}/${x}/text
-        rm ${data}/${x}/text.tmp
+        cp ${data}/${x}/text ${data}/${x}/text.org
+        paste -d " " <(cut -f 1 -d " " ${data}/${x}/text.org) \
+            <(cut -f 2- -d " " ${data}/${x}/text.org | awk '{print tolower($0)}') > ${data}/${x}/text
     done
 
     # nomalization
-    cp ${data}/${train_set}/text ${data}/${train_set}/text.tmp.0
-    cut -f 2- -d " " ${data}/${train_set}/text.tmp.0 | \
-        sed -e 's/*//g' | \
-        sed -e "s/\)/\'/g" | \
-        sed -e 's/.period/period/g' | \
-        sed -e 's/,comma/comma/g' | \
-        sed -e 's/:colon/colon/g' | \
-        sed -e 's/://g' | \
-        sed -e 's/;semi-colon/semi-colon/g' | \
-        sed -e 's/;//g' | \
-        sed -e 's/\/slash/slash/g' | \
-        sed -e 's/&ampersand/ampersand/g' | \
-        sed -e 's/?question-mark/question-mark/g' | \
-        sed -e 's/!exclamation-point/exclamation-point/g' | \
-        sed -e 's/!//g' | \
-        sed -e 's/-dash/dash/g' | \
-        sed -e 's/-hyphen/hyphen/g' | \
-        sed -e 's/(paren/paren/g' | \
-        sed -e 's/)paren/paren/g' | \
-        sed -e 's/)un-parentheses/un-parentheses/g' | \
-        sed -e 's/)close_paren/close-paren/g' | \
-        sed -e 's/)close-paren/close-paren/g' | \
-        sed -e 's/)end-the-paren/end-the-paren/g' | \
-        sed -e 's/(left-paren/left-paren/g' | \
-        sed -e 's/)right-paren/right-paren/g' | \
-        sed -e 's/(begin-parens/begin-parens/g' | \
-        sed -e 's/)end-parens/end-parens/g' | \
-        sed -e 's/(brace/brace/g' | \
-        sed -e 's/)close-brace/close-brace/g' | \
-        sed -e 's/{left-brace/left-brace/g' | \
-        sed -e 's/}right-brace/right-brace/g' | \
-        sed -e "s/\'single-quote/single-quote/g" | \
-        sed -e 's/\"quote/quote/g' | \
-        sed -e 's/\"in-quotes/in-quotes/g' | \
-        sed -e 's/\"double-quote/double-quote/g' | \
-        sed -e 's/\"unquote/quote/g' | \
-        sed -e 's/\"close-quote/close-quote/g' | \
-        sed -e 's/\"end-quote/end-quote/g' | \
-        sed -e 's/\"end-of-quote/end-of-quote/g' |
-    sed -e 's/\<nperiod/nperiod/g' > ${data}/${train_set}/text.tmp.1
-
-    paste -d "" <(cut -f 1 -d " " ${data}/${train_set}/text.tmp.0) \
-        <(cat ${data}/${train_set}/text.tmp.1 | awk '{$1=""; print tolower($0)}') > ${data}/${train_set}/text
-    rm ${data}/${train_set}/text.tmp*
+    for x in ${train_set} ${dev_set}; do
+        local/normalize_trans.sh ${data}/${x}
+    done
 
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
@@ -442,7 +397,6 @@ if [ ${stage} -le 4 ]; then
         --enc_n_projs ${enc_n_projs} \
         --enc_n_layers ${enc_n_layers} \
         --enc_residual ${enc_residual} \
-        --enc_add_ffl ${enc_add_ffl} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
@@ -455,8 +409,6 @@ if [ ${stage} -le 4 ]; then
         --dec_n_layers ${dec_n_layers} \
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
-        --dec_add_ffl ${dec_add_ffl} \
-        --dec_layerwise_attention ${dec_layerwise_attention} \
         --input_feeding ${input_feeding} \
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \
