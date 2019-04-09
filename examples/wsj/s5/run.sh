@@ -59,7 +59,7 @@ emb_dim=512
 tie_embedding=
 ctc_fc_list="512"
 ### optimization
-batch_size=30
+batch_size=25
 optimizer=adam
 learning_rate=1e-3
 n_epochs=30
@@ -104,10 +104,10 @@ lmobj_weight=0.0
 share_lm_softmax=
 
 #########################
-# RNNLM configuration
+# LM configuration
 #########################
 # topology
-lm_rnn_type=lstm
+lm_type=lstm
 lm_n_units=1024
 lm_n_projs=0
 lm_n_layers=2
@@ -145,7 +145,7 @@ model=/n/sd8/inaguma/result/wsj
 
 ### path to the model directory to resume training
 resume=
-rnnlm_resume=
+lm_resume=
 
 ### path to original data
 wsj0=/n/rd21/corpora_1/WSJ/wsj0
@@ -173,7 +173,7 @@ if [ -z ${gpu} ]; then
     exit 1
 fi
 n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
-rnnlm_gpu=$(echo ${gpu} | cut -d "," -f 1)
+lm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 train_set=train_si284
 dev_set=test_dev93
@@ -305,7 +305,7 @@ fi
 mkdir -p ${model}
 if [ ${stage} -le 3 ]; then
     echo ============================================================================
-    echo "                      RNNLM Training stage (stage:3)                       "
+    echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
 
     # Extend dictionary for the external text data
@@ -324,17 +324,17 @@ if [ ${stage} -le 3 ]; then
         touch ${data}/.done_stage_3_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    # NOTE: support only a single GPU for RNNLM training
-    CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
+    # NOTE: support only a single GPU for LM training
+    CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus wsj \
         --n_gpus 1 \
         --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
-        --model ${model}/rnnlm \
+        --model ${model}/lm \
         --unit ${unit} \
-        --rnn_type ${lm_rnn_type} \
+        --lm_type ${lm_type} \
         --n_units ${lm_n_units} \
         --n_projs ${lm_n_projs} \
         --n_layers ${lm_n_layers} \
@@ -363,9 +363,9 @@ if [ ${stage} -le 3 ]; then
         --dropout_emb ${lm_dropout_emb} \
         --weight_decay ${lm_weight_decay} \
         --backward ${lm_backward} || exit 1;
-    # --resume ${rnnlm_resume} || exit 1;
+    # --resume ${lm_resume} || exit 1;
 
-    echo "Finish RNNLM training (stage: 3)." && exit 1;
+    echo "Finish LM training (stage: 3)." && exit 1;
 fi
 
 if [ ${stage} -le 4 ]; then

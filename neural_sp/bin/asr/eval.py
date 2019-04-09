@@ -25,6 +25,7 @@ from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
+from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 
@@ -99,37 +100,43 @@ def main():
                     ensemble_models += [model_e]
 
             # For shallow fusion
-            if not args.rnnlm_fusion:
-                if args.recog_rnnlm is not None and args.recog_rnnlm_weight > 0:
-                    # Load a RNNLM conf file
-                    conf_rnnlm = load_config(os.path.join(os.path.dirname(args.recog_rnnlm), 'conf.yml'))
+            if not args.lm_fusion:
+                if args.recog_lm is not None and args.recog_lm_weight > 0:
+                    # Load a LM conf file
+                    conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm), 'conf.yml'))
 
                     # Merge conf with args
-                    args_rnnlm = argparse.Namespace()
-                    for k, v in conf_rnnlm.items():
-                        setattr(args_rnnlm, k, v)
+                    args_lm = argparse.Namespace()
+                    for k, v in conf_lm.items():
+                        setattr(args_lm, k, v)
 
-                    # Load the pre-trianed RNNLM
-                    rnnlm = RNNLM(args_rnnlm)
-                    rnnlm.load_checkpoint(args.recog_rnnlm)
-                    if args_rnnlm.backward:
-                        model.rnnlm_bwd = rnnlm
+                    # Load the pre-trianed LM
+                    if args_lm.lm_type == 'gated_cnn':
+                        lm = GatedConvLM(args_lm)
                     else:
-                        model.rnnlm_fwd = rnnlm
+                        lm = RNNLM(args_lm)
+                    lm.load_checkpoint(args.recog_lm)
+                    if args_lm.backward:
+                        model.lm_bwd = lm
+                    else:
+                        model.lm_fwd = lm
 
-                if args.recog_rnnlm_bwd is not None and args.recog_rnnlm_weight > 0 and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
-                    # Load a RNNLM conf file
-                    conf_rnnlm = load_config(os.path.join(args.recog_rnnlm_bwd, 'conf.yml'))
+                if args.recog_lm_bwd is not None and args.recog_lm_weight > 0 and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
+                    # Load a LM conf file
+                    conf_lm = load_config(os.path.join(args.recog_lm_bwd, 'conf.yml'))
 
                     # Merge conf with args
-                    args_rnnlm_bwd = argparse.Namespace()
-                    for k, v in conf_rnnlm.items():
-                        setattr(args_rnnlm_bwd, k, v)
+                    args_lm_bwd = argparse.Namespace()
+                    for k, v in conf_lm.items():
+                        setattr(args_lm_bwd, k, v)
 
-                    # Load the pre-trianed RNNLM
-                    rnnlm_bwd = RNNLM(args_rnnlm_bwd)
-                    rnnlm_bwd.load_checkpoint(args.recog_rnnlm_bwd)
-                    model.rnnlm_bwd = rnnlm_bwd
+                    # Load the pre-trianed LM
+                    if args_lm.lm_type == 'gated_cnn':
+                        lm_bwd = GatedConvLM(args_lm_bwd)
+                    else:
+                        lm_bwd = RNNLM(args_lm_bwd)
+                    lm_bwd.load_checkpoint(args.recog_lm_bwd)
+                    model.lm_bwd = lm_bwd
 
             if not args.recog_unit:
                 args.recog_unit = args.unit
@@ -146,16 +153,16 @@ def main():
             logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
             logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
             logger.info('CTC weight: %.3f' % args.recog_ctc_weight)
-            logger.info('RNNLM path: %s' % args.recog_rnnlm)
-            logger.info('RNNLM path (bwd): %s' % args.recog_rnnlm_bwd)
-            logger.info('RNNLM weight: %.3f' % args.recog_rnnlm_weight)
+            logger.info('LM path: %s' % args.recog_lm)
+            logger.info('LM path (bwd): %s' % args.recog_lm_bwd)
+            logger.info('LM weight: %.3f' % args.recog_lm_weight)
             logger.info('GNMT: %s' % args.recog_gnmt_decoding)
             logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
             logger.info('reverse LM rescoring: %s' % args.recog_reverse_lm_rescoring)
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))
-            logger.info('RNNLM state carry over: %s' % (args.recog_rnnlm_state_carry_over))
+            logger.info('LM state carry over: %s' % (args.recog_lm_state_carry_over))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache type: %s' % (args.recog_cache_type))
             logger.info('cache word frequency threshold: %s' % (args.recog_cache_word_freq))

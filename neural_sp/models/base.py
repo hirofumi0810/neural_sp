@@ -187,7 +187,8 @@ class ModelBase(nn.Module):
         elif optimizer == 'momentum':
             self.optimizer = torch.optim.SGD(parameters,
                                              lr=learning_rate,
-                                             momentum=0.9,
+                                             #  momentum=0.9,
+                                             momentum=0.99,
                                              weight_decay=weight_decay,
                                              nesterov=False)
         elif optimizer == 'nesterov':

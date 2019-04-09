@@ -79,8 +79,8 @@ class GatedConvLM(ModelBase):
         self.cache_keys = []
         self.cache_attn = []
 
-        args.n_layers = 8
         args.kernel_size = 5  # 3, 4, 5
+        # TODO(hirofumi): make this hyperparameter
         args.channels = [args.n_units] * args.n_layers
 
         self.embed = Embedding(vocab=self.vocab,

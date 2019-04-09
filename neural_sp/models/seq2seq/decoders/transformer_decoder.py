@@ -405,14 +405,14 @@ class TransformerDecoder(nn.Module):
         # return best_hyps, aws
         return best_hyps, None
 
-    def decode_ctc(self, eouts, xlens, beam_width=1, rnnlm=None):
+    def decode_ctc(self, eouts, xlens, beam_width=1, lm=None):
         """Decoding by the CTC layer in the inference stage.
 
             This is only used for Joint CTC-Attention model.
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
             beam_width (int): size of beam
-            rnnlm ():
+            lm ():
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
 
@@ -421,7 +421,7 @@ class TransformerDecoder(nn.Module):
         if beam_width == 1:
             best_hyps = self.decode_ctc_greedy(log_probs, xlens)
         else:
-            best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width, rnnlm)
+            best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width, lm)
             # TODO(hirofumi): add decoding paramters
         return best_hyps
 

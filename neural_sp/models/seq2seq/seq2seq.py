@@ -19,6 +19,7 @@ from neural_sp.models.base import ModelBase
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
 from neural_sp.models.lm.brnnlm import BRNNLM
+from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.fwd_bwd_decoding import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn_decoder import RNNDecoder
@@ -184,15 +185,15 @@ class Seq2seq(ModelBase):
             directions.append('bwd')
         for dir in directions:
             # Cold fusion
-            if args.rnnlm_fusion and dir == 'fwd':
+            if args.lm_fusion and dir == 'fwd':
                 if 'bi' in args.lm_fusion_type:
-                    rnnlm = BRNNLM(args.rnnlm_conf)
+                    lm = BRNNLM(args.lm_conf)
                 else:
-                    rnnlm = RNNLM(args.rnnlm_conf)
-                    rnnlm.load_checkpoint(args.rnnlm_fusion)
+                    lm = RNNLM(args.lm_conf)
+                    lm.load_checkpoint(args.lm_fusion)
             else:
-                args.rnnlm_conf = False
-                rnnlm = None
+                args.lm_conf = False
+                lm = None
             # TODO(hirofumi): cold fusion for backward RNNLM
 
             # Decoder
@@ -259,11 +260,11 @@ class Seq2seq(ModelBase):
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                     input_feeding=args.input_feeding,
                     backward=(dir == 'bwd'),
-                    # rnnlm=args.rnnlm_conf,
-                    rnnlm=rnnlm,  # TODO(hirofumi): load RNNLM in the model init.
+                    # lm=args.lm_conf,
+                    lm=lm,  # TODO(hirofumi): load RNNLM in the model init.
                     lm_fusion_type=args.lm_fusion_type,
                     n_caches=args.n_caches,
-                    rnnlm_init=args.rnnlm_init,
+                    lm_init=args.lm_init,
                     lmobj_weight=args.lmobj_weight,
                     share_lm_softmax=args.share_lm_softmax,
                     global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
@@ -318,10 +319,10 @@ class Seq2seq(ModelBase):
                                          ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
                             input_feeding=args.input_feeding,
                             backward=(dir_sub == 'bwd'),
-                            rnnlm=None,
+                            lm=None,
                             lm_fusion_type='',
                             n_caches=0,
-                            rnnlm_init=None,
+                            lm_init=None,
                             lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
                             share_lm_softmax=args.share_lm_softmax,
                             global_weight=getattr(self, sub + '_weight'),
@@ -377,19 +378,19 @@ class Seq2seq(ModelBase):
         self.init_forget_gate_bias_with_one()
 
         # Initialize bias in gating with -1 for cold fusion
-        if args.rnnlm_fusion:
+        if args.lm_fusion:
             self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
 
-        if args.lm_fusion_type in ['deep', 'deep_original'] and args.rnnlm_fusion:
+        if args.lm_fusion_type in ['deep', 'deep_original'] and args.lm_fusion:
             for n, p in self.named_parameters():
                 if 'output' in n or 'output_bn' in n or 'cf_linear' in n:
                     p.requires_grad = True
                 else:
                     p.requires_grad = False
 
-        if args.lm_fusion_type in ['cache'] and args.rnnlm_fusion:
+        if args.lm_fusion_type in ['cache'] and args.lm_fusion:
             for n, p in self.named_parameters():
-                if 'output' in n or 'output_bn' in n or 'cache' in n or 'rnnlm' in n:
+                if 'output' in n or 'output_bn' in n or 'cache' in n or 'lm' in n:
                     p.requires_grad = True
                 else:
                     p.requires_grad = False
@@ -464,7 +465,7 @@ class Seq2seq(ModelBase):
 
         # for the forward decoder in the main task
         if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc',
-                                                                     'ys.lmobj', 'ys.rnnlm']:
+                                                                     'ys.lmobj', 'ys.lm']:
             ys_cache = []
             if perm_ids is None:
                 ys = batch['ys'][:]  # for lmobj
@@ -478,12 +479,12 @@ class Seq2seq(ModelBase):
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
             observation['loss.lmobj'] = obs_fwd['loss_lmobj']
-            observation['loss.rnnlm'] = obs_fwd['loss_rnnlm']
+            observation['loss.lm'] = obs_fwd['loss_lm']
             observation['acc.att'] = obs_fwd['acc_att']
             observation['acc.lmobj'] = obs_fwd['acc_lmobj']
             observation['ppl.att'] = obs_fwd['ppl_att']
             observation['ppl.lmobj'] = obs_fwd['ppl_lmobj']
-            observation['ppl.rnnlm'] = obs_fwd['ppl_rnnlm']
+            observation['ppl.lm'] = obs_fwd['ppl_lm']
 
         # for the backward decoder in the main task
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
@@ -645,7 +646,7 @@ class Seq2seq(ModelBase):
                 len_penalty (float): length penalty
                 cov_penalty (float): coverage penalty
                 cov_threshold (float): threshold for coverage penalty
-                rnnlm_weight (float): the weight of RNNLM score
+                lm_weight (float): the weight of RNNLM score
                 resolving_unk (bool): not used (to make compatible)
                 fwd_bwd_attention (bool):
             idx2token (): converter from index to token
@@ -690,13 +691,13 @@ class Seq2seq(ModelBase):
             # CTC
             #########################
             if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
-                rnnlm = None
-                if params['recog_rnnlm_weight'] > 0:
-                    rnnlm = getattr(self, 'rnnlm_' + dir)
+                lm = None
+                if params['recog_lm_weight'] > 0:
+                    lm = getattr(self, 'lm_' + dir)
 
                 best_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                    params['recog_beam_width'], rnnlm)
+                    params['recog_beam_width'], lm)
                 return best_hyps_id, None, perm_ids, (None, None)
 
             #########################
@@ -722,11 +723,11 @@ class Seq2seq(ModelBase):
                     # forward-backward decoding
                     if params['recog_fwd_bwd_attention']:
                         # forward decoder
-                        rnnlm_fwd, rnnlm_bwd = None, None
-                        if params['recog_rnnlm_weight'] > 0:
-                            rnnlm_fwd = self.rnnlm_fwd
+                        lm_fwd, lm_bwd = None, None
+                        if params['recog_lm_weight'] > 0:
+                            lm_fwd = self.lm_fwd
                             if params['recog_reverse_lm_rescoring']:
-                                rnnlm_bwd = self.rnnlm_bwd
+                                lm_bwd = self.lm_bwd
 
                         # ensemble (forward)
                         ensemble_eouts_fwd = []
@@ -742,16 +743,16 @@ class Seq2seq(ModelBase):
 
                         nbest_hyps_id_fwd, nbest_hyps_str_fwd, aws_fwd, scores_fwd, scores_cp_fwd, cache_info = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            params, idx2token, rnnlm_fwd, rnnlm_bwd, ctc_log_probs,
+                            params, idx2token, lm_fwd, lm_bwd, ctc_log_probs,
                             params['recog_beam_width'], False, refs_id, utt_ids, speakers,
                             ensemble_eouts_fwd, ensemble_elens_fwd, ensemble_decs_fwd)
 
                         # backward decoder
-                        rnnlm_bwd, rnnlm_fwd = None, None
-                        if params['recog_rnnlm_weight'] > 0:
-                            rnnlm_bwd = self.rnnlm_bwd
+                        lm_bwd, lm_fwd = None, None
+                        if params['recog_lm_weight'] > 0:
+                            lm_bwd = self.lm_bwd
                             if params['recog_reverse_lm_rescoring']:
-                                rnnlm_fwd = self.rnnlm_fwd
+                                lm_fwd = self.lm_fwd
 
                         # ensemble (backward)
                         ensemble_eouts_bwd = []
@@ -777,7 +778,7 @@ class Seq2seq(ModelBase):
                             enc_outs_bwd = enc_outs
                         nbest_hyps_id_bwd, nbest_hyps_str_bwd, aws_bwd, scores_bwd, scores_cp_bwd, _ = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
-                            params, idx2token, rnnlm_bwd, rnnlm_fwd, ctc_log_probs,
+                            params, idx2token, lm_bwd, lm_fwd, ctc_log_probs,
                             params['recog_beam_width'], False, refs_id, utt_ids, speakers,
                             ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decs_bwd)
 
@@ -804,25 +805,25 @@ class Seq2seq(ModelBase):
                                 ensemble_decs += [getattr(model, 'dec_' + dir)]
                                 # NOTE: only support for the main task now
 
-                        rnnlm, rnnlm_rev = None, None
-                        if params['recog_rnnlm_weight'] > 0 and hasattr(self, 'rnnlm_' + dir) and getattr(self, 'rnnlm_' + dir) is not None:
-                            rnnlm = getattr(self, 'rnnlm_' + dir)
+                        lm, lm_rev = None, None
+                        if params['recog_lm_weight'] > 0 and hasattr(self, 'lm_' + dir) and getattr(self, 'lm_' + dir) is not None:
+                            lm = getattr(self, 'lm_' + dir)
                             if params['recog_reverse_lm_rescoring']:
                                 if dir == 'fwd':
-                                    rnnlm_rev = self.rnnlm_bwd
+                                    lm_rev = self.lm_bwd
                                 else:
                                     raise NotImplementedError
 
                         nbest_hyps_id, nbest_hyps_str, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            params, idx2token, rnnlm, rnnlm_rev, ctc_log_probs,
+                            params, idx2token, lm, lm_rev, ctc_log_probs,
                             nbest, exclude_eos, refs_id, utt_ids, speakers,
                             ensemble_eouts, ensemble_elens, ensemble_decs,
                             store_cache=store_cache, refs_text=refs_text, word_list=word_list)
                         if params['recog_second_pass']:
                             nbest_hyps_id, nbest_hyps_str, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
                                 enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                                params, idx2token, rnnlm, rnnlm_rev, ctc_log_probs,
+                                params, idx2token, lm, lm_rev, ctc_log_probs,
                                 nbest, exclude_eos, refs_id, utt_ids, speakers,
                                 ensemble_eouts, ensemble_elens, ensemble_decs,
                                 second_pass=True, word_list=word_list)

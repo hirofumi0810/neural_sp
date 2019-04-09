@@ -33,7 +33,7 @@ class BeamSearchDecoder(object):
         self.space = space  # only for character-level CTC
 
     def __call__(self, log_probs, xlens, beam_width=1,
-                 rnnlm=None, rnnlm_weight=0, length_penalty=0):
+                 lm=None, lm_weight=0, length_penalty=0):
         """Performs inference for the given output probabilities.
 
         Args:
@@ -41,8 +41,8 @@ class BeamSearchDecoder(object):
                 (e.g. post-softmax) for each time step. `[B, T, vocab]`
             xlens (list): A list of length `[B]`
             beam_width (int): the size of beam
-            rnnlm (RNNLM):
-            rnnlm_weight (float): language model weight
+            lm (LM or GatedConvLM):
+            lm_weight (float): language model weight
             length_penalty (float): insertion bonus
         Returns:
             best_hyps (list): Best path hypothesis. `[B, L]`
@@ -59,9 +59,9 @@ class BeamSearchDecoder(object):
             beam = [{'hyp': [],
                      'p_blank': LOG_1,
                      'p_nonblank': LOG_1,
-                     'rnnlm_score': LOG_1,
-                     'rnnlm_hxs': None,
-                     'rnnlm_cxs': None}]
+                     'lm_score': LOG_1,
+                     'lm_hxs': None,
+                     'lm_cxs': None}]
 
             for t in range(xlens[b]):
                 new_beam = []
@@ -80,9 +80,9 @@ class BeamSearchDecoder(object):
                         prefix = beam[i_beam]['hyp']
                         p_blank = beam[i_beam]['p_blank']
                         p_nonblank = beam[i_beam]['p_nonblank']
-                        rnnlm_score = beam[i_beam]['rnnlm_score']
-                        rnnlm_hxs = beam[i_beam]['rnnlm_hxs']
-                        rnnlm_cxs = beam[i_beam]['rnnlm_cxs']
+                        lm_score = beam[i_beam]['lm_score']
+                        lm_hxs = beam[i_beam]['lm_hxs']
+                        lm_cxs = beam[i_beam]['lm_cxs']
 
                         # If we propose a blank the prefix doesn't change.
                         # Only the probability of ending in blank gets updated.
@@ -91,9 +91,9 @@ class BeamSearchDecoder(object):
                             new_beam.append({'hyp': beam[i_beam]['hyp'],
                                              'p_blank': new_p_blank,
                                              'p_nonblank': LOG_0,
-                                             'rnnlm_score': rnnlm_score,
-                                             'rnnlm_hxs': rnnlm_hxs[:] if rnnlm_hxs is not None else None,
-                                             'rnnlm_cxs': rnnlm_cxs[:] if rnnlm_cxs is not None else None})
+                                             'lm_score': lm_score,
+                                             'lm_hxs': lm_hxs[:] if lm_hxs is not None else None,
+                                             'lm_cxs': lm_cxs[:] if lm_cxs is not None else None})
                             continue
 
                         # Extend the prefix by the new character c and it to the
@@ -111,27 +111,27 @@ class BeamSearchDecoder(object):
                             # blank.
                             new_p_nonblank = p_blank + p_t
 
-                        # Update RNNLM states
-                        if rnnlm_weight > 0 and rnnlm is not None:
-                            y_rnnlm = log_probs.new(1, 1).fill_(c).long()
-                            y_rnnlm = rnnlm.embed(y_rnnlm)
-                            logits_step_rnnlm, rnnlm_out, rnnlm_state = rnnlm.predict(
-                                y_rnnlm, h=(rnnlm_hxs, rnnlm_cxs))
+                        # Update LM states
+                        if lm_weight > 0 and lm is not None:
+                            y_lm = log_probs.new(1, 1).fill_(c).long()
+                            y_lm = lm.embed(y_lm)
+                            logits_step_lm, lmout, lmstate = lm.predict(
+                                y_lm, h=(lm_hxs, lm_cxs))
                         else:
-                            rnnlm_state = None
+                            lmstate = None
 
-                        # # Add RNNLM score
-                        if rnnlm_weight > 0 and rnnlm is not None:
-                            rnnlm_log_probs = F.log_softmax(logits_step_rnnlm.squeeze(1), dim=1)
-                            assert log_probs[:, t, :].size() == rnnlm_log_probs.size()
-                            rnnlm_score = rnnlm_log_probs.data[0, c]
+                        # # Add LM score
+                        if lm_weight > 0 and lm is not None:
+                            lm_log_probs = F.log_softmax(logits_step_lm.squeeze(1), dim=1)
+                            assert log_probs[:, t, :].size() == lm_log_probs.size()
+                            lm_score = lm_log_probs.data[0, c]
 
                         new_beam.append({'hyp': beam[i_beam]['hyp'] + [c],
                                          'p_blank': new_p_blank,
                                          'p_nonblank': new_p_nonblank,
-                                         'rnnlm_score': rnnlm_score,
-                                         'rnnlm_hxs': rnnlm_state[0][:] if rnnlm_state is not None else None,
-                                         'rnnlm_cxs': rnnlm_state[1][:] if rnnlm_state is not None else None})
+                                         'lm_score': lm_score,
+                                         'lm_hxs': lmstate[0][:] if lmstate is not None else None,
+                                         'lm_cxs': lmstate[1][:] if lmstate is not None else None})
 
                         # If c is repeated at the end we also update the unchanged
                         # prefix. This is the merging case.
@@ -140,15 +140,15 @@ class BeamSearchDecoder(object):
                             new_beam.append({'hyp': beam[i_beam]['hyp'],
                                              'p_blank': new_p_blank,
                                              'p_nonblank': new_p_nonblank,
-                                             'rnnlm_score': rnnlm_score,
-                                             'rnnlm_hxs': rnnlm_state[0][:] if rnnlm_state is not None else None,
-                                             'rnnlm_cxs': rnnlm_state[1][:] if rnnlm_state is not None else None, })
+                                             'lm_score': lm_score,
+                                             'lm_hxs': lmstate[0][:] if lmstate is not None else None,
+                                             'lm_cxs': lmstate[1][:] if lmstate is not None else None, })
 
                 # Sort and trim the beam before moving on to the
                 # next time-step.
                 beam = sorted(new_beam,
                               key=lambda x: np.logaddexp(x['p_blank'], x['p_nonblank']) +
-                              x['rnnlm_score'] * rnnlm_weight,
+                              x['lm_score'] * lm_weight,
                               reverse=True)
                 beam = beam[:beam_width]
 

@@ -184,7 +184,7 @@ def parse():
     parser.add_argument('--batch_size', type=int, default=50,
                         help='size of mini-batch')
     parser.add_argument('--optimizer', type=str, default='adam',
-                        choices=['adam', 'adadelta', 'sgd'],
+                        choices=['adam', 'adadelta', 'sgd', 'momentum'],
                         help='')
     parser.add_argument('--learning_rate', type=float, default=1e-3,
                         help='')
@@ -293,11 +293,11 @@ def parse():
                         choices=['cold', 'cold_prob', 'cold_recurrency',
                                  'deep_original', 'deep',
                                  'cache',  'cache_bi'],
-                        help='type of RNNLM fusion')
-    parser.add_argument('--rnnlm_fusion', type=str, default=False, nargs='?',
-                        help='RNNLM for LM fusion during training')
-    # RNNLM initialization, objective
-    parser.add_argument('--rnnlm_init', type=str, default=False, nargs='?',
+                        help='type of LM fusion')
+    parser.add_argument('--lm_fusion', type=str, default=False, nargs='?',
+                        help='LM for LM fusion during training')
+    # LM initialization, objective
+    parser.add_argument('--lm_init', type=str, default=False, nargs='?',
                         help='')
     parser.add_argument('--lmobj_weight', type=float, default=0.0, nargs='?',
                         help='LM objective weight for the main task')
@@ -366,13 +366,13 @@ def parse():
                         help='coverage threshold')
     parser.add_argument('--recog_gnmt_decoding', type=strtobool, default=False, nargs='?',
                         help='adopt Google NMT beam search decoding')
-    parser.add_argument('--recog_rnnlm_weight', type=float, default=0.0,
-                        help='weight of RNNLM score')
+    parser.add_argument('--recog_lm_weight', type=float, default=0.0,
+                        help='weight of LM score')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
                         help='weight of CTC score')
-    parser.add_argument('--recog_rnnlm', type=str, default=None, nargs='?',
+    parser.add_argument('--recog_lm', type=str, default=None, nargs='?',
                         help='path to the RMMLM')
-    parser.add_argument('--recog_rnnlm_bwd', type=str, default=None, nargs='?',
+    parser.add_argument('--recog_lm_bwd', type=str, default=None, nargs='?',
                         help='path to the RMMLM in the reverse direction')
     parser.add_argument('--recog_resolving_unk', type=strtobool, default=False,
                         help='resolving UNK for the word-based model')
@@ -384,8 +384,8 @@ def parse():
                         help='rescore with another LM in the reverse direction')
     parser.add_argument('--recog_asr_state_carry_over', type=strtobool, default=False,
                         help='carry over ASR decoder state')
-    parser.add_argument('--recog_rnnlm_state_carry_over', type=strtobool, default=False,
-                        help='carry over RNNLM state')
+    parser.add_argument('--recog_lm_state_carry_over', type=strtobool, default=False,
+                        help='carry over LM state')
     parser.add_argument('--recog_concat_prev_n_utterances', type=int, default=0,
                         help='number of previous utterances to concatenate (for inference)')
     parser.add_argument('--recog_n_caches', type=int, default=0,

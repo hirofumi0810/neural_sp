@@ -66,7 +66,7 @@ def parse():
     parser.add_argument('--bptt', type=int, default=100,
                         help='')
     parser.add_argument('--optimizer', type=str, default='adam',
-                        choices=['adam', 'adadelta', 'sgd'],
+                        choices=['adam', 'adadelta', 'sgd', 'momentum'],
                         help='')
     parser.add_argument('--learning_rate', type=float, default=1e-3,
                         help='')

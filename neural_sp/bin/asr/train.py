@@ -162,17 +162,17 @@ def main():
     args.vocab_sub3 = train_set.vocab_sub3
     args.input_dim = train_set.input_dim
 
-    # Load a RNNLM conf file for cold fusion & RNNLM initialization
-    if args.rnnlm_fusion:
+    # Load a LM conf file for cold fusion & LM initialization
+    if args.lm_fusion:
         if args.model:
-            rnnlm_conf = load_config(os.path.join(os.path.dirname(args.rnnlm_fusion), 'conf.yml'))
+            lm_conf = load_config(os.path.join(os.path.dirname(args.lm_fusion), 'conf.yml'))
         elif args.resume:
-            rnnlm_conf = load_config(os.path.join(os.path.dirname(args.resume), 'conf_rnnlm.yml'))
-        args.rnnlm_conf = argparse.Namespace()
-        for k, v in rnnlm_conf.items():
-            setattr(args.rnnlm_conf, k, v)
-        assert args.unit == args.rnnlm_conf.unit
-        assert args.vocab == args.rnnlm_conf.vocab
+            lm_conf = load_config(os.path.join(os.path.dirname(args.resume), 'conf_lm.yml'))
+        args.lm_conf = argparse.Namespace()
+        for k, v in lm_conf.items():
+            setattr(args.lm_conf, k, v)
+        assert args.unit == args.lm_conf.unit
+        assert args.vocab == args.lm_conf.vocab
 
     if args.enc_type == 'transformer':
         args.decay_type = 'warmup'
@@ -214,8 +214,8 @@ def main():
 
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(model.save_path, 'conf.yml'))
-        if args.rnnlm_fusion:
-            save_config(args.rnnlm_conf, os.path.join(model.save_path, 'conf_rnnlm.yml'))
+        if args.lm_fusion:
+            save_config(args.lm_conf, os.path.join(model.save_path, 'conf_lm.yml'))
 
         # Save the nlsyms, dictionar, and wp_model
         if args.nlsyms:
@@ -320,8 +320,8 @@ def main():
             tasks = ['ys.ctc'] + tasks
         if args.lmobj_weight > 0:
             tasks = ['ys.lmobj'] + tasks
-        if args.rnnlm_fusion is not None and 'mtl' in args.lm_fusion_type:
-            tasks = ['ys.rnnlm'] + tasks
+        if args.lm_fusion is not None and 'mtl' in args.lm_fusion_type:
+            tasks = ['ys.lm'] + tasks
         for sub in ['sub1', 'sub2', 'sub3']:
             if getattr(args, 'train_set_' + sub):
                 if getattr(args, sub + '_weight') - getattr(args, 'bwd_weight_' + sub) - getattr(args, 'ctc_weight_' + sub) > 0:
@@ -585,7 +585,7 @@ def make_model_name(args, subsample_factor):
         dir_name += '_ln'
 
     # LM integration
-    if args.rnnlm_fusion:
+    if args.lm_fusion:
         dir_name += '_' + args.lm_fusion_type
         if args.n_caches > 0:
             dir_name += '_cache' + str(args.n_caches)

@@ -106,10 +106,10 @@ share_lm_softmax=
 n_caches=0
 
 #########################
-# RNNLM configuration
+# LM configuration
 #########################
 # topology
-lm_rnn_type=lstm
+lm_type=lstm
 lm_n_units=1024
 lm_n_projs=0
 lm_n_layers=2
@@ -147,7 +147,7 @@ model=/n/sd8/inaguma/result/csj
 
 ### path to the model directory to resume training
 resume=
-rnnlm_resume=
+lm_resume=
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -184,7 +184,7 @@ if [ -z ${gpu} ]; then
     exit 1
 fi
 n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
-rnnlm_gpu=$(echo ${gpu} | cut -d "," -f 1)
+lm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 train_set=train_${data_size}
 dev_set=dev_${data_size}
@@ -313,7 +313,7 @@ fi
 mkdir -p ${model}
 if [ ${stage} -le 3 ]; then
     echo ============================================================================
-    echo "                      RNNLM Training stage (stage:3)                       "
+    echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
 
     if [ ! -e ${data}/.done_stage_3_${data_size}${lm_data_size}_${unit}${wp_type}${vocab_size} ]; then
@@ -349,8 +349,8 @@ if [ ${stage} -le 3 ]; then
                  ${data}/dataset_lm/eval2_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
                  ${data}/dataset_lm/eval3_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv"
 
-    # NOTE: support only a single GPU for RNNLM training
-    CUDA_VISIBLE_DEVICES=${rnnlm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
+    # NOTE: support only a single GPU for LM training
+    CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus csj \
         --n_gpus 1 \
         --train_set ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
@@ -358,9 +358,9 @@ if [ ${stage} -le 3 ]; then
         --eval_sets ${lm_test_set} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
-        --model ${model}/rnnlm \
+        --model ${model}/lm \
         --unit ${unit} \
-        --rnn_type ${lm_rnn_type} \
+        --lm_type ${lm_type} \
         --n_units ${lm_n_units} \
         --n_projs ${lm_n_projs} \
         --n_layers ${lm_n_layers} \
@@ -389,9 +389,9 @@ if [ ${stage} -le 3 ]; then
         --dropout_emb ${lm_dropout_emb} \
         --weight_decay ${lm_weight_decay} \
         --backward ${lm_backward} || exit 1;
-    # --resume ${rnnlm_resume} || exit 1;
+    # --resume ${lm_resume} || exit 1;
 
-    echo "Finish RNNLM training (stage: 3)." && exit 1;
+    echo "Finish LM training (stage: 3)." && exit 1;
 fi
 
 if [ ${stage} -le 4 ]; then

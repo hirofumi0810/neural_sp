@@ -27,9 +27,9 @@ length_penalty=0.03
 coverage_penalty=0.03
 coverage_threshold=0.0
 gnmt_decoding=true
-rnnlm=
-rnnlm_bwd=
-rnnlm_weight=0.0
+lm=
+lm_bwd=
+lm_weight=0.0
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -42,8 +42,7 @@ cache_theta_speech=1.5
 cache_lambda_speech=0.1
 cache_theta_lm=1.0
 cache_lambda_lm=0.1
-cache_type=lm
-concat_prev_n_utterances=0
+cache_type=lm_fifo
 oracle=false
 
 . ./cmd.sh
@@ -69,14 +68,17 @@ for set in eval1 eval2 eval3; do
     if [ ${metric} != 'edit_distance' ]; then
         recog_dir=${recog_dir}_${metric}
     fi
-    if [ ${rnnlm_weight} != 0.0 ]; then
-        recog_dir=${recog_dir}_rnnlm${rnnlm_weight}
+    if [ ${lm_weight} != 0.0 ]; then
+        recog_dir=${recog_dir}_lm${lm_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
     fi
     if ${gnmt_decoding}; then
         recog_dir=${recog_dir}_gnmt
+    fi
+    if ${resolving_unk}; then
+        recog_dir=${recog_dir}_resolvingOOV
     fi
     if ${fwd_bwd_attention}; then
         recog_dir=${recog_dir}_fwdbwd
@@ -90,17 +92,11 @@ for set in eval1 eval2 eval3; do
     if ${asr_state_carry_over}; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${rnnlm_weight} != 0.0 ] && ${lm_state_carry_over}; then
+    if [ ${lm_weight} != 0.0 ] && ${lm_state_carry_over}; then
         recog_dir=${recog_dir}_LMcarryover
     fi
     if [ ${n_caches} != 0 ]; then
         recog_dir=${recog_dir}_${cache_type}cache${n_caches}
-        if [ ${cache_type} = speech ] || [ ${cache_type} = joint ]; then
-            recog_dir=${recog_dir}_sptheta${cache_theta_speech}_splambda${cache_lambda_speech}
-        fi
-        if [ ${rnnlm_weight} != 0.0 ] && ([ ${cache_type} = lm ] || [ ${cache_type} = joint ]); then
-            recog_dir=${recog_dir}_lmtheta${cache_theta_lm}_lmlambda${cache_lambda_lm}
-        fi
     fi
     if ${oracle}; then
         recog_dir=${recog_dir}_oracle
@@ -124,15 +120,15 @@ for set in eval1 eval2 eval3; do
 
     if [ $(echo ${model} | grep 'train_sp') ]; then
         if [ $(echo ${model} | grep 'all') ]; then
-            recog_set=${data}/dataset/${set}_sp_all_word30000.tsv
+            recog_set=${data}/dataset/${set}_sp_all_wpbpe30000.tsv
         elif [ $(echo ${model} | grep 'aps_other') ]; then
-            recog_set=${data}/dataset/${set}_sp_aps_other_word10000.tsv
+            recog_set=${data}/dataset/${set}_sp_aps_other_wpbpe10000.tsv
         fi
     else
         if [ $(echo ${model} | grep 'all') ]; then
-            recog_set=${data}/dataset/${set}_all_word30000.tsv
+            recog_set=${data}/dataset/${set}_all_wpbpe30000.tsv
         elif [ $(echo ${model} | grep 'aps_other') ]; then
-            recog_set=${data}/dataset/${set}_aps_other_word10000.tsv
+            recog_set=${data}/dataset/${set}_aps_other_wpbpe10000.tsv
         fi
     fi
 
@@ -151,23 +147,22 @@ for set in eval1 eval2 eval3; do
         --recog_coverage_penalty ${coverage_penalty} \
         --recog_coverage_threshold ${coverage_threshold} \
         --recog_gnmt_decoding ${gnmt_decoding} \
-        --recog_rnnlm ${rnnlm} \
-        --recog_rnnlm_bwd ${rnnlm_bwd} \
-        --recog_rnnlm_weight ${rnnlm_weight} \
+        --recog_lm ${lm} \
+        --recog_lm_bwd ${lm_bwd} \
+        --recog_lm_weight ${lm_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
         --recog_bwd_attention ${bwd_attention} \
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
-        --recog_rnnlm_state_carry_over ${lm_state_carry_over} \
+        --recog_lm_state_carry_over ${lm_state_carry_over} \
         --recog_n_caches ${n_caches} \
         --recog_cache_theta_speech ${cache_theta_speech} \
         --recog_cache_lambda_speech ${cache_lambda_speech} \
         --recog_cache_theta_lm ${cache_theta_lm} \
         --recog_cache_lambda_lm ${cache_lambda_lm} \
         --recog_cache_type ${cache_type} \
-        --recog_concat_prev_n_utterances ${concat_prev_n_utterances} \
         --recog_oracle ${oracle} \
         || exit 1;
 
