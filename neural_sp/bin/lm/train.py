@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Train the RNNLM."""
+"""Train the LM."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -29,6 +29,7 @@ from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
+from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.utils.general import mkdir_join
 
@@ -79,8 +80,11 @@ def main():
     args.vocab = train_set.vocab
 
     # Model setting
-    model = RNNLM(args)
-    dir_name = args.rnn_type
+    if args.lm_type == 'gated_cnn':
+        model = GatedConvLM(args)
+    else:
+        model = RNNLM(args)
+    dir_name = args.lm_type
     dir_name += str(args.n_units) + 'H'
     dir_name += str(args.n_projs) + 'P'
     dir_name += str(args.n_layers) + 'L'
@@ -189,7 +193,8 @@ def main():
         model.module.optimizer.step()
         loss_train = loss.item()
         del loss
-        hidden = model.module.repackage_hidden(hidden)
+        if args.lm_type != 'gated_cnn':
+            hidden = model.module.repackage_hidden(hidden)
         reporter.step(is_eval=False)
 
         if step % args.print_step == 0:

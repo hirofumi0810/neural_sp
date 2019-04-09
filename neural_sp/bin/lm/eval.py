@@ -5,7 +5,7 @@
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 
-"""Evaluate the RNNLM."""
+"""Evaluate the LM."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -19,6 +19,7 @@ from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
+from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 
 
@@ -54,10 +55,13 @@ def main():
                           is_test=True)
 
         if i == 0:
-            # Load the RNNLM
-            rnnlm = RNNLM(args)
-            epoch = rnnlm.load_checkpoint(args.recog_model[0])['epoch']
-            rnnlm.save_path = dir_name
+            # Load the LM
+            if args.lm_type == 'gated_cnn':
+                model = GatedConvLM(args)
+            else:
+                model = RNNLM(args)
+            epoch = model.load_checkpoint(args.recog_model[0])['epoch']
+            model.save_path = dir_name
 
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
@@ -67,16 +71,16 @@ def main():
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache theta: %.3f' % (args.recog_cache_theta))
             logger.info('cache lambda: %.3f' % (args.recog_cache_lambda))
-            rnnlm.cache_theta = args.recog_cache_theta
-            rnnlm.cache_lambda = args.recog_cache_lambda
+            model.cache_theta = args.recog_cache_theta
+            model.cache_lambda = args.recog_cache_lambda
 
             # GPU setting
-            rnnlm.cuda()
+            model.cuda()
 
         start_time = time.time()
 
         # TODO(hirofumi): ensemble
-        ppl, _ = eval_ppl([rnnlm], dataset, batch_size=1, bptt=args.bptt,
+        ppl, _ = eval_ppl([model], dataset, batch_size=1, bptt=args.bptt,
                           n_caches=args.recog_n_caches, progressbar=True)
         ppl_avg += ppl
         print('PPL (%s): %.2f' % (dataset.set, ppl))

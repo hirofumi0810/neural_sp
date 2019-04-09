@@ -84,13 +84,13 @@ class Dataset(Base):
         else:
             raise ValueError(unit)
 
-        # Load dataset csv file
+        # Load dataset tsv file
         self.df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
         self.df = self.df.loc[:, ['utt_id', 'speaker', 'feat_path',
                                   'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
 
-        # Sort csv records
+        # Sort tsv records
         if shuffle:
             self.df = self.df.reindex(np.random.permutation(self.df.index))
         elif serialize:
@@ -155,7 +155,7 @@ class Dataset(Base):
             self.epoch += 1
 
             if self.shuffle:
-                # Sort csv records
+                # Sort tsv records
                 self.df = self.df.reindex(np.random.permutation(self.df.index))
 
                 # Concatenate into a single sentence

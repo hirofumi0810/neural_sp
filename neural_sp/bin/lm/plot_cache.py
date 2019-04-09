@@ -19,6 +19,7 @@ from neural_sp.bin.asr.plot_utils import plot_cache_weights
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.loader_lm import Dataset
+from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.utils.general import mkdir_join
 
@@ -54,10 +55,13 @@ def main():
                           is_test=True)
 
         if i == 0:
-            # Load the RNNLM
-            rnnlm = RNNLM(args)
-            epoch = rnnlm.load_checkpoint(args.recog_model[0])['epoch']
-            rnnlm.save_path = dir_name
+            # Load the LM
+            if args.lm_type == 'gated_cnn':
+                model = GatedConvLM(args)
+            else:
+                model = RNNLM(args)
+            epoch = model.load_checkpoint(args.recog_model[0])['epoch']
+            model.save_path = dir_name
 
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
@@ -67,11 +71,11 @@ def main():
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache theta: %.3f' % (args.recog_cache_theta))
             logger.info('cache lambda: %.3f' % (args.recog_cache_lambda))
-            rnnlm.cache_theta = args.recog_cache_theta
-            rnnlm.cache_lambda = args.recog_cache_lambda
+            model.cache_theta = args.recog_cache_theta
+            model.cache_lambda = args.recog_cache_lambda
 
             # GPU setting
-            rnnlm.cuda()
+            model.cuda()
 
         assert args.recog_n_caches > 0
         save_path = mkdir_join(args.recog_dir, 'cache')
@@ -100,19 +104,19 @@ def main():
             ys, is_new_epoch = dataset.next()
 
             for t in range(ys.shape[1] - 1):
-                loss, hidden = rnnlm(ys[:, t:t + 2], hidden, is_eval=True, n_caches=args.recog_n_caches)[:2]
+                loss, hidden = model(ys[:, t:t + 2], hidden, is_eval=True, n_caches=args.recog_n_caches)[:2]
 
-                if len(rnnlm.cache_attn) > 0:
+                if len(model.cache_attn) > 0:
                     if toknen_count == n_tokens:
-                        tokens_keys = idx2token(rnnlm.cache_ids[:args.recog_n_caches], return_list=True)
-                        tokens_query = idx2token(rnnlm.cache_ids[-n_tokens:], return_list=True)
+                        tokens_keys = idx2token(model.cache_ids[:args.recog_n_caches], return_list=True)
+                        tokens_query = idx2token(model.cache_ids[-n_tokens:], return_list=True)
 
                         # Slide attention matrix
                         n_keys = len(tokens_keys)
                         n_queries = len(tokens_query)
                         cache_probs = np.zeros((n_keys, n_queries))  # `[n_keys, n_queries]`
                         mask = np.zeros((n_keys, n_queries))
-                        for i, aw in enumerate(rnnlm.cache_attn[-n_tokens:]):
+                        for i, aw in enumerate(model.cache_attn[-n_tokens:]):
                             cache_probs[:(n_keys - n_queries + i + 1), i] = aw[0, -(n_keys - n_queries + i + 1):]
                             mask[(n_keys - n_queries + i + 1):, i] = 1
 

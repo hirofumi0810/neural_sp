@@ -19,6 +19,7 @@ import torch.nn.functional as F
 from neural_sp.models.base import ModelBase
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
+from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
@@ -31,8 +32,8 @@ class RNNLM(ModelBase):
         super(ModelBase, self).__init__()
 
         self.emb_dim = args.emb_dim
-        self.rnn_type = args.rnn_type
-        assert args.rnn_type in ['lstm', 'gru']
+        self.rnn_type = args.lm_type
+        assert args.lm_type in ['lstm', 'gru']
         self.n_units = args.n_units
         self.n_layers = args.n_layers
         self.tie_embedding = args.tie_embedding
@@ -60,9 +61,9 @@ class RNNLM(ModelBase):
         self.fast_impl = False
         if args.n_projs == 0 and not args.residual:
             self.fast_impl = True
-            if 'lstm' in args.rnn_type:
+            if 'lstm' in args.lm_type:
                 rnn = nn.LSTM
-            elif 'gru' in args.rnn_type:
+            elif 'gru' in args.lm_type:
                 rnn = nn.GRU
             else:
                 raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
@@ -82,7 +83,7 @@ class RNNLM(ModelBase):
                 self.proj = torch.nn.ModuleList()
             rnn_idim = args.emb_dim
             for l in range(args.n_layers):
-                self.rnn += [getattr(nn, args.rnn_type.upper())(
+                self.rnn += [getattr(nn, args.lm_type.upper())(
                     rnn_idim, args.n_units, 1,
                     bias=True,
                     batch_first=True,
@@ -123,7 +124,7 @@ class RNNLM(ModelBase):
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
             self.init_weights(args.param_init, dist='orthogonal',
-                              keys=[args.rnn_type, 'weight'])
+                              keys=[args.lm_type, 'weight'])
 
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
@@ -205,11 +206,7 @@ class RNNLM(ModelBase):
             self.cache_keys += [ys_in]
 
         # Compute token-level accuracy in teacher-forcing
-        pad_pred = logits.view(ys_out.size(0), ys_out.size(1), logits.size(-1)).argmax(2)
-        mask = ys_out != self.pad
-        numerator = (pad_pred.masked_select(mask) == ys_out.masked_select(mask)).sum()
-        denominator = mask.sum()
-        acc = float(numerator) * 100 / float(denominator)
+        acc = compute_accuracy(logits, ys_out, pad=self.pad)
 
         observation = {'loss.rnnlm': loss.item(),
                        'acc.rnnlm': acc,
@@ -231,8 +228,7 @@ class RNNLM(ModelBase):
             ys (FloatTensor): `[B, L, emb_dim]`
 
         """
-        ys_emb = self.embed(ys)
-        return ys_emb
+        return self.embed(ys)
 
     def decode(self, ys_emb, hidden):
         """Decode function.
@@ -290,13 +286,12 @@ class RNNLM(ModelBase):
         """Generate function.
 
         Args:
-            hidden (FloatTensor):
+            hidden (FloatTensor): `[B, T, n_units]`
         Returns:
-            logits (FloatTensor):
+            logits (FloatTensor): `[B, T, vocab]`
 
         """
-        logits = self.output(hidden)
-        return logits
+        return self.output(hidden)
 
     def initialize_hidden(self, batch_size):
         """Initialize hidden states.

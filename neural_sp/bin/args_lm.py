@@ -30,6 +30,8 @@ def parse():
                         help='path to a tsv file for the development set')
     parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
                         help='path to tsv files for the evaluation sets')
+    parser.add_argument('--nlsyms', type=str, nargs='?',
+                        help='path to a non-linguistic symbols file')
     parser.add_argument('--dict', type=str,
                         help='path to a dictionary file')
     parser.add_argument('--unit', type=str, default='word',
@@ -41,17 +43,17 @@ def parse():
     parser.add_argument('--dynamic_batching', type=bool, default=False,
                         help='')
     # topology
-    parser.add_argument('--rnn_type', type=str, default='lstm',
-                        choices=['lstm', 'gru'],
-                        help='')
-    parser.add_argument('--n_units', type=int, default=320,
-                        help='')
+    parser.add_argument('--lm_type', type=str, default='lstm',
+                        choices=['lstm', 'gru', 'gated_cnn'],
+                        help='type of language model')
+    parser.add_argument('--n_units', type=int, default=512,
+                        help='number of units in each layer')
     parser.add_argument('--n_projs', type=int, default=0,
-                        help='')
+                        help='number of units in the projection layer')
     parser.add_argument('--n_layers', type=int, default=5,
-                        help='')
+                        help='number of layers')
     parser.add_argument('--emb_dim', type=int, default=5,
-                        help='')
+                        help='number of dimensions in the embedding layer')
     parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
                         help='Tie input and output embedding')
     parser.add_argument('--residual', type=strtobool, default=False, nargs='?',
@@ -107,11 +109,11 @@ def parse():
     parser.add_argument('--clip_grad_norm', type=float, default=5.0,
                         help='')
     parser.add_argument('--dropout_hidden', type=float, default=0.0,
-                        help='')
+                        help='dropout probability for the hidden layers')
     parser.add_argument('--dropout_out', type=float, default=0.0,
-                        help='')
+                        help='dropout probability for the output layer')
     parser.add_argument('--dropout_emb', type=float, default=0.0,
-                        help='')
+                        help='dropout probability for the embedding layer')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help='')
     parser.add_argument('--logits_temp', type=float, default=1.0,
