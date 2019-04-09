@@ -106,7 +106,7 @@ def parse():
     parser.add_argument('--enc_type', type=str, default='blstm',
                         choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn', 'transformer'],
                         help='type of the encoder')
-    parser.add_argument('--enc_n_units', type=int, default=320,
+    parser.add_argument('--enc_n_units', type=int, default=512,
                         help='number of units in each encoder RNN layer')
     parser.add_argument('--enc_n_projs', type=int, default=0,
                         help='number of units in the projection layer after each encoder RNN layer')
@@ -149,7 +149,7 @@ def parse():
     parser.add_argument('--dec_type', type=str, default='lstm',
                         choices=['lstm', 'gru', 'transformer'],
                         help='')
-    parser.add_argument('--dec_n_units', type=int, default=320,
+    parser.add_argument('--dec_n_units', type=int, default=512,
                         help='number of units in each decoder RNN layer')
     parser.add_argument('--dec_n_projs', type=int, default=0,
                         help='number of units in the projection layer after each decoder RNN layer')
@@ -168,7 +168,7 @@ def parse():
                         help='residual connection between each decoder layer')
     parser.add_argument('--input_feeding', type=bool, default=False, nargs='?',
                         help='')
-    parser.add_argument('--emb_dim', type=int, default=320,
+    parser.add_argument('--emb_dim', type=int, default=512,
                         help='number of dimensions in the embedding layer')
     parser.add_argument('--tie_embedding', type=bool, default=False, nargs='?',
                         help='tie weights between an embedding matrix and a linear layer before the softmax layer')
