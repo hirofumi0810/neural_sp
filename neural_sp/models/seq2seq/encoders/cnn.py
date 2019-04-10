@@ -15,7 +15,6 @@ import numpy as np
 import torch.nn as nn
 
 from neural_sp.models.model_utils import LinearND
-from neural_sp.models.seq2seq.encoders.cnn_utils import ConvOutSize
 
 
 class CNNEncoder(nn.Module):
@@ -142,3 +141,40 @@ class CNNEncoder(nn.Module):
         xlens = [self.get_conv_out_size(xlen, dim=1) for xlen in xlens]  # (freq, time)
 
         return xs, xlens
+
+
+class ConvOutSize(object):
+    """Return the size of outputs for CNN layers."""
+
+    def __init__(self, conv):
+        super(ConvOutSize, self).__init__()
+        self.conv = conv
+
+        if self.conv is None:
+            raise ValueError
+
+    def __call__(self, size, dim):
+        """
+
+        Args:
+            size (int):
+            dim (int): dim == 0 means frequency dimension, dim == 1 means
+                time dimension.
+        Returns:
+            size (int):
+
+        """
+        for m in self.conv._modules.values():
+            if type(m) in [nn.Conv2d, nn.MaxPool2d]:
+                if type(m) == nn.MaxPool2d:
+                    if m.ceil_mode:
+                        size = int(np.ceil(
+                            (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1))
+                    else:
+                        size = int(np.floor(
+                            (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1))
+                else:
+                    size = int(np.floor(
+                        (size + 2 * m.padding[dim] - m.kernel_size[dim]) / m.stride[dim] + 1))
+                # assert size >= 1
+        return size

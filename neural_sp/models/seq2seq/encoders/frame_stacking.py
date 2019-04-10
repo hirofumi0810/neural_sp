@@ -13,7 +13,7 @@ from __future__ import print_function
 import numpy as np
 
 
-def stack_frame(feat, nstacks, nskips, dtype=np.float32):
+def stack_frame(feat, n_stacks, n_skips, dtype=np.float32):
     """Stack & skip some frames. This implementation is based on
 
        https://arxiv.org/abs/1507.06947.
@@ -23,58 +23,55 @@ def stack_frame(feat, nstacks, nskips, dtype=np.float32):
 
     Args:
         feat (list): `[T, input_dim]`
-        nstacks (int): the number of frames to stack
-        nskips (int): the number of frames to skip
+        n_stacks (int): the number of frames to stack
+        n_skips (int): the number of frames to skip
         dtype ():
     Returns:
-        stacked_feat (np.ndarray): `[floor(T / nskips), input_dim * nstacks]`
+        stacked_feat (np.ndarray): `[floor(T / n_skips), input_dim * n_stacks]`
 
     """
-    if nstacks == 1 and nstacks == 1:
+    if n_stacks == 1 and n_stacks == 1:
         return feat
 
-    if nstacks < nskips:
-        raise ValueError('nskips must be less than nstacks.')
+    if n_stacks < n_skips:
+        raise ValueError('n_skips must be less than n_stacks.')
 
     frame_num, input_dim = feat.shape
-    frame_num_new = (frame_num + 1) // nskips
+    frame_num_new = (frame_num + 1) // n_skips
 
-    stacked_feat = np.zeros((frame_num_new, input_dim * nstacks), dtype=dtype)
+    stacked_feat = np.zeros((frame_num_new, input_dim * n_stacks), dtype=dtype)
     stack_count = 0
     stack = []
     for t, frame_t in enumerate(feat):
-
-        # final frame
-        if t == len(feat) - 1:
+        if t == len(feat) - 1:  # final frame
             # Stack the final frame
             stack.append(frame_t)
 
             while stack_count != int(frame_num_new):
                 # Concatenate stacked frames
                 for i in range(len(stack)):
-                    stacked_feat[stack_count][input_dim *
-                                              i:input_dim * (i + 1)] = stack[i]
+                    stacked_feat[stack_count][input_dim
+                                              * i:input_dim * (i + 1)] = stack[i]
                 stack_count += 1
 
                 # Delete some frames to skip
-                for _ in range(nskips):
+                for _ in range(n_skips):
                     if len(stack) != 0:
                         stack.pop(0)
 
-        # first & middle frames
-        elif len(stack) < nstacks:
+        elif len(stack) < n_stacks:  # first & middle frames
             # Stack some frames until stack is filled
             stack.append(frame_t)
 
-            if len(stack) == nstacks:
-                    # Concatenate stacked frames
-                for i in range(nstacks):
-                    stacked_feat[stack_count][input_dim *
-                                              i:input_dim * (i + 1)] = stack[i]
-                stack_count += 1
+        if len(stack) == n_stacks:
+            # Concatenate stacked frames
+            for i in range(n_stacks):
+                stacked_feat[stack_count][input_dim
+                                          * i:input_dim * (i + 1)] = stack[i]
+            stack_count += 1
 
-                # Delete some frames to skip
-                for _ in range(nskips):
-                    stack.pop(0)
+            # Delete some frames to skip
+            for _ in range(n_skips):
+                stack.pop(0)
 
     return stacked_feat
