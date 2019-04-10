@@ -98,8 +98,8 @@ mtl_per_batch=true
 task_specific_layer=
 ### LM integration
 lm_fusion_type=cold
-rnnlm_fusion=
-rnnlm_init=
+lm_fusion=
+lm_init=
 lmobj_weight=0.0
 share_lm_softmax=
 
@@ -122,7 +122,7 @@ lm_optimizer=adam
 lm_learning_rate=1e-3
 lm_n_epochs=40
 lm_convert_to_sgd_epoch=40
-lm_print_step=50
+lm_print_step=200
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
@@ -448,8 +448,8 @@ if [ ${stage} -le 4 ]; then
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \
         --lm_fusion_type ${lm_fusion_type} \
-        --rnnlm_fusion ${rnnlm_fusion} \
-        --rnnlm_init ${rnnlm_init} \
+        --lm_fusion ${lm_fusion} \
+        --lm_init ${lm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
         --resume ${resume} || exit 1;

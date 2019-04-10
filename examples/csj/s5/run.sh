@@ -98,8 +98,8 @@ mtl_per_batch=true
 task_specific_layer=
 ### LM integration
 lm_fusion_type=cold
-rnnlm_fusion=
-rnnlm_init=
+lm_fusion=
+lm_init=
 lmobj_weight=0.0
 share_lm_softmax=
 # contextualization
@@ -474,8 +474,8 @@ if [ ${stage} -le 4 ]; then
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \
         --lm_fusion_type ${lm_fusion_type} \
-        --rnnlm_fusion ${rnnlm_fusion} \
-        --rnnlm_init ${rnnlm_init} \
+        --lm_fusion ${lm_fusion} \
+        --lm_init ${lm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
         --n_caches ${n_caches} \

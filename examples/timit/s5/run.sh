@@ -108,7 +108,6 @@ if [ -z ${gpu} ]; then
     exit 1
 fi
 n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
-rnnlm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 train_set=train
 dev_set=dev
@@ -177,7 +176,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2 ]; then
     touch ${data}/.done_stage_2 && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
-# NOTE: skip RNNLM training (stage:3)
+# NOTE: skip LM training (stage:3)
 
 mkdir -p ${model}
 if [ ${stage} -le 4 ]; then
