@@ -48,7 +48,7 @@ def eval_word(models, dataset, recog_params, epoch,
         recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
         recog_dir += '_cp' + str(recog_params['recog_coverage_penalty'])
         recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
-        recog_dir += '_rnnlm' + str(recog_params['recog_rnnlm_weight'])
+        recog_dir += '_lm' + str(recog_params['recog_lm_weight'])
 
         ref_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
         hyp_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
@@ -67,7 +67,7 @@ def eval_word(models, dataset, recog_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, best_hyps_str, aws, perm_ids, _ = models[0].decode(
+            best_hyps_id, aws, perm_ids, _ = models[0].decode(
                 batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=True,
                 refs_id=batch['ys'],
@@ -80,16 +80,15 @@ def eval_word(models, dataset, recog_params, epoch,
             for b in range(len(batch['xs'])):
                 ref = ys[b]
                 hyp = dataset.idx2token[0](best_hyps_id[b])
-                # hyp = best_hyps_str[b]
 
                 n_oov_total += hyp.count('<unk>')
 
                 # Resolving UNK
                 if recog_params['recog_resolving_unk'] and '<unk>' in hyp:
                     recog_params_char = copy.deepcopy(recog_params)
-                    recog_params_char['recog_rnnlm_weight'] = 0
+                    recog_params_char['recog_lm_weight'] = 0
                     recog_params_char['recog_beam_width'] = 1
-                    best_hyps_id_char, _, aw_char, _, _ = models[0].decode(
+                    best_hyps_id_char, aw_char, _, _ = models[0].decode(
                         batch['xs'][b:b + 1], recog_params_char,
                         dataset.idx2token[1],
                         exclude_eos=True,

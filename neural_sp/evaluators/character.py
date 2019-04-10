@@ -47,7 +47,7 @@ def eval_char(models, dataset, recog_params, epoch,
         recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
         recog_dir += '_cp' + str(recog_params['recog_coverage_penalty'])
         recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
-        recog_dir += '_rnnlm' + str(recog_params['recog_rnnlm_weight'])
+        recog_dir += '_lm' + str(recog_params['recog_lm_weight'])
 
         ref_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
         hyp_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
@@ -74,7 +74,7 @@ def eval_char(models, dataset, recog_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, _, _, perm_ids, _ = models[0].decode(
+            best_hyps_id, _, perm_ids, _ = models[0].decode(
                 batch['xs'], recog_params, dataset.idx2token[task_idx],
                 exclude_eos=True,
                 refs_id=batch['ys'] if task_idx == 0 else batch['ys_sub' + str(task_idx)],
