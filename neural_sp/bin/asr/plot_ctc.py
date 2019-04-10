@@ -92,8 +92,8 @@ def main():
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps, aws, perm_ids, _ = model.decode(batch['xs'], recog_params,
-                                                       exclude_eos=False)
+            best_hyps_id, aws, perm_ids, _ = model.decode(batch['xs'], recog_params,
+                                                          exclude_eos=False)
             ys = [batch['ys'][i] for i in perm_ids]
 
             # Get CTC probs
@@ -102,7 +102,7 @@ def main():
             # NOTE: ctc_probs: '[B, T, topk]'
 
             for b in range(len(batch['xs'])):
-                tokens = dataset.idx2token[0](best_hyps[b], return_list=True)
+                tokens = dataset.idx2token[0](best_hyps_id[b], return_list=True)
                 tokens = [unicode(t, 'utf-8') for t in tokens]
                 spk = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
 

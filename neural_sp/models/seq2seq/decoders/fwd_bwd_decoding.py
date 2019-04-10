@@ -15,8 +15,8 @@ import logging
 logger = logging.getLogger("decoding")
 
 
-def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
-                      nbest_hyps_bwd, aws_bwd, scores_bwd, scores_cp_bwd,
+def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
+                      nbest_hyps_bwd, aws_bwd, scores_bwd,
                       flip, eos, gnmt_decoding, lp_weight, idx2token=None, refs=None):
     """Decoding with the forward and backward attention-based decoders.
 
@@ -24,11 +24,9 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
         nbest_hyps_fwd (list): A list of length `[B]`, which contains list of n hypotheses
         aws_fwd (list): A list of length `[B]`, which contains arrays of size `[L, T]`
         scores_fwd (list):
-        scores_cp_fwd (list):
         nbest_hyps_bwd (list):
         aws_bwd (list):
         scores_bwd (list):
-        scores_cp_bwd (list):
         flip (bool):
         eos (int):
         gnmt_decoding ():
@@ -94,16 +92,6 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
                             score_curr_bwd = scores_bwd[b][n_b][i_b] - scores_bwd[b][n_b][i_b + 1]
                             score_curr = max(score_curr_fwd, score_curr_bwd)
                             new_score = scores_fwd[b][n_f][i_f - 1] + scores_bwd[b][n_b][i_b + 1] + score_curr
-                            # if gnmt_decoding:
-                            #     lp = (math.pow(5 + len(nbest_hyps_fwd[b][n_f][:i_f + 1]) + len(nbest_hyps_bwd[b][n_b][i_b + 1:]),
-                            #                    lp_weight)) / math.pow(6, lp_weight)
-                            #     new_score /= lp
-
-                            # coverage
-                            # score_cp_curr_fwd = scores_cp_fwd[b][n_f][i_f] - scores_cp_fwd[b][n_f][i_f - 1]
-                            # score_cp_curr_bwd = scores_cp_bwd[b][n_b][i_b] - scores_cp_bwd[b][n_b][i_b + 1]
-                            # score_cp_curr = max(score_cp_curr_fwd, score_cp_curr_bwd)
-                            # new_score += scores_cp_fwd[b][n_f][i_f - 1] + scores_cp_bwd[b][n_b][i_b + 1] + score_cp_curr
                             merged.append({'hyp': new_hyp, 'score': new_score})
 
                             logger.info('time matching')

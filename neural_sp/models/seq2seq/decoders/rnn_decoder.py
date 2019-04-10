@@ -140,6 +140,7 @@ class RNNDecoder(nn.Module):
         self.unk = unk
         self.pad = pad
         self.blank = blank
+        self.vocab = vocab
         self.rnn_type = rnn_type
         assert rnn_type in ['lstm', 'gru']
         self.enc_n_units = enc_n_units
@@ -1012,12 +1013,14 @@ class RNNDecoder(nn.Module):
         oracle = params['recog_oracle']
         beam_width = params['recog_beam_width']
         ctc_weight = params['recog_ctc_weight']
+        max_len_ratio = params['recog_max_len_ratio']
+        min_len_ratio = params['recog_min_len_ratio']
         lp_weight = params['recog_length_penalty']
         cp_weight = params['recog_coverage_penalty']
         cp_threshold = params['recog_coverage_threshold']
         lm_weight = params['recog_lm_weight']
         gnmt_decoding = params['recog_gnmt_decoding']
-        hard_attention_limit = params['recog_hard_attention_limit']
+        hard_attn_limit = params['recog_hard_attention_limit']
         eos_threshold = params['recog_eos_threshold']
         prune_threshold = params['recog_prune_threshold']
         asr_state_carry_over = params['recog_asr_state_carry_over']
@@ -1041,7 +1044,7 @@ class RNNDecoder(nn.Module):
             else:
                 ctc_prefix_score = CTCPrefixScore(tensor2np(ctc_log_probs)[0], self.blank, self.eos)
 
-        nbest_hyps_idx, nbest_hyps_str, aws, scores, scores_cp = [], [], [], [], []
+        nbest_hyps_idx, aws, scores = [], [], []
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
@@ -1081,26 +1084,25 @@ class RNNDecoder(nn.Module):
             complete = []
             beam = [{'hyp_id': [self.eos],
                      'ref_id': [self.eos],
-                     'score': 0,
-                     'scores': [0],
-                     'scores_cp': [0],
-                     'score_attn': 0,
-                     'score_ctc': 0,
-                     'score_lm': 0,
+                     'score': 0.0,
+                     'hist_score': [0.0],
+                     'score_attn': 0.0,
+                     'score_ctc': 0.0,
+                     'score_lm': 0.0,
                      'dstates': dstates,
                      'cv': cv,
                      'cv_cache': cv_cache,
                      'hxs_cache': hxs_cache,
                      'cxs_cache': cxs_cache,
                      'aws': [None],
+                     'aw_prev': 0,
                      'lm_hxs': lm_hxs,
                      'lm_cxs': lm_cxs,
-                     'cp_prev': 0,
                      'ensemble_dstates': ensemble_dstates,
                      'ensemble_cv': ensemble_cv,
                      'ensemble_aws':[[None] for _ in range(n_models)],
                      'ctc_state':  ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
-                     'ctc_score': 0,
+                     'ctc_score': 0.0,
                      'cache_ids': [],
                      'dict_cache_sp': {},
                      'cache_sp_key': [],
@@ -1113,22 +1115,19 @@ class RNNDecoder(nn.Module):
                 assert refs_id is not None
                 ylen_max = len(refs_id[b]) + 1
             else:
-                ylen_max = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
+                ylen_max = int(math.floor(elens[b] * max_len_ratio)) + 1
             for t in range(ylen_max):
                 new_beam = []
                 for i_beam in range(len(beam)):
                     prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam[i_beam]['hyp_id'][-1]
 
-                    if 'recurrency' in self.lm_fusion_type:
-                        raise NotImplementedError
-
-                    # Recurrency (1st) for the main model
+                    # Recurrency for the main model
                     y = eouts.new_zeros(1, 1).fill_(prev_idx).long()
                     y_emb = self.embed(y)
                     dstates = self.recurrency(y_emb,
                                               beam[i_beam]['cv'],
                                               beam[i_beam]['dstates']['dstate'])
-                    # Recurrency (1st) for the ensemble
+                    # Recurrency for the ensemble
                     ensemble_dstates = []
                     if n_models > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
@@ -1296,35 +1295,44 @@ class RNNDecoder(nn.Module):
                                 cache_ids = [self.eos]
                             cache_lm_attn = aw_cache.unsqueeze(2)
 
-                    log_probs = torch.log(probs)
+                    local_scores_attn = torch.log(probs)
                     # Generate for the ensemble
                     if n_models > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
-                            attn_v, _ = dec.generate(ensemble_cv[i_e],
-                                                     ensemble_dstates[i_e]['dout_gen'],
-                                                     lmout)
-                            log_probs += F.log_softmax(dec.output(attn_v).squeeze(1), dim=1)
+                            attn_v, _, _ = dec.generate(ensemble_cv[i_e],
+                                                        ensemble_dstates[i_e]['dout_gen'],
+                                                        lmout)
+                            local_scores_attn += F.log_softmax(dec.output(attn_v).squeeze(1), dim=1)
                         # re-normalize
-                        log_probs /= (n_models + 1)
-                        # TODO(hirofumi): cache
+                        local_scores_attn /= (n_models + 1)
+
+                    # Attention scores
+                    scores_attn = beam[i_beam]['score_attn'] + local_scores_attn
+                    global_scores = scores_attn * (1 - ctc_weight)
 
                     # Pick up the top-k scores
-                    log_probs_topk, topk_ids = torch.topk(log_probs, k=beam_width, dim=1, largest=True, sorted=True)
-                    scores_attn = beam[i_beam]['score_attn'] + log_probs_topk
-                    local_scores = scores_attn.clone()
+                    global_scores_topk, topk_ids = torch.topk(
+                        global_scores, k=beam_width, dim=1, largest=True, sorted=True)
+
+                    # Add LM score
+                    if lm_weight > 0:
+                        global_scores_lm = beam[i_beam]['score_lm'] + torch.log(lm_probs)[0, topk_ids[0]]
+                        global_scores_topk += global_scores_lm * lm_weight
+                    else:
+                        global_scores_lm = torch.zeros((beam_width), dtype=torch.float32)
 
                     # Add length penalty
-                    lp = 1
+                    lp = 1.0
                     if lp_weight > 0:
                         if gnmt_decoding:
                             lp = (math.pow(5 + (len(beam[i_beam]['hyp_id']) - 1 + 1),
                                            lp_weight)) / math.pow(6, lp_weight)
-                            local_scores /= lp
+                            global_scores_topk /= lp
                         else:
-                            local_scores += (len(beam[i_beam]['hyp_id']) - 1 + 1) * lp_weight
+                            global_scores_topk += (len(beam[i_beam]['hyp_id']) - 1 + 1) * lp_weight
 
                     # Add coverage penalty
-                    cp = torch.zeros((), dtype=torch.float32)
+                    cp = 0.0
                     aw_mat = None
                     if cp_weight > 0:
                         aw_mat = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=-1)  # `[B, T, len(hyp)]`
@@ -1332,7 +1340,7 @@ class RNNDecoder(nn.Module):
                             aw_mat = torch.log(aw_mat.sum(-1))
                             cp = torch.where(aw_mat < 0, aw_mat, torch.zeros_like(aw_mat)).sum()
                             # TODO (hirofumi): mask by elens[b]
-                            local_scores += cp * cp_weight
+                            global_scores_topk += cp * cp_weight
                         else:
                             # Recompute converage penalty in each step
                             if cp_threshold == 0:
@@ -1340,64 +1348,52 @@ class RNNDecoder(nn.Module):
                             else:
                                 cp = torch.where(aw_mat > cp_threshold, aw_mat,
                                                  torch.zeros_like(aw_mat)).sum() / self.score.n_heads
-                            local_scores += cp * cp_weight
-
-                    local_scores *= (1 - ctc_weight)
-
-                    # Add LM score
-                    if lm_weight > 0:
-                        lm_log_probs = torch.log(lm_probs)
-                        scores_lm = beam[i_beam]['score_lm'] + lm_log_probs[0, topk_ids[0]]
-                        score_lm_norm = scores_lm / lp  # normalize by length
-                        local_scores += score_lm_norm * lm_weight
-                    else:
-                        scores_lm = torch.zeros((beam_width,), dtype=torch.float32)
+                            global_scores_topk += cp * cp_weight
 
                     # CTC score
                     if ctc_weight > 0 and ctc_log_probs is not None:
                         ctc_scores, ctc_states = ctc_prefix_score(
                             beam[i_beam]['hyp_id'], topk_ids[0], beam[i_beam]['ctc_state'])
-                        scores_ctc = beam[i_beam]['score_ctc'] + torch.from_numpy(
-                            ctc_scores - beam[i_beam]['ctc_score']).cuda(self.device_id)
-                        scores_ctc_norm = scores_ctc / lp  # normalize
-                        local_scores += scores_ctc_norm * ctc_weight
-                        local_scores, joint_ids_topk = torch.topk(local_scores, beam_width, dim=1)
+                        global_scores_ctc = torch.from_numpy(ctc_scores).cuda(self.device_id)
+                        global_scores += global_scores_ctc * ctc_weight
+                        global_scores, joint_ids_topk = torch.topk(global_scores, beam_width, dim=1)
                         topk_ids = topk_ids[:, joint_ids_topk[0]]
                     else:
-                        scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
+                        global_scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
 
+                    max_score = local_scores_attn[0, :self.eos].max(0)[0].item()
+                    max_score = max(max_score, local_scores_attn[0, self.eos + 1:].max(0)[0].item())
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
+                        total_score = global_scores_topk[0, k].item()
 
                         # Exclude short hypotheses
-                        if idx == self.eos and len(beam[i_beam]['hyp_id']) - 1 < elens[b] * params['recog_min_len_ratio']:
-                            continue
-
-                        score_attn = scores_attn[0, k].item()
-                        score_ctc = scores_ctc[k].item()
-                        score_lm = scores_lm[k].item()
-                        score_t = score_attn * (1 - ctc_weight) + score_ctc * ctc_weight + score_lm * lm_weight
+                        if idx == self.eos:
+                            if len(beam[i_beam]['hyp_id']) - 1 < elens[b] * min_len_ratio:
+                                continue
+                            if local_scores_attn[0, idx].item() <= eos_threshold * max_score:
+                                continue
+                            if aw[0].argmax(0) - beam[i_beam]['aw_prev'] > hard_attn_limit:
+                                continue
 
                         new_beam.append(
                             {'hyp_id': beam[i_beam]['hyp_id'] + [idx],
                              'ref_id': beam[i_beam]['ref_id'] + refs_id[b][t:t + 1] if oracle else [],
-                             'score': local_scores[0, k].item(),
-                             #  'scores': beam[i_beam]['scores'] + [score_t],
-                             'scores': beam[i_beam]['scores'] + [local_scores[0, k].item()],
-                             'scores_cp': beam[i_beam]['scores_cp'] + [cp * cp_weight],
-                             'score_attn': score_attn,  # total score
+                             'score': total_score,
+                             'hist_score': beam[i_beam]['hist_score'] + [total_score],
+                             'score_attn': scores_attn[0, idx].item(),
                              'score_cp': cp,
-                             'score_ctc': score_ctc,  # total score
-                             'score_lm': score_lm,  # total score
+                             'score_ctc':  global_scores_ctc[k].item(),
+                             'score_lm': global_scores_lm[k].item(),
                              'dstates': dstates,
                              'cv': attn_v if self.input_feeding else cv,
                              'cv_cache': cv_cache,
                              'hxs_cache': hxs_cache,
                              'cxs_cache': cxs_cache,
                              'aws': beam[i_beam]['aws'] + [aw],
+                             'aw_prev': aw[0].argmax(0),
                              'lm_hxs': lmstate[0][:] if lmstate is not None else None,
                              'lm_cxs': lmstate[1][:] if lmstate is not None else None,
-                             'cp_prev': cp,
                              'ensemble_dstates': ensemble_dstates,
                              'ensemble_cv': ensemble_cv,
                              'ensemble_aws': ensemble_aws,
@@ -1441,27 +1437,29 @@ class RNNDecoder(nn.Module):
 
             # backward LM rescoring
             if lm_rev is not None and lm_weight > 0:
-                for cand in complete:
+                for i in range(len(complete)):
                     # Initialize
                     lm_rev_hxs, lm_rev_cxs = None, None
-                    score_lm_rev = 0
-                    lp = 1
+                    score_lm_rev = 0.0
+                    lp = 1.0
 
                     # Append <eos>
-                    if cand['hyp_id'][-1] != self.eos:
-                        cand['hyp_id'].append(self.eos)
+                    if complete[i]['hyp_id'][-1] != self.eos:
+                        complete[i]['hyp_id'].append(self.eos)
+                        logger.info('Append <eos>.')
 
                     if lp_weight > 0 and gnmt_decoding:
-                        lp = (math.pow(5 + (len(cand['hyp_id']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
-                    for t in range(len(cand['hyp_id'][1:])):
+                        lp = (math.pow(5 + (len(complete[i]['hyp_id']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
+                    for t in range(len(complete[i]['hyp_id'][1:])):
                         lm_out_rev, (lm_rev_hxs, lm_rev_cxs) = lm_rev.decode(
-                            lm_rev.encode(eouts.new_zeros(1, 1).fill_(cand['hyp_id'][-1 - t]).long()),
+                            lm_rev.encode(eouts.new_zeros(1, 1).fill_(complete[i]['hyp_id'][-1 - t]).long()),
                             (lm_hxs, lm_rev_cxs))
                         lm_log_probs = F.log_softmax(lm_rev.generate(lm_out_rev).squeeze(1), dim=-1)
-                        score_lm_rev += lm_log_probs[0, cand['hyp_id'][-2 - t]]
-                    score_lm_rev /= lp  # normalize
-                    cand['score'] += score_lm_rev * lm_weight
-                    cand['score_lm_rev'] = score_lm_rev * lm_weight
+                        score_lm_rev += lm_log_probs[0, complete[i]['hyp_id'][-2 - t]]
+                    if gnmt_decoding:
+                        score_lm_rev /= lp  # normalize
+                    complete[i]['score'] += score_lm_rev * lm_weight
+                    complete[i]['score_lm_rev'] = score_lm_rev
 
             # Sort by score
             complete = sorted(complete, key=lambda x: x['score'], reverse=True)
@@ -1474,16 +1472,14 @@ class RNNDecoder(nn.Module):
                     aws += [[complete[n]['aws'][0, 1:][::-1] for n in range(nbest)]]
                 else:
                     aws += [[complete[n]['aws'][1:][::-1] for n in range(nbest)]]
-                scores += [[complete[n]['scores'][1:][::-1] for n in range(nbest)]]
-                scores_cp += [[complete[n]['scores_cp'][1:][::-1] for n in range(nbest)]]
+                scores += [[complete[n]['hist_score'][1:][::-1] for n in range(nbest)]]
             else:
                 nbest_hyps_idx += [[np.array(complete[n]['hyp_id'][1:]) for n in range(nbest)]]
                 if self.score.n_heads > 1:
                     aws += [[complete[n]['aws'][0, 1:] for n in range(nbest)]]
                 else:
                     aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
-                scores += [[complete[n]['scores'][1:] for n in range(nbest)]]
-                scores_cp += [[complete[n]['scores_cp'][1:] for n in range(nbest)]]
+                scores += [[complete[n]['hist_score'][1:] for n in range(nbest)]]
 
             # Check <eos>
             eos_flag = [True if complete[n]['hyp_id'][-1] == self.eos else False for n in range(nbest)]
@@ -1503,7 +1499,7 @@ class RNNDecoder(nn.Module):
                 if lm_weight > 0:
                     logger.info('log prob (hyp, lm): %.7f' % (complete[k]['score_lm'] * lm_weight))
                     if lm_rev is not None:
-                        logger.info('log prob (hyp, lm rev): %.7f' % (complete[k]['score_lm_rev']))
+                        logger.info('log prob (hyp, lm reverse): %.7f' % (complete[k]['score_lm_rev'] * lm_weight))
                 if n_caches > 0:
                     logger.info('Cache: %d' % (len(self.fifo_cache_ids) + len(complete[k]['cache_ids'])))
 
@@ -1517,11 +1513,9 @@ class RNNDecoder(nn.Module):
             if self.backward:
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][1:] if eos_flags[b][n]
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
-                nbest_hyps_str = [[nbest_hyps_str[b][n].split('<eos> ')[-1] for n in range(nbest)] for b in range(bs)]
             else:
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][:-1] if eos_flags[b][n]
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
-                nbest_hyps_str = [[nbest_hyps_str[b][n].split(' <eos>')[0] for n in range(nbest)] for b in range(bs)]
 
         # Store in cache
         cache_idx_hist = None
@@ -1575,8 +1569,6 @@ class RNNDecoder(nn.Module):
                     cache_sp_attn_hist = torch.cat(complete[0]['cache_sp_attn_hist'], dim=-1).cpu().numpy()
 
                 for t, idx in enumerate(complete[0]['hyp_id'][1:]):
-                    if len(word_list) > 0 and idx not in word_list:
-                        continue
                     if idx == self.eos:
                         continue
                     if idx != self.unk and idx in self.dict_cache_sp.keys():
@@ -1613,8 +1605,6 @@ class RNNDecoder(nn.Module):
                     cache_lm_attn_hist = torch.cat(complete[0]['cache_lm_attn_hist'], dim=-1).cpu().numpy()
 
                 for t, idx in enumerate(complete[0]['hyp_id'][1:]):
-                    if len(word_list) > 0 and idx not in word_list:
-                        continue
                     if idx == self.eos:
                         continue
                     if idx in self.dict_cache_lm.keys():
@@ -1641,9 +1631,9 @@ class RNNDecoder(nn.Module):
         self.lmstate_final = (complete[0]['lm_hxs'], complete[0]['lm_cxs'])
 
         if 'speech' in cache_type:
-            return nbest_hyps_idx, nbest_hyps_str, aws, scores, scores_cp, (cache_sp_attn_hist, cache_idx_hist)
+            return nbest_hyps_idx, aws, scores, (cache_sp_attn_hist, cache_idx_hist)
         else:
-            return nbest_hyps_idx, nbest_hyps_str, aws, scores, scores_cp, (cache_lm_attn_hist, cache_idx_hist)
+            return nbest_hyps_idx, aws, scores, (cache_lm_attn_hist, cache_idx_hist)
 
     def reset_global_cache(self):
         """Reset global cache when the speaker/session is changed."""

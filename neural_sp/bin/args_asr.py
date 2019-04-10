@@ -366,6 +366,12 @@ def parse():
                         help='coverage threshold')
     parser.add_argument('--recog_gnmt_decoding', type=strtobool, default=False, nargs='?',
                         help='adopt Google NMT beam search decoding')
+    parser.add_argument('--recog_hard_attention_limit', type=int, default=30,
+                        help='')
+    parser.add_argument('--recog_eos_threshold', type=float, default=1.5,
+                        help='')
+    parser.add_argument('--recog_prune_threshold', type=float, default=10,
+                        help='')
     parser.add_argument('--recog_lm_weight', type=float, default=0.0,
                         help='weight of LM score')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,

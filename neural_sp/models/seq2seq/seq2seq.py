@@ -629,8 +629,7 @@ class Seq2seq(ModelBase):
 
     def decode(self, xs, params, idx2token, nbest=1, exclude_eos=False,
                refs_id=None, refs_text=None, utt_ids=None, speakers=None,
-               task='ys', ensemble_models=[],
-               store_cache=False, word_list=[]):
+               task='ys', ensemble_models=[]):
         """Decoding in the inference stage.
 
         Args:
@@ -654,7 +653,6 @@ class Seq2seq(ModelBase):
             speakers (list):
             task (str): ys* or ys_sub1* or ys_sub2* or ys_sub3*
             ensemble_models (list): list of Seq2seq classes
-            word_list (list):
         Returns:
             best_hyps_id (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -703,7 +701,7 @@ class Seq2seq(ModelBase):
                 best_hyps_str = None
                 cache_info = (None, None)
 
-                if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention'] and not store_cache:
+                if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
                     best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
                         params['recog_max_len_ratio'], exclude_eos, idx2token, refs_id,
@@ -737,7 +735,7 @@ class Seq2seq(ModelBase):
                                 ensemble_decs_fwd += [model.dec_fwd]
                                 # NOTE: only support for the main task now
 
-                        nbest_hyps_id_fwd, nbest_hyps_str_fwd, aws_fwd, scores_fwd, scores_cp_fwd, cache_info = self.dec_fwd.beam_search(
+                        nbest_hyps_id_fwd, aws_fwd, scores_fwd, cache_info = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, lm_fwd, lm_bwd, ctc_log_probs,
                             params['recog_beam_width'], False, refs_id, utt_ids, speakers,
@@ -772,7 +770,7 @@ class Seq2seq(ModelBase):
                             enc_outs_bwd, _ = self.encode(xs, task, flip=True)
                         else:
                             enc_outs_bwd = enc_outs
-                        nbest_hyps_id_bwd, nbest_hyps_str_bwd, aws_bwd, scores_bwd, scores_cp_bwd, _ = self.dec_bwd.beam_search(
+                        nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, lm_bwd, lm_fwd, ctc_log_probs,
                             params['recog_beam_width'], False, refs_id, utt_ids, speakers,
@@ -780,8 +778,8 @@ class Seq2seq(ModelBase):
 
                         # forward-backward attention
                         best_hyps_id = fwd_bwd_attention(
-                            nbest_hyps_id_fwd, aws_fwd, scores_fwd, scores_cp_fwd,
-                            nbest_hyps_id_bwd, aws_bwd, scores_bwd, scores_cp_bwd,
+                            nbest_hyps_id_fwd, aws_fwd, scores_fwd,
+                            nbest_hyps_id_bwd, aws_bwd, scores_bwd,
                             flip, self.eos, params['recog_gnmt_decoding'], params['recog_length_penalty'],
                             idx2token, refs_id)
                         aws = None
@@ -810,7 +808,7 @@ class Seq2seq(ModelBase):
                                 else:
                                     raise NotImplementedError
 
-                        nbest_hyps_id, nbest_hyps_str, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
+                        nbest_hyps_id, aws, scores, cache_info = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, lm, lm_rev, ctc_log_probs,
                             nbest, exclude_eos, refs_id, utt_ids, speakers,
@@ -818,10 +816,9 @@ class Seq2seq(ModelBase):
 
                         if nbest == 1:
                             best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
-                            best_hyps_str = [hyp[0] for hyp in nbest_hyps_str]
                             aws = [aw[0] for aw in aws]
                         else:
-                            return nbest_hyps_id, nbest_hyps_str, aws, scores, perm_ids, cache_info
+                            return nbest_hyps_id, aws, scores, perm_ids, cache_info
                         # NOTE: nbest >= 2 is used for MWER training only
 
-                return best_hyps_id, best_hyps_str, aws, perm_ids, cache_info
+                return best_hyps_id, aws, perm_ids, cache_info

@@ -87,7 +87,7 @@ def main():
                     ensemble_models += [model_e]
 
             # For shallow fusion
-            if not args.rnnlm_fusion:
+            if not args.lm_fusion:
                 if args.recog_lm is not None and args.recog_lm_weight > 0:
                     # Load a LM conf file
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm), 'conf.yml'))
@@ -149,7 +149,7 @@ def main():
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))
-            logger.info('LM state carry over: %s' % (args.recog_rnnlm_state_carry_over))
+            logger.info('LM state carry over: %s' % (args.recog_lm_state_carry_over))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache type: %s' % (args.recog_cache_type))
             logger.info('cache word frequency threshold: %s' % (args.recog_cache_word_freq))
@@ -157,42 +157,31 @@ def main():
             logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
             logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
             logger.info('cache lambda (lm): %.3f' % (args.recog_cache_lambda_lm))
-            logger.info('concat_prev_n_utterances: %d' % (args.recog_concat_prev_n_utterances))
 
             # GPU setting
             model.cuda()
             # TODO(hirofumi): move this
 
-        word_list = set([])
-        if args.recog_word_count_list and args.recog_unit == 'word':
-            with codecs.open(args.recog_word_count_list, 'r', 'utf-8') as f:
-                for line in f:
-                    count, w = line.strip().split()
-                    if int(count) <= args.recog_cache_word_freq:
-                        word_list |= set(dataset.token2idx[0](w))
-                word_list = list(word_list)
-
         save_path = mkdir_join(args.recog_dir, 'att_weights')
-        if args.recog_n_caches > 0 or args.cache_prev_n_tokens > 0:
+        if args.recog_n_caches > 0:
             save_path_cache = mkdir_join(args.recog_dir, 'cache')
 
         # Clean directory
         if save_path is not None and os.path.isdir(save_path):
             shutil.rmtree(save_path)
             os.mkdir(save_path)
-            if args.recog_n_caches > 0 or args.cache_prev_n_tokens > 0:
+            if args.recog_n_caches > 0:
                 shutil.rmtree(save_path_cache)
                 os.mkdir(save_path_cache)
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, _, aws, perm_ids, (cache_attn_hist, cache_id_hist) = model.decode(
+            best_hyps_id, aws, perm_ids, (cache_attn_hist, cache_id_hist) = model.decode(
                 batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=False,
                 refs_id=batch['ys'],
                 ensemble_models=ensemble_models[1:] if len(ensemble_models) > 1 else [],
-                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
-                word_list=word_list)
+                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
             refs_text = [batch['text'][i] for i in perm_ids]
 
             if model.bwd_weight > 0.5:
