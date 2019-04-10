@@ -98,10 +98,6 @@ class Seq2seq(ModelBase):
         self.fwd_weight_sub2 = self.sub2_weight - self.bwd_weight_sub2 - self.ctc_weight_sub2
         self.fwd_weight_sub3 = self.sub3_weight - self.bwd_weight_sub3 - self.ctc_weight_sub3
 
-        # for regularization
-        self.gaussian_noise_std = args.gaussian_noise_std
-        self._gaussian_noise = True if args.gaussian_noise_std > 0 and args.gaussian_noise_timing == 'constant' else False
-
         # Encoder
         if args.enc_type == 'transformer':
             self.enc = TransformerEncoder(
@@ -818,15 +814,7 @@ class Seq2seq(ModelBase):
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, lm, lm_rev, ctc_log_probs,
                             nbest, exclude_eos, refs_id, utt_ids, speakers,
-                            ensemble_eouts, ensemble_elens, ensemble_decs,
-                            store_cache=store_cache, refs_text=refs_text, word_list=word_list)
-                        if params['recog_second_pass']:
-                            nbest_hyps_id, nbest_hyps_str, aws, scores, _, cache_info = getattr(self, 'dec_' + dir).beam_search(
-                                enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                                params, idx2token, lm, lm_rev, ctc_log_probs,
-                                nbest, exclude_eos, refs_id, utt_ids, speakers,
-                                ensemble_eouts, ensemble_elens, ensemble_decs,
-                                second_pass=True, word_list=word_list)
+                            ensemble_eouts, ensemble_elens, ensemble_decs)
 
                         if nbest == 1:
                             best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]

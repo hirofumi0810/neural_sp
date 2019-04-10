@@ -973,9 +973,7 @@ class RNNDecoder(nn.Module):
     def beam_search(self, eouts, elens, params, idx2token,
                     lm=None, lm_rev=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False, refs_id=None, utt_ids=None, speakers=None,
-                    ensemble_eouts=None, ensemble_elens=None, ensemble_decoders=[],
-                    store_cache=False, refs_text=None,
-                    word_list=[]):
+                    ensemble_eouts=None, ensemble_elens=None, ensemble_decoders=[]):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -1002,9 +1000,6 @@ class RNNDecoder(nn.Module):
             ensemble_eouts (list): list of FloatTensor
             ensemble_elens (list) list of list
             ensemble_decoders (list): list of torch.nn.Module
-            store_cache (bool):
-            refs_text (list):
-            word_list (list):
         Returns:
             nbest_hyps_idx (list): A list of length `[B]`, which contains list of n hypotheses
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -1022,6 +1017,9 @@ class RNNDecoder(nn.Module):
         cp_threshold = params['recog_coverage_threshold']
         lm_weight = params['recog_lm_weight']
         gnmt_decoding = params['recog_gnmt_decoding']
+        hard_attention_limit = params['recog_hard_attention_limit']
+        eos_threshold = params['recog_eos_threshold']
+        prune_threshold = params['recog_prune_threshold']
         asr_state_carry_over = params['recog_asr_state_carry_over']
         lm_state_carry_over = params['recog_lm_state_carry_over']
         n_caches = params['recog_n_caches']
@@ -1030,7 +1028,6 @@ class RNNDecoder(nn.Module):
         cache_theta_lm = params['recog_cache_theta_lm']
         cache_lambda_lm = params['recog_cache_lambda_lm']
         cache_type = params['recog_cache_type']
-        concat_prev_n_utterances = params['recog_concat_prev_n_utterances']
 
         if lm is not None:
             lm.eval()
@@ -1083,9 +1080,7 @@ class RNNDecoder(nn.Module):
 
             complete = []
             beam = [{'hyp_id': [self.eos],
-                     'hyp_str': ['<eos>'],
                      'ref_id': [self.eos],
-                     'ref_str': ['<eos>'],
                      'score': 0,
                      'scores': [0],
                      'scores_cp': [0],
@@ -1116,8 +1111,6 @@ class RNNDecoder(nn.Module):
                      }]
             if oracle:
                 assert refs_id is not None
-                if store_cache:
-                    assert refs_text is not None
                 ylen_max = len(refs_id[b]) + 1
             else:
                 ylen_max = int(math.floor(elens[b] * params['recog_max_len_ratio'])) + 1
@@ -1167,15 +1160,13 @@ class RNNDecoder(nn.Module):
                     lmout, lmstate = None, None
                     if self.lm is not None:
                         # Update LM states for cold fusion
-                        y_lm = eouts.new_zeros(1, 1).fill_(prev_idx).long()
                         lmout, lmstate = self.lm.decode(
-                            self.lm.encode(y_lm),
+                            self.lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx).long()),
                             (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
                     elif lm_weight > 0:
                         # Update LM states for shallow fusion
-                        y_lm = eouts.new_zeros(1, 1).fill_(prev_idx).long()
                         lmout, lmstate = lm.decode(
-                            lm.encode(y_lm),
+                            lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx).long()),
                             (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
 
                     dout_cache = None
@@ -1387,32 +1378,9 @@ class RNNDecoder(nn.Module):
                         score_lm = scores_lm[k].item()
                         score_t = score_attn * (1 - ctc_weight) + score_ctc * ctc_weight + score_lm * lm_weight
 
-                        # Recover from OOV cache
-                        oov = '<unk>'
-                        if not store_cache and idx == self.unk and cache_type == 'static' and len(self.static_cache.keys()) > 0:
-                            cache_words = sorted(list(self.static_cache.keys()))
-                            cache_sp_key = [v['key']
-                                            for k, v in sorted(self.static_cache.items(), key=lambda x: x[0])]
-                            cache_sp_utt_ids = [v['utt_id']
-                                                for k, v in sorted(self.static_cache.items(), key=lambda x: x[0])]
-                            cache_sp_key = torch.cat(cache_sp_key, dim=1)
-                            cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
-                                cache_sp_key, torch.cat([cv, dstates['dout_gen']], dim=-1).transpose(2, 1)), dim=1)  # `[1, L, 1]`
-                            # Copy form OOV cache
-                            confidence = cache_sp_attn.max(1)[0].item()
-                            if confidence > 0.5:
-                                offset = cache_sp_attn.argmax(1)
-                                if utt_ids[b] == cache_sp_utt_ids[offset]:
-                                    logger.info('Skip static cache because of the same utterance.')
-                                else:
-                                    oov = cache_words[offset]
-                                    logger.info('Key matching: %s (conf: %.2f)' % (oov, confidence))
-
                         new_beam.append(
                             {'hyp_id': beam[i_beam]['hyp_id'] + [idx],
-                             'hyp_str': beam[i_beam]['hyp_str'] + [idx2token([idx]) if oov == '<unk>' else oov],
                              'ref_id': beam[i_beam]['ref_id'] + refs_id[b][t:t + 1] if oracle else [],
-                             'ref_str': beam[i_beam]['ref_str'] + refs_text[b].split(' ')[t:t + 1] if store_cache else [],
                              'score': local_scores[0, k].item(),
                              #  'scores': beam[i_beam]['scores'] + [score_t],
                              'scores': beam[i_beam]['scores'] + [local_scores[0, k].item()],
@@ -1454,7 +1422,7 @@ class RNNDecoder(nn.Module):
                         else:
                             not_complete += [cand]
                     else:
-                        if cand['hyp_id'][-1] == self.eos and cand['hyp_id'].count(self.eos) >= concat_prev_n_utterances + 2:
+                        if cand['hyp_id'][-1] == self.eos:
                             complete += [cand]
                         else:
                             not_complete += [cand]
@@ -1486,9 +1454,9 @@ class RNNDecoder(nn.Module):
                     if lp_weight > 0 and gnmt_decoding:
                         lp = (math.pow(5 + (len(cand['hyp_id']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
                     for t in range(len(cand['hyp_id'][1:])):
-                        y_lm = eouts.new_zeros(1, 1).fill_(cand['hyp_id'][-1 - t]).long()
                         lm_out_rev, (lm_rev_hxs, lm_rev_cxs) = lm_rev.decode(
-                            lm_rev.encode(y_lm), (lm_hxs, lm_rev_cxs))
+                            lm_rev.encode(eouts.new_zeros(1, 1).fill_(cand['hyp_id'][-1 - t]).long()),
+                            (lm_hxs, lm_rev_cxs))
                         lm_log_probs = F.log_softmax(lm_rev.generate(lm_out_rev).squeeze(1), dim=-1)
                         score_lm_rev += lm_log_probs[0, cand['hyp_id'][-2 - t]]
                     score_lm_rev /= lp  # normalize
@@ -1502,7 +1470,6 @@ class RNNDecoder(nn.Module):
             if self.backward:
                 # Reverse the order
                 nbest_hyps_idx += [[np.array(complete[n]['hyp_id'][1:][::-1]) for n in range(nbest)]]
-                nbest_hyps_str += [[' '.join(complete[n]['hyp_str'][1:][::-1]) for n in range(nbest)]]
                 if self.score.n_heads > 1:
                     aws += [[complete[n]['aws'][0, 1:][::-1] for n in range(nbest)]]
                 else:
@@ -1511,7 +1478,6 @@ class RNNDecoder(nn.Module):
                 scores_cp += [[complete[n]['scores_cp'][1:][::-1] for n in range(nbest)]]
             else:
                 nbest_hyps_idx += [[np.array(complete[n]['hyp_id'][1:]) for n in range(nbest)]]
-                nbest_hyps_str += [[' '.join(complete[n]['hyp_str'][1:]) for n in range(nbest)]]
                 if self.score.n_heads > 1:
                     aws += [[complete[n]['aws'][0, 1:] for n in range(nbest)]]
                 else:
@@ -1670,29 +1636,11 @@ class RNNDecoder(nn.Module):
                             self.dict_cache_lm.pop(oldest_id)
                 self.total_step += len(complete[0]['hyp_id'][1:])
 
-        elif store_cache:
-            assert oracle
-            for t, idx in enumerate(complete[0]['ref_id'][1:]):
-                if len(word_list) > 0 and complete[0]['ref_str'][t + 1] not in word_list:
-                    continue
-                if len(word_list) == 0 and idx != self.unk:
-                    continue
-                if complete[0]['ref_str'][t + 1] in self.static_cache.keys():
-                    continue
-                self.static_cache[complete[0]['ref_str'][t + 1]] = {
-                    'key': complete[0]['cache_sp_key'][t],
-                    'value': complete[0]['cache_sp_key'][t],
-                    'count': 1,
-                    'time': 1,
-                    'utt_id': utt_ids[0]}
-                logger.info('Register to the static cache: %s' % complete[0]['ref_str'][t + 1])
-                self.static_cache_utt_ids.append(utt_ids[0])
-
         # Store ASR/LM state
         self.dstates_final = complete[0]['dstates']
         self.lmstate_final = (complete[0]['lm_hxs'], complete[0]['lm_cxs'])
 
-        if 'speech' in cache_type or 'static' in cache_type:
+        if 'speech' in cache_type:
             return nbest_hyps_idx, nbest_hyps_str, aws, scores, scores_cp, (cache_sp_attn_hist, cache_idx_hist)
         else:
             return nbest_hyps_idx, nbest_hyps_str, aws, scores, scores_cp, (cache_lm_attn_hist, cache_idx_hist)
