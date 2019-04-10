@@ -31,11 +31,13 @@ class GLUblock(nn.Module):
         self.pad_left = nn.ConstantPad1d((kernel_size - 1, 0), 0)
         self.conv = nn.utils.weight_norm(nn.Conv1d(in_channels=in_ch,
                                                    out_channels=out_ch,
-                                                   kernel_size=kernel_size))
+                                                   kernel_size=kernel_size),
+                                         name='weight')
         self.bias_b = nn.Parameter(torch.zeros(out_ch, 1))
         self.conv_gate = nn.utils.weight_norm(nn.Conv1d(in_channels=in_ch,
                                                         out_channels=out_ch,
-                                                        kernel_size=kernel_size))
+                                                        kernel_size=kernel_size),
+                                              name='weight')
         self.bias_c = nn.Parameter(torch.zeros(out_ch, 1))
 
     def forward(self, x):

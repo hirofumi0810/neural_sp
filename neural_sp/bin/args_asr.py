@@ -184,7 +184,7 @@ def parse():
     parser.add_argument('--batch_size', type=int, default=50,
                         help='size of mini-batch')
     parser.add_argument('--optimizer', type=str, default='adam',
-                        choices=['adam', 'adadelta', 'sgd', 'momentum'],
+                        choices=['adam', 'adadelta', 'sgd', 'momentum', 'nesterov'],
                         help='')
     parser.add_argument('--learning_rate', type=float, default=1e-3,
                         help='')
