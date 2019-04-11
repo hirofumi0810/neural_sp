@@ -23,10 +23,11 @@ batch_size=1
 beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=0.03
-coverage_penalty=0.03
+length_penalty=1.0
+coverage_penalty=0.0
 coverage_threshold=0.0
-gnmt_decoding=true
+gnmt_decoding=false
+eos_threshold=1.5
 lm=
 lm_bwd=
 lm_weight=0.0
@@ -37,12 +38,6 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_caches=0
-cache_theta_speech=1.5
-cache_lambda_speech=0.1
-cache_theta_lm=1.0
-cache_lambda_lm=0.1
-cache_type=lm_fifo
 oracle=false
 
 . ./cmd.sh
@@ -95,9 +90,6 @@ for set in test_dev93 test_eval92; do
     if [ ${lm_weight} != 0.0 ] && ${lm_state_carry_over}; then
         recog_dir=${recog_dir}_LMcarryover
     fi
-    if [ ${n_caches} != 0 ]; then
-        recog_dir=${recog_dir}_${cache_type}cache${n_caches}
-    fi
     if ${oracle}; then
         recog_dir=${recog_dir}_oracle
     fi
@@ -119,7 +111,7 @@ for set in test_dev93 test_eval92; do
     mkdir -p ${recog_dir}
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
-        --recog_sets ${data}/dataset/${set}_char.csv \
+        --recog_sets ${data}/dataset/${set}_char.tsv \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
@@ -133,6 +125,7 @@ for set in test_dev93 test_eval92; do
         --recog_coverage_penalty ${coverage_penalty} \
         --recog_coverage_threshold ${coverage_threshold} \
         --recog_gnmt_decoding ${gnmt_decoding} \
+        --recog_eos_threshold ${eos_threshold} \
         --recog_lm ${lm} \
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
@@ -143,22 +136,16 @@ for set in test_dev93 test_eval92; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
-        --recog_n_caches ${n_caches} \
-        --recog_cache_theta_speech ${cache_theta_speech} \
-        --recog_cache_lambda_speech ${cache_lambda_speech} \
-        --recog_cache_theta_lm ${cache_theta_lm} \
-        --recog_cache_lambda_lm ${cache_lambda_lm} \
-        --recog_cache_type ${cache_type} \
         --recog_oracle ${oracle} \
         || exit 1;
 
-    # remove <unk>
-    # cp ${recog_dir}/hyp.trn ${recog_dir}/hyp.trn.bk
-    # cat ${recog_dir}/hyp.trn.bk | grep -i -v -E '<unk>' > ${recog_dir}/hyp.trn
+    # remove <noise>
+    cat ${recog_dir}/ref.trn | sed 's:<noise>::g' > ${recog_dir}/ref.trn.filt
+    cat ${recog_dir}/hyp.trn | sed 's:<noise>::g' > ${recog_dir}/hyp.trn.filt
 
     if [ ${metric} = 'edit_distance' ]; then
       echo ${set}
-      sclite -r ${recog_dir}/ref.trn trn -h ${recog_dir}/hyp.trn trn -i rm -o all stdout > ${recog_dir}/result.txt
+      sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
       grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS
       cat ${recog_dir}/RESULTS
     fi

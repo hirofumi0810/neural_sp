@@ -22,10 +22,11 @@ batch_size=1
 beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=0.03
-coverage_penalty=0.03
+length_penalty=0.0
+coverage_penalty=0.0
 coverage_threshold=0.0
-gnmt_decoding=true
+gnmt_decoding=false
+eos_threshold=1.5
 lm=
 lm_bwd=
 lm_weight=0.0
@@ -142,6 +143,7 @@ for set in eval1 eval2 eval3; do
         --recog_coverage_penalty ${coverage_penalty} \
         --recog_coverage_threshold ${coverage_threshold} \
         --recog_gnmt_decoding ${gnmt_decoding} \
+        --recog_eos_threshold ${eos_threshold} \
         --recog_lm ${lm} \
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \

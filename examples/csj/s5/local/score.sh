@@ -23,10 +23,11 @@ batch_size=1
 beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=0.03
-coverage_penalty=0.03
+length_penalty=0.0
+coverage_penalty=0.0
 coverage_threshold=0.0
-gnmt_decoding=true
+gnmt_decoding=false
+eos_threshold=1.5
 lm=
 lm_bwd=
 lm_weight=0.0
@@ -147,6 +148,7 @@ for set in eval1 eval2 eval3; do
         --recog_coverage_penalty ${coverage_penalty} \
         --recog_coverage_threshold ${coverage_threshold} \
         --recog_gnmt_decoding ${gnmt_decoding} \
+        --recog_eos_threshold ${eos_threshold} \
         --recog_lm ${lm} \
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
@@ -167,12 +169,12 @@ for set in eval1 eval2 eval3; do
         || exit 1;
 
     # remove <unk>
-    # cp ${recog_dir}/hyp.trn ${recog_dir}/hyp.trn.bk
-    # cat ${recog_dir}/hyp.trn.bk | grep -i -v -E '<unk>' > ${recog_dir}/hyp.trn
+    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
+    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
 
     if [ ${metric} = 'edit_distance' ]; then
       echo ${set}
-      sclite -r ${recog_dir}/ref.trn trn -h ${recog_dir}/hyp.trn trn -i rm -o all stdout > ${recog_dir}/result.txt
+      sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
       grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS
       cat ${recog_dir}/RESULTS
     fi
