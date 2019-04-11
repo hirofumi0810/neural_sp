@@ -10,8 +10,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from glob import glob
 import logging
 import os
+import torch
 import yaml
 
 logger = logging.getLogger('training')
@@ -70,9 +72,118 @@ def set_logger(save_path, key):
     return logger
 
 
-def dict2args():
-    pass
+def set_save_path(save_path):
+    """Change directory name to avoid name ovarlapping.
+
+    Args:
+        save_path (str):
+    Returns:
+        save_path_new (str):
+
+    """
+    # Reset model directory
+    model_idx = 0
+    save_path_new = save_path
+    while True:
+        if os.path.isfile(os.path.join(save_path_new, 'conf.yml')):
+            # Training of the first model have not been finished yet
+            model_idx += 1
+            save_path_new = save_path + '_' + str(model_idx)
+        else:
+            break
+    if not os.path.isdir(save_path_new):
+        os.mkdir(save_path_new)
+    return save_path_new
 
 
-def args2dict():
-    pass
+def load_checkpoint(model, checkpoint_path, resume=False):
+    """Load checkpoint.
+
+    Args:
+        model (torch.nn.Module):
+        checkpoint_path (str): path to the saved model (model..epoch-*)
+        epoch (int): negative values mean the offset from the last saved model
+        resume (bool): if True, restore the save optimizer
+    Returns:
+        model (torch.nn.Module):
+        checkpoints (dict):
+            epoch (int): the currnet epoch
+            step (int): the current step
+            metric_dev_best (float): the current best performance
+
+    """
+    if not os.path.isfile(checkpoint_path):
+        raise ValueError('There is no checkpoint')
+
+    epoch = int(os.path.basename(checkpoint_path).split('-')[-1])
+
+    if os.path.isfile(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
+    else:
+        raise ValueError("No checkpoint found at %s" % checkpoint_path)
+
+    # Restore parameters
+    model.load_state_dict(checkpoint['state_dict'])
+
+    # Restore optimizer
+    if resume:
+        logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
+
+        if hasattr(model, 'optimizer'):
+            model.optimizer.load_state_dict(checkpoint['optimizer'])
+
+            for state in model.optimizer.state.values():
+                for k, v in state.items():
+                    if torch.is_tensor(v):
+                        state[k] = v.cuda(0)
+                        # state[k] = v.cuda(self.device_id)
+                        # TODO (hirofumi): Fix for multi-GPU
+            # NOTE: from https://github.com/pytorch/pytorch/issues/2830
+        else:
+            raise ValueError('Set optimizer.')
+    else:
+        logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
+
+    return_values = {
+        'lr_controller': checkpoint['lr_controller'],
+        'epoch': epoch + 1,
+        'step': checkpoint['step'] + 1,
+        'metric_dev_best': checkpoint['metric_dev_best']
+    }
+    return model, return_values
+
+
+def save_checkpoint(model, save_path, lr_controller, epoch, step, metric_dev_best,
+                    remove_old_checkpoints=False):
+    """Save checkpoint.
+
+    Args:
+        model (torch.nn.Module):
+        save_path (str): path to the directory to save a model
+        lr_controller ():
+        epoch (int): the currnet epoch
+        step (int): the current step
+        metric_dev_best (float):
+        remove_old_checkpoints (bool): if True, all checkpoints
+            other than the best one will be deleted
+
+    """
+    model_path = os.path.join(save_path, 'model.epoch-' + str(epoch))
+
+    # Remove old checkpoints
+    if remove_old_checkpoints:
+        for path in glob(os.path.join(save_path, 'model.epoch-*')):
+            os.remove(path)
+
+    # Save parameters, optimizer, step index etc.
+    checkpoint = {
+        "state_dict": model.state_dict(),
+        "optimizer": model.optimizer.state_dict(),
+        "lr_controller": lr_controller,
+        "epoch": epoch,
+        "step": step,
+        "metric_dev_best": metric_dev_best
+    }
+    torch.save(checkpoint, model_path)
+
+    logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))

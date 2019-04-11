@@ -19,6 +19,7 @@ import time
 from neural_sp.bin.args_asr import parse
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
@@ -78,7 +79,8 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Seq2seq(args)
-            epoch = model.load_checkpoint(args.recog_model[0])['epoch']
+            model, checkpoint = load_checkpoint(model, args.recog_model[0])
+            epoch = checkpoint['epoch']
             model.save_path = dir_name
 
             # ensemble (different models)
@@ -95,7 +97,7 @@ def main():
                             setattr(args_e, k, v)
 
                     model_e = Seq2seq(args_e)
-                    model_e.load_checkpoint(recog_model_e)
+                    model_e, _ = load_checkpoint(model_e, recog_model_e)
                     model_e.cuda()
                     ensemble_models += [model_e]
 
@@ -115,7 +117,7 @@ def main():
                         lm = GatedConvLM(args_lm)
                     else:
                         lm = RNNLM(args_lm)
-                    lm.load_checkpoint(args.recog_lm)
+                    lm, _ = load_checkpoint(lm, args.recog_lm)
                     if args_lm.backward:
                         model.lm_bwd = lm
                     else:
@@ -131,11 +133,11 @@ def main():
                         setattr(args_lm_bwd, k, v)
 
                     # Load the pre-trianed LM
-                    if args_lm.lm_type == 'gated_cnn':
+                    if args_lm_bwd.lm_type == 'gated_cnn':
                         lm_bwd = GatedConvLM(args_lm_bwd)
                     else:
                         lm_bwd = RNNLM(args_lm_bwd)
-                    lm_bwd.load_checkpoint(args.recog_lm_bwd)
+                    lm_bwd, _ = load_checkpoint(lm_bwd, args.recog_lm_bwd)
                     model.lm_bwd = lm_bwd
 
             if not args.recog_unit:
@@ -170,7 +172,6 @@ def main():
             logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
             logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
             logger.info('cache lambda (lm): %.3f' % (args.recog_cache_lambda_lm))
-            logger.info('concat_prev_n_utterances: %d' % (args.recog_concat_prev_n_utterances))
 
             # GPU setting
             model.cuda()

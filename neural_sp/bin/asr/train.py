@@ -26,6 +26,9 @@ from neural_sp.bin.lr_controller import Controller
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import set_save_path
+from neural_sp.bin.train_utils import load_checkpoint
+from neural_sp.bin.train_utils import save_checkpoint
 from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
@@ -177,17 +180,23 @@ def main():
     if args.enc_type == 'transformer':
         args.decay_type = 'warmup'
 
+    # Set save path
+    if args.resume:
+        save_path = os.path.dirname(args.resume)
+        dir_name = os.path.basename(save_path)
+    else:
+        dir_name = make_model_name(args, subsample_factor)
+        save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        save_path = set_save_path(save_path)  # avoid overwriting
+
+    # Set logger
+    logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
+
     # Model setting
     model = Seq2seq(args)
-    dir_name = make_model_name(args, subsample_factor)
+    model.save_path = save_path
 
     if args.resume:
-        # Set save path
-        model.save_path = os.path.dirname(args.resume)
-
-        # Setting for logging
-        logger = set_logger(os.path.join(os.path.dirname(args.resume), 'train.log'), key='training')
-
         # Set optimizer
         epoch = int(args.resume.split('-')[-1])
         model.set_optimizer(optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] + 1 else conf['optimizer'],
@@ -195,11 +204,11 @@ def main():
                             weight_decay=float(conf['weight_decay']))
 
         # Restore the last saved model
-        checkpoints = model.load_checkpoint(args.resume, resume=True)
-        lr_controller = checkpoints['lr_controller']
-        epoch = checkpoints['epoch']
-        step = checkpoints['step']
-        metric_dev_best = checkpoints['metric_dev_best']
+        model, checkpoint = load_checkpoint(model, args.resume, resume=True)
+        lr_controller = checkpoint['lr_controller']
+        epoch = checkpoint['epoch']
+        step = checkpoint['step']
+        metric_dev_best = checkpoint['metric_dev_best']
 
         # Resume between convert_to_sgd_epoch and convert_to_sgd_epoch + 1
         if epoch == conf['convert_to_sgd_epoch'] + 1:
@@ -208,10 +217,6 @@ def main():
                                 weight_decay=float(conf['weight_decay']))
             logger.info('========== Convert to SGD ==========')
     else:
-        # Set save path
-        save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
-        model.set_save_path(save_path)  # avoid overwriting
-
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(model.save_path, 'conf.yml'))
         if args.lm_fusion:
@@ -225,9 +230,6 @@ def main():
                 shutil.copy(getattr(args, 'dict' + sub), os.path.join(model.save_path, 'dict' + sub + '.txt'))
             if getattr(args, 'unit' + sub) == 'wp':
                 shutil.copy(getattr(args, 'wp_model' + sub), os.path.join(model.save_path, 'wp' + sub + '.model'))
-
-        # Setting for logging
-        logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
 
         for k, v in sorted(vars(args).items(), key=lambda x: x[0]):
             logger.info('%s: %s' % (k, str(v)))
@@ -250,7 +252,7 @@ def main():
 
             # Load the ASR model
             model_pt = Seq2seq(args_pt)
-            model_pt.load_checkpoint(args.pretrained_model)
+            model_pt, _ = load_checkpoint(model_pt, args.pretrained_model)
 
             # Overwrite parameters
             only_enc = (args.enc_n_layers != args_pt.enc_n_layers) or (args.unit != args_pt.unit)
@@ -402,9 +404,8 @@ def main():
 
             if epoch < args.eval_start_epoch:
                 # Save the model
-                model.module.save_checkpoint(
-                    model.module.save_path, lr_controller,
-                    epoch, step - 1, metric_dev_best)
+                save_checkpoint(model.module, model.module.save_path, lr_controller,
+                                epoch, step - 1, metric_dev_best)
                 reporter._epoch += 1
                 # TODO(hirofumi): fix later
             else:
@@ -449,9 +450,8 @@ def main():
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    model.module.save_checkpoint(
-                        model.module.save_path, lr_controller,
-                        epoch, step - 1, metric_dev_best)
+                    save_checkpoint(model.module, model.module.save_path, lr_controller,
+                                    epoch, step - 1, metric_dev_best)
 
                     # test
                     for s in eval_sets:

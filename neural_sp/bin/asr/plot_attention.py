@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-import codecs
 import copy
 import numpy as np
 import os
@@ -22,6 +21,7 @@ from neural_sp.bin.asr.plot_utils import plot_attention_weights
 from neural_sp.bin.asr.plot_utils import plot_cache_weights
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
@@ -65,7 +65,8 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Seq2seq(args)
-            epoch = model.load_checkpoint(args.recog_model[0])['epoch']
+            model, checkpoint = load_checkpoint(model, args.recog_model[0])
+            epoch = checkpoint['epoch']
             model.save_path = dir_name
 
             # ensemble (different models)
@@ -82,7 +83,7 @@ def main():
                             setattr(args_e, k, v)
 
                     model_e = Seq2seq(args_e)
-                    model_e.load_checkpoint(recog_model_e)
+                    model_e, _ = load_checkpoint(model_e, recog_model_e)
                     model_e.cuda()
                     ensemble_models += [model_e]
 
@@ -102,7 +103,7 @@ def main():
                         lm = GatedConvLM(args_lm)
                     else:
                         lm = RNNLM(args_lm)
-                    lm.load_checkpoint(args.recog_lm)
+                    lm, _ = load_checkpoint(lm, args.recog_lm)
                     if args_lm.backward:
                         model.lm_bwd = lm
                     else:
@@ -122,7 +123,7 @@ def main():
                         lm_bwd = GatedConvLM(args_lm_bwd)
                     else:
                         lm_bwd = RNNLM(args_lm_bwd)
-                    lm_bwd.load_checkpoint(args.recog_lm_bwd)
+                    lm_bwd, _ = load_checkpoint(lm_bwd, args.recog_lm_bwd)
                     model.lm_bwd = lm_bwd
 
             if not args.recog_unit:

@@ -25,6 +25,9 @@ from neural_sp.bin.lr_controller import Controller
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import set_save_path
+from neural_sp.bin.train_utils import load_checkpoint
+from neural_sp.bin.train_utils import save_checkpoint
 from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
@@ -79,6 +82,18 @@ def main():
 
     args.vocab = train_set.vocab
 
+    # Set save path
+    if args.resume:
+        save_path = os.path.dirname(args.resume)
+        dir_name = os.path.basename(save_path)
+    else:
+        dir_name = make_model_name(args, subsample_factor)
+        save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        save_path = set_save_path(save_path)  # avoid overwriting
+
+    # Set logger
+    logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
+
     # Model setting
     if args.lm_type == 'gated_cnn':
         model = GatedConvLM(args)
@@ -107,20 +122,15 @@ def main():
     if args.resume:
         raise NotImplementedError
     else:
-        # Set save path
-        save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
-        model.set_save_path(save_path)  # avoid overwriting
-
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(model.save_path, 'conf.yml'))
 
-        # Save the dictionary & wp_model
+        # Save the nlsyms, dictionar, and wp_model
+        if args.nlsyms:
+            shutil.copy(args.nlsyms, os.path.join(model.save_path, 'nlsyms.txt'))
         shutil.copy(args.dict, os.path.join(model.save_path, 'dict.txt'))
         if args.unit == 'wp':
             shutil.copy(args.wp_model, os.path.join(model.save_path, 'wp.model'))
-
-        # Setting for logging
-        logger = set_logger(os.path.join(model.save_path, 'train.log'), key='training')
 
         for k, v in sorted(vars(args).items(), key=lambda x: x[0]):
             logger.info('%s: %s' % (k, str(v)))
@@ -225,8 +235,8 @@ def main():
 
             if epoch < args.eval_start_epoch:
                 # Save the model
-                model.module.save_checkpoint(model.module.save_path, lr_controller,
-                                             epoch, step - 1, ppl_dev_best)
+                save_checkpoint(model.module, model.module.save_path, lr_controller,
+                                epoch, step - 1, ppl_dev_best)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -245,8 +255,8 @@ def main():
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    model.module.save_checkpoint(model.module.save_path, lr_controller,
-                                                 epoch, step - 1, ppl_dev_best)
+                    save_checkpoint(model.module, model.module.save_path, lr_controller,
+                                    epoch, step - 1, ppl_dev_best)
 
                     # test
                     ppl_test_avg = 0.

@@ -18,6 +18,7 @@ from neural_sp.bin.args_asr import parse
 from neural_sp.bin.asr.plot_utils import plot_ctc_probs
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.utils.general import mkdir_join
@@ -69,7 +70,8 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Seq2seq(args)
-            epoch = model.load_checkpoint(args.recog_model[0])['epoch']
+            model, checkpoint = load_checkpoint(model, args.recog_model[0])
+            epoch = checkpoint['epoch']
             model.save_path = dir_name
 
             if not args.recog_unit:

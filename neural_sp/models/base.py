@@ -10,11 +10,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from glob import glob
 import logging
 import math
 import numpy as np
-import os
 import torch
 import torch.nn as nn
 
@@ -187,14 +185,14 @@ class ModelBase(nn.Module):
         elif optimizer == 'momentum':
             self.optimizer = torch.optim.SGD(parameters,
                                              lr=learning_rate,
-                                             #  momentum=0.9,
-                                             momentum=0.99,
+                                             momentum=0.9,
                                              weight_decay=weight_decay,
                                              nesterov=False)
         elif optimizer == 'nesterov':
             self.optimizer = torch.optim.SGD(parameters,
                                              lr=learning_rate,
-                                             momentum=0.9,
+                                             #  momentum=0.9,
+                                             momentum=0.99,
                                              weight_decay=weight_decay,
                                              nesterov=True)
         elif optimizer == 'adadelta':
@@ -238,108 +236,3 @@ class ModelBase(nn.Module):
         #                                   cooldown=0,
         #                                   min_lr=0,
         #                                   eps=1e-08)
-
-    def set_save_path(self, save_path):
-        # Reset model directory
-        model_idx = 0
-        save_path_tmp = save_path
-        while True:
-            if os.path.isfile(os.path.join(save_path_tmp, 'conf.yml')):
-                # Training of the first model have not been finished yet
-                model_idx += 1
-                save_path_tmp = save_path + '_' + str(model_idx)
-            else:
-                break
-        if not os.path.isdir(save_path_tmp):
-            os.mkdir(save_path_tmp)
-        self.save_path = save_path_tmp
-
-    def save_checkpoint(self, save_path, lr_controller, epoch, step, metric_dev_best,
-                        remove_old_checkpoints=False):
-        """Save checkpoint.
-
-        Args:
-            save_path (str): path to the directory to save a model
-            lr_controller ():
-            epoch (int): the currnet epoch
-            step (int): the current step
-            metric_dev_best (float):
-            remove_old_checkpoints (bool): if True, all checkpoints
-                other than the best one will be deleted
-        Returns:
-            model (str): path to the saved model (file)
-
-        """
-        model_path = os.path.join(save_path, 'model.epoch-' + str(epoch))
-
-        # Remove old checkpoints
-        if remove_old_checkpoints:
-            for path in glob(os.path.join(save_path, 'model.epoch-*')):
-                os.remove(path)
-
-        # Save parameters, optimizer, step index etc.
-        checkpoint = {
-            "state_dict": self.state_dict(),
-            "optimizer": self.optimizer.state_dict(),
-            "lr_controller": lr_controller,
-            "epoch": epoch,
-            "step": step,
-            "metric_dev_best": metric_dev_best
-        }
-        torch.save(checkpoint, model_path)
-
-        logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))
-
-    def load_checkpoint(self, checkpoint_path, resume=False):
-        """Load checkpoint.
-
-        Args:
-            checkpoint_path (str): path to the saved model (model..epoch-*)
-            epoch (int): negative values mean the offset from the last saved model
-            resume (bool): if True, restore the save optimizer
-        Returns:
-            checkpoints (dict):
-                epoch (int): the currnet epoch
-                step (int): the current step
-                metric_dev_best (float): the current best performance
-
-        """
-        if not os.path.isfile(checkpoint_path):
-            raise ValueError('There is no checkpoint')
-
-        epoch = int(os.path.basename(checkpoint_path).split('-')[-1])
-
-        if os.path.isfile(checkpoint_path):
-            checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
-        else:
-            raise ValueError("No checkpoint found at %s" % checkpoint_path)
-
-        # Restore parameters
-        self.load_state_dict(checkpoint['state_dict'])
-
-        # Restore optimizer
-        if resume:
-            logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
-
-            if hasattr(self, 'optimizer'):
-                self.optimizer.load_state_dict(checkpoint['optimizer'])
-
-                for state in self.optimizer.state.values():
-                    for k, v in state.items():
-                        if torch.is_tensor(v):
-                            state[k] = v.cuda(0)
-                            # state[k] = v.cuda(self.device_id)
-                            # TODO (hirofumi): Fix for multi-GPU
-                # NOTE: from https://github.com/pytorch/pytorch/issues/2830
-            else:
-                raise ValueError('Set optimizer.')
-        else:
-            logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
-
-        return_values = {
-            'lr_controller': checkpoint['lr_controller'],
-            'epoch': epoch + 1,
-            'step': checkpoint['step'] + 1,
-            'metric_dev_best': checkpoint['metric_dev_best']
-        }
-        return return_values

@@ -17,6 +17,7 @@ import time
 from neural_sp.bin.args_lm import parse
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.lm.gated_convlm import GatedConvLM
@@ -60,7 +61,8 @@ def main():
                 model = GatedConvLM(args)
             else:
                 model = RNNLM(args)
-            epoch = model.load_checkpoint(args.recog_model[0])['epoch']
+            model, checkpoint = load_checkpoint(model, args.recog_model[0])
+            epoch = checkpoint['epoch']
             model.save_path = dir_name
 
             logger.info('epoch: %d' % (epoch - 1))
