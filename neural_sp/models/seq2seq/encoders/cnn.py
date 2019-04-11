@@ -21,14 +21,15 @@ class CNNEncoder(nn.Module):
     """CNN encoder.
 
     Args:
-        input_dim (int) dimension of input features (freq * channel)
-        in_channel (int) number of channels of input features
-        channels (list) number of channles in CNN layers
-        kernel_sizes (list) size of kernels in CNN layers
+        input_dim (int): dimension of input features (freq * channel)
+        in_channel (int): number of channels of input features
+        channels (list): number of channles in CNN layers
+        kernel_sizes (list): size of kernels in CNN layers
         strides (list): strides in CNN layers
-        poolings (list) size of poolings in CNN layers
-        dropout (float) probability to drop nodes in hidden-hidden connection
+        poolings (list): size of poolings in CNN layers
+        dropout (float): probability to drop nodes in hidden-hidden connection
         batch_norm (bool): if True, apply batch normalization
+        residual (bool): add residual connections
         bottleneck_dim (int): dimension of the bottleneck layer after the last layer
 
     """
@@ -42,6 +43,7 @@ class CNNEncoder(nn.Module):
                  poolings,
                  dropout,
                  batch_norm=False,
+                 residual=False,
                  bottleneck_dim=0):
 
         super(CNNEncoder, self).__init__()
@@ -49,15 +51,14 @@ class CNNEncoder(nn.Module):
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
         self.input_freq = input_dim // in_channel
+        self.residual = residual
         self.bottleneck_dim = bottleneck_dim
 
         assert len(channels) > 0
-        assert len(channels) == len(kernel_sizes)
-        assert len(kernel_sizes) == len(strides)
-        assert len(strides) == len(poolings)
+        assert len(channels) == len(kernel_sizes) == len(strides) == len(poolings)
 
         layers = OrderedDict()
-        in_ch = self.in_channel
+        in_ch = in_channel
         in_freq = self.input_freq
         for l in range(len(channels)):
             # Conv
@@ -65,33 +66,31 @@ class CNNEncoder(nn.Module):
                              out_channels=channels[l],
                              kernel_size=tuple(kernel_sizes[l]),
                              stride=tuple(strides[l]),
-                             padding=tuple(strides[l]),
-                             bias=not batch_norm)
+                             padding=(1, 1))
             layers['conv' + str(channels[l]) + '_l' + str(l)] = conv
-            in_freq = int(np.floor((in_freq + 2 * conv.padding[0] - conv.kernel_size[0]) / conv.stride[0] + 1))
+            in_freq = int(np.floor((in_freq + 2 * conv.padding[1] - conv.kernel_size[1]) / conv.stride[1] + 1))
 
             # Activation
             layers['relu_' + str(l)] = nn.ReLU()
 
-            # # Max Pooling
-            if len(poolings[l]) > 0 and np.prod(poolings[l]) > 1:
-                pool = nn.MaxPool2d(kernel_size=tuple(poolings[l]),
-                                    stride=tuple(poolings[l]),
-                                    padding=(0, 0),  # default
-                                    ceil_mode=True)
-                layers['pool_' + str(l)] = pool
-                # NOTE: If ceil_mode is False, remove last feature when the
-                # dimension of features are odd.
-
-                in_freq = int(np.ceil((in_freq + 2 * pool.padding[0] - pool.kernel_size[0]) / pool.stride[0] + 1))
+            # Dropout for hidden-hidden connection
+            layers['dropout_' + str(l)] = nn.Dropout(p=dropout)
+            # TODO(hirofumi): compare BN before and after ReLU
 
             # Batch Normalization
             if batch_norm:
                 layers['bn_' + str(l)] = nn.BatchNorm2d(channels[l])
 
-            # Dropout for hidden-hidden connection
-            layers['dropout_' + str(l)] = nn.Dropout(p=dropout)
-            # TODO(hirofumi): compare BN before and after ReLU
+            # Max Pooling
+            if len(poolings[l]) > 0 and np.prod(poolings[l]) > 1:
+                pool = nn.MaxPool2d(kernel_size=tuple(poolings[l]),
+                                    stride=tuple(poolings[l]),
+                                    padding=(0, 0),
+                                    ceil_mode=True)
+                layers['pool_' + str(l)] = pool
+                # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
+
+                in_freq = int(np.ceil((in_freq + 2 * pool.padding[1] - pool.kernel_size[1]) / pool.stride[1] + 1))
 
             in_ch = channels[l]
 
@@ -115,30 +114,28 @@ class CNNEncoder(nn.Module):
             xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
             xlens (list): A list of length `[B]`
         Returns:
-            xs (FloatTensor): `[B, T', feature_dim]`
+            xs (FloatTensor): `[B, T', feat_dim]`
             xlens (list): A list of length `[B]`
 
         """
-        bs, max_xlen, input_dim = xs.size()
+        bs, time, input_dim = xs.size()
 
-        # Reshape to 4D tensor `[B, in_ch, T, input_dim // in_ch]`
-        xs = xs.contiguous().transpose(2, 1)
-        xs = xs.view(bs, self.in_channel, input_dim // self.in_channel, max_xlen)
+        # Reshape to `[B, in_ch, T, input_dim // in_ch]`
+        xs = xs.contiguous().view(bs, time, self.in_channel, input_dim // self.in_channel).transpose(2, 1)
 
         xs = self.layers(xs)
-        # NOTE: xs: `[B, out_ch, feature_dim, T]`
+        # NOTE: xs: `[B, out_ch, T, feat_dim]`
 
         # Collapse feature dimension
-        bs, out_ch, freq, time = xs.size()
-        xs = xs.view(bs, -1, time)
-        xs = xs.contiguous().transpose(2, 1)
+        bs, out_ch, time, freq = xs.size()
+        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)
 
         # Reduce dimension
         if self.bottleneck_dim > 0:
             xs = self.bottleneck(xs)
 
         # Update xlens
-        xlens = [self.get_conv_out_size(xlen, dim=1) for xlen in xlens]  # (freq, time)
+        xlens = [self.get_conv_out_size(xlen, dim=0) for xlen in xlens]  # (time, freq)
 
         return xs, xlens
 
