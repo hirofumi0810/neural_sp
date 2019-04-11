@@ -123,8 +123,7 @@ class CNNEncoder(nn.Module):
         # Reshape to `[B, in_ch, T, input_dim // in_ch]`
         xs = xs.contiguous().view(bs, time, self.in_channel, input_dim // self.in_channel).transpose(2, 1)
 
-        xs = self.layers(xs)
-        # NOTE: xs: `[B, out_ch, T, feat_dim]`
+        xs = self.layers(xs)  # `[B, out_ch, T, feat_dim]`
 
         # Collapse feature dimension
         bs, out_ch, time, freq = xs.size()

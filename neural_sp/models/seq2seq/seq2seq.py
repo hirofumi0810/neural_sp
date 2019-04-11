@@ -149,7 +149,7 @@ class Seq2seq(ModelBase):
                 nin=0,
                 # layer_norm=args.layer_norm,
                 task_specific_layer=args.task_specific_layer)
-            # NOTE: pure CNN encoder is also included
+            # NOTE: pure CNN/TDS encoders are also included
 
         if args.freeze_encoder:
             for p in self.enc.parameters():
@@ -157,7 +157,7 @@ class Seq2seq(ModelBase):
 
         # Bridge layer between the encoder and decoder
         self.is_bridge = False
-        if args.enc_type in ['cnn', 'transformer'] or args.dec_type == 'transformer' or args.bridge_layer:
+        if args.enc_type in ['cnn', 'tds', 'transformer'] or args.dec_type == 'transformer' or args.bridge_layer:
             self.bridge = LinearND(self.enc.output_dim,
                                    args.d_model if args.dec_type == 'transformer' else args.dec_n_units,
                                    dropout=args.dropout_enc)
@@ -363,7 +363,7 @@ class Seq2seq(ModelBase):
 
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
-            if args.enc_type != 'cnn':
+            if args.enc_type not in ['cnn', 'tds']:
                 self.init_weights(args.param_init, dist='orthogonal',
                                   keys=[args.enc_type, 'weight'])
             # TODO(hirofumi): in case of CNN + LSTM
@@ -588,7 +588,7 @@ class Seq2seq(ModelBase):
 
             enc_outs = self.enc(xs, xlens, task.split('.')[0])
 
-            if self.main_weight < 1 and self.enc_type == 'cnn':
+            if self.main_weight < 1 and self.enc_type in ['cnn', 'tds']:
                 for sub in ['sub1', 'sub2', 'sub3']:
                     enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
                     enc_outs['ys_' + sub]['xlens'] = copy.deepcopy(enc_outs['ys']['xlens'])

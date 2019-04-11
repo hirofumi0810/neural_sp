@@ -104,7 +104,7 @@ def parse():
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
-                        choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn', 'transformer'],
+                        choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn', 'transformer', 'tds'],
                         help='type of the encoder')
     parser.add_argument('--enc_n_units', type=int, default=512,
                         help='number of units in each encoder RNN layer')

@@ -19,6 +19,7 @@ from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.model_utils import LinearND
 from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
+from neural_sp.models.seq2seq.encoders.time_depth_separable_conv import TDSEncoder
 
 
 class RNNEncoder(nn.Module):
@@ -26,7 +27,7 @@ class RNNEncoder(nn.Module):
 
     Args:
         input_dim (int): dimension of input features (freq * channel)
-        rnn_type (str): blstm or lstm or bgru or gru
+        rnn_type (str): blstm or lstm or bgru or gru or cnn or tds
         n_units (int): number of units in each layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of layers
@@ -92,8 +93,6 @@ class RNNEncoder(nn.Module):
             raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1.')
         if n_layers_sub3 < 0 or (n_layers_sub3 > 1 and n_layers_sub2 < n_layers_sub3):
             raise ValueError('Set n_layers_sub3 between 1 to n_layers_sub2.')
-        if rnn_type == 'cnn':
-            assert n_stacks == 1 and n_splices == 1
 
         self.rnn_type = rnn_type
         self.bidirectional = True if rnn_type in ['blstm', 'bgru'] else False
@@ -134,39 +133,50 @@ class RNNEncoder(nn.Module):
         self.dropout_in = nn.Dropout(p=dropout_in)
 
         # Setting for CNNs before RNNs
-        if conv_poolings:
+        if conv_channels:
             channels = [int(c) for c in conv_channels.split('_')] if len(conv_channels) > 0 else []
             kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
                             for c in conv_kernel_sizes.split('_')] if len(conv_kernel_sizes) > 0 else []
-            strides = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                       for c in conv_strides.split('_')] if len(conv_strides) > 0 else []
-            poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                        for c in conv_poolings.split('_')] if len(conv_poolings) > 0 else []
+            if rnn_type == 'tds':
+                strides = []
+                poolings = []
+            else:
+                strides = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                           for c in conv_strides.split('_')] if len(conv_strides) > 0 else []
+                poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                            for c in conv_poolings.split('_')] if len(conv_poolings) > 0 else []
         else:
             channels = []
             kernel_sizes = []
             strides = []
             poolings = []
 
-        if len(channels) > 0 and len(channels) == len(kernel_sizes) and len(kernel_sizes) == len(strides):
-            # assert n_stacks == 1 and n_splices == 1
-            self.conv = CNNEncoder(input_dim * n_stacks,
-                                   in_channel=conv_in_channel * n_stacks,
-                                   channels=channels,
-                                   kernel_sizes=kernel_sizes,
-                                   strides=strides,
-                                   poolings=poolings,
-                                   dropout=dropout,
-                                   batch_norm=conv_batch_norm,
-                                   bottleneck_dim=conv_bottleneck_dim)
+        if len(channels) > 0:
+            assert n_stacks == 1 and n_splices == 1
+            if rnn_type == 'tds':
+                self.conv = TDSEncoder(input_dim=input_dim,
+                                       in_channel=conv_in_channel,
+                                       channels=channels,
+                                       kernel_sizes=kernel_sizes,
+                                       dropout=dropout)
+            else:
+                self.conv = CNNEncoder(input_dim,
+                                       in_channel=conv_in_channel,
+                                       channels=channels,
+                                       kernel_sizes=kernel_sizes,
+                                       strides=strides,
+                                       poolings=poolings,
+                                       dropout=dropout,
+                                       batch_norm=conv_batch_norm,
+                                       bottleneck_dim=conv_bottleneck_dim)
             self._output_dim = self.conv.output_dim
         else:
             self._output_dim = input_dim * n_splices * n_stacks
             self.conv = None
 
-        if rnn_type != 'cnn':
-            self.fast_impl = False
+        if rnn_type not in ['cnn', 'tds']:
             # Fast implementation without processes between each layer
+            self.fast_impl = False
             if np.prod(self.subsample) == 1 and self.n_projs == 0 and not residual and n_layers_sub1 == 0 and (not conv_batch_norm) and nin == 0:
                 self.fast_impl = True
                 if 'lstm' in rnn_type:
@@ -301,7 +311,7 @@ class RNNEncoder(nn.Module):
         # Path through CNN layers before RNN layers
         if self.conv is not None:
             xs, xlens = self.conv(xs, xlens)
-            if self.rnn_type == 'cnn':
+            if self.rnn_type in ['cnn', 'tds']:
                 eouts['ys']['xs'] = xs
                 eouts['ys']['xlens'] = xlens
                 return eouts
