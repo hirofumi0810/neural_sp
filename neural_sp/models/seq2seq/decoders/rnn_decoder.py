@@ -1020,9 +1020,7 @@ class RNNDecoder(nn.Module):
         cp_threshold = params['recog_coverage_threshold']
         lm_weight = params['recog_lm_weight']
         gnmt_decoding = params['recog_gnmt_decoding']
-        hard_attn_limit = params['recog_hard_attention_limit']
         eos_threshold = params['recog_eos_threshold']
-        prune_threshold = params['recog_prune_threshold']
         asr_state_carry_over = params['recog_asr_state_carry_over']
         lm_state_carry_over = params['recog_lm_state_carry_over']
         n_caches = params['recog_n_caches']
@@ -1095,12 +1093,11 @@ class RNNDecoder(nn.Module):
                      'hxs_cache': hxs_cache,
                      'cxs_cache': cxs_cache,
                      'aws': [None],
-                     'aw_prev': 0,
                      'lm_hxs': lm_hxs,
                      'lm_cxs': lm_cxs,
                      'ensemble_dstates': ensemble_dstates,
                      'ensemble_cv': ensemble_cv,
-                     'ensemble_aws':[[None] for _ in range(n_models)],
+                     'ensemble_aws':[[None] * n_models],
                      'ctc_state':  ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
                      'ctc_score': 0.0,
                      'cache_ids': [],
@@ -1268,10 +1265,6 @@ class RNNDecoder(nn.Module):
                             cache_sp_key = torch.cat(cache_sp_key, dim=1)
                             cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
                                 cache_sp_key, torch.cat([cv, dstates['dout_gen']], dim=-1).transpose(2, 1)), dim=1)  # `[1, L, 1]`
-                            # cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
-                            #     cache_sp_key, cv.transpose(2, 1)), dim=1)  # `[1, L, 1]`
-                            # cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
-                            #     cache_sp_key, dstates['dout_gen'].transpose(2, 1)), dim=1)  # `[1, L, 1]`
                             # Sum all probabilities
                             for offset, c in enumerate(cache_ids):
                                 cache_probs_sp[0, c] += cache_sp_attn[0, offset, 0]
@@ -1361,26 +1354,26 @@ class RNNDecoder(nn.Module):
                     else:
                         global_scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
 
-                    max_score = local_scores_attn[0, :self.eos].max(0)[0].item()
-                    max_score = max(max_score, local_scores_attn[0, self.eos + 1:].max(0)[0].item())
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
-                        total_score = global_scores_topk[0, k].item()
+                        score = global_scores_topk[0, k].item()
 
                         # Exclude short hypotheses
                         if idx == self.eos:
                             if len(beam[i_beam]['hyp_id']) - 1 < elens[b] * min_len_ratio:
                                 continue
-                            if local_scores_attn[0, idx].item() <= eos_threshold * max_score:
-                                continue
-                            if aw[0].argmax(0) - beam[i_beam]['aw_prev'] > hard_attn_limit:
+                            # EOS threshold
+                            max_score_except_eos = local_scores_attn[0, :idx].max(0)[0].item()
+                            max_score_except_eos = max(
+                                max_score_except_eos, local_scores_attn[0, idx + 1:].max(0)[0].item())
+                            if local_scores_attn[0, idx].item() <= eos_threshold * max_score_except_eos:
                                 continue
 
                         new_beam.append(
                             {'hyp_id': beam[i_beam]['hyp_id'] + [idx],
                              'ref_id': beam[i_beam]['ref_id'] + refs_id[b][t:t + 1] if oracle else [],
-                             'score': total_score,
-                             'hist_score': beam[i_beam]['hist_score'] + [total_score],
+                             'score': score,  # total score
+                             'hist_score': beam[i_beam]['hist_score'] + [score],
                              'score_attn': scores_attn[0, idx].item(),
                              'score_cp': cp,
                              'score_ctc':  global_scores_ctc[k].item(),
@@ -1391,7 +1384,6 @@ class RNNDecoder(nn.Module):
                              'hxs_cache': hxs_cache,
                              'cxs_cache': cxs_cache,
                              'aws': beam[i_beam]['aws'] + [aw],
-                             'aw_prev': aw[0].argmax(0),
                              'lm_hxs': lmstate[0][:] if lmstate is not None else None,
                              'lm_cxs': lmstate[1][:] if lmstate is not None else None,
                              'ensemble_dstates': ensemble_dstates,
