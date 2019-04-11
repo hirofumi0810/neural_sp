@@ -67,7 +67,7 @@ def main():
     subsample = [int(s) for s in args.subsample.split('_')]
     if args.conv_poolings:
         for p in args.conv_poolings.split('_'):
-            p = int(p.split(',')[0].replace('(', ''))
+            p = int(p.split(',')[1].replace(')', ''))
             if p > 1:
                 subsample_factor *= p
     if args.train_set_sub1:
@@ -416,14 +416,15 @@ def main():
                                                epoch=epoch)[0]
                         logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
                     elif args.unit == 'wp':
-                        metric_dev = eval_wordpiece([model.module], dev_set, recog_params,
-                                                    epoch=epoch)[0]
+                        metric_dev, cer_dev = eval_wordpiece([model.module], dev_set, recog_params,
+                                                             epoch=epoch)
                         logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
+                        logger.info('CER (%s): %.2f %%' % (dev_set.set, cer_dev))
                     elif 'char' in args.unit:
-                        wer_dev, metric_dev = eval_char([model.module], dev_set, recog_params,
+                        metric_dev, cer_dev = eval_char([model.module], dev_set, recog_params,
                                                         epoch=epoch)
-                        logger.info('CER (%s): %.2f %%' % (dev_set.set, metric_dev))
-                        logger.info('WER (%s): %.2f %%' % (dev_set.set, wer_dev))
+                        logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
+                        logger.info('CER (%s): %.2f %%' % (dev_set.set, cer_dev))
                     elif 'phone' in args.unit:
                         metric_dev = eval_phone([model.module], dev_set, recog_params,
                                                 epoch=epoch)
@@ -460,14 +461,15 @@ def main():
                                                      epoch=epoch)[0]
                                 logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
                             elif args.unit == 'wp':
-                                wer_test = eval_wordpiece([model.module], s, recog_params,
-                                                          epoch=epoch)[0]
+                                wer_test, cer_test = eval_wordpiece([model.module], s, recog_params,
+                                                                    epoch=epoch)
                                 logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
+                                logger.info('CER (%s): %.2f %%' % (s.set, cer_test))
                             elif 'char' in args.unit:
                                 wer_test, cer_test = eval_char([model.module], s, recog_params,
                                                                epoch=epoch)
-                                logger.info('CER (%s): %.2f %%' % (s.set, cer_test))
                                 logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
+                                logger.info('CER (%s): %.2f %%' % (s.set, cer_test))
                             elif 'phone' in args.unit:
                                 per_test = eval_phone([model.module], s, recog_params,
                                                       epoch=epoch)
@@ -622,8 +624,8 @@ def make_model_name(args, subsample_factor):
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
-                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') -
+                                            getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
 
