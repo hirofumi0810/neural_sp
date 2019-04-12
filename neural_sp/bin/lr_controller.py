@@ -30,13 +30,14 @@ class Controller(object):
         warmup_start_learning_rate (float):
         warmup_n_steps (int):
         factor (float):
+        transformer (bool):
 
     """
 
     def __init__(self, learning_rate, decay_type, decay_start_epoch, decay_rate,
                  decay_patient_n_epochs=0, lower_better=True, best_value=10000,
                  model_size=1, warmup_start_learning_rate=0, warmup_n_steps=4000,
-                 factor=1):
+                 factor=1, transformer=False):
 
         self.lr_max = learning_rate
         self.decay_type = decay_type
@@ -48,14 +49,14 @@ class Controller(object):
         self.best_value = best_value
 
         # for warmup
-        if decay_type == 'warmup':
+        if transformer:
             assert warmup_n_steps > 0
+            self.lr_init = factor * (model_size ** (-0.5))
+        else:
             if warmup_start_learning_rate > 0:
                 self.lr_init = warmup_start_learning_rate
             else:
-                self.lr_init = factor * (model_size ** (-0.5))
-        else:
-            self.lr_init = learning_rate
+                self.lr_init = learning_rate
         self.warmup_start_lr = warmup_start_learning_rate
         self.warmup_n_steps = warmup_n_steps
 

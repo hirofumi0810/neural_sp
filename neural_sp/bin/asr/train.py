@@ -271,7 +271,7 @@ def main():
             optimizer=args.optimizer,
             learning_rate=float(args.learning_rate),
             weight_decay=float(args.weight_decay),
-            transformer=True if args.enc_type == 'transformer' or args.dec_type == 'transformer' else False)
+            transformer=args.enc_type == 'transformer' or args.dec_type == 'transformer')
 
         epoch, step = 1, 1
         metric_dev_best = 10000
@@ -287,7 +287,8 @@ def main():
                                    model_size=args.d_model,
                                    warmup_start_learning_rate=args.warmup_start_learning_rate,
                                    warmup_n_steps=args.warmup_n_steps,
-                                   factor=1)
+                                   factor=1,
+                                   transformer=args.enc_type == 'transformer' or args.dec_type == 'transformer')
 
     train_set.epoch = epoch - 1  # start from index:0
 
@@ -364,9 +365,8 @@ def main():
         reporter.step(is_eval=False)
 
         # Update learning rate
-        if args.decay_type == 'warmup' and step < args.warmup_n_steps:
-            model.module.optimizer = lr_controller.warmup(
-                model.module.optimizer, step=step)
+        if step < args.warmup_n_steps:
+            model.module.optimizer = lr_controller.warmup(model.module.optimizer, step=step)
 
         if step % args.print_step == 0:
             # Compute loss in the dev set
@@ -585,6 +585,8 @@ def make_model_name(args, subsample_factor):
         dir_name += '_fl' + str(args.focal_loss_weight)
     if args.layer_norm:
         dir_name += '_ln'
+    if args.warmup_n_steps > 0:
+        dir_name += '_warmpup' + str(args.warmup_n_steps)
 
     # LM integration
     if args.lm_fusion:
