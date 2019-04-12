@@ -61,7 +61,11 @@ class AttentionMechanism(nn.Module):
         # attention dropout applied AFTER the softmax layer
         self.attn_dropout = nn.Dropout(p=dropout)
 
-        if attn_type == 'add':
+        if attn_type == 'no':
+            pass
+            # NOTE: sequence-to-sequence without attetnion (use the last state as a context vector)
+
+        elif attn_type == 'add':
             self.w_enc = LinearND(key_dim, attn_dim)
             self.w_dec = LinearND(query_dim, attn_dim, bias=False)
             self.v = LinearND(attn_dim, 1, bias=False)
@@ -100,7 +104,7 @@ class AttentionMechanism(nn.Module):
         self.key = None
         self.mask = None
 
-    def forward(self, key, key_lens, value, query, aw=None, return_logits=False):
+    def forward(self, key, key_lens, value, query, aw=None):
         """Forward computation.
 
         Args:
@@ -109,7 +113,6 @@ class AttentionMechanism(nn.Module):
             value (FloatTensor): `[B, key_len, value_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
             aw (FloatTensor): `[B, key_len]`
-            return_logits (bool): return logits before the softmax
         Returns:
             cv (FloatTensor): `[B, 1, value_dim]`
             aw (FloatTensor): `[B, key_len]`
@@ -157,21 +160,17 @@ class AttentionMechanism(nn.Module):
             query = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
             e = self.v(F.tanh(self.w(torch.cat([self.key, query], dim=-1)))).squeeze(2)
 
-        # Compute attention weights
-        e = e.masked_fill_(self.mask == 0, -1024)  # `[B, key_len]`
-
-        if return_logits:
-            return e
-
-        if self.sigmoid_smoothing:
-            aw = F.sigmoid(e) / F.sigmoid(e).sum(-1).unsqueeze(-1)
+        if self.attn_type == 'no':
+            last_state = [k[key_lens[b] - 1] for b, k in enumerate(key)]
+            cv = torch.stack(last_state, dim=0).unsqueeze(1)
         else:
-            aw = F.softmax(e * self.sharpening_factor, dim=-1)
-
-        # attention dropout
-        aw = self.attn_dropout(aw)
-
-        # Compute context vector (weighted sum of encoder outputs)
-        cv = torch.matmul(aw.unsqueeze(1), value)
+            # Compute attention weights, context vector
+            e = e.masked_fill_(self.mask == 0, -1024)  # `[B, key_len]`
+            if self.sigmoid_smoothing:
+                aw = F.sigmoid(e) / F.sigmoid(e).sum(-1).unsqueeze(-1)
+            else:
+                aw = F.softmax(e * self.sharpening_factor, dim=-1)
+            aw = self.attn_dropout(aw)
+            cv = torch.matmul(aw.unsqueeze(1), value)
 
         return cv, aw
