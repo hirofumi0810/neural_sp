@@ -19,7 +19,6 @@ from neural_sp.models.base import ModelBase
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
 from neural_sp.models.lm.brnnlm import BRNNLM
-from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.fwd_bwd_decoding import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn_decoder import RNNDecoder
@@ -69,7 +68,6 @@ class Seq2seq(ModelBase):
         self.vocab_sub3 = args.vocab_sub3
         self.blank = 0
         self.unk = 1
-        self.sos = 2  # NOTE: the same index as <eos>
         self.eos = 2
         self.pad = 3
         # NOTE: reserved in advance
@@ -343,7 +341,7 @@ class Seq2seq(ModelBase):
                               keys=['embed_in'])
         else:
             self.init_weights(args.param_init, dist=args.param_init_dist,
-                              keys=['enc'])
+                              keys=['enc'], ignore_keys=['conv'])
 
         if args.dec_type == 'transformer':
             self.init_weights(args.param_init, dist='xavier_uniform',
@@ -358,7 +356,9 @@ class Seq2seq(ModelBase):
         self.init_weights(0, dist='constant', keys=['bias'])
 
         # Initialize CNN layers
-        self.init_weights(args.param_init, dist='xavier_uniform',
+        self.init_weights(args.param_init,
+                          dist='xavier_uniform',
+                          #   dist='kaiming_uniform',
                           keys=['conv'], ignore_keys=['score'])
 
         # Recurrent weights are orthogonalized
@@ -469,8 +469,7 @@ class Seq2seq(ModelBase):
                 ys = [batch['ys'][:][i] for i in perm_ids]
                 if len(batch['ys_cache']) > 0:
                     ys_cache = [batch['ys_cache'][:][i] for i in perm_ids]
-            loss_fwd, obs_fwd = self.dec_fwd(
-                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, ys_cache)
+            loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, ys_cache)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
@@ -485,8 +484,7 @@ class Seq2seq(ModelBase):
         # for the backward decoder in the main task
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
             ys = [batch['ys'][:][i] for i in perm_ids]
-            loss_bwd, obs_bwd = self.dec_bwd(
-                enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
+            loss_bwd, obs_bwd = self.dec_bwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
             loss += loss_bwd
             observation['loss.att-bwd'] = obs_bwd['loss_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
@@ -558,8 +556,7 @@ class Seq2seq(ModelBase):
             return eouts, None
         else:
             # Sort by lenghts in the descending order
-            perm_ids = sorted(list(range(0, len(xs), 1)),
-                              key=lambda i: len(xs[i]), reverse=True)
+            perm_ids = sorted(list(range(0, len(xs), 1)), key=lambda i: len(xs[i]), reverse=True)
             xs = [xs[i] for i in perm_ids]
             # NOTE: must be descending order for pack_padded_sequence
 
@@ -698,7 +695,6 @@ class Seq2seq(ModelBase):
             # Attention
             #########################
             else:
-                best_hyps_str = None
                 cache_info = (None, None)
 
                 if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:

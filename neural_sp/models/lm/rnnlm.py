@@ -208,9 +208,9 @@ class RNNLM(ModelBase):
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out, pad=self.pad)
 
-        observation = {'loss.rnnlm': loss.item(),
-                       'acc.rnnlm': acc,
-                       'ppl.rnnlm': np.exp(loss.item())}
+        observation = {'loss.lm': loss.item(),
+                       'acc.lm': acc,
+                       'ppl.lm': np.exp(loss.item())}
 
         # Report here
         if reporter is not None:
@@ -223,7 +223,7 @@ class RNNLM(ModelBase):
         """Encode function.
 
         Args:
-            ys (LongTensor):
+            ys (LongTensor): `[B, L]`
         Returns:
             ys (FloatTensor): `[B, L, emb_dim]`
 

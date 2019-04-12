@@ -65,17 +65,17 @@ class RNNEncoder(nn.Module):
                  dropout_in,
                  dropout,
                  subsample,
-                 subsample_type,
-                 n_stacks,
-                 n_splices,
-                 conv_in_channel,
-                 conv_channels,
-                 conv_kernel_sizes,
-                 conv_strides,
-                 conv_poolings,
-                 conv_batch_norm,
-                 conv_bottleneck_dim,
-                 residual,
+                 subsample_type='drop',
+                 n_stacks=1,
+                 n_splices=1,
+                 conv_in_channel=1,
+                 conv_channels=0,
+                 conv_kernel_sizes=[],
+                 conv_strides=[],
+                 conv_poolings=[],
+                 conv_batch_norm=False,
+                 conv_bottleneck_dim=0,
+                 residual=False,
                  n_layers_sub1=0,
                  n_layers_sub2=0,
                  n_layers_sub3=0,
@@ -116,7 +116,7 @@ class RNNEncoder(nn.Module):
             self.subsample = subsample
         self.subsample_type = subsample_type
 
-        # Setting for residual connection
+        # Setting for residual connections
         subsample_last = 0
         for l_reverse, is_subsample in enumerate(subsample[::-1]):
             if is_subsample:
@@ -125,7 +125,7 @@ class RNNEncoder(nn.Module):
         self.residual_start_layer = subsample_last + 1
         # NOTE: residual connection starts from the last subsampling layer
 
-        # Setting for the NiN
+        # Setting for the NiN (Network in Network)
         self.conv_batch_norm = conv_batch_norm
         self.nin = nin
 
@@ -192,7 +192,7 @@ class RNNEncoder(nn.Module):
                                dropout=dropout,
                                bidirectional=self.bidirectional)
                 # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
-                self._output_dim = n_units
+                self._output_dim = n_units * self.n_dirs
                 self.dropout_top = nn.Dropout(p=dropout)
             else:
                 self.rnn = nn.ModuleList()
@@ -292,11 +292,11 @@ class RNNEncoder(nn.Module):
             task (str): all or ys or ys_sub1 or ys_sub2 or ys_sub3
         Returns:
             eouts (dict):
-                xs (FloatTensor): `[B, T // prod(subsample), n_units (*n_dirs)]`
+                xs (FloatTensor): `[B, T // prod(subsample), n_units (*2)]`
                 xlens (list): `[B]`
-                xs_sub1 (FloatTensor): `[B, T // prod(subsample), n_units (*n_dirs)]`
+                xs_sub1 (FloatTensor): `[B, T // prod(subsample), n_units (*2)]`
                 xlens_sub1 (list): `[B]`
-                xs_sub2 (FloatTensor): `[B, T // prod(subsample), n_units (*n_dirs)]`
+                xs_sub2 (FloatTensor): `[B, T // prod(subsample), n_units (*2)]`
                 xlens_sub2 (list): `[B]`
 
         """
@@ -410,10 +410,13 @@ class RNNEncoder(nn.Module):
                             xs = xs.transpose(1, 0).contiguous()
                             xs = [torch.max(xs[t - self.subsample[l] + 1:t + 1], dim=0)[0].unsqueeze(0)
                                   for t in range(xs.size(0)) if (t + 1) % self.subsample[l] == 0]
+                            # NOTE: Exclude the last frame if the length of xs is odd
                             xs = torch.cat(xs, dim=0).transpose(1, 0)
+                        elif self.subsample_type == 'conv1d':
+                            raise NotImplementedError
 
                         # Update xlens
-                        xlens = [x.size(0) for x in xs]
+                        xlens = [x // 2 for x in xlens]
 
                     # NiN
                     if self.nin > 0:

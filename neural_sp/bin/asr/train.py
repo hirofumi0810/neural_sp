@@ -70,7 +70,7 @@ def main():
     subsample = [int(s) for s in args.subsample.split('_')]
     if args.conv_poolings:
         for p in args.conv_poolings.split('_'):
-            p = int(p.split(',')[1].replace(')', ''))
+            p = int(p.split(',')[0].replace('(', ''))
             if p > 1:
                 subsample_factor *= p
     if args.train_set_sub1:

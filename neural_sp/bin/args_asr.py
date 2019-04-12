@@ -99,7 +99,7 @@ def parse():
                         help='delimited list input')
     parser.add_argument('--conv_poolings', type=str, default="", nargs='?',
                         help='delimited list input')
-    parser.add_argument('--conv_batch_norm', type=bool, default=False, nargs='?',
+    parser.add_argument('--conv_batch_norm', type=strtobool, default=False, nargs='?',
                         help='')
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
@@ -123,8 +123,8 @@ def parse():
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
-                        choices=['drop', 'concat', 'max_pool'],
-                        help='')
+                        choices=['drop', 'concat', 'max_pool', 'conv1d'],
+                        help='type of subsampling in the encoder')
     parser.add_argument('--freeze_encoder', type=strtobool, default=False,
                         help='freeze the encoder parameter')
     # topology (decoder)

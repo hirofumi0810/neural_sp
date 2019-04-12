@@ -53,12 +53,6 @@ class RNNDecoder(nn.Module):
         blank (int): index for <blank>
         enc_n_units (int):
         attn_type (str):
-        attn_dim (int):
-        attn_sharpening_factor (float):
-        attn_sigmoid_smoothing (bool):
-        attn_conv_out_channels (int):
-        attn_conv_kernel_size (int):
-        attn_n_heads (int): number of attention heads
         rnn_type (str): lstm or gru
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
@@ -68,12 +62,18 @@ class RNNDecoder(nn.Module):
         emb_dim (int): dimension of the embedding in target spaces.
         tie_embedding (bool):
         vocab (int): number of nodes in softmax layer
+        attn_dim (int):
+        attn_sharpening_factor (float):
+        attn_sigmoid_smoothing (bool):
+        attn_conv_out_channels (int):
+        attn_conv_kernel_size (int):
+        attn_n_heads (int): number of attention heads
         dropout (float): probability to drop nodes in the RNN layer
         dropout_emb (float): probability to drop nodes of the embedding layer
         dropout_att (float): dropout probabilities for attention distributions
+        lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
         ss_type (str): constant or saturation
-        lsm_prob (float): label smoothing probability
         layer_norm (bool): layer normalization
         ctc_weight (float):
         ctc_fc_list (list):
@@ -97,12 +97,6 @@ class RNNDecoder(nn.Module):
                  blank,
                  enc_n_units,
                  attn_type,
-                 attn_dim,
-                 attn_sharpening_factor,
-                 attn_sigmoid_smoothing,
-                 attn_conv_out_channels,
-                 attn_conv_kernel_size,
-                 attn_n_heads,
                  rnn_type,
                  n_units,
                  n_projs,
@@ -112,27 +106,33 @@ class RNNDecoder(nn.Module):
                  emb_dim,
                  tie_embedding,
                  vocab,
-                 dropout,
-                 dropout_emb,
-                 dropout_att,
-                 ss_prob,
-                 ss_type,
-                 lsm_prob,
-                 layer_norm,
-                 fl_weight,
-                 fl_gamma,
-                 ctc_weight,
-                 ctc_fc_list,
-                 input_feeding,
-                 backward,
-                 lm,
-                 lm_fusion_type,
-                 n_caches,
-                 lm_init,
-                 lmobj_weight,
-                 share_lm_softmax,
-                 global_weight,
-                 mtl_per_batch):
+                 attn_dim=0,
+                 attn_sharpening_factor=0.0,
+                 attn_sigmoid_smoothing=False,
+                 attn_conv_out_channels=0,
+                 attn_conv_kernel_size=0,
+                 attn_n_heads=0,
+                 dropout=0.0,
+                 dropout_emb=0.0,
+                 dropout_att=0.0,
+                 lsm_prob=0.0,
+                 ss_prob=0.0,
+                 ss_type='constant',
+                 layer_norm=False,
+                 fl_weight=0.0,
+                 fl_gamma=2.0,
+                 ctc_weight=0.0,
+                 ctc_fc_list=[],
+                 input_feeding=False,
+                 backward=False,
+                 lm=None,
+                 lm_fusion_type='cold',
+                 n_caches=0,
+                 lm_init=False,
+                 lmobj_weight=0.0,
+                 share_lm_softmax=False,
+                 global_weight=1.0,
+                 mtl_per_batch=False):
 
         super(RNNDecoder, self).__init__()
 
@@ -166,7 +166,7 @@ class RNNDecoder(nn.Module):
         self.input_feeding = input_feeding
         if input_feeding:
             assert loop_type == 'normal'
-        self.backward = backward
+        self.bwd = backward
         self.lm = lm
         self.lm_fusion_type = lm_fusion_type
         self.n_caches = n_caches
@@ -313,8 +313,6 @@ class RNNDecoder(nn.Module):
                     self.score_cache = AttentionMechanism(key_dim=n_units,
                                                           query_dim=n_units,
                                                           attn_type='dot',
-                                                          #   attn_type='add',
-                                                          #   attn_type='location',
                                                           attn_dim=n_units)
 
                     # history controller
@@ -483,7 +481,7 @@ class RNNDecoder(nn.Module):
 
         # Append <sos> and <eos>
         eos = w.new_zeros((1,)).fill_(self.eos).long()
-        ys = [np2tensor(np.fromiter(y[::-1] if self.backward else y, dtype=np.int64),
+        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
                         self.device_id).long() for y in ys]
         ys_in = [torch.cat([eos, y], dim=0) for y in ys]
         ys_out = [torch.cat([y, eos], dim=0) for y in ys]
@@ -491,7 +489,7 @@ class RNNDecoder(nn.Module):
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dstates = self.init_dec_state(bs, self.n_layers)
+        dstates = self.init_dec_state(bs)
         cv = w.new_zeros((bs, 1, self.enc_n_units))
         attn_v = w.new_zeros((bs, 1, self.dec_n_units))
 
@@ -558,7 +556,7 @@ class RNNDecoder(nn.Module):
 
         # Append <sos> and <eos>
         eos = eouts.new_zeros(1).fill_(self.eos).long()
-        _ys = [np2tensor(np.fromiter(y[::-1] if self.backward else y, dtype=np.int64),
+        _ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
                          self.device_id).long() for y in ys]
         ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
         ys_out = [torch.cat([y, eos], dim=0) for y in _ys]
@@ -566,7 +564,7 @@ class RNNDecoder(nn.Module):
         ys_out_pad = pad_list(ys_out, -1)
 
         # Initialization
-        dstates = self.init_dec_state(bs, self.n_layers, eouts, elens)
+        dstates = self.init_dec_state(bs)
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
@@ -642,16 +640,14 @@ class RNNDecoder(nn.Module):
         # Compute XE sequence loss
         if self.lsm_prob > 0:
             # Label smoothing
-            loss = cross_entropy_lsm(
-                logits,
-                ys=ys_out_pad,
-                ylens=[y.size(0) for y in ys_out],
-                lsm_prob=self.lsm_prob, size_average=True)
+            loss = cross_entropy_lsm(logits,
+                                     ys=ys_out_pad,
+                                     ylens=[y.size(0) for y in ys_out],
+                                     lsm_prob=self.lsm_prob, size_average=True)
         else:
-            loss = F.cross_entropy(
-                logits.view((-1, logits.size(2))),
-                ys_out_pad.view(-1),  # long
-                ignore_index=-1, size_average=False) / bs
+            loss = F.cross_entropy(logits.view((-1, logits.size(2))),
+                                   ys_out_pad.view(-1),  # long
+                                   ignore_index=-1, size_average=False) / bs
 
         # Focal loss
         if self.fl_weight > 0:
@@ -667,13 +663,11 @@ class RNNDecoder(nn.Module):
 
         return loss, acc, ppl
 
-    def init_dec_state(self, bs, n_layers, eouts=None, elens=None):
+    def init_dec_state(self, batch_size):
         """Initialize decoder state.
 
         Args:
-            eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length `[B]`
-            n_layers (int):
+            batch_size (int):
         Returns:
             dstates (dict):
                 dout (FloatTensor): `[B, 1, dec_n_units]`
@@ -686,9 +680,9 @@ class RNNDecoder(nn.Module):
                    'dout_gen': None,  # for token generation
                    'dstate': None}
         w = next(self.parameters())
-        zero_state = w.new_zeros((bs, self.dec_n_units))
-        dstates['dout_score'] = w.new_zeros((bs, 1, self.dec_n_units))
-        dstates['dout_gen'] = w.new_zeros((bs, 1, self.dec_n_units))
+        zero_state = w.new_zeros((batch_size, self.dec_n_units))
+        dstates['dout_score'] = w.new_zeros((batch_size, 1, self.dec_n_units))
+        dstates['dout_gen'] = w.new_zeros((batch_size, 1, self.dec_n_units))
         hxs = [zero_state for l in range(self.n_layers)]
         cxs = [zero_state for l in range(self.n_layers)] if self.rnn_type == 'lstm' else []
         dstates['dstate'] = (hxs, cxs)
@@ -718,6 +712,8 @@ class RNNDecoder(nn.Module):
                        'dout_gen': None,  # for token generation
                        'dout_lmdec': None,
                        'dstate': None}
+
+        # 1st layer
         if self.loop_type == 'lmdecoder':
             if self.rnn_type == 'lstm':
                 hxs[0], cxs[0] = self.rnn[0](y_emb, (hxs[0], cxs[0]))
@@ -740,6 +736,7 @@ class RNNDecoder(nn.Module):
             # the bottom layer
             dstates_new['dout_score'] = dout.unsqueeze(1)
 
+        # after 2nd layers
         for l in range(1, self.n_layers):
             if self.loop_type == 'lmdecoder' and l == 1:
                 if self.rnn_type == 'lstm':
@@ -836,7 +833,7 @@ class RNNDecoder(nn.Module):
         bs, max_xlen, enc_n_units = eouts.size()
 
         # Initialization
-        dstates = self.init_dec_state(bs, self.n_layers, eouts, elens)
+        dstates = self.init_dec_state(bs)
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
@@ -954,7 +951,7 @@ class RNNDecoder(nn.Module):
         aws_tmp = tensor2np(torch.stack(aws_tmp, dim=1))
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
-        if self.backward:
+        if self.bwd:
             # Reverse the order
             best_hyps = [best_hyps_tmp[b, :ylens[b]][::-1] for b in range(bs)]
             aws = [aws_tmp[b, :ylens[b]][::-1] for b in range(bs)]
@@ -964,7 +961,7 @@ class RNNDecoder(nn.Module):
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
-            if self.backward:
+            if self.bwd:
                 best_hyps = [best_hyps[b][1:] if eos_flags[b] else best_hyps[b] for b in range(bs)]
             else:
                 best_hyps = [best_hyps[b][:-1] if eos_flags[b] else best_hyps[b] for b in range(bs)]
@@ -1037,7 +1034,7 @@ class RNNDecoder(nn.Module):
 
         # For joint CTC-Attention decoding
         if ctc_weight > 0 and ctc_log_probs is not None:
-            if self.backward:
+            if self.bwd:
                 ctc_prefix_score = CTCPrefixScore(tensor2np(ctc_log_probs)[0][::-1], self.blank, self.eos)
             else:
                 ctc_prefix_score = CTCPrefixScore(tensor2np(ctc_log_probs)[0], self.blank, self.eos)
@@ -1046,7 +1043,7 @@ class RNNDecoder(nn.Module):
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
-            dstates = self.init_dec_state(1, self.n_layers, eouts[b:b + 1], elens[b:b + 1])
+            dstates = self.init_dec_state(1)
             cv = eouts.new_zeros(1, 1, self.dec_n_units if self.input_feeding else self.enc_n_units)
             self.score.reset()
             lm_hxs, lm_cxs = None, None
@@ -1062,7 +1059,7 @@ class RNNDecoder(nn.Module):
             ensemble_cv = []
             if n_models > 0:
                 for dec in ensemble_decoders:
-                    ensemble_dstates += [dec.init_dec_state(1, dec.n_layers, eouts[b:b + 1], elens[b:b + 1])]
+                    ensemble_dstates += [dec.init_dec_state(1)]
                     if dec.input_feeding:
                         ensemble_cv += [eouts.new_zeros(1, 1, dec.dec_n_units)]
                         # NOTE: this is equivalent to attn_v
@@ -1457,7 +1454,7 @@ class RNNDecoder(nn.Module):
             complete = sorted(complete, key=lambda x: x['score'], reverse=True)
 
             # N-best list
-            if self.backward:
+            if self.bwd:
                 # Reverse the order
                 nbest_hyps_idx += [[np.array(complete[n]['hyp_id'][1:][::-1]) for n in range(nbest)]]
                 if self.score.n_heads > 1:
@@ -1502,7 +1499,7 @@ class RNNDecoder(nn.Module):
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
-            if self.backward:
+            if self.bwd:
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][1:] if eos_flags[b][n]
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
             else:

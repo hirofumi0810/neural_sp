@@ -24,7 +24,7 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
-class GLUblock(nn.Module):
+class GLUBlock(nn.Module):
     def __init__(self, kernel_size, in_ch, out_ch):
         super().__init__()
 
@@ -53,7 +53,9 @@ class GLUblock(nn.Module):
         a = self.conv(x) + self.bias_b  # a: `[B, out_ch, T]`
         b = self.conv_gate(x) + self.bias_c  # b: `[B, out_ch, T]`
         x = torch.mul(a, F.sigmoid(b))
-        return x + residual
+        if x.size() == residual.size():
+            x = x + residual
+        return x
 
 
 class GatedConvLM(ModelBase):
@@ -81,24 +83,54 @@ class GatedConvLM(ModelBase):
         self.cache_keys = []
         self.cache_attn = []
 
-        args.kernel_size = 5  # 3, 4, 5
-        # TODO(hirofumi): make this hyperparameter
-        args.channels = [args.n_units] * args.n_layers
-
         self.embed = Embedding(vocab=self.vocab,
                                emb_dim=args.emb_dim,
                                dropout=args.dropout_emb,
                                ignore_index=self.pad)
 
-        self.glu0 = GLUblock(args.kernel_size, args.emb_dim, args.channels[0])
         glu_layers = OrderedDict()
-        for l in range(1, args.n_layers):
-            glu_layers['glu%s' % l] = GLUblock(args.kernel_size, args.channels[l - 1], args.channels[l])
+
+        # model = '13'
+        model = '14B'
+
+        if model == '13':
+            glu_layers['conv1'] = GLUBlock(4, args.emb_dim, 1268)
+            for i in range(12):
+                glu_layers['conv2-%d-1' % i] = GLUBlock(4, 1268, 1268)
+                glu_layers['conv2-%d-2' % i] = GLUBlock(4, 1268, 1268)
+
+        elif model == '14B':
+            glu_layers['conv1'] = GLUBlock(5, args.emb_dim, 512)
+            for i in range(3):
+                glu_layers['conv2-%d-1' % i] = GLUBlock(1, 512, 128)
+                glu_layers['conv2-%d-2' % i] = GLUBlock(5, 128, 128)
+                glu_layers['conv2-%d-3' % i] = GLUBlock(1, 128, 512)
+            for i in range(3):
+                if i == 0:
+                    glu_layers['conv3-%d-1' % i] = GLUBlock(1, 512, 512)
+                else:
+                    glu_layers['conv3-%d-1' % i] = GLUBlock(1, 1024, 512)
+                glu_layers['conv3-%d-2' % i] = GLUBlock(5, 512, 512)
+                glu_layers['conv3-%d-3' % i] = GLUBlock(1, 512, 1024)
+            for i in range(6):
+                if i == 0:
+                    glu_layers['conv4-%d-1' % i] = GLUBlock(1, 1024, 1024)
+                else:
+                    glu_layers['conv4-%d-1' % i] = GLUBlock(1, 2048, 1024)
+                glu_layers['conv4-%d-2' % i] = GLUBlock(5, 1024, 1024)
+                glu_layers['conv4-%d-3' % i] = GLUBlock(1, 1024, 2048)
+            glu_layers['conv5-1-1'] = GLUBlock(1, 2048, 1024)
+            glu_layers['conv5-1-2'] = GLUBlock(5, 1024, 1024)
+            glu_layers['conv5-1-3'] = GLUBlock(1, 1024, 4096)
+            last_dim = 4096
+        else:
+            raise NotImplementedError
+
         self.glu_layers = nn.Sequential(glu_layers)
         # self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
         #     args.n_units, vs, cutoffs=[round(vs / 25), round(vs / 5)], div_value=4)
 
-        self.output = LinearND(args.channels[-1], self.vocab,
+        self.output = LinearND(last_dim, self.vocab,
                                dropout=args.dropout_out)
         # NOTE: include bias even when tying weights
 
@@ -200,9 +232,9 @@ class GatedConvLM(ModelBase):
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out, pad=self.pad)
 
-        observation = {'loss.rnnlm': loss.item(),
-                       'acc.rnnlm': acc,
-                       'ppl.rnnlm': np.exp(loss.item())}
+        observation = {'loss.lm': loss.item(),
+                       'acc.lm': acc,
+                       'ppl.lm': np.exp(loss.item())}
 
         # Report here
         if reporter is not None:
@@ -236,10 +268,7 @@ class GatedConvLM(ModelBase):
         bs, max_ylen = ys_emb.size()[:2]
 
         # embed_dim = in_ch
-        ys_emb = self.glu0(ys_emb.transpose(2, 1))  # `[B, out_ch, T]`
-
-        # GLU blocks
-        ys_emb = self.glu_layers(ys_emb)  # [B, out_ch, T]
+        ys_emb = self.glu_layers(ys_emb.transpose(2, 1))  # [B, out_ch, T]
         ys_emb = ys_emb.transpose(2, 1).contiguous()  # `[B, T, out_ch]`
 
         return ys_emb, hidden
