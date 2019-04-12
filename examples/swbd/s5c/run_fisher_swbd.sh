@@ -16,7 +16,7 @@ export data=/n/sd8/inaguma/corpus/swbd
 ### vocabulary
 unit=wp      # word/wp/char/word_char
 vocab_size=30000
-wp_type=bpe  # or unigram (for wordpiece)
+wp_type=bpe  # bpe/unigram (for wordpiece)
 
 #########################
 # ASR configuration
@@ -30,7 +30,8 @@ conv_channels=
 conv_kernel_sizes=
 conv_strides=
 conv_poolings=
-conv_batch_norm=
+conv_batch_norm=false
+conv_bottleneck_dim=0
 subsample="1_2_2_2_1"
 # VGG
 # conv_channels="64_64_128_128"
@@ -42,37 +43,37 @@ enc_type=blstm
 enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
-enc_residual=
+enc_residual=false
 subsample_type=drop
 attn_type=location
 attn_dim=512
 attn_n_heads=1
-attn_sigmoid=
+attn_sigmoid=false
 dec_type=lstm
 dec_n_units=1024
 dec_n_projs=0
 dec_n_layers=1
 dec_loop_type=normal
-dec_residual=
-input_feeding=
+dec_residual=false
+input_feeding=false
 emb_dim=512
-tie_embedding=
+tie_embedding=false
 ctc_fc_list="512"
 ### optimization
 batch_size=50
 optimizer=adam
 learning_rate=1e-3
-n_epochs=30
-convert_to_sgd_epoch=25
+n_epochs=25
+convert_to_sgd_epoch=20
 print_step=1000
 decay_start_epoch=10
-decay_rate=0.9
+decay_rate=0.85
 decay_patient_n_epochs=0
 decay_type=epoch
 not_improved_patient_n_epochs=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
-warmup_n_steps=0
+warmup_n_steps=4000
 warmup_n_epochs=0
 ### initialization
 param_init=0.1
@@ -89,19 +90,19 @@ weight_decay=1e-6
 ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
-layer_norm=
+layer_norm=false
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
 bwd_weight=0.0
 mtl_per_batch=true
-task_specific_layer=
+task_specific_layer=false
 ### LM integration
 lm_fusion_type=cold
 lm_fusion=
 lm_init=
 lmobj_weight=0.0
-share_lm_softmax=
+share_lm_softmax=false
 # contextualization
 n_caches=0
 
@@ -431,6 +432,7 @@ if [ ${stage} -le 4 ]; then
         --conv_kernel_sizes ${conv_kernel_sizes} \
         --conv_strides ${conv_strides} \
         --conv_poolings ${conv_poolings} \
+        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --conv_batch_norm ${conv_batch_norm} \
         --enc_type ${enc_type} \
         --enc_n_units ${enc_n_units} \
