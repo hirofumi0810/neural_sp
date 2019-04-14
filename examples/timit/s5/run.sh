@@ -25,29 +25,28 @@ conv_channels=
 conv_kernel_sizes=
 conv_strides=
 conv_poolings=
-conv_batch_norm=
+conv_batch_norm=false
+conv_bottleneck_dim=0
 subsample="1_1_1_1_1"
-enc_type=blstm
-enc_n_units=320
 enc_type=bgru
 enc_n_units=256
 enc_n_projs=0
 enc_n_layers=5
-enc_residual=
+enc_residual=false
 subsample_type=drop
 attn_type=location
 attn_dim=256
 attn_n_heads=1
-attn_sigmoid=
+attn_sigmoid=false
 dec_type=gru
 dec_n_units=256
 dec_n_projs=0
 dec_n_layers=1
 dec_loop_type=normal
-dec_residual=
-input_feeding=
+dec_residual=false
+input_feeding=false
 emb_dim=256
-tie_embedding=
+tie_embedding=false
 ctc_fc_list=""
 ### optimization
 batch_size=32
@@ -62,6 +61,9 @@ decay_patient_n_epochs=0
 decay_type=epoch
 not_improved_patient_n_epochs=20
 eval_start_epoch=20
+warmup_start_learning_rate=1e-4
+warmup_n_steps=4000
+warmup_n_epochs=0
 ### initialization
 param_init=0.1
 param_init_dist=uniform
@@ -77,13 +79,13 @@ weight_decay=1e-6
 ss_prob=0.0
 ss_type=constant
 lsm_prob=0.0
-layer_norm=
+layer_norm=false
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
 bwd_weight=0.0
 mtl_per_batch=true
-task_specific_layer=
+task_specific_layer=false
 
 ### path to save the model
 model=/n/sd8/inaguma/result/timit
@@ -201,6 +203,7 @@ if [ ${stage} -le 4 ]; then
         --conv_kernel_sizes ${conv_kernel_sizes} \
         --conv_strides ${conv_strides} \
         --conv_poolings ${conv_poolings} \
+        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --conv_batch_norm ${conv_batch_norm} \
         --enc_type ${enc_type} \
         --enc_n_units ${enc_n_units} \
@@ -235,6 +238,9 @@ if [ ${stage} -le 4 ]; then
         --decay_patient_n_epochs ${decay_patient_n_epochs} \
         --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
         --eval_start_epoch ${eval_start_epoch} \
+        --warmup_start_learning_rate ${warmup_start_learning_rate} \
+        --warmup_n_steps ${warmup_n_steps} \
+        --warmup_n_epochs ${warmup_n_epochs} \
         --param_init ${param_init} \
         --param_init_dist ${param_init_dist} \
         --pretrained_model ${pretrained_model} \
