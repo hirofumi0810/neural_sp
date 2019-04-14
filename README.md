@@ -29,8 +29,8 @@
 
 #### Attention
   - RNN decoder
-    - location [link]
-    - additive [link]
+    - location
+    - additive
     - dot-product
     - Luong's dot/general/concat [[link](https://aclweb.org/anthology/D15-1166)]
     - Multi-headed dor-product [[link](https://arxiv.org/abs/1706.03762)]
@@ -44,7 +44,7 @@
 ### Output units
   - phoneme (TIMIT, Switchboard)
   - grapheme
-  - wordpiece (BPE, wordpiece)
+  - wordpiece (BPE, sentencepiece)
   - word
   - word-char mix
 
@@ -61,8 +61,10 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### WSJ
 | model | test_dev93 | test_eval92 |
 | --- | --- | --- |
-| Char attn | N/A | N/A |
-| BPE1k attn | N/A | N/A |
+| Char attn | 17.1 | 14.1 |
+| + RNNLM | N/A | N/A |
+| BPE1k attn | 15.1 | 12.4 |
+| + RNNLM | 11.8 | 10.3 |
 
 ### CSJ
 | model | eva1l | eval2 | eval3 |
@@ -71,16 +73,17 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | + RNNLM  | N/A | N/A | N/A |
 | BPE30k attn | 8.8 | 6.3 | 6.9 |
 | + RNNLM | 8.2 | 6.0 | 6.7 |
-<!-- | Word30k attn | 9.3 | 7.0 | 7.9 |
+| Word30k attn | 9.3 | 7.0 | 7.9 |
 | + RNNLM | 8.9 | 6.9 | 7.6 |
 | + Char attn | 8.8 | 6.8 | 7.6 |
-| + OOV resolution | 8.3 | 6.1 | 6.7 | -->
+| + OOV resolution | 8.3 | 6.1 | 6.7 |
 
 ### Switchboard
 | model | SWB | CH |
 | --- | --- | --- |
 | Char attn | N/A | N/A |
-| BPE10k attn | N/A | N/A |
+| BPE10k attn | 11.8 | 23.5 |
+| + RNNLM | 11.0 | 23.3 |
 | Word10k attn | N/A | N/A |
 
 ### Librispeech
@@ -95,7 +98,6 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 - https://github.com/kaldi-asr/kaldi
 - https://github.com/espnet/espnet
 - https://github.com/awni/speech
-- https://github.com/facebookresearch/wav2letter
 
 <!-- ## TODO
 - WFST decoder
