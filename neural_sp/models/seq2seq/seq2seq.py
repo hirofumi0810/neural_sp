@@ -15,6 +15,7 @@ import logging
 import numpy as np
 import torch
 
+from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
 from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
@@ -184,7 +185,7 @@ class Seq2seq(ModelBase):
                     lm = BRNNLM(args.lm_conf)
                 else:
                     lm = RNNLM(args.lm_conf)
-                    lm.load_checkpoint(args.lm_fusion)
+                    lm, _ = load_checkpoint(lm, args.lm_fusion)
             else:
                 args.lm_conf = False
                 lm = None

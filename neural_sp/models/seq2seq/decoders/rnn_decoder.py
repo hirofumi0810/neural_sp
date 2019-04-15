@@ -295,19 +295,19 @@ class RNNDecoder(nn.Module):
             dout_dim = n_projs if self.n_projs > 0 else n_units
             if self.lm is not None:
                 if lm_fusion_type not in ['deep_original', 'cache']:
-                    self.cf_linear_dec_feat = LinearND(dout_dim + enc_n_units, n_units)
+                    self.linear_dec_feat = LinearND(dout_dim + enc_n_units, n_units)
 
                 if 'cache' in self.lm_fusion_type:
                     assert n_caches > 0
 
                 if lm_fusion_type in ['cold', 'deep']:
-                    self.cf_linear_lm_feat = LinearND(self.lm.n_units, n_units)
-                    self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
+                    self.linear_lm_feat = LinearND(self.lm.n_units, n_units)
+                    self.linear_lm_gate = LinearND(n_units * 2, n_units)
                 elif lm_fusion_type == 'deep_original':
-                    self.cf_linear_lm_gate = LinearND(self.lm.n_units, 1)
+                    self.linear_lm_gate = LinearND(self.lm.n_units, 1)
                 elif lm_fusion_type == 'cold_prob':
-                    self.cf_linear_lm_feat = LinearND(self.lm.vocab, n_units)
-                    self.cf_linear_lm_gate = LinearND(n_units * 2, n_units)
+                    self.linear_lm_feat = LinearND(self.lm.vocab, n_units)
+                    self.linear_lm_gate = LinearND(n_units * 2, n_units)
                 elif lm_fusion_type == 'cache':
                     self.cache_bridge = LinearND(self.lm.n_units, n_units)
                     self.score_cache = AttentionMechanism(key_dim=n_units,
@@ -788,18 +788,18 @@ class RNNDecoder(nn.Module):
         elif self.lm is not None:
             # LM fusion
             if self.lm_fusion_type != 'deep_original':
-                dec_feat = self.cf_linear_dec_feat(torch.cat([dout, cv], dim=-1))
+                dec_feat = self.linear_dec_feat(torch.cat([dout, cv], dim=-1))
 
             if self.lm_fusion_type in ['cold', 'deep']:
-                lm_feat = self.cf_linear_lm_feat(lmout)
-                gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+                lm_feat = self.linear_lm_feat(lmout)
+                gate = torch.sigmoid(self.linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
                 gated_lm_feat = gate * lm_feat
             elif self.lm_fusion_type == 'cold_prob':
-                lm_feat = self.cf_linear_lm_feat(self.lm.generate(lmout))
-                gate = torch.sigmoid(self.cf_linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
+                lm_feat = self.linear_lm_feat(self.lm.generate(lmout))
+                gate = torch.sigmoid(self.linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
                 gated_lm_feat = gate * lm_feat
             elif self.lm_fusion_type == 'deep_original':
-                gate = torch.sigmoid(self.cf_linear_lm_gate(lmout))
+                gate = torch.sigmoid(self.linear_lm_gate(lmout))
                 gated_lm_feat = gate * lmout
 
             if self.lm_fusion_type == 'deep_original':
