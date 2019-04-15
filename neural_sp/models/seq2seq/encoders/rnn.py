@@ -101,7 +101,6 @@ class RNNEncoder(nn.Module):
         self.n_projs = n_projs
         self.n_layers = n_layers
         self.layer_norm = layer_norm
-        self.residual = residual
 
         # Setting for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -110,20 +109,13 @@ class RNNEncoder(nn.Module):
         self.task_specific_layer = task_specific_layer
 
         # Setting for subsampling
-        if len(subsample) == 0:
-            self.subsample = [1] * n_layers
-        else:
-            self.subsample = subsample
+        self.subsample = subsample
         self.subsample_type = subsample_type
 
         # Setting for residual connections
-        subsample_last = 0
-        for l_reverse, is_subsample in enumerate(subsample[::-1]):
-            if is_subsample:
-                subsample_last = n_layers - l_reverse
-                break
-        self.residual_start_layer = subsample_last + 1
-        # NOTE: residual connection starts from the last subsampling layer
+        self.residual = residual
+        if residual:
+            assert np.prod(subsample) == 1
 
         # Setting for the NiN (Network in Network)
         self.conv_batch_norm = conv_batch_norm
@@ -326,7 +318,7 @@ class RNNEncoder(nn.Module):
             xs = pad_packed_sequence(xs, batch_first=True)[0]
             xs = self.dropout_top(xs)
         else:
-            xs_lower = None
+            residual = None
             for l in range(len(self.rnn)):
                 self.rnn[l].flatten_parameters()
                 # NOTE: this is necessary for multi-GPUs setting
@@ -416,11 +408,11 @@ class RNNEncoder(nn.Module):
                             raise NotImplementedError
 
                         # Update xlens
-                        xlens = [x // 2 for x in xlens]
+                        xlens = [x // self.subsample[l] for x in xlens]
 
                     # NiN
                     if self.nin > 0:
-                        raise NotImplementedError()
+                        raise NotImplementedError
 
                         # Batch normalization befor NiN
                         if self.conv_batch_norm:
@@ -434,11 +426,9 @@ class RNNEncoder(nn.Module):
                         xs = getattr(self, 'nin_l' + str(l))(xs)
 
                     # Residual connection
-                    if (not self.subsample[l]) and self.residual:
-                        if l >= self.residual_start_layer - 1:
-                            xs = xs + xs_lower
-                        xs_lower = xs
-                    # NOTE: Exclude residual connection from the raw inputs
+                    if self.residual and residual is not None:
+                        xs += residual
+                    residual = xs
 
         if task in ['all', 'ys']:
             eouts['ys']['xs'] = xs
