@@ -23,7 +23,7 @@ batch_size=1
 beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=1.0
+length_penalty=0.1
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
@@ -111,7 +111,7 @@ for set in test_dev93 test_eval92; do
     mkdir -p ${recog_dir}
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
-        --recog_sets ${data}/dataset/${set}_char.tsv \
+        --recog_sets ${data}/dataset/${set}_wpbpe1000.tsv \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
