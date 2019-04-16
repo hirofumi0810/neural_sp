@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import copy
 import logging
 import numpy as np
 import torch
@@ -258,7 +257,7 @@ class Seq2seq(ModelBase):
                     # lm=args.lm_conf,
                     lm=lm,  # TODO(hirofumi): load RNNLM in the model init.
                     lm_fusion_type=args.lm_fusion_type,
-                    n_caches=args.n_caches,
+                    contextualize=args.contextualize,
                     lm_init=args.lm_init,
                     lmobj_weight=args.lmobj_weight,
                     share_lm_softmax=args.share_lm_softmax,
@@ -316,7 +315,7 @@ class Seq2seq(ModelBase):
                             backward=(dir_sub == 'bwd'),
                             lm=None,
                             lm_fusion_type='',
-                            n_caches=0,
+                            contextualize='',
                             lm_init=None,
                             lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
                             share_lm_softmax=args.share_lm_softmax,
@@ -376,18 +375,11 @@ class Seq2seq(ModelBase):
 
         # Initialize bias in gating with -1 for cold fusion
         if args.lm_fusion:
-            self.init_weights(-1, dist='constant', keys=['cf_linear_lm_gate.fc.bias'])
+            self.init_weights(-1, dist='constant', keys=['linear_lm_gate.fc.bias'])
 
-        if args.lm_fusion_type in ['deep', 'deep_original'] and args.lm_fusion:
+        if args.lm_fusion_type == 'deep' and args.lm_fusion:
             for n, p in self.named_parameters():
-                if 'output' in n or 'output_bn' in n or 'cf_linear' in n:
-                    p.requires_grad = True
-                else:
-                    p.requires_grad = False
-
-        if args.lm_fusion_type in ['cache'] and args.lm_fusion:
-            for n, p in self.named_parameters():
-                if 'output' in n or 'output_bn' in n or 'cache' in n or 'lm' in n:
+                if 'output' in n or 'output_bn' in n or 'linear' in n:
                     p.requires_grad = True
                 else:
                     p.requires_grad = False
@@ -461,16 +453,15 @@ class Seq2seq(ModelBase):
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
 
         # for the forward decoder in the main task
-        if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc',
-                                                                     'ys.lmobj', 'ys.lm']:
-            ys_cache = []
+        if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj', 'ys.lm']:
+            ys_hist = []
             if perm_ids is None:
                 ys = batch['ys'][:]  # for lmobj
             else:
                 ys = [batch['ys'][:][i] for i in perm_ids]
-                if len(batch['ys_cache']) > 0:
-                    ys_cache = [batch['ys_cache'][:][i] for i in perm_ids]
-            loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, ys_cache)
+                if len(batch['ys_hist']) > 0:
+                    ys_hist = [batch['ys_hist'][:][i] for i in perm_ids]
+            loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, ys_hist)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
@@ -500,9 +491,9 @@ class Seq2seq(ModelBase):
             # for the forward decoder in the sub tasks
             if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc', 'ys_' + sub + '.lmobj']:
                 if perm_ids is None:
-                    ys_sub = [batch['ys_' + sub][:][i] for i in perm_ids]  # for lmobj
+                    ys_sub = batch['ys_' + sub][:]  # for lmobj
                 else:
-                    ys_sub = batch['ys_' + sub][:]
+                    ys_sub = [batch['ys_' + sub][:][i] for i in perm_ids]
                 loss_sub, obs_fwd_sub = getattr(self, 'dec_fwd_' + sub)(
                     enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub, task)
                 loss += loss_sub
@@ -514,12 +505,12 @@ class Seq2seq(ModelBase):
                 observation['ppl.att-' + sub] = obs_fwd_sub['ppl_att']
                 observation['ppl.lmobj-' + sub] = obs_fwd_sub['ppl_lmobj']
 
-                # for the backward decoder in the sub tasks
+            # for the backward decoder in the sub tasks
             if getattr(self, 'bwd_weight_' + sub) > 0 and task in ['all', 'ys_' + sub + '.bwd']:
                 if perm_ids is None:
-                    ys_sub = [batch['ys_' + sub][:][i] for i in perm_ids]  # for lmobj
+                    ys_sub = batch['ys_' + sub][:]  # for lmobj
                 else:
-                    ys_sub = batch['ys_' + sub][:]
+                    ys_sub = [batch['ys_' + sub][:][i] for i in perm_ids]
                 loss_sub, obs_bwd_sub = getattr(self, 'dec_fwd_' + sub)(
                     enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub, task)
                 loss += loss_sub
@@ -589,7 +580,7 @@ class Seq2seq(ModelBase):
             if self.main_weight < 1 and self.enc_type in ['cnn', 'tds']:
                 for sub in ['sub1', 'sub2', 'sub3']:
                     enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
-                    enc_outs['ys_' + sub]['xlens'] = copy.deepcopy(enc_outs['ys']['xlens'])
+                    enc_outs['ys_' + sub]['xlens'] = enc_outs['ys']['xlens'][:]
 
             # Bridge between the encoder and decoder
             if self.main_weight > 0 and self.is_bridge and (task in ['all', 'ys']):
