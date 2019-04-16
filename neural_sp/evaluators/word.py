@@ -67,7 +67,7 @@ def eval_word(models, dataset, recog_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, aws, perm_ids, _ = models[0].decode(
+            best_hyps_id, aws, _, _ = models[0].decode(
                 batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=True,
                 refs_id=batch['ys'],
@@ -75,10 +75,9 @@ def eval_word(models, dataset, recog_params, epoch,
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
                 ensemble_models=models[1:] if len(models) > 1 else [],
                 word_list=word_list)
-            ys = [batch['text'][i] for i in perm_ids]
 
             for b in range(len(batch['xs'])):
-                ref = ys[b]
+                ref = batch['text'][b]
                 hyp = dataset.idx2token[0](best_hyps_id[b])
 
                 n_oov_total += hyp.count('<unk>')

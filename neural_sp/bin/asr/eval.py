@@ -73,7 +73,6 @@ def main():
                           unit_sub2=args.unit_sub2,
                           unit_sub3=args.unit_sub3,
                           batch_size=args.recog_batch_size,
-                          concat_prev_n_utterances=args.recog_concat_prev_n_utterances,
                           is_test=True)
 
         if i == 0:

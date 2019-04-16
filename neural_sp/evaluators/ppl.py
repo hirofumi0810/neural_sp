@@ -44,6 +44,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1,
     is_lm = False
     if isinstance(model, RNNLM) or isinstance(model, GatedConvLM):
         is_lm = True
+    skip_thought = 'skip' in model.enc_type
 
     # Change to the evaluation mode
     model.eval()
@@ -67,7 +68,13 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1,
                     pbar.update(sum([len(y) for y in ys[:, t:t + 1]]))
         else:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            loss, _ = model(batch, task='all', is_eval=True)
+            if skip_thought:
+                loss, _ = model(batch['ys'],
+                                ys_prev=batch['ys_prev'],
+                                ys_next=batch['ys_next'],
+                                is_eval=True)
+            else:
+                loss, _ = model(batch, task='all', is_eval=True)
             total_loss += loss.item()
             del loss
             n_tokens += sum([len(y) for y in batch['ys']])

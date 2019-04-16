@@ -177,13 +177,12 @@ def main():
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, aws, perm_ids, (cache_attn_hist, cache_id_hist) = model.decode(
+            best_hyps_id, aws, (cache_attn_hist, cache_id_hist) = model.decode(
                 batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=False,
                 refs_id=batch['ys'],
                 ensemble_models=ensemble_models[1:] if len(ensemble_models) > 1 else [],
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
-            refs_text = [batch['text'][i] for i in perm_ids]
 
             if model.bwd_weight > 0.5:
                 # Reverse the order
@@ -222,7 +221,7 @@ def main():
                 else:
                     hyp = ' '.join(tokens)
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
-                logger.info('Ref: %s' % refs_text[b].lower())
+                logger.info('Ref: %s' % batch['text'][b].lower())
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 50)
 

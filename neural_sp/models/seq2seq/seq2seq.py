@@ -442,26 +442,20 @@ class Seq2seq(ModelBase):
         if self.input_type == 'speech':
             if self.mtl_per_batch:
                 flip = True if 'bwd' in task else False
-                enc_outs, perm_ids = self.encode(batch['xs'], task, flip=flip)
+                enc_outs = self.encode(batch['xs'], task, flip=flip)
             else:
                 flip = True if self.bwd_weight == 1 else False
-                enc_outs, perm_ids = self.encode(batch['xs'], 'all', flip=flip)
+                enc_outs = self.encode(batch['xs'], 'all', flip=flip)
         else:
-            enc_outs, perm_ids = self.encode(batch['ys_sub1'])
+            enc_outs = self.encode(batch['ys_sub1'])
 
         observation = {}
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
 
         # for the forward decoder in the main task
         if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj', 'ys.lm']:
-            ys_hist = []
-            if perm_ids is None:
-                ys = batch['ys'][:]  # for lmobj
-            else:
-                ys = [batch['ys'][:][i] for i in perm_ids]
-                if len(batch['ys_hist']) > 0:
-                    ys_hist = [batch['ys_hist'][:][i] for i in perm_ids]
-            loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task, ys_hist)
+            loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']
+                                             ['xlens'], batch['ys'], task, batch['ys_hist'])
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
@@ -475,8 +469,7 @@ class Seq2seq(ModelBase):
 
         # for the backward decoder in the main task
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
-            ys = [batch['ys'][:][i] for i in perm_ids]
-            loss_bwd, obs_bwd = self.dec_bwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], ys, task)
+            loss_bwd, obs_bwd = self.dec_bwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], batch['ys'], task)
             loss += loss_bwd
             observation['loss.att-bwd'] = obs_bwd['loss_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
@@ -490,12 +483,8 @@ class Seq2seq(ModelBase):
         for sub in ['sub1', 'sub2', 'sub3']:
             # for the forward decoder in the sub tasks
             if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc', 'ys_' + sub + '.lmobj']:
-                if perm_ids is None:
-                    ys_sub = batch['ys_' + sub][:]  # for lmobj
-                else:
-                    ys_sub = [batch['ys_' + sub][:][i] for i in perm_ids]
                 loss_sub, obs_fwd_sub = getattr(self, 'dec_fwd_' + sub)(
-                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub, task)
+                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], batch['ys_' + sub], task)
                 loss += loss_sub
                 observation['loss.att-' + sub] = obs_fwd_sub['loss_att']
                 observation['loss.ctc-' + sub] = obs_fwd_sub['loss_ctc']
@@ -507,12 +496,8 @@ class Seq2seq(ModelBase):
 
             # for the backward decoder in the sub tasks
             if getattr(self, 'bwd_weight_' + sub) > 0 and task in ['all', 'ys_' + sub + '.bwd']:
-                if perm_ids is None:
-                    ys_sub = batch['ys_' + sub][:]  # for lmobj
-                else:
-                    ys_sub = [batch['ys_' + sub][:][i] for i in perm_ids]
                 loss_sub, obs_bwd_sub = getattr(self, 'dec_fwd_' + sub)(
-                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], ys_sub, task)
+                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], batch['ys_' + sub], task)
                 loss += loss_sub
                 observation['loss.att-bwd-' + sub] = obs_bwd_sub['loss_att']
                 observation['loss.ctc-bwd-' + sub] = obs_bwd_sub['loss_ctc']
@@ -537,7 +522,6 @@ class Seq2seq(ModelBase):
             flip (bool): if True, flip acoustic features in the time-dimension
         Returns:
             enc_outs (dict):
-            perm_ids ():
 
         """
         if 'lmobj' in task:
@@ -545,13 +529,8 @@ class Seq2seq(ModelBase):
                      'ys_sub1': {'xs': None, 'xlens': None},
                      'ys_sub2': {'xs': None, 'xlens': None},
                      'ys_sub3': {'xs': None, 'xlens': None}}
-            return eouts, None
+            return eouts
         else:
-            # Sort by lenghts in the descending order
-            perm_ids = sorted(list(range(0, len(xs), 1)), key=lambda i: len(xs[i]), reverse=True)
-            xs = [xs[i] for i in perm_ids]
-            # NOTE: must be descending order for pack_padded_sequence
-
             if self.input_type == 'speech':
                 # Frame stacking
                 if self.n_stacks > 1:
@@ -592,12 +571,12 @@ class Seq2seq(ModelBase):
             if self.sub3_weight > 0 and self.is_bridge and (task in ['all', 'ys_sub3']):
                 enc_outs['ys_sub3']['xs'] = self.bridge_sub3(enc_outs['ys_sub3']['xs'])
 
-            return enc_outs, perm_ids
+            return enc_outs
 
     def get_ctc_posteriors(self, xs, task='ys', temperature=1, topk=None):
         self.eval()
         with torch.no_grad():
-            enc_outs, perm_ids = self.encode(xs, task)
+            enc_outs = self.encode(xs, task)
             dir = 'fwd' if self.fwd_weight >= self.bwd_weight else 'bwd'
             if task == 'ys_sub1':
                 dir += '_sub1'
@@ -645,7 +624,6 @@ class Seq2seq(ModelBase):
         Returns:
             best_hyps_id (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
-            perm_ids (list): A list of length `[B]`
 
         """
         self.eval()
@@ -666,9 +644,9 @@ class Seq2seq(ModelBase):
 
             # encode
             if self.input_type == 'speech' and self.mtl_per_batch and 'bwd' in dir:
-                enc_outs, perm_ids = self.encode(xs, task, flip=True)
+                enc_outs = self.encode(xs, task, flip=True)
             else:
-                enc_outs, perm_ids = self.encode(xs, task, flip=False)
+                enc_outs = self.encode(xs, task, flip=False)
 
             #########################
             # CTC
@@ -681,7 +659,7 @@ class Seq2seq(ModelBase):
                 best_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
                     params['recog_beam_width'], lm)
-                return best_hyps_id, None, perm_ids, (None, None)
+                return best_hyps_id, None, (None, None)
 
             #########################
             # Attention
@@ -806,7 +784,7 @@ class Seq2seq(ModelBase):
                             best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
                             aws = [aw[0] for aw in aws]
                         else:
-                            return nbest_hyps_id, aws, scores, perm_ids, cache_info
+                            return nbest_hyps_id, aws, scores, cache_info
                         # NOTE: nbest >= 2 is used for MWER training only
 
-                return best_hyps_id, aws, perm_ids, cache_info
+                return best_hyps_id, aws, cache_info

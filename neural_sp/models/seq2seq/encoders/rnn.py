@@ -308,12 +308,17 @@ class RNNEncoder(nn.Module):
                 eouts['ys']['xlens'] = xlens
                 return eouts
 
+        # Sort by lenghts in the descending order for pack_padded_sequence
+        xlens, perm_ids = torch.LongTensor(xlens).sort(0, descending=True)
+        xs = xs[perm_ids]
+        _, perm_ids_unsort = perm_ids.sort()
+
         if self.fast_impl:
             self.rnn.flatten_parameters()
             # NOTE: this is necessary for multi-GPUs setting
 
             # Path through RNN
-            xs = pack_padded_sequence(xs, xlens, batch_first=True)
+            xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
             xs, _ = self.rnn(xs, hx=None)
             xs = pad_packed_sequence(xs, batch_first=True)[0]
             xs = self.dropout_top(xs)
@@ -324,7 +329,7 @@ class RNNEncoder(nn.Module):
                 # NOTE: this is necessary for multi-GPUs setting
 
                 # Path through RNN
-                xs = pack_padded_sequence(xs, xlens, batch_first=True)
+                xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
                 xs, _ = self.rnn[l](xs, hx=None)
                 xs = pad_packed_sequence(xs, batch_first=True)[0]
                 xs = self.dropout[l](xs)
@@ -333,13 +338,13 @@ class RNNEncoder(nn.Module):
                 if l == self.n_layers_sub1 - 1:
                     if self.task_specific_layer:
                         self.rnn_sub1_tsl.flatten_parameters()
-                        xs_sub1 = pack_padded_sequence(xs, xlens, batch_first=True)
+                        xs_sub1 = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
                         xs_sub1, _ = self.rnn_sub1_tsl(xs_sub1, hx=None)
                         xs_sub1 = pad_packed_sequence(xs_sub1, batch_first=True)[0]
                         xs_sub1 = self.dropout_sub1_tsl(xs_sub1)
                     else:
-                        xs_sub1 = xs.clone()
-                    xlens_sub1 = xlens[:]
+                        xs_sub1 = xs.clone()[perm_ids_unsort]
+                    xlens_sub1 = xlens[perm_ids_unsort].tolist()
 
                     if task == 'ys_sub1':
                         eouts[task]['xs'] = xs_sub1
@@ -349,13 +354,13 @@ class RNNEncoder(nn.Module):
                 if l == self.n_layers_sub2 - 1:
                     if self.task_specific_layer:
                         self.rnn_sub2_tsl.flatten_parameters()
-                        xs_sub2 = pack_padded_sequence(xs, xlens, batch_first=True)
+                        xs_sub2 = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
                         xs_sub2, _ = self.rnn_sub2_tsl(xs_sub2, hx=None)
                         xs_sub2 = pad_packed_sequence(xs_sub2, batch_first=True)[0]
                         xs_sub2 = self.dropout_sub2_tsl(xs_sub2)
                     else:
-                        xs_sub2 = xs.clone()
-                    xlens_sub2 = xlens[:]
+                        xs_sub2 = xs.clone()[perm_ids_unsort]
+                    xlens_sub2 = xlens[perm_ids_unsort].tolist()
 
                     if task == 'ys_sub2':
                         eouts[task]['xs'] = xs_sub2
@@ -365,13 +370,13 @@ class RNNEncoder(nn.Module):
                 if l == self.n_layers_sub3 - 1:
                     if self.task_specific_layer:
                         self.rnn_sub3_tsl.flatten_parameters()
-                        xs_sub3 = pack_padded_sequence(xs, xlens, batch_first=True)
+                        xs_sub3 = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
                         xs_sub3, _ = self.rnn_sub3_tsl(xs_sub3, hx=None)
                         xs_sub3 = pad_packed_sequence(xs_sub3, batch_first=True)[0]
                         xs_sub3 = self.dropout_sub3_tsl(xs_sub3)
                     else:
-                        xs_sub3 = xs.clone()
-                    xlens_sub3 = xlens[:]
+                        xs_sub3 = xs.clone()[perm_ids_unsort]
+                    xlens_sub3 = xlens[perm_ids_unsort].tolist()
 
                     if task == 'ys_sub3':
                         eouts[task]['xs'] = xs_sub3
@@ -408,7 +413,7 @@ class RNNEncoder(nn.Module):
                             raise NotImplementedError
 
                         # Update xlens
-                        xlens = [x // self.subsample[l] for x in xlens]
+                        xlens //= self.subsample[l]
 
                     # NiN
                     if self.nin > 0:
@@ -429,6 +434,10 @@ class RNNEncoder(nn.Module):
                     if self.residual and residual is not None:
                         xs += residual
                     residual = xs
+
+        # Unsort
+        xs = xs[perm_ids_unsort]
+        xlens = xlens[perm_ids_unsort].tolist()
 
         if task in ['all', 'ys']:
             eouts['ys']['xs'] = xs

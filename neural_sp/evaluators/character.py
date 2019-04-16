@@ -74,7 +74,7 @@ def eval_char(models, dataset, recog_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, _, perm_ids, _ = models[0].decode(
+            best_hyps_id, _, _ = models[0].decode(
                 batch['xs'], recog_params, dataset.idx2token[task_idx],
                 exclude_eos=True,
                 refs_id=batch['ys'] if task_idx == 0 else batch['ys_sub' + str(task_idx)],
@@ -82,10 +82,9 @@ def eval_char(models, dataset, recog_params, epoch,
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
                 task=task,
                 ensemble_models=models[1:] if len(models) > 1 else [])
-            ys = [batch['text'][i] for i in perm_ids]
 
             for b in range(len(batch['xs'])):
-                ref = ys[b]
+                ref = batch['text'][b]
                 hyp = dataset.idx2token[task_idx](best_hyps_id[b])
 
                 # Write to trn

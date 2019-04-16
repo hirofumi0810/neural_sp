@@ -94,9 +94,8 @@ def main():
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, aws, perm_ids, _ = model.decode(batch['xs'], recog_params,
-                                                          exclude_eos=False)
-            ys = [batch['ys'][i] for i in perm_ids]
+            best_hyps_id, aws, _ = model.decode(batch['xs'], recog_params,
+                                                exclude_eos=False)
 
             # Get CTC probs
             ctc_probs, indices_topk, xlens = model.get_ctc_posteriors(
@@ -117,7 +116,7 @@ def main():
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8))
 
-                ref = ys[b]
+                ref = batch['text'][b]
                 hyp = ' '.join(tokens)
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
                 logger.info('Ref: %s' % ref.lower())
