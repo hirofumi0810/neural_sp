@@ -30,7 +30,7 @@ gnmt_decoding=false
 eos_threshold=1.5
 lm=
 lm_bwd=
-lm_weight=0.0
+lm_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -63,7 +63,7 @@ for set in test_dev93 test_eval92; do
     if [ ${metric} != 'edit_distance' ]; then
         recog_dir=${recog_dir}_${metric}
     fi
-    if [ ${lm_weight} != 0.0 ]; then
+    if [ ! -z ${lm} ]; then
         recog_dir=${recog_dir}_lm${lm_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
@@ -144,9 +144,9 @@ for set in test_dev93 test_eval92; do
     cat ${recog_dir}/hyp.trn | sed 's:<noise>::g' > ${recog_dir}/hyp.trn.filt
 
     if [ ${metric} = 'edit_distance' ]; then
-      echo ${set}
-      sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
-      grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS
-      cat ${recog_dir}/RESULTS
+        echo ${set}
+        sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
+        grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS
+        cat ${recog_dir}/RESULTS
     fi
 done
