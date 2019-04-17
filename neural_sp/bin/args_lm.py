@@ -40,7 +40,7 @@ def parse():
     parser.add_argument('--wp_model', type=str, default=False, nargs='?',
                         help='path to of the wordpiece model')
     # features
-    parser.add_argument('--dynamic_batching', type=bool, default=False,
+    parser.add_argument('--dynamic_batching', type=strtobool, default=False,
                         help='')
     # topology
     parser.add_argument('--lm_type', type=str, default='lstm',
@@ -58,7 +58,7 @@ def parse():
                         help='Tie input and output embedding')
     parser.add_argument('--residual', type=strtobool, default=False, nargs='?',
                         help='')
-    parser.add_argument('--use_glu', type=bool, default=False, nargs='?',
+    parser.add_argument('--use_glu', type=strtobool, default=False, nargs='?',
                         help='Use Gated Linear Unit (GLU) for fully-connected layers')
     # optimization
     parser.add_argument('--batch_size', type=int, default=256,
@@ -101,7 +101,7 @@ def parse():
                                  'xavier_uniform', 'xavier_normal',
                                  'kaiming_uniform', 'kaiming_normal'],
                         help='')
-    parser.add_argument('--rec_weight_orthogonal', type=bool, default=False,
+    parser.add_argument('--rec_weight_orthogonal', type=strtobool, default=False,
                         help='')
     parser.add_argument('--pretrained_model', default=False, nargs='?',
                         help='')
@@ -118,10 +118,10 @@ def parse():
                         help='')
     parser.add_argument('--logits_temp', type=float, default=1.0,
                         help='')
-    parser.add_argument('--backward', type=bool, default=False, nargs='?',
+    parser.add_argument('--backward', type=strtobool, default=False, nargs='?',
                         help='')
     # contextualization
-    parser.add_argument('--serialize', type=bool, default=False, nargs='?',
+    parser.add_argument('--serialize', type=strtobool, default=False, nargs='?',
                         help='serialize text according to onset in dialogue')
     # evaluation
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',

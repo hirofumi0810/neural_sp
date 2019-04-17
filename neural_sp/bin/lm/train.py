@@ -87,7 +87,7 @@ def main():
         save_path = os.path.dirname(args.resume)
         dir_name = os.path.basename(save_path)
     else:
-        dir_name = make_model_name(args, subsample_factor)
+        dir_name = make_model_name(args)
         save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
         save_path = set_save_path(save_path)  # avoid overwriting
 
@@ -99,25 +99,7 @@ def main():
         model = GatedConvLM(args)
     else:
         model = RNNLM(args)
-    dir_name = args.lm_type
-    dir_name += str(args.n_units) + 'H'
-    dir_name += str(args.n_projs) + 'P'
-    dir_name += str(args.n_layers) + 'L'
-    dir_name += '_emb' + str(args.emb_dim)
-    dir_name += '_' + args.optimizer
-    dir_name += '_lr' + str(args.learning_rate)
-    dir_name += '_bs' + str(args.batch_size)
-    dir_name += '_bptt' + str(args.bptt)
-    if args.tie_embedding:
-        dir_name += '_tie'
-    if args.residual:
-        dir_name += '_residual'
-    if args.use_glu:
-        dir_name += '_glu'
-    if args.backward:
-        dir_name += '_bwd'
-    if args.serialize:
-        dir_name += '_serialize'
+    model.save_path = save_path
 
     if args.resume:
         raise NotImplementedError
@@ -306,6 +288,29 @@ def main():
     pbar_epoch.close()
 
     return model.module.save_path
+
+
+def make_model_name(args):
+    dir_name = args.lm_type
+    dir_name += str(args.n_units) + 'H'
+    dir_name += str(args.n_projs) + 'P'
+    dir_name += str(args.n_layers) + 'L'
+    dir_name += '_emb' + str(args.emb_dim)
+    dir_name += '_' + args.optimizer
+    dir_name += '_lr' + str(args.learning_rate)
+    dir_name += '_bs' + str(args.batch_size)
+    dir_name += '_bptt' + str(args.bptt)
+    if args.tie_embedding:
+        dir_name += '_tie'
+    if args.residual:
+        dir_name += '_residual'
+    if args.use_glu:
+        dir_name += '_glu'
+    if args.backward:
+        dir_name += '_bwd'
+    if args.serialize:
+        dir_name += '_serialize'
+    return dir_name
 
 
 if __name__ == '__main__':
