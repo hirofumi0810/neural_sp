@@ -120,12 +120,12 @@ lm_residual=true
 lm_use_glu=true
 # optimization
 lm_batch_size=64
-lm_bptt=200
+lm_bptt=100
 lm_optimizer=adam
 lm_learning_rate=1e-3
 lm_n_epochs=40
 lm_convert_to_sgd_epoch=40
-lm_print_step=50
+lm_print_step=2000
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
@@ -212,7 +212,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     # lowercasing
     for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
         cp ${data}/${x}/text ${data}/${x}/text.org
-        paste -d "" <(cut -f 1 -d " " ${data}/${x}/text.org) \
+        paste -d " " <(cut -f 1 -d " " ${data}/${x}/text.org) \
             <(cut -f 2- -d " " ${data}/${x}/text.org | awk '{print tolower($0)}') > ${data}/${x}/text
     done
 
