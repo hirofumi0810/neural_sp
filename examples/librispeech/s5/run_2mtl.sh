@@ -123,7 +123,7 @@ resume=
 data_download_path=/n/rd21/corpora_7/librispeech/
 
 ### data size
-data_size=960  # or 100 or 460
+data_size=960     # 100/460/960
 
 . ./cmd.sh
 . ./path.sh
@@ -185,10 +185,9 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
 
     # lowercasing
     for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
-        cp ${data}/${x}/text ${data}/${x}/text.tmp
-        paste -d "" <(cut -f 1 -d " " ${data}/${x}/text.tmp) \
-            <(cut -f 2- -d " " ${data}/${x}/text.tmp | awk '{$1=""; print tolower($0)}') > ${data}/${x}/text
-        rm ${data}/${x}/text.tmp
+        cp ${data}/${x}/text ${data}/${x}/text.org
+        paste -d "" <(cut -f 1 -d " " ${data}/${x}/text.org) \
+            <(cut -f 2- -d " " ${data}/${x}/text.org | awk '{print tolower($0)}') > ${data}/${x}/text
     done
 
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."

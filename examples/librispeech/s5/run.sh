@@ -104,7 +104,7 @@ lm_init=
 lmobj_weight=0.0
 share_lm_softmax=false
 # contextualization
-n_caches=0
+contextualize=
 
 #########################
 # LM configuration
@@ -154,8 +154,9 @@ lm_resume=
 data_download_path=/n/rd21/corpora_7/librispeech/
 
 ### data size
-data_size=960     # 100/460/969
-lm_data_size=960  # default is the same data as ASR
+data_size=960     # 100/460/960
+lm_data_size=960  # 100/460/960
+use_external_text=true
 
 . ./cmd.sh
 . ./path.sh
@@ -210,10 +211,9 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
 
     # lowercasing
     for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
-        cp ${data}/${x}/text ${data}/${x}/text.tmp
-        paste -d "" <(cut -f 1 -d " " ${data}/${x}/text.tmp) \
-            <(cut -f 2- -d " " ${data}/${x}/text.tmp | awk '{$1=""; print tolower($0)}') > ${data}/${x}/text
-        rm ${data}/${x}/text.tmp
+        cp ${data}/${x}/text ${data}/${x}/text.org
+        paste -d "" <(cut -f 1 -d " " ${data}/${x}/text.org) \
+            <(cut -f 2- -d " " ${data}/${x}/text.org | awk '{print tolower($0)}') > ${data}/${x}/text
     done
 
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
@@ -322,7 +322,7 @@ if [ ${stage} -le 3 ]; then
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
 
-    if [ ! -e ${data}/.done_stage_3_${data_size}${lm_data_size}_${unit}${wp_type}${vocab_size} ]; then
+    if [ ! -e ${data}/.done_stage_3_${data_size}${lm_data_size}_${unit}${wp_type}${vocab_size}_${use_external_text} ]; then
         if [ ! -e ${data}/.done_stage_1_${data_size} ]; then
             echo "run ./run.sh --data_size ${lm_data_size} first" && exit 1
         fi
@@ -339,14 +339,31 @@ if [ ${stage} -le 3 ]; then
             fi
         done
 
-        touch ${data}/.done_stage_3_${data_size}${lm_data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
+        # use external data
+        if [ ${use_external_text} ]; then
+            if [ ! -e ${data}/local/lm_train/librispeech-lm-norm.txt.gz ]; then
+                wget http://www.openslr.org/resources/11/librispeech-lm-norm.txt.gz -P ${data}/local/lm_train/
+            fi
+            zcat ${data}/local/lm_train/librispeech-lm-norm.txt.gz | shuf | awk '{print "unpaired-text-"NR, tolower($0)}' > ${data}/dataset_lm/text
+            update_dataset.sh --unit ${unit} --wp_model ${wp_model} \
+                ${data}/dataset_lm/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
+                > ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}_external.tsv || exit 1;
+        fi
+
+        touch ${data}/.done_stage_3_${data_size}${lm_data_size}_${unit}${wp_type}${vocab_size}_${use_external_text} && echo "Finish creating dataset for LM (stage: 3)."
+    fi
+
+    if [ ${use_external_text} ]; then
+        lm_train_set="${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}_external.tsv"
+    else
+        lm_train_set="${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv"
     fi
 
     # NOTE: support only a single GPU for LM training
     CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus librispeech \
         --n_gpus 1 \
-        --train_set ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --train_set ${lm_train_set} \
         --dev_set ${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
@@ -408,8 +425,8 @@ if [ ${stage} -le 4 ]; then
         --conv_kernel_sizes ${conv_kernel_sizes} \
         --conv_strides ${conv_strides} \
         --conv_poolings ${conv_poolings} \
-        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --conv_batch_norm ${conv_batch_norm} \
+        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --enc_type ${enc_type} \
         --enc_n_units ${enc_n_units} \
         --enc_n_projs ${enc_n_projs} \
@@ -470,7 +487,7 @@ if [ ${stage} -le 4 ]; then
         --lm_init ${lm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
-        --n_caches ${n_caches} \
+        --contextualize ${contextualize} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

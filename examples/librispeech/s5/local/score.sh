@@ -120,7 +120,7 @@ for set in dev_clean dev_other test_clean test_other; do
     mkdir -p ${recog_dir}
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
-        --recog_sets ${data}/dataset/${set}_960_word30000.tsv \
+        --recog_sets ${data}/dataset/${set}_960_wpbpe30000.tsv \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
