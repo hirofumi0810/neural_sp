@@ -39,11 +39,6 @@ subsample="1_2_2_2_1"
 # conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
 # conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
 # subsample="1_1_1_1_1"
-# TDS
-# enc_type=tds
-# conv_channels="10_10_14_14_14_18_18_18_18_18_18"
-# conv_kernel_sizes="(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)"
-# subsample="1_1_1_1_1"
 enc_type=blstm
 enc_n_units=512
 enc_n_projs=0
@@ -65,7 +60,7 @@ emb_dim=512
 tie_embedding=false
 ctc_fc_list="512"
 ### optimization
-batch_size=30
+batch_size=50
 optimizer=adam
 learning_rate=1e-3
 n_epochs=25
@@ -109,7 +104,7 @@ lm_init=
 lmobj_weight=0.0
 share_lm_softmax=false
 # contextualization
-n_caches=0
+contextualize=
 
 #########################
 # LM configuration
@@ -466,8 +461,8 @@ if [ ${stage} -le 4 ]; then
         --conv_kernel_sizes ${conv_kernel_sizes} \
         --conv_strides ${conv_strides} \
         --conv_poolings ${conv_poolings} \
-        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --conv_batch_norm ${conv_batch_norm} \
+        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --enc_type ${enc_type} \
         --enc_n_units ${enc_n_units} \
         --enc_n_projs ${enc_n_projs} \
@@ -528,7 +523,7 @@ if [ ${stage} -le 4 ]; then
         --lm_init ${lm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
-        --n_caches ${n_caches} \
+        --contextualize ${contextualize} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

@@ -60,7 +60,7 @@ emb_dim=512
 tie_embedding=false
 ctc_fc_list="512"
 ### optimization
-batch_size=30
+batch_size=50
 optimizer=adam
 learning_rate=1e-3
 n_epochs=20
@@ -327,8 +327,8 @@ if [ ${stage} -le 4 ]; then
         --conv_kernel_sizes ${conv_kernel_sizes} \
         --conv_strides ${conv_strides} \
         --conv_poolings ${conv_poolings} \
-        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --conv_batch_norm ${conv_batch_norm} \
+        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --enc_type ${enc_type} \
         --enc_n_units ${enc_n_units} \
         --enc_n_projs ${enc_n_projs} \
