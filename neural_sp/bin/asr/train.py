@@ -38,6 +38,7 @@ from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
+from neural_sp.models.seq2seq.skip_thought import SkipThought
 from neural_sp.utils.general import mkdir_join
 
 
@@ -81,6 +82,8 @@ def main():
         subsample_factor_sub3 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub3 - 1])
     subsample_factor *= np.prod(subsample)
 
+    skip_thought = 'skip' in args.enc_type
+
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
@@ -116,8 +119,8 @@ def main():
                         subsample_factor_sub1=subsample_factor_sub1,
                         subsample_factor_sub2=subsample_factor_sub2,
                         subsample_factor_sub3=subsample_factor_sub3,
-                        concat_prev_n_utterances=args.concat_prev_n_utterances,
-                        n_caches=args.n_caches)
+                        contextualize=args.contextualize,
+                        skip_thought=skip_thought)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
                       tsv_path_sub1=args.dev_set_sub1,
@@ -127,6 +130,7 @@ def main():
                       dict_path_sub1=args.dict_sub1,
                       dict_path_sub2=args.dict_sub2,
                       dict_path_sub3=args.dict_sub3,
+                      nlsyms=args.nlsyms,
                       unit=args.unit,
                       unit_sub1=args.unit_sub1,
                       unit_sub2=args.unit_sub2,
@@ -138,7 +142,7 @@ def main():
                       batch_size=args.batch_size * args.n_gpus,
                       min_n_frames=args.min_n_frames,
                       max_n_frames=args.max_n_frames,
-                      shuffle=True if args.n_caches == 0 else False,
+                      shuffle=True if args.contextualize else False,
                       ctc=args.ctc_weight > 0,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
                       ctc_sub2=args.ctc_weight_sub2 > 0,
@@ -147,16 +151,19 @@ def main():
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
                       subsample_factor_sub3=subsample_factor_sub3,
-                      n_caches=args.n_caches)
+                      contextualize=args.contextualize,
+                      skip_thought=skip_thought)
     eval_sets = []
     for s in args.eval_sets:
         eval_sets += [Dataset(corpus=args.corpus,
                               tsv_path=s,
                               dict_path=args.dict,
+                              nlsyms=args.nlsyms,
                               unit=args.unit,
                               wp_model=args.wp_model,
                               batch_size=1,
-                              n_caches=args.n_caches,
+                              contextualize=args.contextualize,
+                              skip_thought=skip_thought,
                               is_test=True)]
 
     args.vocab = train_set.vocab
@@ -193,7 +200,10 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
 
     # Model setting
-    model = Seq2seq(args)
+    if skip_thought:
+        model = SkipThought(args)
+    else:
+        model = Seq2seq(args)
     model.save_path = save_path
 
     if args.resume:
@@ -350,7 +360,13 @@ def main():
         # Change tasks depending on task
         for task in tasks:
             model.module.optimizer.zero_grad()
-            loss, reporter = model(batch_train, reporter=reporter, task=task)
+            if skip_thought:
+                loss, reporter = model(batch_train['ys'],
+                                       ys_prev=batch_train['ys_prev'],
+                                       ys_next=batch_train['ys_next'],
+                                       reporter=reporter)
+            else:
+                loss, reporter = model(batch_train, reporter=reporter, task=task)
             if len(model.device_ids) > 1:
                 loss.backward(torch.ones(len(model.device_ids)))
             else:
@@ -373,8 +389,15 @@ def main():
             batch_dev = dev_set.next()[0]
             # Change tasks depending on task
             for task in tasks:
-                loss, reporter = model(batch_dev, reporter=reporter, task=task,
-                                       is_eval=True)
+                if skip_thought:
+                    loss, reporter = model(batch_dev['ys'],
+                                           ys_prev=batch_dev['ys_prev'],
+                                           ys_next=batch_dev['ys_next'],
+                                           reporter=reporter,
+                                           is_eval=True)
+                else:
+                    loss, reporter = model(batch_dev, reporter=reporter, task=task,
+                                           is_eval=True)
                 loss_dev = loss.item()
                 del loss
             reporter.step(is_eval=True)
@@ -431,10 +454,10 @@ def main():
                                                 epoch=epoch)
                         logger.info('PER (%s): %.2f %%' % (dev_set.set, metric_dev))
                 elif args.metric == 'ppl':
-                    metric_dev = eval_ppl([model.module], dev_set, recog_params)[0]
+                    metric_dev = eval_ppl([model.module], dev_set, recog_params=recog_params)[0]
                     logger.info('PPL (%s): %.2f %%' % (dev_set.set, metric_dev))
                 elif args.metric == 'loss':
-                    metric_dev = eval_ppl([model.module], dev_set, recog_params)[1]
+                    metric_dev = eval_ppl([model.module], dev_set, recog_params=recog_params)[1]
                     logger.info('Loss (%s): %.2f %%' % (dev_set.set, metric_dev))
                 else:
                     raise NotImplementedError(args.metric)
@@ -475,10 +498,10 @@ def main():
                                                       epoch=epoch)
                                 logger.info('PER (%s): %.2f %%' % (s.set, per_test))
                         elif args.metric == 'ppl':
-                            ppl_test = eval_ppl([model.module], s, recog_params)[0]
+                            ppl_test = eval_ppl([model.module], s, recog_params=recog_params)[0]
                             logger.info('PPL (%s): %.2f %%' % (s.set, ppl_test))
                         elif args.metric == 'loss':
-                            loss_test = eval_ppl([model.module], s, recog_params)[1]
+                            loss_test = eval_ppl([model.module], s, recog_params=recog_params)[1]
                             logger.info('Loss (%s): %.2f %%' % (s.set, loss_test))
                         else:
                             raise NotImplementedError(args.metric)
@@ -591,8 +614,6 @@ def make_model_name(args, subsample_factor):
     # LM integration
     if args.lm_fusion:
         dir_name += '_' + args.lm_fusion_type
-        if args.n_caches > 0:
-            dir_name += '_cache' + str(args.n_caches)
 
     # MTL
     if args.mtl_per_batch:
@@ -626,14 +647,14 @@ def make_model_name(args, subsample_factor):
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') -
-                                            getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
+                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
 
     # contextualization
-    if args.concat_prev_n_utterances > 0:
-        dir_name += '_concat' + str(args.concat_prev_n_utterances) + 'utt'
+    if args.contextualize:
+        dir_name += '_' + str(args.contextualize)
 
     # Pre-training
     if args.pretrained_model and os.path.isfile(args.pretrained_model):

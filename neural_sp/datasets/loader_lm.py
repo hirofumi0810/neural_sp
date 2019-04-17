@@ -35,9 +35,10 @@ np.random.seed(1)
 class Dataset(Base):
 
     def __init__(self, tsv_path, dict_path,
-                 unit, batch_size, n_epochs=None,
-                 is_test=False, bptt=2, wp_model=None, corpus='',
-                 shuffle=False, serialize=False):
+                 unit, batch_size, nlsyms=False, n_epochs=None,
+                 is_test=False, min_n_tokens=1, bptt=2,
+                 shuffle=False, serialize=False,
+                 wp_model=None, corpus=''):
         """A class for loading dataset.
 
         Args:
@@ -45,13 +46,17 @@ class Dataset(Base):
             dict_path (str): path to the dictionary
             unit (str): word or wp or char or phone or word_char
             batch_size (int): size of mini-batch
+            nlsyms (str): path to the non-linguistic symbols file
+            n_epochs (int): max epoch. None means infinite loop
+            is_test (bool):
+            min_n_tokens (int): exclude utterances shorter than this value
             bptt (int): BPTT length
-            n_epochs (int): max epoch. None means infinite loop.
-            wp_model (): path to the word-piece model for sentencepiece
-            corpus (str): name of corpus
             shuffle (bool): shuffle utterances.
                 This is disabled when sort_by_input_length is True.
             serialize (bool): serialize text according to contexts in dialogue
+            wp_model (): path to the word-piece model for sentencepiece
+            corpus (str): name of corpus
+
 
         """
         super(Dataset, self).__init__()
@@ -68,19 +73,22 @@ class Dataset(Base):
         self.vocab = self.count_vocab_size(dict_path)
         assert bptt >= 2
 
+        self.idx2token = []
+        self.token2idx = []
+
         # Set index converter
         if unit in ['word', 'word_char']:
-            self.idx2word = Idx2word(dict_path)
-            self.word2idx = Word2idx(dict_path, word_char_mix=(unit == 'word_char'))
+            self.idx2token += [Idx2word(dict_path)]
+            self.token2idx += [Word2idx(dict_path, word_char_mix=(unit == 'word_char'))]
         elif unit == 'wp':
-            self.idx2wp = Idx2wp(dict_path, wp_model)
-            self.wp2idx = Wp2idx(dict_path, wp_model)
+            self.idx2token += [Idx2wp(dict_path, wp_model)]
+            self.token2idx += [Wp2idx(dict_path, wp_model)]
         elif unit == 'char':
-            self.idx2char = Idx2char(dict_path)
-            self.char2idx = Char2idx(dict_path)
+            self.idx2token += [Idx2char(dict_path)]
+            self.token2idx += [Char2idx(dict_path, nlsyms=nlsyms)]
         elif 'phone' in unit:
-            self.idx2phone = Idx2phone(dict_path)
-            self.phone2idx = Phone2idx(dict_path)
+            self.idx2token += [Idx2phone(dict_path)]
+            self.token2idx += [Phone2idx(dict_path)]
         else:
             raise ValueError(unit)
 
@@ -88,7 +96,18 @@ class Dataset(Base):
         self.df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
         self.df = self.df.loc[:, ['utt_id', 'speaker', 'feat_path',
                                   'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
-        self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
+
+        # Remove inappropriate utterances
+        if is_test:
+            print('Original utterance num: %d' % len(self.df))
+            n_utts = len(self.df)
+            self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
+            print('Removed %d empty utterances' % (n_utts - len(self.df)))
+        else:
+            print('Original utterance num: %d' % len(self.df))
+            n_utts = len(self.df)
+            self.df = self.df[self.df.apply(lambda x: x['ylen'] >= min_n_tokens, axis=1)]
+            print('Removed %d utterances (threshold)' % (n_utts - len(self.df)))
 
         # Sort tsv records
         if shuffle:

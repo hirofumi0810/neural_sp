@@ -40,6 +40,8 @@ def parse():
     parser.add_argument('--wp_model', type=str, default=False, nargs='?',
                         help='path to of the wordpiece model')
     # features
+    parser.add_argument('--min_n_tokens', type=int, default=1,
+                        help='minimum number of input tokens')
     parser.add_argument('--dynamic_batching', type=strtobool, default=False,
                         help='')
     # topology
