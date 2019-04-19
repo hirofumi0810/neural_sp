@@ -666,9 +666,9 @@ class Seq2seq(ModelBase):
                     if params['recog_fwd_bwd_attention']:
                         # forward decoder
                         lm_fwd, lm_bwd = None, None
-                        if params['recog_lm_weight'] > 0:
+                        if params['recog_lm_weight'] > 0 and hasattr(self, 'lm_fwd') and self.lm_fwd is not None:
                             lm_fwd = self.lm_fwd
-                            if params['recog_reverse_lm_rescoring']:
+                            if params['recog_reverse_lm_rescoring'] and hasattr(self, 'lm_bwd') and self.lm_bwd is not None:
                                 lm_bwd = self.lm_bwd
 
                         # ensemble (forward)
@@ -677,7 +677,7 @@ class Seq2seq(ModelBase):
                         ensemble_decs_fwd = []
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
-                                enc_outs_e_fwd, _ = model.encode(xs, task, flip=False)
+                                enc_outs_e_fwd = model.encode(xs, task, flip=False)
                                 ensemble_eouts_fwd += [enc_outs_e_fwd[task]['xs']]
                                 ensemble_elens_fwd += [enc_outs_e_fwd[task]['xlens']]
                                 ensemble_decs_fwd += [model.dec_fwd]
@@ -691,9 +691,9 @@ class Seq2seq(ModelBase):
 
                         # backward decoder
                         lm_bwd, lm_fwd = None, None
-                        if params['recog_lm_weight'] > 0:
+                        if params['recog_lm_weight'] > 0 and hasattr(self, 'lm_bwd') and self.lm_bwd is not None:
                             lm_bwd = self.lm_bwd
-                            if params['recog_reverse_lm_rescoring']:
+                            if params['recog_reverse_lm_rescoring'] and hasattr(self, 'lm_fwd') and self.lm_fwd is not None:
                                 lm_fwd = self.lm_fwd
 
                         # ensemble (backward)
@@ -703,9 +703,9 @@ class Seq2seq(ModelBase):
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
                                 if self.input_type == 'speech' and self.mtl_per_batch:
-                                    enc_outs_e_bwd, _ = model.encode(xs, task, flip=True)
+                                    enc_outs_e_bwd = model.encode(xs, task, flip=True)
                                 else:
-                                    enc_outs_e_bwd, _ = model.encode(xs, task, flip=False)
+                                    enc_outs_e_bwd = model.encode(xs, task, flip=False)
                                 ensemble_eouts_bwd += [enc_outs_e_bwd[task]['xs']]
                                 ensemble_elens_bwd += [enc_outs_e_bwd[task]['xlens']]
                                 ensemble_decs_bwd += [model.dec_bwd]
@@ -715,7 +715,7 @@ class Seq2seq(ModelBase):
                         flip = False
                         if self.input_type == 'speech' and self.mtl_per_batch:
                             flip = True
-                            enc_outs_bwd, _ = self.encode(xs, task, flip=True)
+                            enc_outs_bwd = self.encode(xs, task, flip=True)
                         else:
                             enc_outs_bwd = enc_outs
                         nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
@@ -739,9 +739,9 @@ class Seq2seq(ModelBase):
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
                                 if model.input_type == 'speech' and model.mtl_per_batch and 'bwd' in dir:
-                                    enc_outs_e, _ = model.encode(xs, task, flip=True)
+                                    enc_outs_e = model.encode(xs, task, flip=True)
                                 else:
-                                    enc_outs_e, _ = model.encode(xs, task, flip=False)
+                                    enc_outs_e = model.encode(xs, task, flip=False)
                                 ensemble_eouts += [enc_outs_e[task]['xs']]
                                 ensemble_elens += [enc_outs_e[task]['xlens']]
                                 ensemble_decs += [getattr(model, 'dec_' + dir)]
