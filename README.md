@@ -42,7 +42,7 @@
   - Gated convolutional LM [[link](https://arxiv.org/abs/1612.08083)]
 
 ### Output units
-  - phoneme (TIMIT, Switchboard)
+  - phoneme
   - grapheme
   - wordpiece (BPE, sentencepiece)
   - word
@@ -57,16 +57,17 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
   - Forward-backward attention [[link](https://www.isca-speech.org/archive/Interspeech_2018/pdfs/1160.pdf)]
   - RNNLM objective [link]
 
-## Performance (word error rate)
-### WSJ
+## Performance
+### WSJ (WER)
 | model | test_dev93 | test_eval92 |
 | --- | --- | --- |
-| Char attn | 17.1 | 14.1 |
-| + RNNLM | N/A | N/A |
+| Char attn | 16.7 | 13.6 |
+| + RNNLM | 14.0 | 10.7 |
 | BPE1k attn | 15.1 | 12.4 |
-| + RNNLM | 11.8 | 10.3 |
+| + RNNLM | 11.6 | 9.3 |
+| + char CTC | N/A | N/A |
 
-### CSJ
+### CSJ (WER)
 | model | eva1l | eval2 | eval3 |
 | --- | --- | --- | --- |
 | Char attn | N/A | N/A | N/A |
@@ -78,15 +79,16 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | + Char attn | 8.8 | 6.8 | 7.6 |
 | + OOV resolution | 8.3 | 6.1 | 6.7 |
 
-### Switchboard
+### Switchboard (WER)
 | model | SWB | CH |
 | --- | --- | --- |
 | Char attn | N/A | N/A |
 | BPE10k attn | 11.8 | 23.5 |
 | + RNNLM | 11.0 | 23.3 |
+| + speed perturbation | 10.2 | 21.5 |
 | Word10k attn | N/A | N/A |
 
-### Librispeech
+### Librispeech (WER)
 | model | dev-clean | dev-other | test-clean | test-other |
 | --- | --- | --- | --- | --- |
 | Char attn | N/A | N/A | N/A | N/A |
