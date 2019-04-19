@@ -29,6 +29,7 @@ from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
+from neural_sp.models.seq2seq.skip_thought import SkipThought
 
 
 def main():
@@ -50,6 +51,8 @@ def main():
         os.remove(os.path.join(args.recog_dir, 'decode.log'))
     logger = set_logger(os.path.join(args.recog_dir, 'decode.log'), key='decoding')
 
+    skip_thought = 'skip' in args.enc_type
+
     wer_avg, cer_avg, per_avg = 0, 0, 0
     ppl_avg, loss_avg = 0, 0
     for i, s in enumerate(args.recog_sets):
@@ -61,23 +64,23 @@ def main():
                               os.path.join(dir_name, 'dict_sub1.txt')) else False,
                           dict_path_sub2=os.path.join(dir_name, 'dict_sub2.txt') if os.path.isfile(
                               os.path.join(dir_name, 'dict_sub2.txt')) else False,
-                          dict_path_sub3=os.path.join(dir_name, 'dict_sub3.txt') if os.path.isfile(
-                              os.path.join(dir_name, 'dict_sub3.txt')) else False,
                           nlsyms=os.path.join(dir_name, 'nlsyms.txt'),
                           wp_model=os.path.join(dir_name, 'wp.model'),
                           wp_model_sub1=os.path.join(dir_name, 'wp_sub1.model'),
                           wp_model_sub2=os.path.join(dir_name, 'wp_sub2.model'),
-                          wp_model_sub3=os.path.join(dir_name, 'wp_sub3.model'),
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
                           unit_sub2=args.unit_sub2,
-                          unit_sub3=args.unit_sub3,
                           batch_size=args.recog_batch_size,
+                          skip_thought=skip_thought,
                           is_test=True)
 
         if i == 0:
             # Load the ASR model
-            model = Seq2seq(args)
+            if skip_thought:
+                model = SkipThought(args)
+            else:
+                model = Seq2seq(args)
             model, checkpoint = load_checkpoint(model, args.recog_model[0])
             epoch = checkpoint['epoch']
             model.save_path = dir_name

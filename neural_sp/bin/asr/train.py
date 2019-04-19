@@ -67,7 +67,6 @@ def main():
     subsample_factor = 1
     subsample_factor_sub1 = 1
     subsample_factor_sub2 = 1
-    subsample_factor_sub3 = 1
     subsample = [int(s) for s in args.subsample.split('_')]
     if args.conv_poolings:
         for p in args.conv_poolings.split('_'):
@@ -78,8 +77,6 @@ def main():
         subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
     if args.train_set_sub2:
         subsample_factor_sub2 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub2 - 1])
-    if args.train_set_sub3:
-        subsample_factor_sub3 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub3 - 1])
     subsample_factor *= np.prod(subsample)
 
     skip_thought = 'skip' in args.enc_type
@@ -89,20 +86,16 @@ def main():
                         tsv_path=args.train_set,
                         tsv_path_sub1=args.train_set_sub1,
                         tsv_path_sub2=args.train_set_sub2,
-                        tsv_path_sub3=args.train_set_sub3,
                         dict_path=args.dict,
                         dict_path_sub1=args.dict_sub1,
                         dict_path_sub2=args.dict_sub2,
-                        dict_path_sub3=args.dict_sub3,
                         nlsyms=args.nlsyms,
                         unit=args.unit,
                         unit_sub1=args.unit_sub1,
                         unit_sub2=args.unit_sub2,
-                        unit_sub3=args.unit_sub3,
                         wp_model=args.wp_model,
                         wp_model_sub1=args.wp_model_sub1,
                         wp_model_sub2=args.wp_model_sub2,
-                        wp_model_sub3=args.wp_model_sub3,
                         batch_size=args.batch_size * args.n_gpus,
                         n_epochs=args.n_epochs,
                         min_n_frames=args.min_n_frames,
@@ -114,31 +107,25 @@ def main():
                         ctc=args.ctc_weight > 0,
                         ctc_sub1=args.ctc_weight_sub1 > 0,
                         ctc_sub2=args.ctc_weight_sub2 > 0,
-                        ctc_sub3=args.ctc_weight_sub3 > 0,
                         subsample_factor=subsample_factor,
                         subsample_factor_sub1=subsample_factor_sub1,
                         subsample_factor_sub2=subsample_factor_sub2,
-                        subsample_factor_sub3=subsample_factor_sub3,
                         contextualize=args.contextualize,
                         skip_thought=skip_thought)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
                       tsv_path_sub1=args.dev_set_sub1,
                       tsv_path_sub2=args.dev_set_sub2,
-                      tsv_path_sub3=args.dev_set_sub3,
                       dict_path=args.dict,
                       dict_path_sub1=args.dict_sub1,
                       dict_path_sub2=args.dict_sub2,
-                      dict_path_sub3=args.dict_sub3,
                       nlsyms=args.nlsyms,
                       unit=args.unit,
                       unit_sub1=args.unit_sub1,
                       unit_sub2=args.unit_sub2,
-                      unit_sub3=args.unit_sub3,
                       wp_model=args.wp_model,
                       wp_model_sub1=args.wp_model_sub1,
                       wp_model_sub2=args.wp_model_sub2,
-                      wp_model_sub3=args.wp_model_sub3,
                       batch_size=args.batch_size * args.n_gpus,
                       min_n_frames=args.min_n_frames,
                       max_n_frames=args.max_n_frames,
@@ -146,11 +133,9 @@ def main():
                       ctc=args.ctc_weight > 0,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
                       ctc_sub2=args.ctc_weight_sub2 > 0,
-                      ctc_sub3=args.ctc_weight_sub3 > 0,
                       subsample_factor=subsample_factor,
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
-                      subsample_factor_sub3=subsample_factor_sub3,
                       contextualize=args.contextualize,
                       skip_thought=skip_thought)
     eval_sets = []
@@ -169,7 +154,6 @@ def main():
     args.vocab = train_set.vocab
     args.vocab_sub1 = train_set.vocab_sub1
     args.vocab_sub2 = train_set.vocab_sub2
-    args.vocab_sub3 = train_set.vocab_sub3
     args.input_dim = train_set.input_dim
 
     # Load a LM conf file for cold fusion & LM initialization
@@ -235,7 +219,7 @@ def main():
         # Save the nlsyms, dictionar, and wp_model
         if args.nlsyms:
             shutil.copy(args.nlsyms, os.path.join(model.save_path, 'nlsyms.txt'))
-        for sub in ['', '_sub1', '_sub2', '_sub3']:
+        for sub in ['', '_sub1', '_sub2']:
             if getattr(args, 'dict' + sub):
                 shutil.copy(getattr(args, 'dict' + sub), os.path.join(model.save_path, 'dict' + sub + '.txt'))
             if getattr(args, 'unit' + sub) == 'wp':
@@ -325,7 +309,7 @@ def main():
     if args.mtl_per_batch:
         # NOTE: from easier to harder tasks
         tasks = []
-        if 1 - args.bwd_weight - args.ctc_weight - args.sub1_weight - args.sub2_weight - args.sub3_weight > 0:
+        if 1 - args.bwd_weight - args.ctc_weight - args.sub1_weight - args.sub2_weight > 0:
             tasks += ['ys']
         if args.bwd_weight > 0:
             tasks = ['ys.bwd'] + tasks
@@ -335,7 +319,7 @@ def main():
             tasks = ['ys.lmobj'] + tasks
         if args.lm_fusion is not None and 'mtl' in args.lm_fusion_type:
             tasks = ['ys.lm'] + tasks
-        for sub in ['sub1', 'sub2', 'sub3']:
+        for sub in ['sub1', 'sub2']:
             if getattr(args, 'train_set_' + sub):
                 if getattr(args, sub + '_weight') - getattr(args, 'bwd_weight_' + sub) - getattr(args, 'ctc_weight_' + sub) > 0:
                     tasks = ['ys_' + sub] + tasks
@@ -455,10 +439,10 @@ def main():
                         logger.info('PER (%s): %.2f %%' % (dev_set.set, metric_dev))
                 elif args.metric == 'ppl':
                     metric_dev = eval_ppl([model.module], dev_set, recog_params=recog_params)[0]
-                    logger.info('PPL (%s): %.2f %%' % (dev_set.set, metric_dev))
+                    logger.info('PPL (%s): %.2f' % (dev_set.set, metric_dev))
                 elif args.metric == 'loss':
                     metric_dev = eval_ppl([model.module], dev_set, recog_params=recog_params)[1]
-                    logger.info('Loss (%s): %.2f %%' % (dev_set.set, metric_dev))
+                    logger.info('Loss (%s): %.2f' % (dev_set.set, metric_dev))
                 else:
                     raise NotImplementedError(args.metric)
                 reporter.epoch(metric_dev)
@@ -499,10 +483,10 @@ def main():
                                 logger.info('PER (%s): %.2f %%' % (s.set, per_test))
                         elif args.metric == 'ppl':
                             ppl_test = eval_ppl([model.module], s, recog_params=recog_params)[0]
-                            logger.info('PPL (%s): %.2f %%' % (s.set, ppl_test))
+                            logger.info('PPL (%s): %.2f' % (s.set, ppl_test))
                         elif args.metric == 'loss':
                             loss_test = eval_ppl([model.module], s, recog_params=recog_params)[1]
-                            logger.info('Loss (%s): %.2f %%' % (s.set, loss_test))
+                            logger.info('Loss (%s): %.2f' % (s.set, loss_test))
                         else:
                             raise NotImplementedError(args.metric)
                 else:
@@ -623,7 +607,7 @@ def make_model_name(args, subsample_factor):
             dir_name += '_' + args.unit + 'bwd'
         if args.lmobj_weight > 0:
             dir_name += '_' + args.unit + 'lmobj'
-        for sub in ['sub1', 'sub2', 'sub3']:
+        for sub in ['sub1', 'sub2']:
             if getattr(args, 'train_set_' + sub):
                 dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
                 if getattr(args, 'ctc_weight_' + sub) > 0:
@@ -639,7 +623,7 @@ def make_model_name(args, subsample_factor):
             dir_name += '_bwd' + str(args.bwd_weight)
         if args.lmobj_weight > 0:
             dir_name += '_lmobj' + str(args.lmobj_weight)
-        for sub in ['sub1', 'sub2', 'sub3']:
+        for sub in ['sub1', 'sub2']:
             if getattr(args, sub + '_weight') > 0:
                 dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
                 if getattr(args, 'ctc_weight_' + sub) > 0:

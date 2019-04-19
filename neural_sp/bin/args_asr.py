@@ -30,16 +30,12 @@ def parse():
                         help='path to a tsv file for the training set for the 1st auxiliary task')
     parser.add_argument('--train_set_sub2', type=str, default=False,
                         help='path to a tsv file for the training set for the 2nd auxiliary task')
-    parser.add_argument('--train_set_sub3', type=str, default=False,
-                        help='path to a tsv file for the training set for the 3rd auxiliary task')
     parser.add_argument('--dev_set', type=str,
                         help='path to a tsv file for the development set')
     parser.add_argument('--dev_set_sub1', type=str, default=False,
                         help='path to a tsv file for the development set for the 1st auxiliary task')
     parser.add_argument('--dev_set_sub2', type=str, default=False,
                         help='path to a tsv file for the development set for the 2nd auxiliary task')
-    parser.add_argument('--dev_set_sub3', type=str, default=False,
-                        help='path to a tsv file for the development set for the 3rd auxiliary task')
     parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
                         help='path to tsv files for the evaluation sets')
     parser.add_argument('--nlsyms', type=str, nargs='?',
@@ -50,9 +46,7 @@ def parse():
                         help='path to a dictionary file for the 1st auxiliary task')
     parser.add_argument('--dict_sub2', type=str, default=False,
                         help='path to a dictionary file for the 2nd auxiliary task')
-    parser.add_argument('--dict_sub3', type=str, default=False,
-                        help='path to a dictionary file for the 3rd auxiliary task')
-    parser.add_argument('--unit', type=str, default='word',
+    parser.add_argument('--unit', type=str, default='wp',
                         choices=['word', 'wp', 'char', 'phone', 'word_char'],
                         help='Output unit for the main task')
     parser.add_argument('--unit_sub1', type=str, default=False,
@@ -61,21 +55,16 @@ def parse():
     parser.add_argument('--unit_sub2', type=str, default=False,
                         choices=['wp', 'char', 'phone'],
                         help='Output unit for the 2nd auxiliary task')
-    parser.add_argument('--unit_sub3', type=str, default=False,
-                        choices=['wp', 'char', 'phone'],
-                        help='Output unit for the 3rd auxiliary task')
     parser.add_argument('--wp_model', type=str, default=False, nargs='?',
                         help='path to of the wordpiece model for the main task')
     parser.add_argument('--wp_model_sub1', type=str, default=False, nargs='?',
                         help='path to of the wordpiece model for the 1st auxiliary task')
     parser.add_argument('--wp_model_sub2', type=str, default=False, nargs='?',
                         help='path to of the wordpiece model for the 2nd auxiliary task')
-    parser.add_argument('--wp_model_sub3', type=str, default=False, nargs='?',
-                        help='path to of the wordpiece model for the 3rd auxiliary task')
     # features
     parser.add_argument('--input_type', type=str, default='speech',
                         choices=['speech', 'text'],
-                        help='')
+                        help='type of input features')
     parser.add_argument('--n_splices', type=int, default=1,
                         help='number of input frames to splice (both for left and right frames)')
     parser.add_argument('--n_stacks', type=int, default=1,
@@ -86,7 +75,7 @@ def parse():
                         help='maximum number of input frames')
     parser.add_argument('--min_n_frames', type=int, default=40,
                         help='minimum number of input frames')
-    parser.add_argument('--dynamic_batching', type=bool, default=True,
+    parser.add_argument('--dynamic_batching', type=strtobool, default=True,
                         help='')
     # topology (encoder)
     parser.add_argument('--conv_in_channel', type=int, default=1, nargs='?',
@@ -104,7 +93,8 @@ def parse():
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
-                        choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn', 'transformer', 'tds'],
+                        choices=['blstm', 'lstm', 'bgru', 'gru', 'cnn', 'transformer', 'tds',
+                                 'blstm_skip', 'lstm_skip'],
                         help='type of the encoder')
     parser.add_argument('--enc_n_units', type=int, default=512,
                         help='number of units in each encoder RNN layer')
@@ -116,9 +106,7 @@ def parse():
                         help='number of encoder RNN layers in the 1st auxiliary task')
     parser.add_argument('--enc_n_layers_sub2', type=int, default=0,
                         help='number of encoder RNN layers in the 2nd auxiliary task')
-    parser.add_argument('--enc_n_layers_sub3', type=int, default=0,
-                        help='number of encoder RNN layers in the 3rd auxiliary task')
-    parser.add_argument('--enc_residual', type=bool, default=False, nargs='?',
+    parser.add_argument('--enc_residual', type=strtobool, default=False, nargs='?',
                         help='residual connection between each encoder layer')
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
@@ -129,7 +117,7 @@ def parse():
                         help='freeze the encoder parameter')
     # topology (decoder)
     parser.add_argument('--attn_type', type=str, default='location',
-                        choices=['location', 'add', 'dot',
+                        choices=['no', 'location', 'add', 'dot',
                                  'luong_dot', 'luong_general', 'luong_concat'],
                         help='type of attention for RNN sequence-to-sequence models')
     parser.add_argument('--attn_dim', type=int, default=128,
@@ -142,9 +130,9 @@ def parse():
                         help='number of heads in the attention layer')
     parser.add_argument('--attn_sharpening', type=float, default=1.0,
                         help='')
-    parser.add_argument('--attn_sigmoid', type=bool, default=False, nargs='?',
+    parser.add_argument('--attn_sigmoid', type=strtobool, default=False, nargs='?',
                         help='')
-    parser.add_argument('--bridge_layer', type=bool, default=False,
+    parser.add_argument('--bridge_layer', type=strtobool, default=False,
                         help='')
     parser.add_argument('--dec_type', type=str, default='lstm',
                         choices=['lstm', 'gru', 'transformer'],
@@ -159,26 +147,22 @@ def parse():
                         help='')
     parser.add_argument('--dec_n_layers_sub2', type=int, default=1,
                         help='')
-    parser.add_argument('--dec_n_layers_sub3', type=int, default=1,
-                        help='')
     parser.add_argument('--dec_loop_type', type=str, default='normal', nargs='?',
                         choices=['normal', 'lmdecoder'],
                         help='')
-    parser.add_argument('--dec_residual', type=bool, default=False, nargs='?',
+    parser.add_argument('--dec_residual', type=strtobool, default=False, nargs='?',
                         help='residual connection between each decoder layer')
-    parser.add_argument('--input_feeding', type=bool, default=False, nargs='?',
+    parser.add_argument('--input_feeding', type=strtobool, default=False, nargs='?',
                         help='')
     parser.add_argument('--emb_dim', type=int, default=512,
                         help='number of dimensions in the embedding layer')
-    parser.add_argument('--tie_embedding', type=bool, default=False, nargs='?',
+    parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
                         help='tie weights between an embedding matrix and a linear layer before the softmax layer')
     parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
                         help='')
     parser.add_argument('--ctc_fc_list_sub1', type=str, default="", nargs='?',
                         help='')
     parser.add_argument('--ctc_fc_list_sub2', type=str, default="", nargs='?',
-                        help='')
-    parser.add_argument('--ctc_fc_list_sub3', type=str, default="", nargs='?',
                         help='')
     # optimization
     parser.add_argument('--batch_size', type=int, default=50,
@@ -228,7 +212,7 @@ def parse():
                                  'xavier_uniform', 'xavier_normal',
                                  'kaiming_uniform', 'kaiming_normal'],
                         help='')
-    parser.add_argument('--rec_weight_orthogonal', type=bool, default=False,
+    parser.add_argument('--rec_weight_orthogonal', type=strtobool, default=False,
                         help='')
     parser.add_argument('--pretrained_model', default=False, nargs='?',
                         help='')
@@ -254,7 +238,7 @@ def parse():
                         help='')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
                         help='')
-    parser.add_argument('--layer_norm', default=False, nargs='?',
+    parser.add_argument('--layer_norm', type=strtobool, default=False, nargs='?',
                         help='apply layer normalization (see https://arxiv.org/abs/1607.06450)')
     parser.add_argument('--focal_loss_weight', type=float, default=0.0,
                         help='')
@@ -267,17 +251,13 @@ def parse():
                         help='CTC loss weight for the 1st auxiliary task')
     parser.add_argument('--ctc_weight_sub2', type=float, default=0.0,
                         help='CTC loss weight for the 2nd auxiliary task')
-    parser.add_argument('--ctc_weight_sub3', type=float, default=0.0,
-                        help='CTC loss weight for the 3rd auxiliary task')
     parser.add_argument('--sub1_weight', type=float, default=0.0,
                         help='total loss weight for the 1st auxiliary task')
     parser.add_argument('--sub2_weight', type=float, default=0.0,
                         help='total loss weight for the 2nd auxiliary task')
-    parser.add_argument('--sub3_weight', type=float, default=0.0,
-                        help='total loss weight for the 3rd auxiliary task')
-    parser.add_argument('--mtl_per_batch', type=bool, default=False, nargs='?',
+    parser.add_argument('--mtl_per_batch', type=strtobool, default=False, nargs='?',
                         help='change mini-batch per task')
-    parser.add_argument('--task_specific_layer', type=bool, default=False, nargs='?',
+    parser.add_argument('--task_specific_layer', type=strtobool, default=False, nargs='?',
                         help='insert a task-specific encoder layer per task')
     # foroward-backward
     parser.add_argument('--bwd_weight', type=float, default=0.0,
@@ -286,8 +266,6 @@ def parse():
                         help='cross etnropy loss weight for the backward decoder in the 1st auxiliary task')
     parser.add_argument('--bwd_weight_sub2', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the 2nd auxiliary task')
-    parser.add_argument('--bwd_weight_sub3', type=float, default=0.0,
-                        help='cross etnropy loss weight for the backward decoder in the 3rd auxiliary task')
     # cold fusion
     parser.add_argument('--lm_fusion_type', type=str, default='cold', nargs='?',
                         choices=['cold', 'cold_prob', 'cold_recurrency',
@@ -305,9 +283,7 @@ def parse():
                         help='LM objective weight for the 1st auxiliary task')
     parser.add_argument('--lmobj_weight_sub2', type=float, default=0.0, nargs='?',
                         help='LM objective weight for the 2nd auxiliary task')
-    parser.add_argument('--lmobj_weight_sub3', type=float, default=0.0, nargs='?',
-                        help='LM objective weight for the 3rd auxiliary task')
-    parser.add_argument('--share_lm_softmax', type=bool, default=False, nargs='?',
+    parser.add_argument('--share_lm_softmax', type=strtobool, default=False, nargs='?',
                         help='')
     # transformer
     parser.add_argument('--d_model', type=int, default=512,
@@ -329,10 +305,10 @@ def parse():
     parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
                         help='')
     # contextualization
-    parser.add_argument('--concat_prev_n_utterances', type=int, default=0,
-                        help='number of previous utterances to concatenate (for training)')
-    parser.add_argument('--n_caches', type=int, default=0,
-                        help='number of previous tokens to cache (for training)')
+    parser.add_argument('--contextualize', type=str, default='', nargs='?',
+                        choices=['hierarchical_uni', 'hierarchical_bi',
+                                 'hierarchical_uni_attention', 'hierarchical_bi_attention'],
+                        help='')
     # decoding parameters
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='path to tsv files for the evaluation sets')

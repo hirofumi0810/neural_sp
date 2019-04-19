@@ -48,7 +48,6 @@ class RNNEncoder(nn.Module):
         residual (bool): add residual connections between the consecutive layers
         n_layers_sub1 (int): number of layers in the 1st auxiliary task
         n_layers_sub2 (int): number of layers in the 2nd auxiliary task
-        n_layers_sub3 (int): number of layers in the 3rd auxiliary task
         nin (int): if larger than 0, insert 1*1 conv (filter size: nin)
             and ReLU activation between each LSTM layer
         layer_norm (bool): layer normalization
@@ -78,7 +77,6 @@ class RNNEncoder(nn.Module):
                  residual=False,
                  n_layers_sub1=0,
                  n_layers_sub2=0,
-                 n_layers_sub3=0,
                  nin=0,
                  layer_norm=False,
                  task_specific_layer=False):
@@ -91,8 +89,6 @@ class RNNEncoder(nn.Module):
             raise ValueError('Set n_layers_sub1 between 1 to n_layers.')
         if n_layers_sub2 < 0 or (n_layers_sub2 > 1 and n_layers_sub1 < n_layers_sub2):
             raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1.')
-        if n_layers_sub3 < 0 or (n_layers_sub3 > 1 and n_layers_sub2 < n_layers_sub3):
-            raise ValueError('Set n_layers_sub3 between 1 to n_layers_sub2.')
 
         self.rnn_type = rnn_type
         self.bidirectional = True if rnn_type in ['blstm', 'bgru'] else False
@@ -105,7 +101,6 @@ class RNNEncoder(nn.Module):
         # Setting for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
         self.n_layers_sub2 = n_layers_sub2
-        self.n_layers_sub3 = n_layers_sub3
         self.task_specific_layer = task_specific_layer
 
         # Setting for subsampling
@@ -244,13 +239,6 @@ class RNNEncoder(nn.Module):
                                                   dropout=0,
                                                   bidirectional=self.bidirectional)
                         self.dropout_sub2_tsl = nn.Dropout(p=dropout)
-                    if l == n_layers_sub3 - 1 and task_specific_layer:
-                        self.rnn_sub3_tsl = rnn_i(self._output_dim, n_units, 1,
-                                                  bias=True,
-                                                  batch_first=True,
-                                                  dropout=0,
-                                                  bidirectional=self.bidirectional)
-                        self.dropout_sub3_tsl = nn.Dropout(p=dropout)
 
                     # Network in network (1*1 conv)
                     if nin > 0:
@@ -281,7 +269,7 @@ class RNNEncoder(nn.Module):
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
             xlens (list): `[B]`
-            task (str): all or ys or ys_sub1 or ys_sub2 or ys_sub3
+            task (str): all or ys or ys_sub1 or ys_sub2
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T // prod(subsample), n_units (*2)]`
@@ -294,8 +282,7 @@ class RNNEncoder(nn.Module):
         """
         eouts = {'ys': {'xs': None, 'xlens': None},
                  'ys_sub1': {'xs': None, 'xlens': None},
-                 'ys_sub2': {'xs': None, 'xlens': None},
-                 'ys_sub3': {'xs': None, 'xlens': None}}
+                 'ys_sub2': {'xs': None, 'xlens': None}}
 
         # Dropout for inputs-hidden connection
         xs = self.dropout_in(xs)
@@ -367,22 +354,6 @@ class RNNEncoder(nn.Module):
                         eouts[task]['xlens'] = xlens_sub2
                         return eouts
 
-                if l == self.n_layers_sub3 - 1:
-                    if self.task_specific_layer:
-                        self.rnn_sub3_tsl.flatten_parameters()
-                        xs_sub3 = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
-                        xs_sub3, _ = self.rnn_sub3_tsl(xs_sub3, hx=None)
-                        xs_sub3 = pad_packed_sequence(xs_sub3, batch_first=True)[0]
-                        xs_sub3 = self.dropout_sub3_tsl(xs_sub3)
-                    else:
-                        xs_sub3 = xs.clone()[perm_ids_unsort]
-                    xlens_sub3 = xlens[perm_ids_unsort].tolist()
-
-                    if task == 'ys_sub3':
-                        eouts[task]['xs'] = xs_sub3
-                        eouts[task]['xlens'] = xlens_sub3
-                        return eouts
-
                 # Projection layer
                 if self.n_projs > 0:
                     # xs = torch.tanh(self.proj[l](xs))
@@ -448,9 +419,6 @@ class RNNEncoder(nn.Module):
         if self.n_layers_sub2 >= 1 and task == 'all':
             eouts['ys_sub2']['xs'] = xs_sub2
             eouts['ys_sub2']['xlens'] = xlens_sub2
-        if self.n_layers_sub3 >= 1 and task == 'all':
-            eouts['ys_sub3']['xs'] = xs_sub3
-            eouts['ys_sub3']['xlens'] = xlens_sub3
 
         return eouts
 

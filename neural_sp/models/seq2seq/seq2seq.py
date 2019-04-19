@@ -65,7 +65,6 @@ class Seq2seq(ModelBase):
         self.vocab = args.vocab
         self.vocab_sub1 = args.vocab_sub1
         self.vocab_sub2 = args.vocab_sub2
-        self.vocab_sub3 = args.vocab_sub3
         self.blank = 0
         self.unk = 1
         self.eos = 2
@@ -73,10 +72,9 @@ class Seq2seq(ModelBase):
         # NOTE: reserved in advance
 
         # for the sub tasks
-        self.main_weight = 1 - args.sub1_weight - args.sub2_weight - args.sub3_weight
+        self.main_weight = 1 - args.sub1_weight - args.sub2_weight
         self.sub1_weight = args.sub1_weight
         self.sub2_weight = args.sub2_weight
-        self.sub3_weight = args.sub3_weight
         self.mtl_per_batch = args.mtl_per_batch
         self.task_specific_layer = args.task_specific_layer
 
@@ -84,17 +82,14 @@ class Seq2seq(ModelBase):
         self.ctc_weight = min(args.ctc_weight, self.main_weight)
         self.ctc_weight_sub1 = min(args.ctc_weight_sub1, self.sub1_weight)
         self.ctc_weight_sub2 = min(args.ctc_weight_sub2, self.sub2_weight)
-        self.ctc_weight_sub3 = min(args.ctc_weight_sub3, self.sub3_weight)
 
         # for backward decoder
         self.bwd_weight = min(args.bwd_weight, self.main_weight)
         self.bwd_weight_sub1 = min(args.bwd_weight_sub1, self.sub1_weight)
         self.bwd_weight_sub2 = min(args.bwd_weight_sub2, self.sub2_weight)
-        self.bwd_weight_sub3 = min(args.bwd_weight_sub3, self.sub3_weight)
         self.fwd_weight = self.main_weight - self.bwd_weight - self.ctc_weight
         self.fwd_weight_sub1 = self.sub1_weight - self.bwd_weight_sub1 - self.ctc_weight_sub1
         self.fwd_weight_sub2 = self.sub2_weight - self.bwd_weight_sub2 - self.ctc_weight_sub2
-        self.fwd_weight_sub3 = self.sub3_weight - self.bwd_weight_sub3 - self.ctc_weight_sub3
 
         # Encoder
         if args.enc_type == 'transformer':
@@ -129,7 +124,6 @@ class Seq2seq(ModelBase):
                 n_layers=args.enc_n_layers,
                 n_layers_sub1=args.enc_n_layers_sub1,
                 n_layers_sub2=args.enc_n_layers_sub2,
-                n_layers_sub3=args.enc_n_layers_sub3,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
                 subsample=[int(s) for s in args.subsample.split('_')],
@@ -165,9 +159,6 @@ class Seq2seq(ModelBase):
                                             dropout=args.dropout_enc)
             if self.sub2_weight > 0:
                 self.bridge_sub2 = LinearND(self.enc.output_dim, args.dec_n_units,
-                                            dropout=args.dropout_enc)
-            if self.sub3_weight > 0:
-                self.bridge_sub3 = LinearND(self.enc.output_dim, args.dec_n_units,
                                             dropout=args.dropout_enc)
             self.enc_n_units = args.dec_n_units
 
@@ -266,7 +257,7 @@ class Seq2seq(ModelBase):
             setattr(self, 'dec_' + dir, dec)
 
         # sub task
-        for sub in ['sub1', 'sub2', 'sub3']:
+        for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0:
                 directions = []
                 if getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0:
@@ -395,7 +386,7 @@ class Seq2seq(ModelBase):
             getattr(self, 'dec_' + dir).start_scheduled_sampling()
 
         # sub task
-        for sub in ['sub1', 'sub2', 'sub3']:
+        for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0:
                 directions = []
                 if getattr(self, 'fwd_weight_' + sub) > 0:
@@ -415,7 +406,6 @@ class Seq2seq(ModelBase):
                 ys (list): reference labels in the main task of size `[L]`
                 ys_sub1 (list): reference labels in the 1st auxiliary task of size `[L_sub1]`
                 ys_sub2 (list): reference labels in the 2nd auxiliary task of size `[L_sub2]`
-                ys_sub3 (list): reference labels in the 3rd auxiliary task of size `[L_sub3]`
                 utt_ids (list): name of utterances
                 speakers (list): name of speakers
             reporter ():
@@ -480,7 +470,7 @@ class Seq2seq(ModelBase):
             observation['ppl.lmobj-bwd'] = obs_bwd['ppl_lmobj']
 
         # only fwd for sub tasks
-        for sub in ['sub1', 'sub2', 'sub3']:
+        for sub in ['sub1', 'sub2']:
             # for the forward decoder in the sub tasks
             if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc', 'ys_' + sub + '.lmobj']:
                 loss_sub, obs_fwd_sub = getattr(self, 'dec_fwd_' + sub)(
@@ -518,7 +508,7 @@ class Seq2seq(ModelBase):
 
         Args:
             xs (list): A list of length `[B]`, which contains Tensor of size `[T, input_dim]`
-            task (str): all or ys* or ys_sub1* or ys_sub2* or ys_sub3*
+            task (str): all or ys* or ys_sub1* or ys_sub2*
             flip (bool): if True, flip acoustic features in the time-dimension
         Returns:
             enc_outs (dict):
@@ -527,8 +517,7 @@ class Seq2seq(ModelBase):
         if 'lmobj' in task:
             eouts = {'ys': {'xs': None, 'xlens': None},
                      'ys_sub1': {'xs': None, 'xlens': None},
-                     'ys_sub2': {'xs': None, 'xlens': None},
-                     'ys_sub3': {'xs': None, 'xlens': None}}
+                     'ys_sub2': {'xs': None, 'xlens': None}}
             return eouts
         else:
             if self.input_type == 'speech':
@@ -557,7 +546,7 @@ class Seq2seq(ModelBase):
             enc_outs = self.enc(xs, xlens, task.split('.')[0])
 
             if self.main_weight < 1 and self.enc_type in ['cnn', 'tds']:
-                for sub in ['sub1', 'sub2', 'sub3']:
+                for sub in ['sub1', 'sub2']:
                     enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
                     enc_outs['ys_' + sub]['xlens'] = enc_outs['ys']['xlens'][:]
 
@@ -568,8 +557,6 @@ class Seq2seq(ModelBase):
                 enc_outs['ys_sub1']['xs'] = self.bridge_sub1(enc_outs['ys_sub1']['xs'])
             if self.sub2_weight > 0 and self.is_bridge and (task in ['all', 'ys_sub2']):
                 enc_outs['ys_sub2']['xs'] = self.bridge_sub2(enc_outs['ys_sub2']['xs'])
-            if self.sub3_weight > 0 and self.is_bridge and (task in ['all', 'ys_sub3']):
-                enc_outs['ys_sub3']['xs'] = self.bridge_sub3(enc_outs['ys_sub3']['xs'])
 
             return enc_outs
 
@@ -589,8 +576,6 @@ class Seq2seq(ModelBase):
                 assert self.ctc_weight_sub1 > 0
             elif task == 'ys_sub2':
                 assert self.ctc_weight_sub2 > 0
-            elif task == 'ys_sub3':
-                assert self.ctc_weight_sub3 > 0
             ctc_probs, indices_topk = getattr(self, 'dec_' + dir).ctc_posteriors(
                 enc_outs[task]['xs'], enc_outs[task]['xlens'], temperature, topk)
             return ctc_probs, indices_topk, enc_outs[task]['xlens']
@@ -619,7 +604,7 @@ class Seq2seq(ModelBase):
             refs_text (list): gold transcriptions
             utt_ids (list):
             speakers (list):
-            task (str): ys* or ys_sub1* or ys_sub2* or ys_sub3*
+            task (str): ys* or ys_sub1* or ys_sub2*
             ensemble_models (list): list of Seq2seq classes
         Returns:
             best_hyps_id (list): A list of length `[B]`, which contains arrays of size `[L]`
@@ -636,9 +621,6 @@ class Seq2seq(ModelBase):
             elif task.split('.')[0] == 'ys_sub2':
                 dir = 'bwd' if self.bwd_weight_sub2 > 0 and params['recog_bwd_attention'] else 'fwd'
                 dir += '_sub2'
-            elif task.split('.')[0] == 'ys_sub3':
-                dir = 'bwd' if self.bwd_weight_sub3 > 0 and params['recog_bwd_attention'] else 'fwd'
-                dir += '_sub3'
             else:
                 raise ValueError(task)
 
