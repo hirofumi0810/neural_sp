@@ -10,9 +10,6 @@ echo ===========================================================================
 stage=0
 gpu=
 
-### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/swbd
-
 ### vocabulary
 unit=wp      # word/wp/char/word_char/phone
 vocab_size=10000
@@ -60,7 +57,7 @@ emb_dim=512
 tie_embedding=false
 ctc_fc_list="512"
 ### optimization
-batch_size=50
+batch_size=30
 optimizer=adam
 learning_rate=1e-3
 n_epochs=20
@@ -109,6 +106,9 @@ model=/n/sd8/inaguma/result/swbd
 
 ### path to the model directory to resume training
 resume=
+
+### path to save preproecssed data
+export data=/n/sd8/inaguma/corpus/swbd
 
 ### path to original data
 SWBD_AUDIOPATH=/n/rd21/corpora_7/swb

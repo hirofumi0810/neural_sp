@@ -10,9 +10,6 @@ echo ===========================================================================
 stage=0
 gpu=
 
-### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/swbd
-
 ### vocabulary
 unit=wp      # word/wp/char/word_char
 vocab_size=30000
@@ -149,6 +146,9 @@ model=/n/sd8/inaguma/result/swbd
 ### path to the model directory to resume training
 resume=
 lm_resume=
+
+### path to save preproecssed data
+export data=/n/sd8/inaguma/corpus/swbd
 
 ### path to original data
 SWBD_AUDIOPATH=/n/rd21/corpora_7/swb

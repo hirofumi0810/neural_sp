@@ -10,9 +10,6 @@ echo ===========================================================================
 stage=0
 gpu=
 
-### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/timit
-
 #########################
 # ASR configuration
 #########################
@@ -92,6 +89,9 @@ model=/n/sd8/inaguma/result/timit
 
 ### path to the model directory to resume training
 resume=
+
+### path to save preproecssed data
+export data=/n/sd8/inaguma/corpus/timit
 
 ### path to original data
 TIMITDATATOP=/n/rd21/corpora_1/TIMIT

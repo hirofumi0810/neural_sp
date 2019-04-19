@@ -10,9 +10,6 @@ echo ===========================================================================
 stage=0
 gpu=
 
-### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/csj
-
 ### vocabulary
 unit=wp      # word/wp/char/word_char
 vocab_size=30000
@@ -109,6 +106,9 @@ model=/n/sd8/inaguma/result/csj
 
 ### path to the model directory to resume training
 resume=
+
+### path to save preproecssed data
+export data=/n/sd8/inaguma/corpus/csj
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -297,8 +297,8 @@ if [ ${stage} -le 4 ]; then
         --conv_kernel_sizes ${conv_kernel_sizes} \
         --conv_strides ${conv_strides} \
         --conv_poolings ${conv_poolings} \
-        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --conv_batch_norm ${conv_batch_norm} \
+        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --enc_type ${enc_type} \
         --enc_n_units ${enc_n_units} \
         --enc_n_projs ${enc_n_projs} \

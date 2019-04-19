@@ -10,9 +10,6 @@ echo ===========================================================================
 stage=0
 gpu=
 
-### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/csj
-
 ### vocabulary
 unit=wp           # word/wp/word_char
 vocab_size=30000
@@ -118,6 +115,9 @@ model=/n/sd8/inaguma/result/csj
 
 ### path to the model directory to resume training
 resume=
+
+### path to save preproecssed data
+export data=/n/sd8/inaguma/corpus/csj
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -307,13 +307,13 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     # if [ ${unit_sub1} = wp ]; then
     #     cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
     #     spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} \
-    #         --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
+        #         --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
     #     spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-    #         sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
+        #         sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
     # else
     #     text2dict.py ${data}/${train_set}/text --unit ${unit_sub1} --vocab_size ${vocab_size_sub1} \
-    #         --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} | \
-    #         sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
+        #         --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} | \
+        #         sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
     # fi
     # echo "vocab size:" $(cat ${dict_sub1} | wc -l)
 

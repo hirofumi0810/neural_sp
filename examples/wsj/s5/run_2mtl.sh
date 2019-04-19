@@ -10,9 +10,6 @@ echo ===========================================================================
 stage=0
 gpu=
 
-### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/wsj
-
 ### vocabulary
 unit=wp           # word/wp/word_char
 vocab_size=1000
@@ -118,6 +115,9 @@ model=/n/sd8/inaguma/result/wsj
 
 ### path to the model directory to resume training
 resume=
+
+### path to save preproecssed data
+export data=/n/sd8/inaguma/corpus/wsj
 
 ### path to original data
 wsj0=/n/rd21/corpora_1/WSJ/wsj0
