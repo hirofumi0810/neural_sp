@@ -126,7 +126,8 @@ class Seq2seq(ModelBase):
                 n_layers_sub2=args.enc_n_layers_sub2,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
-                subsample=[int(s) for s in args.subsample.split('_')],
+                subsample=list(map(int, args.subsample.split('_'))) +
+                [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
                 subsample_type=args.subsample_type,
                 n_stacks=args.n_stacks,
                 n_splices=args.n_splices,
