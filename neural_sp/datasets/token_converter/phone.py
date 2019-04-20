@@ -31,6 +31,7 @@ class Phone2idx(object):
                 if p in remove_list:
                     continue
                 self.token2idx[p] = int(idx)
+        self.vocab = len(self.token2idx.keys())
 
     def __call__(self, text):
         """Convert phone sequence to indices.
@@ -64,6 +65,7 @@ class Idx2phone(object):
                 if p in remove_list:
                     continue
                 self.idx2token[int(idx)] = p
+        self.vocab = len(self.idx2token.keys())
 
     def __call__(self, token_ids, return_list=False):
         """Convert indices to phone sequence.

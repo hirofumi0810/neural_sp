@@ -31,6 +31,7 @@ class Word2idx(object):
             for line in f:
                 w, idx = line.strip().split(' ')
                 self.token2idx[w] = int(idx)
+        self.vocab = len(self.token2idx.keys())
 
     def __call__(self, text):
         """Convert word sequence into indices.
@@ -74,6 +75,7 @@ class Idx2word(object):
             for line in f:
                 w, idx = line.strip().split(' ')
                 self.idx2token[int(idx)] = w
+        self.vocab = len(self.idx2token.keys())
 
     def __call__(self, token_ids, return_list=False):
         """Convert indices into word sequence.

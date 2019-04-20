@@ -29,6 +29,7 @@ class Wp2idx(object):
             for line in f:
                 wp, idx = line.strip().split(' ')
                 self.token2idx[wp] = int(idx)
+        self.vocab = len(self.token2idx.keys())
 
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)
@@ -68,6 +69,7 @@ class Idx2wp(object):
             for line in f:
                 wp, idx = line.strip().split(' ')
                 self.idx2token[int(idx)] = wp
+        self.vocab = len(self.idx2token.keys())
 
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)

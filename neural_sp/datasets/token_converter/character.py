@@ -35,6 +35,7 @@ class Char2idx(object):
                 if c in remove_list:
                     continue
                 self.token2idx[c] = int(idx)
+        self.vocab = len(self.token2idx.keys())
 
         self.nlsyms_list = []
         if nlsyms and os.path.isfile(nlsyms):
@@ -91,6 +92,7 @@ class Idx2char(object):
                 if c in remove_list:
                     continue
                 self.idx2token[int(idx)] = c
+        self.vocab = len(self.idx2token.keys())
 
     def __call__(self, token_ids, return_list=False):
         """Convert indices into character sequence.
