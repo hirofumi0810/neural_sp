@@ -87,7 +87,7 @@ for set in test_dev93 test_eval92; do
     if ${asr_state_carry_over}; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${lm_weight} != 0.0 ] && ${lm_state_carry_over}; then
+    if [ ! -z ${lm} ] && ${lm_state_carry_over}; then
         recog_dir=${recog_dir}_LMcarryover
     fi
     if ${oracle}; then
