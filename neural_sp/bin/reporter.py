@@ -125,7 +125,7 @@ class Reporter(object):
                  label='dev', linestyle='-')
         plt.xlabel('epoch', fontsize=12)
         plt.ylabel('WER', fontsize=12)
-        plt.ylim([0,  max(100, max(self.observation_eval))])
+        plt.ylim([0,  min(100, max(self.observation_eval) + 1)])
         plt.legend(loc="upper right", fontsize=12)
         if os.path.isfile(os.path.join(self.save_path, 'wer' + ".png")):
             os.remove(os.path.join(self.save_path, 'wer' + ".png"))
