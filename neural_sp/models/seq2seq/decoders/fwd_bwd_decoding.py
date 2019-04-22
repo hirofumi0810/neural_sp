@@ -17,7 +17,7 @@ logger = logging.getLogger("decoding")
 
 def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                       nbest_hyps_bwd, aws_bwd, scores_bwd,
-                      flip, eos, gnmt_decoding, lp_weight, idx2token=None, refs=None):
+                      flip, eos, gnmt_decoding, lp_weight, idx2token, refs_id=None):
     """Decoding with the forward and backward attention-based decoders.
 
     Args:
@@ -32,7 +32,7 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
         gnmt_decoding ():
         lp_weight ():
         idx2token (): converter from index to token
-        refs ():
+        refs_id ():
     Returns:
 
     """
@@ -95,12 +95,11 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                             merged.append({'hyp': new_hyp, 'score': new_score})
 
                             logger.info('time matching')
-                            if idx2token is not None:
-                                if refs is not None:
-                                    logger.info('Ref: %s' % refs[b].lower())
-                                logger.info('hyp (fwd): %s' % idx2token(nbest_hyps_fwd[b][n_f]))
-                                logger.info('hyp (bwd): %s' % idx2token(nbest_hyps_bwd[b][n_b]))
-                                logger.info('hyp (fwd-bwd): %s' % idx2token(new_hyp))
+                            if refs_id is not None:
+                                logger.info('Ref: %s' % idx2token(refs_id[b]))
+                            logger.info('hyp (fwd): %s' % idx2token(nbest_hyps_fwd[b][n_f]))
+                            logger.info('hyp (bwd): %s' % idx2token(nbest_hyps_bwd[b][n_b]))
+                            logger.info('hyp (fwd-bwd): %s' % idx2token(new_hyp))
                             logger.info('log prob (fwd): %.3f' % scores_fwd[b][n_f][-1])
                             logger.info('log prob (bwd): %.3f' % scores_bwd[b][n_b][0])
                             logger.info('log prob (fwd-bwd): %.3f' % new_score)
