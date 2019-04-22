@@ -38,12 +38,16 @@ for set in eval1 eval2 eval3; do
 
     if [ $(echo ${model} | grep 'all') ]; then
         if [ $(echo ${model} | grep 'aps_other') ]; then
-            recog_set=${data}/dataset_lm/${set}_all_train_aps_other_word30000.tsv
+            recog_set=${data}/dataset_lm/${set}_all_train_aps_other_wpbpe30000.tsv
+        elif [ $(echo ${model} | grep 'sps') ]; then
+            recog_set=${data}/dataset_lm/${set}_all_train_sps_wpbpe30000.tsv
         else
-            recog_set=${data}/dataset_lm/${set}_all_train_all_word30000.tsv
+            recog_set=${data}/dataset_lm/${set}_all_train_all_wpbpe30000.tsv
         fi
     elif [ $(echo ${model} | grep 'aps_other') ]; then
         recog_set=${data}/dataset_lm/${set}_aps_other_train_aps_other_wpbpe10000.tsv
+    elif [ $(echo ${model} | grep 'sps') ]; then
+        recog_set=${data}/dataset_lm/${set}_sps_train_sps_wpbpe10000.tsv
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/eval.py \

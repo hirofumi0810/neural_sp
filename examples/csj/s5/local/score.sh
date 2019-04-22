@@ -93,7 +93,7 @@ for set in eval1 eval2 eval3; do
     if ${asr_state_carry_over}; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${lm_weight} != 0.0 ] && ${lm_state_carry_over}; then
+    if [ ! -z ${lm} ] && ${lm_state_carry_over}; then
         recog_dir=${recog_dir}_LMcarryover
     fi
     if [ ${n_caches} != 0 ]; then
@@ -119,17 +119,21 @@ for set in eval1 eval2 eval3; do
     fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep 'train_sp') ]; then
+    if [ $(echo ${model} | grep 'train_sp_') ]; then
         if [ $(echo ${model} | grep 'all') ]; then
             recog_set=${data}/dataset/${set}_sp_all_wpbpe30000.tsv
         elif [ $(echo ${model} | grep 'aps_other') ]; then
             recog_set=${data}/dataset/${set}_sp_aps_other_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep 'sps') ]; then
+            recog_set=${data}/dataset/${set}_sp_sps_wpbpe10000.tsv
         fi
     else
         if [ $(echo ${model} | grep 'all') ]; then
             recog_set=${data}/dataset/${set}_all_wpbpe30000.tsv
         elif [ $(echo ${model} | grep 'aps_other') ]; then
             recog_set=${data}/dataset/${set}_aps_other_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep 'sps') ]; then
+            recog_set=${data}/dataset/${set}_sps_wpbpe10000.tsv
         fi
     fi
 
