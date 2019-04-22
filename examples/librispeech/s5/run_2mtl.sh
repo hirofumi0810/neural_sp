@@ -76,7 +76,7 @@ decay_type=epoch
 not_improved_patient_n_epochs=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
-warmup_n_steps=4000
+warmup_n_steps=0
 warmup_n_epochs=0
 ### initialization
 param_init=0.1

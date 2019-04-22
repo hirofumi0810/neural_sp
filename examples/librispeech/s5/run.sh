@@ -70,7 +70,7 @@ decay_type=epoch
 not_improved_patient_n_epochs=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
-warmup_n_steps=4000
+warmup_n_steps=0
 warmup_n_epochs=0
 ### initialization
 param_init=0.1
@@ -224,23 +224,23 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-    done
-
-    if [ ${data_size} == '100' ]; then
-        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-            ${data}/train_clean_100 || exit 1;
-    elif [ ${data_size} == '460' ]; then
-        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-            ${data}/train_clean_100 ${data}/train_clean_360 || exit 1;
-    elif [ ${data_size} == '960' ]; then
-        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-            ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
-    else
-        echo "data_size is 100 or 460 or 960." && exit 1;
-    fi
+    # for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
+    #     steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+        #         ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+    # done
+    #
+    # if [ ${data_size} == '100' ]; then
+    #     utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+        #         ${data}/train_clean_100 || exit 1;
+    # elif [ ${data_size} == '460' ]; then
+    #     utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+        #         ${data}/train_clean_100 ${data}/train_clean_360 || exit 1;
+    # elif [ ${data_size} == '960' ]; then
+    #     utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+        #         ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
+    # else
+    #     echo "data_size is 100 or 460 or 960." && exit 1;
+    # fi
     cp -rf ${data}/dev_clean ${data}/${dev_set}
 
     # Compute global CMVN
