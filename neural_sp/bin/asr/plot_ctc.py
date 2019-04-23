@@ -64,7 +64,6 @@ def main():
                           unit=args.unit,
                           unit_sub1=args.unit_sub1,
                           batch_size=args.recog_batch_size,
-                          concat_prev_n_utterances=args.recog_concat_prev_n_utterances,
                           is_test=True)
 
         if i == 0:
@@ -94,8 +93,8 @@ def main():
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, aws, _ = model.decode(batch['xs'], recog_params,
-                                                exclude_eos=False)
+            best_hyps_id, _, _ = model.decode(batch['xs'], recog_params,
+                                              exclude_eos=False)
 
             # Get CTC probs
             ctc_probs, indices_topk, xlens = model.get_ctc_posteriors(
@@ -104,7 +103,6 @@ def main():
 
             for b in range(len(batch['xs'])):
                 tokens = dataset.idx2token[0](best_hyps_id[b], return_list=True)
-                tokens = [unicode(t, 'utf-8') for t in tokens]
                 spk = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
 
                 plot_ctc_probs(
