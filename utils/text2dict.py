@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Make dataset CSV files."""
+"""Make a dictionary file."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -12,13 +12,13 @@ from __future__ import print_function
 
 import argparse
 import codecs
-import sentencepiece as spm
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
 parser.add_argument('text', type=str,
                     help='path to text file')
-parser.add_argument('--unit', type=str, choices=['word', "wp", 'char', "phone", "word_char"],
+parser.add_argument('--unit', type=str,
+                    choices=['word', "wp", 'char', "phone", "word_char"],
                     help='token units')
 parser.add_argument('--vocab_size', type=int, nargs='?',
                     help='the size of vocabulary for word and wordpiece.')
@@ -26,11 +26,6 @@ parser.add_argument('--remove_word_boundary', action='store_false',
                     help='remove all whitespaces in the transcriptions')
 parser.add_argument('--nlsyms', type=str, default=False,
                     help='path to non-linguistic symbols, e.g., <NOISE> etc.')
-parser.add_argument('--wp_type', type=str, default='unigram', nargs='?',
-                    choices=['unigram', 'bpe'],
-                    help='')
-parser.add_argument('--wp_model', type=str, default=False, nargs='?',
-                    help='prefix of the wordpiece model')
 args = parser.parse_args()
 
 
@@ -45,30 +40,29 @@ def main():
                 nlsyms.append(line.strip())
 
     if args.unit == 'wp':
-        spm.SentencePieceTrainer.Train('--input=' + args.text +
-                                       ' --user_defined_symbols=' + ','.join(nlsyms) +
-                                       ' --vocab_size=' + str(args.vocab_size) +
-                                       ' --model_type=' + args.wp_type +
-                                       ' --model_prefix=' + args.wp_model +
-                                       ' --input_sentence_size=100000000')
-        sp = spm.SentencePieceProcessor()
-        sp.Load(args.wp_model + '.model')
+        raise ValueError("Use spm_encode in the bash script instead of text2dict.py.")
 
     word_dict = {}
-    word2phone = {}
     token_set = set([])
     with codecs.open(args.text, 'r', encoding="utf-8") as f:
         pbar = tqdm(total=len(codecs.open(args.text, 'r', encoding="utf-8").readlines()))
         for line in f:
-            line = line.strip()
+            words = line.strip().split()[1:]
+            if '' in words:
+                words.remove('')
 
             # Remove special tokens
             for token in nlsyms:
-                line = line.replace(token, '')
+                # Include in the dictionary to sort by frequency
+                if args.unit in ['word', 'word_char']:
+                    if token not in word_dict.keys():
+                        word_dict[token] = words.count(token)
+                    else:
+                        word_dict[token] += words.count(token)
 
-            words = line.split()[1:]
-            if '' in words:
-                words.remove('')
+                if token in words:
+                    words.remove(token)
+
             text = ' '.join(words)
 
             if args.unit in ['word', 'word_char']:
@@ -79,11 +73,8 @@ def main():
                     else:
                         word_dict[w] += 1
 
-                if args.unit in ['char', 'word_char']:
+                if args.unit == 'word_char':
                     token_set |= set(list(text))
-
-            elif args.unit == 'wp':
-                token_set |= set(sp.EncodeAsPieces(text))
 
             elif args.unit == 'char':
                 # Remove whitespaces
@@ -100,25 +91,24 @@ def main():
             pbar.update(1)
 
     if args.unit == 'word':
-        token_list = sorted(nlsyms) + sorted(list(word_dict.keys()),
-                                             key=lambda x: word_dict[x],
-                                             reverse=True)[:args.vocab_size]
+        token_list = sorted(list(word_dict.keys()),
+                            key=lambda x: word_dict[x],
+                            reverse=True)[:args.vocab_size]
+        # NOTE: nlsyms are already included in the word_dict
 
     elif args.unit == 'word_char':
         word_char_list = sorted(list(word_dict.keys()),
                                 key=lambda x: word_dict[x],
-                                reverse=True)[:args.vocab_size]
-        word_char_list += list(token_set)
-        token_list = sorted(nlsyms) + sorted(list(set(word_char_list)))
-
-    elif args.unit == 'wp':
-        token_list = sorted(nlsyms) + sorted(list(token_set))
+                                reverse=True)[:args.vocab_size] + list(token_set)
+        token_list = sorted(list(set(word_char_list)))
+        # NOTE: nlsyms are already included in the word_dict
 
     elif args.unit == 'char':
         token_list = sorted(nlsyms) + sorted(list(token_set))
 
     elif args.unit == 'phone':
         token_list = sorted(list(token_set))
+        # NOTE: nlsyms are already included in the phone set
 
     for t in token_list:
         print('%s' % t)

@@ -164,7 +164,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2 ]; then
     echo "<pad> 3" >> ${dict}
     offset=$(cat ${dict} | wc -l)
     text2dict.py ${data}/${train_set}/text --unit phone | \
-        sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+        awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     echo "vocab size:" $(cat ${dict} | wc -l)
 
     echo "Making dataset tsv files for ASR ..."
@@ -203,8 +203,8 @@ if [ ${stage} -le 4 ]; then
         --conv_kernel_sizes ${conv_kernel_sizes} \
         --conv_strides ${conv_strides} \
         --conv_poolings ${conv_poolings} \
-        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --conv_batch_norm ${conv_batch_norm} \
+        --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --enc_type ${enc_type} \
         --enc_n_units ${enc_n_units} \
         --enc_n_projs ${enc_n_projs} \

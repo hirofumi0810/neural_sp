@@ -224,23 +224,23 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    # for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
-    #     steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-        #         ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-    # done
-    #
-    # if [ ${data_size} == '100' ]; then
-    #     utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-        #         ${data}/train_clean_100 || exit 1;
-    # elif [ ${data_size} == '460' ]; then
-    #     utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-        #         ${data}/train_clean_100 ${data}/train_clean_360 || exit 1;
-    # elif [ ${data_size} == '960' ]; then
-    #     utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-        #         ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
-    # else
-    #     echo "data_size is 100 or 460 or 960." && exit 1;
-    # fi
+    for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
+        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+            ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+    done
+
+    if [ ${data_size} == '100' ]; then
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+            ${data}/train_clean_100 || exit 1;
+    elif [ ${data_size} == '460' ]; then
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+            ${data}/train_clean_100 ${data}/train_clean_360 || exit 1;
+    elif [ ${data_size} == '960' ]; then
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
+            ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
+    else
+        echo "data_size is 100 or 460 or 960." && exit 1;
+    fi
     cp -rf ${data}/dev_clean ${data}/${dev_set}
 
     # Compute global CMVN
@@ -271,20 +271,17 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict}
-    if [ ${unit} = char ]; then
-        echo "<space> 4" >> ${dict}
-    fi
+    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
     offset=$(cat ${dict} | wc -l)
     if [ ${unit} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
+            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
     else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
-            --wp_type ${wp_type} --wp_model ${wp_model} | \
-            sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} | \
+            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     fi
     echo "vocab size:" $(cat ${dict} | wc -l)
 
@@ -323,9 +320,7 @@ if [ ${stage} -le 3 ]; then
     echo ============================================================================
 
     if [ ! -e ${data}/.done_stage_3_${data_size}${lm_data_size}_${unit}${wp_type}${vocab_size}_${use_external_text} ]; then
-        if [ ! -e ${data}/.done_stage_1_${data_size} ]; then
-            echo "run ./run.sh --data_size ${lm_data_size} first" && exit 1
-        fi
+        [ ! -e ${data}/.done_stage_1_${data_size} ] && echo "run ./run.sh --data_size ${lm_data_size} first" && exit 1
 
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm

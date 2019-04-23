@@ -152,7 +152,7 @@ def main():
                     token_ids.append(token2idx[args.unk])
 
         elif args.unit == 'char':
-            for i,  w in enumerate(words):
+            for i, w in enumerate(words):
                 if w in nlsyms:
                     token_ids.append(token2idx[w])
                 else:
@@ -190,7 +190,6 @@ def main():
         # data augmentation for wordpiece
         if args.unit == 'wp' and args.wp_nbest > 1:
             raise NotImplementedError
-            # TODO(hirofumi): update sentencepiece version
 
             for wp_i in sp.NBestEncodeAsPieces(text, args.wp_nbest)[1:]:
                 if wp_i in token2idx.keys():

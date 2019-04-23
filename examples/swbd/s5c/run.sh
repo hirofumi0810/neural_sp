@@ -204,10 +204,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
     local/swbd1_prepare_dict.sh || exit 1;
     local/swbd1_data_prep.sh ${SWBD_AUDIOPATH} || exit 1;
     local/eval2000_data_prep.sh ${EVAL2000_AUDIOPATH} ${EVAL2000_TRANSPATH} || exit 1;
-
-    if [ ! -z ${RT03_PATH} ]; then
-        local/rt03_data_prep.sh ${RT03_PATH}
-    fi
+    [ ! -z ${RT03_PATH} ] && local/rt03_data_prep.sh ${RT03_PATH} || exit 1;
 
     touch ${data}/.done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
 fi
@@ -249,7 +246,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
 fi
 
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-nlsyms=${data}/dict/non_linguistic_symbols_${data_size}.txt
+nlsyms=${data}/dict/nlsyms_${data_size}.txt
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
     echo ============================================================================
@@ -264,25 +261,23 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict}
-    if [ ${unit} = char ]; then
-        echo "<space> 4" >> ${dict}
-    fi
+    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
     offset=$(cat ${dict} | wc -l)
     if [ ${unit} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         spm_train --user_defined_symbols=$(cat ${nlsyms} | tr "\n" ",") --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
+            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
+        # NOTE: sort by frequency
     elif [ ${unit} = phone ]; then
-        map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt
-        map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt
+        map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt > ${data}/${train_set}/text.phone
+        map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt > ${data}/${dev_set}/text.phone
         text2dict.py ${data}/${train_set}/text.phone --unit ${unit} | \
-            sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
-            --wp_type ${wp_type} --wp_model ${wp_model} | \
-            sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} | \
+            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     fi
     echo "vocab size:" $(cat ${dict} | wc -l)
 
@@ -310,16 +305,12 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
                 >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
         done
 
-        # swichboard
-        cut -f 2- -d " " ${data}/${test_set}/text.swbd | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-            > ${data}/dict/word_count/${test_set}_swbd.txt || exit 1;
-        compute_oov_rate.py ${data}/dict/word_count/${test_set}_swbd.txt ${dict} ${test_set}_swbd \
-            >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
-        # callhome
-        cut -f 2- -d " " ${data}/${test_set}/text.ch | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-            > ${data}/dict/word_count/${test_set}_callhm.txt || exit 1;
-        compute_oov_rate.py ${data}/dict/word_count/${test_set}_callhm.txt ${dict} ${test_set}_callhm \
-            >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
+        for set in "swbd" "ch"; do
+            cut -f 2- -d " " ${data}/${test_set}/text.${set} | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+                > ${data}/dict/word_count/${test_set}_${set}.txt || exit 1;
+            compute_oov_rate.py ${data}/dict/word_count/${test_set}_${set}.txt ${dict} ${test_set}_${set} \
+                >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
+        done
         cat ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
     fi
 
@@ -331,8 +322,13 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
             make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --text ${data}/${x}/text.phone \
                 ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
         else
-            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
-                ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+            if [ ${x} = ${train_set} ]; then
+                make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+                    ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+            else
+                make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+                    ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+            fi
         fi
     done
     if [ ${unit} != phone ]; then

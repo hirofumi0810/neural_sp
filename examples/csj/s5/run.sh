@@ -266,20 +266,18 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict}
-    if [ ${unit} = char ]; then
-        echo "<space> 4" >> ${dict}
-    fi
+    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
     offset=$(cat ${dict} | wc -l)
     if [ ${unit} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
+            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
+        # NOTE: sort by frequency
     else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} \
-            --wp_type ${wp_type} --wp_model ${wp_model} | \
-            sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} | \
+            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     fi
     echo "vocab size:" $(cat ${dict} | wc -l)
 
@@ -318,16 +316,14 @@ if [ ${stage} -le 3 ]; then
     echo ============================================================================
 
     if [ ! -e ${data}/.done_stage_3_${data_size}${lm_data_size}_${unit}${wp_type}${vocab_size} ]; then
-        if [ ! -e ${data}/.done_stage_1_${data_size} ]; then
-            echo "run ./run.sh --data_size ${lm_data_size} first" && exit 1
-        fi
+        [ ! -e ${data}/.done_stage_1_${data_size} ] && echo "run ./run.sh --data_size ${lm_data_size} first" && exit 1;
 
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
         for x in train dev; do
             if [ ${lm_data_size} = ${data_size} ]; then
                 cp ${data}/dataset/${x}_${lm_data_size}_${unit}${wp_type}${vocab_size}.tsv \
-                    ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv  || exit 1;
+                    ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
             else
                 make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
                     ${data}/${x}_${lm_data_size} ${dict} > ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
@@ -336,7 +332,7 @@ if [ ${stage} -le 3 ]; then
         for x in ${test_set}; do
             if [ ${lm_data_size} = ${data_size} ]; then
                 cp ${data}/dataset/${x}_${lm_data_size}_${unit}${wp_type}${vocab_size}.tsv \
-                    ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv  || exit 1;
+                    ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
             else
                 make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
                     ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;

@@ -168,9 +168,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
 
-    if [ ! -e ${data}/.done_stage_0_${data_size} ]; then
-        echo "run ./run.sh first" && exit 1
-    fi
+    [ ! -e ${data}/.done_stage_0_${data_size} ] &&   echo "run ./run.sh first" && exit 1;
 fi
 
 if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
@@ -178,9 +176,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    if [ ! -e ${data}/.done_stage_1_${data_size} ]; then
-        echo "run ./run.sh first" && exit 1
-    fi
+    [ ! -e ${data}/.done_stage_1_${data_size} ] && echo "run ./run.sh first" && exit 1;
 
     # speed-perturbed
     utils/perturb_data_dir_speed.sh 0.9 ${data}/train_swbd ${data}/temp1
@@ -220,9 +216,9 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size}_sp ]; then
 fi
 
 # main
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}_sp.txt; mkdir -p ${data}/dict
-nlsyms=${data}/dict/non_linguistic_symbols_${data_size}_sp.txt
-wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}_sp
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
+nlsyms=${data}/dict/nlsyms_${data_size}.txt
+wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size}_sp ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2, main)                  "
@@ -239,20 +235,18 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict}
-    if [ ${unit} = char ]; then
-        echo "<space> 4" >> ${dict}
-    fi
+    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
     offset=$(cat ${dict} | wc -l)
     if [ ${unit} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
         spm_train --user_defined_symbols=$(cat ${nlsyms} | tr "\n" ",") --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict}
+            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
+        # NOTE: sort by frequency
     else
-        text2dict.py ${data}/${train_set}/text.org --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} \
-            --wp_type ${wp_type} --wp_model ${wp_model} | \
-            sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+        text2dict.py ${data}/${train_set}/text.org --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} | \
+            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     fi
     echo "vocab size:" $(cat ${dict} | wc -l)
 
@@ -280,16 +274,12 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
                 >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
         done
 
-        # swichboard
-        cut -f 2- -d " " ${data}/${test_set}/text.swbd | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-            > ${data}/dict/word_count/${test_set}_swbd.txt || exit 1;
-        compute_oov_rate.py ${data}/dict/word_count/${test_set}_swbd.txt ${dict} ${test_set}_swbd \
-            >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
-        # callhome
-        cut -f 2- -d " " ${data}/${test_set}/text.ch | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-            > ${data}/dict/word_count/${test_set}_callhm.txt || exit 1;
-        compute_oov_rate.py ${data}/dict/word_count/${test_set}_callhm.txt ${dict} ${test_set}_callhm \
-            >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
+        for set in "swbd" "ch"; do
+            cut -f 2- -d " " ${data}/${test_set}/text.${set} | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+                > ${data}/dict/word_count/${test_set}_${set}.txt || exit 1;
+            compute_oov_rate.py ${data}/dict/word_count/${test_set}_${set}.txt ${dict} ${test_set}_${set} \
+                >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
+        done
         cat ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
     fi
 
@@ -310,8 +300,8 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
 fi
 
 # sub1
-dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}_sp.txt
-wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}_sp
+dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
+wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}_sp ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2, sub1)                  "
@@ -320,33 +310,27 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}$
     cat ${data}/${train_set}/text | grep sp1.0 > ${data}/${train_set}/text.org
     cat ${data}/${dev_set}/text > ${data}/${dev_set}/text.org
 
-    echo "make a non-linguistic symbol list"
-    cut -f 2- -d " " ${data}/${train_set}/text.org | tr " " "\n" | sort | uniq | grep "\[" > ${nlsyms}
-    cat ${nlsyms}
-
     echo "Making a dictionary..."
     echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
     echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
     echo "<pad> 3" >> ${dict_sub1}
-    if [ ${unit_sub1} = char ]; then
-        echo "<space> 4" >> ${dict_sub1}
-    fi
+    [ ${unit_sub1} = char ] && echo "<space> 4" >> ${dict_sub1}
     offset=$(cat ${dict_sub1} | wc -l)
     if [ ${unit_sub1} = wp ]; then
         cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
         spm_train --user_defined_symbols=$(cat ${nlsyms} | tr "\n" ",") --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} \
             --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
+            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
+        # NOTE: sort by frequency
     elif [ ${unit_sub1} = phone ]; then
         map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt
         map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt
         text2dict.py ${data}/${train_set}/text.phone --unit ${unit_sub1} | \
-            sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
+            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
     else
-        text2dict.py ${data}/${train_set}/text.org --unit ${unit_sub1} --vocab_size ${vocab_size_sub1} --nlsyms ${nlsyms} \
-            --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} | \
-            sort | uniq | grep -v -e '^\s*$' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
+        text2dict.py ${data}/${train_set}/text.org --unit ${unit_sub1} --vocab_size ${vocab_size_sub1} --nlsyms ${nlsyms} | \
+            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
     fi
     echo "vocab size:" $(cat ${dict_sub1} | wc -l)
 
