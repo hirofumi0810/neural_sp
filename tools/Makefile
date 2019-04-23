@@ -81,13 +81,13 @@ kaldi-io.done:
 	touch kalid-io.done
 
 sentencepiece.done:
-	if [ -e $(TOOL)/sentencepiece ]; then rm -rf sentencepiece; fi
+	if [ -e $(TOOL)/sentencepiece ]; then rm -rf $(TOOL)/sentencepiece; fi
 	git clone https://github.com/google/sentencepiece.git $(TOOL)/sentencepiece
 	cd $(TOOL)/sentencepiece && mkdir build && cd build && (cmake3 .. || cmake ..) && $(MAKE)
 	touch sentencepiece.done
 
 nkf.done:
-	rm -rf nkf
+	if [ -e $(TOOL)/nkf ]; then rm -rf $(TOOL)/nkf; fi
 	mkdir -p nkf
 	cd nkf; wget https://ja.osdn.net/dl/nkf/nkf-2.1.4.tar.gz
 	cd nkf; tar zxvf nkf-2.1.4.tar.gz; cd nkf-2.1.4; $(MAKE) prefix=.
