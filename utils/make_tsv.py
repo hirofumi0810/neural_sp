@@ -42,6 +42,8 @@ parser.add_argument('--nlsyms', type=str, default='', nargs='?',
                     help='path to non-linguistic symbols, e.g., [noise] etc.')
 parser.add_argument('--wp_model', type=str, default=False, nargs='?',
                     help='prefix of the wordpiece model')
+parser.add_argument('--wp_nbest', type=int, default=1, nargs='?',
+                    help='')
 parser.add_argument('--update', action='store_true',
                     help='')
 args = parser.parse_args()
@@ -142,13 +144,13 @@ def main():
                         token_ids.append(token2idx[args.unk])
 
         elif args.unit == 'wp':
-            wps = sp.EncodeAsPieces(text)
-            for wp in wps:
+            for wp in sp.EncodeAsPieces(text):
                 if wp in token2idx.keys():
                     token_ids.append(token2idx[wp])
                 else:
                     # Replace with <unk>
                     token_ids.append(token2idx[args.unk])
+
         elif args.unit == 'char':
             for i,  w in enumerate(words):
                 if w in nlsyms:
@@ -184,6 +186,25 @@ def main():
 
         print('%s\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d' %
               (utt_id, speaker, feat_path, xlen, xdim, text, token_id, ylen, ydim))
+
+        # data augmentation for wordpiece
+        if args.unit == 'wp' and args.wp_nbest > 1:
+            raise NotImplementedError
+            # TODO(hirofumi): update sentencepiece version
+
+            for wp_i in sp.NBestEncodeAsPieces(text, args.wp_nbest)[1:]:
+                if wp_i in token2idx.keys():
+                    token_ids = token2idx[wp_i]
+                else:
+                    # Replace with <unk>
+                    token_ids = token2idx[args.unk]
+
+                token_id = ' '.join(token_ids)
+                ylen = len(token_ids)
+
+                print('%s\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d' %
+                      (utt_id, speaker, feat_path, xlen, xdim, text, token_id, ylen, ydim))
+
         pbar.update(1)
 
 

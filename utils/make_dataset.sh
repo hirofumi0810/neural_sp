@@ -12,6 +12,7 @@ unk="<unk>"
 space="<space>"
 nlsyms=""
 wp_model=""
+wp_nbest=1
 text=
 
 . utils/parse_options.sh
@@ -38,4 +39,5 @@ make_tsv.py --feat ${feat} \
     --unk ${unk} \
     --space ${space} \
     --nlsyms ${nlsyms} \
-    --wp_model ${wp_model}
+    --wp_model ${wp_model} \
+    --wp_nbest ${wp_nbest}
