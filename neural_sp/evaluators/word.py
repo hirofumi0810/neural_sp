@@ -23,7 +23,7 @@ logger = logging.getLogger("decoding").getChild('word')
 
 
 def eval_word(models, dataset, recog_params, epoch,
-              recog_dir=None, word_list=[], progressbar=False):
+              recog_dir=None, progressbar=False):
     """Evaluate the word-level model by WER.
 
     Args:
@@ -32,7 +32,6 @@ def eval_word(models, dataset, recog_params, epoch,
         recog_params (dict):
         epoch (int):
         recog_dir (str):
-        word_list (list):
         progressbar (bool): visualize the progressbar
     Returns:
         wer (float): Word error rate
@@ -67,14 +66,13 @@ def eval_word(models, dataset, recog_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, aws, _, _ = models[0].decode(
+            best_hyps_id, aws, _ = models[0].decode(
                 batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=True,
                 refs_id=batch['ys'],
                 utt_ids=batch['utt_ids'],
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
-                ensemble_models=models[1:] if len(models) > 1 else [],
-                word_list=word_list)
+                ensemble_models=models[1:] if len(models) > 1 else [])
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
