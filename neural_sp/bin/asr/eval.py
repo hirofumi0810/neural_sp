@@ -125,7 +125,8 @@ def main():
                     else:
                         model.lm_fwd = lm
 
-                if args.recog_lm_bwd is not None and args.recog_lm_weight > 0 and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
+                if args.recog_lm_bwd is not None and args.recog_lm_weight > 0 \
+                        and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
                     # Load a LM conf file
                     conf_lm = load_config(os.path.join(args.recog_lm_bwd, 'conf.yml'))
 

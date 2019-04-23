@@ -314,6 +314,8 @@ def make_model_name(args):
         dir_name += '_bwd'
     if args.serialize:
         dir_name += '_serialize'
+    if args.min_n_tokens > 0:
+        dir_name += '_' + str(args.min_n_tokens) + 'tokens'
     return dir_name
 
 

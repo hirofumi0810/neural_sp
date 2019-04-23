@@ -41,8 +41,10 @@ def plot_cache_weights(cache_probs, keys=[], queries=[],
     """
     plt.clf()
     plt.figure(figsize=figsize)
-    assert len(keys) == cache_probs.shape[0], "key: %d, cache: (%d, %d)" % (len(keys), cache_probs.shape[0], cache_probs.shape[1])
-    assert len(queries) == cache_probs.shape[1], "query: %d, cache: (%d, %d)" % (len(queries), cache_probs.shape[0], cache_probs.shape[1])
+    assert len(keys) == cache_probs.shape[0], "key: %d, cache: (%d, %d)" % (
+        len(keys), cache_probs.shape[0], cache_probs.shape[1])
+    assert len(queries) == cache_probs.shape[1], "query: %d, cache: (%d, %d)" % (
+        len(queries), cache_probs.shape[0], cache_probs.shape[1])
     sns.heatmap(cache_probs.transpose(1, 0),
                 # cmap='viridis',
                 xticklabels=keys,

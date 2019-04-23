@@ -321,7 +321,8 @@ def main():
             tasks = ['ys.lm'] + tasks
         for sub in ['sub1', 'sub2']:
             if getattr(args, 'train_set_' + sub):
-                if getattr(args, sub + '_weight') - getattr(args, 'bwd_weight_' + sub) - getattr(args, 'ctc_weight_' + sub) > 0:
+                if getattr(args, sub + '_weight') - getattr(args, 'bwd_weight_' + sub) - \
+                        getattr(args, 'ctc_weight_' + sub) > 0:
                     tasks = ['ys_' + sub] + tasks
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     tasks = ['ys_' + sub + '.bwd'] + tasks
@@ -614,7 +615,8 @@ def make_model_name(args, subsample_factor):
                     dir_name += 'ctc'
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd'
-                if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
+                if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - \
+                        getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'fwd'
     else:
         if args.ctc_weight > 0:
@@ -630,9 +632,10 @@ def make_model_name(args, subsample_factor):
                     dir_name += 'ctc' + str(getattr(args, 'ctc_weight_' + sub))
                 if getattr(args, 'bwd_weight_' + sub) > 0:
                     dir_name += 'bwd' + str(getattr(args, 'bwd_weight_' + sub))
-                if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight')
-                                            - getattr(args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
+                if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) - \
+                        getattr(args, 'bwd_weight_' + sub) > 0:
+                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') - getattr(
+                        args, 'ctc_weight_' + sub) - getattr(args, 'bwd_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
 

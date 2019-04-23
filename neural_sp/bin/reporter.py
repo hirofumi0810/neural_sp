@@ -13,13 +13,11 @@ from __future__ import print_function
 import logging
 import matplotlib
 matplotlib.use('Agg')
-
 from matplotlib import pyplot as plt
 import numpy as np
 import os
 import seaborn as sns
 from tensorboardX import SummaryWriter
-import torch
 
 plt.style.use('ggplot')
 grey = '#878f99'
@@ -28,7 +26,6 @@ orange = '#D2691E'
 green = '#82b74b'
 
 logger = logging.getLogger('training')
-
 
 
 class Reporter(object):
@@ -125,7 +122,7 @@ class Reporter(object):
                  label='dev', linestyle='-')
         plt.xlabel('epoch', fontsize=12)
         plt.ylabel('WER', fontsize=12)
-        plt.ylim([0,  min(100, max(self.observation_eval) + 1)])
+        plt.ylim([0, min(100, max(self.observation_eval) + 1)])
         plt.legend(loc="upper right", fontsize=12)
         if os.path.isfile(os.path.join(self.save_path, 'wer' + ".png")):
             os.remove(os.path.join(self.save_path, 'wer' + ".png"))

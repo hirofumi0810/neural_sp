@@ -270,7 +270,7 @@ def parse():
     parser.add_argument('--lm_fusion_type', type=str, default='cold', nargs='?',
                         choices=['cold', 'cold_prob', 'cold_recurrency',
                                  'deep_original', 'deep',
-                                 'cache',  'cache_bi'],
+                                 'cache', 'cache_bi'],
                         help='type of LM fusion')
     parser.add_argument('--lm_fusion', type=str, default=False, nargs='?',
                         help='LM for LM fusion during training')
