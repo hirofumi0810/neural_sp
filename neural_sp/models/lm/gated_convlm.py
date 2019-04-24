@@ -25,7 +25,7 @@ from neural_sp.models.torch_utils import pad_list
 
 
 class GLUBlock(nn.Module):
-    def __init__(self, kernel_size, in_ch, out_ch):
+    def __init__(self, kernel_size, in_ch, out_ch, dropout):
         super().__init__()
 
         self.pad_left = nn.ConstantPad1d((kernel_size - 1, 0), 0)
@@ -33,12 +33,15 @@ class GLUBlock(nn.Module):
                                                    out_channels=out_ch,
                                                    kernel_size=kernel_size),
                                          name='weight')
-        self.bias_b = nn.Parameter(torch.zeros(out_ch, 1))
+        self.bias = nn.Parameter(torch.zeros(out_ch, 1))
+        self.dropout = nn.Dropout(p=dropout)
+
         self.conv_gate = nn.utils.weight_norm(nn.Conv1d(in_channels=in_ch,
                                                         out_channels=out_ch,
                                                         kernel_size=kernel_size),
                                               name='weight')
-        self.bias_c = nn.Parameter(torch.zeros(out_ch, 1))
+        self.bias_gate = nn.Parameter(torch.zeros(out_ch, 1))
+        self.dropout_gate = nn.Dropout(p=dropout)
 
     def forward(self, x):
         """Forward computation.
@@ -50,8 +53,10 @@ class GLUBlock(nn.Module):
         """
         residual = x
         x = self.pad_left(x)  # `[B, embed_dim, T+kernel-1]`
-        a = self.conv(x) + self.bias_b  # a: `[B, out_ch, T]`
-        b = self.conv_gate(x) + self.bias_c  # b: `[B, out_ch, T]`
+        a = self.conv(x) + self.bias  # a: `[B, out_ch, T]`
+        a = self.dropout(a)
+        b = self.conv_gate(x) + self.bias_gate  # b: `[B, out_ch, T]`
+        b = self.dropout_gate(b)
         x = torch.mul(a, F.sigmoid(b))
         if x.size() == residual.size():
             x = x + residual
@@ -96,56 +101,56 @@ class GatedConvLM(ModelBase):
         # model = '14B'
 
         if model == '8':
-            glu_layers['conv1-1-1'] = GLUBlock(4, args.emb_dim, 900)
+            glu_layers['conv1-1-1'] = GLUBlock(4, args.emb_dim, 900, args.dropout_hidden)
             for i in range(1, 8, 1):
-                glu_layers['conv2-%d-1' % i] = GLUBlock(4, 900, 900)
+                glu_layers['conv2-%d-1' % i] = GLUBlock(4, 900, 900, args.dropout_hidden)
             last_dim = 900
 
         elif model == '13':
-            glu_layers['conv1-1-1'] = GLUBlock(4, args.emb_dim, 1268)
+            glu_layers['conv1-1-1'] = GLUBlock(4, args.emb_dim, 1268, args.dropout_hidden)
             for i in range(1, 13, 1):
-                glu_layers['conv2-%d-1' % i] = GLUBlock(4, 1268, 1268)
+                glu_layers['conv2-%d-1' % i] = GLUBlock(4, 1268, 1268, args.dropout_hidden)
             last_dim = 1268
 
         elif model == '14':
             for i in range(1, 4, 1):
                 if i == 1:
-                    glu_layers['conv1-%d-1' % i] = GLUBlock(6, args.emb_dim, 850)
+                    glu_layers['conv1-%d-1' % i] = GLUBlock(6, args.emb_dim, 850, args.dropout_hidden)
                 else:
-                    glu_layers['conv1-%d-1' % i] = GLUBlock(6, 850, 850)
-            glu_layers['conv2-1-1'] = GLUBlock(1, 850, 850)
+                    glu_layers['conv1-%d-1' % i] = GLUBlock(6, 850, 850, args.dropout_hidden)
+            glu_layers['conv2-1-1'] = GLUBlock(1, 850, 850, args.dropout_hidden)
             for i in range(1, 5, 1):
-                glu_layers['conv3-%d-1' % i] = GLUBlock(5, 850, 850)
-            glu_layers['conv4-1-1'] = GLUBlock(1, 850, 850)
+                glu_layers['conv3-%d-1' % i] = GLUBlock(5, 850, 850, args.dropout_hidden)
+            glu_layers['conv4-1-1'] = GLUBlock(1, 850, 850, args.dropout_hidden)
             for i in range(1, 4, 1):
-                glu_layers['conv5-%d-1' % i] = GLUBlock(4, 850, 850)
-            glu_layers['conv6-1-1'] = GLUBlock(4, 850, 1024)
-            glu_layers['conv7-1-1'] = GLUBlock(4, 1024, 2048)
+                glu_layers['conv5-%d-1' % i] = GLUBlock(4, 850, 850, args.dropout_hidden)
+            glu_layers['conv6-1-1'] = GLUBlock(4, 850, 1024, args.dropout_hidden)
+            glu_layers['conv7-1-1'] = GLUBlock(4, 1024, 2048, args.dropout_hidden)
             last_dim = 2048
 
         elif model == '14B':
-            glu_layers['conv1'] = GLUBlock(5, args.emb_dim, 512)
+            glu_layers['conv1'] = GLUBlock(5, args.emb_dim, 512, args.dropout_hidden)
             for i in range(1, 4, 1):
-                glu_layers['conv2-%d-1' % i] = GLUBlock(1, 512, 128)
-                glu_layers['conv2-%d-2' % i] = GLUBlock(5, 128, 128)
-                glu_layers['conv2-%d-3' % i] = GLUBlock(1, 128, 512)
+                glu_layers['conv2-%d-1' % i] = GLUBlock(1, 512, 128, args.dropout_hidden)
+                glu_layers['conv2-%d-2' % i] = GLUBlock(5, 128, 128, args.dropout_hidden)
+                glu_layers['conv2-%d-3' % i] = GLUBlock(1, 128, 512, args.dropout_hidden)
             for i in range(1, 4, 1):
                 if i == 1:
-                    glu_layers['conv3-%d-1' % i] = GLUBlock(1, 512, 512)
+                    glu_layers['conv3-%d-1' % i] = GLUBlock(1, 512, 512, args.dropout_hidden)
                 else:
-                    glu_layers['conv3-%d-1' % i] = GLUBlock(1, 1024, 512)
-                glu_layers['conv3-%d-2' % i] = GLUBlock(5, 512, 512)
-                glu_layers['conv3-%d-3' % i] = GLUBlock(1, 512, 1024)
+                    glu_layers['conv3-%d-1' % i] = GLUBlock(1, 1024, 512, args.dropout_hidden)
+                glu_layers['conv3-%d-2' % i] = GLUBlock(5, 512, 512, args.dropout_hidden)
+                glu_layers['conv3-%d-3' % i] = GLUBlock(1, 512, 1024, args.dropout_hidden)
             for i in range(1, 7, 1):
                 if i == 1:
-                    glu_layers['conv4-%d-1' % i] = GLUBlock(1, 1024, 1024)
+                    glu_layers['conv4-%d-1' % i] = GLUBlock(1, 1024, 1024, args.dropout_hidden)
                 else:
-                    glu_layers['conv4-%d-1' % i] = GLUBlock(1, 2048, 1024)
-                glu_layers['conv4-%d-2' % i] = GLUBlock(5, 1024, 1024)
-                glu_layers['conv4-%d-3' % i] = GLUBlock(1, 1024, 2048)
-            glu_layers['conv5-1-1'] = GLUBlock(1, 2048, 1024)
-            glu_layers['conv5-1-2'] = GLUBlock(5, 1024, 1024)
-            glu_layers['conv5-1-3'] = GLUBlock(1, 1024, 4096)
+                    glu_layers['conv4-%d-1' % i] = GLUBlock(1, 2048, 1024, args.dropout_hidden)
+                glu_layers['conv4-%d-2' % i] = GLUBlock(5, 1024, 1024, args.dropout_hidden)
+                glu_layers['conv4-%d-3' % i] = GLUBlock(1, 1024, 2048, args.dropout_hidden)
+            glu_layers['conv5-1-1'] = GLUBlock(1, 2048, 1024, args.dropout_hidden)
+            glu_layers['conv5-1-2'] = GLUBlock(5, 1024, 1024, args.dropout_hidden)
+            glu_layers['conv5-1-3'] = GLUBlock(1, 1024, 4096, args.dropout_hidden)
             last_dim = 4096
         else:
             raise NotImplementedError(model)
