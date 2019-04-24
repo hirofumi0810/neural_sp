@@ -58,6 +58,7 @@ dec_n_layers_sub1=1
 dec_loop_type=normal
 dec_residual=false
 input_feeding=false
+dec_bottleneck_dim=1024
 emb_dim=512
 tie_embedding=false
 ctc_fc_list="512"
@@ -398,6 +399,8 @@ if [ ${stage} -le 4 ]; then
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
         --input_feeding ${input_feeding} \
+        --dec_bottleneck_dim ${dec_bottleneck_dim} \
+
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \
         --ctc_fc_list ${ctc_fc_list} \
