@@ -65,14 +65,14 @@ def main():
                 utt2featpath[utt_id] = feat_path
 
     utt2num_frames = {}
-    if args.utt2num_frames:
+    if args.utt2num_frames and os.path.isfile(args.utt2num_frames):
         with codecs.open(args.utt2num_frames, 'r', encoding="utf-8") as f:
             for line in f:
                 utt_id, xlen = line.strip().split(' ')
                 utt2num_frames[utt_id] = int(xlen)
 
     utt2spk = {}
-    if args.utt2spk:
+    if args.utt2spk and os.path.isfile(args.utt2spk):
         with codecs.open(args.utt2spk, 'r', encoding="utf-8") as f:
             for line in f:
                 utt_id, speaker = line.strip().split(' ')

@@ -36,7 +36,11 @@ def main():
     n_words = 0
     with codecs.open(args.word_count, 'r', encoding="utf-8") as f:
         for line in f:
-            count, w = line.strip().split(' ')
+            line = line.strip()
+            if len(line.split(' ')) == 1:
+                # Skip empty line
+                continue
+            count, w = line.split(' ')
 
             # For swbd
             if w == '(%hesitation)':
