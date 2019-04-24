@@ -45,7 +45,7 @@ param_init_dist=uniform
 pretrained_model=
 # regularization
 clip_grad_norm=0.1
-dropout_hidden=0.65
+dropout_hidden=0.5
 dropout_out=0.0
 dropout_emb=0.2
 weight_decay=1e-6

@@ -109,7 +109,7 @@ class RNNLM(ModelBase):
             self.adaptive_softmax = None
             self.output = LinearND(rnn_idim, self.vocab,
                                    dropout=args.dropout_out)
-           # NOTE: include bias even when tying weights
+            # NOTE: include bias even when tying weights
 
             # Optionally tie weights as in:
             # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -165,8 +165,6 @@ class RNNLM(ModelBase):
         return loss, hidden, reporter
 
     def _forward(self, ys, hidden, reporter, n_caches=0):
-        bs = len(ys)
-
         ys = [np2tensor(y[::-1] if self.backward else y, self.device_id).long() for y in ys]
         ys = pad_list(ys, self.pad)
         ys_in = ys[:, :-1]
@@ -215,7 +213,7 @@ class RNNLM(ModelBase):
                                        ignore_index=self.pad, size_average=True)
             else:
                 loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
-                                             ys_out.contiguous().view(-1)).loss * bs
+                                             ys_out.contiguous().view(-1)).loss
 
         if n_caches > 0:
             # Register to cache

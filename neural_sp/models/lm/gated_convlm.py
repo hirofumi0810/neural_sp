@@ -90,9 +90,9 @@ class GatedConvLM(ModelBase):
 
         glu_layers = OrderedDict()
 
-        # model = '8'
+        model = '8'
         # model = '13'
-        model = '14'
+        # model = '14'
         # model = '14B'
 
         if model == '8':
@@ -101,7 +101,7 @@ class GatedConvLM(ModelBase):
                 glu_layers['conv2-%d-1' % i] = GLUBlock(4, 900, 900)
             last_dim = 900
 
-        if model == '13':
+        elif model == '13':
             glu_layers['conv1-1-1'] = GLUBlock(4, args.emb_dim, 1268)
             for i in range(1, 13, 1):
                 glu_layers['conv2-%d-1' % i] = GLUBlock(4, 1268, 1268)
@@ -211,8 +211,6 @@ class GatedConvLM(ModelBase):
         return loss, hidden, reporter
 
     def _forward(self, ys, hidden, reporter, n_caches=0):
-        bs = len(ys)
-
         ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64) if self.backward else y, self.device_id).long()
               for y in ys]
         ys = pad_list(ys, self.pad)
@@ -263,7 +261,7 @@ class GatedConvLM(ModelBase):
                                        ignore_index=self.pad, size_average=True)
             else:
                 loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
-                                             ys_out.contiguous().view(-1)).loss * bs
+                                             ys_out.contiguous().view(-1)).loss
 
         if n_caches > 0:
             # Register to cache
