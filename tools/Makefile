@@ -29,6 +29,7 @@ extra: sentencepiece.done nkf.done
 # miniconda
 miniconda.done:
 	mkdir -p $(TOOL)
+	if [ -e $(TOOL)/miniconda ]; then rm -rf $(TOOL)/miniconda; fi
 	test -f miniconda.sh || wget $(CONDA_URL) -O $(TOOL)/miniconda.sh
 	bash $(TOOL)/miniconda.sh -b -p $(CONDA)
 	. $(CONDA)/bin/activate && conda update -y conda
@@ -92,23 +93,3 @@ nkf.done:
 	cd nkf; wget https://ja.osdn.net/dl/nkf/nkf-2.1.4.tar.gz
 	cd nkf; tar zxvf nkf-2.1.4.tar.gz; cd nkf-2.1.4; $(MAKE) prefix=.
 	touch nkf.done
-
-# moses:
-#   git clone https://github.com/moses-smt/mosesdecoder.git moses
-# 	ln -s $(abspath $(MOSES)) moses
-# 	touch moses.done
-#
-# clean: clean_extra
-#   rm -rf kaldi venv warp-ctc
-#   rm -f miniconda.sh
-#   rm -rf *.done
-#   find . -iname "*.pyc" -delete
-#
-# clean_python:
-#   rm -rf venv warp-ctc kaldi-io-for-python
-#   rm -f miniconda.sh
-#   rm -rf warp-ctc.done
-#   find . -iname "*.pyc" -delete
-#
-# clean_extra:
-#   rm -rf nkf sentencepiece moses
