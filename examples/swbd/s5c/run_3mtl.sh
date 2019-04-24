@@ -58,8 +58,6 @@ dec_type=lstm
 dec_n_units=1024
 dec_n_projs=0
 dec_n_layers=1
-dec_n_layers_sub1=1
-dec_n_layers_sub2=1
 dec_loop_type=normal
 dec_residual=false
 input_feeding=false
@@ -107,8 +105,6 @@ ctc_weight=0.0
 ctc_weight_sub1=0.2
 ctc_weight_sub2=0.2
 bwd_weight=0.0
-bwd_weight_sub1=0.0
-bwd_weight_sub2=0.0
 sub1_weight=0.2
 sub2_weight=0.2
 mtl_per_batch=true
@@ -459,8 +455,6 @@ if [ ${stage} -le 4 ]; then
         --dec_n_units ${dec_n_units} \
         --dec_n_projs ${dec_n_projs} \
         --dec_n_layers ${dec_n_layers} \
-        --dec_n_layers_sub1 ${dec_n_layers_sub1} \
-        --dec_n_layers_sub2 ${dec_n_layers_sub2} \
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
         --input_feeding ${input_feeding} \
@@ -504,8 +498,6 @@ if [ ${stage} -le 4 ]; then
         --ctc_weight_sub1 ${ctc_weight_sub1} \
         --ctc_weight_sub2 ${ctc_weight_sub2} \
         --bwd_weight ${bwd_weight} \
-        --bwd_weight_sub1 ${bwd_weight_sub1} \
-        --bwd_weight_sub2 ${bwd_weight_sub2} \
         --sub1_weight ${sub1_weight} \
         --sub2_weight ${sub2_weight} \
         --mtl_per_batch ${mtl_per_batch} \

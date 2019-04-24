@@ -85,11 +85,9 @@ class Seq2seq(ModelBase):
 
         # for backward decoder
         self.bwd_weight = min(args.bwd_weight, self.main_weight)
-        self.bwd_weight_sub1 = min(args.bwd_weight_sub1, self.sub1_weight)
-        self.bwd_weight_sub2 = min(args.bwd_weight_sub2, self.sub2_weight)
         self.fwd_weight = self.main_weight - self.bwd_weight - self.ctc_weight
-        self.fwd_weight_sub1 = self.sub1_weight - self.bwd_weight_sub1 - self.ctc_weight_sub1
-        self.fwd_weight_sub2 = self.sub2_weight - self.bwd_weight_sub2 - self.ctc_weight_sub2
+        self.fwd_weight_sub1 = self.sub1_weight - self.ctc_weight_sub1
+        self.fwd_weight_sub2 = self.sub2_weight - self.ctc_weight_sub2
 
         # Encoder
         if args.enc_type == 'transformer':
@@ -229,6 +227,7 @@ class Seq2seq(ModelBase):
                     n_layers=args.dec_n_layers,
                     loop_type=args.dec_loop_type,
                     residual=args.dec_residual,
+                    bottleneck_dim=args.dec_bottleneck_dim,
                     emb_dim=args.emb_dim,
                     tie_embedding=args.tie_embedding,
                     vocab=self.vocab,
@@ -254,66 +253,62 @@ class Seq2seq(ModelBase):
                     lmobj_weight=args.lmobj_weight,
                     share_lm_softmax=args.share_lm_softmax,
                     global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
-                    mtl_per_batch=args.mtl_per_batch)
+                    mtl_per_batch=args.mtl_per_batch,
+                    adaptive_softmax=args.adaptive_softmax)
             setattr(self, 'dec_' + dir, dec)
 
         # sub task
         for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0:
-                directions = []
-                if getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0:
-                    directions.append('fwd')
-                if getattr(self, 'bwd_weight_' + sub) > 0:
-                    directions.append('bwd')
-                for dir_sub in directions:
-                    if args.dec_type == 'transformer':
-                        raise NotImplementedError
-                    else:
-                        dec_sub = RNNDecoder(
-                            eos=self.eos,
-                            unk=self.unk,
-                            pad=self.pad,
-                            blank=self.blank,
-                            enc_n_units=self.enc_n_units,
-                            attn_type=args.attn_type,
-                            attn_dim=args.attn_dim,
-                            attn_sharpening_factor=args.attn_sharpening,
-                            attn_sigmoid_smoothing=args.attn_sigmoid,
-                            attn_conv_out_channels=args.attn_conv_n_channels,
-                            attn_conv_kernel_size=args.attn_conv_width,
-                            attn_n_heads=1,
-                            rnn_type=args.dec_type,
-                            n_units=args.dec_n_units,
-                            n_projs=args.dec_n_projs,
-                            n_layers=args.dec_n_layers,
-                            loop_type=args.dec_loop_type,
-                            residual=args.dec_residual,
-                            emb_dim=args.emb_dim,
-                            tie_embedding=args.tie_embedding,
-                            vocab=getattr(self, 'vocab_' + sub),
-                            dropout=args.dropout_dec,
-                            dropout_emb=args.dropout_emb,
-                            dropout_att=args.dropout_att,
-                            ss_prob=args.ss_prob,
-                            ss_type=args.ss_type,
-                            lsm_prob=args.lsm_prob,
-                            layer_norm=args.layer_norm,
-                            fl_weight=args.focal_loss_weight,
-                            fl_gamma=args.focal_loss_gamma,
-                            ctc_weight=getattr(self, 'ctc_weight_' + sub) if dir_sub == 'fwd' else 0,
-                            ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
-                                         ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
-                            input_feeding=args.input_feeding,
-                            backward=(dir_sub == 'bwd'),
-                            lm=None,
-                            lm_fusion_type='',
-                            contextualize='',
-                            lm_init=None,
-                            lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
-                            share_lm_softmax=args.share_lm_softmax,
-                            global_weight=getattr(self, sub + '_weight'),
-                            mtl_per_batch=args.mtl_per_batch)
-                    setattr(self, 'dec_' + dir_sub + '_' + sub, dec_sub)
+                if args.dec_type == 'transformer':
+                    raise NotImplementedError
+                else:
+                    dec_sub = RNNDecoder(
+                        eos=self.eos,
+                        unk=self.unk,
+                        pad=self.pad,
+                        blank=self.blank,
+                        enc_n_units=self.enc_n_units,
+                        attn_type=args.attn_type,
+                        attn_dim=args.attn_dim,
+                        attn_sharpening_factor=args.attn_sharpening,
+                        attn_sigmoid_smoothing=args.attn_sigmoid,
+                        attn_conv_out_channels=args.attn_conv_n_channels,
+                        attn_conv_kernel_size=args.attn_conv_width,
+                        attn_n_heads=1,
+                        rnn_type=args.dec_type,
+                        n_units=args.dec_n_units,
+                        n_projs=args.dec_n_projs,
+                        n_layers=args.dec_n_layers,
+                        loop_type=args.dec_loop_type,
+                        residual=args.dec_residual,
+                        bottleneck_dim=args.dec_bottleneck_dim,
+                        emb_dim=args.emb_dim,
+                        tie_embedding=args.tie_embedding,
+                        vocab=getattr(self, 'vocab_' + sub),
+                        dropout=args.dropout_dec,
+                        dropout_emb=args.dropout_emb,
+                        dropout_att=args.dropout_att,
+                        ss_prob=args.ss_prob,
+                        ss_type=args.ss_type,
+                        lsm_prob=args.lsm_prob,
+                        layer_norm=args.layer_norm,
+                        fl_weight=args.focal_loss_weight,
+                        fl_gamma=args.focal_loss_gamma,
+                        ctc_weight=getattr(self, 'ctc_weight_' + sub),
+                        ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
+                                     ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
+                        input_feeding=args.input_feeding,
+                        backward=False,
+                        lm=None,
+                        lm_fusion_type='',
+                        contextualize='',
+                        lm_init=None,
+                        lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
+                        share_lm_softmax=args.share_lm_softmax,
+                        global_weight=getattr(self, sub + '_weight'),
+                        mtl_per_batch=args.mtl_per_batch)
+                setattr(self, 'dec_fwd_' + sub, dec_sub)
 
         if args.input_type == 'text':
             if args.vocab == args.vocab_sub1:
@@ -392,8 +387,6 @@ class Seq2seq(ModelBase):
                 directions = []
                 if getattr(self, 'fwd_weight_' + sub) > 0:
                     directions.append('fwd')
-                if getattr(self, 'bwd_weight_' + sub) > 0:
-                    directions.append('bwd')
                 for dir_sub in directions:
                     getattr(self, 'dec_' + dir_sub + '_' + sub).start_scheduled_sampling()
 
@@ -484,19 +477,6 @@ class Seq2seq(ModelBase):
                 observation['acc.lmobj-' + sub] = obs_fwd_sub['acc_lmobj']
                 observation['ppl.att-' + sub] = obs_fwd_sub['ppl_att']
                 observation['ppl.lmobj-' + sub] = obs_fwd_sub['ppl_lmobj']
-
-            # for the backward decoder in the sub tasks
-            if getattr(self, 'bwd_weight_' + sub) > 0 and task in ['all', 'ys_' + sub + '.bwd']:
-                loss_sub, obs_bwd_sub = getattr(self, 'dec_fwd_' + sub)(
-                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], batch['ys_' + sub], task)
-                loss += loss_sub
-                observation['loss.att-bwd-' + sub] = obs_bwd_sub['loss_att']
-                observation['loss.ctc-bwd-' + sub] = obs_bwd_sub['loss_ctc']
-                observation['loss.lmobj-bwd-' + sub] = obs_bwd_sub['loss_lmobj']
-                observation['acc.att-bwd-' + sub] = obs_bwd_sub['acc_att']
-                observation['acc.lmobj-bwd-' + sub] = obs_bwd_sub['acc_lmobj']
-                observation['ppl.att-bwd-' + sub] = obs_bwd_sub['ppl_att']
-                observation['ppl.lmobj-bwd-' + sub] = obs_bwd_sub['ppl_lmobj']
 
         if reporter is not None:
             is_eval = not self.training
@@ -617,11 +597,9 @@ class Seq2seq(ModelBase):
             if task.split('.')[0] == 'ys':
                 dir = 'bwd' if self.bwd_weight > 0 and params['recog_bwd_attention'] else 'fwd'
             elif task.split('.')[0] == 'ys_sub1':
-                dir = 'bwd' if self.bwd_weight_sub1 > 0 and params['recog_bwd_attention'] else 'fwd'
-                dir += '_sub1'
+                dir = 'fwd_sub1'
             elif task.split('.')[0] == 'ys_sub2':
-                dir = 'bwd' if self.bwd_weight_sub2 > 0 and params['recog_bwd_attention'] else 'fwd'
-                dir += '_sub2'
+                dir = 'fwd_sub2'
             else:
                 raise ValueError(task)
 

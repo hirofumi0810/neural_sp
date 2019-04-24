@@ -143,10 +143,6 @@ def parse():
                         help='number of units in the projection layer after each decoder RNN layer')
     parser.add_argument('--dec_n_layers', type=int, default=1,
                         help='number of decoder RNN layers')
-    parser.add_argument('--dec_n_layers_sub1', type=int, default=1,
-                        help='')
-    parser.add_argument('--dec_n_layers_sub2', type=int, default=1,
-                        help='')
     parser.add_argument('--dec_loop_type', type=str, default='normal', nargs='?',
                         choices=['normal', 'lmdecoder'],
                         help='')
@@ -154,6 +150,8 @@ def parse():
                         help='residual connection between each decoder layer')
     parser.add_argument('--input_feeding', type=strtobool, default=False, nargs='?',
                         help='')
+    parser.add_argument('--dec_bottleneck_dim', type=int, default=1024,
+                        help='number of dimensions of the bottleneck layer before the softmax layer')
     parser.add_argument('--emb_dim', type=int, default=512,
                         help='number of dimensions in the embedding layer')
     parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
@@ -168,7 +166,7 @@ def parse():
     parser.add_argument('--batch_size', type=int, default=50,
                         help='size of mini-batch')
     parser.add_argument('--optimizer', type=str, default='adam',
-                        choices=['adam', 'adadelta', 'sgd', 'momentum', 'nesterov'],
+                        choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov'],
                         help='')
     parser.add_argument('--learning_rate', type=float, default=1e-3,
                         help='')
@@ -244,6 +242,8 @@ def parse():
                         help='')
     parser.add_argument('--focal_loss_gamma', type=float, default=2.0,
                         help='')
+    parser.add_argument('--adaptive_softmax', type=strtobool, default=False,
+                        help='use adaptive softmax')
     # MTL
     parser.add_argument('--ctc_weight', type=float, default=0.0,
                         help='CTC loss weight for the main task')
@@ -262,10 +262,6 @@ def parse():
     # foroward-backward
     parser.add_argument('--bwd_weight', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the main task')
-    parser.add_argument('--bwd_weight_sub1', type=float, default=0.0,
-                        help='cross etnropy loss weight for the backward decoder in the 1st auxiliary task')
-    parser.add_argument('--bwd_weight_sub2', type=float, default=0.0,
-                        help='cross etnropy loss weight for the backward decoder in the 2nd auxiliary task')
     # cold fusion
     parser.add_argument('--lm_fusion_type', type=str, default='cold', nargs='?',
                         choices=['cold', 'cold_prob', 'cold_recurrency',
