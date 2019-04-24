@@ -16,3 +16,4 @@ log
 examples/*/*/steps
 examples/*/*/utils
 kaldi_io.py
+neural_sp.egg-info
