@@ -42,9 +42,11 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1,
 
     model = models[0]
     is_lm = False
+    skip_thought = False
     if isinstance(model, RNNLM) or isinstance(model, GatedConvLM):
         is_lm = True
-    skip_thought = 'skip' in model.enc_type
+    elif 'skip' in model.enc_type:
+        skip_thought = True
 
     # Change to the evaluation mode
     model.eval()

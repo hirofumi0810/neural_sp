@@ -19,6 +19,7 @@ class Wp2idx(object):
 
     Args:
         dict_path (str): path to a dictionary file
+        wp_model ():
 
     """
 

@@ -24,7 +24,7 @@ fi
 mkdir -p $log_dir
 mkdir -p $dump_dir
 
-dump_dir=`perl -e '($dir,$pwd)= @ARGV; if($dir!~m:^/:) { $dir = "$pwd/$dir"; } print $dir; ' ${dump_dir} ${PWD}`
+dump_dir=$(perl -e '($dir,$pwd)= @ARGV; if($dir!~m:^/:) { $dir = "$pwd/$dir"; } print $dir; ' ${dump_dir} ${PWD})
 
 # split scp file
 split_feet_scps=""
@@ -53,4 +53,4 @@ done > $dump_dir/feats.scp
 
 # remove temp scps
 rm $log_dir/feats.*.scp 2>/dev/null
-echo "Succeeded dumping features for " `dirname $feat_scp`
+echo "Succeeded dumping features for " $(dirname $feat_scp)
