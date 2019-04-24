@@ -1,0 +1,6 @@
+lstm1024H0P2L_emb1024_adam_lr0.001_bs64_bptt200_tie_residual_glu_1tokens
+% PPL
+valid (baseline): 92.38
+valid (cache size: 100): 82.33
+test (baseline): 89.64
+test (cache size: 100): 81.41
