@@ -90,30 +90,54 @@ class GatedConvLM(ModelBase):
 
         glu_layers = OrderedDict()
 
+        # model = '8'
         # model = '13'
-        model = '14B'
+        model = '14'
+        # model = '14B'
+
+        if model == '8':
+            glu_layers['conv1-1-1'] = GLUBlock(4, args.emb_dim, 900)
+            for i in range(1, 8, 1):
+                glu_layers['conv2-%d-1' % i] = GLUBlock(4, 900, 900)
+            last_dim = 900
 
         if model == '13':
-            glu_layers['conv1'] = GLUBlock(4, args.emb_dim, 1268)
-            for i in range(12):
+            glu_layers['conv1-1-1'] = GLUBlock(4, args.emb_dim, 1268)
+            for i in range(1, 13, 1):
                 glu_layers['conv2-%d-1' % i] = GLUBlock(4, 1268, 1268)
-                glu_layers['conv2-%d-2' % i] = GLUBlock(4, 1268, 1268)
+            last_dim = 1268
+
+        elif model == '14':
+            for i in range(1, 4, 1):
+                if i == 1:
+                    glu_layers['conv1-%d-1' % i] = GLUBlock(6, args.emb_dim, 850)
+                else:
+                    glu_layers['conv1-%d-1' % i] = GLUBlock(6, 850, 850)
+            glu_layers['conv2-1-1'] = GLUBlock(1, 850, 850)
+            for i in range(1, 5, 1):
+                glu_layers['conv3-%d-1' % i] = GLUBlock(5, 850, 850)
+            glu_layers['conv4-1-1'] = GLUBlock(1, 850, 850)
+            for i in range(1, 4, 1):
+                glu_layers['conv5-%d-1' % i] = GLUBlock(4, 850, 850)
+            glu_layers['conv6-1-1'] = GLUBlock(4, 850, 1024)
+            glu_layers['conv7-1-1'] = GLUBlock(4, 1024, 2048)
+            last_dim = 2048
 
         elif model == '14B':
             glu_layers['conv1'] = GLUBlock(5, args.emb_dim, 512)
-            for i in range(3):
+            for i in range(1, 4, 1):
                 glu_layers['conv2-%d-1' % i] = GLUBlock(1, 512, 128)
                 glu_layers['conv2-%d-2' % i] = GLUBlock(5, 128, 128)
                 glu_layers['conv2-%d-3' % i] = GLUBlock(1, 128, 512)
-            for i in range(3):
-                if i == 0:
+            for i in range(1, 4, 1):
+                if i == 1:
                     glu_layers['conv3-%d-1' % i] = GLUBlock(1, 512, 512)
                 else:
                     glu_layers['conv3-%d-1' % i] = GLUBlock(1, 1024, 512)
                 glu_layers['conv3-%d-2' % i] = GLUBlock(5, 512, 512)
                 glu_layers['conv3-%d-3' % i] = GLUBlock(1, 512, 1024)
-            for i in range(6):
-                if i == 0:
+            for i in range(1, 7, 1):
+                if i == 1:
                     glu_layers['conv4-%d-1' % i] = GLUBlock(1, 1024, 1024)
                 else:
                     glu_layers['conv4-%d-1' % i] = GLUBlock(1, 2048, 1024)
@@ -124,26 +148,33 @@ class GatedConvLM(ModelBase):
             glu_layers['conv5-1-3'] = GLUBlock(1, 1024, 4096)
             last_dim = 4096
         else:
-            raise NotImplementedError
+            raise NotImplementedError(model)
 
         self.glu_layers = nn.Sequential(glu_layers)
-        # self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
-        #     args.n_units, vs, cutoffs=[round(vs / 25), round(vs / 5)], div_value=4)
 
-        self.output = LinearND(last_dim, self.vocab,
-                               dropout=args.dropout_out)
-        # NOTE: include bias even when tying weights
+        if args.adaptive_softmax:
+            self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
+                last_dim, self.vocab,
+                cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
+                # cutoffs=[round(self.vocab / 25), round(self.vocab / 5)],
+                div_value=4.0)
+            self.output = None
+        else:
+            self.adaptive_softmax = None
+            self.output = LinearND(last_dim, self.vocab,
+                                   dropout=args.dropout_out)
+            # NOTE: include bias even when tying weights
 
-        # Optionally tie weights as in:
-        # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-        # https://arxiv.org/abs/1608.05859
-        # and
-        # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-        # https://arxiv.org/abs/1611.01462
-        if args.tie_embedding:
-            if args.n_units != args.emb_dim:
-                raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
-            self.output.fc.weight = self.embed.embed.weight
+            # Optionally tie weights as in:
+            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
+            # https://arxiv.org/abs/1608.05859
+            # and
+            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
+            # https://arxiv.org/abs/1611.01462
+            if args.tie_embedding:
+                if args.n_units != args.emb_dim:
+                    raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
+                self.output.fc.weight = self.embed.embed.weight
 
         # Initialize weight matrices
         self.init_weights(args.param_init, dist=args.param_init_dist)
@@ -180,6 +211,8 @@ class GatedConvLM(ModelBase):
         return loss, hidden, reporter
 
     def _forward(self, ys, hidden, reporter, n_caches=0):
+        bs = len(ys)
+
         ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64) if self.backward else y, self.device_id).long()
               for y in ys]
         ys = pad_list(ys, self.pad)
@@ -188,15 +221,21 @@ class GatedConvLM(ModelBase):
 
         ys_in = self.encode(ys_in)
 
-        lm_out, hidden = self.decode(ys_in, hidden)
-        logits = self.generate(lm_out)
+        lmout, hidden = self.decode(ys_in, hidden)
+        if self.adaptive_softmax is None:
+            logits = self.generate(lmout)
+        else:
+            logits = lmout
 
         # Compute XE sequence loss
         if n_caches > 0 and len(self.cache_ids) > 0:
             assert ys_out.size(1) == 1
             assert ys_out.size(0) == 1
-            probs = F.softmax(logits, dim=-1)
-            cache_probs = torch.zeros_like(probs)
+            if self.adaptive_softmax is None:
+                probs = F.softmax(logits, dim=-1)
+            else:
+                probs = self.adaptive_softmax.log_prob(logits).exp()
+            cache_probs = probs.new_zeros(probs.size())
 
             # Truncate cache
             self.cache_ids = self.cache_ids[-n_caches:]  # list of `[B, 1]`
@@ -218,11 +257,13 @@ class GatedConvLM(ModelBase):
             probs = (1 - self.cache_lambda) * probs + self.cache_lambda * cache_probs
             loss = -torch.log(probs[:, :, ys_out[:, -1]])
         else:
-            loss = F.cross_entropy(logits.view((-1, logits.size(2))),
-                                   ys_out.contiguous().view(-1),
-                                   ignore_index=self.pad, size_average=True)
-
-        # loss = self.adaptive_softmax(x, ys_out)
+            if self.adaptive_softmax is None:
+                loss = F.cross_entropy(logits.view((-1, logits.size(2))),
+                                       ys_out.contiguous().view(-1),
+                                       ignore_index=self.pad, size_average=True)
+            else:
+                loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
+                                             ys_out.contiguous().view(-1)).loss * bs
 
         if n_caches > 0:
             # Register to cache
@@ -230,7 +271,10 @@ class GatedConvLM(ModelBase):
             self.cache_keys += [ys_in]
 
         # Compute token-level accuracy in teacher-forcing
-        acc = compute_accuracy(logits, ys_out, pad=self.pad)
+        if self.adaptive_softmax is None:
+            acc = compute_accuracy(logits, ys_out, pad=self.pad)
+        else:
+            acc = 0
 
         observation = {'loss.lm': loss.item(),
                        'acc.lm': acc,

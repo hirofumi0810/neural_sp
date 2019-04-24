@@ -122,6 +122,8 @@ def parse():
                         help='')
     parser.add_argument('--backward', type=strtobool, default=False, nargs='?',
                         help='')
+    parser.add_argument('--adaptive_softmax', type=strtobool, default=False,
+                        help='use adaptive softmax')
     # contextualization
     parser.add_argument('--serialize', type=strtobool, default=False, nargs='?',
                         help='serialize text according to onset in dialogue')

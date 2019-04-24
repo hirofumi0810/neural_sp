@@ -27,28 +27,29 @@ tie_embedding=true
 residual=true
 use_glu=true
 # optimization
-batch_size=64
-bptt=200
+batch_size=20
+bptt=30
 optimizer=adam
 learning_rate=1e-3
-n_epochs=40
-convert_to_sgd_epoch=40
-print_step=50
+n_epochs=50
+convert_to_sgd_epoch=50
+print_step=200
 decay_start_epoch=10
 decay_rate=0.9
 decay_patient_n_epochs=0
-not_improved_patient_n_epochs=5
+not_improved_patient_n_epochs=10
 eval_start_epoch=1
 # initialization
 param_init=0.05
 param_init_dist=uniform
 pretrained_model=
 # regularization
-clip_grad_norm=1.0
-dropout_hidden=0.5
+clip_grad_norm=0.1
+dropout_hidden=0.65
 dropout_out=0.0
 dropout_emb=0.2
 weight_decay=1e-6
+adaptive_softmax=false
 
 ### path to save the model
 model=/n/sd8/inaguma/result/wikitext2
@@ -163,7 +164,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_hidden ${dropout_hidden} \
         --dropout_out ${dropout_out} \
         --dropout_emb ${dropout_emb} \
-        --weight_decay ${weight_decay} || exit 1;
+        --weight_decay ${weight_decay} \
+        --adaptive_softmax ${adaptive_softmax} || exit 1;
     # --resume ${resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;

@@ -36,7 +36,6 @@ class RNNLM(ModelBase):
         assert args.lm_type in ['lstm', 'gru']
         self.n_units = args.n_units
         self.n_layers = args.n_layers
-        self.tie_embedding = args.tie_embedding
         self.residual = args.residual
         self.use_glu = args.use_glu
         self.backward = args.backward
@@ -100,20 +99,28 @@ class RNNLM(ModelBase):
             self.fc_glu = LinearND(rnn_idim, rnn_idim * 2,
                                    dropout=args.dropout_hidden)
 
-        self.output = LinearND(rnn_idim, self.vocab,
-                               dropout=args.dropout_out)
-        # NOTE: include bias even when tying weights
+        if args.adaptive_softmax:
+            self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
+                rnn_idim, self.vocab,
+                cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
+                div_value=4.0)
+            self.output = None
+        else:
+            self.adaptive_softmax = None
+            self.output = LinearND(rnn_idim, self.vocab,
+                                   dropout=args.dropout_out)
+           # NOTE: include bias even when tying weights
 
-        # Optionally tie weights as in:
-        # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-        # https://arxiv.org/abs/1608.05859
-        # and
-        # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-        # https://arxiv.org/abs/1611.01462
-        if args.tie_embedding:
-            if args.n_units != args.emb_dim:
-                raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
-            self.output.fc.weight = self.embed.embed.weight
+            # Optionally tie weights as in:
+            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
+            # https://arxiv.org/abs/1608.05859
+            # and
+            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
+            # https://arxiv.org/abs/1611.01462
+            if args.tie_embedding:
+                if args.n_units != args.emb_dim:
+                    raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
+                self.output.fc.weight = self.embed.embed.weight
 
         # Initialize weight matrices
         self.init_weights(args.param_init, dist=args.param_init_dist)
@@ -158,22 +165,29 @@ class RNNLM(ModelBase):
         return loss, hidden, reporter
 
     def _forward(self, ys, hidden, reporter, n_caches=0):
-        ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64) if self.backward else y, self.device_id).long()
-              for y in ys]
+        bs = len(ys)
+
+        ys = [np2tensor(y[::-1] if self.backward else y, self.device_id).long() for y in ys]
         ys = pad_list(ys, self.pad)
         ys_in = ys[:, :-1]
         ys_out = ys[:, 1:]
 
         ys_in = self.encode(ys_in)
-        lm_out, hidden = self.decode(ys_in, hidden)
-        logits = self.generate(lm_out)
+        lmout, hidden = self.decode(ys_in, hidden)
+        if self.adaptive_softmax is None:
+            logits = self.generate(lmout)
+        else:
+            logits = lmout
 
         # Compute XE sequence loss
         if n_caches > 0 and len(self.cache_ids) > 0:
             assert ys_out.size(1) == 1
             assert ys_out.size(0) == 1
-            probs = F.softmax(logits, dim=-1)
-            cache_probs = torch.zeros_like(probs)
+            if self.adaptive_softmax is None:
+                probs = F.softmax(logits, dim=-1)
+            else:
+                probs = self.adaptive_softmax.log_prob(logits).exp()
+            cache_probs = probs.new_zeros(probs.size())
 
             # Truncate cache
             self.cache_ids = self.cache_ids[-n_caches:]  # list of `[B, 1]`
@@ -195,18 +209,24 @@ class RNNLM(ModelBase):
             probs = (1 - self.cache_lambda) * probs + self.cache_lambda * cache_probs
             loss = -torch.log(probs[:, :, ys_out[:, -1]])
         else:
-            loss = F.cross_entropy(logits.view((-1, logits.size(2))),
-                                   ys_out.contiguous().view(-1),
-                                   ignore_index=self.pad, size_average=True)
+            if self.adaptive_softmax is None:
+                loss = F.cross_entropy(logits.view((-1, logits.size(2))),
+                                       ys_out.contiguous().view(-1),
+                                       ignore_index=self.pad, size_average=True)
+            else:
+                loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
+                                             ys_out.contiguous().view(-1)).loss * bs
 
         if n_caches > 0:
             # Register to cache
-            # self.cache_ids += [ys_out[:, -1].cpu().numpy()]
             self.cache_ids += [ys_out[0, -1].item()]
             self.cache_keys += [ys_in]
 
         # Compute token-level accuracy in teacher-forcing
-        acc = compute_accuracy(logits, ys_out, pad=self.pad)
+        if self.adaptive_softmax is None:
+            acc = compute_accuracy(logits, ys_out, pad=self.pad)
+        else:
+            acc = 0
 
         observation = {'loss.lm': loss.item(),
                        'acc.lm': acc,
