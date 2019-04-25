@@ -126,13 +126,13 @@ lm_batch_size=128
 lm_bptt=200
 lm_optimizer=adam
 lm_learning_rate=1e-3
-lm_n_epochs=40
-lm_convert_to_sgd_epoch=40
+lm_n_epochs=50
+lm_convert_to_sgd_epoch=50
 lm_print_step=50
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
-lm_not_improved_patient_n_epochs=5
+lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
 lm_param_init=0.05

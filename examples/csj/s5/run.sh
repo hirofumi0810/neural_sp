@@ -122,13 +122,13 @@ lm_batch_size=64
 lm_bptt=200
 lm_optimizer=adam
 lm_learning_rate=1e-3
-lm_n_epochs=40
-lm_convert_to_sgd_epoch=40
+lm_n_epochs=50
+lm_convert_to_sgd_epoch=50
 lm_print_step=50
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
-lm_not_improved_patient_n_epochs=5
+lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
 lm_param_init=0.05
@@ -141,6 +141,7 @@ lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_weight_decay=1e-6
 lm_backward=
+lm_adaptive_softmax=false
 
 ### path to save the model
 model=/n/sd8/inaguma/result/csj
@@ -387,7 +388,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_out ${lm_dropout_out} \
         --dropout_emb ${lm_dropout_emb} \
         --weight_decay ${lm_weight_decay} \
-        --backward ${lm_backward} || exit 1;
+        --backward ${lm_backward} \
+        --adaptive_softmax ${lm_adaptive_softmax} || exit 1;
     # --resume ${lm_resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;

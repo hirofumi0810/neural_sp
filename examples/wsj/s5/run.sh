@@ -53,6 +53,7 @@ dec_n_layers=1
 dec_loop_type=normal
 dec_residual=false
 input_feeding=false
+dec_bottleneck_dim=1024
 emb_dim=512
 tie_embedding=false
 ctc_fc_list="512"
@@ -120,13 +121,13 @@ lm_batch_size=128
 lm_bptt=200
 lm_optimizer=adam
 lm_learning_rate=1e-3
-lm_n_epochs=40
-lm_convert_to_sgd_epoch=40
+lm_n_epochs=50
+lm_convert_to_sgd_epoch=50
 lm_print_step=200
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
-lm_not_improved_patient_n_epochs=5
+lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
 lm_param_init=0.05
@@ -272,6 +273,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab_s
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
             sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
+        # NOTE: sort by frequency
     else
         text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
@@ -413,6 +415,7 @@ if [ ${stage} -le 4 ]; then
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
         --input_feeding ${input_feeding} \
+        --dec_bottleneck_dim ${dec_bottleneck_dim} \
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \
         --ctc_fc_list ${ctc_fc_list} \
