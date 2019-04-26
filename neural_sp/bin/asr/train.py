@@ -410,7 +410,8 @@ def main():
             if epoch < args.eval_start_epoch:
                 # Save the model
                 save_checkpoint(model.module, model.module.save_path, lr_controller,
-                                epoch, step - 1, metric_dev_best)
+                                epoch, step - 1, metric_dev_best,
+                                remove_old_checkpoints=True)
                 reporter._epoch += 1
                 # TODO(hirofumi): fix later
             else:
@@ -456,7 +457,8 @@ def main():
 
                     # Save the model
                     save_checkpoint(model.module, model.module.save_path, lr_controller,
-                                    epoch, step - 1, metric_dev_best)
+                                    epoch, step - 1, metric_dev_best,
+                                    remove_old_checkpoints=True)
 
                     # test
                     for s in eval_sets:

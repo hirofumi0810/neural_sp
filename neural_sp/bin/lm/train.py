@@ -222,7 +222,8 @@ def main():
             if epoch < args.eval_start_epoch:
                 # Save the model
                 save_checkpoint(model.module, model.module.save_path, lr_controller,
-                                epoch, step - 1, ppl_dev_best)
+                                epoch, step - 1, ppl_dev_best,
+                                remove_old_checkpoints=True)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -242,7 +243,8 @@ def main():
 
                     # Save the model
                     save_checkpoint(model.module, model.module.save_path, lr_controller,
-                                    epoch, step - 1, ppl_dev_best)
+                                    epoch, step - 1, ppl_dev_best,
+                                    remove_old_checkpoints=True)
 
                     # test
                     ppl_test_avg = 0.
