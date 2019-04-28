@@ -93,7 +93,7 @@ for set in dev_clean dev_other test_clean test_other; do
     if ${asr_state_carry_over}; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${lm_weight} != 0.0 ] && ${lm_state_carry_over}; then
+    if [ ! -z ${lm} ] && ${lm_state_carry_over}; then
         recog_dir=${recog_dir}_LMcarryover
     fi
     if [ ${n_caches} != 0 ]; then
@@ -155,12 +155,12 @@ for set in dev_clean dev_other test_clean test_other; do
         || exit 1;
 
     # remove <unk>
-    # cp ${recog_dir}/hyp.trn ${recog_dir}/hyp.trn.bk
-    # cat ${recog_dir}/hyp.trn.bk | grep -i -v -E '<unk>' > ${recog_dir}/hyp.trn
+    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
+    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
 
     if [ ${metric} = 'edit_distance' ]; then
         echo ${set}
-        sclite -r ${recog_dir}/ref.trn trn -h ${recog_dir}/hyp.trn trn -i rm -o all stdout > ${recog_dir}/result.txt
+        sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS
         cat ${recog_dir}/RESULTS
     fi

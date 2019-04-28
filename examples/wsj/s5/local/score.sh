@@ -139,9 +139,9 @@ for set in test_dev93 test_eval92; do
         --recog_oracle ${oracle} \
         || exit 1;
 
-    # remove <noise>
-    cat ${recog_dir}/ref.trn | sed 's:<noise>::g' > ${recog_dir}/ref.trn.filt
-    cat ${recog_dir}/hyp.trn | sed 's:<noise>::g' > ${recog_dir}/hyp.trn.filt
+    # remove <unk>, <noise>
+    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' | sed 's:<noise>::g' > ${recog_dir}/ref.trn.filt
+    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' | sed 's:<noise>::g' > ${recog_dir}/hyp.trn.filt
 
     if [ ${metric} = 'edit_distance' ]; then
         echo ${set}
