@@ -68,9 +68,9 @@ class BeamSearchDecoder(object):
 
                 # Pick up the top-k scores
                 log_probs_topk, indices_topk = torch.topk(
-                    log_probs[:, t, :], k=beam_width, dim=-1, largest=True, sorted=True)
+                    log_probs[b:b + 1, t], k=beam_width, dim=-1, largest=True, sorted=True)
 
-                for c in tensor2np(indices_topk)[b]:
+                for c in tensor2np(indices_topk)[0]:
                     p_t = log_probs[b, t, c].item()
 
                     # The variables p_blank and p_nonblank are respectively the
@@ -112,19 +112,12 @@ class BeamSearchDecoder(object):
                             new_p_nonblank = p_blank + p_t
 
                         # Update LM states
+                        lmstate = None
                         if lm_weight > 0 and lm is not None:
-                            y_lm = log_probs.new(1, 1).fill_(c).long()
-                            y_lm = lm.embed(y_lm)
-                            logits_step_lm, lmout, lmstate = lm.predict(
-                                y_lm, h=(lm_hxs, lm_cxs))
-                        else:
-                            lmstate = None
-
-                        # # Add LM score
-                        if lm_weight > 0 and lm is not None:
-                            lm_log_probs = F.log_softmax(logits_step_lm.squeeze(1), dim=1)
-                            assert log_probs[:, t, :].size() == lm_log_probs.size()
-                            lm_score = lm_log_probs.data[0, c]
+                            lmout, lmstate = lm.decode(
+                                lm.encode(log_probs.new_zeros(1, 1).fill_(c).long()), (lm_hxs, lm_cxs))
+                            lm_scores = F.log_softmax(lm.generate(lmout).squeeze(1), dim=-1)
+                            lm_score = lm_scores[0, c]
 
                         new_beam.append({'hyp': beam[i_beam]['hyp'] + [c],
                                          'p_blank': new_p_blank,
@@ -142,13 +135,13 @@ class BeamSearchDecoder(object):
                                              'p_nonblank': new_p_nonblank,
                                              'lm_score': lm_score,
                                              'lm_hxs': lmstate[0][:] if lmstate is not None else None,
-                                             'lm_cxs': lmstate[1][:] if lmstate is not None else None, })
+                                             'lm_cxs': lmstate[1][:] if lmstate is not None else None})
 
                 # Sort and trim the beam before moving on to the
                 # next time-step.
                 beam = sorted(new_beam,
-                              key=lambda x: np.logaddexp(x['p_blank'], x['p_nonblank']) +
-                              x['lm_score'] * lm_weight,
+                              key=lambda x: np.logaddexp(x['p_blank'], x['p_nonblank'])
+                              + x['lm_score'] * lm_weight,
                               reverse=True)
                 beam = beam[:beam_width]
 

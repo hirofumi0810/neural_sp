@@ -614,12 +614,12 @@ class Seq2seq(ModelBase):
             #########################
             if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
                 lm = None
-                if params['recog_lm_weight'] > 0:
+                if params['recog_lm_weight'] > 0 and hasattr(self, 'lm_fwd') and self.lm_fwd is not None:
                     lm = getattr(self, 'lm_' + dir)
 
                 best_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                    params['recog_beam_width'], lm)
+                    params['recog_beam_width'], lm, params['recog_lm_weight'])
                 return best_hyps_id, None, (None, None)
 
             #########################
