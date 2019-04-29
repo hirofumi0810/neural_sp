@@ -31,8 +31,9 @@ from neural_sp.models.model_utils import SublayerConnection
 from neural_sp.models.model_utils import PositionwiseFeedForward
 from neural_sp.models.model_utils import PositionalEncoding
 from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
-from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearchDecoder
-from neural_sp.models.seq2seq.decoders.ctc_greedy_decoder import GreedyDecoder
+from neural_sp.models.seq2seq.decoders.ctc_beam_search import BeamSearchDecoder
+from neural_sp.models.seq2seq.decoders.ctc_beam_search import CTCPrefixScore
+from neural_sp.models.seq2seq.decoders.ctc_greedy import GreedyDecoder
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
@@ -462,9 +463,7 @@ class TransformerDecoderBlock(nn.Module):
                                                          dropout=dropout_att)
         elif attn_type == "average":
             raise NotImplementedError
-
-
-a            # self.self_attn = AverageAttention(d_model, dropout, layer_norm=True)
+            # self.self_attn = AverageAttention(d_model, dropout, layer_norm=True)
         else:
             raise NotImplementedError(attn_type)
         self.add_norm_self_attn = SublayerConnection(d_model, dropout, layer_norm_eps)

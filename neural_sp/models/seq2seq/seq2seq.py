@@ -21,9 +21,9 @@ from neural_sp.models.model_utils import Embedding
 from neural_sp.models.model_utils import LinearND
 from neural_sp.models.lm.brnnlm import BRNNLM
 from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.seq2seq.decoders.fwd_bwd_decoding import fwd_bwd_attention
-from neural_sp.models.seq2seq.decoders.rnn_decoder import RNNDecoder
-from neural_sp.models.seq2seq.decoders.transformer_decoder import TransformerDecoder
+from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
+from neural_sp.models.seq2seq.decoders.rnn import RNNDecoder
+from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
 from neural_sp.models.seq2seq.encoders.splicing import splice
