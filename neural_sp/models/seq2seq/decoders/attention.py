@@ -139,13 +139,13 @@ class AttentionMechanism(nn.Module):
 
         if self.attn_type == 'add':
             query = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
-            e = self.v(F.tanh(self.key + self.w_query(query))).squeeze(2)
+            e = self.v(torch.tanh(self.key + self.w_query(query))).squeeze(2)
 
         elif self.attn_type == 'location':
             query = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
             conv_feat = self.conv(aw.view(bs, 1, 1, key_len)).squeeze(2)  # `[B, conv_out_channels, key_len]`
             conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, key_len, conv_out_channels]`
-            e = self.v(F.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat))).squeeze(2)
+            e = self.v(torch.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat))).squeeze(2)
 
         elif self.attn_type == 'dot':
             e = torch.matmul(self.key, self.w_query(query).transpose(-1, -2)).squeeze(2)
@@ -158,7 +158,7 @@ class AttentionMechanism(nn.Module):
 
         elif self.attn_type == 'luong_concat':
             query = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
-            e = self.v(F.tanh(self.w(torch.cat([self.key, query], dim=-1)))).squeeze(2)
+            e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1)))).squeeze(2)
 
         if self.attn_type == 'no':
             last_state = [key[b, key_lens[b] - 1] for b in range(bs)]
