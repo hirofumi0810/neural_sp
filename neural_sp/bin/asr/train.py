@@ -282,7 +282,7 @@ def main():
                                    model_size=args.d_model,
                                    warmup_start_learning_rate=args.warmup_start_learning_rate,
                                    warmup_n_steps=args.warmup_n_steps,
-                                   factor=1,
+                                   factor=10,
                                    transformer=args.enc_type == 'transformer' or args.dec_type == 'transformer')
 
     train_set.epoch = epoch - 1  # start from index:0

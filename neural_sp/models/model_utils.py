@@ -132,9 +132,9 @@ class PositionalEncoding(nn.Module):
 class SublayerConnection(nn.Module):
     """A residual connection with dropout and layer normalization.
 
-        input -> layer norm -> sublayer -> dropout -> output
-          |                                             |
-          -----------------------------------------------
+        input -> layer norm -> sublayer -> dropout -> output ->
+          |                                         |
+          -------------------------------------------
     Args:
         layer_norm_eps (float): epsilon parameter for layer normalization
 
@@ -189,9 +189,9 @@ class PositionwiseFeedForward(nn.Module):
 class ResidualFeedForward(nn.Module):
     """Wrapper for the combination of SublayerConnection and PositionwiseFeedForward
 
-        input -> layer norm -> PositionwiseFeedForward -> dropout -> output
-          |                                                            |
-          --------------------------------------------------------------
+        input -> layer norm -> PositionwiseFeedForward -> dropout -> output ->
+          |                                                        |
+          ----------------------------------------------------------
 
     Args:
         d_model (int):

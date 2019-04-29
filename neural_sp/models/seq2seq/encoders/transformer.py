@@ -101,7 +101,7 @@ class TransformerEncoder(nn.Module):
                                    poolings=poolings,
                                    dropout=dropout,
                                    batch_norm=conv_batch_norm,
-                                   bottleneck_dim=conv_bottleneck_dim)
+                                   bottleneck_dim=d_model)
             self._output_dim = self.conv.output_dim
         else:
             self._output_dim = input_dim * n_splices * n_stacks
