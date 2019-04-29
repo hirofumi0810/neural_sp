@@ -122,8 +122,8 @@ lm_batch_size=64
 lm_bptt=100
 lm_optimizer=adam
 lm_learning_rate=1e-3
-lm_n_epochs=50
-lm_convert_to_sgd_epoch=50
+lm_n_epochs=40
+lm_convert_to_sgd_epoch=40
 lm_print_step=2000
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
@@ -397,8 +397,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_emb ${lm_dropout_emb} \
         --weight_decay ${lm_weight_decay} \
         --backward ${lm_backward} \
-        --adaptive_softmax ${lm_adaptive_softmax} || exit 1;
-    # --resume ${lm_resume} || exit 1;
+        --adaptive_softmax ${lm_adaptive_softmax} \
+        --resume ${lm_resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
 fi

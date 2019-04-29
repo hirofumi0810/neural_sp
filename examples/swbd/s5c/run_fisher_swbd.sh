@@ -125,7 +125,7 @@ lm_print_step=50
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
-lm_not_improved_patient_n_epochs=5
+lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
 lm_param_init=0.05
@@ -392,8 +392,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_emb ${lm_dropout_emb} \
         --weight_decay ${lm_weight_decay} \
         --backward ${lm_backward} \
-        --serialize ${lm_serialize} || exit 1;
-    # --resume ${lm_resume} || exit 1;
+        --serialize ${lm_serialize} \
+        --resume ${lm_resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
 fi

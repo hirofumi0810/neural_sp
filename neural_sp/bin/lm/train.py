@@ -47,9 +47,10 @@ def main():
 
     # Load a conf file
     if args.resume:
-        conf = load_config(os.path.join(args.resume, 'conf.yml'))
+        conf = load_config(os.path.join(os.path.dirname(args.resume), 'conf.yml'))
         for k, v in conf.items():
-            setattr(args, k, v)
+            if k != 'resume':
+                setattr(args, k, v)
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
@@ -106,7 +107,25 @@ def main():
     model.save_path = save_path
 
     if args.resume:
-        raise NotImplementedError
+        # Set optimizer
+        epoch = int(args.resume.split('-')[-1])
+        model.set_optimizer(optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] + 1 else conf['optimizer'],
+                            learning_rate=float(conf['learning_rate']),  # on-the-fly
+                            weight_decay=float(conf['weight_decay']))
+
+        # Restore the last saved model
+        model, checkpoint = load_checkpoint(model, args.resume, resume=True)
+        lr_controller = checkpoint['lr_controller']
+        epoch = checkpoint['epoch']
+        step = checkpoint['step']
+        ppl_dev_best = checkpoint['metric_dev_best']
+
+        # Resume between convert_to_sgd_epoch and convert_to_sgd_epoch + 1
+        if epoch == conf['convert_to_sgd_epoch'] + 1:
+            model.set_optimizer(optimizer='sgd',
+                                learning_rate=args.learning_rate,
+                                weight_decay=float(conf['weight_decay']))
+            logger.info('========== Convert to SGD ==========')
     else:
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(model.save_path, 'conf.yml'))
