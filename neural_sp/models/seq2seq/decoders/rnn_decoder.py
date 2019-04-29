@@ -220,7 +220,6 @@ class RNNDecoder(nn.Module):
                 self.score = MultiheadAttentionMechanism(
                     key_dim=self.enc_n_units,
                     query_dim=n_units if n_projs == 0 else n_projs,
-                    attn_type=attn_type,
                     attn_dim=attn_dim,
                     n_heads=attn_n_heads,
                     dropout=dropout_att)
@@ -362,9 +361,9 @@ class RNNDecoder(nn.Module):
         """
         observation = {'loss': None,
                        'loss_att': None, 'loss_ctc': None,
-                       'loss_lmobj': None, 'loss_lm': None,
+                       'loss_lmobj': None,
                        'acc_att': None, 'acc_lmobj': None,
-                       'ppl_att': None, 'ppl_lmobj': None, 'ppl_lm': None}
+                       'ppl_att': None, 'ppl_lmobj': None}
         loss = eouts.new_zeros((1,))
 
         # if self.lm is not None:
@@ -389,13 +388,6 @@ class RNNDecoder(nn.Module):
                 loss += loss_lmobj
             else:
                 loss += loss_lmobj * self.lmobj_weight
-
-        # LM joint training
-        if self.lm is not None and 'mtl' in self.lm_fusion_type and (task == 'all' or 'lm' in task):
-            loss_lm, ppl_lm = self.forward_lm(ys, ys_hist)
-            observation['loss_lm'] = loss_lm.item()
-            observation['ppl_lm'] = ppl_lm
-            loss += loss_lm
 
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task and 'lmobj' not in task and 'lm' not in task)):
@@ -502,7 +494,7 @@ class RNNDecoder(nn.Module):
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, -1)
-        ppl = np.exp(loss.item())
+        ppl = min(np.exp(loss.item()), np.inf)
 
         return loss, acc, ppl
 

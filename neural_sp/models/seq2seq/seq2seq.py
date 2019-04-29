@@ -457,12 +457,10 @@ class Seq2seq(ModelBase):
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
             observation['loss.lmobj'] = obs_fwd['loss_lmobj']
-            observation['loss.lm'] = obs_fwd['loss_lm']
             observation['acc.att'] = obs_fwd['acc_att']
             observation['acc.lmobj'] = obs_fwd['acc_lmobj']
             observation['ppl.att'] = obs_fwd['ppl_att']
             observation['ppl.lmobj'] = obs_fwd['ppl_lmobj']
-            observation['ppl.lm'] = obs_fwd['ppl_lm']
 
         # for the backward decoder in the main task
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:

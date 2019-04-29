@@ -30,10 +30,10 @@ from neural_sp.models.model_utils import LinearND
 from neural_sp.models.model_utils import SublayerConnection
 from neural_sp.models.model_utils import PositionwiseFeedForward
 from neural_sp.models.model_utils import PositionalEncoding
-from neural_sp.models.seq2seq.decoders.multihead_attention import TransformerMultiheadAttentionMechanism
+from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import BeamSearchDecoder
-from neural_sp.models.seq2seq.decoders.ctc_beam_search_decoder import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.ctc_greedy_decoder import GreedyDecoder
+from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import tensor2np
@@ -47,14 +47,14 @@ class TransformerDecoder(nn.Module):
     """Transformer decoder.
 
     Args:
-        sos (int): index for <sos>
-        eos (int): index for <eos>
+        eos (int): index for <eos> (shared with <sos>)
+        unk (int): index for <unk>
         pad (int): index for <pad>
         blank (int): index for <blank>
-        enc_nunits (int):
+        enc_n_units (int):
         attn_type (str):
-        attn_nheads (int): number of attention heads
-        n_layers (int): number of encoder layers.
+        attn_n_heads (int): number of attention heads
+        n_layers (int): number of decoder layers.
         d_model (int): size of the model
         d_ff (int): size of the inner FF layer
         pe_type (str): concat or add or learn or False
@@ -70,6 +70,7 @@ class TransformerDecoder(nn.Module):
         backward (bool): decode in the backward order
         global_weight (float):
         mtl_per_batch (bool):
+        adaptive_softmax (bool):
 
     """
 
@@ -78,25 +79,26 @@ class TransformerDecoder(nn.Module):
                  unk,
                  pad,
                  blank,
-                 enc_nunits,
+                 enc_n_units,
                  attn_type,
-                 attn_nheads,
+                 attn_n_heads,
                  n_layers,
                  d_model,
                  d_ff,
                  pe_type,
                  tie_embedding,
                  vocab,
-                 dropout,
-                 dropout_emb,
-                 dropout_att,
-                 lsm_prob,
-                 layer_norm_eps,
-                 ctc_weight,
-                 ctc_fc_list,
-                 backward,
-                 global_weight,
-                 mtl_per_batch):
+                 dropout=0.0,
+                 dropout_emb=0.0,
+                 dropout_att=0.0,
+                 lsm_prob=0.0,
+                 layer_norm_eps=1e-6,
+                 ctc_weight=0.0,
+                 ctc_fc_list=[],
+                 backward=False,
+                 global_weight=1.0,
+                 mtl_per_batch=False,
+                 adaptive_softmax=False):
 
         super(TransformerDecoder, self).__init__()
 
@@ -104,7 +106,7 @@ class TransformerDecoder(nn.Module):
         self.unk = unk
         self.pad = pad
         self.blank = blank
-        self.enc_nunits = enc_nunits
+        self.enc_n_units = enc_n_units
         self.d_model = d_model
         self.n_layers = n_layers
         self.pe_type = pe_type
@@ -132,7 +134,7 @@ class TransformerDecoder(nn.Module):
 
         if ctc_weight < global_weight:
             self.layers = nn.ModuleList(
-                [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_nheads,
+                [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_n_heads,
                                          dropout, dropout_att, layer_norm_eps)
                  for _ in range(n_layers)])
 
@@ -141,16 +143,25 @@ class TransformerDecoder(nn.Module):
                                    ignore_index=pad)
             if pe_type:
                 self.pos_emb_out = PositionalEncoding(d_model, dropout_emb, pe_type)
-            self.output = LinearND(d_model, vocab)
 
-            # Optionally tie weights as in:
-            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-            # https://arxiv.org/abs/1608.05859
-            # and
-            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-            # https://arxiv.org/abs/1611.01462
-            if tie_embedding:
-                self.output.fc.weight.data = self.embed.embed.weight.data
+            if adaptive_softmax:
+                self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
+                    d_model, vocab,
+                    cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
+                    div_value=4.0)
+                self.output = None
+            else:
+                self.adaptive_softmax = None
+                self.output = LinearND(d_model, vocab)
+
+                # Optionally tie weights as in:
+                # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
+                # https://arxiv.org/abs/1608.05859
+                # and
+                # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
+                # https://arxiv.org/abs/1611.01462
+                if tie_embedding:
+                    self.output.fc.weight = self.embed.embed.weight
 
             self.layer_norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
@@ -158,7 +169,7 @@ class TransformerDecoder(nn.Module):
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
 
-    def forward(self, eouts, elens, ys, task='all'):
+    def forward(self, eouts, elens, ys, task='all', ys_hist=[]):
         """Forward computation.
 
         Args:
@@ -166,6 +177,7 @@ class TransformerDecoder(nn.Module):
             elens (list): A list of length `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             task (str): all or ys or ys_sub*
+            ys_hist (list): dummy (not used)
         Returns:
             loss (FloatTensor): `[1]`
             observation (dict):
@@ -233,9 +245,10 @@ class TransformerDecoder(nn.Module):
 
         # Label smoothing for CTC
         if self.lsm_prob > 0 and self.ctc_weight == 1:
-            loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(
-                logits, ylens=elens,
-                lsm_prob=self.lsm_prob, size_average=True) * self.lsm_prob
+            loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits,
+                                                              ylens=elens,
+                                                              lsm_prob=self.lsm_prob,
+                                                              size_average=True) * self.lsm_prob
 
         return loss
 
@@ -252,8 +265,11 @@ class TransformerDecoder(nn.Module):
             ppl (float):
 
         """
+        bs = eouts.size(0)
+
         # Append <sos> and <eos>
         eos = eouts.new_zeros((1,)).fill_(self.eos).long()
+        ylens = [len(y) for y in ys]
         ys = [np2tensor(np.fromiter(y[::-1] if self.backward else y, dtype=np.int64), self.device_id).long()
               for y in ys]
         ys_in = [torch.cat([eos, y], dim=0) for y in ys]
@@ -266,46 +282,35 @@ class TransformerDecoder(nn.Module):
         if self.pe_type:
             ys_emb = self.pos_emb_out(ys_emb)
 
-        # Make source-target attention mask: `[B, L(query), T(key)]`
-        bs, max_xlen = eouts.size()[:2]
-        y_len_max = ys_in_pad.size(1)
-        yx_mask = (ys_in_pad != self.pad).unsqueeze(-1).expand(bs, y_len_max, max_xlen)
-        for b in range(bs):
-            if elens[b] < max_xlen:
-                yx_mask[b, :, elens[b]:] = 0
-
-        # Make target-side self-attention mask (hide future tokens): `[B, L(query), L(key)]`
-        yy_mask = (ys_in_pad != self.pad).unsqueeze(-2).expand(bs, y_len_max, y_len_max)
-        history_mask = torch.triu(torch.ones((y_len_max, y_len_max),
-                                             device=self.device_id, dtype=torch.uint8), diagonal=1)
-        history_mask = history_mask.unsqueeze(0).expand(bs, -1, -1) == 0
-        yy_mask = yy_mask & history_mask
-
         for l in range(self.n_layers):
-            ys_emb, yy_aw, xy_aw = self.layers[l](eouts, ys_emb, yx_mask, yy_mask)
+            ys_emb, yy_aw, xy_aw = self.layers[l](eouts, elens, ys_emb, ylens)
 
-        ys_emb = self.layer_norm_top(ys_emb)
-        logits = self.output(ys_emb)
+        logits = self.layer_norm_top(ys_emb)
+        if self.adaptive_softmax is None:
+            logits = self.output(logits)
 
         # Compute XE sequence loss
-        if self.lsm_prob > 0:
-            # Label smoothing
-            loss = cross_entropy_lsm(logits,
-                                     ys=ys_out_pad,
-                                     ylens=[y.size(0) for y in ys_out],
-                                     lsm_prob=self.lsm_prob, size_average=True)
+        if self.adaptive_softmax is None:
+            if self.lsm_prob > 0:
+                # Label smoothing
+                loss = cross_entropy_lsm(logits,
+                                         ys=ys_out_pad,
+                                         ylens=[y.size(0) for y in ys_out],
+                                         lsm_prob=self.lsm_prob, size_average=True)
+            else:
+                loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
+                                       target=ys_out_pad.view(-1),  # long
+                                       ignore_index=-1, size_average=False) / bs
         else:
-            loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
-                                   target=ys_out_pad.view(-1),  # long
-                                   ignore_index=-1, size_average=False) / bs
+            loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
+                                         ys_out_pad.view(-1)).loss
 
         # Compute token-level accuracy in teacher-forcing
-        pad_pred = logits.view(ys_out_pad.size(0), ys_out_pad.size(1), logits.size(-1)).argmax(2)
-        mask = ys_out_pad != -1
-        numerator = (pad_pred.masked_select(mask) == ys_out_pad.masked_select(mask)).sum()
-        denominator = mask.sum()
-        acc = float(numerator) * 100 / float(denominator)
-        ppl = np.exp(loss.item())
+        if self.adaptive_softmax is None:
+            acc = compute_accuracy(logits, ys_out_pad, pad=-1)
+        else:
+            acc = 0
+        ppl = min(np.exp(loss.item()), np.inf)
 
         return loss, acc, ppl
 
@@ -327,27 +332,19 @@ class TransformerDecoder(nn.Module):
         # Start from <sos> (<eos> in case of the backward decoder)
         ys = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
-        yy_mask = None
-
         best_hyps_tmp = []
         ylens = np.zeros((bs,), dtype=np.int32)
         yy_aws_tmp = [None] * bs
         xy_aws_tmp = [None] * bs
         eos_flags = [False] * bs
         for t in range(int(np.floor(max_xlen * max_len_ratio)) + 1):
-            # Make source-target attention mask
-            yx_mask = eouts.new_ones(bs, t + 1, max_xlen)
-            for b in range(bs):
-                if elens[b] < max_xlen:
-                    yx_mask[b, :, elens[b]:] = 0
-
             # Add positional embedding
             out = self.embed(ys) * (self.d_model ** 0.5)
             if self.pe_type:
                 out = self.pos_emb_out(out)
 
             for l in range(self.n_layers):
-                out, yy_aw, xy_aw = self.layers[l](eouts, out, yx_mask, yy_mask)
+                out, yy_aw, xy_aw = self.layers[l](eouts, elens, out, ylens + 1)
                 # xy_aw: `[B, head, T, L]`
             out = self.layer_norm_top(out)
             logits_t = self.output(out)
@@ -380,7 +377,7 @@ class TransformerDecoder(nn.Module):
         best_hyps_tmp = tensor2np(best_hyps_tmp)
         # xy_aws_tmp = tensor2np(xy_aws_tmp)
 
-        # if self.score.attn_nheads > 1:
+        # if self.score.attn_n_heads > 1:
         #     xy_aws_tmp = xy_aws_tmp[:, :, :, 0]
         #     # TODO(hirofumi): fix for MHA
 
@@ -405,14 +402,15 @@ class TransformerDecoder(nn.Module):
         # return best_hyps, aws
         return best_hyps, None
 
-    def decode_ctc(self, eouts, xlens, beam_width=1, lm=None):
+    def decode_ctc(self, eouts, xlens, beam_width=1, lm=None, lm_weight=0.0):
         """Decoding by the CTC layer in the inference stage.
 
             This is only used for Joint CTC-Attention model.
         Args:
-            eouts (FloatTensor): `[B, T, enc_units]`
+            eouts (FloatTensor): `[B, T, d_model]`
             beam_width (int): size of beam
             lm ():
+            lm_weight (float):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
 
@@ -421,7 +419,7 @@ class TransformerDecoder(nn.Module):
         if beam_width == 1:
             best_hyps = self.decode_ctc_greedy(log_probs, xlens)
         else:
-            best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width, lm)
+            best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width, lm, lm_weight)
             # TODO(hirofumi): add decoding paramters
         return best_hyps
 
@@ -431,11 +429,11 @@ class TransformerDecoderBlock(nn.Module):
 
         Args:
             d_model (int): dimension of keys/values/queries in
-                           TransformerMultiheadAttentionMechanism, also the input size of
+                           MultiheadAttentionMechanism, also the input size of
                            the first-layer of the PositionwiseFeedForward
             d_ff (int): second-layer of the PositionwiseFeedForward
             attn_type (str):
-            attn_nheads (int): number of heads for multi-head attention
+            attn_n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
             attn_type (str): type of self-attention, scaled_dot_product or average
@@ -443,40 +441,54 @@ class TransformerDecoderBlock(nn.Module):
 
     """
 
-    def __init__(self, d_model, d_ff, attn_type, attn_nheads,
-                 dropout, dropout_att, layer_norm_eps):
+    def __init__(self,
+                 d_model,
+                 d_ff,
+                 attn_type,
+                 attn_n_heads,
+                 dropout,
+                 dropout_att,
+                 layer_norm_eps):
         super(TransformerDecoderBlock, self).__init__()
 
         self.attn_type = attn_type
 
         # self-attention
         if attn_type == "scaled_dot_product":
-            self.self_attn = TransformerMultiheadAttentionMechanism(attn_nheads, d_model, dropout_att)
+            self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
+                                                         query_dim=d_model,
+                                                         attn_dim=d_model,
+                                                         n_heads=attn_n_heads,
+                                                         dropout=dropout_att)
         elif attn_type == "average":
-            raise NotImplementedError()
-            # self.self_attn = AverageAttention(d_model, dropout, layer_norm=True)
+            raise NotImplementedError
+
+
+a            # self.self_attn = AverageAttention(d_model, dropout, layer_norm=True)
         else:
             raise NotImplementedError(attn_type)
-        self.add_norm1 = SublayerConnection(d_model, dropout, layer_norm_eps)
+        self.add_norm_self_attn = SublayerConnection(d_model, dropout, layer_norm_eps)
 
         # attention for encoder stacks
-        self.enc_attn = TransformerMultiheadAttentionMechanism(attn_nheads, d_model, dropout_att)
-        self.add_norm2 = SublayerConnection(d_model, dropout, layer_norm_eps)
+        self.src_attn = MultiheadAttentionMechanism(key_dim=d_model,
+                                                    query_dim=d_model,
+                                                    attn_dim=d_model,
+                                                    n_heads=attn_n_heads,
+                                                    dropout=dropout_att)
+        self.add_norm_src_attn = SublayerConnection(d_model, dropout, layer_norm_eps)
 
         # feed-forward
-        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
-        self.add_norm3 = SublayerConnection(d_model, dropout, layer_norm_eps)
+        self.ff = PositionwiseFeedForward(d_model, d_ff, dropout)
+        self.add_norm_ff = SublayerConnection(d_model, dropout, layer_norm_eps)
 
-    def forward(self, x, y, yx_mask, yy_mask):
+    def forward(self, x, xlens, y, ylens):
         """Transformer decoder layer definition.
 
         Args:
             x (FloatTensor): encoder outputs. `[B, T, d_model]`
+            xlens (list): `[B]`
             y (FloatTensor): `[B, L, d_model]`
-            yx_mask (LongTensor): mask for source-target connection. `[B, L(query), T(key)]`
-            yy_mask (LongTensor): mask for target-target connection. `[B, L(query), L(key)]`
-                0: place to pad with -1024
-                1: otherwise
+            ylens (list): `[B]`
         Returns:
             y (FloatTensor): `[B, L, d_model]`
             yy_aw (FloatTensor)`[B, L, L]`
@@ -485,14 +497,18 @@ class TransformerDecoderBlock(nn.Module):
         """
         # self-attention
         if self.attn_type == "scaled_dot_product":
-            y, yy_aw = self.add_norm1(y, lambda y: self.self_attn(y, y, y, yy_mask))  # key/value/query
+            y, yy_aw = self.add_norm_self_attn(y, lambda y: self.self_attn(
+                key=y, key_lens=ylens, value=y, query=y, diagonal=True))
         elif self.attn_type == "average":
-            raise NotImplementedError()
+            raise NotImplementedError
+        self.self_attn.reset()
 
         # attention for encoder stacks
-        y, xy_aw = self.add_norm2(y, lambda y: self.enc_attn(x, x, y, yx_mask))  # key/value/query
+        y, xy_aw = self.add_norm_src_attn(y, lambda y: self.src_attn(
+            key=x, key_lens=xlens, value=x, query=y))
+        self.src_attn.reset()
 
         # position-wise feed-forward
-        y = self.add_norm3(y, lambda y: self.feed_forward(y))  # key/value/query
+        y = self.add_norm_ff(y, lambda y: self.ff(y))
 
         return y, yy_aw, xy_aw

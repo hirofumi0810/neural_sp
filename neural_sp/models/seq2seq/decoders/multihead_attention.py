@@ -66,7 +66,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value = None
         self.mask = None
 
-    def forward(self, key, key_lens, value, query, aw=None, query_lens=None):
+    def forward(self, key, key_lens, value, query, aw=None, diagonal=False):
         """Forward computation.
 
         Args:
@@ -75,7 +75,7 @@ class MultiheadAttentionMechanism(nn.Module):
             value (FloatTensor): `[B, key_len, value_dim]`
             query (FloatTensor): `[B, query_len, query_dim]`
             aw (FloatTensor): dummy (not used)
-            query_lens (list): A list of length `[B]`
+            diagonal (bool):
         Returns:
             cv (FloatTensor): `[B, query_len, value_dim]`
             aw (FloatTensor): `[B, key_len, n_heads]`
@@ -96,11 +96,18 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # Mask attention distribution
         if self.mask is None:
-            mask = key.new_ones(bs, query_len, key_len)
+            mask = key.new_ones(bs, query_len, key_len).byte()
             for b in range(bs):
                 if key_lens[b] < key_len:
                     mask[b, :, key_lens[b]:] = 0
             self.mask = mask.repeat(self.n_heads, 1, 1)
+
+            # hide future information for transformer decoder
+            if diagonal:
+                assert query_len == key_len
+                subsequent_mask = torch.tril(key.new_ones((query_len, key_len)).byte(), diagonal=0)
+                subsequent_mask = subsequent_mask.unsqueeze(0).expand(bs * self.n_heads, -1, -1)  # `[B, query_len, key_len]`
+                self.mask = self.mask & subsequent_mask
 
         query = self.w_query(query).view(bs, query_len, self.n_heads, self.head_dim)
         query = query.transpose(2, 1).contiguous().view(bs * self.n_heads, query_len, self.head_dim)
