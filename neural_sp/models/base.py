@@ -63,9 +63,9 @@ class ModelBase(nn.Module):
 
     @property
     def device_id(self):
-        return torch.cuda.device_of(next(self.parameters()).data).idx
+        return torch.cuda.device_of(next(self.parameters())).idx
 
-    def init_weights(self, param_init, dist, keys=[None], ignore_keys=[None]):
+    def reset_parameters(self, param_init, dist, keys=[None], ignore_keys=[None]):
         """Initialize parameters. All biases are initialized with zero unless otherwise specified.
 
         Args:
@@ -81,42 +81,45 @@ class ModelBase(nn.Module):
             if ignore_keys != [None] and len(list(filter(lambda k: k in n, ignore_keys))) > 0:
                 continue
 
-            if p.data.dim() == 1:
+            if p.dim() == 1:
                 if dist == 'constant':
-                    torch.nn.init.constant_(p.data, val=param_init)
+                    nn.init.constant_(p, val=param_init)
                     logger.info('Initialize %s / %s / %.3f' % (n, dist, param_init))
                 else:
-                    p.data.zero_()
+                    nn.init.constant_(p, val=0)
+                    logger.info('Initialize %s / %s / %.3f' % (n, 'constant', 0))
             else:
                 if dist == 'uniform':
-                    nn.init.uniform_(p.data, a=-param_init, b=param_init)
+                    nn.init.uniform_(p, a=-param_init, b=param_init)
                 elif dist == 'normal':
                     assert param_init > 0
-                    torch.nn.init.normal_(p.data, mean=0, std=param_init)
+                    nn.init.normal_(p, mean=0, std=param_init)
                 elif dist == 'orthogonal':
-                    torch.nn.init.orthogonal_(p.data, gain=1)
+                    nn.init.orthogonal_(p, gain=1)
                 elif dist == 'constant':
-                    torch.nn.init.constant_(p.data, val=param_init)
+                    nn.init.constant_(p, val=param_init)
                 elif dist == 'lecun':
-                    if p.data.dim() == 2:
-                        n = p.data.size(1)  # linear weight
-                        p.data.normal_(0, 1. / math.sqrt(n))
-                    elif p.data.dim() == 4:
+                    if p.dim() == 2:
+                        n = p.size(1)  # linear weight
+                        assert param_init > 0
+                        nn.init.normal_(p, mean=0, std=1. / math.sqrt(n))
+                    elif p.dim() == 4:
                         # conv weight
-                        n = p.data.size(1)
-                        for k in p.data.size()[2:]:
+                        n = p.size(1)
+                        for k in p.size()[2:]:
                             n *= k
-                        p.data.normal_(0, 1. / math.sqrt(n))
+                        assert param_init > 0
+                        nn.init.normal_(p, mean=0, std=1. / math.sqrt(n))
                     else:
-                        raise NotImplementedError(p.data.dim())
+                        raise NotImplementedError(p.dim())
                 elif dist == 'xavier_uniform':
-                    torch.nn.init.xavier_uniform_(p.data, gain=1.0)
+                    nn.init.xavier_uniform_(p, gain=1.0)
                 elif dist == 'xavier_normal':
-                    torch.nn.init.xavier_normal_(p.data, gain=1.0)
+                    nn.init.xavier_normal_(p, gain=1.0)
                 elif dist == 'kaiming_uniform':
-                    torch.nn.init.kaiming_uniform_(p.data, mode='fan_in', nonlinearity='relu')
+                    nn.init.kaiming_uniform_(p, mode='fan_in', nonlinearity='relu')
                 elif dist == 'kaiming_normal':
-                    torch.nn.init.kaiming_normal_(p.data, mode='fan_in', nonlinearity='relu')
+                    nn.init.kaiming_normal_(p, mode='fan_in', nonlinearity='relu')
                 else:
                     raise NotImplementedError(dist)
                 logger.info('Initialize %s / %s / %.3f' % (n, dist, param_init))

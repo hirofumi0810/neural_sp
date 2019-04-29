@@ -137,8 +137,8 @@ class Seq2seq(ModelBase):
                 n_layers_sub2=args.enc_n_layers_sub2,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
-                subsample=list(map(int, args.subsample.split('_'))) +
-                [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
+                subsample=list(map(int, args.subsample.split('_')))
+                + [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
                 subsample_type=args.subsample_type,
                 n_stacks=args.n_stacks,
                 n_splices=args.n_splices,
@@ -335,47 +335,47 @@ class Seq2seq(ModelBase):
 
         # Initialize weight matrices
         if args.enc_type == 'transformer':
-            self.init_weights(args.param_init, dist='xavier_uniform',
-                              keys=['enc'], ignore_keys=['score', 'embed_in'])
-            self.init_weights(args.d_model**-0.5, dist='normal',
-                              keys=['embed_in'])
+            self.reset_parameters(args.param_init, dist='xavier_uniform',
+                                  keys=['enc'], ignore_keys=['score', 'embed_in'])
+            self.reset_parameters(args.d_model**-0.5, dist='normal',
+                                  keys=['embed_in'])
         else:
-            self.init_weights(args.param_init, dist=args.param_init_dist,
-                              keys=['enc'], ignore_keys=['conv'])
+            self.reset_parameters(args.param_init, dist=args.param_init_dist,
+                                  keys=['enc'], ignore_keys=['conv'])
 
         if args.dec_type == 'transformer':
-            self.init_weights(args.param_init, dist='xavier_uniform',
-                              keys=['dec'], ignore_keys=['score', 'embed'])
-            self.init_weights(args.d_model**-0.5, dist='normal',
-                              keys=['embed'])
+            self.reset_parameters(args.param_init, dist='xavier_uniform',
+                                  keys=['dec'], ignore_keys=['score', 'embed'])
+            self.reset_parameters(args.d_model**-0.5, dist='normal',
+                                  keys=['embed'])
         else:
-            self.init_weights(args.param_init, dist=args.param_init_dist,
-                              keys=['dec'])
+            self.reset_parameters(args.param_init, dist=args.param_init_dist,
+                                  keys=['dec'])
 
         # Initialize bias vectors with zero
-        self.init_weights(0, dist='constant', keys=['bias'])
+        self.reset_parameters(0, dist='constant', keys=['bias'])
 
         # Initialize CNN layers
-        self.init_weights(args.param_init,
-                          dist='xavier_uniform',
-                          #   dist='kaiming_uniform',
-                          keys=['conv'], ignore_keys=['score'])
+        self.reset_parameters(args.param_init,
+                              dist='xavier_uniform',
+                              #   dist='kaiming_uniform',
+                              keys=['conv'], ignore_keys=['score'])
 
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
             if args.enc_type not in ['cnn', 'tds']:
-                self.init_weights(args.param_init, dist='orthogonal',
-                                  keys=[args.enc_type, 'weight'])
+                self.reset_parameters(args.param_init, dist='orthogonal',
+                                      keys=[args.enc_type, 'weight'])
             # TODO(hirofumi): in case of CNN + LSTM
-            self.init_weights(args.param_init, dist='orthogonal',
-                              keys=[args.dec_type, 'weight'])
+            self.reset_parameters(args.param_init, dist='orthogonal',
+                                  keys=[args.dec_type, 'weight'])
 
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
 
         # Initialize bias in gating with -1 for cold fusion
         if args.lm_fusion:
-            self.init_weights(-1, dist='constant', keys=['linear_lm_gate.fc.bias'])
+            self.reset_parameters(-1, dist='constant', keys=['linear_lm_gate.fc.bias'])
 
         if args.lm_fusion_type == 'deep' and args.lm_fusion:
             for n, p in self.named_parameters():

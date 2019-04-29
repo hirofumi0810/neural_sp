@@ -25,23 +25,72 @@ from neural_sp.models.torch_utils import pad_list
 
 
 class GLUBlock(nn.Module):
-    def __init__(self, kernel_size, in_ch, out_ch, dropout):
+    """GLU block.
+
+    Args:
+        kernel_size (int): kernel size
+        in_ch (int): number of input channels
+        out_ch (int): number of output channels
+        bottlececk_dim (int): dimension of the bottleneck layers for computational efficiency
+        dropout (float): dropout probability
+
+    """
+
+    def __init__(self, kernel_size, in_ch, out_ch, bottlececk_dim=0, dropout=0.0):
         super().__init__()
 
-        self.pad_left = nn.ConstantPad1d((kernel_size - 1, 0), 0)
-        self.conv = nn.utils.weight_norm(nn.Conv1d(in_channels=in_ch,
-                                                   out_channels=out_ch,
-                                                   kernel_size=kernel_size),
-                                         name='weight')
-        self.bias = nn.Parameter(torch.zeros(out_ch, 1))
-        self.dropout = nn.Dropout(p=dropout)
+        self.conv_residual = None
+        if in_ch != out_ch:
+            self.conv_residual = nn.utils.weight_norm(nn.Conv2d(in_channels=in_ch,
+                                                                out_channels=out_ch,
+                                                                kernel_size=(1, 1)),
+                                                      name='weight', dim=0)
 
-        self.conv_gate = nn.utils.weight_norm(nn.Conv1d(in_channels=in_ch,
-                                                        out_channels=out_ch,
-                                                        kernel_size=kernel_size),
-                                              name='weight')
-        self.bias_gate = nn.Parameter(torch.zeros(out_ch, 1))
+        self.pad_left = nn.ConstantPad2d((0, 0, kernel_size - 1, 0), 0)
+        self.dropout = nn.Dropout(p=dropout)
         self.dropout_gate = nn.Dropout(p=dropout)
+
+        if bottlececk_dim == 0:
+            self.conv_in = lambda x: x
+            self.conv = nn.utils.weight_norm(nn.Conv2d(in_channels=in_ch,
+                                                       out_channels=out_ch,
+                                                       kernel_size=(kernel_size, 1)),
+                                             name='weight', dim=0)
+            self.conv_out = lambda x: x
+
+            self.conv_gate_in = lambda x: x
+            self.conv_gate = nn.utils.weight_norm(nn.Conv2d(in_channels=in_ch,
+                                                            out_channels=out_ch,
+                                                            kernel_size=(kernel_size, 1)),
+                                                  name='weight', dim=0)
+            self.conv_gate_out = lambda x: x
+
+        elif bottlececk_dim > 0:
+            self.conv_in = nn.utils.weight_norm(nn.Conv2d(in_channels=in_ch,
+                                                          out_channels=bottlececk_dim,
+                                                          kernel_size=(1, 1)),
+                                                name='weight', dim=0)
+            self.conv = nn.utils.weight_norm(nn.Conv2d(in_channels=bottlececk_dim,
+                                                       out_channels=bottlececk_dim,
+                                                       kernel_size=(kernel_size, 1)),
+                                             name='weight', dim=0)
+            self.conv_out = nn.utils.weight_norm(nn.Conv2d(in_channels=bottlececk_dim,
+                                                           out_channels=out_ch,
+                                                           kernel_size=(1, 1)),
+                                                 name='weight', dim=0)
+
+            self.conv_gate_in = nn.utils.weight_norm(nn.Conv2d(in_channels=in_ch,
+                                                               out_channels=bottlececk_dim,
+                                                               kernel_size=(1, 1)),
+                                                     name='weight', dim=0)
+            self.conv_gate = nn.utils.weight_norm(nn.Conv2d(in_channels=bottlececk_dim,
+                                                            out_channels=bottlececk_dim,
+                                                            kernel_size=(kernel_size, 1)),
+                                                  name='weight', dim=0)
+            self.conv_gate_out = nn.utils.weight_norm(nn.Conv2d(in_channels=bottlececk_dim,
+                                                                out_channels=out_ch,
+                                                                kernel_size=(1, 1)),
+                                                      name='weight', dim=0)
 
     def forward(self, x):
         """Forward computation.
@@ -52,14 +101,16 @@ class GLUBlock(nn.Module):
 
         """
         residual = x
-        x = self.pad_left(x)  # `[B, embed_dim, T+kernel-1]`
-        a = self.conv(x) + self.bias  # a: `[B, out_ch, T]`
+        if self.conv_residual is not None:
+            residual = self.conv_residual(residual)
+        x = self.pad_left(x)  # `[B, embed_dim, T+kernel-1, 1]`
+        a = self.conv_out(self.conv(self.conv_in(x)))  # `[B, out_ch, T ,1]`
         a = self.dropout(a)
-        b = self.conv_gate(x) + self.bias_gate  # b: `[B, out_ch, T]`
+        b = self.conv_gate_out(self.conv_gate(self.conv_gate_in(x)))  # `[B, out_ch, T, 1]`
         b = self.dropout_gate(b)
+
         x = torch.mul(a, F.sigmoid(b))
-        if x.size() == residual.size():
-            x = x + residual
+        x += residual
         return x
 
 
@@ -95,62 +146,54 @@ class GatedConvLM(ModelBase):
 
         glu_layers = OrderedDict()
 
-        model = '8'
+        # model = 'small'
+        # model = '8'
         # model = '13'
         # model = '14'
-        # model = '14B'
+        model = '14B'
 
-        if model == '8':
-            glu_layers['conv1-1-1'] = GLUBlock(4, args.emb_dim, 900, args.dropout_hidden)
+        if model == 'small':
+            glu_layers['conv1-1'] = GLUBlock(4, args.emb_dim, 600, bottlececk_dim=15)
+            glu_layers['conv2-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
+            glu_layers['conv3-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
+            glu_layers['conv4-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
+            glu_layers['conv5-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
+            last_dim = 600
+
+        elif model == '8':
+            glu_layers['conv1-1'] = GLUBlock(4, args.emb_dim, 900)
             for i in range(1, 8, 1):
-                glu_layers['conv2-%d-1' % i] = GLUBlock(4, 900, 900, args.dropout_hidden)
+                glu_layers['conv2-%d' % i] = GLUBlock(4, 900, 900)
             last_dim = 900
 
         elif model == '13':
-            glu_layers['conv1-1-1'] = GLUBlock(4, args.emb_dim, 1268, args.dropout_hidden)
+            glu_layers['conv1-1'] = GLUBlock(4, args.emb_dim, 1268)
             for i in range(1, 13, 1):
-                glu_layers['conv2-%d-1' % i] = GLUBlock(4, 1268, 1268, args.dropout_hidden)
+                glu_layers['conv2-%d' % i] = GLUBlock(4, 1268, 1268)
             last_dim = 1268
 
         elif model == '14':
             for i in range(1, 4, 1):
-                if i == 1:
-                    glu_layers['conv1-%d-1' % i] = GLUBlock(6, args.emb_dim, 850, args.dropout_hidden)
-                else:
-                    glu_layers['conv1-%d-1' % i] = GLUBlock(6, 850, 850, args.dropout_hidden)
-            glu_layers['conv2-1-1'] = GLUBlock(1, 850, 850, args.dropout_hidden)
+                glu_layers['conv1-%d' % i] = GLUBlock(6, args.emb_dim if i == 1 else 850, 850)
+            glu_layers['conv2-1'] = GLUBlock(1, 850, 850)
             for i in range(1, 5, 1):
-                glu_layers['conv3-%d-1' % i] = GLUBlock(5, 850, 850, args.dropout_hidden)
-            glu_layers['conv4-1-1'] = GLUBlock(1, 850, 850, args.dropout_hidden)
+                glu_layers['conv3-%d' % i] = GLUBlock(5, 850, 850)
+            glu_layers['conv4-1'] = GLUBlock(1, 850, 850)
             for i in range(1, 4, 1):
-                glu_layers['conv5-%d-1' % i] = GLUBlock(4, 850, 850, args.dropout_hidden)
-            glu_layers['conv6-1-1'] = GLUBlock(4, 850, 1024, args.dropout_hidden)
-            glu_layers['conv7-1-1'] = GLUBlock(4, 1024, 2048, args.dropout_hidden)
+                glu_layers['conv5-%d' % i] = GLUBlock(4, 850, 850)
+            glu_layers['conv6-1'] = GLUBlock(4, 850, 1024)
+            glu_layers['conv7-1'] = GLUBlock(4, 1024, 2048)
             last_dim = 2048
 
         elif model == '14B':
-            glu_layers['conv1'] = GLUBlock(5, args.emb_dim, 512, args.dropout_hidden)
+            glu_layers['conv1-1'] = GLUBlock(5, args.emb_dim, 512)
             for i in range(1, 4, 1):
-                glu_layers['conv2-%d-1' % i] = GLUBlock(1, 512, 128, args.dropout_hidden)
-                glu_layers['conv2-%d-2' % i] = GLUBlock(5, 128, 128, args.dropout_hidden)
-                glu_layers['conv2-%d-3' % i] = GLUBlock(1, 128, 512, args.dropout_hidden)
+                glu_layers['conv2-%d' % i] = GLUBlock(5, 512, 512, bottlececk_dim=128)
             for i in range(1, 4, 1):
-                if i == 1:
-                    glu_layers['conv3-%d-1' % i] = GLUBlock(1, 512, 512, args.dropout_hidden)
-                else:
-                    glu_layers['conv3-%d-1' % i] = GLUBlock(1, 1024, 512, args.dropout_hidden)
-                glu_layers['conv3-%d-2' % i] = GLUBlock(5, 512, 512, args.dropout_hidden)
-                glu_layers['conv3-%d-3' % i] = GLUBlock(1, 512, 1024, args.dropout_hidden)
+                glu_layers['conv3-%d' % i] = GLUBlock(5, 512 if i == 1 else 1024, 1024, bottlececk_dim=512)
             for i in range(1, 7, 1):
-                if i == 1:
-                    glu_layers['conv4-%d-1' % i] = GLUBlock(1, 1024, 1024, args.dropout_hidden)
-                else:
-                    glu_layers['conv4-%d-1' % i] = GLUBlock(1, 2048, 1024, args.dropout_hidden)
-                glu_layers['conv4-%d-2' % i] = GLUBlock(5, 1024, 1024, args.dropout_hidden)
-                glu_layers['conv4-%d-3' % i] = GLUBlock(1, 1024, 2048, args.dropout_hidden)
-            glu_layers['conv5-1-1'] = GLUBlock(1, 2048, 1024, args.dropout_hidden)
-            glu_layers['conv5-1-2'] = GLUBlock(5, 1024, 1024, args.dropout_hidden)
-            glu_layers['conv5-1-3'] = GLUBlock(1, 1024, 4096, args.dropout_hidden)
+                glu_layers['conv4-%d' % i] = GLUBlock(5, 1024 if i == 1 else 2048, 2048, bottlececk_dim=1024)
+            glu_layers['conv5-1'] = GLUBlock(5, 2048, 4096, bottlececk_dim=1024)
             last_dim = 4096
         else:
             raise NotImplementedError(model)
@@ -160,8 +203,8 @@ class GatedConvLM(ModelBase):
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
                 last_dim, self.vocab,
-                cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
-                # cutoffs=[round(self.vocab / 25), round(self.vocab / 5)],
+                # cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
+                cutoffs=[round(self.vocab / 25), round(self.vocab / 5)],
                 div_value=4.0)
             self.output = None
         else:
@@ -182,10 +225,10 @@ class GatedConvLM(ModelBase):
                 self.output.fc.weight = self.embed.embed.weight
 
         # Initialize weight matrices
-        self.init_weights(args.param_init, dist=args.param_init_dist)
+        self.reset_parameters(args.param_init, dist=args.param_init_dist)
 
         # Initialize bias vectors with zero
-        self.init_weights(0, dist='constant', keys=['bias'])
+        self.reset_parameters(0, dist='constant', keys=['bias'])
 
     def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0,
                 ylens=[]):
@@ -314,9 +357,11 @@ class GatedConvLM(ModelBase):
         """
         bs, max_ylen = ys_emb.size()[:2]
 
-        # embed_dim = in_ch
-        ys_emb = self.glu_layers(ys_emb.transpose(2, 1))  # [B, out_ch, T]
+        # NOTE: embed_dim = in_ch
+        ys_emb = ys_emb.unsqueeze(3)
+        ys_emb = self.glu_layers(ys_emb.transpose(2, 1))  # [B, out_ch, T, 1]
         ys_emb = ys_emb.transpose(2, 1).contiguous()  # `[B, T, out_ch]`
+        ys_emb = ys_emb.squeeze(3)
 
         return ys_emb, hidden
 
