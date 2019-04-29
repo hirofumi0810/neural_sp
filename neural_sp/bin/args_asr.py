@@ -77,6 +77,8 @@ def parse():
                         help='minimum number of input frames')
     parser.add_argument('--dynamic_batching', type=strtobool, default=True,
                         help='')
+    parser.add_argument('--sequence_summary_network', type=strtobool, default=False,
+                        help='Use sequence summary network')
     # topology (encoder)
     parser.add_argument('--conv_in_channel', type=int, default=1, nargs='?',
                         help='')

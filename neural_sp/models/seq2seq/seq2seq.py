@@ -13,6 +13,7 @@ from __future__ import print_function
 import logging
 import numpy as np
 import torch
+import torch.nn as nn
 
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
@@ -88,6 +89,18 @@ class Seq2seq(ModelBase):
         self.fwd_weight = self.main_weight - self.bwd_weight - self.ctc_weight
         self.fwd_weight_sub1 = self.sub1_weight - self.ctc_weight_sub1
         self.fwd_weight_sub2 = self.sub2_weight - self.ctc_weight_sub2
+
+        # Feature extraction
+        self.ssn = None
+        if args.sequence_summary_network:
+            assert args.input_type == 'speech'
+            self.ssn = nn.Sequential(
+                LinearND(args.input_dim, 512, bias=False),
+                nn.Tanh(),
+                LinearND(512, 100, bias=False),
+                nn.Tanh(),
+            )
+            self.feat_proj = LinearND(100, args.input_dim, bias=False)
 
         # Encoder
         if args.enc_type == 'transformer':
@@ -524,6 +537,19 @@ class Seq2seq(ModelBase):
                 xs = pad_list(xs, self.pad)
                 xs = self.embed_in(xs)
 
+            # sequence summary network
+            if self.ssn is not None:
+                bs, time = xs.size()[:2]
+                aw_ave = xs.new_zeros((bs, 1, time))
+                for b in range(bs):
+                    aw_ave[b, :, :xlens[b]] = 1 / xlens[b]
+                s = self.ssn(xs.clone())  # `[B, T, 100]`
+
+                # time average
+                s = torch.matmul(aw_ave, s)  # `[B, 1, 100]`
+                xs += torch.tanh(self.feat_proj(s))
+
+            # encoder
             enc_outs = self.enc(xs, xlens, task.split('.')[0])
 
             if self.main_weight < 1 and self.enc_type in ['cnn', 'tds']:

@@ -249,7 +249,8 @@ def main():
             model_pt, _ = load_checkpoint(model_pt, args.pretrained_model)
 
             # Overwrite parameters
-            only_enc = (args.enc_n_layers != args_pt.enc_n_layers) or (args.unit != args_pt.unit)
+            only_enc = (args.enc_n_layers != args_pt.enc_n_layers) or (
+                args.unit != args_pt.unit) or args_pt.ctc_weight == 1
             param_dict = dict(model_pt.named_parameters())
             for n, p in model.named_parameters():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
@@ -557,6 +558,8 @@ def make_model_name(args, subsample_factor):
         dir_name += '_stack' + str(args.n_stacks)
     else:
         dir_name += '_' + args.subsample_type + str(subsample_factor)
+    if args.sequence_summary_network:
+        dir_name += '_ssn'
 
     # decoder
     dir_name += '_' + args.dec_type
