@@ -202,8 +202,6 @@ def parse():
                         help='')
     parser.add_argument('--warmup_n_steps', type=int, default=4000,
                         help='')
-    parser.add_argument('--warmup_n_epochs', type=int, default=0,
-                        help='')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
                         help='')

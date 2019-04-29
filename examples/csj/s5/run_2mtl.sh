@@ -77,7 +77,6 @@ not_improved_patient_n_epochs=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
 warmup_n_steps=0
-warmup_n_epochs=0
 ### initialization
 param_init=0.1
 param_init_dist=uniform
@@ -395,7 +394,6 @@ if [ ${stage} -le 4 ]; then
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \
         --warmup_n_steps ${warmup_n_steps} \
-        --warmup_n_epochs ${warmup_n_epochs} \
         --param_init ${param_init} \
         --param_init_dist ${param_init_dist} \
         --pretrained_model ${pretrained_model} \
