@@ -33,10 +33,9 @@ def cross_entropy_lsm(logits, ys, ylens, lsm_prob, size_average=False):
 
     """
     bs, _, vocab = logits.size()
-    fill_val = lsm_prob / (vocab - 1)
 
     # Create one-hot vector
-    ys_lsm = logits.new_zeros(logits.size()).fill_(fill_val)
+    ys_lsm = logits.new_zeros(logits.size()).fill_(lsm_prob / (vocab - 1))
     for b in range(bs):
         for t in range(ylens[b]):
             ys_lsm[b, t, ys[b, t]] = 1 - lsm_prob
