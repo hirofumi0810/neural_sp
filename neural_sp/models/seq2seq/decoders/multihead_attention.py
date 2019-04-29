@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -45,15 +44,18 @@ class MultiheadAttentionMechanism(nn.Module):
                  attn_type,
                  attn_dim,
                  dropout=0,
-                 n_heads=4):
+                 n_heads=4,
+                 scale=1):
 
         super(MultiheadAttentionMechanism, self).__init__()
 
         self.attn_type = attn_type
         self.attn_dim = attn_dim
         self.n_heads = n_heads
-        self.scale = attn_dim ** -0.5
+        # self.scale = attn_dim ** -0.5
+        self.scale = scale
         self.key = None
+        self.value = None
         self.mask = None
 
         # attention dropout applied AFTER the softmax layer
@@ -64,10 +66,11 @@ class MultiheadAttentionMechanism(nn.Module):
         self.w_key = LinearND(key_dim, attn_dim * n_heads, bias=False)
         self.w_value = LinearND(key_dim, attn_dim * n_heads, bias=False)
         self.w_query = LinearND(query_dim, attn_dim * n_heads, bias=False)
-        self.w_out = LinearND(attn_dim * n_heads, key_dim, bias=False)
+        self.w_out = LinearND(attn_dim * n_heads, key_dim)
 
     def reset(self):
         self.key = None
+        self.value = None
         self.mask = None
 
     def forward(self, key, key_lens, value, query, aw=None):
@@ -88,32 +91,37 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None:
-            self.key = self.w_key(key).view(bs, key_len, self.n_heads, self.attn_dim).transpose(2, 1).transpose(3, 2)
-            # `[B, n_heads, attn_dim, key_len]`
-            self.value = self.w_value(value).view(bs, key_len, self.n_heads, self.attn_dim).transpose(2, 1)
-            # `[B, n_heads, key_len, attn_dim]`
+            key = self.w_key(key).view(bs, key_len, self.n_heads, self.attn_dim)
+            self.key = key.permute(2, 0, 3, 1).contiguous().view(self.n_heads * bs, self.attn_dim, key_len)
+            # `[n_heads * B, key_len, attn_dim]`
+
+            value = self.w_value(value).view(bs, key_len, self.n_heads, self.attn_dim)
+            self.value = value.permute(2, 0, 1, 3).contiguous().view(self.n_heads * bs, key_len, self.attn_dim)
+            # `[n_heads * B, key_len, attn_dim]`
 
         # Mask attention distribution
         if self.mask is None:
-            self.mask = key.new_ones(bs, self.n_heads, 1, key_len)
+            mask = key.new_ones(bs, 1, key_len)
             for b in range(bs):
                 if key_lens[b] < key_len:
-                    self.mask[b, :, :, key_lens[b]:] = 0
+                    mask[b, :, key_lens[b]:] = 0
+            self.mask = mask.repeat(self.n_heads, 1, 1)
 
-        query = self.w_query(query).view(bs, 1, self.n_heads, self.attn_dim).transpose(2, 1)
-        e = torch.matmul(query, self.key) * self.scale
-        # B, H, 1, key_len
+        query = self.w_query(query).view(bs, 1, self.n_heads, self.attn_dim)
+        query = query.transpose(2, 1).contiguous().view(self.n_heads * bs, 1, self.attn_dim)
+        e = torch.bmm(query, self.key) * self.scale
 
         # Compute attention weights
-        e = e.masked_fill_(self.mask == 0, -1024)  # `[B, n_heads, 1, key_len]`
+        e = e.masked_fill_(self.mask == 0, -1024)  # `[n_heads * B, 1, key_len]`
         aw = F.softmax(e, dim=1)
 
         # attention dropout
         aw = self.attn_dropout(aw)
 
         # Compute context vector (weighted sum of encoder outputs)
-        cv = torch.matmul(aw, self.value)  # `[B, n_heads, 1, attn_dim]`
-        cv = cv.transpose(2, 1).view(bs, 1, self.n_heads * self.attn_dim)
+        cv = torch.bmm(aw, self.value)  # `[n_heads * B, 1, attn_dim]`
+        cv = cv.view(self.n_heads, bs, 1, self.attn_dim).permute(
+            1, 2, 0, 3).contiguous().view(bs, 1, self.n_heads * self.attn_dim)
         cv = self.w_out(cv)
 
         return cv, aw
@@ -170,13 +178,13 @@ class TransformerMultiheadAttentionMechanism(nn.Module):
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1)
 
         # 2) Apply attention on all the projected vectors in batch.
-        e = torch.matmul(query, key) * self.scale
+        e = torch.bmm(query, key) * self.scale
         if mask is not None:
             mask = mask.unsqueeze(1)  # Same mask applied to all heads.
             e = e.masked_fill(mask == 0, -10e9)  # this is ok
             # e = e.masked_fill(mask == 0, -1024)
         aw = self.dropout(F.softmax(e, dim=-1))
-        cv = torch.matmul(aw, value)
+        cv = torch.bmm(aw, value)
 
         # 3) "Concat" using a view and apply a final linear.
         cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads * self.d_k)

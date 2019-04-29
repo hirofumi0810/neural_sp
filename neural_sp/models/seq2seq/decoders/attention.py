@@ -148,13 +148,13 @@ class AttentionMechanism(nn.Module):
             e = self.v(torch.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat))).squeeze(2)
 
         elif self.attn_type == 'dot':
-            e = torch.matmul(self.key, self.w_query(query).transpose(-1, -2)).squeeze(2)
+            e = torch.bmm(self.key, self.w_query(query).transpose(-1, -2)).squeeze(2)
 
         elif self.attn_type == 'luong_dot':
-            e = torch.matmul(self.key, query.transpose(-1, -2)).squeeze(2)
+            e = torch.bmm(self.key, query.transpose(-1, -2)).squeeze(2)
 
         elif self.attn_type == 'luong_general':
-            e = torch.matmul(self.key, query.transpose(-1, -2)).squeeze(2)
+            e = torch.bmm(self.key, query.transpose(-1, -2)).squeeze(2)
 
         elif self.attn_type == 'luong_concat':
             query = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
@@ -171,6 +171,6 @@ class AttentionMechanism(nn.Module):
             else:
                 aw = F.softmax(e * self.sharpening_factor, dim=-1)
             aw = self.attn_dropout(aw)
-            cv = torch.matmul(aw.unsqueeze(1), value)
+            cv = torch.bmm(aw.unsqueeze(1), value)
 
         return cv, aw
