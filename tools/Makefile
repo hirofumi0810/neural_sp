@@ -90,6 +90,6 @@ sentencepiece.done:
 nkf.done:
 	if [ -e $(TOOL)/nkf ]; then rm -rf $(TOOL)/nkf; fi
 	mkdir -p nkf
-	cd nkf; wget https://ja.osdn.net/dl/nkf/nkf-2.1.4.tar.gz
-	cd nkf; tar zxvf nkf-2.1.4.tar.gz; cd nkf-2.1.4; $(MAKE) prefix=.
+	cd $(TOOL)/nkf; wget https://ja.osdn.net/dl/nkf/nkf-2.1.4.tar.gz -P $(TOOL)/nkf
+	cd $(TOOL)/nkf; tar zxvf nkf-2.1.4.tar.gz; cd nkf-2.1.4; $(MAKE) prefix=.
 	touch nkf.done
