@@ -26,6 +26,7 @@ from neural_sp.models.seq2seq.decoders.rnn import RNNDecoder
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
+from neural_sp.models.seq2seq.encoders.sequence_summary import SequenceSummaryNetwork
 from neural_sp.models.seq2seq.encoders.splicing import splice
 from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
 from neural_sp.models.torch_utils import np2tensor
@@ -94,13 +95,11 @@ class Seq2seq(ModelBase):
         self.ssn = None
         if args.sequence_summary_network:
             assert args.input_type == 'speech'
-            self.ssn = nn.Sequential(
-                LinearND(args.input_dim, 512, bias=False),
-                nn.Tanh(),
-                LinearND(512, 100, bias=False),
-                nn.Tanh(),
-            )
-            self.feat_proj = LinearND(100, args.input_dim, bias=False)
+            self.ssn = SequenceSummaryNetwork(args.input_dim,
+                                              n_units=512,
+                                              n_layers=3,
+                                              bottleneck_dim=100,
+                                              dropout=0)
 
         # Encoder
         if args.enc_type == 'transformer':
@@ -137,8 +136,8 @@ class Seq2seq(ModelBase):
                 n_layers_sub2=args.enc_n_layers_sub2,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
-                subsample=list(map(int, args.subsample.split('_')))
-                + [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
+                subsample=list(map(int, args.subsample.split('_'))) +
+                [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
                 subsample_type=args.subsample_type,
                 n_stacks=args.n_stacks,
                 n_splices=args.n_splices,
@@ -537,15 +536,7 @@ class Seq2seq(ModelBase):
 
             # sequence summary network
             if self.ssn is not None:
-                bs, time = xs.size()[:2]
-                aw_ave = xs.new_zeros((bs, 1, time))
-                for b in range(bs):
-                    aw_ave[b, :, :xlens[b]] = 1 / xlens[b]
-                s = self.ssn(xs.clone())  # `[B, T, 100]`
-
-                # time average
-                s = torch.matmul(aw_ave, s)  # `[B, 1, 100]`
-                xs += torch.tanh(self.feat_proj(s))
+                xs += self.ssn(xs, xlens)
 
             # encoder
             enc_outs = self.enc(xs, xlens, task.split('.')[0])
