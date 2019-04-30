@@ -41,10 +41,10 @@ class SequenceSummaryNetwork(nn.Module):
 
         self.ssn = nn.ModuleList()
         self.ssn += [LinearND(input_dim, n_units, bias=False, dropout=dropout)]
-        for l in range(1, n_layers, 1):
+        for l in range(1, n_layers - 1, 1):
             self.ssn += [LinearND(n_units, bottleneck_dim if l == n_layers - 2 else n_units,
                                   bias=False, dropout=dropout)]
-        self.feat_proj = LinearND(bottleneck_dim, input_dim, bias=False, dropout=dropout)
+        self.ssn += [LinearND(bottleneck_dim, input_dim, bias=False, dropout=dropout)]
 
     def forward(self, xs, xlens):
         """Forward computation.
@@ -68,6 +68,6 @@ class SequenceSummaryNetwork(nn.Module):
 
         # time average
         s = torch.matmul(aw_ave, s)  # `[B, 1, bottleneck_dim]`
-        xs += torch.tanh(self.feat_proj(s))
+        xs += torch.tanh(self.ssn[self.n_layers - 1](s))
 
         return xs
