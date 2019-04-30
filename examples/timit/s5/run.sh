@@ -17,6 +17,7 @@ gpu=
 n_splices=1
 n_stacks=1
 n_skips=1
+sequence_summary_network=false
 conv_in_channel=3
 conv_channels=
 conv_kernel_sizes=
@@ -197,6 +198,7 @@ if [ ${stage} -le 4 ]; then
         --n_splices ${n_splices} \
         --n_stacks ${n_stacks} \
         --n_skips ${n_skips} \
+        --sequence_summary_network ${sequence_summary_network} \
         --conv_in_channel ${conv_in_channel} \
         --conv_channels ${conv_channels} \
         --conv_kernel_sizes ${conv_kernel_sizes} \
