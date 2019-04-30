@@ -99,25 +99,22 @@ class CNNBlock(nn.Module):
         if self.dropout1 is not None:
             xs = self.dropout1(xs)
         xs = F.relu(xs)
+        xlens = update_lens(xlens, self.conv1, dim=0)
 
-        self.conv2(xs)
+        xs = self.conv2(xs)
         if self.batch_norm1 is not None:
             xs = self.batch_norm1(xs)
         if self.dropout2 is not None:
             xs = self.dropout2(xs)
         residual = xs
-
         if self.residual:
             xs += residual
         xs = F.relu(xs)
+        xlens = update_lens(xlens, self.conv2, dim=0)
 
         if self.pool is not None:
             xs = self.pool(xs)
-
-        # Update xlens
-        xlens = update_lens(xlens, self.conv1, dim=0)
-        xlens = update_lens(xlens, self.conv2, dim=0)
-        xlens = update_lens(xlens, self.pool, dim=0)
+            xlens = update_lens(xlens, self.pool, dim=0)
 
         return xs, xlens
 
