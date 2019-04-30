@@ -24,8 +24,14 @@ conv_kernel_sizes=
 conv_strides=
 conv_poolings=
 conv_batch_norm=false
+conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_1_1_1_1"
+# VGG
+# conv_channels="64_128"
+# conv_kernel_sizes="(3,3)_(3,3)"
+# conv_strides="(1,1)_(1,1)"
+# conv_poolings="(2,2)_(2,2)"
 enc_type=bgru
 enc_n_units=256
 enc_n_projs=0
@@ -43,6 +49,7 @@ dec_n_layers=1
 dec_loop_type=normal
 dec_residual=false
 input_feeding=false
+dec_bottleneck_dim=256
 emb_dim=256
 tie_embedding=false
 ctc_fc_list=""
@@ -205,6 +212,7 @@ if [ ${stage} -le 4 ]; then
         --conv_strides ${conv_strides} \
         --conv_poolings ${conv_poolings} \
         --conv_batch_norm ${conv_batch_norm} \
+        --conv_residual ${conv_residual} \
         --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --enc_type ${enc_type} \
         --enc_n_units ${enc_n_units} \
@@ -224,6 +232,7 @@ if [ ${stage} -le 4 ]; then
         --dec_loop_type ${dec_loop_type} \
         --dec_residual ${dec_residual} \
         --input_feeding ${input_feeding} \
+        --dec_bottleneck_dim ${dec_bottleneck_dim} \
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \
         --ctc_fc_list ${ctc_fc_list} \

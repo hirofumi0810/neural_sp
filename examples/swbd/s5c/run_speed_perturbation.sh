@@ -29,13 +29,14 @@ conv_kernel_sizes=
 conv_strides=
 conv_poolings=
 conv_batch_norm=false
+conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_2_2_2_1"
 # VGG
-# conv_channels="64_64_128_128"
-# conv_kernel_sizes="(3,3)_(3,3)_(3,3)_(3,3)"
-# conv_strides="(1,1)_(1,1)_(1,1)_(1,1)"
-# conv_poolings="(1,1)_(2,2)_(1,1)_(2,2)"
+# conv_channels="64_128"
+# conv_kernel_sizes="(3,3)_(3,3)"
+# conv_strides="(1,1)_(1,1)"
+# conv_poolings="(2,2)_(2,2)"
 # subsample="1_1_1_1_1"
 enc_type=blstm
 enc_n_units=512
@@ -320,6 +321,7 @@ if [ ${stage} -le 4 ]; then
         --conv_strides ${conv_strides} \
         --conv_poolings ${conv_poolings} \
         --conv_batch_norm ${conv_batch_norm} \
+        --conv_residual ${conv_residual} \
         --conv_bottleneck_dim ${conv_bottleneck_dim} \
         --enc_type ${enc_type} \
         --enc_n_units ${enc_n_units} \
