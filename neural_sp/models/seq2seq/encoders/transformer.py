@@ -40,11 +40,12 @@ class TransformerEncoder(nn.Module):
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channles in the CNN layers
-        conv_kernel_sizes (list): size of kernels in the CNN layers
-        conv_strides (list): number of strides in the CNN layers
-        conv_poolings (list): size of poolings in the CNN layers
-        conv_batch_norm (bool): apply batch normalization only in the CNN layers
+        conv_channels (int): number of channles in the CNN blocks
+        conv_kernel_sizes (list): size of kernels in the CNN blocks
+        conv_strides (list): number of strides in the CNN blocks
+        conv_poolings (list): size of poolings in the CNN blocks
+        conv_batch_norm (bool): apply batch normalization only in the CNN blocks
+        conv_residual (bool): add residual connection between each CNN block
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
 
     """
@@ -69,6 +70,7 @@ class TransformerEncoder(nn.Module):
                  conv_strides=[],
                  conv_poolings=[],
                  conv_batch_norm=False,
+                 conv_residual=False,
                  conv_bottleneck_dim=0):
 
         super(TransformerEncoder, self).__init__()
@@ -101,6 +103,7 @@ class TransformerEncoder(nn.Module):
                                    poolings=poolings,
                                    dropout=dropout,
                                    batch_norm=conv_batch_norm,
+                                   residual=conv_residual,
                                    bottleneck_dim=d_model)
             self._output_dim = self.conv.output_dim
         else:
@@ -143,7 +146,7 @@ class TransformerEncoder(nn.Module):
                  'ys_sub1': {'xs': None, 'xlens': None},
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
-        # Path through CNN layers before RNN layers
+        # Path through CNN blocks before RNN layers
         if self.conv is None:
             # Transform to d_model dimension
             xs = self.embed_in(xs) * (self.d_model ** 0.5)

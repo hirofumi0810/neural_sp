@@ -81,17 +81,19 @@ def parse():
                         help='Use sequence summary network')
     # topology (encoder)
     parser.add_argument('--conv_in_channel', type=int, default=1, nargs='?',
-                        help='')
+                        help='input dimension of the first CNN block')
     parser.add_argument('--conv_channels', type=str, default="", nargs='?',
-                        help='delimited list input')
+                        help='delimited list of channles in each CNN block')
     parser.add_argument('--conv_kernel_sizes', type=str, default="", nargs='?',
-                        help='delimited list input')
+                        help='delimited list of kernel sizes in each CNN block')
     parser.add_argument('--conv_strides', type=str, default="", nargs='?',
-                        help='delimited list input')
+                        help='delimited list of strides in each CNN block')
     parser.add_argument('--conv_poolings', type=str, default="", nargs='?',
-                        help='delimited list input')
+                        help='delimited list of poolings in each CNN block')
     parser.add_argument('--conv_batch_norm', type=strtobool, default=False, nargs='?',
-                        help='')
+                        help='apply batch normalization in each CNN block')
+    parser.add_argument('--conv_residual', type=strtobool, default=False, nargs='?',
+                        help='add residual connection between each CNN block')
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',

@@ -124,6 +124,7 @@ class Seq2seq(ModelBase):
                 conv_strides=args.conv_strides,
                 conv_poolings=args.conv_poolings,
                 conv_batch_norm=args.conv_batch_norm,
+                conv_residual=args.conv_residual,
                 conv_bottleneck_dim=args.conv_bottleneck_dim)
         else:
             self.enc = RNNEncoder(
@@ -147,6 +148,7 @@ class Seq2seq(ModelBase):
                 conv_strides=args.conv_strides,
                 conv_poolings=args.conv_poolings,
                 conv_batch_norm=args.conv_batch_norm,
+                conv_residual=args.conv_residual,
                 conv_bottleneck_dim=args.conv_bottleneck_dim,
                 residual=args.enc_residual,
                 nin=0,

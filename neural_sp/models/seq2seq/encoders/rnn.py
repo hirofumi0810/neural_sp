@@ -39,11 +39,12 @@ class RNNEncoder(nn.Module):
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channles in the CNN layers
-        conv_kernel_sizes (list): size of kernels in the CNN layers
-        conv_strides (list): number of strides in the CNN layers
-        conv_poolings (list): size of poolings in the CNN layers
-        conv_batch_norm (bool): apply batch normalization only in the CNN layers
+        conv_channels (int): number of channles in the CNN blocks
+        conv_kernel_sizes (list): size of kernels in the CNN blocks
+        conv_strides (list): number of strides in the CNN blocks
+        conv_poolings (list): size of poolings in the CNN blocks
+        conv_batch_norm (bool): apply batch normalization only in the CNN blocks
+        conv_residual (bool): add residual connection between each CNN block
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and RNN layers
         residual (bool): add residual connections between the consecutive layers
         n_layers_sub1 (int): number of layers in the 1st auxiliary task
@@ -73,6 +74,7 @@ class RNNEncoder(nn.Module):
                  conv_strides=[],
                  conv_poolings=[],
                  conv_batch_norm=False,
+                 conv_residual=False,
                  conv_bottleneck_dim=0,
                  residual=False,
                  n_layers_sub1=0,
@@ -153,8 +155,9 @@ class RNNEncoder(nn.Module):
                                        kernel_sizes=kernel_sizes,
                                        strides=strides,
                                        poolings=poolings,
-                                       dropout=dropout,
+                                       dropout=0,
                                        batch_norm=conv_batch_norm,
+                                       residual=conv_residual,
                                        bottleneck_dim=conv_bottleneck_dim)
             self._output_dim = self.conv.output_dim
         else:
@@ -287,7 +290,7 @@ class RNNEncoder(nn.Module):
         # Dropout for inputs-hidden connection
         xs = self.dropout_in(xs)
 
-        # Path through CNN layers before RNN layers
+        # Path through CNN blocks before RNN layers
         if self.conv is not None:
             xs, xlens = self.conv(xs, xlens)
             if self.rnn_type in ['cnn', 'tds']:
