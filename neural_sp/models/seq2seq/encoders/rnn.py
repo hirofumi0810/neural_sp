@@ -167,7 +167,7 @@ class RNNEncoder(nn.Module):
         if rnn_type not in ['cnn', 'tds']:
             # Fast implementation without processes between each layer
             self.fast_impl = False
-            if np.prod(self.subsample) == 1 and self.n_projs == 0 and not residual and n_layers_sub1 == 0 and (not conv_batch_norm) and nin == 0:
+            if np.prod(self.subsample) == 1 and self.n_projs == 0 and not residual and n_layers_sub1 == 0 and nin == 0:
                 self.fast_impl = True
                 if 'lstm' in rnn_type:
                     rnn = nn.LSTM
@@ -287,6 +287,11 @@ class RNNEncoder(nn.Module):
                  'ys_sub1': {'xs': None, 'xlens': None},
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
+        # Sort by lenghts in the descending order for pack_padded_sequence
+        xlens, perm_ids = torch.LongTensor(xlens).sort(0, descending=True)
+        xs = xs[perm_ids]
+        _, perm_ids_unsort = perm_ids.sort()
+
         # Dropout for inputs-hidden connection
         xs = self.dropout_in(xs)
 
@@ -297,11 +302,6 @@ class RNNEncoder(nn.Module):
                 eouts['ys']['xs'] = xs
                 eouts['ys']['xlens'] = xlens
                 return eouts
-
-        # Sort by lenghts in the descending order for pack_padded_sequence
-        xlens, perm_ids = torch.LongTensor(xlens).sort(0, descending=True)
-        xs = xs[perm_ids]
-        _, perm_ids_unsort = perm_ids.sort()
 
         if self.fast_impl:
             self.rnn.flatten_parameters()

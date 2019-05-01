@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -229,4 +230,5 @@ def update_lens(xlens, layer, dim=0):
         def update(xlen): return int(np.floor(
             (xlen + 2 * layer.padding[dim] - layer.kernel_size[dim]) / layer.stride[dim] + 1))
     xlens = [update(xlen) for xlen in xlens]
+    xlens = torch.from_numpy(np.array(xlens, dtype=np.int64))
     return xlens
