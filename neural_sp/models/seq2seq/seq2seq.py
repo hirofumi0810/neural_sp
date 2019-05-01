@@ -13,7 +13,6 @@ from __future__ import print_function
 import logging
 import numpy as np
 import torch
-import torch.nn as nn
 
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
@@ -606,7 +605,7 @@ class Seq2seq(ModelBase):
             ensemble_models (list): list of Seq2seq classes
         Returns:
             best_hyps_id (list): A list of length `[B]`, which contains arrays of size `[L]`
-            aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
+            aws (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
 
         """
         self.eval()

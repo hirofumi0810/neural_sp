@@ -112,16 +112,16 @@ class AttentionMechanism(nn.Module):
             key_lens (list): A list of length `[B]`
             value (FloatTensor): `[B, key_len, value_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
-            aw (FloatTensor): `[B, key_len]`
+            aw (FloatTensor): `[B, key_len, 1 (n_heads)]`
         Returns:
             cv (FloatTensor): `[B, 1, value_dim]`
-            aw (FloatTensor): `[B, key_len]`
+            aw (FloatTensor): `[B, key_len, 1 (n_heads)]`
 
         """
         bs, key_len = key.size()[:2]
 
         if aw is None:
-            aw = key.new_zeros(bs, key_len)
+            aw = key.new_zeros(bs, key_len, 1)
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None:
@@ -143,7 +143,7 @@ class AttentionMechanism(nn.Module):
 
         elif self.attn_type == 'location':
             query = query.expand_as(torch.zeros((bs, key_len, query.size(2))))
-            conv_feat = self.conv(aw.view(bs, 1, 1, key_len)).squeeze(2)  # `[B, conv_out_channels, key_len]`
+            conv_feat = self.conv(aw.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, conv_out_channels, key_len]`
             conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, key_len, conv_out_channels]`
             e = self.v(torch.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat))).squeeze(2)
 
@@ -173,4 +173,4 @@ class AttentionMechanism(nn.Module):
             aw = self.attn_dropout(aw)
             cv = torch.bmm(aw.unsqueeze(1), value)
 
-        return cv, aw
+        return cv, aw.unsqueeze(2)

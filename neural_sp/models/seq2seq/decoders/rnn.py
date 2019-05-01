@@ -770,7 +770,7 @@ class RNNDecoder(nn.Module):
             oracle (bool):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-            aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
+            aw (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
 
         """
         bs, max_xlen, enc_n_units = eouts.size()
@@ -823,10 +823,7 @@ class RNNDecoder(nn.Module):
 
             # Pick up 1-best
             best_hyps_tmp += [y]
-            if self.score.n_heads > 1:
-                aws_tmp += [aw[0]]
-            else:
-                aws_tmp += [aw]
+            aws_tmp += [aw]
 
             # Count lengths of hypotheses
             for b in range(bs):
@@ -1194,7 +1191,8 @@ class RNNDecoder(nn.Module):
                     cp = 0.0
                     aw_mat = None
                     if cp_weight > 0:
-                        aw_mat = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=-1)  # `[B, T, len(hyp)]`
+                        aw_mat = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=-1)  # `[B, T, len(hyp), n_heads]`
+                        aw_mat = aw_mat[:, :, :, 0]
                         if gnmt_decoding:
                             aw_mat = torch.log(aw_mat.sum(-1))
                             cp = torch.where(aw_mat < 0, aw_mat, aw_mat.new_zeros(aw_mat.size())).sum()
@@ -1326,17 +1324,11 @@ class RNNDecoder(nn.Module):
             if self.bwd:
                 # Reverse the order
                 nbest_hyps_idx += [[np.array(complete[n]['hyp_id'][1:][::-1]) for n in range(nbest)]]
-                if self.score.n_heads > 1:
-                    aws += [[complete[n]['aws'][0, 1:][::-1] for n in range(nbest)]]
-                else:
-                    aws += [[complete[n]['aws'][1:][::-1] for n in range(nbest)]]
+                aws += [[complete[n]['aws'][1:][::-1] for n in range(nbest)]]
                 scores += [[complete[n]['hist_score'][1:][::-1] for n in range(nbest)]]
             else:
                 nbest_hyps_idx += [[np.array(complete[n]['hyp_id'][1:]) for n in range(nbest)]]
-                if self.score.n_heads > 1:
-                    aws += [[complete[n]['aws'][0, 1:] for n in range(nbest)]]
-                else:
-                    aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
+                aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
                 scores += [[complete[n]['hist_score'][1:] for n in range(nbest)]]
 
             # Check <eos>

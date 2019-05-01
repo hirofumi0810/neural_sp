@@ -68,7 +68,7 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
     """Plot attention weights.
 
     Args:
-        aw (np.ndarray): A tensor of size `[L, T]`
+        aw (np.ndarray): A tensor of size `[L, T, n_heads]
         tokens (list):
         spectrogram (np.ndarray): A tensor of size `[T, feature_dim]`
         ref (str):
@@ -79,23 +79,26 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
     plt.clf()
     plt.figure(figsize=figsize)
 
+    n_heads = aw.shape[2]
+
     if spectrogram is None:
-        sns.heatmap(aw, cmap='viridis',
+        sns.heatmap(aw[:, :, 0], cmap='viridis',
                     xticklabels=False,
                     yticklabels=tokens if len(tokens) > 0 else False)
         # cbar_kws={"orientation": "horizontal"}
         plt.ylabel(u'Output labels (←)', fontsize=8)
         plt.yticks(rotation=0)
     else:
-        plt.subplot(211)
-        sns.heatmap(aw, cmap='viridis',
-                    xticklabels=False,
-                    yticklabels=tokens if len(tokens) > 0 else False)
-        plt.ylabel(u'Output labels (←)', fontsize=12)
-        plt.yticks(rotation=0)
+        for head in range(1, n_heads + 1, 1):
+            plt.subplot(n_heads + 1, 1, head)
+            sns.heatmap(aw[:, :, head - 1], cmap='viridis',
+                        xticklabels=False,
+                        yticklabels=tokens if len(tokens) > 0 else False)
+            plt.ylabel(u'Output labels (←)', fontsize=12)
+            plt.yticks(rotation=0)
 
         # Plot spectrogram
-        plt.subplot(212)
+        plt.subplot(n_heads + 1, 1, n_heads + 1)
         plt.imshow(spectrogram.T, cmap='viridis', aspect='auto', origin='lower')
         plt.xlabel(u'Time [msec]', fontsize=12)
         plt.ylabel(u'Frequency bin', fontsize=12)

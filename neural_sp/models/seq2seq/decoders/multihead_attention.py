@@ -88,11 +88,11 @@ class MultiheadAttentionMechanism(nn.Module):
         if self.key is None:
             key = self.w_key(key).view(bs, key_len, self.n_heads, self.head_dim)
             self.key = key.permute(0, 2, 3, 1).contiguous().view(bs * self.n_heads, self.head_dim, key_len)
-            # `[B * n_heads, key_len, attn_dim]`
+            # `[B * n_heads, key_len, head_dim]`
 
             value = self.w_value(value).view(bs, key_len, self.n_heads, self.head_dim)
             self.value = value.permute(0, 2, 1, 3).contiguous().view(bs * self.n_heads, key_len, self.head_dim)
-            # `[B * n_heads, key_len, attn_dim]`
+            # `[B * n_heads, key_len, head_dim]`
 
         # Mask attention distribution
         if self.mask is None:
@@ -106,7 +106,8 @@ class MultiheadAttentionMechanism(nn.Module):
             if diagonal:
                 assert query_len == key_len
                 subsequent_mask = torch.tril(key.new_ones((query_len, key_len)).byte(), diagonal=0)
-                subsequent_mask = subsequent_mask.unsqueeze(0).expand(bs * self.n_heads, -1, -1)  # `[B, query_len, key_len]`
+                subsequent_mask = subsequent_mask.unsqueeze(0).expand(
+                    bs * self.n_heads, -1, -1)  # `[B, query_len, key_len]`
                 self.mask = self.mask & subsequent_mask
 
         query = self.w_query(query).view(bs, query_len, self.n_heads, self.head_dim)
@@ -121,9 +122,13 @@ class MultiheadAttentionMechanism(nn.Module):
         aw = self.attn_dropout(aw)
 
         # Compute context vector (weighted sum of encoder outputs)
-        cv = torch.bmm(aw, self.value)  # `[B * n_heads, query_len, attn_dim]`
+        cv = torch.bmm(aw, self.value)  # `[B * n_heads, query_len, head_dim]`
         cv = cv.view(bs, self.n_heads, query_len, self.head_dim).permute(
             0, 2, 1, 3).contiguous().view(bs, query_len, self.n_heads * self.head_dim)
         cv = self.w_out(cv)
+
+        aw = aw.view(bs, self.n_heads, query_len, key_len)
+        aw = aw.permute(0, 2, 3, 1)[:, 0, :, :]
+        # TODO(hiroufmi): fix for Transformer
 
         return cv, aw
