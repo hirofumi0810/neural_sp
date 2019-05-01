@@ -15,7 +15,7 @@ import os
 import shutil
 
 from neural_sp.bin.args_asr import parse
-from neural_sp.bin.asr.plot_utils import plot_ctc_probs
+from neural_sp.bin.plot_utils import plot_ctc_probs
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import load_checkpoint
