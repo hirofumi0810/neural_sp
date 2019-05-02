@@ -16,8 +16,8 @@ import torch
 
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
-from neural_sp.models.model_utils import Embedding
-from neural_sp.models.model_utils import LinearND
+from neural_sp.models.modules.embedding import Embedding
+from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.lm.brnnlm import BRNNLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention

@@ -17,8 +17,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.base import ModelBase
-from neural_sp.models.model_utils import Embedding
-from neural_sp.models.model_utils import LinearND
+from neural_sp.models.modules.embedding import Embedding
+from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
@@ -123,15 +123,15 @@ class RNNLM(ModelBase):
                 self.output.fc.weight = self.embed.embed.weight
 
         # Initialize weight matrices
-        self.init_weights(args.param_init, dist=args.param_init_dist)
+        self.reset_parameters(args.param_init, dist=args.param_init_dist)
 
         # Initialize bias vectors with zero
-        self.init_weights(0, dist='constant', keys=['bias'])
+        self.reset_parameters(0, dist='constant', keys=['bias'])
 
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
-            self.init_weights(args.param_init, dist='orthogonal',
-                              keys=[args.lm_type, 'weight'])
+            self.reset_parameters(args.param_init, dist='orthogonal',
+                                  keys=[args.lm_type, 'weight'])
 
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()

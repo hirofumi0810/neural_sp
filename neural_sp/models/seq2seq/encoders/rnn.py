@@ -17,7 +17,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.utils.rnn import pad_packed_sequence
 
-from neural_sp.models.model_utils import LinearND
+from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
 from neural_sp.models.seq2seq.encoders.time_depth_separable_conv import TDSEncoder
 
@@ -49,8 +49,7 @@ class RNNEncoder(nn.Module):
         residual (bool): add residual connections between the consecutive layers
         n_layers_sub1 (int): number of layers in the 1st auxiliary task
         n_layers_sub2 (int): number of layers in the 2nd auxiliary task
-        nin (int): if larger than 0, insert 1*1 conv (filter size: nin)
-            and ReLU activation between each LSTM layer
+        nin (bool): insert 1*1 conv + batch normalization + ReLU
         layer_norm (bool): layer normalization
         task_specific_layer (bool):
 
@@ -79,7 +78,7 @@ class RNNEncoder(nn.Module):
                  residual=False,
                  n_layers_sub1=0,
                  n_layers_sub2=0,
-                 nin=0,
+                 nin=False,
                  layer_norm=False,
                  task_specific_layer=False):
 
@@ -115,7 +114,6 @@ class RNNEncoder(nn.Module):
             assert np.prod(subsample) == 1
 
         # Setting for the NiN (Network in Network)
-        self.conv_batch_norm = conv_batch_norm
         self.nin = nin
 
         # Dropout for input-hidden connection
@@ -167,7 +165,7 @@ class RNNEncoder(nn.Module):
         if rnn_type not in ['cnn', 'tds']:
             # Fast implementation without processes between each layer
             self.fast_impl = False
-            if np.prod(self.subsample) == 1 and self.n_projs == 0 and not residual and n_layers_sub1 == 0 and nin == 0:
+            if np.prod(self.subsample) == 1 and self.n_projs == 0 and not residual and n_layers_sub1 == 0 and not nin:
                 self.fast_impl = True
                 if 'lstm' in rnn_type:
                     rnn = nn.LSTM
@@ -199,12 +197,19 @@ class RNNEncoder(nn.Module):
                         else:
                             self.max_pool += [None]
                 if subsample_type == 'concat' and np.prod(self.subsample) > 1:
-                    self.concat = nn.ModuleList()
+                    self.concat_proj = nn.ModuleList()
+                    self.concat_bn = nn.ModuleList()
                     for l in range(n_layers):
                         if self.subsample[l] > 1:
-                            self.concat += [LinearND(n_units * self.n_dirs * self.subsample[l], n_units * self.n_dirs)]
+                            self.concat_proj += [LinearND(n_units * self.n_dirs *
+                                                          self.subsample[l], n_units * self.n_dirs)]
+                            self.concat_bn += [nn.BatchNorm2d(n_units * self.n_dirs)]
                         else:
-                            self.concat += [None]
+                            self.concat_proj += [None]
+                            self.concat_bn += [None]
+                if nin:
+                    self.nin_conv = nn.ModuleList()
+                    self.nin_bn = nn.ModuleList()
 
                 for l in range(n_layers):
                     if 'lstm' in rnn_type:
@@ -243,24 +248,17 @@ class RNNEncoder(nn.Module):
                                                   bidirectional=self.bidirectional)
                         self.dropout_sub2_tsl = nn.Dropout(p=dropout)
 
-                    # Network in network (1*1 conv)
-                    if nin > 0:
-                        setattr(self, 'nin_l' + str(l),
-                                nn.Conv1d(in_channels=self._output_dim,
-                                          out_channels=nin,
-                                          kernel_size=1,
-                                          stride=1,
-                                          padding=1,
-                                          bias=not conv_batch_norm))
-
-                        # Batch normalization
-                        if conv_batch_norm:
-                            if nin:
-                                setattr(self, 'bn_0_l' + str(l), nn.BatchNorm1d(self._output_dim))
-                                setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(nin))
-                            else:
-                                setattr(self, 'bn_l' + str(l), nn.BatchNorm1d(self._output_dim))
-                        # NOTE* BN in RNN models is applied only after NiN
+                    # Network in network (1*1 conv + batch normalization + ReLU)
+                    # NOTE: exclude the last layer
+                    if nin and l != n_layers - 1:
+                        self.nin_conv += [nn.Conv2d(in_channels=self._output_dim,
+                                                    out_channels=self._output_dim,
+                                                    kernel_size=1,
+                                                    stride=1,
+                                                    padding=0)]
+                        self.nin_bn += [nn.BatchNorm2d(self._output_dim)]
+                        if n_layers_sub1 > 0 or n_layers_sub2 > 0:
+                            assert task_specific_layer
 
     @property
     def output_dim(self):
@@ -359,8 +357,7 @@ class RNNEncoder(nn.Module):
 
                 # Projection layer
                 if self.n_projs > 0:
-                    # xs = torch.tanh(self.proj[l](xs))
-                    xs = self.proj[l](xs)
+                    xs = torch.tanh(self.proj[l](xs))
 
                 # NOTE: Exclude the last layer
                 if l != len(self.rnn) - 1:
@@ -376,33 +373,34 @@ class RNNEncoder(nn.Module):
                                   for t in range(xs.size(0)) if (t + 1) % self.subsample[l] == 0]
                             # NOTE: Exclude the last frame if the length of xs is odd
                             xs = torch.cat(xs, dim=0).transpose(1, 0)
-                            xs = torch.tanh(self.concat[l](xs))
+                            # xs = torch.tanh(self.concat[l](xs))
+
+                            # Projection + batch normalization, ReLU
+                            xs = self.concat_proj[l](xs)
+                            xs = xs.contiguous().transpose(2, 1).unsqueeze(3)  # `[B, n_unis (*2), T, 1]`
+                            # NOTE: consider feature dimension as input channel
+                            xs = self.nin_bn[l](xs)
+                            xs = F.relu(xs)  # `[B, n_unis (*2), T, 1]`
+                            xs = xs.transpose(2, 1).squeeze(3)  # `[B, T, n_unis (*2)]`
+
                         elif self.subsample_type == 'max_pool':
                             xs = xs.transpose(1, 0).contiguous()
                             xs = [torch.max(xs[t - self.subsample[l] + 1:t + 1], dim=0)[0].unsqueeze(0)
                                   for t in range(xs.size(0)) if (t + 1) % self.subsample[l] == 0]
                             # NOTE: Exclude the last frame if the length of xs is odd
                             xs = torch.cat(xs, dim=0).transpose(1, 0)
-                        elif self.subsample_type == 'conv1d':
-                            raise NotImplementedError
 
                         # Update xlens
                         xlens //= self.subsample[l]
 
-                    # NiN
-                    if self.nin > 0:
-                        raise NotImplementedError
-
-                        # Batch normalization befor NiN
-                        if self.conv_batch_norm:
-                            size = list(xs.size())
-                            xs = to2d(xs, size)
-                            xs = getattr(self, 'bn_0_l' + str(l))(xs)
-                            xs = F.relu(xs)
-                            xs = to3d(xs, size)
-                            # NOTE: mean and var are computed along all timesteps in the mini-batch
-
-                        xs = getattr(self, 'nin_l' + str(l))(xs)
+                    # NiN (1*1 conv + batch normalization + ReLU)
+                    if self.nin:
+                        xs = xs.contiguous().transpose(2, 1).unsqueeze(3)  # `[B, n_unis (*2), T, 1]`
+                        # NOTE: consider feature dimension as input channel
+                        xs = self.nin_conv[l](xs)
+                        xs = self.nin_bn[l](xs)
+                        xs = F.relu(xs)  # `[B, n_unis (*2), T, 1]`
+                        xs = xs.transpose(2, 1).squeeze(3)  # `[B, T, n_unis (*2)]`
 
                     # Residual connection
                     if self.residual and residual is not None:

@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.model_utils import LinearND
+from neural_sp.models.modules.linear import LinearND
 
 
 class AttentionMechanism(nn.Module):

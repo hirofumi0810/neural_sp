@@ -12,10 +12,10 @@ from __future__ import print_function
 
 import torch.nn as nn
 
-from neural_sp.models.model_utils import LinearND
-from neural_sp.models.model_utils import SublayerConnection
-from neural_sp.models.model_utils import PositionwiseFeedForward
-from neural_sp.models.model_utils import PositionalEncoding
+from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.transformer import SublayerConnection
+from neural_sp.models.modules.transformer import PositionwiseFeedForward
+from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
 from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
 

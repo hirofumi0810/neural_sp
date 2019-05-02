@@ -1,92 +1,19 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright 2018 Kyoto University (Hirofumi Inaguma)
+# Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Utilities for layer definition."""
+"""Utilities for Transformer."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import math
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-class LinearND(nn.Module):
-
-    def __init__(self, in_size, out_size, bias=True, dropout=0):
-        """Linear layer with dropout.
-
-        A torch.nn.Linear layer modified to accept ND arrays.
-            The function treats the last dimension of the input
-            as the hidden dimension.
-        Args:
-            in_size (int):
-            out_size (int):
-            bias (bool): if False, remove a bias term
-            dropout (float):
-
-        """
-        super(LinearND, self).__init__()
-
-        self.fc = nn.Linear(in_size, out_size, bias=bias)
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, xs):
-        size = list(xs.size())
-        xs = xs.contiguous().view((int(np.prod(size[:-1])), int(size[-1])))
-        xs = self.dropout(self.fc(xs))
-        size[-1] = xs.size()[-1]
-        return xs.view(size)
-
-
-class Embedding(nn.Module):
-
-    def __init__(self, vocab, emb_dim, dropout=0, ignore_index=-1):
-        """Embedding layer.
-
-        Args:
-            vocab (int): the number of nodes in softmax layer
-            emb_dim (int): the dimension of the embedding in target spaces
-            dropout (float): the probability to dropout nodes of the embedding
-            ignore_index (int):
-
-        """
-        super(Embedding, self).__init__()
-
-        self.emb_dim = emb_dim
-        self.embed = nn.Embedding(vocab, emb_dim, padding_idx=ignore_index)
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, y):
-        return self.dropout(self.embed(y))  # `[B, L, emb_dim]`
-
-
-class LayerNorm(nn.Module):
-    """Layer normalizazion.
-
-    Args:
-        d_model (float):
-        eps (float):
-
-    """
-
-    def __init__(self, d_model, eps=1e-6):
-        super(LayerNorm, self).__init__()
-        self.gamma = nn.Parameter(torch.ones(d_model))
-        self.beta = nn.Parameter(torch.zeros(d_model))
-        self.eps = eps
-
-    def forward(self, x):
-        mean = x.mean(dim=-1, keepdim=True)
-        std = x.std(dim=-1, keepdim=True)
-        x_norm = (x - mean) / (std + self.eps)
-        return self.gamma * x_norm + self.beta
 
 
 class PositionalEncoding(nn.Module):

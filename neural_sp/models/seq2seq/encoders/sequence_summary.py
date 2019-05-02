@@ -13,7 +13,7 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 
-from neural_sp.models.model_utils import LinearND
+from neural_sp.models.modules.linear import LinearND
 
 
 class SequenceSummaryNetwork(nn.Module):

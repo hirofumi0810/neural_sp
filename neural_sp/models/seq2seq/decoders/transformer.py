@@ -25,11 +25,11 @@ except:
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import kldiv_lsm_ctc
-from neural_sp.models.model_utils import Embedding
-from neural_sp.models.model_utils import LinearND
-from neural_sp.models.model_utils import SublayerConnection
-from neural_sp.models.model_utils import PositionwiseFeedForward
-from neural_sp.models.model_utils import PositionalEncoding
+from neural_sp.models.modules.embedding import Embedding
+from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.transformer import SublayerConnection
+from neural_sp.models.modules.transformer import PositionwiseFeedForward
+from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import CTCPrefixScore
@@ -315,14 +315,20 @@ class TransformerDecoder(nn.Module):
 
         return loss, acc, ppl
 
-    def greedy(self, eouts, elens, max_len_ratio, exclude_eos=False):
-        """Greedy decoding in the inference stage.
+    def greedy(self, eouts, elens, max_len_ratio,
+               exclude_eos=False, idx2token=None, refs_id=None,
+               speakers=None, oracle=False):
+        """Greedy decoding in the inference stage (used only for evaluation during training).
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
             elens (list): A list of length `[B]`
             max_len_ratio (int): maximum sequence length of tokens
             exclude_eos (bool):
+            idx2token ():
+            refs_id (list):
+            speakers (list):
+            oracle (bool):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`

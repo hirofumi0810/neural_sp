@@ -17,8 +17,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.base import ModelBase
-from neural_sp.models.model_utils import Embedding
-from neural_sp.models.model_utils import LinearND
+from neural_sp.models.modules.embedding import Embedding
+from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list

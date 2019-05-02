@@ -26,8 +26,8 @@ except:
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import kldiv_lsm_ctc
-from neural_sp.models.model_utils import Embedding
-from neural_sp.models.model_utils import LinearND
+from neural_sp.models.modules.embedding import Embedding
+from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import CTCPrefixScore
