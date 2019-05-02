@@ -104,8 +104,7 @@ class ModelBase(nn.Module):
                         assert param_init > 0
                         nn.init.normal_(p, mean=0, std=1. / math.sqrt(n))
                     elif p.dim() == 4:
-                        # conv weight
-                        n = p.size(1)
+                        n = p.size(1)  # conv weight
                         for k in p.size()[2:]:
                             n *= k
                         assert param_init > 0
@@ -131,10 +130,11 @@ class ModelBase(nn.Module):
 
         """
         for n, p in self.named_parameters():
-            if 'lstm' in n and 'bias' in n:
-                n = p.size(0)
-                start, end = n // 4, n // 2
+            if p.dim() == 1 and 'bias_ih' in n:
+                dim = p.size(0)
+                start, end = dim // 4, dim // 2
                 p.data[start:end].fill_(1.)
+                logger.info('Initialize %s with 1 (bias in forget gate)' % (n))
 
     def set_cuda(self, deterministic=True, benchmark=False):
         """Set model to the GPU version.
