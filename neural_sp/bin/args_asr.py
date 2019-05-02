@@ -112,10 +112,12 @@ def parse():
                         help='number of encoder RNN layers in the 2nd auxiliary task')
     parser.add_argument('--enc_residual', type=strtobool, default=False, nargs='?',
                         help='residual connection between each encoder layer')
+    parser.add_argument('--enc_nin', type=strtobool, default=False, nargs='?',
+                        help='NiN (network in network) between each encoder layer')
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
-                        choices=['drop', 'concat', 'max_pool', 'conv1d'],
+                        choices=['drop', 'concat', 'max_pool'],
                         help='type of subsampling in the encoder')
     parser.add_argument('--freeze_encoder', type=strtobool, default=False,
                         help='freeze the encoder parameter')
@@ -277,10 +279,6 @@ def parse():
                         help='')
     parser.add_argument('--lmobj_weight', type=float, default=0.0, nargs='?',
                         help='LM objective weight for the main task')
-    parser.add_argument('--lmobj_weight_sub1', type=float, default=0.0, nargs='?',
-                        help='LM objective weight for the 1st auxiliary task')
-    parser.add_argument('--lmobj_weight_sub2', type=float, default=0.0, nargs='?',
-                        help='LM objective weight for the 2nd auxiliary task')
     parser.add_argument('--share_lm_softmax', type=strtobool, default=False, nargs='?',
                         help='')
     # transformer

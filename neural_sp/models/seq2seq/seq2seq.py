@@ -150,7 +150,7 @@ class Seq2seq(ModelBase):
                 conv_residual=args.conv_residual,
                 conv_bottleneck_dim=args.conv_bottleneck_dim,
                 residual=args.enc_residual,
-                nin=0,
+                nin=args.enc_nin,
                 # layer_norm=args.layer_norm,
                 task_specific_layer=args.task_specific_layer)
             # NOTE: pure CNN/TDS encoders are also included
@@ -312,13 +312,6 @@ class Seq2seq(ModelBase):
                         ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
                                      ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
                         input_feeding=args.input_feeding,
-                        backward=False,
-                        lm=None,
-                        lm_fusion_type='',
-                        contextualize='',
-                        lm_init=None,
-                        lmobj_weight=getattr(args, 'lmobj_weight_' + sub),
-                        share_lm_softmax=args.share_lm_softmax,
                         global_weight=getattr(self, sub + '_weight'),
                         mtl_per_batch=args.mtl_per_batch)
                 setattr(self, 'dec_fwd_' + sub, dec_sub)
