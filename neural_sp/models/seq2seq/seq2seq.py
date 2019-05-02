@@ -18,7 +18,6 @@ from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
-from neural_sp.models.lm.brnnlm import BRNNLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn import RNNDecoder
@@ -136,8 +135,8 @@ class Seq2seq(ModelBase):
                 n_layers_sub2=args.enc_n_layers_sub2,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
-                subsample=list(map(int, args.subsample.split('_'))) +
-                [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
+                subsample=list(map(int, args.subsample.split('_')))
+                + [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
                 subsample_type=args.subsample_type,
                 n_stacks=args.n_stacks,
                 n_splices=args.n_splices,
@@ -183,11 +182,8 @@ class Seq2seq(ModelBase):
         for dir in directions:
             # Cold fusion
             if args.lm_fusion and dir == 'fwd':
-                if 'bi' in args.lm_fusion_type:
-                    lm = BRNNLM(args.lm_conf)
-                else:
-                    lm = RNNLM(args.lm_conf)
-                    lm, _ = load_checkpoint(lm, args.lm_fusion)
+                lm = RNNLM(args.lm_conf)
+                lm, _ = load_checkpoint(lm, args.lm_fusion)
             else:
                 args.lm_conf = False
                 lm = None
@@ -326,19 +322,26 @@ class Seq2seq(ModelBase):
                                           dropout=args.dropout_emb,
                                           ignore_index=self.pad)
 
-        # Initialize weight matrices
+        # Initialize parameters in CNN layers
+        self.reset_parameters(args.param_init,
+                              #   dist='xavier_uniform',
+                              dist='kaiming_uniform',
+                              keys=['conv'], ignore_keys=['score'])
+
+        # Initialize parameters in the encoder
         if args.enc_type == 'transformer':
             self.reset_parameters(args.param_init, dist='xavier_uniform',
-                                  keys=['enc'], ignore_keys=['score', 'embed_in'])
+                                  keys=['enc'], ignore_keys=['embed_in'])
             self.reset_parameters(args.d_model**-0.5, dist='normal',
                                   keys=['embed_in'])
         else:
             self.reset_parameters(args.param_init, dist=args.param_init_dist,
                                   keys=['enc'], ignore_keys=['conv'])
 
+        # Initialize parameters in the decoder
         if args.dec_type == 'transformer':
             self.reset_parameters(args.param_init, dist='xavier_uniform',
-                                  keys=['dec'], ignore_keys=['score', 'embed'])
+                                  keys=['dec'], ignore_keys=['embed'])
             self.reset_parameters(args.d_model**-0.5, dist='normal',
                                   keys=['embed'])
         else:
@@ -348,20 +351,10 @@ class Seq2seq(ModelBase):
         # Initialize bias vectors with zero
         self.reset_parameters(0, dist='constant', keys=['bias'])
 
-        # Initialize CNN layers
-        self.reset_parameters(args.param_init,
-                              dist='xavier_uniform',
-                              #   dist='kaiming_uniform',
-                              keys=['conv'], ignore_keys=['score'])
-
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
-            if args.enc_type not in ['cnn', 'tds']:
-                self.reset_parameters(args.param_init, dist='orthogonal',
-                                      keys=[args.enc_type, 'weight'])
-            # TODO(hirofumi): in case of CNN + LSTM
             self.reset_parameters(args.param_init, dist='orthogonal',
-                                  keys=[args.dec_type, 'weight'])
+                                  keys=['rnn', 'weight'])
 
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()

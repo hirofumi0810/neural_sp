@@ -84,10 +84,10 @@ class ModelBase(nn.Module):
             if p.dim() == 1:
                 if dist == 'constant':
                     nn.init.constant_(p, val=param_init)
-                    logger.info('Initialize %s / %s / %.3f' % (n, dist, param_init))
+                    logger.info('Initialize %s with %.3f' % (n, param_init))
                 else:
                     nn.init.constant_(p, val=0)
-                    logger.info('Initialize %s / %s / %.3f' % (n, 'constant', 0))
+                    logger.info('Initialize %s with 0' % (n))
             else:
                 if dist == 'uniform':
                     nn.init.uniform_(p, a=-param_init, b=param_init)
@@ -101,16 +101,14 @@ class ModelBase(nn.Module):
                 elif dist == 'lecun':
                     if p.dim() == 2:
                         n = p.size(1)  # linear weight
-                        assert param_init > 0
                         nn.init.normal_(p, mean=0, std=1. / math.sqrt(n))
                     elif p.dim() == 4:
                         n = p.size(1)  # conv weight
                         for k in p.size()[2:]:
                             n *= k
-                        assert param_init > 0
                         nn.init.normal_(p, mean=0, std=1. / math.sqrt(n))
                     else:
-                        raise NotImplementedError(p.dim())
+                        raise ValueError(p.dim())
                 elif dist == 'xavier_uniform':
                     nn.init.xavier_uniform_(p, gain=1.0)
                 elif dist == 'xavier_normal':
@@ -121,7 +119,7 @@ class ModelBase(nn.Module):
                     nn.init.kaiming_normal_(p, mode='fan_in', nonlinearity='relu')
                 else:
                     raise NotImplementedError(dist)
-                logger.info('Initialize %s / %s / %.3f' % (n, dist, param_init))
+                logger.info('Initialize %s with %s / %.3f' % (n, dist, param_init))
 
     def init_forget_gate_bias_with_one(self):
         """Initialize bias in forget gate with 1. See detail in

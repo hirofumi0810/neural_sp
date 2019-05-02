@@ -224,7 +224,7 @@ class GatedConvLM(ModelBase):
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
                 self.output.fc.weight = self.embed.embed.weight
 
-        # Initialize weight matrices
+        # Initialize parameters
         self.reset_parameters(args.param_init, dist=args.param_init_dist)
 
         # Initialize bias vectors with zero

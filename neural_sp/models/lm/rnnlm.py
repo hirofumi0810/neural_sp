@@ -122,7 +122,7 @@ class RNNLM(ModelBase):
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
                 self.output.fc.weight = self.embed.embed.weight
 
-        # Initialize weight matrices
+        # Initialize parameters
         self.reset_parameters(args.param_init, dist=args.param_init_dist)
 
         # Initialize bias vectors with zero
@@ -131,7 +131,7 @@ class RNNLM(ModelBase):
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
             self.reset_parameters(args.param_init, dist='orthogonal',
-                                  keys=[args.lm_type, 'weight'])
+                                  keys=['rnn', 'weight'])
 
         # Initialize bias in forget gate with 1
         self.init_forget_gate_bias_with_one()
