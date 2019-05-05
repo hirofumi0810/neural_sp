@@ -51,7 +51,7 @@ class Controller(object):
         # for warmup
         if transformer:
             assert warmup_n_steps > 0
-            self.lr_init = factor * (model_size ** (-0.5))
+            self.lr_init = factor * (model_size ** -0.5)
         else:
             if warmup_start_learning_rate > 0:
                 self.lr_init = warmup_start_learning_rate
@@ -130,8 +130,8 @@ class Controller(object):
             self.lr = (self.lr_max - self.warmup_start_lr) / self.warmup_n_steps * step + self.lr_init
         else:
             # based on the original transformer paper
-            self.lr = self.lr_init * min(step ** (-0.5),
-                                         step * (self.warmup_n_steps ** (-1.5)))
+            self.lr = self.lr_init * min(step ** -0.5,
+                                         step * (self.warmup_n_steps ** -1.5))
 
         # Update optimizer
         for param_group in optimizer.param_groups:

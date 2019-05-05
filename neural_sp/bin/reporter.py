@@ -71,7 +71,7 @@ class Reporter(object):
             # NOTE: metric: loss, acc, ppl
 
             if v == float("inf") or v == -float("inf"):
-                logger.warning("WARNING: received an inf loss for %s." % k)
+                logger.warning("WARNING: received an inf %s for %s." % (metric, k))
 
             if not is_eval:
                 if name not in self.observation_train_local[metric].keys():
