@@ -37,11 +37,11 @@ for set in eval2000_swbd; do
     mkdir -p ${recog_dir}
 
     if [ $(echo ${model} | grep 'fisher_swbd_train_fisher_swbd') ]; then
-        recog_set=${data}/dataset_lm/${set}_fisher_swbd_train_fisher_swbd_word30000.tsv
+        recog_set=${data}/dataset_lm/${set}_fisher_swbd_train_fisher_swbd_wpbpe30000.tsv
     elif [ $(echo ${model} | grep 'fisher_swbd_train_swbd') ]; then
-        recog_set=${data}/dataset_lm/${set}_fisher_swbd_train_swbd_word10000.tsv
+        recog_set=${data}/dataset_lm/${set}_fisher_swbd_train_swbd_wpbpe10000.tsv
     elif [ $(echo ${model} | grep 'fisher_swbd_train_fisher_swbd') ]; then
-        recog_set=${data}/dataset_lm/${set}_swbd_train_swbd_word10000.tsv
+        recog_set=${data}/dataset_lm/${set}_swbd_train_swbd_wpbpe10000.tsv
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/plot_cache.py \
