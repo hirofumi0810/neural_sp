@@ -24,9 +24,9 @@ from neural_sp.models.seq2seq.decoders.rnn import RNNDecoder
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
-from neural_sp.models.seq2seq.encoders.sequence_summary import SequenceSummaryNetwork
 from neural_sp.models.seq2seq.encoders.splicing import splice
 from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
+from neural_sp.models.seq2seq.frontends.sequence_summary import SequenceSummaryNetwork
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
@@ -135,8 +135,8 @@ class Seq2seq(ModelBase):
                 n_layers_sub2=args.enc_n_layers_sub2,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
-                subsample=list(map(int, args.subsample.split('_')))
-                + [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
+                subsample=list(map(int, args.subsample.split('_'))) +
+                [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
                 subsample_type=args.subsample_type,
                 n_stacks=args.n_stacks,
                 n_splices=args.n_splices,
@@ -325,7 +325,8 @@ class Seq2seq(ModelBase):
         # Initialize parameters in CNN layers
         self.reset_parameters(args.param_init,
                               #   dist='xavier_uniform',
-                              dist='kaiming_uniform',
+                              #   dist='kaiming_uniform',
+                              dist='lecun',
                               keys=['conv'], ignore_keys=['score'])
 
         # Initialize parameters in the encoder
@@ -357,7 +358,7 @@ class Seq2seq(ModelBase):
                                   keys=['rnn', 'weight'])
 
         # Initialize bias in forget gate with 1
-        self.init_forget_gate_bias_with_one()
+        # self.init_forget_gate_bias_with_one()
 
         # Initialize bias in gating with -1 for cold fusion
         if args.lm_fusion:
@@ -436,7 +437,7 @@ class Seq2seq(ModelBase):
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
 
         # for the forward decoder in the main task
-        if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj', 'ys.lm']:
+        if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
             loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']
                                              ['xlens'], batch['ys'], task, batch['ys_hist'])
             loss += loss_fwd
@@ -536,6 +537,7 @@ class Seq2seq(ModelBase):
             # Bridge between the encoder and decoder
             if self.main_weight > 0 and self.is_bridge and (task in ['all', 'ys']):
                 enc_outs['ys']['xs'] = self.bridge(enc_outs['ys']['xs'])
+                raise ValueError
             if self.sub1_weight > 0 and self.is_bridge and (task in ['all', 'ys_sub1']):
                 enc_outs['ys_sub1']['xs'] = self.bridge_sub1(enc_outs['ys_sub1']['xs'])
             if self.sub2_weight > 0 and self.is_bridge and (task in ['all', 'ys_sub2']):
