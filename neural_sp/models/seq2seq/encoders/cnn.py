@@ -38,7 +38,7 @@ class CNNBlock(nn.Module):
         self.conv1 = nn.Conv2d(in_channels=in_channel,
                                out_channels=out_channel,
                                kernel_size=tuple(kernel_size),
-                               stride=tuple(stride),
+                               stride=1,
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv1, dim=1)[0]
 
@@ -94,20 +94,23 @@ class CNNBlock(nn.Module):
             xlens (list): A list of length `[B]`
 
         """
+        residual = xs
         xs = self.conv1(xs)
         if self.batch_norm1 is not None:
             xs = self.batch_norm1(xs)
         if self.dropout1 is not None:
             xs = self.dropout1(xs)
+        if self.residual and xs.size() == residual.size():
+            xs += residual
         xs = F.relu(xs)
         xlens = update_lens(xlens, self.conv1, dim=0)
 
+        residual = xs
         xs = self.conv2(xs)
-        if self.batch_norm1 is not None:
-            xs = self.batch_norm1(xs)
+        if self.batch_norm2 is not None:
+            xs = self.batch_norm2(xs)
         if self.dropout2 is not None:
             xs = self.dropout2(xs)
-        residual = xs
         if self.residual:
             xs += residual
         xs = F.relu(xs)
