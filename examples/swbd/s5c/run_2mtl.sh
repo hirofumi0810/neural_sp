@@ -47,6 +47,7 @@ enc_n_projs=0
 enc_n_layers=5
 enc_n_layers_sub1=4
 enc_residual=false
+enc_nin=false
 subsample_type=drop
 attn_type=location
 attn_dim=512
@@ -172,7 +173,13 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
     local/swbd1_prepare_dict.sh || exit 1;
     local/swbd1_data_prep.sh ${SWBD_AUDIOPATH} || exit 1;
     local/eval2000_data_prep.sh ${EVAL2000_AUDIOPATH} ${EVAL2000_TRANSPATH} || exit 1;
-    [ ! -z ${RT03_PATH} ] && local/rt03_data_prep.sh ${RT03_PATH} || exit 1;
+    [ ! -z ${RT03_PATH} ] && local/rt03_data_prep.sh ${RT03_PATH}
+
+    # upsample audio from 8k to 16k
+    # for x in train eval2000 rt03; do
+    for x in train_swbd eval2000; do
+        sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" ${data}/${x}/wav.scp
+    done
 
     touch ${data}/.done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
 fi
@@ -386,6 +393,7 @@ if [ ${stage} -le 4 ]; then
         --enc_n_layers ${enc_n_layers} \
         --enc_n_layers_sub1 ${enc_n_layers_sub1} \
         --enc_residual ${enc_residual} \
+        --enc_nin ${enc_nin} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \

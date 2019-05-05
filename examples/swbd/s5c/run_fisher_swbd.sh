@@ -43,6 +43,7 @@ enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_residual=false
+enc_nin=false
 subsample_type=drop
 attn_type=location
 attn_dim=512
@@ -202,12 +203,14 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
     local/fisher_swbd_prepare_dict.sh
     utils/fix_data_dir.sh ${data}/train_fisher
 
+    # upsample audio from 8k to 16k
+    sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" ${data}/train_fisher/wav.scp
+
     # nomalization
     cp ${data}/train_fisher/text ${data}/train_fisher/text.tmp.0
     cut -f 2- -d " " ${data}/train_fisher/text.tmp.0 | \
         sed -e 's/\[laughter\]-/[laughter]/g' | \
         sed -e 's/\[noise\]-/[noise]/g' > ${data}/train_fisher/text.tmp.1
-
     paste -d " " <(cut -f 1 -d " " ${data}/train_fisher/text.tmp.0) \
         <(cat ${data}/train_fisher/text.tmp.1) > ${data}/train_fisher/text
     rm ${data}/train_fisher/text.tmp*
@@ -393,8 +396,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_emb ${lm_dropout_emb} \
         --weight_decay ${lm_weight_decay} \
         --backward ${lm_backward} \
-        --serialize ${lm_serialize} \
-        --resume ${lm_resume} || exit 1;
+        --resume ${lm_resume} \
+        --serialize ${lm_serialize} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
 fi
@@ -431,6 +434,7 @@ if [ ${stage} -le 4 ]; then
         --enc_n_projs ${enc_n_projs} \
         --enc_n_layers ${enc_n_layers} \
         --enc_residual ${enc_residual} \
+        --enc_nin ${enc_nin} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
