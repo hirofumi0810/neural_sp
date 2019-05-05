@@ -203,8 +203,8 @@ class GatedConvLM(ModelBase):
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
                 last_dim, self.vocab,
-                # cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
-                cutoffs=[round(self.vocab / 25), round(self.vocab / 5)],
+                # cutoffs=[self.vocab // 10, 3 * self.vocab // 10],
+                cutoffs=[self.vocab // 25, self.vocab // 5],
                 div_value=4.0)
             self.output = None
         else:

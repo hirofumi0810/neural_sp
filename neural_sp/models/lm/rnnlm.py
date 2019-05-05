@@ -102,7 +102,7 @@ class RNNLM(ModelBase):
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
                 rnn_idim, self.vocab,
-                cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
+                cutoffs=[self.vocab // 10, 3 * self.vocab // 10],
                 div_value=4.0)
             self.output = None
         else:
@@ -134,7 +134,7 @@ class RNNLM(ModelBase):
                                   keys=['rnn', 'weight'])
 
         # Initialize bias in forget gate with 1
-        self.init_forget_gate_bias_with_one()
+        # self.init_forget_gate_bias_with_one()
 
     def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0,
                 ylens=[]):

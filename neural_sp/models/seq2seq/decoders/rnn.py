@@ -317,9 +317,10 @@ class RNNDecoder(nn.Module):
                                    ignore_index=pad)
 
             if adaptive_softmax:
+                assert self.vocab >= 25000
                 self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
                     bottleneck_dim, vocab,
-                    cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
+                    cutoffs=[self.vocab // 10, 3 * self.vocab // 10],
                     div_value=4.0)
                 self.output = None
             else:
@@ -498,23 +499,6 @@ class RNNDecoder(nn.Module):
 
         return loss, acc, ppl
 
-    def forward_lm(self, ys, ys_hist):
-        """Compute XE loss for LM during LM fusion.
-
-        Args:
-            ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            ys_hist (list):
-        Returns:
-            loss (FloatTensor): `[1]`
-            ppl (float):
-
-        """
-        if len(ys_hist) > 0:
-            ys = [ys_hist[b] + y for b, y in enumerate(ys)]
-        loss, _, _ = self.lm(ys)
-        ppl = np.exp(loss.item())
-        return loss, ppl
-
     def forward_att(self, eouts, elens, ys, ys_hist):
         """Compute XE loss for the attention-based sequence-to-sequence model.
 
@@ -613,7 +597,8 @@ class RNNDecoder(nn.Module):
         if self.adaptive_softmax is None:
             acc = compute_accuracy(logits, ys_out_pad, pad=-1)
         else:
-            acc = 0
+            acc = compute_accuracy(self.adaptive_softmax.log_prob(
+                logits.view((-1, logits.size(2)))), ys_out_pad, pad=-1)
         ppl = np.exp(loss.item())
 
         return loss, acc, ppl
@@ -819,7 +804,7 @@ class RNNDecoder(nn.Module):
             if self.adaptive_softmax is None:
                 y = self.output(attn_v).detach().argmax(-1)
             else:
-                y = self.adaptive_softmax.log_prob(attn_v.view(bs * 1, -1).unsqueeze(1)).detach().argmax(-1)
+                y = self.adaptive_softmax.predict(attn_v.view(-1, attn_v.size(2))).detach().unsqueeze(1)
 
             # Pick up 1-best
             best_hyps_tmp += [y]
@@ -1058,14 +1043,18 @@ class RNNDecoder(nn.Module):
 
                     # Generate for the main model
                     attn_v, lm_feat = self.generate(cv, dstates['dout_gen'], lmout)
-                    probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
+                    if self.adaptive_softmax is None:
+                        probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
+                    else:
+                        probs = self.adaptive_softmax.log_prob(attn_v.view(-1, attn_v.size(2)))
 
                     # Generate for LM
-                    if lm_weight > 0 and lm is not None:
+                    if lm_weight > 0:
                         if self.lm is not None:
                             lm_probs = F.softmax(self.lm.generate(lmout).squeeze(1), dim=-1)
-                        else:
+                        elif lm is not None:
                             lm_probs = F.softmax(lm.generate(lmout).squeeze(1), dim=-1)
+                        # TODO(hirofumi): support adaptive softmax for LM
 
                     # Cache decoding
                     cache_ids = None
@@ -1074,6 +1063,8 @@ class RNNDecoder(nn.Module):
                     cache_probs_sp = probs.new_zeros(probs.size())
                     cache_probs_lm = probs.new_zeros(probs.size())
                     if n_caches > 0:
+                        assert self.adaptive_softmax is None
+
                         # Compute inner-product over caches
                         if 'speech_fifo' in cache_type:
                             is_cache = True
@@ -1151,14 +1142,21 @@ class RNNDecoder(nn.Module):
                                 cache_probs_lm[0, c] += cache_lm_attn[0, offset, 0]
                             probs = (1 - cache_lambda_lm) * probs + cache_lambda_lm * cache_probs_lm
 
-                    local_scores_attn = torch.log(probs)
+                    if self.adaptive_softmax is None:
+                        local_scores_attn = torch.log(probs)
+                    else:
+                        local_scores_attn = probs
                     # Generate for the ensemble
                     if n_models > 0:
                         for i_e, dec in enumerate(ensemble_decoders):
-                            attn_v, _ = dec.generate(ensemble_cv[i_e],
-                                                     ensemble_dstates[i_e]['dout_gen'],
-                                                     lmout)
-                            local_scores_attn += F.log_softmax(dec.output(attn_v).squeeze(1), dim=1)
+                            attn_v_e, _ = dec.generate(ensemble_cv[i_e],
+                                                       ensemble_dstates[i_e]['dout_gen'],
+                                                       lmout)
+                            if dec.adaptive_softmax is None:
+                                local_scores_attn += F.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
+                            else:
+                                local_scores_attn += dec.adaptive_softmax.log_prob(
+                                    attn_v_e.view(-1, attn_v_e.size(2))).unsqueeze(1)
                         # re-normalize
                         local_scores_attn /= (n_models + 1)
 
