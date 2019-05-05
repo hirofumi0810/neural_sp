@@ -535,12 +535,11 @@ class Seq2seq(ModelBase):
                     enc_outs['ys_' + sub]['xlens'] = enc_outs['ys']['xlens'][:]
 
             # Bridge between the encoder and decoder
-            if self.main_weight > 0 and self.is_bridge and (task in ['all', 'ys']):
+            if self.main_weight > 0 and self.is_bridge:
                 enc_outs['ys']['xs'] = self.bridge(enc_outs['ys']['xs'])
-                raise ValueError
-            if self.sub1_weight > 0 and self.is_bridge and (task in ['all', 'ys_sub1']):
+            if self.sub1_weight > 0 and self.is_bridge:
                 enc_outs['ys_sub1']['xs'] = self.bridge_sub1(enc_outs['ys_sub1']['xs'])
-            if self.sub2_weight > 0 and self.is_bridge and (task in ['all', 'ys_sub2']):
+            if self.sub2_weight > 0 and self.is_bridge:
                 enc_outs['ys_sub2']['xs'] = self.bridge_sub2(enc_outs['ys_sub2']['xs'])
 
             return enc_outs
