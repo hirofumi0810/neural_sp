@@ -21,7 +21,7 @@ from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
-from neural_sp.utils.general import mkdir_join
+from neural_sp.utils import mkdir_join
 
 
 def main():

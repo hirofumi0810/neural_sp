@@ -34,7 +34,7 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.utils.general import mkdir_join
+from neural_sp.utils import mkdir_join
 
 
 torch.manual_seed(1)

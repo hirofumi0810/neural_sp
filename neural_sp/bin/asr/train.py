@@ -39,7 +39,7 @@ from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.models.seq2seq.skip_thought import SkipThought
-from neural_sp.utils.general import mkdir_join
+from neural_sp.utils import mkdir_join
 
 
 torch.manual_seed(1)

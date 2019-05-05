@@ -10,13 +10,25 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import functools
 from glob import glob
 import logging
 import os
+import time
 import torch
 import yaml
 
 logger = logging.getLogger('training')
+
+
+def measure_time(func):
+    @functools.wraps(func)
+    def _measure_time(*args, **kwargs):
+        start = time.time()
+        func(*args, **kwargs)
+        elapse = time.time() - start
+        print("Takes {} seconds.".format(elapse))
+    return _measure_time
 
 
 def load_config(config_path):

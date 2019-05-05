@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from neural_sp.evaluators.edit_distance import compute_wer
 from neural_sp.evaluators.resolving_unk import resolve_unk
-from neural_sp.utils.general import mkdir_join
+from neural_sp.utils import mkdir_join
 
 logger = logging.getLogger("decoding").getChild('word')
 

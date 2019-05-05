@@ -26,7 +26,7 @@ from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
-from neural_sp.utils.general import mkdir_join
+from neural_sp.utils import mkdir_join
 
 
 def main():

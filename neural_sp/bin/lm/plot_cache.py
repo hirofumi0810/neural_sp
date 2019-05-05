@@ -22,7 +22,7 @@ from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.utils.general import mkdir_join
+from neural_sp.utils import mkdir_join
 
 
 def main():
