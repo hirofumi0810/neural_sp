@@ -100,7 +100,7 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
 
     # Model setting
-    if args.lm_type == 'gated_conv':
+    if 'gated_conv' in args.lm_type:
         model = GatedConvLM(args)
     else:
         model = RNNLM(args)
@@ -208,7 +208,7 @@ def main():
         model.module.optimizer.step()
         loss_train = loss.item()
         del loss
-        if args.lm_type != 'gated_conv':
+        if 'gated_conv' not in args.lm_type:
             hidden = model.module.repackage_hidden(hidden)
         reporter.step(is_eval=False)
 
@@ -227,7 +227,7 @@ def main():
                          lr_controller.lr, len(ys_train), duration_step / 60))
             start_time_step = time.time()
         step += args.n_gpus
-        pbar_epoch.update(np.prod(ys_train.shape))
+        pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
 
         # Save fugures of loss and accuracy
         if step % (args.print_step * 10) == 0:

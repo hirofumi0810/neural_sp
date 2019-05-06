@@ -18,8 +18,8 @@ vocab_size=33278
 # LM configuration
 #########################
 # topology
-lm_type=gated_conv
-emb_dim=1024
+lm_type=gated_conv_small
+emb_dim=300
 tie_embedding=false
 # optimization
 batch_size=50
@@ -32,7 +32,7 @@ print_step=100
 decay_start_epoch=10
 decay_rate=0.9
 decay_patient_n_epochs=0
-not_improved_patient_n_epochs=10
+not_improved_patient_n_epochs=20
 eval_start_epoch=1
 # initialization
 param_init=0.05

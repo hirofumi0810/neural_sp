@@ -57,13 +57,9 @@ class GatedConvLM(ModelBase):
 
         layers = OrderedDict()
 
-        model = 'small'
-        # model = '8'
-        # model = '13'
-        # model = '14'
-        # model = '14B'
+        model_size = args.lm_type.replace('gated_conv_', '')
 
-        if model == 'small':
+        if model_size == 'small':
             layers['conv1-1'] = GLUBlock(4, args.emb_dim, 600, bottlececk_dim=15)
             layers['conv2-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
             layers['conv3-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
@@ -71,19 +67,25 @@ class GatedConvLM(ModelBase):
             layers['conv5-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
             last_dim = 600
 
-        elif model == '8':
+        elif model_size == '8':
             layers['conv1-1'] = GLUBlock(4, args.emb_dim, 900)
             for i in range(1, 8, 1):
                 layers['conv2-%d' % i] = GLUBlock(4, 900, 900)
             last_dim = 900
 
-        elif model == '13':
+        elif model_size == '8B':
+            raise NotImplementedError
+
+        elif model_size == '9':
+            raise NotImplementedError
+
+        elif model_size == '13':
             layers['conv1-1'] = GLUBlock(4, args.emb_dim, 1268)
             for i in range(1, 13, 1):
                 layers['conv2-%d' % i] = GLUBlock(4, 1268, 1268)
             last_dim = 1268
 
-        elif model == '14':
+        elif model_size == '14':
             for i in range(1, 4, 1):
                 layers['conv1-%d' % i] = GLUBlock(6, args.emb_dim if i == 1 else 850, 850)
             layers['conv2-1'] = GLUBlock(1, 850, 850)
@@ -96,7 +98,7 @@ class GatedConvLM(ModelBase):
             layers['conv7-1'] = GLUBlock(4, 1024, 2048)
             last_dim = 2048
 
-        elif model == '14B':
+        elif model_size == '14B':
             layers['conv1-1'] = GLUBlock(5, args.emb_dim, 512)
             for i in range(1, 4, 1):
                 layers['conv2-%d' % i] = GLUBlock(5, 512, 512, bottlececk_dim=128)
@@ -106,8 +108,9 @@ class GatedConvLM(ModelBase):
                 layers['conv4-%d' % i] = GLUBlock(5, 1024 if i == 1 else 2048, 2048, bottlececk_dim=1024)
             layers['conv5-1'] = GLUBlock(5, 2048, 4096, bottlececk_dim=1024)
             last_dim = 4096
+
         else:
-            raise NotImplementedError(model)
+            raise NotImplementedError(model_size)
 
         self.layers = nn.Sequential(layers)
 

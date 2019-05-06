@@ -57,7 +57,7 @@ def main():
 
         if i == 0:
             # Load the LM
-            if args.lm_type == 'gated_conv':
+            if 'gated_conv' in args.lm_type:
                 model = GatedConvLM(args)
             else:
                 model = RNNLM(args)

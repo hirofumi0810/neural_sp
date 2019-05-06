@@ -46,7 +46,9 @@ def parse():
                         help='')
     # topology
     parser.add_argument('--lm_type', type=str, default='lstm',
-                        choices=['lstm', 'gru', 'gated_conv'],
+                        choices=['lstm', 'gru', 'gated_conv_small',
+                                 'gated_conv_8', 'gated_conv_8B', 'gated_conv_9',
+                                 'gated_conv_13', 'gated_conv_14', 'gated_conv_14B'],
                         help='type of language model')
     parser.add_argument('--n_units', type=int, default=512,
                         help='number of units in each layer')
