@@ -317,9 +317,10 @@ def main():
 
 def make_model_name(args):
     dir_name = args.lm_type
-    dir_name += str(args.n_units) + 'H'
-    dir_name += str(args.n_projs) + 'P'
-    dir_name += str(args.n_layers) + 'L'
+    if 'gated_conv' not in args.lm_type:
+        dir_name += str(args.n_units) + 'H'
+        dir_name += str(args.n_projs) + 'P'
+        dir_name += str(args.n_layers) + 'L'
     dir_name += '_emb' + str(args.emb_dim)
     dir_name += '_' + args.optimizer
     dir_name += '_lr' + str(args.learning_rate)

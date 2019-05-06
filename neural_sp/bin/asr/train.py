@@ -566,27 +566,28 @@ def make_model_name(args, subsample_factor):
         dir_name += '_ssn'
 
     # decoder
-    dir_name += '_' + args.dec_type
-    if args.dec_type == 'transformer':
-        dir_name += str(args.d_model) + 'H'
-        dir_name += str(args.transformer_dec_n_layers) + 'L'
-        dir_name += '_' + args.transformer_attn_type
-    else:
-        dir_name += str(args.dec_n_units) + 'H'
-        dir_name += str(args.dec_n_projs) + 'P'
-        dir_name += str(args.dec_n_layers) + 'L'
-        dir_name += '_' + args.dec_loop_type
-        if args.dec_residual:
-            dir_name += 'res'
-        if args.input_feeding:
-            dir_name += '_inputfeed'
-        dir_name += '_' + args.attn_type
-        if args.attn_sigmoid:
-            dir_name += '_sig'
-    if args.attn_n_heads > 1:
-        dir_name += '_head' + str(args.attn_n_heads)
-    if args.tie_embedding:
-        dir_name += '_tie'
+    if args.ctc_weight < 1:
+        dir_name += '_' + args.dec_type
+        if args.dec_type == 'transformer':
+            dir_name += str(args.d_model) + 'H'
+            dir_name += str(args.transformer_dec_n_layers) + 'L'
+            dir_name += '_' + args.transformer_attn_type
+        else:
+            dir_name += str(args.dec_n_units) + 'H'
+            dir_name += str(args.dec_n_projs) + 'P'
+            dir_name += str(args.dec_n_layers) + 'L'
+            dir_name += '_' + args.dec_loop_type
+            if args.dec_residual:
+                dir_name += 'res'
+            if args.input_feeding:
+                dir_name += '_inputfeed'
+            dir_name += '_' + args.attn_type
+            if args.attn_sigmoid:
+                dir_name += '_sig'
+        if args.attn_n_heads > 1:
+            dir_name += '_head' + str(args.attn_n_heads)
+        if args.tie_embedding:
+            dir_name += '_tie'
 
     # optimization and regularization
     dir_name += '_' + args.optimizer
