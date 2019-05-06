@@ -102,7 +102,8 @@ class RNNLM(ModelBase):
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
                 rnn_idim, self.vocab,
-                cutoffs=[self.vocab // 10, 3 * self.vocab // 10],
+                # cutoffs=[self.vocab // 10, 3 * self.vocab // 10],
+                cutoffs=[self.vocab // 25, self.vocab // 5],
                 div_value=4.0)
             self.output = None
         else:
@@ -193,7 +194,7 @@ class RNNLM(ModelBase):
             # Compute inner-product over caches
             cache_attn = F.softmax(self.cache_theta * torch.matmul(
                 torch.cat(self.cache_keys, dim=1),
-                ys_in.transpose(1, 2)).squeeze(2), dim=1)
+                lmout.transpose(1, 2)).squeeze(2), dim=1)
 
             # For visualization
             if len(self.cache_ids) == n_caches:
@@ -217,7 +218,7 @@ class RNNLM(ModelBase):
         if n_caches > 0:
             # Register to cache
             self.cache_ids += [ys_out[0, -1].item()]
-            self.cache_keys += [ys_in]
+            self.cache_keys += [lmout]
 
         # Compute token-level accuracy in teacher-forcing
         if self.adaptive_softmax is None:
