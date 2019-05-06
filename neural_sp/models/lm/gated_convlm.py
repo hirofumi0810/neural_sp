@@ -60,17 +60,29 @@ class GatedConvLM(ModelBase):
         model_size = args.lm_type.replace('gated_conv_', '')
 
         if model_size == 'small':
-            layers['conv1-1'] = GLUBlock(4, args.emb_dim, 600, bottlececk_dim=15)
-            layers['conv2-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
-            layers['conv3-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
-            layers['conv4-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
-            layers['conv5-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
+            layers['conv1-1'] = GLUBlock(4, args.emb_dim, 600,
+                                         bottlececk_dim=15,
+                                         dropout=args.dropout_hidden)
+            layers['conv2-1'] = GLUBlock(4, 600, 600,
+                                         bottlececk_dim=30,
+                                         dropout=args.dropout_hidden)
+            layers['conv3-1'] = GLUBlock(4, 600, 600,
+                                         bottlececk_dim=30,
+                                         dropout=args.dropout_hidden)
+            layers['conv4-1'] = GLUBlock(4, 600, 600,
+                                         bottlececk_dim=30,
+                                         dropout=args.dropout_hidden)
+            layers['conv5-1'] = GLUBlock(4, 600, 600,
+                                         bottlececk_dim=30,
+                                         dropout=args.dropout_hidden)
             last_dim = 600
 
         elif model_size == '8':
-            layers['conv1-1'] = GLUBlock(4, args.emb_dim, 900)
+            layers['conv1-1'] = GLUBlock(4, args.emb_dim, 900,
+                                         dropout=args.dropout_hidden)
             for i in range(1, 8, 1):
-                layers['conv2-%d' % i] = GLUBlock(4, 900, 900)
+                layers['conv2-%d' % i] = GLUBlock(4, 900, 900,
+                                                  dropout=args.dropout_hidden)
             last_dim = 900
 
         elif model_size == '8B':
@@ -80,33 +92,51 @@ class GatedConvLM(ModelBase):
             raise NotImplementedError
 
         elif model_size == '13':
-            layers['conv1-1'] = GLUBlock(4, args.emb_dim, 1268)
+            layers['conv1-1'] = GLUBlock(4, args.emb_dim, 1268,
+                                         dropout=args.dropout_hidden)
             for i in range(1, 13, 1):
-                layers['conv2-%d' % i] = GLUBlock(4, 1268, 1268)
+                layers['conv2-%d' % i] = GLUBlock(4, 1268, 1268,
+                                                  dropout=args.dropout_hidden)
             last_dim = 1268
 
         elif model_size == '14':
             for i in range(1, 4, 1):
-                layers['conv1-%d' % i] = GLUBlock(6, args.emb_dim if i == 1 else 850, 850)
-            layers['conv2-1'] = GLUBlock(1, 850, 850)
+                layers['conv1-%d' % i] = GLUBlock(6, args.emb_dim if i == 1 else 850, 850,
+                                                  dropout=args.dropout_hidden)
+            layers['conv2-1'] = GLUBlock(1, 850, 850,
+                                         dropout=args.dropout_hidden)
             for i in range(1, 5, 1):
-                layers['conv3-%d' % i] = GLUBlock(5, 850, 850)
-            layers['conv4-1'] = GLUBlock(1, 850, 850)
+                layers['conv3-%d' % i] = GLUBlock(5, 850, 850,
+                                                  dropout=args.dropout_hidden)
+            layers['conv4-1'] = GLUBlock(1, 850, 850,
+                                         dropout=args.dropout_hidden)
             for i in range(1, 4, 1):
-                layers['conv5-%d' % i] = GLUBlock(4, 850, 850)
-            layers['conv6-1'] = GLUBlock(4, 850, 1024)
-            layers['conv7-1'] = GLUBlock(4, 1024, 2048)
+                layers['conv5-%d' % i] = GLUBlock(4, 850, 850,
+                                                  dropout=args.dropout_hidden)
+            layers['conv6-1'] = GLUBlock(4, 850, 1024,
+                                         dropout=args.dropout_hidden)
+            layers['conv7-1'] = GLUBlock(4, 1024, 2048,
+                                         dropout=args.dropout_hidden)
             last_dim = 2048
 
         elif model_size == '14B':
-            layers['conv1-1'] = GLUBlock(5, args.emb_dim, 512)
+            layers['conv1-1'] = GLUBlock(5, args.emb_dim, 512,
+                                         dropout=args.dropout_hidden)
             for i in range(1, 4, 1):
-                layers['conv2-%d' % i] = GLUBlock(5, 512, 512, bottlececk_dim=128)
+                layers['conv2-%d' % i] = GLUBlock(5, 512, 512,
+                                                  bottlececk_dim=128,
+                                                  dropout=args.dropout_hidden)
             for i in range(1, 4, 1):
-                layers['conv3-%d' % i] = GLUBlock(5, 512 if i == 1 else 1024, 1024, bottlececk_dim=512)
+                layers['conv3-%d' % i] = GLUBlock(5, 512 if i == 1 else 1024, 1024,
+                                                  bottlececk_dim=512,
+                                                  dropout=args.dropout_hidden)
             for i in range(1, 7, 1):
-                layers['conv4-%d' % i] = GLUBlock(5, 1024 if i == 1 else 2048, 2048, bottlececk_dim=1024)
-            layers['conv5-1'] = GLUBlock(5, 2048, 4096, bottlececk_dim=1024)
+                layers['conv4-%d' % i] = GLUBlock(5, 1024 if i == 1 else 2048, 2048,
+                                                  bottlececk_dim=1024,
+                                                  dropout=args.dropout_hidden)
+            layers['conv5-1'] = GLUBlock(5, 2048, 4096,
+                                         bottlececk_dim=1024,
+                                         dropout=args.dropout_hidden)
             last_dim = 4096
 
         else:
