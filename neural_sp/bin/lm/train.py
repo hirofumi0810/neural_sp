@@ -100,7 +100,7 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
 
     # Model setting
-    if args.lm_type == 'gated_cnn':
+    if args.lm_type == 'gated_conv':
         model = GatedConvLM(args)
     else:
         model = RNNLM(args)
@@ -208,7 +208,7 @@ def main():
         model.module.optimizer.step()
         loss_train = loss.item()
         del loss
-        if args.lm_type != 'gated_cnn':
+        if args.lm_type != 'gated_conv':
             hidden = model.module.repackage_hidden(hidden)
         reporter.step(is_eval=False)
 

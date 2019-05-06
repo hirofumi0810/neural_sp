@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -48,21 +47,13 @@ class GLUBlock(nn.Module):
         if bottlececk_dim == 0:
             self.conv_in = lambda x: x
             self.conv = nn.Conv2d(in_channels=in_ch,
-                                  out_channels=out_ch,
+                                  out_channels=out_ch * 2,
                                   kernel_size=(kernel_size, 1))
             self.conv_out = lambda x: x
-
-            self.conv_gate_in = lambda x: x
-            self.conv_gate = nn.Conv2d(in_channels=in_ch,
-                                       out_channels=out_ch,
-                                       kernel_size=(kernel_size, 1))
-            self.conv_gate_out = lambda x: x
 
             if weight_norm:
                 self.conv = nn.utils.weight_norm(self.conv,
                                                  name='weight', dim=0)
-                self.conv_gate = nn.utils.weight_norm(self.conv_gate,
-                                                      name='weight', dim=0)
 
         elif bottlececk_dim > 0:
             self.conv_in = nn.Conv2d(in_channels=in_ch,
@@ -72,18 +63,8 @@ class GLUBlock(nn.Module):
                                   out_channels=bottlececk_dim,
                                   kernel_size=(kernel_size, 1))
             self.conv_out = nn.Conv2d(in_channels=bottlececk_dim,
-                                      out_channels=out_ch,
+                                      out_channels=out_ch * 2,
                                       kernel_size=(1, 1))
-
-            self.conv_gate_in = nn.Conv2d(in_channels=in_ch,
-                                          out_channels=bottlececk_dim,
-                                          kernel_size=(1, 1))
-            self.conv_gate = nn.Conv2d(in_channels=bottlececk_dim,
-                                       out_channels=bottlececk_dim,
-                                       kernel_size=(kernel_size, 1))
-            self.conv_gate_out = nn.Conv2d(in_channels=bottlececk_dim,
-                                           out_channels=out_ch,
-                                           kernel_size=(1, 1))
 
             if weight_norm:
                 self.conv_in = nn.utils.weight_norm(self.conv_in,
@@ -93,29 +74,19 @@ class GLUBlock(nn.Module):
                 self.conv_out = nn.utils.weight_norm(self.conv_out,
                                                      name='weight', dim=0)
 
-                self.conv_gate_in = nn.utils.weight_norm(self.conv_gate_in,
-                                                         name='weight', dim=0)
-                self.conv_gate = nn.utils.weight_norm(self.conv_gate,
-                                                      name='weight', dim=0)
-                self.conv_gate_out = nn.utils.weight_norm(self.conv_gate_out,
-                                                          name='weight', dim=0)
-
-    def forward(self, x):
+    def forward(self, xs):
         """Forward computation.
         Args:
-            x (FloatTensor): `[B, in_ch, T]`
+            xs (FloatTensor): `[B, in_ch, T, feat_dim]`
         Returns:
-            out (FloatTensor): `[B, out_ch, T]`
+            out (FloatTensor): `[B, out_ch, T, feat_dim]`
         """
-        residual = x
+        residual = xs
         if self.conv_residual is not None:
             residual = self.conv_residual(residual)
-        x = self.pad_left(x)  # `[B, embed_dim, T+kernel-1, 1]`
-        a = self.conv_out(self.conv(self.conv_in(x)))  # `[B, out_ch, T ,1]`
-        a = self.dropout(a)
-        b = self.conv_gate_out(self.conv_gate(self.conv_gate_in(x)))  # `[B, out_ch, T, 1]`
-        b = self.dropout_gate(b)
-
-        x = torch.mul(a, F.sigmoid(b))
-        x += residual
-        return x
+        xs = self.pad_left(xs)  # `[B, embed_dim, T+kernel-1, 1]`
+        xs = self.conv_out(self.conv(self.conv_in(xs)))  # `[B, out_ch * 2, T ,1]`
+        xs = self.dropout(xs)
+        xs = F.glu(xs, dim=1)
+        xs += residual
+        return xs

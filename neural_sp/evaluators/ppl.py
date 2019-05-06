@@ -59,15 +59,14 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1,
     while True:
         if is_lm:
             ys, is_new_epoch = dataset.next(batch_size)
-            bs = len(ys)
+            bs, time = ys.shape[:2]
 
-            for t in range(ys.shape[1] - 1):
-                loss, hidden = model(ys[:, t:t + 2], hidden, is_eval=True, n_caches=n_caches)[:2]
-                total_loss += loss.item() * bs
-                n_tokens += bs
+            loss, hidden = model(ys, hidden, is_eval=True, n_caches=n_caches)[:2]
+            total_loss += loss.item() * bs * (time - 1)
+            n_tokens += bs * (time - 1)
 
-                if progressbar:
-                    pbar.update(sum([len(y) for y in ys[:, t:t + 1]]))
+            if progressbar:
+                pbar.update(sum([len(y) for y in ys]))
         else:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
             if skip_thought:
@@ -93,10 +92,10 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1,
     # Reset data counters
     dataset.reset()
 
-    loss = total_loss / n_tokens
-    ppl = np.exp(loss)
+    avg_loss = total_loss / n_tokens
+    ppl = np.exp(avg_loss)
 
     logger.info('PPL (%s): %.2f %%' % (dataset.set, ppl))
-    logger.info('Loss (%s): %.2f %%' % (dataset.set, loss))
+    logger.info('Loss (%s): %.2f %%' % (dataset.set, avg_loss))
 
-    return ppl, loss
+    return ppl, avg_loss

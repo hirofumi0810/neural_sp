@@ -170,8 +170,7 @@ class RNNLM(ModelBase):
         ys_in = ys[:, :-1]
         ys_out = ys[:, 1:]
 
-        ys_in = self.encode(ys_in)
-        lmout, hidden = self.decode(ys_in, hidden)
+        lmout, hidden = self.decode(self.encode(ys_in), hidden)
         if self.adaptive_softmax is None:
             logits = self.generate(lmout)
         else:
@@ -224,7 +223,8 @@ class RNNLM(ModelBase):
         if self.adaptive_softmax is None:
             acc = compute_accuracy(logits, ys_out, pad=self.pad)
         else:
-            acc = 0
+            acc = compute_accuracy(self.adaptive_softmax.log_prob(
+                logits.view((-1, logits.size(2)))), ys_out, pad=self.pad)
 
         observation = {'loss.lm': loss.item(),
                        'acc.lm': acc,

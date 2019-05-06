@@ -55,61 +55,61 @@ class GatedConvLM(ModelBase):
                                dropout=args.dropout_emb,
                                ignore_index=self.pad)
 
-        glu_layers = OrderedDict()
+        layers = OrderedDict()
 
-        # model = 'small'
+        model = 'small'
         # model = '8'
         # model = '13'
         # model = '14'
-        model = '14B'
+        # model = '14B'
 
         if model == 'small':
-            glu_layers['conv1-1'] = GLUBlock(4, args.emb_dim, 600, bottlececk_dim=15)
-            glu_layers['conv2-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
-            glu_layers['conv3-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
-            glu_layers['conv4-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
-            glu_layers['conv5-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
+            layers['conv1-1'] = GLUBlock(4, args.emb_dim, 600, bottlececk_dim=15)
+            layers['conv2-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
+            layers['conv3-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
+            layers['conv4-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
+            layers['conv5-1'] = GLUBlock(4, 600, 600, bottlececk_dim=30)
             last_dim = 600
 
         elif model == '8':
-            glu_layers['conv1-1'] = GLUBlock(4, args.emb_dim, 900)
+            layers['conv1-1'] = GLUBlock(4, args.emb_dim, 900)
             for i in range(1, 8, 1):
-                glu_layers['conv2-%d' % i] = GLUBlock(4, 900, 900)
+                layers['conv2-%d' % i] = GLUBlock(4, 900, 900)
             last_dim = 900
 
         elif model == '13':
-            glu_layers['conv1-1'] = GLUBlock(4, args.emb_dim, 1268)
+            layers['conv1-1'] = GLUBlock(4, args.emb_dim, 1268)
             for i in range(1, 13, 1):
-                glu_layers['conv2-%d' % i] = GLUBlock(4, 1268, 1268)
+                layers['conv2-%d' % i] = GLUBlock(4, 1268, 1268)
             last_dim = 1268
 
         elif model == '14':
             for i in range(1, 4, 1):
-                glu_layers['conv1-%d' % i] = GLUBlock(6, args.emb_dim if i == 1 else 850, 850)
-            glu_layers['conv2-1'] = GLUBlock(1, 850, 850)
+                layers['conv1-%d' % i] = GLUBlock(6, args.emb_dim if i == 1 else 850, 850)
+            layers['conv2-1'] = GLUBlock(1, 850, 850)
             for i in range(1, 5, 1):
-                glu_layers['conv3-%d' % i] = GLUBlock(5, 850, 850)
-            glu_layers['conv4-1'] = GLUBlock(1, 850, 850)
+                layers['conv3-%d' % i] = GLUBlock(5, 850, 850)
+            layers['conv4-1'] = GLUBlock(1, 850, 850)
             for i in range(1, 4, 1):
-                glu_layers['conv5-%d' % i] = GLUBlock(4, 850, 850)
-            glu_layers['conv6-1'] = GLUBlock(4, 850, 1024)
-            glu_layers['conv7-1'] = GLUBlock(4, 1024, 2048)
+                layers['conv5-%d' % i] = GLUBlock(4, 850, 850)
+            layers['conv6-1'] = GLUBlock(4, 850, 1024)
+            layers['conv7-1'] = GLUBlock(4, 1024, 2048)
             last_dim = 2048
 
         elif model == '14B':
-            glu_layers['conv1-1'] = GLUBlock(5, args.emb_dim, 512)
+            layers['conv1-1'] = GLUBlock(5, args.emb_dim, 512)
             for i in range(1, 4, 1):
-                glu_layers['conv2-%d' % i] = GLUBlock(5, 512, 512, bottlececk_dim=128)
+                layers['conv2-%d' % i] = GLUBlock(5, 512, 512, bottlececk_dim=128)
             for i in range(1, 4, 1):
-                glu_layers['conv3-%d' % i] = GLUBlock(5, 512 if i == 1 else 1024, 1024, bottlececk_dim=512)
+                layers['conv3-%d' % i] = GLUBlock(5, 512 if i == 1 else 1024, 1024, bottlececk_dim=512)
             for i in range(1, 7, 1):
-                glu_layers['conv4-%d' % i] = GLUBlock(5, 1024 if i == 1 else 2048, 2048, bottlececk_dim=1024)
-            glu_layers['conv5-1'] = GLUBlock(5, 2048, 4096, bottlececk_dim=1024)
+                layers['conv4-%d' % i] = GLUBlock(5, 1024 if i == 1 else 2048, 2048, bottlececk_dim=1024)
+            layers['conv5-1'] = GLUBlock(5, 2048, 4096, bottlececk_dim=1024)
             last_dim = 4096
         else:
             raise NotImplementedError(model)
 
-        self.glu_layers = nn.Sequential(glu_layers)
+        self.layers = nn.Sequential(layers)
 
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -176,9 +176,7 @@ class GatedConvLM(ModelBase):
         ys_in = ys[:, : -1]
         ys_out = ys[:, 1:]
 
-        ys_in = self.encode(ys_in)
-
-        lmout, hidden = self.decode(ys_in, hidden)
+        lmout, hidden = self.decode(self.encode(ys_in), hidden)
         if self.adaptive_softmax is None:
             logits = self.generate(lmout)
         else:
@@ -231,7 +229,8 @@ class GatedConvLM(ModelBase):
         if self.adaptive_softmax is None:
             acc = compute_accuracy(logits, ys_out, pad=self.pad)
         else:
-            acc = 0
+            acc = compute_accuracy(self.adaptive_softmax.log_prob(
+                logits.view((-1, logits.size(2)))), ys_out, pad=self.pad)
 
         observation = {'loss.lm': loss.item(),
                        'acc.lm': acc,
@@ -268,10 +267,10 @@ class GatedConvLM(ModelBase):
         """
         bs, max_ylen = ys_emb.size()[:2]
 
-        # NOTE: embed_dim = in_ch
+        # NOTE: consider embed_dim as in_ch
         ys_emb = ys_emb.unsqueeze(3)
-        ys_emb = self.glu_layers(ys_emb.transpose(2, 1))  # [B, out_ch, T, 1]
-        ys_emb = ys_emb.transpose(2, 1).contiguous()  # `[B, T, out_ch]`
+        ys_emb = self.layers(ys_emb.transpose(2, 1))  # [B, out_ch, T, 1]
+        ys_emb = ys_emb.transpose(2, 1).contiguous()  # `[B, T, out_ch, 1]`
         ys_emb = ys_emb.squeeze(3)
 
         return ys_emb, hidden

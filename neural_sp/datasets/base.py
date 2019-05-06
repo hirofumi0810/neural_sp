@@ -141,13 +141,13 @@ class Base(object):
         if self.sort_by_input_length or not self.shuffle:
             if self.sort_by_input_length:
                 # Change batch size dynamically
-                min_num_frames_batch = self.df[self.offset:self.offset + 1]['xlen'].values[0]
-                _batch_size = self.select_batch_size(batch_size, min_num_frames_batch)
+                min_n_frames_batch = self.df[self.offset:self.offset + 1]['xlen'].values[0]
+                batch_size_tmp = self.select_batch_size(batch_size, min_n_frames_batch)
             else:
-                _batch_size = batch_size
+                batch_size_tmp = batch_size
 
-            if len(self.rest) > _batch_size:
-                data_indices = list(self.df[self.offset:self.offset + _batch_size].index)
+            if len(self.rest) > batch_size_tmp:
+                data_indices = list(self.df[self.offset:self.offset + batch_size_tmp].index)
                 self.rest -= set(data_indices)
                 # NOTE: rest is in uttrance length order when sort_by_input_length == True
                 # NOTE: otherwise in name length order when shuffle == False
@@ -180,13 +180,13 @@ class Base(object):
 
         return data_indices, is_new_epoch
 
-    def select_batch_size(self, batch_size, min_num_frames_batch):
+    def select_batch_size(self, batch_size, min_n_frames_batch):
         if not self.dynamic_batching:
             return batch_size
 
-        if min_num_frames_batch <= 800:
+        if min_n_frames_batch <= 800:
             pass
-        elif min_num_frames_batch <= 1600:
+        elif min_n_frames_batch <= 1600:
             batch_size = int(batch_size / 2)
         else:
             batch_size = int(batch_size / 4)

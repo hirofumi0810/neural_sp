@@ -18,22 +18,17 @@ vocab_size=33278
 # LM configuration
 #########################
 # topology
-lm_type=gated_cnn
-n_units=512
-n_projs=0
-n_layers=8
-emb_dim=128
+lm_type=gated_conv
+emb_dim=1024
 tie_embedding=false
-residual=false
-use_glu=false
 # optimization
-batch_size=64
+batch_size=50
 bptt=100
 optimizer=nesterov
 learning_rate=1.0
 n_epochs=50
 convert_to_sgd_epoch=50
-print_step=50
+print_step=100
 decay_start_epoch=10
 decay_rate=0.9
 decay_patient_n_epochs=0
@@ -138,13 +133,8 @@ if [ ${stage} -le 3 ]; then
         --model ${model}/lm \
         --unit ${unit} \
         --lm_type ${lm_type} \
-        --n_units ${n_units} \
-        --n_projs ${n_projs} \
-        --n_layers ${n_layers} \
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \
-        --residual ${residual} \
-        --use_glu ${use_glu} \
         --batch_size ${batch_size} \
         --bptt ${bptt} \
         --optimizer ${optimizer} \
@@ -165,8 +155,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_out ${dropout_out} \
         --dropout_emb ${dropout_emb} \
         --weight_decay ${weight_decay} \
-        --adaptive_softmax ${adaptive_softmax} || exit 1;
-    # --resume ${resume} || exit 1;
+        --adaptive_softmax ${adaptive_softmax} \
+        --resume ${resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
 fi

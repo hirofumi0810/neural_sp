@@ -159,16 +159,19 @@ class Dataset(Base):
 
         if batch_size is None:
             batch_size = self.batch_size
+        elif self.concat_ids.shape[0] != batch_size:
+            self.concat_ids = self.concat_ids.reshape((batch_size, -1))
 
         if self.max_epoch is not None and self.epoch >= self.max_epoch:
             raise StopIteration()
         # NOTE: max_epoch == None means infinite loop
 
         ys = self.concat_ids[:, self.offset:self.offset + self.bptt]
-        self.offset += self.bptt
+        self.offset += self.bptt - 1
+        # NOTE: the last token in ys must be feeded as inputs in the next mini-batch
 
         # Last mini-batch
-        if (self.offset + 1) * self.batch_size >= len(self.concat_ids.reshape((-1))):
+        if (self.offset + 1) * batch_size >= len(self):
             self.offset = 0
             is_new_epoch = True
             self.epoch += 1
@@ -186,7 +189,7 @@ class Dataset(Base):
                 # NOTE: <sos> and <eos> have the same index
 
                 # Reshape
-                concat_ids = concat_ids[:len(concat_ids) // batch_size * batch_size]
-                self.concat_ids = np.array(concat_ids).reshape((batch_size, -1))
+                concat_ids = concat_ids[:len(concat_ids) // self.batch_size * self.batch_size]
+                self.concat_ids = np.array(concat_ids).reshape((self.batch_size, -1))
 
         return ys, is_new_epoch
