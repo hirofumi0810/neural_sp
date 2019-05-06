@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from neural_sp.models.modules.linear import LinearND
 
 
-class CNN1LBlock(nn.Module):
+class Conv1LBlock(nn.Module):
     """1-layer CNN block without residual connection."""
 
     def __init__(self,
@@ -31,7 +31,7 @@ class CNN1LBlock(nn.Module):
                  dropout,
                  batch_norm):
 
-        super(CNN1LBlock, self).__init__()
+        super(Conv1LBlock, self).__init__()
 
         # Conv
         self.conv = nn.Conv2d(in_channels=in_channel,
@@ -81,7 +81,7 @@ class CNN1LBlock(nn.Module):
         return xs, xlens
 
 
-class CNN2LBlock(nn.Module):
+class Conv2LBlock(nn.Module):
     """2-layer CNN block."""
 
     def __init__(self,
@@ -95,7 +95,7 @@ class CNN2LBlock(nn.Module):
                  batch_norm,
                  residual):
 
-        super(CNN2LBlock, self).__init__()
+        super(Conv2LBlock, self).__init__()
 
         # 1st layer
         self.conv1 = nn.Conv2d(in_channels=in_channel,
@@ -170,7 +170,7 @@ class CNN2LBlock(nn.Module):
         return xs, xlens
 
 
-class CNNEncoder(nn.Module):
+class ConvEncoder(nn.Module):
     """CNN encoder.
 
     Args:
@@ -199,7 +199,7 @@ class CNNEncoder(nn.Module):
                  residual=False,
                  bottleneck_dim=0):
 
-        super(CNNEncoder, self).__init__()
+        super(ConvEncoder, self).__init__()
 
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
@@ -214,15 +214,15 @@ class CNNEncoder(nn.Module):
         in_ch = in_channel
         in_freq = self.input_freq
         for l in range(len(channels)):
-            block = CNN2LBlock(input_dim=in_freq,
-                               in_channel=in_ch,
-                               out_channel=channels[l],
-                               kernel_size=kernel_sizes[l],
-                               stride=strides[l],
-                               pooling=poolings[l],
-                               dropout=dropout,
-                               batch_norm=batch_norm,
-                               residual=residual)
+            block = Conv2LBlock(input_dim=in_freq,
+                                in_channel=in_ch,
+                                out_channel=channels[l],
+                                kernel_size=kernel_sizes[l],
+                                stride=strides[l],
+                                pooling=poolings[l],
+                                dropout=dropout,
+                                batch_norm=batch_norm,
+                                residual=residual)
             self.layers += [block]
             in_freq = block.input_dim
             in_ch = channels[l]

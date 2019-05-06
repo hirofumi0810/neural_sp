@@ -16,7 +16,7 @@ from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.transformer import SublayerConnection
 from neural_sp.models.modules.transformer import PositionwiseFeedForward
 from neural_sp.models.modules.transformer import PositionalEncoding
-from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
+from neural_sp.models.seq2seq.encoders.cnn import ConvEncoder
 from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
 
 
@@ -95,16 +95,16 @@ class TransformerEncoder(nn.Module):
 
         if len(channels) > 0:
             assert n_stacks == 1 and n_splices == 1
-            self.conv = CNNEncoder(input_dim * n_stacks,
-                                   in_channel=conv_in_channel * n_stacks,
-                                   channels=channels,
-                                   kernel_sizes=kernel_sizes,
-                                   strides=strides,
-                                   poolings=poolings,
-                                   dropout=dropout,
-                                   batch_norm=conv_batch_norm,
-                                   residual=conv_residual,
-                                   bottleneck_dim=d_model)
+            self.conv = ConvEncoder(input_dim * n_stacks,
+                                    in_channel=conv_in_channel,
+                                    channels=channels,
+                                    kernel_sizes=kernel_sizes,
+                                    strides=strides,
+                                    poolings=poolings,
+                                    dropout=0,
+                                    batch_norm=conv_batch_norm,
+                                    residual=conv_residual,
+                                    bottleneck_dim=d_model)
             self._output_dim = self.conv.output_dim
         else:
             self._output_dim = input_dim * n_splices * n_stacks

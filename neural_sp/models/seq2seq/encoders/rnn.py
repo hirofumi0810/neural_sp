@@ -18,7 +18,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.modules.linear import LinearND
-from neural_sp.models.seq2seq.encoders.cnn import CNNEncoder
+from neural_sp.models.seq2seq.encoders.cnn import ConvEncoder
 from neural_sp.models.seq2seq.encoders.time_depth_separable_conv import TDSEncoder
 
 
@@ -147,16 +147,16 @@ class RNNEncoder(nn.Module):
                                        kernel_sizes=kernel_sizes,
                                        dropout=dropout)
             else:
-                self.conv = CNNEncoder(input_dim,
-                                       in_channel=conv_in_channel,
-                                       channels=channels,
-                                       kernel_sizes=kernel_sizes,
-                                       strides=strides,
-                                       poolings=poolings,
-                                       dropout=0,
-                                       batch_norm=conv_batch_norm,
-                                       residual=conv_residual,
-                                       bottleneck_dim=conv_bottleneck_dim)
+                self.conv = ConvEncoder(input_dim,
+                                        in_channel=conv_in_channel,
+                                        channels=channels,
+                                        kernel_sizes=kernel_sizes,
+                                        strides=strides,
+                                        poolings=poolings,
+                                        dropout=0,
+                                        batch_norm=conv_batch_norm,
+                                        residual=conv_residual,
+                                        bottleneck_dim=conv_bottleneck_dim)
             self._output_dim = self.conv.output_dim
         else:
             self._output_dim = input_dim * n_splices * n_stacks
@@ -201,8 +201,8 @@ class RNNEncoder(nn.Module):
                     self.concat_bn = nn.ModuleList()
                     for l in range(n_layers):
                         if self.subsample[l] > 1:
-                            self.concat_proj += [LinearND(n_units * self.n_dirs *
-                                                          self.subsample[l], n_units * self.n_dirs)]
+                            self.concat_proj += [LinearND(n_units * self.n_dirs
+                                                          * self.subsample[l], n_units * self.n_dirs)]
                             self.concat_bn += [nn.BatchNorm2d(n_units * self.n_dirs)]
                         else:
                             self.concat_proj += [None]
