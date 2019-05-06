@@ -18,8 +18,71 @@ import torch.nn.functional as F
 from neural_sp.models.modules.linear import LinearND
 
 
-class CNNBlock(nn.Module):
-    """CNN block."""
+class CNN1LBlock(nn.Module):
+    """1-layer CNN block without residual connection."""
+
+    def __init__(self,
+                 input_dim,
+                 in_channel,
+                 out_channel,
+                 kernel_size,
+                 stride,
+                 pooling,
+                 dropout,
+                 batch_norm):
+
+        super(CNN1LBlock, self).__init__()
+
+        # Conv
+        self.conv = nn.Conv2d(in_channels=in_channel,
+                              out_channels=out_channel,
+                              kernel_size=tuple(kernel_size),
+                              stride=tuple(stride),
+                              padding=(1, 1))
+        input_dim = update_lens([input_dim], self.conv, dim=1)[0]
+        self.batch_norm = nn.BatchNorm2d(out_channel) if batch_norm else None
+        self.dropout = nn.Dropout2d(p=dropout) if dropout > 0 else None
+
+        # Max Pooling
+        self.pool = None
+        if len(pooling) > 0 and np.prod(pooling) > 1:
+            self.pool = nn.MaxPool2d(kernel_size=tuple(pooling),
+                                     stride=tuple(pooling),
+                                     padding=(0, 0),
+                                     ceil_mode=True)
+            # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
+            input_dim = update_lens([input_dim], self.pool, dim=1)[0]
+
+        self.input_dim = input_dim
+
+    def forward(self, xs, xlens):
+        """Forward computation.
+
+        Args:
+            xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
+            xlens (list): A list of length `[B]`
+        Returns:
+            xs (FloatTensor): `[B, T', feat_dim]`
+            xlens (list): A list of length `[B]`
+
+        """
+        xs = self.conv(xs)
+        if self.batch_norm is not None:
+            xs = self.batch_norm(xs)
+        if self.dropout is not None:
+            xs = self.dropout(xs)
+        xs = F.relu(xs)
+        xlens = update_lens(xlens, self.conv, dim=0)
+
+        if self.pool is not None:
+            xs = self.pool(xs)
+            xlens = update_lens(xlens, self.pool, dim=0)
+
+        return xs, xlens
+
+
+class CNN2LBlock(nn.Module):
+    """2-layer CNN block."""
 
     def __init__(self,
                  input_dim,
@@ -32,43 +95,27 @@ class CNNBlock(nn.Module):
                  batch_norm,
                  residual):
 
-        super(CNNBlock, self).__init__()
+        super(CNN2LBlock, self).__init__()
 
-        # Conv
+        # 1st layer
         self.conv1 = nn.Conv2d(in_channels=in_channel,
                                out_channels=out_channel,
                                kernel_size=tuple(kernel_size),
-                               stride=1,
+                               stride=tuple(stride),
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv1, dim=1)[0]
+        self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else None
+        self.dropout1 = nn.Dropout2d(p=dropout) if dropout > 0 else None
 
-        # Batch Normalization
-        self.batch_norm1 = None
-        if batch_norm:
-            self.batch_norm1 = nn.BatchNorm2d(out_channel)
-
-        # Dropout for hidden-hidden connection
-        self.dropout1 = None
-        if dropout > 0:
-            self.dropout1 = nn.Dropout2d(p=dropout)
-
-        # Conv
+        # 2nd layer
         self.conv2 = nn.Conv2d(in_channels=out_channel,
                                out_channels=out_channel,
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv2, dim=1)[0]
-
-        # Batch Normalization
-        self.batch_norm2 = None
-        if batch_norm:
-            self.batch_norm2 = nn.BatchNorm2d(out_channel)
-
-        # Dropout for hidden-hidden connection
-        self.dropout2 = None
-        if dropout > 0:
-            self.dropout2 = nn.Dropout2d(p=dropout)
+        self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else None
+        self.dropout2 = nn.Dropout2d(p=dropout) if dropout > 0 else None
 
         # Max Pooling
         self.pool = None
@@ -167,15 +214,15 @@ class CNNEncoder(nn.Module):
         in_ch = in_channel
         in_freq = self.input_freq
         for l in range(len(channels)):
-            block = CNNBlock(input_dim=in_freq,
-                             in_channel=in_ch,
-                             out_channel=channels[l],
-                             kernel_size=kernel_sizes[l],
-                             stride=strides[l],
-                             pooling=poolings[l],
-                             dropout=dropout,
-                             batch_norm=batch_norm,
-                             residual=residual)
+            block = CNN2LBlock(input_dim=in_freq,
+                               in_channel=in_ch,
+                               out_channel=channels[l],
+                               kernel_size=kernel_sizes[l],
+                               stride=strides[l],
+                               pooling=poolings[l],
+                               dropout=dropout,
+                               batch_norm=batch_norm,
+                               residual=residual)
             self.layers += [block]
             in_freq = block.input_dim
             in_ch = channels[l]
