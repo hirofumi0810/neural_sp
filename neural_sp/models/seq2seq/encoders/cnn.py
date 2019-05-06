@@ -69,9 +69,9 @@ class Conv1LBlock(nn.Module):
         xs = self.conv(xs)
         if self.batch_norm is not None:
             xs = self.batch_norm(xs)
+        xs = F.relu(xs)
         if self.dropout is not None:
             xs = self.dropout(xs)
-        xs = F.relu(xs)
         xlens = update_lens(xlens, self.conv, dim=0)
 
         if self.pool is not None:
@@ -145,22 +145,22 @@ class Conv2LBlock(nn.Module):
         xs = self.conv1(xs)
         if self.batch_norm1 is not None:
             xs = self.batch_norm1(xs)
-        if self.dropout1 is not None:
-            xs = self.dropout1(xs)
         if self.residual and xs.size() == residual.size():
             xs += residual
         xs = F.relu(xs)
+        if self.dropout1 is not None:
+            xs = self.dropout1(xs)
         xlens = update_lens(xlens, self.conv1, dim=0)
 
         residual = xs
         xs = self.conv2(xs)
         if self.batch_norm2 is not None:
             xs = self.batch_norm2(xs)
-        if self.dropout2 is not None:
-            xs = self.dropout2(xs)
         if self.residual:
             xs += residual
         xs = F.relu(xs)
+        if self.dropout2 is not None:
+            xs = self.dropout2(xs)
         xlens = update_lens(xlens, self.conv2, dim=0)
 
         if self.pool is not None:
