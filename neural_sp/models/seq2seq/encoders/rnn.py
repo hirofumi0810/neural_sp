@@ -19,7 +19,7 @@ from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
-from neural_sp.models.seq2seq.encoders.time_depth_separable_conv import TDSEncoder
+from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
 
 
 class RNNEncoder(nn.Module):
