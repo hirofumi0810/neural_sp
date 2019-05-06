@@ -42,7 +42,6 @@ class GLUBlock(nn.Module):
 
         self.pad_left = nn.ConstantPad2d((0, 0, kernel_size - 1, 0), 0)
         self.dropout = nn.Dropout(p=dropout)
-        self.dropout_gate = nn.Dropout(p=dropout)
 
         if bottlececk_dim == 0:
             self.conv_in = lambda x: x
