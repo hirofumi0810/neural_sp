@@ -16,7 +16,7 @@ from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.transformer import SublayerConnection
 from neural_sp.models.modules.transformer import PositionwiseFeedForward
 from neural_sp.models.modules.transformer import PositionalEncoding
-from neural_sp.models.seq2seq.encoders.cnn import ConvEncoder
+from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
 
 
