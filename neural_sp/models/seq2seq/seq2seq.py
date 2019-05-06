@@ -22,11 +22,11 @@ from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn import RNNDecoder
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
-from neural_sp.models.seq2seq.encoders.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
-from neural_sp.models.seq2seq.encoders.splicing import splice
 from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
 from neural_sp.models.seq2seq.frontends.sequence_summary import SequenceSummaryNetwork
+from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
+from neural_sp.models.seq2seq.frontends.splicing import splice
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
