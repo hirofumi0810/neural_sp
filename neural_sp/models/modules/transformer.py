@@ -113,30 +113,5 @@ class PositionwiseFeedForward(nn.Module):
         return self.w_2(self.dropout(F.relu(self.w_1(xs))))
 
 
-class ResidualFeedForward(nn.Module):
-    """Wrapper for the combination of SublayerConnection and PositionwiseFeedForward
-
-        input -> layer norm -> PositionwiseFeedForward -> dropout -> output ->
-          |                                                        |
-          ----------------------------------------------------------
-
-    Args:
-        d_model (int):
-        d_ff (int):
-        dropout (float):
-        layer_norm_eps (float):
-
-    """
-
-    def __init__(self, d_model, d_ff, dropout, layer_norm_eps=1e-6):
-        super(ResidualFeedForward, self).__init__()
-
-        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
-        self.add_norm = SublayerConnection(d_model, dropout, layer_norm_eps)
-
-    def forward(self, xs):
-        return self.add_norm(xs, self.feed_forward)
-
-
 def gelu(x):
     return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
