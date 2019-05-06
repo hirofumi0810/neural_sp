@@ -10,7 +10,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class GLUBlock(nn.Module):
@@ -97,3 +99,23 @@ class GLUBlock(nn.Module):
                                                       name='weight', dim=0)
                 self.conv_gate_out = nn.utils.weight_norm(self.conv_gate_out,
                                                           name='weight', dim=0)
+
+    def forward(self, x):
+        """Forward computation.
+        Args:
+            x (FloatTensor): `[B, in_ch, T]`
+        Returns:
+            out (FloatTensor): `[B, out_ch, T]`
+        """
+        residual = x
+        if self.conv_residual is not None:
+            residual = self.conv_residual(residual)
+        x = self.pad_left(x)  # `[B, embed_dim, T+kernel-1, 1]`
+        a = self.conv_out(self.conv(self.conv_in(x)))  # `[B, out_ch, T ,1]`
+        a = self.dropout(a)
+        b = self.conv_gate_out(self.conv_gate(self.conv_gate_in(x)))  # `[B, out_ch, T, 1]`
+        b = self.dropout_gate(b)
+
+        x = torch.mul(a, F.sigmoid(b))
+        x += residual
+        return x
