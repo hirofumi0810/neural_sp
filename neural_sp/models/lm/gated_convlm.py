@@ -62,19 +62,19 @@ class GatedConvLM(ModelBase):
         if model_size == 'small':
             layers['conv1-1'] = GLUBlock(4, args.emb_dim, 600,
                                          bottlececk_dim=15,
-                                         dropout=args.dropout_hidden)
+                                         dropout=0.2)
             layers['conv2-1'] = GLUBlock(4, 600, 600,
                                          bottlececk_dim=30,
-                                         dropout=args.dropout_hidden)
+                                         dropout=0.3)
             layers['conv3-1'] = GLUBlock(4, 600, 600,
                                          bottlececk_dim=30,
-                                         dropout=args.dropout_hidden)
+                                         dropout=0.4)
             layers['conv4-1'] = GLUBlock(4, 600, 600,
                                          bottlececk_dim=30,
-                                         dropout=args.dropout_hidden)
+                                         dropout=0.5)
             layers['conv5-1'] = GLUBlock(4, 600, 600,
                                          bottlececk_dim=30,
-                                         dropout=args.dropout_hidden)
+                                         dropout=0.6)
             last_dim = 600
 
         elif model_size == '8':
@@ -231,8 +231,7 @@ class GatedConvLM(ModelBase):
 
             # Compute inner-product over caches
             cache_attn = F.softmax(self.cache_theta * torch.matmul(
-                torch.cat(self.cache_keys, dim=1),
-                ys_in.transpose(1, 2)).squeeze(2), dim=1)
+                torch.cat(self.cache_keys, dim=1), lmout.transpose(2, 1)).squeeze(2), dim=1)
 
             # For visualization
             if len(self.cache_ids) == n_caches:
@@ -256,7 +255,7 @@ class GatedConvLM(ModelBase):
         if n_caches > 0:
             # Register to cache
             self.cache_ids += [ys_out[0, -1].item()]
-            self.cache_keys += [ys_in]
+            self.cache_keys += [lmout]
 
         # Compute token-level accuracy in teacher-forcing
         if self.adaptive_softmax is None:

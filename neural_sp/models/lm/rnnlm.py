@@ -38,7 +38,7 @@ class RNNLM(ModelBase):
         self.n_layers = args.n_layers
         self.residual = args.residual
         self.use_glu = args.use_glu
-        self.backward = args.backward
+        self.bwd = args.backward
 
         self.vocab = args.vocab
         self.eos = 2
@@ -166,7 +166,7 @@ class RNNLM(ModelBase):
         return loss, hidden, reporter
 
     def _forward(self, ys, hidden, reporter, n_caches=0):
-        ys = [np2tensor(y[::-1] if self.backward else y, self.device_id).long() for y in ys]
+        ys = [np2tensor(y[::-1] if self.bwd else y, self.device_id).long() for y in ys]
         ys = pad_list(ys, self.pad)
         ys_in = ys[:, :-1]
         ys_out = ys[:, 1:]
@@ -193,8 +193,7 @@ class RNNLM(ModelBase):
 
             # Compute inner-product over caches
             cache_attn = F.softmax(self.cache_theta * torch.matmul(
-                torch.cat(self.cache_keys, dim=1),
-                lmout.transpose(1, 2)).squeeze(2), dim=1)
+                torch.cat(self.cache_keys, dim=1), lmout.transpose(2, 1)).squeeze(2), dim=1)
 
             # For visualization
             if len(self.cache_ids) == n_caches:

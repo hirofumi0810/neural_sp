@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import cProfile
-import math
 import numpy as np
 import os
 from setproctitle import setproctitle
@@ -223,8 +222,8 @@ def main():
             duration_step = time.time() - start_time_step
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
                         (step, train_set.epoch_detail, loss_train, loss_dev,
-                         math.exp(loss_train), math.exp(loss_dev),
-                         lr_controller.lr, len(ys_train), duration_step / 60))
+                         np.exp(loss_train), np.exp(loss_dev),
+                         lr_controller.lr, ys_train.shape[0], duration_step / 60))
             start_time_step = time.time()
         step += args.n_gpus
         pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))

@@ -60,13 +60,23 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1,
         if is_lm:
             ys, is_new_epoch = dataset.next(batch_size)
             bs, time = ys.shape[:2]
+            if n_caches > 0:
+                assert isinstance(model, RNNLM)
+                # NOTE: cache is not supported for GatedConvLM now
+                for t in range(time - 1):
+                    loss, hidden = model(ys[:, t:t + 2], hidden, is_eval=True, n_caches=n_caches)[:2]
+                    total_loss += loss.item() * bs
+                    n_tokens += bs
 
-            loss, hidden = model(ys, hidden, is_eval=True, n_caches=n_caches)[:2]
-            total_loss += loss.item() * bs * (time - 1)
-            n_tokens += bs * (time - 1)
+                    if progressbar:
+                        pbar.update(bs)
+            else:
+                loss, hidden = model(ys, hidden, is_eval=True)[:2]
+                total_loss += loss.item() * bs * (time - 1)
+                n_tokens += bs * (time - 1)
 
-            if progressbar:
-                pbar.update(sum([len(y) for y in ys]))
+                if progressbar:
+                    pbar.update(bs * (time - 1))
         else:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
             if skip_thought:

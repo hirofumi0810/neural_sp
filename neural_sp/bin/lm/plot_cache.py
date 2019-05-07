@@ -87,17 +87,6 @@ def main():
             shutil.rmtree(save_path)
             os.mkdir(save_path)
 
-        if args.unit == 'word':
-            idx2token = dataset.idx2word
-        elif args.unit == 'wp':
-            idx2token = dataset.idx2wp
-        elif args.unit == 'char':
-            idx2token = dataset.idx2char
-        elif args.unit == 'phone':
-            idx2token = dataset.idx2phone
-        else:
-            raise NotImplementedError(args.unit)
-
         hidden = None
         fig_count = 0
         toknen_count = 0
@@ -110,8 +99,8 @@ def main():
 
                 if len(model.cache_attn) > 0:
                     if toknen_count == n_tokens:
-                        tokens_keys = idx2token(model.cache_ids[:args.recog_n_caches], return_list=True)
-                        tokens_query = idx2token(model.cache_ids[-n_tokens:], return_list=True)
+                        tokens_keys = dataset.idx2token[0](model.cache_ids[:args.recog_n_caches], return_list=True)
+                        tokens_query = dataset.idx2token[0](model.cache_ids[-n_tokens:], return_list=True)
 
                         # Slide attention matrix
                         n_keys = len(tokens_keys)
