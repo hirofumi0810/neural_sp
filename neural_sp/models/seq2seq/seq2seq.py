@@ -544,7 +544,7 @@ class Seq2seq(ModelBase):
 
             return enc_outs
 
-    def get_ctc_posteriors(self, xs, task='ys', temperature=1, topk=None):
+    def get_ctc_probs(self, xs, task='ys', temperature=1, topk=None):
         self.eval()
         with torch.no_grad():
             enc_outs = self.encode(xs, task)
@@ -560,8 +560,8 @@ class Seq2seq(ModelBase):
                 assert self.ctc_weight_sub1 > 0
             elif task == 'ys_sub2':
                 assert self.ctc_weight_sub2 > 0
-            ctc_probs, indices_topk = getattr(self, 'dec_' + dir).ctc_posteriors(
-                enc_outs[task]['xs'], enc_outs[task]['xlens'], temperature, topk)
+            ctc_probs, indices_topk = getattr(self, 'dec_' + dir).ctc_probs_topk(
+                enc_outs[task]['xs'], temperature, topk)
             return ctc_probs, indices_topk, enc_outs[task]['xlens']
 
     def decode(self, xs, params, idx2token, nbest=1, exclude_eos=False,
@@ -639,10 +639,9 @@ class Seq2seq(ModelBase):
                 else:
                     assert params['recog_batch_size'] == 1
 
+                    ctc_log_probs = None
                     if params['recog_ctc_weight'] > 0:
                         ctc_log_probs = self.dec_fwd.ctc_log_probs(enc_outs[task]['xs'])
-                    else:
-                        ctc_log_probs = None
 
                     # forward-backward decoding
                     if params['recog_fwd_bwd_attention']:

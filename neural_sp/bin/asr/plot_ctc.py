@@ -97,7 +97,7 @@ def main():
                                               exclude_eos=False)
 
             # Get CTC probs
-            ctc_probs, indices_topk, xlens = model.get_ctc_posteriors(
+            ctc_probs, indices_topk, xlens = model.get_ctc_probs(
                 batch['xs'], temperature=1, topk=min(100, model.vocab))
             # NOTE: ctc_probs: '[B, T, topk]'
 

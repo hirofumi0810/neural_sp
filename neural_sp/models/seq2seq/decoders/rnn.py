@@ -1513,11 +1513,12 @@ class RNNDecoder(nn.Module):
             # TODO(hirofumi): add decoding paramters
         return best_hyps
 
-    def ctc_posteriors(self, eouts, xlens, temperature, topk):
-        # Path through the softmax layer
-        logits_ctc = self.output_ctc(eouts)
-        ctc_probs = F.softmax(logits_ctc / temperature, dim=-1)
+    def ctc_log_probs(self, eouts, temperature=1):
+        return F.log_softmax(self.output_ctc(eouts) / temperature, dim=-1)
+
+    def ctc_probs_topk(self, eouts, temperature, topk):
+        probs = F.softmax(self.output_ctc(eouts) / temperature, dim=-1)
         if topk is None:
-            topk = ctc_probs.size(-1)
-        _, topk_ids = torch.topk(ctc_probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
-        return tensor2np(ctc_probs), tensor2np(topk_ids)
+            topk = probs.size(-1)
+        _, topk_ids = torch.topk(probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
+        return tensor2np(probs), tensor2np(topk_ids)
