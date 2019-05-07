@@ -33,16 +33,17 @@ conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_2_2_1_1"
 # VGG
-# conv_channels="64_128"
-# conv_kernel_sizes="(3,3)_(3,3)"
-# conv_strides="(1,1)_(1,1)"
-# conv_poolings="(2,2)_(2,2)"
-# subsample="1_1_1_1_1"
+conv_channels="32_32"
+conv_kernel_sizes="(3,3)_(3,3)"
+conv_strides="(1,1)_(1,1)"
+conv_poolings="(2,2)_(2,2)"
+subsample="1_1_1_1_1"
 enc_type=blstm
 enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_residual=false
+enc_nin=false
 subsample_type=drop
 attn_type=location
 attn_dim=512
@@ -58,7 +59,7 @@ input_feeding=false
 dec_bottleneck_dim=1024
 emb_dim=512
 tie_embedding=false
-ctc_fc_list="512"
+ctc_fc_list=""
 ### optimization
 batch_size=20
 optimizer=adam
@@ -239,7 +240,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 80 \
+    dump_feat.sh --cmd "$train_cmd" --nj 200 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
     for x in ${dev_set} ${test_set}; do
         dump_dir=${data}/dump/${x}
@@ -405,6 +406,7 @@ if [ ${stage} -le 4 ]; then
         --enc_n_projs ${enc_n_projs} \
         --enc_n_layers ${enc_n_layers} \
         --enc_residual ${enc_residual} \
+        --enc_nin ${enc_nin} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
