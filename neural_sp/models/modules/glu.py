@@ -22,7 +22,7 @@ class GLUBlock(nn.Module):
         in_ch (int): number of input channels
         out_ch (int): number of output channels
         bottlececk_dim (int): dimension of the bottleneck layers for computational efficiency
-        weight_norm (bool): weight normalization
+        weight_norm (bool): weight normalization for the batch dimension
         dropout (float): dropout probability
 
     """

@@ -19,6 +19,7 @@ from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
+from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
 from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
 
 
@@ -124,7 +125,7 @@ class RNNEncoder(nn.Module):
             channels = [int(c) for c in conv_channels.split('_')] if len(conv_channels) > 0 else []
             kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
                             for c in conv_kernel_sizes.split('_')] if len(conv_kernel_sizes) > 0 else []
-            if rnn_type == 'tds':
+            if rnn_type in ['tds', 'gated_conv']:
                 strides = []
                 poolings = []
             else:
@@ -139,14 +140,20 @@ class RNNEncoder(nn.Module):
             poolings = []
 
         if len(channels) > 0:
-            assert n_stacks == 1 and n_splices == 1
             if rnn_type == 'tds':
-                self.conv = TDSEncoder(input_dim=input_dim,
+                self.conv = TDSEncoder(input_dim=input_dim * n_stacks,
                                        in_channel=conv_in_channel,
                                        channels=channels,
                                        kernel_sizes=kernel_sizes,
                                        dropout=dropout)
+            elif rnn_type == 'gated_conv':
+                self.conv = GatedConvEncoder(input_dim=input_dim * n_stacks,
+                                             in_channel=conv_in_channel,
+                                             channels=channels,
+                                             kernel_sizes=kernel_sizes,
+                                             dropout=dropout)
             else:
+                assert n_stacks == 1 and n_splices == 1
                 self.conv = ConvEncoder(input_dim,
                                         in_channel=conv_in_channel,
                                         channels=channels,
@@ -162,7 +169,7 @@ class RNNEncoder(nn.Module):
             self._output_dim = input_dim * n_splices * n_stacks
             self.conv = None
 
-        if rnn_type not in ['cnn', 'tds']:
+        if rnn_type not in ['conv', 'tds', 'gated_conv']:
             # Fast implementation without processes between each layer
             self.fast_impl = False
             if np.prod(self.subsample) == 1 and self.n_projs == 0 and not residual and n_layers_sub1 == 0 and not nin:
@@ -296,7 +303,7 @@ class RNNEncoder(nn.Module):
         # Path through CNN blocks before RNN layers
         if self.conv is not None:
             xs, xlens = self.conv(xs, xlens)
-            if self.rnn_type in ['cnn', 'tds']:
+            if self.rnn_type in ['conv', 'tds', 'gated_conv']:
                 eouts['ys']['xs'] = xs
                 eouts['ys']['xlens'] = xlens
                 return eouts
