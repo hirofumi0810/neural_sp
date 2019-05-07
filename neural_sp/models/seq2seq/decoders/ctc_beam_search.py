@@ -41,7 +41,7 @@ class BeamSearchDecoder(object):
                 (e.g. post-softmax) for each time step. `[B, T, vocab]`
             xlens (list): A list of length `[B]`
             beam_width (int): the size of beam
-            lm (LM or GatedConvLM):
+            lm (RNNLM or GatedConvLM):
             lm_weight (float): language model weight
             length_penalty (float): insertion bonus
         Returns:
@@ -196,7 +196,7 @@ class CTCPrefixScore(object):
 
         Args:
             hyp (list): prefix label sequence
-            cs (torch.FloatTensor): array of next labels. A tensor of size `[beam_width]`
+            cs (np.ndarray): array of next labels. A tensor of size `[beam_width]`
             r_prev (np.ndarray): previous CTC state
         Returns:
             ctc_scores (np.ndarray):

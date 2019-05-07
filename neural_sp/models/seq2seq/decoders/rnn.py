@@ -868,7 +868,7 @@ class RNNDecoder(nn.Module):
             idx2token (): converter from index to token
             lm (torch.nn.Module):
             lm_rev (torch.nn.Module):
-            ctc_log_probs (torch.FloatTensor):
+            ctc_log_probs (FloatTensor):
             nbest (int):
             exclude_eos (bool):
             refs_id (list):
@@ -1208,10 +1208,12 @@ class RNNDecoder(nn.Module):
                     # CTC score
                     if ctc_weight > 0 and ctc_log_probs is not None:
                         ctc_scores, ctc_states = ctc_prefix_score(
-                            beam[i_beam]['hyp_id'], topk_ids[0], beam[i_beam]['ctc_state'])
+                            beam[i_beam]['hyp_id'], tensor2np(topk_ids[0]), beam[i_beam]['ctc_state'])
                         global_scores_ctc = torch.from_numpy(ctc_scores).cuda(self.device_id)
-                        global_scores += global_scores_ctc * ctc_weight
-                        global_scores, joint_ids_topk = torch.topk(global_scores, beam_width, dim=1)
+                        global_scores_topk += global_scores_ctc * ctc_weight
+                        # Sort again
+                        global_scores_topk, joint_ids_topk = torch.topk(
+                            global_scores_topk, k=beam_width, dim=1, largest=True, sorted=True)
                         topk_ids = topk_ids[:, joint_ids_topk[0]]
                     else:
                         global_scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
