@@ -160,7 +160,7 @@ class Seq2seq(ModelBase):
 
         # Bridge layer between the encoder and decoder
         self.is_bridge = False
-        if args.enc_type in ['cnn', 'tds', 'transformer'] or args.dec_type == 'transformer' or args.bridge_layer:
+        if (args.enc_type in ['conv', 'tds', 'gated_conv', 'transformer'] and args.ctc_weight < 1)or args.dec_type == 'transformer' or args.bridge_layer:
             self.bridge = LinearND(self.enc.output_dim,
                                    args.d_model if args.dec_type == 'transformer' else args.dec_n_units,
                                    dropout=args.dropout_enc)
@@ -196,7 +196,7 @@ class Seq2seq(ModelBase):
                     unk=self.unk,
                     pad=self.pad,
                     blank=self.blank,
-                    enc_n_units=args.d_model,
+                    enc_n_units=self.enc.output_dim,
                     attn_type=args.transformer_attn_type,
                     attn_n_heads=args.transformer_attn_n_heads,
                     n_layers=args.transformer_dec_n_layers,
@@ -222,7 +222,7 @@ class Seq2seq(ModelBase):
                     unk=self.unk,
                     pad=self.pad,
                     blank=self.blank,
-                    enc_n_units=self.enc_n_units,
+                    enc_n_units=self.enc.output_dim,
                     attn_type=args.attn_type,
                     attn_dim=args.attn_dim,
                     attn_sharpening_factor=args.attn_sharpening,
@@ -529,7 +529,7 @@ class Seq2seq(ModelBase):
             # encoder
             enc_outs = self.enc(xs, xlens, task.split('.')[0])
 
-            if self.main_weight < 1 and self.enc_type in ['cnn', 'tds']:
+            if self.main_weight < 1 and self.enc_type in ['conv', 'tds', 'gated_conv', 'transformer']:
                 for sub in ['sub1', 'sub2']:
                     enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
                     enc_outs['ys_' + sub]['xlens'] = enc_outs['ys']['xlens'][:]
