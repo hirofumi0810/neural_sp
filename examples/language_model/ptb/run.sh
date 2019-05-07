@@ -163,8 +163,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_hidden ${dropout_hidden} \
         --dropout_out ${dropout_out} \
         --dropout_emb ${dropout_emb} \
-        --weight_decay ${weight_decay} || exit 1;
-    # --resume ${resume} || exit 1;
+        --weight_decay ${weight_decay} \
+        --resume ${resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
 fi

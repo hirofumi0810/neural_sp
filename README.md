@@ -17,7 +17,9 @@ cd tools
 make KALDI=/path/to/kaldi
 ```
 
+
 ## Data preparation
+
 
 ## Features
 ### Corpus
@@ -39,6 +41,7 @@ make KALDI=/path/to/kaldi
 - CNN+(bidirectional/unidirectional) LSTM encoder
 - Self-attention (Transformer) encoder [[link](https://arxiv.org/abs/1706.03762)]
 - Time-Depth Seprarabel (TDS) convolutional encoder [[link](https://arxiv.org/abs/1904.02619)]
+- Gated CNN encoder (GLU) [link]
 
 ### Connectionist Temporal Classification (CTC) decoder
 - beam search
@@ -75,33 +78,35 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 - Forward-backward attention [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
 - RNNLM objective [link]
 
+
 ## Performance
 ### WSJ (WER)
 | model                            | test_dev93 | test_eval92 |
 | -------------------------------- | ---------- | ----------- |
 | BPE1k attn + conv + CTC + RNNLM  | 10.5       | 7.6         |
 
-### CSJ (WER)
-| model            | eva1l | eval2 | eval3 |
-| ---------------- | ----- | ----- | ----- |
-| BPE10k attn      | 8.3   | 6.2   | 6.9   |
-| + RNNLM          | 7.8   | 5.9   | 6.6   |
-| Word30k attn     | 9.3   | 7.0   | 7.9   |
-| + RNNLM          | 8.9   | 6.9   | 7.6   |
-| + Char attn      | 8.8   | 6.8   | 7.6   |
-| + OOV resolution | 8.3   | 6.1   | 6.7   |
+### CSJ (WER(CER))
+| model               | eva1l    | eval2 | eval3 |
+| ------------------- | ------ | ----- | ----- |
+| BPE10k attn + RNNLM | 7.8 ()   | 5.9 ()  | 6.6 ()  |
 
 ### Switchboard (WER)
 | model                | SWB  | CH   |
 | -------------------- | ---- | ---- |
-| BPE10k attn          | 11.8 | 23.5 |
-| + RNNLM              | 11.0 | 23.3 |
+| BPE10k attn + RNNLM  | 11.0 | 23.3 |
 | + speed perturbation | 10.2 | 21.5 |
 
 ### Librispeech (WER)
 | model                | dev-clean | dev-other | test-clean | test-other |
 | -------------------- | --------- | --------- | ---------- | ---------- |
 | BPE30k attn + RNNLM  | 3.6       | 11.2      | 3.9        | 12.2       |
+
+### PTB (PPL)
+| model       | valid | test  |
+| ------------| ----- | ----- |
+| RNNLM       | 87.99 | 79.58 |
+| + cache=500 | 77.36 | 76.94 |
+
 
 ## Reference
 - https://github.com/kaldi-asr/kaldi
