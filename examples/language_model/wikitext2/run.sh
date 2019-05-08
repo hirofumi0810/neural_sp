@@ -165,8 +165,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_out ${dropout_out} \
         --dropout_emb ${dropout_emb} \
         --weight_decay ${weight_decay} \
-        --adaptive_softmax ${adaptive_softmax} || exit 1;
-    # --resume ${resume} || exit 1;
+        --adaptive_softmax ${adaptive_softmax} \
+        --resume ${resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
 fi

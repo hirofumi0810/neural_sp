@@ -88,7 +88,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### CSJ (WER(CER))
 | model               | eva1l    | eval2 | eval3 |
 | ------------------- | ------ | ----- | ----- |
-| BPE10k attn + RNNLM | 7.8 ()   | 5.9 ()  | 6.6 ()  |
+| BPE10k attn + RNNLM | 7.8 (N/A) | 5.9 (N/A) | 6.6 (N/A) |
 
 ### Switchboard (WER)
 | model                | SWB  | CH   |
@@ -105,8 +105,15 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | model       | valid | test  |
 | ------------| ----- | ----- |
 | RNNLM       | 87.99 | 79.58 |
+| + cache=100 | 79.58 | 79.12 |
 | + cache=500 | 77.36 | 76.94 |
 
+### WikiText (PPL)
+| model        | valid  | test  |
+| ------------ | ------ | ----- |
+| RNNLM        | 104.53 | 98.73 |
+| + cache=100  | 90.86  | 85.87 |
+| + cache=2000 | 76.10  | 72.77 |
 
 ## Reference
 - https://github.com/kaldi-asr/kaldi
