@@ -24,19 +24,13 @@ n_stacks=1
 n_skips=1
 sequence_summary_network=false
 conv_in_channel=1
-conv_channels=
-conv_kernel_sizes=
-conv_strides=
-conv_poolings=
-conv_batch_norm=false
-conv_residual=false
-conv_bottleneck_dim=0
-subsample="1_2_2_1_1"
-# VGG
 conv_channels="32_32"
 conv_kernel_sizes="(3,3)_(3,3)"
 conv_strides="(1,1)_(1,1)"
 conv_poolings="(2,2)_(2,2)"
+conv_batch_norm=false
+conv_residual=false
+conv_bottleneck_dim=0
 subsample="1_1_1_1_1"
 enc_type=blstm
 enc_n_units=512
@@ -93,7 +87,7 @@ lsm_prob=0.1
 layer_norm=false
 focal_loss=0.0
 ### MTL
-ctc_weight=0.0
+ctc_weight=0.1
 bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=false
@@ -104,7 +98,6 @@ lm_init=
 lmobj_weight=0.0
 share_lm_softmax=false
 # contextualization
-contextualize=
 
 #########################
 # LM configuration
@@ -129,6 +122,7 @@ lm_print_step=200
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
+lm_decay_type=epoch
 lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
@@ -357,6 +351,7 @@ if [ ${stage} -le 3 ]; then
         --decay_start_epoch ${lm_decay_start_epoch} \
         --decay_rate ${lm_decay_rate} \
         --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
+        --decay_type ${lm_decay_type} \
         --not_improved_patient_n_epochs ${lm_not_improved_patient_n_epochs} \
         --eval_start_epoch ${lm_eval_start_epoch} \
         --param_init ${lm_param_init} \
@@ -462,7 +457,6 @@ if [ ${stage} -le 4 ]; then
         --lm_init ${lm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
-        --contextualize ${contextualize} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

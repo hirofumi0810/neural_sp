@@ -79,11 +79,11 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 - RNNLM objective [link]
 
 
-## Performance
+## ASR Performance
 ### WSJ (WER)
 | model                            | test_dev93 | test_eval92 |
 | -------------------------------- | ---------- | ----------- |
-| BPE1k attn + conv + CTC + RNNLM  | 10.5       | 7.6         |
+| BPE1k attn + conv + CTC + RNNLM  | 10.2       | 7.5         |
 
 ### CSJ (WER(CER))
 | model               | eva1l    | eval2 | eval3 |
@@ -101,6 +101,8 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | -------------------- | --------- | --------- | ---------- | ---------- |
 | BPE30k attn + RNNLM  | 3.6       | 11.2      | 3.9        | 12.2       |
 
+
+## LM Performance
 ### PTB (PPL)
 | model       | valid | test  |
 | ------------| ----- | ----- |
@@ -114,6 +116,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | RNNLM        | 104.53 | 98.73 |
 | + cache=100  | 90.86  | 85.87 |
 | + cache=2000 | 76.10  | 72.77 |
+
 
 ## Reference
 - https://github.com/kaldi-asr/kaldi
