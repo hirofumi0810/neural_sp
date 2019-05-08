@@ -12,7 +12,7 @@ gpu=
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char
-vocab_size=30000
+vocab_size=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
 
 #########################
@@ -33,7 +33,7 @@ conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_2_2_2_1"
 # VGG
-# conv_channels="64_128"
+# conv_channels="32_32"
 # conv_kernel_sizes="(3,3)_(3,3)"
 # conv_strides="(1,1)_(1,1)"
 # conv_poolings="(2,2)_(2,2)"
@@ -43,6 +43,7 @@ enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_residual=false
+enc_nin=false
 subsample_type=drop
 attn_type=location
 attn_dim=512
@@ -129,6 +130,7 @@ lm_print_step=50
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
+lm_decay_type=epoch
 lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
@@ -379,6 +381,7 @@ if [ ${stage} -le 3 ]; then
         --decay_start_epoch ${lm_decay_start_epoch} \
         --decay_rate ${lm_decay_rate} \
         --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
+        --decay_type ${lm_decay_type} \
         --not_improved_patient_n_epochs ${lm_not_improved_patient_n_epochs} \
         --eval_start_epoch ${lm_eval_start_epoch} \
         --param_init ${lm_param_init} \
@@ -428,6 +431,7 @@ if [ ${stage} -le 4 ]; then
         --enc_n_projs ${enc_n_projs} \
         --enc_n_layers ${enc_n_layers} \
         --enc_residual ${enc_residual} \
+        --enc_nin ${enc_nin} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \

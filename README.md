@@ -86,9 +86,9 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | BPE1k attn + conv + CTC + RNNLM  | 10.2       | 7.5         |
 
 ### CSJ (WER(CER))
-| model               | eva1l    | eval2 | eval3 |
-| ------------------- | ------ | ----- | ----- |
-| BPE10k attn + RNNLM | 7.8 (N/A) | 5.9 (N/A) | 6.6 (N/A) |
+| model               | eva1l     | eval2     | eval3     |
+| ------------------- | --------- | --------- | --------- |
+| BPE10k attn + RNNLM | 7.4 (5.8) | 5.7 (4.5) | 6.0 (4.5) |
 
 ### Switchboard (WER)
 | model                | SWB  | CH   |
