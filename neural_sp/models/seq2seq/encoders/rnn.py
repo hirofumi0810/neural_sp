@@ -210,7 +210,7 @@ class RNNEncoder(nn.Module):
                         if self.subsample[l] > 1:
                             self.concat_proj += [LinearND(n_units * self.n_dirs
                                                           * self.subsample[l], n_units * self.n_dirs)]
-                            self.concat_bn += [nn.BatchNorm2d(n_units * self.n_dirs)]
+                            self.concat_bn += [nn.BatchNorm1d(n_units * self.n_dirs)]
                         else:
                             self.concat_proj += [None]
                             self.concat_bn += [None]
@@ -384,11 +384,11 @@ class RNNEncoder(nn.Module):
 
                             # Projection + batch normalization, ReLU
                             xs = self.concat_proj[l](xs)
-                            xs = xs.contiguous().transpose(2, 1).unsqueeze(3)  # `[B, n_unis (*2), T, 1]`
-                            # NOTE: consider feature dimension as input channel
-                            xs = self.nin_bn[l](xs)
-                            xs = F.relu(xs)  # `[B, n_unis (*2), T, 1]`
-                            xs = xs.transpose(2, 1).squeeze(3)  # `[B, T, n_unis (*2)]`
+                            bs, time = xs.size()[:2]
+                            xs = xs.view(bs * time, -1)
+                            xs = self.concat_bn[l](xs)
+                            xs = xs.view(bs, time, -1)
+                            xs = F.relu(xs)
 
                         elif self.subsample_type == 'max_pool':
                             xs = xs.transpose(1, 0).contiguous()
