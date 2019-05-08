@@ -418,7 +418,7 @@ class RNNDecoder(nn.Module):
         logits = self.output_ctc(eouts)
 
         # Compute the auxiliary CTC loss
-        elens_ctc = np2tensor(np.fromiter(elens, dtype=np.int64), -1).int()
+        elensmbl_ctc = np2tensor(np.fromiter(elens, dtype=np.int64), -1).int()
         ys_ctc = [np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys]  # always fwd
         ylens = np2tensor(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int64), -1).int()
         ys_ctc = torch.cat(ys_ctc, dim=0).int()
@@ -427,7 +427,7 @@ class RNNDecoder(nn.Module):
 
         # Compute CTC loss
         loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
-                                 ys_ctc, elens_ctc, ylens)
+                                 ys_ctc, elensmbl_ctc, ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
 
@@ -850,7 +850,7 @@ class RNNDecoder(nn.Module):
     def beam_search(self, eouts, elens, params, idx2token,
                     lm=None, lm_rev=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False, refs_id=None, utt_ids=None, speakers=None,
-                    ensemble_eouts=None, ensemble_elens=None, ensemble_decoders=[]):
+                    ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[]):
         """Beam search decoding in the inference stage.
 
         Args:
@@ -874,9 +874,9 @@ class RNNDecoder(nn.Module):
             refs_id (list):
             utt_ids (list):
             speakers (list):
-            ensemble_eouts (list): list of FloatTensor
-            ensemble_elens (list) list of list
-            ensemble_decoders (list): list of torch.nn.Module
+            ensmbl_eouts (list): list of FloatTensor
+            ensmbl_elens (list) list of list
+            ensmbl_decs (list): list of torch.nn.Module
         Returns:
             nbest_hyps_idx (list): A list of length `[B]`, which contains list of n hypotheses
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
@@ -884,7 +884,7 @@ class RNNDecoder(nn.Module):
 
         """
         bs, _, enc_n_units = eouts.size()
-        n_models = len(ensemble_decoders) + 1
+        n_models = len(ensmbl_decs) + 1
 
         oracle = params['recog_oracle']
         beam_width = params['recog_beam_width']
@@ -927,23 +927,19 @@ class RNNDecoder(nn.Module):
             self.score.reset()
             lm_hxs, lm_cxs = None, None
 
-            hxs_hist = eouts.new_zeros((bs, self.dec_n_units))
-            cxs_hist = eouts.new_zeros((bs, self.dec_n_units))
+            hxs_hist = eouts.new_zeros((1, self.dec_n_units))
+            cxs_hist = eouts.new_zeros((1, self.dec_n_units))
             cv_hist = eouts.new_zeros(bs, 1, self.dec_n_units)
             if self.cache_fusion:
                 self.score_cache.reset()
 
             # Ensemble initialization
-            ensemble_dstates = []
-            ensemble_cv = []
-            if n_models > 0:
-                for dec in ensemble_decoders:
-                    ensemble_dstates += [dec.init_dec_state(1)]
-                    if dec.input_feeding:
-                        ensemble_cv += [eouts.new_zeros(1, 1, dec.dec_n_units)]
-                        # NOTE: this is equivalent to attn_v
-                    else:
-                        ensemble_cv += [eouts.new_zeros(1, 1, dec.enc_n_units)]
+            ensmbl_dstates = []
+            ensmbl_cv = []
+            if n_models > 1:
+                for dec in ensmbl_decs:
+                    ensmbl_dstates += [dec.init_dec_state(1)]
+                    ensmbl_cv += [eouts.new_zeros(1, 1, dec.dec_n_units if dec.input_feeding else dec.enc_n_units)]
                     dec.score.reset()
 
             if speakers is not None and speakers[b] != self.prev_spk:
@@ -971,9 +967,9 @@ class RNNDecoder(nn.Module):
                      'aws': [None],
                      'lm_hxs': lm_hxs,
                      'lm_cxs': lm_cxs,
-                     'ensemble_dstates': ensemble_dstates,
-                     'ensemble_cv': ensemble_cv,
-                     'ensemble_aws':[[None] * n_models],
+                     'ensmbl_dstates': ensmbl_dstates,
+                     'ensmbl_cv': ensmbl_cv,
+                     'ensmbl_aws':[[None]] * (n_models - 1),
                      'ctc_state': ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
                      'ctc_score': 0.0,
                      'cache_ids': [],
@@ -996,19 +992,16 @@ class RNNDecoder(nn.Module):
 
                     # Recurrency for the main model
                     y = eouts.new_zeros(1, 1).fill_(prev_idx).long()
-                    y_emb = self.embed(y)
-                    dstates = self.recurrency(y_emb,
+                    dstates = self.recurrency(self.embed(y),
                                               beam[i_beam]['cv'],
                                               beam[i_beam]['dstates']['dstate'])
                     # Recurrency for the ensemble
-                    ensemble_dstates = []
-                    if n_models > 0:
-                        for i_e, dec in enumerate(ensemble_decoders):
-                            y_emb = dec.embed(y)
-                            ensemble_dstates += [dec.recurrency(
-                                y_emb,
-                                beam[i_beam]['ensemble_cv'][i_e],
-                                beam[i_beam]['ensemble_dstates'][i_e]['dstate'])]
+                    ensmbl_dstates = []
+                    if n_models > 1:
+                        for i_e, dec in enumerate(ensmbl_decs):
+                            ensmbl_dstates += [dec.recurrency(dec.embed(y),
+                                                              beam[i_beam]['ensmbl_cv'][i_e],
+                                                              beam[i_beam]['ensmbl_dstates'][i_e]['dstate'])]
 
                     # Score for the main model
                     cv, aw = self.score(eouts[b:b + 1, :elens[b]],
@@ -1017,17 +1010,18 @@ class RNNDecoder(nn.Module):
                                         dstates['dout_score'],
                                         beam[i_beam]['aws'][-1])
                     # Score for the ensemble
-                    ensemble_cv = []
-                    ensemble_aws = []
-                    if n_models > 0:
-                        for i_e, dec in enumerate(ensemble_decoders):
-                            con_vec_e, aw_e = dec.score(
-                                ensemble_eouts[i_e][b:b + 1, :ensemble_elens[i_e][b]],
-                                ensemble_elens[i_e][b:b + 1],
-                                ensemble_dstates[i_e]['dout_score'],
-                                beam[i_beam]['ensemble_aws'][i_e][-1])
-                            ensemble_cv += [con_vec_e]
-                            ensemble_aws += [aw_e]
+                    ensmbl_cv = []
+                    ensmbl_aws = []
+                    if n_models > 1:
+                        for i_e, dec in enumerate(ensmbl_decs):
+                            cv_e, aw_e = dec.score(
+                                ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
+                                ensmbl_elens[i_e][b:b + 1],
+                                ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
+                                ensmbl_dstates[i_e]['dout_score'],
+                                beam[i_beam]['ensmbl_aws'][i_e][-1])
+                            ensmbl_cv += [cv_e]
+                            ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi)] why unsqueeze?
 
                     lmout, lmstate = None, None
                     if self.lm is not None:
@@ -1145,20 +1139,19 @@ class RNNDecoder(nn.Module):
                     if self.adaptive_softmax is None:
                         local_scores_attn = torch.log(probs)
                     else:
-                        local_scores_attn = probs
+                        local_scores_attn = probs  # NOTE: already log-scaled
                     # Generate for the ensemble
-                    if n_models > 0:
-                        for i_e, dec in enumerate(ensemble_decoders):
-                            attn_v_e, _ = dec.generate(ensemble_cv[i_e],
-                                                       ensemble_dstates[i_e]['dout_gen'],
+                    if n_models > 1:
+                        for i_e, dec in enumerate(ensmbl_decs):
+                            attn_v_e, _ = dec.generate(ensmbl_cv[i_e],
+                                                       ensmbl_dstates[i_e]['dout_gen'],
                                                        lmout)
                             if dec.adaptive_softmax is None:
                                 local_scores_attn += F.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
                             else:
                                 local_scores_attn += dec.adaptive_softmax.log_prob(
                                     attn_v_e.view(-1, attn_v_e.size(2))).unsqueeze(1)
-                        # re-normalize
-                        local_scores_attn /= (n_models + 1)
+                        local_scores_attn /= n_models
 
                     # Attention scores
                     scores_attn = beam[i_beam]['score_attn'] + local_scores_attn
@@ -1250,9 +1243,9 @@ class RNNDecoder(nn.Module):
                              'aws': beam[i_beam]['aws'] + [aw],
                              'lm_hxs': lmstate[0][:] if lmstate is not None else None,
                              'lm_cxs': lmstate[1][:] if lmstate is not None else None,
-                             'ensemble_dstates': ensemble_dstates,
-                             'ensemble_cv': ensemble_cv,
-                             'ensemble_aws': ensemble_aws,
+                             'ensmbl_dstates': ensmbl_dstates,
+                             'ensmbl_cv': ensmbl_cv,
+                             'ensmbl_aws': ensmbl_aws,
                              'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
                              'ctc_score': ctc_scores[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
                              'cache_ids': beam[i_beam]['cache_ids'] + [idx],

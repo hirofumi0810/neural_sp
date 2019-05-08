@@ -653,22 +653,22 @@ class Seq2seq(ModelBase):
                                 lm_bwd = self.lm_bwd
 
                         # ensemble (forward)
-                        ensemble_eouts_fwd = []
-                        ensemble_elens_fwd = []
-                        ensemble_decs_fwd = []
+                        ensmbl_eouts_fwd = []
+                        ensmbl_elens_fwd = []
+                        ensmbl_decs_fwd = []
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
                                 enc_outs_e_fwd = model.encode(xs, task, flip=False)
-                                ensemble_eouts_fwd += [enc_outs_e_fwd[task]['xs']]
-                                ensemble_elens_fwd += [enc_outs_e_fwd[task]['xlens']]
-                                ensemble_decs_fwd += [model.dec_fwd]
+                                ensmbl_eouts_fwd += [enc_outs_e_fwd[task]['xs']]
+                                ensmbl_elens_fwd += [enc_outs_e_fwd[task]['xlens']]
+                                ensmbl_decs_fwd += [model.dec_fwd]
                                 # NOTE: only support for the main task now
 
                         nbest_hyps_id_fwd, aws_fwd, scores_fwd, cache_info = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, lm_fwd, lm_bwd, ctc_log_probs,
                             params['recog_beam_width'], False, refs_id, utt_ids, speakers,
-                            ensemble_eouts_fwd, ensemble_elens_fwd, ensemble_decs_fwd)
+                            ensmbl_eouts_fwd, ensmbl_elens_fwd, ensmbl_decs_fwd)
 
                         # backward decoder
                         lm_bwd, lm_fwd = None, None
@@ -678,18 +678,18 @@ class Seq2seq(ModelBase):
                                 lm_fwd = self.lm_fwd
 
                         # ensemble (backward)
-                        ensemble_eouts_bwd = []
-                        ensemble_elens_bwd = []
-                        ensemble_decs_bwd = []
+                        ensmbl_eouts_bwd = []
+                        ensmbl_elens_bwd = []
+                        ensmbl_decs_bwd = []
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
                                 if self.input_type == 'speech' and self.mtl_per_batch:
                                     enc_outs_e_bwd = model.encode(xs, task, flip=True)
                                 else:
                                     enc_outs_e_bwd = model.encode(xs, task, flip=False)
-                                ensemble_eouts_bwd += [enc_outs_e_bwd[task]['xs']]
-                                ensemble_elens_bwd += [enc_outs_e_bwd[task]['xlens']]
-                                ensemble_decs_bwd += [model.dec_bwd]
+                                ensmbl_eouts_bwd += [enc_outs_e_bwd[task]['xs']]
+                                ensmbl_elens_bwd += [enc_outs_e_bwd[task]['xlens']]
+                                ensmbl_decs_bwd += [model.dec_bwd]
                                 # NOTE: only support for the main task now
                                 # TODO(hirofumi): merge with the forward for the efficiency
 
@@ -703,7 +703,7 @@ class Seq2seq(ModelBase):
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, lm_bwd, lm_fwd, ctc_log_probs,
                             params['recog_beam_width'], False, refs_id, utt_ids, speakers,
-                            ensemble_eouts_bwd, ensemble_elens_bwd, ensemble_decs_bwd)
+                            ensmbl_eouts_bwd, ensmbl_elens_bwd, ensmbl_decs_bwd)
 
                         # forward-backward attention
                         best_hyps_id = fwd_bwd_attention(
@@ -714,18 +714,18 @@ class Seq2seq(ModelBase):
                         aws = None
                     else:
                         # ensemble
-                        ensemble_eouts = []
-                        ensemble_elens = []
-                        ensemble_decs = []
+                        ensmbl_eouts = []
+                        ensmbl_elens = []
+                        ensmbl_decs = []
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
                                 if model.input_type == 'speech' and model.mtl_per_batch and 'bwd' in dir:
                                     enc_outs_e = model.encode(xs, task, flip=True)
                                 else:
                                     enc_outs_e = model.encode(xs, task, flip=False)
-                                ensemble_eouts += [enc_outs_e[task]['xs']]
-                                ensemble_elens += [enc_outs_e[task]['xlens']]
-                                ensemble_decs += [getattr(model, 'dec_' + dir)]
+                                ensmbl_eouts += [enc_outs_e[task]['xs']]
+                                ensmbl_elens += [enc_outs_e[task]['xlens']]
+                                ensmbl_decs += [getattr(model, 'dec_' + dir)]
                                 # NOTE: only support for the main task now
 
                         lm, lm_rev = None, None
@@ -741,7 +741,7 @@ class Seq2seq(ModelBase):
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, lm, lm_rev, ctc_log_probs,
                             nbest, exclude_eos, refs_id, utt_ids, speakers,
-                            ensemble_eouts, ensemble_elens, ensemble_decs)
+                            ensmbl_eouts, ensmbl_elens, ensmbl_decs)
 
                         if nbest == 1:
                             best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
