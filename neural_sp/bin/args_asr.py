@@ -372,7 +372,8 @@ def parse():
     parser.add_argument('--recog_cache_type', type=str, default='speech',
                         choices=['speech_fifo', 'speech_fifo_online',
                                  'speech_dict', 'speech_dict_overwrite',
-                                 'lm_fifo', 'lm_fifo_online'],
+                                 'lm_fifo', 'lm_fifo_online',
+                                 'lm_dict', 'lm_dict_overwrite', ],
                         help='cache type')
     parser.add_argument('--recog_second_pass', type=strtobool, default=False,
                         help='')
