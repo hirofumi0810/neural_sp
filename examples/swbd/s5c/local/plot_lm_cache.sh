@@ -11,7 +11,7 @@ data=/n/sd8/inaguma/corpus/swbd
 
 batch_size=1
 n_caches=100
-cache_theta=1.0
+cache_theta=0.1
 cache_lambda=0.1
 
 . ./cmd.sh

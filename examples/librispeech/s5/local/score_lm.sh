@@ -7,10 +7,10 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/csj
+data=/n/sd8/inaguma/corpus/librispeech
 
 batch_size=1
-n_caches=100
+n_caches=0
 cache_theta=0.1
 cache_lambda=0.1
 
@@ -24,30 +24,20 @@ set -o pipefail
 
 if [ -z ${gpu} ]; then
     echo "Error: set GPU number." 1>&2
-    echo "Usage: local/plot_lm_cache.sh --gpu 0" 1>&2
+    echo "Usage: local/score.sh --gpu 0" 1>&2
     exit 1
 fi
 gpu=$(echo ${gpu} | cut -d "," -f 1)
 
-for set in eval1 eval2 eval3; do
-    recog_dir=$(dirname ${model})/plot_${set}
+for set in dev_clean dev_other test_clean test_other; do
+    recog_dir=$(dirname ${model})/decode_${set}
     if [ ${n_caches} != 0 ]; then
         recog_dir=${recog_dir}_cache${n_caches}_theta${cache_theta}_lambda${cache_lambda}
     fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep 'all') ]; then
-        if [ $(echo ${model} | grep 'aps_other') ]; then
-            recog_set=${data}/dataset_lm/${set}_all_train_aps_other_word30000.tsv
-        else
-            recog_set=${data}/dataset_lm/${set}_all_train_all_word30000.tsv
-        fi
-    elif [ $(echo ${model} | grep 'aps_other') ]; then
-        recog_set=${data}/dataset_lm/${set}_aps_other_train_aps_other_wpbpe10000.tsv
-    fi
-
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/plot_cache.py \
-        --recog_sets ${recog_set} \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/eval.py \
+        --recog_sets ${data}/dataset_lm/${set}_960_train_960_wpbpe30000.tsv \
         --recog_model ${model} \
         --recog_batch_size ${batch_size} \
         --recog_n_caches ${n_caches} \

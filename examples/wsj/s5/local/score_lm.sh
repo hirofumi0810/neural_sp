@@ -11,7 +11,7 @@ data=/n/sd8/inaguma/corpus/wsj
 
 batch_size=1
 n_caches=0
-cache_theta=1.0
+cache_theta=0.1
 cache_lambda=0.1
 
 . ./cmd.sh

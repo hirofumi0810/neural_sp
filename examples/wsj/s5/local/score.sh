@@ -38,6 +38,12 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
+n_caches=0
+cache_theta_speech=1.5
+cache_lambda_speech=0.1
+cache_theta_lm=0.1
+cache_lambda_lm=0.1
+cache_type=lm_fifo
 oracle=false
 
 . ./cmd.sh
@@ -90,6 +96,9 @@ for set in test_dev93 test_eval92; do
     if [ ! -z ${lm} ] && ${lm_state_carry_over}; then
         recog_dir=${recog_dir}_LMcarryover
     fi
+    if [ ${n_caches} != 0 ]; then
+        recog_dir=${recog_dir}_${cache_type}cache${n_caches}
+    fi
     if ${oracle}; then
         recog_dir=${recog_dir}_oracle
     fi
@@ -136,6 +145,12 @@ for set in test_dev93 test_eval92; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_n_caches ${n_caches} \
+        --recog_cache_theta_speech ${cache_theta_speech} \
+        --recog_cache_lambda_speech ${cache_lambda_speech} \
+        --recog_cache_theta_lm ${cache_theta_lm} \
+        --recog_cache_lambda_lm ${cache_lambda_lm} \
+        --recog_cache_type ${cache_type} \
         --recog_oracle ${oracle} \
         || exit 1;
 
