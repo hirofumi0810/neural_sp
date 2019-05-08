@@ -23,6 +23,7 @@ make KALDI=/path/to/kaldi
 
 ## Features
 ### Corpus
+#### ASR
 - AMI
 - CSJ
 - Librispeech
@@ -31,6 +32,10 @@ make KALDI=/path/to/kaldi
 - TEDLIUM3
 - TIMIT
 - WSJ
+
+#### LM
+- Penn Tree Bank
+- WikiText2
 
 ### Front-end
 - Sequence summary network [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1438.html)]
@@ -85,10 +90,10 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | -------------------------------- | ---------- | ----------- |
 | BPE1k attn + conv + CTC + RNNLM  | 10.2       | 7.5         |
 
-### CSJ (WER(CER))
-| model               | eva1l     | eval2     | eval3     |
-| ------------------- | --------- | --------- | --------- |
-| BPE10k attn + RNNLM | 7.4 (5.8) | 5.7 (4.5) | 6.0 (4.5) |
+### CSJ (WER/CER)
+| model                                         | eval1   | eval2   | eval3   |
+| --------------------------------------------- | ------- | ------- | ------- |
+| BPE10k attn + char CTC init. + add 2L + RNNLM | 7.4/5.8 | 5.7/4.5 | 6.0/4.5 |
 
 ### Switchboard (WER)
 | model                | SWB  | CH   |
@@ -103,14 +108,14 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 
 
 ## LM Performance
-### PTB (PPL)
+### Penn Tree Bank (PPL)
 | model       | valid | test  |
 | ------------| ----- | ----- |
-| RNNLM       | 87.99 | 79.58 |
+| RNNLM       | 87.99 | 86.06 |
 | + cache=100 | 79.58 | 79.12 |
 | + cache=500 | 77.36 | 76.94 |
 
-### WikiText (PPL)
+### WikiText2 (PPL)
 | model        | valid  | test  |
 | ------------ | ------ | ----- |
 | RNNLM        | 104.53 | 98.73 |
