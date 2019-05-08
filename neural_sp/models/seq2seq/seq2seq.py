@@ -150,7 +150,6 @@ class Seq2seq(ModelBase):
                 conv_bottleneck_dim=args.conv_bottleneck_dim,
                 residual=args.enc_residual,
                 nin=args.enc_nin,
-                # layer_norm=args.layer_norm,
                 task_specific_layer=args.task_specific_layer)
             # NOTE: pure CNN/TDS encoders are also included
 
@@ -246,7 +245,6 @@ class Seq2seq(ModelBase):
                     ss_prob=args.ss_prob,
                     ss_type=args.ss_type,
                     lsm_prob=args.lsm_prob,
-                    layer_norm=args.layer_norm,
                     fl_weight=args.focal_loss_weight,
                     fl_gamma=args.focal_loss_gamma,
                     ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
@@ -301,7 +299,6 @@ class Seq2seq(ModelBase):
                         ss_prob=args.ss_prob,
                         ss_type=args.ss_type,
                         lsm_prob=args.lsm_prob,
-                        layer_norm=args.layer_norm,
                         fl_weight=args.focal_loss_weight,
                         fl_gamma=args.focal_loss_gamma,
                         ctc_weight=getattr(self, 'ctc_weight_' + sub),

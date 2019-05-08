@@ -598,8 +598,6 @@ def make_model_name(args, subsample_factor):
     dir_name += '_ls' + str(args.lsm_prob)
     if args.focal_loss_weight > 0:
         dir_name += '_fl' + str(args.focal_loss_weight)
-    if args.layer_norm:
-        dir_name += '_ln'
     if args.warmup_n_steps > 0:
         dir_name += '_warmpup' + str(args.warmup_n_steps)
 

@@ -51,7 +51,6 @@ class RNNEncoder(nn.Module):
         n_layers_sub1 (int): number of layers in the 1st auxiliary task
         n_layers_sub2 (int): number of layers in the 2nd auxiliary task
         nin (bool): insert 1*1 conv + batch normalization + ReLU
-        layer_norm (bool): layer normalization
         task_specific_layer (bool):
 
     """
@@ -80,7 +79,6 @@ class RNNEncoder(nn.Module):
                  n_layers_sub1=0,
                  n_layers_sub2=0,
                  nin=False,
-                 layer_norm=False,
                  task_specific_layer=False):
 
         super(RNNEncoder, self).__init__()
@@ -98,7 +96,6 @@ class RNNEncoder(nn.Module):
         self.n_dirs = 2 if self.bidirectional else 1
         self.n_projs = n_projs
         self.n_layers = n_layers
-        self.layer_norm = layer_norm
 
         # Setting for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1

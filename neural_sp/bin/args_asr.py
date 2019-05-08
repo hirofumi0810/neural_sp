@@ -239,8 +239,6 @@ def parse():
                         help='')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
                         help='')
-    parser.add_argument('--layer_norm', type=strtobool, default=False, nargs='?',
-                        help='apply layer normalization (see https://arxiv.org/abs/1607.06450)')
     parser.add_argument('--focal_loss_weight', type=float, default=0.0,
                         help='')
     parser.add_argument('--focal_loss_gamma', type=float, default=2.0,

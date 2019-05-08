@@ -75,7 +75,6 @@ class RNNDecoder(nn.Module):
         lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
         ss_type (str): constant or saturation
-        layer_norm (bool): layer normalization
         ctc_weight (float):
         ctc_fc_list (list):
         input_feeding (bool):
@@ -121,7 +120,6 @@ class RNNDecoder(nn.Module):
                  lsm_prob=0.0,
                  ss_prob=0.0,
                  ss_type='constant',
-                 layer_norm=False,
                  fl_weight=0.0,
                  fl_gamma=2.0,
                  ctc_weight=0.0,
@@ -162,7 +160,6 @@ class RNNDecoder(nn.Module):
         elif ss_type == 'saturation':
             self._ss_prob = 0  # start from 0
         self.lsm_prob = lsm_prob
-        self.layer_norm = layer_norm
         self.fl_weight = fl_weight
         self.fl_gamma = fl_gamma
         self.ctc_weight = ctc_weight
