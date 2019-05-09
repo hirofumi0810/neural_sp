@@ -121,7 +121,7 @@ for set in eval1 eval2 eval3; do
 
     if [ $(echo ${model} | grep 'train_sp_') ]; then
         if [ $(echo ${model} | grep 'all') ]; then
-            recog_set=${data}/dataset/${set}_sp_all_wpbpe30000.tsv
+            recog_set=${data}/dataset/${set}_sp_all_wpbpe10000.tsv
         elif [ $(echo ${model} | grep 'aps_other') ]; then
             recog_set=${data}/dataset/${set}_sp_aps_other_wpbpe10000.tsv
         elif [ $(echo ${model} | grep 'sps') ]; then
@@ -129,7 +129,7 @@ for set in eval1 eval2 eval3; do
         fi
     else
         if [ $(echo ${model} | grep 'all') ]; then
-            recog_set=${data}/dataset/${set}_all_wpbpe30000.tsv
+            recog_set=${data}/dataset/${set}_all_wpbpe10000.tsv
         elif [ $(echo ${model} | grep 'aps_other') ]; then
             recog_set=${data}/dataset/${set}_aps_other_wpbpe10000.tsv
         elif [ $(echo ${model} | grep 'sps') ]; then
