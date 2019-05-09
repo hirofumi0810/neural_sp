@@ -306,9 +306,10 @@ class TransformerDecoder(nn.Module):
 
         # Compute token-level accuracy in teacher-forcing
         if self.adaptive_softmax is None:
-            acc = compute_accuracy(logits, ys_out_pad, pad=-1)
+            acc = compute_accuracy(logits, ys_out_pad, pad=self.pad)
         else:
-            acc = 0
+            acc = compute_accuracy(self.adaptive_softmax.log_prob(
+                logits.view((-1, logits.size(2)))), ys_out_pad, pad=self.pad)
         ppl = min(np.exp(loss.item()), np.inf)
 
         return loss, acc, ppl

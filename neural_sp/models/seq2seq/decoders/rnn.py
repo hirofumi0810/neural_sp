@@ -489,7 +489,7 @@ class RNNDecoder(nn.Module):
                                ignore_index=self.pad, size_average=False) / bs
 
         # Compute token-level accuracy in teacher-forcing
-        acc = compute_accuracy(logits, ys_out_pad, -1)
+        acc = compute_accuracy(logits, ys_out_pad, self.pad)
         ppl = min(np.exp(loss.item()), np.inf)
 
         return loss, acc, ppl
@@ -587,10 +587,10 @@ class RNNDecoder(nn.Module):
 
         # Compute token-level accuracy in teacher-forcing
         if self.adaptive_softmax is None:
-            acc = compute_accuracy(logits, ys_out_pad, pad=-1)
+            acc = compute_accuracy(logits, ys_out_pad, pad=self.pad)
         else:
             acc = compute_accuracy(self.adaptive_softmax.log_prob(
-                logits.view((-1, logits.size(2)))), ys_out_pad, pad=-1)
+                logits.view((-1, logits.size(2)))), ys_out_pad, pad=self.pad)
         ppl = np.exp(loss.item())
 
         return loss, acc, ppl
