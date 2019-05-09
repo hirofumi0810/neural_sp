@@ -207,8 +207,7 @@ class RNNLM(ModelBase):
             loss = -torch.log(probs[:, :, ys_out[:, -1]])
         else:
             if self.adaptive_softmax is None:
-                loss = F.cross_entropy(logits.view((-1, logits.size(2))),
-                                       ys_out.contiguous().view(-1),
+                loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out.view(-1),
                                        ignore_index=self.pad, size_average=True)
             else:
                 loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),

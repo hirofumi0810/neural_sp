@@ -276,7 +276,7 @@ class TransformerDecoder(nn.Module):
         ys_in = [torch.cat([eos, y], dim=0) for y in ys]
         ys_out = [torch.cat([y, eos], dim=0) for y in ys]
         ys_in_pad = pad_list(ys_in, self.pad)
-        ys_out_pad = pad_list(ys_out, -1)
+        ys_out_pad = pad_list(ys_out, self.pad)
 
         # Add positional embedding
         ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
@@ -294,14 +294,12 @@ class TransformerDecoder(nn.Module):
         if self.adaptive_softmax is None:
             if self.lsm_prob > 0:
                 # Label smoothing
-                loss = cross_entropy_lsm(logits,
-                                         ys=ys_out_pad,
+                loss = cross_entropy_lsm(logits, ys_out_pad,
                                          ylens=[y.size(0) for y in ys_out],
-                                         lsm_prob=self.lsm_prob, size_average=True)
+                                         lsm_prob=self.lsm_prob, size_average=False) / bs
             else:
-                loss = F.cross_entropy(input=logits.view((-1, logits.size(2))),
-                                       target=ys_out_pad.view(-1),  # long
-                                       ignore_index=-1, size_average=False) / bs
+                loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                                       ignore_index=self.pad, size_average=False) / bs
         else:
             loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
                                          ys_out_pad.view(-1)).loss

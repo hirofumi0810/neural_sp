@@ -61,20 +61,20 @@ class GatedConvLM(ModelBase):
 
         if model_size == 'small':
             layers['conv1-1'] = GLUBlock(4, args.emb_dim, 600,
-                                         bottlececk_dim=15,
-                                         dropout=0.2)
+                                         bottlececk_dim=300,
+                                         dropout=args.dropout_hidden)
             layers['conv2-1'] = GLUBlock(4, 600, 600,
-                                         bottlececk_dim=30,
-                                         dropout=0.3)
+                                         bottlececk_dim=300,
+                                         dropout=args.dropout_hidden)
             layers['conv3-1'] = GLUBlock(4, 600, 600,
-                                         bottlececk_dim=30,
-                                         dropout=0.4)
+                                         bottlececk_dim=300,
+                                         dropout=args.dropout_hidden)
             layers['conv4-1'] = GLUBlock(4, 600, 600,
-                                         bottlececk_dim=30,
-                                         dropout=0.5)
+                                         bottlececk_dim=300,
+                                         dropout=args.dropout_hidden)
             layers['conv5-1'] = GLUBlock(4, 600, 600,
-                                         bottlececk_dim=30,
-                                         dropout=0.6)
+                                         bottlececk_dim=300,
+                                         dropout=args.dropout_hidden)
             last_dim = 600
 
         elif model_size == '8':
@@ -245,8 +245,7 @@ class GatedConvLM(ModelBase):
             loss = -torch.log(probs[:, :, ys_out[:, -1]])
         else:
             if self.adaptive_softmax is None:
-                loss = F.cross_entropy(logits.view((-1, logits.size(2))),
-                                       ys_out.contiguous().view(-1),
+                loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out.view(-1),
                                        ignore_index=self.pad, size_average=True)
             else:
                 loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
