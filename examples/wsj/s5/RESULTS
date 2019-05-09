@@ -1,9 +1,9 @@
                                |          no LM           |           RNNLM          |
                                | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
-1) Char attention              | 16.4       | 12.8        | N/A        | N/A         |
-2) Char attention + CTC        | N/A        | N/A         | N/A        | N/A         |
-3) Char attention + conv       | 15.0       | 11.3        | N/A        | N/A         |
-4) Char attention + conv + CTC | N/A        | N/A         | N/A        | N/A         |
+1) Char attention              | 16.4       | 12.8        | 14.0       | 10.5        |
+2) Char attention + CTC        | 17.7       | 14.2        | 15.5       | 11.7        |
+3) Char attention + conv       | 15.0       | 11.3        | 12.8       | 9.4         |
+4) Char attention + conv + CTC | 15.0       | 12.3        | 12.8       | 10.2        |
 
 
                                 |          no LM           |           RNNLM          |

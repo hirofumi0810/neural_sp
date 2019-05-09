@@ -31,6 +31,9 @@ conv_poolings="(2,2)_(2,2)"
 conv_batch_norm=false
 conv_residual=false
 conv_bottleneck_dim=0
+# GatedConv
+# conv_channels="100_100_100_125_125_150_175_200_225_250_250_250_300_300_375"
+# conv_kernel_sizes="(13,1)_(3,1)_(4,1)_(5,1)_(6,1)_(7,1)_(8,1)_(9,1)_(10,1)_(11,1)_(12,1)_(13,1)_(14,1)_(15,1)_(21,1)"
 subsample="1_1_1_1_1"
 enc_type=blstm
 enc_n_units=512
@@ -84,10 +87,9 @@ weight_decay=1e-6
 ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
-layer_norm=false
 focal_loss=0.0
 ### MTL
-ctc_weight=0.1
+ctc_weight=0.2
 bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=false
@@ -97,7 +99,6 @@ lm_fusion=
 lm_init=
 lmobj_weight=0.0
 share_lm_softmax=false
-# contextualization
 
 #########################
 # LM configuration
@@ -446,7 +447,6 @@ if [ ${stage} -le 4 ]; then
         --ss_prob ${ss_prob} \
         --ss_type ${ss_type} \
         --lsm_prob ${lsm_prob} \
-        --layer_norm ${layer_norm} \
         --focal_loss_weight ${focal_loss} \
         --ctc_weight ${ctc_weight} \
         --bwd_weight ${bwd_weight} \
