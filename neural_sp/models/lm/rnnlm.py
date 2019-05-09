@@ -38,7 +38,6 @@ class RNNLM(ModelBase):
         self.n_layers = args.n_layers
         self.residual = args.residual
         self.use_glu = args.use_glu
-        self.bwd = args.backward
 
         self.vocab = args.vocab
         self.eos = 2
@@ -166,7 +165,7 @@ class RNNLM(ModelBase):
         return loss, hidden, reporter
 
     def _forward(self, ys, hidden, reporter, n_caches=0):
-        ys = [np2tensor(y[::-1] if self.bwd else y, self.device_id).long() for y in ys]
+        ys = [np2tensor(y, self.device_id).long() for y in ys]
         ys = pad_list(ys, self.pad)
         ys_in = ys[:, :-1]
         ys_out = ys[:, 1:]
@@ -207,7 +206,8 @@ class RNNLM(ModelBase):
             loss = -torch.log(probs[:, :, ys_out[:, -1]])
         else:
             if self.adaptive_softmax is None:
-                loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out.view(-1),
+                loss = F.cross_entropy(logits.view((-1, logits.size(2))),
+                                       ys_out.contiguous().view(-1),
                                        ignore_index=self.pad, size_average=True)
             else:
                 loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),

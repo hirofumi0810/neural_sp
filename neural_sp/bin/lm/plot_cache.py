@@ -52,6 +52,7 @@ def main():
                           unit=args.unit,
                           batch_size=args.recog_batch_size,
                           bptt=args.bptt,
+                          backward=args.backward,
                           serialize=args.serialize,
                           is_test=True)
 

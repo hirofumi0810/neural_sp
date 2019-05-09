@@ -62,6 +62,7 @@ def main():
                         n_epochs=args.n_epochs,
                         min_n_tokens=args.min_n_tokens,
                         bptt=args.bptt,
+                        backward=args.backward,
                         serialize=args.serialize)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
@@ -71,6 +72,7 @@ def main():
                       wp_model=args.wp_model,
                       batch_size=args.batch_size * args.n_gpus,
                       bptt=args.bptt,
+                      backward=args.backward,
                       serialize=args.serialize)
     eval_sets = []
     for s in args.eval_sets:
@@ -82,6 +84,7 @@ def main():
                               wp_model=args.wp_model,
                               batch_size=1,
                               bptt=args.bptt,
+                              backward=args.backward,
                               serialize=args.serialize)]
 
     args.vocab = train_set.vocab

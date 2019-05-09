@@ -37,7 +37,7 @@ class Dataset(Base):
     def __init__(self, tsv_path, dict_path,
                  unit, batch_size, nlsyms=False, n_epochs=None,
                  is_test=False, min_n_tokens=1, bptt=2,
-                 shuffle=False, serialize=False,
+                 shuffle=False, backward=False, serialize=False,
                  wp_model=None, corpus=''):
         """A class for loading dataset.
 
@@ -53,6 +53,7 @@ class Dataset(Base):
             bptt (int): BPTT length
             shuffle (bool): shuffle utterances.
                 This is disabled when sort_by_input_length is True.
+            backward (bool): flip all text in the corpus
             serialize (bool): serialize text according to contexts in dialogue
             wp_model (): path to the word-piece model for sentencepiece
             corpus (str): name of corpus
@@ -122,7 +123,10 @@ class Dataset(Base):
 
         # Concatenate into a single sentence
         concat_ids = []
-        for i in list(self.df.index):
+        indices = list(self.df.index)
+        if backward:
+            indices = indices[::-1]
+        for i in indices:
             assert self.df['token_id'][i] != ''
             concat_ids += [self.eos] + list(map(int, self.df['token_id'][i].split()))
         concat_ids += [self.eos]
