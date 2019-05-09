@@ -39,7 +39,7 @@ conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_2_2_2_1"
 # VGG
-# conv_channels="64_128"
+# conv_channels="32_32"
 # conv_kernel_sizes="(3,3)_(3,3)"
 # conv_strides="(1,1)_(1,1)"
 # conv_poolings="(2,2)_(2,2)"
@@ -100,7 +100,6 @@ weight_decay=1e-6
 ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
-layer_norm=false
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
@@ -502,7 +501,6 @@ if [ ${stage} -le 4 ]; then
         --ss_prob ${ss_prob} \
         --ss_type ${ss_type} \
         --lsm_prob ${lsm_prob} \
-        --layer_norm ${layer_norm} \
         --focal_loss_weight ${focal_loss} \
         --ctc_weight ${ctc_weight} \
         --ctc_weight_sub1 ${ctc_weight_sub1} \

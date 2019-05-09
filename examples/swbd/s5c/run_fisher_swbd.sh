@@ -33,7 +33,7 @@ conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_2_2_2_1"
 # VGG
-# conv_channels="64_128"
+# conv_channels="32_32"
 # conv_kernel_sizes="(3,3)_(3,3)"
 # conv_strides="(1,1)_(1,1)"
 # conv_poolings="(2,2)_(2,2)"
@@ -90,7 +90,6 @@ weight_decay=1e-6
 ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
-layer_norm=false
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
@@ -127,6 +126,7 @@ lm_print_step=50
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
+lm_decay_type=epoch
 lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
@@ -385,6 +385,7 @@ if [ ${stage} -le 3 ]; then
         --decay_start_epoch ${lm_decay_start_epoch} \
         --decay_rate ${lm_decay_rate} \
         --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
+        --decay_type ${lm_decay_type} \
         --not_improved_patient_n_epochs ${lm_not_improved_patient_n_epochs} \
         --eval_start_epoch ${lm_eval_start_epoch} \
         --param_init ${lm_param_init} \
@@ -396,8 +397,8 @@ if [ ${stage} -le 3 ]; then
         --dropout_emb ${lm_dropout_emb} \
         --weight_decay ${lm_weight_decay} \
         --backward ${lm_backward} \
-        --resume ${lm_resume} \
-        --serialize ${lm_serialize} || exit 1;
+        --serialize ${lm_serialize} \
+        --resume ${lm_resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
 fi
@@ -479,7 +480,6 @@ if [ ${stage} -le 4 ]; then
         --ss_prob ${ss_prob} \
         --ss_type ${ss_type} \
         --lsm_prob ${lsm_prob} \
-        --layer_norm ${layer_norm} \
         --focal_loss_weight ${focal_loss} \
         --ctc_weight ${ctc_weight} \
         --bwd_weight ${bwd_weight} \
