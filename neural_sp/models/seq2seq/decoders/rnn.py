@@ -1327,7 +1327,10 @@ class RNNDecoder(nn.Module):
             if refs_id is not None and self.vocab == idx2token.vocab:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
             for k in range(len(complete)):
-                logger.info('Hyp: %s' % idx2token(complete[k]['hyp_id'][1:]))
+                if self.bwd:
+                    logger.info('Hyp: %s' % idx2token(complete[k]['hyp_id'][1:][::-1]))
+                else:
+                    logger.info('Hyp: %s' % idx2token(complete[k]['hyp_id'][1:]))
                 logger.info('log prob (hyp): %.7f' % complete[k]['score'])
                 logger.info('log prob (hyp, att): %.7f' % (complete[k]['score_attn'] * (1 - ctc_weight)))
                 logger.info('log prob (hyp, cp): %.7f' % (complete[k]['score_cp'] * cp_weight))

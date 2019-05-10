@@ -76,13 +76,13 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                 for i_f in range(len(aws_fwd[b][n_f]) - 1):
                     for i_b in range(len(aws_bwd[b][n_b]) - 1):
                         if flip:
-                            t_prev = max_time - aws_bwd[b][n_b][i_b + 1].argmax(-1).item()
-                            t_curr = aws_fwd[b][n_f][i_f].argmax(-1).item()
-                            t_next = max_time - aws_bwd[b][n_b][i_b - 1].argmax(-1).item()
+                            t_prev = max_time - aws_bwd[b][n_b][i_b + 1].argmax(-2)
+                            t_curr = aws_fwd[b][n_f][i_f].argmax(-2)
+                            t_next = max_time - aws_bwd[b][n_b][i_b - 1].argmax(-2)
                         else:
-                            t_prev = aws_bwd[b][n_b][i_b + 1].argmax(-1).item()
-                            t_curr = aws_fwd[b][n_f][i_f].argmax(-1).item()
-                            t_next = aws_bwd[b][n_b][i_b - 1].argmax(-1).item()
+                            t_prev = aws_bwd[b][n_b][i_b + 1].argmax(-2)
+                            t_curr = aws_fwd[b][n_f][i_f].argmax(-2)
+                            t_next = aws_bwd[b][n_b][i_b - 1].argmax(-2)
 
                         # the same token at the same time
                         if t_curr >= t_prev and t_curr <= t_next and nbest_hyps_fwd[b][n_f][i_f] == nbest_hyps_bwd[b][n_b][i_b]:
