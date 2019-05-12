@@ -248,7 +248,6 @@ class TransformerDecoder(nn.Module):
         if self.lsm_prob > 0 and self.ctc_weight == 1:
             loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits,
                                                               ylens=elens,
-                                                              lsm_prob=self.lsm_prob,
                                                               size_average=True) * self.lsm_prob
 
         return loss
