@@ -388,13 +388,15 @@ def main():
             duration_step = time.time() - start_time_step
             if args.input_type == 'speech':
                 xlen = max(len(x) for x in batch_train['xs'])
+                ylen = max(len(y) for y in batch_train['ys'])
             elif args.input_type == 'text':
                 xlen = max(len(x) for x in batch_train['ys'])
-            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/xlen:%d (%.2f min)" %
+                ylen = max(len(y) for y in batch_train['ys_sub1'])
+            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
                         (step, train_set.epoch_detail,
                          loss_train, loss_dev,
                          lr_controller.lr, len(batch_train['utt_ids']),
-                         xlen, duration_step / 60))
+                         xlen, ylen, duration_step / 60))
             start_time_step = time.time()
         step += args.n_gpus
         pbar_epoch.update(len(batch_train['utt_ids']))
