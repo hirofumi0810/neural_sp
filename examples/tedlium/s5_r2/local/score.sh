@@ -15,7 +15,7 @@ model_bwd=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/tedlium2
+data=/n/sd3/inaguma/corpus/tedlium2
 
 unit=
 metric=edit_distance

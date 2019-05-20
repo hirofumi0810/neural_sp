@@ -105,6 +105,11 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | -------------------- | --------- | --------- | ---------- | ---------- |
 | BPE30k attn + RNNLM  | 3.6       | 11.2      | 3.9        | 12.2       |
 
+### TEDLIUM2 (WER)
+| model                       | dev  | test |
+| --------------------------- | ---- | ---- |
+| BPE10k attn + conv + RNNLM  | 11.7 | 11.5 |
+
 
 ## LM Performance
 ### Penn Tree Bank (PPL)

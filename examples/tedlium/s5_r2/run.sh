@@ -24,20 +24,14 @@ n_stacks=1
 n_skips=1
 sequence_summary_network=false
 conv_in_channel=1
-conv_channels=
-conv_kernel_sizes=
-conv_strides=
-conv_poolings=
+conv_channels="32_32"
+conv_kernel_sizes="(3,3)_(3,3)"
+conv_strides="(1,1)_(1,1)"
+conv_poolings="(2,2)_(2,2)"
 conv_batch_norm=false
 conv_residual=false
 conv_bottleneck_dim=0
-subsample="1_2_2_2_1"
-# VGG
-# conv_channels="32_32"
-# conv_kernel_sizes="(3,3)_(3,3)"
-# conv_strides="(1,1)_(1,1)"
-# conv_poolings="(2,2)_(2,2)"
-# subsample="1_1_1_1_1"
+subsample="1_1_1_1_1"
 enc_type=blstm
 enc_n_units=512
 enc_n_projs=0
@@ -143,14 +137,14 @@ lm_weight_decay=1e-6
 lm_backward=
 
 ### path to save the model
-model=/n/sd8/inaguma/result/tedlium2
+model=/n/sd3/inaguma/result/tedlium2
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/tedlium2
+export data=/n/sd3/inaguma/corpus/tedlium2
 
 ### path to original data
 export db=/n/rd21/corpora_7/tedlium
