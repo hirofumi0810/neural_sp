@@ -29,7 +29,7 @@ class Conv1LBlock(nn.Module):
                  stride,
                  pooling,
                  dropout,
-                 batch_norm):
+                 batch_norm=False):
 
         super(Conv1LBlock, self).__init__()
 
@@ -92,10 +92,12 @@ class Conv2LBlock(nn.Module):
                  stride,
                  pooling,
                  dropout,
-                 batch_norm,
-                 residual):
+                 batch_norm=False,
+                 residual=False):
 
         super(Conv2LBlock, self).__init__()
+
+        self.batch_norm = batch_norm
 
         # 1st layer
         self.conv1 = nn.Conv2d(in_channels=in_channel,
@@ -104,7 +106,8 @@ class Conv2LBlock(nn.Module):
                                stride=tuple(stride),
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv1, dim=1)[0]
-        self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else None
+        if batch_norm:
+            self.batch_norm1 = nn.BatchNorm2d(out_channel)
         self.dropout1 = nn.Dropout2d(p=dropout) if dropout > 0 else None
 
         # 2nd layer
@@ -114,7 +117,8 @@ class Conv2LBlock(nn.Module):
                                stride=tuple(stride),
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv2, dim=1)[0]
-        self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else None
+        if batch_norm:
+            self.batch_norm2 = nn.BatchNorm2d(out_channel)
         self.dropout2 = nn.Dropout2d(p=dropout) if dropout > 0 else None
 
         # Max Pooling
@@ -143,7 +147,7 @@ class Conv2LBlock(nn.Module):
         """
         residual = xs
         xs = self.conv1(xs)
-        if self.batch_norm1 is not None:
+        if self.batch_norm:
             xs = self.batch_norm1(xs)
         if self.residual and xs.size() == residual.size():
             xs += residual
@@ -154,7 +158,7 @@ class Conv2LBlock(nn.Module):
 
         residual = xs
         xs = self.conv2(xs)
-        if self.batch_norm2 is not None:
+        if self.batch_norm:
             xs = self.batch_norm2(xs)
         if self.residual:
             xs += residual
