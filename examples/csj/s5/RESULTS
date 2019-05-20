@@ -1,7 +1,5 @@
-                                              |               no LM               |                RNNLM              |
-                                              | eval1     | eval2     | eval3     | eval1     | eval2     | eval3     |
-1) BPE10k attention                           | 8.3 (6.6) | 6.2 (5.0) | 6.9 (5.1) | 7.7 (6.1) | 5.8 (4.7) | 6.7 (5.0) |
-2) BPE10k attention + char CTC init. + add 1L | 8.1 (6.2) | 5.8 (4.6) | 6.2 (4.6) | 7.5 (5.9) | 5.5 (4.4) | 6.1 (4.6) |
-3) BPE10k attention + char CTC init. + add 2L | 8.1 (6.2) | 6.0 (4.8) | 6.3 (4.6) | 7.4 (5.8) | 5.7 (4.5) | 6.0 (4.5) |
-2 ensemble (2+3)                              | 7.9 (N/A) | 5.9 (N/A) | 6.4 (N/A) | 7.6 (N/A) | 5.5 (N/A) | 6.1 (N/A) |
-3 ensemble (1+2+3)                            | 7.7 (N/A) | 5.7 (N/A) | 6.2 (N/A) | 7.3 (N/A) | 5.5 (N/A) | 6.0 (N/A) |
+                                                                        |               no LM               |                RNNLM              |
+                                                                        | eval1     | eval2     | eval3     | eval1     | eval2     | eval3     |
+BPE10k attention                                                        | 8.3 (6.6) | 6.2 (5.0) | 6.9 (5.1) | 7.7 (6.1) | 5.8 (4.7) | 6.7 (5.0) |
+BPE10k attention + char CTC init. + add 1L                              | 8.1 (6.2) | 5.8 (4.6) | 6.2 (4.6) | 7.5 (5.9) | 5.5 (4.4) | 6.1 (4.6) |
+BPE10k attention + char CTC init. + add 2L                              | 8.1 (6.2) | 6.0 (4.8) | 6.3 (4.6) | 7.4 (5.8) | 5.7 (4.5) | 6.0 (4.5) |

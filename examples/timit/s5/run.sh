@@ -27,11 +27,6 @@ conv_batch_norm=false
 conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_1_1_1_1"
-# VGG
-# conv_channels="64_128"
-# conv_kernel_sizes="(3,3)_(3,3)"
-# conv_strides="(1,1)_(1,1)"
-# conv_poolings="(2,2)_(2,2)"
 enc_type=bgru
 enc_n_units=256
 enc_n_projs=0
@@ -60,14 +55,15 @@ learning_rate=1e-3
 n_epochs=100
 convert_to_sgd_epoch=40
 print_step=10
+decay_type=epoch
 decay_start_epoch=20
 decay_rate=0.97
 decay_patient_n_epochs=0
-decay_type=epoch
+sort_stop_epoch=100
 not_improved_patient_n_epochs=20
 eval_start_epoch=20
 warmup_start_learning_rate=1e-4
-warmup_n_steps=4000
+warmup_n_steps=0
 ### initialization
 param_init=0.1
 param_init_dist=uniform
@@ -83,7 +79,6 @@ weight_decay=1e-6
 ss_prob=0.0
 ss_type=constant
 lsm_prob=0.0
-layer_norm=false
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
@@ -242,11 +237,12 @@ if [ ${stage} -le 4 ]; then
         --n_epochs ${n_epochs} \
         --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
         --print_step ${print_step} \
+        --decay_type ${decay_type} \
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
-        --decay_type ${decay_type} \
         --decay_patient_n_epochs ${decay_patient_n_epochs} \
         --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
+        --sort_stop_epoch ${sort_stop_epoch} \
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \
         --warmup_n_steps ${warmup_n_steps} \
@@ -263,7 +259,6 @@ if [ ${stage} -le 4 ]; then
         --ss_prob ${ss_prob} \
         --ss_type ${ss_type} \
         --lsm_prob ${lsm_prob} \
-        --layer_norm ${layer_norm} \
         --focal_loss_weight ${focal_loss} \
         --ctc_weight ${ctc_weight} \
         --bwd_weight ${bwd_weight} \

@@ -33,7 +33,7 @@ conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_2_2_2_1"
 # VGG
-# conv_channels="64_128"
+# conv_channels="32_32"
 # conv_kernel_sizes="(3,3)_(3,3)"
 # conv_strides="(1,1)_(1,1)"
 # conv_poolings="(2,2)_(2,2)"
@@ -43,6 +43,7 @@ enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_residual=false
+enc_nin=false
 subsample_type=drop
 attn_type=location
 attn_dim=512
@@ -66,10 +67,11 @@ learning_rate=1e-3
 n_epochs=25
 convert_to_sgd_epoch=20
 print_step=200
+decay_type=epoch
 decay_start_epoch=10
 decay_rate=0.85
 decay_patient_n_epochs=0
-decay_type=epoch
+sort_stop_epoch=100
 not_improved_patient_n_epochs=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
@@ -89,7 +91,6 @@ weight_decay=1e-6
 ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
-layer_norm=false
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
@@ -126,6 +127,7 @@ lm_print_step=200
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
+lm_decay_type=epoch
 lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
@@ -295,6 +297,8 @@ if [ ${stage} -le 3 ]; then
             > ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
         cp ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
             ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+        cp ${data}/dataset/${test_set}_${unit}${wp_type}${vocab_size}.tsv \
+            ${data}/dataset_lm/${test_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
 
         touch ${data}/.done_stage_3_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
     fi
@@ -305,6 +309,7 @@ if [ ${stage} -le 3 ]; then
         --n_gpus 1 \
         --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --eval_sets ${data}/dataset_lm/${test_set}_${unit}${wp_type}${vocab_size}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model ${model}/lm \
@@ -327,6 +332,7 @@ if [ ${stage} -le 3 ]; then
         --decay_start_epoch ${lm_decay_start_epoch} \
         --decay_rate ${lm_decay_rate} \
         --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
+        --decay_type ${lm_decay_type} \
         --not_improved_patient_n_epochs ${lm_not_improved_patient_n_epochs} \
         --eval_start_epoch ${lm_eval_start_epoch} \
         --param_init ${lm_param_init} \
@@ -375,6 +381,7 @@ if [ ${stage} -le 4 ]; then
         --enc_n_projs ${enc_n_projs} \
         --enc_n_layers ${enc_n_layers} \
         --enc_residual ${enc_residual} \
+        --enc_nin ${enc_nin} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
@@ -398,11 +405,12 @@ if [ ${stage} -le 4 ]; then
         --n_epochs ${n_epochs} \
         --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
         --print_step ${print_step} \
+        --decay_type ${decay_type} \
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
-        --decay_type ${decay_type} \
         --decay_patient_n_epochs ${decay_patient_n_epochs} \
         --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
+        --sort_stop_epoch ${sort_stop_epoch} \
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \
         --warmup_n_steps ${warmup_n_steps} \
@@ -419,7 +427,6 @@ if [ ${stage} -le 4 ]; then
         --ss_prob ${ss_prob} \
         --ss_type ${ss_type} \
         --lsm_prob ${lsm_prob} \
-        --layer_norm ${layer_norm} \
         --focal_loss_weight ${focal_loss} \
         --ctc_weight ${ctc_weight} \
         --bwd_weight ${bwd_weight} \

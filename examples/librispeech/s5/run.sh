@@ -33,16 +33,22 @@ conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_2_2_2_1"
 # VGG
-# conv_channels="64_128"
+# conv_channels="32_32"
 # conv_kernel_sizes="(3,3)_(3,3)"
 # conv_strides="(1,1)_(1,1)"
 # conv_poolings="(2,2)_(2,2)"
+# subsample="1_1_1_1_1"
+# GatedConv
+# enc_type=gated_conv
+# conv_channels="200_220_242_266_292_321_353_388_426_468_514_565_621_683_751_826_908"
+# conv_kernel_sizes="(13,1)_(14,1)_(15,1)_(16,1)_(17,1)_(18,1)_(19,1)_(20,1)_(21,1)_(22,1)_(23,1)_(24,1)_(25,1)_(26,1)_(27,1)_(28,1)_(29,1)"
 # subsample="1_1_1_1_1"
 enc_type=blstm
 enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
 enc_residual=false
+enc_nin=false
 subsample_type=drop
 attn_type=location
 attn_dim=512
@@ -66,10 +72,11 @@ learning_rate=1e-3
 n_epochs=25
 convert_to_sgd_epoch=25
 print_step=500
+decay_type=epoch
 decay_start_epoch=10
 decay_rate=0.85
 decay_patient_n_epochs=0
-decay_type=epoch
+sort_stop_epoch=100
 not_improved_patient_n_epochs=5
 eval_start_epoch=1
 warmup_start_learning_rate=1e-4
@@ -89,7 +96,6 @@ weight_decay=1e-6
 ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
-layer_norm=false
 focal_loss=0.0
 adaptive_softmax=false
 ### MTL
@@ -129,6 +135,7 @@ lm_print_step=2000
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
+lm_decay_type=epoch
 lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
@@ -387,6 +394,7 @@ if [ ${stage} -le 3 ]; then
         --decay_start_epoch ${lm_decay_start_epoch} \
         --decay_rate ${lm_decay_rate} \
         --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
+        --decay_type ${lm_decay_type} \
         --not_improved_patient_n_epochs ${lm_not_improved_patient_n_epochs} \
         --eval_start_epoch ${lm_eval_start_epoch} \
         --param_init ${lm_param_init} \
@@ -435,6 +443,7 @@ if [ ${stage} -le 4 ]; then
         --enc_n_projs ${enc_n_projs} \
         --enc_n_layers ${enc_n_layers} \
         --enc_residual ${enc_residual} \
+        --enc_nin ${enc_nin} \
         --subsample ${subsample} \
         --subsample_type ${subsample_type} \
         --attn_type ${attn_type} \
@@ -458,11 +467,12 @@ if [ ${stage} -le 4 ]; then
         --n_epochs ${n_epochs} \
         --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
         --print_step ${print_step} \
+        --decay_type ${decay_type} \
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
-        --decay_type ${decay_type} \
         --decay_patient_n_epochs ${decay_patient_n_epochs} \
         --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
+        --sort_stop_epoch ${sort_stop_epoch} \
         --eval_start_epoch ${eval_start_epoch} \
         --warmup_start_learning_rate ${warmup_start_learning_rate} \
         --warmup_n_steps ${warmup_n_steps} \
@@ -479,7 +489,6 @@ if [ ${stage} -le 4 ]; then
         --ss_prob ${ss_prob} \
         --ss_type ${ss_type} \
         --lsm_prob ${lsm_prob} \
-        --layer_norm ${layer_norm} \
         --focal_loss_weight ${focal_loss} \
         --adaptive_softmax ${adaptive_softmax} \
         --ctc_weight ${ctc_weight} \

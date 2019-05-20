@@ -1,5 +1,5 @@
-                                 |          no LM           |           RNNLM          |
-                                 | SWBD       | CH          | SWBD       | CH          |
-1) BPE10k attention              | 12.3       | 23.8        | 11.4       | 23.0        |
-2) BPE10k attention + conv       | 12.7       | 23.5        | 12.0       | 23.0        |
-2 ensemble (1+2)                 | 11.4       | 22.1        | 10.6       | 21.5        |
+                              |          no LM           |           RNNLM          |
+                              | SWBD       | CH          | SWBD       | CH          |
+BPE10k attention              | 12.3       | 23.8        | 11.4       | 23.0        |
+BPE10k attention + conv       | 12.7       | 23.5        | 12.0       | 23.0        |
+BPE10k attention + 5L->6L     | 11.8       | 22.7        | 11.2       | 22.1        |

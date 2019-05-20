@@ -1,17 +1,14 @@
-                               |          no LM           |           RNNLM          |
-                               | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
-1) Char attention              | 16.4       | 12.8        | 14.0       | 10.5        |
-2) Char attention + CTC        | 17.7       | 14.2        | 15.5       | 11.7        |
-3) Char attention + conv       | 15.0       | 11.3        | 12.8       | 9.4         |
-4) Char attention + conv + CTC | 15.0       | 12.3        | 12.8       | 10.2        |
+                            |          no LM           |           RNNLM          |
+                            | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
+Char attention              | 16.4       | 12.8        | 14.0       | 10.5        |
+Char attention + CTC        | 17.7       | 14.2        | 15.5       | 11.7        |
+Char attention + conv       | 15.0       | 11.3        | 12.8       | 9.4         |
+Char attention + conv + CTC | 15.0       | 12.3        | 12.8       | 10.2        |
 
 
-                                |          no LM           |           RNNLM          |
-                                | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
-1) BPE1k attention              | 14.4       | 12.0        | 11.4       | 9.5         |
-2) BPE1k attention + CTC        | 14.4       | 11.3        | 11.2       | 8.8         |
-3) BPE1k attention + conv       | 14.7       | 11.6        | 10.8       | 8.2         |
-4) BPE1k attention + conv + CTC | 12.9       | 10.6        | 10.2       | 7.5         |
-2 ensemble (3+4)                | 12.3       | 9.9         | 10.0       | 7.4         |
-3 ensemble (2+3+4)              | 12.3       | 9.7         | 9.5        | 7.6         |
-4 ensemble (1+2+3+4)            | 12.1       | 9.2         | 9.6        | 7.5         |
+                             |          no LM           |           RNNLM          |
+                             | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
+BPE1k attention              | 14.4       | 12.0        | 11.4       | 9.5         |
+BPE1k attention + CTC        | 14.4       | 11.3        | 11.2       | 8.8         |
+BPE1k attention + conv       | 14.7       | 11.6        | 10.8       | 8.2         |
+BPE1k attention + conv + CTC | 12.9       | 10.6        | 10.2       | 7.5         |
