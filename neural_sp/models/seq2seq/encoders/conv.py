@@ -273,16 +273,12 @@ class ConvEncoder(nn.Module):
 
 def update_lens(xlens, layer, dim=0):
     assert type(layer) in [nn.Conv2d, nn.MaxPool2d]
-    if type(layer) == nn.MaxPool2d:
-        if layer.ceil_mode:
-            def update(xlen): return int(np.ceil(
-                (xlen + 2 * layer.padding[dim] - layer.kernel_size[dim]) / layer.stride[dim] + 1))
-        else:
-            def update(xlen): return int(np.floor(
-                (xlen + 2 * layer.padding[dim] - layer.kernel_size[dim]) / layer.stride[dim] + 1))
+    if type(layer) == nn.MaxPool2d and layer.ceil_mode:
+        def update(xlen): return np.ceil(
+            (xlen + 1 + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
     else:
-        def update(xlen): return int(np.floor(
-            (xlen + 2 * layer.padding[dim] - layer.kernel_size[dim]) / layer.stride[dim] + 1))
+        def update(xlen): return np.floor(
+            (xlen + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
     xlens = [update(xlen) for xlen in xlens]
     xlens = torch.from_numpy(np.array(xlens, dtype=np.int64))
     return xlens
