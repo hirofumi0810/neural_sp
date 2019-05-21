@@ -1151,16 +1151,23 @@ class RNNDecoder(nn.Module):
                     scores_attn = beam[i_beam]['score_attn'] + local_scores_attn
                     global_scores = scores_attn * (1 - ctc_weight)
 
-                    # Pick up the top-k scores
+                    # Add LM score <after> top-K selection
                     global_scores_topk, topk_ids = torch.topk(
                         global_scores, k=beam_width, dim=1, largest=True, sorted=True)
-
-                    # Add LM score
                     if lm_weight > 0 and lm is not None:
                         global_scores_lm = beam[i_beam]['score_lm'] + torch.log(lm_probs)[0, topk_ids[0]]
                         global_scores_topk += global_scores_lm * lm_weight
                     else:
                         global_scores_lm = torch.zeros((beam_width), dtype=torch.float32)
+
+                    # Add LM score <before> top-K selection
+                    # if lm_weight > 0 and lm is not None:
+                    #     global_scores_lm = beam[i_beam]['score_lm'] + torch.log(lm_probs)
+                    #     global_scores += global_scores_lm * lm_weight
+                    # else:
+                    #     global_scores_lm = torch.zeros((self.vocab), dtype=torch.float32)
+                    # global_scores_topk, topk_ids = torch.topk(
+                    #     global_scores, k=beam_width, dim=1, largest=True, sorted=True)
 
                     # Add length penalty
                     lp = 1.0
@@ -1208,7 +1215,7 @@ class RNNDecoder(nn.Module):
 
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
-                        score = global_scores_topk[0, k].item()
+                        total_score = global_scores_topk[0, k].item()
 
                         # Exclude short hypotheses
                         if idx == self.eos:
@@ -1224,12 +1231,13 @@ class RNNDecoder(nn.Module):
                         new_beam.append(
                             {'hyp_id': beam[i_beam]['hyp_id'] + [idx],
                              'ref_id': beam[i_beam]['ref_id'] + refs_id[b][t:t + 1] if oracle else [],
-                             'score': score,  # total score
-                             'hist_score': beam[i_beam]['hist_score'] + [score],
+                             'score': total_score,
+                             'hist_score': beam[i_beam]['hist_score'] + [total_score],
                              'score_attn': scores_attn[0, idx].item(),
                              'score_cp': cp,
                              'score_ctc': global_scores_ctc[k].item(),
                              'score_lm': global_scores_lm[k].item(),
+                             #  'score_lm': global_scores_lm[0, idx].item(),
                              'dstates': dstates,
                              'cv': attn_v if self.input_feeding else cv,
                              'cv_hist': cv_hist,

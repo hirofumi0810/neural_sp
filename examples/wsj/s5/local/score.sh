@@ -27,10 +27,10 @@ length_penalty=0.1
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
-eos_threshold=1.5
+eos_threshold=1.0
 lm=
 lm_bwd=
-lm_weight=0.3
+lm_weight=1.0
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -119,8 +119,14 @@ for set in test_dev93 test_eval92; do
     fi
     mkdir -p ${recog_dir}
 
+    if [ $(echo ${model} | grep 'train_si284_sp') ]; then
+        recog_set=${data}/dataset/${set}_sp_wpbpe1000.tsv
+    else
+        recog_set=${data}/dataset/${set}_wpbpe1000.tsv
+    fi
+
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
-        --recog_sets ${data}/dataset/${set}_wpbpe1000.tsv \
+        --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
