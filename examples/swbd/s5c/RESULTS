@@ -1,5 +1,6 @@
                               |          no LM           |           RNNLM          |
                               | SWBD       | CH          | SWBD       | CH          |
-BPE10k attention              | 12.3       | 23.8        | 11.4       | 23.0        |
+BPE10k attention              | 12.3       | 23.8        | 11.3       | 23.0        |
 BPE10k attention + conv       | 12.7       | 23.5        | 12.0       | 23.0        |
-BPE10k attention + 5L->6L     | 11.8       | 22.7        | 11.2       | 22.1        |
+BPE10k attention + 5L->6L     | 11.8       | 22.7        | 11.1       | 22.2        |
+BPE10k attention + 512->768   | 11.8       | 23.3        | 10.7       | 22.9        |

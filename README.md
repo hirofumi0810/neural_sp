@@ -98,7 +98,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### Switchboard (WER)
 | model                | SWB  | CH   |
 | -------------------- | ---- | ---- |
-| BPE10k attn + RNNLM  | 11.4 | 23.0 |
+| BPE10k attn + RNNLM  | 11.3 | 23.0 |
 
 ### Librispeech (WER)
 | model                | dev-clean | dev-other | test-clean | test-other |

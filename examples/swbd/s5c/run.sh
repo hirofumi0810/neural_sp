@@ -38,11 +38,6 @@ subsample="1_2_2_2_1"
 # conv_strides="(1,1)_(1,1)"
 # conv_poolings="(2,2)_(2,2)"
 # subsample="1_1_1_1_1"
-# TDS
-# enc_type=tds
-# conv_channels="10_10_14_14_14_18_18_18_18_18_18"
-# conv_kernel_sizes="(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)"
-# subsample="1_1_1_1_1"
 enc_type=blstm
 enc_n_units=512
 enc_n_projs=0
