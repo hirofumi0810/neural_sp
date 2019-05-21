@@ -235,7 +235,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
+    for x in dev_clean test_clean dev_other test_other train_clean_100; do
         steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
             ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
     done
@@ -244,9 +244,15 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
         utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
             ${data}/train_clean_100 || exit 1;
     elif [ ${data_size} == '460' ]; then
+        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+            ${data}/train_clean_360 ${data}/log/make_fbank/train_clean_360 ${data}/fbank || exit 1;
         utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
             ${data}/train_clean_100 ${data}/train_clean_360 || exit 1;
     elif [ ${data_size} == '960' ]; then
+        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+            ${data}/train_clean_360 ${data}/log/make_fbank/train_clean_360 ${data}/fbank || exit 1;
+        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+            ${data}/train_other_500 ${data}/log/make_fbank/train_other_500 ${data}/fbank || exit 1;
         utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
             ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
     else
