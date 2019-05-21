@@ -15,7 +15,7 @@ model_bwd=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/tedlium3
+data=/n/sd3/inaguma/corpus/tedlium3
 
 unit=
 metric=edit_distance
@@ -27,10 +27,10 @@ length_penalty=0.0
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
-eos_threshold=1.5
+eos_threshold=1.0
 lm=
 lm_bwd=
-lm_weight=0.15
+lm_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
