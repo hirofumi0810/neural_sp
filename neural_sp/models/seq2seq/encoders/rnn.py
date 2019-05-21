@@ -408,7 +408,7 @@ class RNNEncoder(nn.Module):
 
                     # Residual connection
                     if self.residual and residual is not None:
-                        xs += residual
+                        xs = xs + residual
                     residual = xs
 
         # Unsort

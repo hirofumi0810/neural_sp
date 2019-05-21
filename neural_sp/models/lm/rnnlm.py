@@ -280,7 +280,7 @@ class RNNLM(ModelBase):
 
                 # Residual connection
                 if self.residual and l > 0:
-                    ys_emb += residual
+                    ys_emb = ys_emb + residual
                 residual = ys_emb
                 # NOTE: Exclude residual connection from the raw inputs
 
@@ -295,7 +295,7 @@ class RNNLM(ModelBase):
                 residual = ys_emb
             ys_emb = F.glu(self.fc_glu(ys_emb), dim=-1)
             if self.residual:
-                ys_emb += residual
+                ys_emb = ys_emb + residual
 
         return ys_emb, hidden
 

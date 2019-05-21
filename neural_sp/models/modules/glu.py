@@ -37,8 +37,8 @@ class GLUBlock(nn.Module):
                                            out_channels=out_ch,
                                            kernel_size=(1, 1))
             if weight_norm:
-                self.conv_residual = nn.utils.weight_norm(self.conv_residual,
-                                                          name='weight', dim=0)
+                self.conv_residual = nn.utils.weight_norm(
+                    self.conv_residual, name='weight', dim=0)
 
         self.pad_left = nn.ConstantPad2d((0, 0, kernel_size - 1, 0), 0)
         self.dropout = nn.Dropout(p=dropout)
@@ -51,8 +51,7 @@ class GLUBlock(nn.Module):
             self.conv_out = lambda x: x
 
             if weight_norm:
-                self.conv = nn.utils.weight_norm(self.conv,
-                                                 name='weight', dim=0)
+                self.conv = nn.utils.weight_norm(self.conv, name='weight', dim=0)
 
         elif bottlececk_dim > 0:
             self.conv_in = nn.Conv2d(in_channels=in_ch,
@@ -66,12 +65,9 @@ class GLUBlock(nn.Module):
                                       kernel_size=(1, 1))
 
             if weight_norm:
-                self.conv_in = nn.utils.weight_norm(self.conv_in,
-                                                    name='weight', dim=0)
-                self.conv = nn.utils.weight_norm(self.conv,
-                                                 name='weight', dim=0)
-                self.conv_out = nn.utils.weight_norm(self.conv_out,
-                                                     name='weight', dim=0)
+                self.conv_in = nn.utils.weight_norm(self.conv_in, name='weight', dim=0)
+                self.conv = nn.utils.weight_norm(self.conv, name='weight', dim=0)
+                self.conv_out = nn.utils.weight_norm(self.conv_out, name='weight', dim=0)
 
     def forward(self, xs):
         """Forward computation.
@@ -87,5 +83,5 @@ class GLUBlock(nn.Module):
         xs = self.conv_out(self.conv(self.conv_in(xs)))  # `[B, out_ch * 2, T ,1]`
         xs = self.dropout(xs)
         xs = F.glu(xs, dim=1)
-        xs += residual
+        xs = xs + residual
         return xs

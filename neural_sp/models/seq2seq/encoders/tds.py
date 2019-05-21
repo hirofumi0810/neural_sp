@@ -39,8 +39,8 @@ class TDSBlock(nn.Module):
                                 kernel_size=(kernel_size, 1),
                                 stride=(1, 1),
                                 padding=(kernel_size // 2, 0))
-        self.dropout_1 = nn.Dropout(p=dropout)
-        self.layer_norm_1 = nn.LayerNorm(in_freq * channel, eps=1e-6)
+        self.dropout1 = nn.Dropout(p=dropout)
+        self.layer_norm1 = nn.LayerNorm(in_freq * channel, eps=1e-6)
 
         # second block
         self.conv1d_1 = nn.Conv2d(in_channels=in_freq * channel,
@@ -48,14 +48,14 @@ class TDSBlock(nn.Module):
                                   kernel_size=1,
                                   stride=1,
                                   padding=0)
-        self.dropout_2_1 = nn.Dropout(p=dropout)
+        self.dropout2_1 = nn.Dropout(p=dropout)
         self.conv1d_2 = nn.Conv2d(in_channels=in_freq * channel,
                                   out_channels=in_freq * channel,
                                   kernel_size=1,
                                   stride=1,
                                   padding=0)
-        self.dropout_2_2 = nn.Dropout(p=dropout)
-        self.layer_norm_2 = nn.LayerNorm(in_freq * channel, eps=1e-6)
+        self.dropout2_2 = nn.Dropout(p=dropout)
+        self.layer_norm2 = nn.LayerNorm(in_freq * channel, eps=1e-6)
 
     def forward(self, xs):
         """Forward computation.
@@ -71,29 +71,29 @@ class TDSBlock(nn.Module):
         residual = xs
         xs = self.conv2d(xs)
         xs = F.relu(xs)
-        self.dropout_1(xs)
+        self.dropout1(xs)
 
         xs = xs + residual  # `[B, out_ch, T, feat_dim]`
 
         # layer normalization
         bs, out_ch, time, feat_dim = xs.size()
         xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, out_ch * feat_dim]`
-        xs = self.layer_norm_1(xs)
+        xs = self.layer_norm1(xs)
         xs = xs.contiguous().transpose(2, 1).unsqueeze(3)  # `[B, out_ch * feat_dim, T, 1]`
 
         # second block
         residual = xs
         xs = self.conv1d_1(xs)
         xs = F.relu(xs)
-        self.dropout_2_1(xs)
+        self.dropout2_1(xs)
         xs = self.conv1d_2(xs)
-        self.dropout_2_2(xs)
+        self.dropout2_2(xs)
         xs = xs + residual  # `[B, out_ch * feat_dim, T, 1]`
 
         # layer normalization
         xs = xs.unsqueeze(3)  # `[B, out_ch * feat_dim, T]`
         xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, out_ch * feat_dim]`
-        xs = self.layer_norm_2(xs)
+        xs = self.layer_norm2(xs)
         xs = xs.view(bs, time, out_ch, feat_dim).contiguous().transpose(2, 1)
 
         return xs

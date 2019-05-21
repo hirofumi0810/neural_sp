@@ -84,7 +84,7 @@ class SublayerConnection(nn.Module):
         else:
             xs_norm = output
         xs_norm = self.dropout(xs_norm)
-        xs_norm += xs
+        xs_norm = xs_norm + xs
 
         if isinstance(output, tuple):
             return xs_norm, aw
