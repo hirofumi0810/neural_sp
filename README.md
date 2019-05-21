@@ -108,7 +108,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### TEDLIUM2 (WER)
 | model                       | dev  | test |
 | --------------------------- | ---- | ---- |
-| BPE10k attn + conv + RNNLM  | 11.7 | 11.5 |
+| BPE10k attn + conv + RNNLM  | 11.4 | 11.0 |
 
 
 ## LM Performance

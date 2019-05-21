@@ -137,14 +137,14 @@ lm_weight_decay=1e-6
 lm_backward=
 
 ### path to save the model
-model=/n/sd3/inaguma/result/tedlium2
+model=/n/sd8/inaguma/result/tedlium2
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/sd3/inaguma/corpus/tedlium2
+export data=/n/sd8/inaguma/corpus/tedlium2
 
 ### path to original data
 export db=/n/rd21/corpora_7/tedlium
@@ -188,10 +188,8 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     done
     local/prepare_dict.sh
     # utils/prepare_lang.sh ${data}/local/dict_nosp "<unk>" ${data}/local/lang_nosp ${data}/lang_nosp
-
     # local/ted_download_lm.sh
     # local/ted_train_lm.sh
-
     # local/format_lms.sh
 
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
