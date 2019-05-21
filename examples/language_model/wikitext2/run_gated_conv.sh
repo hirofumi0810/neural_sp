@@ -23,15 +23,17 @@ emb_dim=300
 tie_embedding=false
 # optimization
 batch_size=50
-bptt=100
+bptt=200
 optimizer=nesterov
 learning_rate=1.0
 n_epochs=50
 convert_to_sgd_epoch=50
-print_step=100
+print_step=50
 decay_start_epoch=10
-decay_rate=0.9
+decay_rate=0.5
 decay_patient_n_epochs=0
+# decay_type=epoch
+decay_type=metric
 not_improved_patient_n_epochs=20
 eval_start_epoch=1
 # initialization
@@ -47,13 +49,13 @@ weight_decay=1e-6
 adaptive_softmax=true
 
 ### path to save the model
-model=/n/sd8/inaguma/result/wikitext2
+model=/n/sd3/inaguma/result/wikitext2
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/wikitext2
+data=/n/sd3/inaguma/corpus/wikitext2
 
 . ./cmd.sh
 . ./path.sh
@@ -145,6 +147,7 @@ if [ ${stage} -le 3 ]; then
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
         --decay_patient_n_epochs ${decay_patient_n_epochs} \
+        --decay_type ${decay_type} \
         --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
         --eval_start_epoch ${eval_start_epoch} \
         --param_init ${param_init} \

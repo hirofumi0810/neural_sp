@@ -52,13 +52,13 @@ weight_decay=1e-6
 adaptive_softmax=false
 
 ### path to save the model
-model=/n/sd8/inaguma/result/wikitext2
+model=/n/sd3/inaguma/result/wikitext2
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/wikitext2
+data=/n/sd3/inaguma/corpus/wikitext2
 
 . ./cmd.sh
 . ./path.sh

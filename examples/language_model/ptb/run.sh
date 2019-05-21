@@ -51,13 +51,13 @@ dropout_emb=0.2
 weight_decay=1e-6
 
 ### path to save the model
-model=/n/sd8/inaguma/result/ptb
+model=/n/sd3/inaguma/result/ptb
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/ptb
+data=/n/sd3/inaguma/corpus/ptb
 
 . ./cmd.sh
 . ./path.sh
