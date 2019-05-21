@@ -317,6 +317,7 @@ class RNNDecoder(nn.Module):
                 self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
                     bottleneck_dim, vocab,
                     cutoffs=[self.vocab // 10, 3 * self.vocab // 10],
+                    # cutoffs=[self.vocab // 25, 3 * self.vocab // 5],
                     div_value=4.0)
                 self.output = None
             else:
@@ -1170,6 +1171,7 @@ class RNNDecoder(nn.Module):
                             global_scores_topk /= lp
                         else:
                             global_scores_topk += (len(beam[i_beam]['hyp_id']) - 1 + 1) * lp_weight
+                            # NOTE: -1 means removing <sos>
 
                     # Add coverage penalty
                     cp = 0.0
@@ -1253,7 +1255,7 @@ class RNNDecoder(nn.Module):
 
                 # Remove complete hypotheses
                 not_complete = []
-                for cand in new_beam[: beam_width]:
+                for cand in new_beam[:beam_width]:
                     if oracle:
                         if t == len(refs_id[b]):
                             complete += [cand]
@@ -1267,15 +1269,15 @@ class RNNDecoder(nn.Module):
 
                 # Pruning
                 if len(complete) >= beam_width:
-                    complete = complete[: beam_width]
+                    complete = complete[:beam_width]
                     break
-                beam = not_complete[: beam_width]
+                beam = not_complete[:beam_width]
 
             # Pruning
             if len(complete) == 0:
                 complete = beam[:]
             elif len(complete) < nbest and nbest > 1:
-                complete.extend(beam[: nbest - len(complete)])
+                complete.extend(beam[:nbest - len(complete)])
 
             # backward LM rescoring
             if lm_rev is not None and lm_weight > 0:
@@ -1292,12 +1294,12 @@ class RNNDecoder(nn.Module):
 
                     if lp_weight > 0 and gnmt_decoding:
                         lp = (math.pow(5 + (len(complete[i]['hyp_id']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
-                    for t in range(len(complete[i]['hyp_id'][1:])):
+                    for t_ in range(len(complete[i]['hyp_id'][::-1]) - 1):
                         lm_out_rev, (lm_rev_hxs, lm_rev_cxs) = lm_rev.decode(
-                            lm_rev.encode(eouts.new_zeros(1, 1).fill_(complete[i]['hyp_id'][-1 - t]).long()),
-                            (lm_hxs, lm_rev_cxs))
+                            lm_rev.encode(eouts.new_zeros(1, 1).fill_(complete[i]['hyp_id'][::-1][t_]).long()),
+                            (lm_rev_hxs, lm_rev_cxs))
                         lm_log_probs = F.log_softmax(lm_rev.generate(lm_out_rev).squeeze(1), dim=-1)
-                        score_lm_rev += lm_log_probs[0, complete[i]['hyp_id'][-2 - t]]
+                        score_lm_rev += lm_log_probs[0, complete[i]['hyp_id'][::-1][t_ + 1]]
                     if gnmt_decoding:
                         score_lm_rev /= lp  # normalize
                     complete[i]['score'] += score_lm_rev * lm_weight
