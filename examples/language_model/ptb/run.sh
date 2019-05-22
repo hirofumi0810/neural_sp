@@ -41,7 +41,6 @@ not_improved_patient_n_epochs=10
 eval_start_epoch=1
 # initialization
 param_init=0.05
-param_init_dist=uniform
 pretrained_model=
 # regularization
 clip_grad_norm=0.1
@@ -157,7 +156,6 @@ if [ ${stage} -le 3 ]; then
         --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
         --eval_start_epoch ${eval_start_epoch} \
         --param_init ${param_init} \
-        --param_init_dist ${param_init_dist} \
         --pretrained_model ${pretrained_model} \
         --clip_grad_norm ${clip_grad_norm} \
         --dropout_hidden ${dropout_hidden} \

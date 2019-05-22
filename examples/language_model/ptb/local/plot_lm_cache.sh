@@ -7,7 +7,7 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/ptb
+data=/n/sd3/inaguma/corpus/ptb
 
 batch_size=1
 n_caches=100
