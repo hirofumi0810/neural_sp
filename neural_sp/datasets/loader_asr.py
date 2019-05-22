@@ -41,16 +41,13 @@ class Dataset(Base):
                  n_ques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1,
                  wp_model=False, corpus='',
-                 concat_prev_n_utterances=0, n_caches=0,
                  tsv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
                  wp_model_sub1=False,
                  ctc_sub1=False, subsample_factor_sub1=1,
                  wp_model_sub2=False,
                  tsv_path_sub2=False, dict_path_sub2=False, unit_sub2=False,
                  ctc_sub2=False, subsample_factor_sub2=1,
-                 wp_model_sub3=False,
-                 tsv_path_sub3=False, dict_path_sub3=False, unit_sub3=False,
-                 ctc_sub3=False, subsample_factor_sub3=1):
+                 contextualize=False, skip_thought=False):
         """A class for loading dataset.
 
         Args:
@@ -75,8 +72,8 @@ class Dataset(Base):
             subsample_factor (int):
             wp_model (): path to the word-piece model for sentencepiece
             corpus (str): name of corpus
-            concat_prev_n_utterances (int): number of utterances to concatenate
-            n_caches (int): number of previous tokens for cache (for training)
+            contextualize (bool):
+            skip_thought (bool):
 
         """
         super(Dataset, self).__init__()
@@ -93,10 +90,10 @@ class Dataset(Base):
         self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
         self.corpus = corpus
-        self.concat_prev_n_utterances = concat_prev_n_utterances
-        self.n_caches = n_caches
-        self.vocab = self.count_vocab_size(dict_path)
+        self.contextualize = contextualize
+        self.skip_thought = skip_thought
 
+        self.vocab = self.count_vocab_size(dict_path)
         self.eos = 2
         self.pad = 3
         # NOTE: reserved in advance
@@ -120,7 +117,7 @@ class Dataset(Base):
         else:
             raise ValueError(unit)
 
-        for i in range(1, 4):
+        for i in range(1, 3):
             dict_path_sub = locals()['dict_path_sub' + str(i)]
             wp_model_sub = locals()['wp_model_sub' + str(i)]
             unit_sub = locals()['unit_sub' + str(i)]
@@ -147,7 +144,7 @@ class Dataset(Base):
         self.df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
         self.df = self.df.loc[:, ['utt_id', 'speaker', 'feat_path',
                                   'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
-        for i in range(1, 4):
+        for i in range(1, 3):
             if locals()['tsv_path_sub' + str(i)]:
                 df_sub = pd.read_csv(locals()['tsv_path_sub' + str(i)], encoding='utf-8', delimiter='\t')
                 df_sub = df_sub.loc[:, ['utt_id', 'speaker', 'feat_path',
@@ -155,15 +152,17 @@ class Dataset(Base):
                 setattr(self, 'df_sub' + str(i), df_sub)
             else:
                 setattr(self, 'df_sub' + str(i), None)
+        self.input_dim = kaldi_io.read_mat(self.df['feat_path'][0]).shape[-1]
 
         if corpus == 'swbd':
             self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
+            # self.df['session'] = self.df['speaker'].apply(lambda x: str(x))
         else:
             self.df['session'] = self.df['speaker'].apply(lambda x: str(x))
 
-        if concat_prev_n_utterances > 0 or n_caches > 0:
+        if contextualize or skip_thought:
             max_n_frames = 10000
-            min_n_frames = 1
+            min_n_frames = 100
 
             # Sort by onset
             self.df = self.df.assign(prev_utt='')
@@ -171,40 +170,25 @@ class Dataset(Base):
                 self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
             elif corpus == 'csj':
                 self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[1]))
+            elif corpus == 'wsj':
+                self.df['onset'] = self.df['utt_id'].apply(lambda x: x)
             else:
                 raise NotImplementedError
             self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
 
             # Extract previous utterances
-            if not (is_test and n_caches > 0):
+            if not skip_thought and not is_test:
                 self.df = self.df.assign(line_no=list(range(len(self.df))))
                 groups = self.df.groupby('session').groups  # dict
                 self.df['prev_utt'] = self.df.apply(
                     lambda x: [self.df.loc[i, 'line_no']
                                for i in groups[x['session']] if self.df.loc[i, 'onset'] < x['onset']], axis=1)
+                self.df['n_prev_utt'] = self.df.apply(lambda x: len(x['prev_utt']), axis=1)
+
         elif is_test and corpus == 'swbd':
             # Sort by onset
             self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
             self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
-
-        if concat_prev_n_utterances > 0:
-            assert n_caches == 0
-            self.pad_xlen = 20
-
-            # Truncate history
-            self.df['prev_utt'] = self.df['prev_utt'].apply(lambda x: x[-concat_prev_n_utterances:])
-
-            # Update xlen, ylen, text
-            self.pad_xlen = 20
-            self.df['xlen'] = self.df.apply(
-                lambda x: sum([self.df.loc[i, 'xlen'] + self.pad_xlen
-                               for i in x['prev_utt']] + [x['xlen']]) if len(x['prev_utt']) > 0 else x['xlen'], axis=1)
-            # self.df['text'] = self.df.apply(
-            #     lambda x: ' '.join([self.df.loc[i, 'text']
-            #                         for i in x['prev_utt']] + [x['text']]) if len(x['prev_utt']) > 0 else x['text'], axis=1)
-
-        if n_caches > 0:
-            assert concat_prev_n_utterances == 0
 
         # Remove inappropriate utterances
         if is_test:
@@ -225,7 +209,7 @@ class Dataset(Base):
                 self.df = self.df[self.df.apply(lambda x: x['ylen'] <= (x['xlen'] // subsample_factor), axis=1)]
                 print('Removed %d utterances (for CTC)' % (n_utts - len(self.df)))
 
-            for i in range(1, 4):
+            for i in range(1, 3):
                 df_sub = getattr(self, 'df_sub' + str(i))
                 ctc_sub = locals()['ctc_sub' + str(i)]
                 subsample_factor_sub = locals()['subsample_factor_sub' + str(i)]
@@ -244,13 +228,14 @@ class Dataset(Base):
 
         # Sort tsv records
         if not is_test:
-            if sort_by_input_length:
+            if contextualize:
+                self.df = self.df.sort_values(by='n_prev_utt', ascending=short2long)
+            elif sort_by_input_length:
                 self.df = self.df.sort_values(by='xlen', ascending=short2long)
             elif shuffle:
                 self.df = self.df.reindex(np.random.permutation(self.df.index))
 
         self.rest = set(list(self.df.index))
-        self.input_dim = kaldi_io.read_mat(self.df['feat_path'][0]).shape[-1]
 
     def make_batch(self, df_indices):
         """Create mini-batch per step.
@@ -264,80 +249,76 @@ class Dataset(Base):
                 ys (list): reference labels in the main task of size `[L]`
                 ys_sub1 (list): reference labels in the 1st auxiliary task of size `[L_sub1]`
                 ys_sub2 (list): reference labels in the 2nd auxiliary task of size `[L_sub2]`
-                ys_sub3 (list): reference labels in the 3rd auxiliary task of size `[L_sub3]`
                 utt_ids (list): name of each utterance
                 speakers (list): name of each speaker
                 sessions (list): name of each session
 
         """
         # inputs
-        xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in df_indices]
-        if self.concat_prev_n_utterances > 0:
-            for j, i in enumerate(df_indices):
-                for idx in self.df['prev_utt'][i][::-1]:
-                    x_prev = kaldi_io.read_mat(self.df['feat_path'][idx])
-                    xs[j] = np.concatenate(
-                        [x_prev, np.zeros((self.pad_xlen, self.input_dim), dtype=np.float32), xs[j]], axis=0)
+        if self.skip_thought:
+            xs = []
+        else:
+            xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in df_indices]
 
         # outputs
-        ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in df_indices]
-        if self.concat_prev_n_utterances > 0:
-            for j, i in enumerate(df_indices):
-                for idx in self.df['prev_utt'][i][::-1]:
-                    y_prev = list(map(int, str(self.df['token_id'][idx]).split()))
-                    ys[j] = y_prev + [self.eos] + ys[j][:]
+        if self.is_test:
+            ys = [self.token2idx[0](self.df['text'][i]) for i in df_indices]
+        else:
+            ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in df_indices]
 
-        ys_cache = []
-        if self.n_caches > 0:
-            ys_cache = [[] for _ in range(len(df_indices))]
+        ys_hist = [[] for _ in range(len(df_indices))]
+        if self.contextualize:
             for j, i in enumerate(df_indices):
                 for idx in self.df['prev_utt'][i]:
-                    y_prev = list(map(int, str(self.df['token_id'][idx]).split()))
-                    ys_cache[j] += [self.eos] + y_prev
+                    ys_hist[j].append(list(map(int, str(self.df['token_id'][idx]).split())))
 
-            # Truencate
-            ys_cache = [y[-self.n_caches:] for y in ys_cache]
+        ys_prev = []
+        ys_next = []
+        text_prev = []
+        text_next = []
+        if self.skip_thought:
+            for i in df_indices:
+                if i - 1 in self.df.index and self.df['session'][i - 1] == self.df['session'][i]:
+                    ys_prev += [list(map(int, str(self.df['token_id'][i - 1]).split()))]
+                    text_prev += [self.df['text'][i - 1]]
+                else:
+                    ys_prev += [[self.pad]]
+                    text_prev += ['']
+                if i + 1 in self.df.index and self.df['session'][i + 1] == self.df['session'][i]:
+                    ys_next += [list(map(int, str(self.df['token_id'][i + 1]).split()))]
+                    text_next += [self.df['text'][i + 1]]
+                else:
+                    ys_next += [[self.pad]]
+                    text_next += ['']
 
         ys_sub1 = []
         if self.df_sub1 is not None:
-            ys_sub1 = [list(map(int, self.df_sub1['token_id'][i].split())) for i in df_indices]
-            if self.concat_prev_n_utterances > 0:
-                for j, i in enumerate(df_indices):
-                    for idx in self.df['prev_utt'][i][::-1]:
-                        y_prev = list(map(int, str(self.df_sub1['token_id'][idx]).split()))
-                        ys_sub1[j] = y_prev + [self.eos] + ys_sub1[j][:]
-        elif self.vocab_sub1 > 0:
+            ys_sub1 = [list(map(int, str(self.df_sub1['token_id'][i]).split())) for i in df_indices]
+        elif self.vocab_sub1 > 0 and not self.is_test:
             ys_sub1 = [self.token2idx[1](self.df['text'][i]) for i in df_indices]
 
         ys_sub2 = []
         if self.df_sub2 is not None:
-            ys_sub2 = [list(map(int, self.df_sub2['token_id'][i].split())) for i in df_indices]
-            if self.concat_prev_n_utterances > 0:
-                raise NotImplementedError
-        elif self.vocab_sub2 > 0:
+            ys_sub2 = [list(map(int, str(self.df_sub2['token_id'][i]).split())) for i in df_indices]
+        elif self.vocab_sub2 > 0 and not self.is_test:
             ys_sub2 = [self.token2idx[2](self.df['text'][i]) for i in df_indices]
-
-        ys_sub3 = []
-        if self.df_sub3 is not None:
-            ys_sub3 = [list(map(int, self.df_sub3['token_id'][i].split())) for i in df_indices]
-            if self.concat_prev_n_utterances > 0:
-                raise NotImplementedError
-        elif self.vocab_sub3 > 0:
-            ys_sub3 = [self.token2idx[3](self.df['text'][i]) for i in df_indices]
 
         batch_dict = {
             'xs': xs,
             'xlens': [self.df['xlen'][i] for i in df_indices],
             'ys': ys,
-            'ys_cache': ys_cache,
+            'ys_hist': ys_hist,
             'ys_sub1': ys_sub1,
             'ys_sub2': ys_sub2,
-            'ys_sub3': ys_sub3,
-            'utt_ids':  [self.df['utt_id'][i] for i in df_indices],
+            'utt_ids': [self.df['utt_id'][i] for i in df_indices],
             'speakers': [self.df['speaker'][i] for i in df_indices],
             'sessions': [self.df['session'][i] for i in df_indices],
             'text': [self.df['text'][i] for i in df_indices],
-            'feat_path': [self.df['feat_path'][i] for i in df_indices]  # for plot
+            'feat_path': [self.df['feat_path'][i] for i in df_indices],  # for plot
+            'ys_prev': ys_prev,
+            'text_prev': text_prev,
+            'ys_next': ys_next,
+            'text_next': text_next,
         }
 
         return batch_dict

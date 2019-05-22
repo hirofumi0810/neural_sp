@@ -146,11 +146,12 @@ class Dataset(Base):
         # Floating point version of epoch
         return self.epoch + (float(self.offset * self.batch_size) / len(self))
 
-    def __next__(self, batch_size=None):
+    def next(self, batch_size=None, bptt=None):
         """Generate each mini-batch.
 
         Args:
-            batch_size (int): the size of mini-batch
+            batch_size (int): size of mini-batch
+            bptt (int): BPTT length
         Returns:
             batch (dict):
                 ys (list): target labels in the main task of size `[B, L]`
@@ -165,13 +166,17 @@ class Dataset(Base):
             batch_size = self.batch_size
         elif self.concat_ids.shape[0] != batch_size:
             self.concat_ids = self.concat_ids.reshape((batch_size, -1))
+            # NOTE: only for the first iteration during evaluation
+
+        if bptt is None:
+            bptt = self.bptt
 
         if self.max_epoch is not None and self.epoch >= self.max_epoch:
-            raise StopIteration()
+            raise StopIteration
         # NOTE: max_epoch == None means infinite loop
 
-        ys = self.concat_ids[:, self.offset:self.offset + self.bptt]
-        self.offset += self.bptt - 1
+        ys = self.concat_ids[:, self.offset:self.offset + bptt]
+        self.offset += bptt - 1
         # NOTE: the last token in ys must be feeded as inputs in the next mini-batch
 
         # Last mini-batch

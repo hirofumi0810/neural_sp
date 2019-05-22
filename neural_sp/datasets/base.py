@@ -61,11 +61,11 @@ class Base(object):
         # Floating point version of epoch
         return self.epoch + (self.offset / len(self))
 
-    def __next__(self, batch_size=None):
+    def next(self, batch_size=None):
         """Generate each mini-batch.
 
         Args:
-            batch_size (int): the size of mini-batch
+            batch_size (int): size of mini-batch
         Returns:
             batch (tuple):
             is_new_epoch (bool): If true, 1 epoch is finished
@@ -76,7 +76,7 @@ class Base(object):
 
         if self.n_ques is None:
             if self.max_epoch is not None and self.epoch >= self.max_epoch:
-                raise StopIteration()
+                raise StopIteration
             # NOTE: max_epoch == None means infinite loop
 
             data_indices, is_new_epoch = self.sample_index(batch_size)
@@ -92,7 +92,7 @@ class Base(object):
                 # Clean up multiprocessing
                 self.preloading_process.terminate()
                 self.preloading_process.join()
-                raise StopIteration()
+                raise StopIteration
             # NOTE: max_epoch == None means infinite loop
 
             # Enqueue mini-batches
@@ -122,10 +122,6 @@ class Base(object):
 
         return batch, is_new_epoch
 
-    def next(self, batch_size=None):
-        # For python2
-        return self.__next__(batch_size)
-
     def sample_index(self, batch_size):
         """Sample data indices of mini-batch.
 
@@ -141,8 +137,9 @@ class Base(object):
         if self.sort_by_input_length or not self.shuffle:
             if self.sort_by_input_length:
                 # Change batch size dynamically
-                min_n_frames_batch = self.df[self.offset:self.offset + 1]['xlen'].values[0]
-                batch_size_tmp = self.select_batch_size(batch_size, min_n_frames_batch)
+                min_xlen = self.df[self.offset:self.offset + 1]['xlen'].values[0]
+                min_ylen = self.df[self.offset:self.offset + 1]['ylen'].values[0]
+                batch_size_tmp = self.select_batch_size(batch_size, min_xlen, min_ylen)
             else:
                 batch_size_tmp = batch_size
 
@@ -180,13 +177,13 @@ class Base(object):
 
         return data_indices, is_new_epoch
 
-    def select_batch_size(self, batch_size, min_n_frames_batch):
+    def select_batch_size(self, batch_size, min_xlen, min_ylen):
         if not self.dynamic_batching:
             return batch_size
 
-        if min_n_frames_batch <= 800:
+        if min_xlen <= 800 and min_ylen <= 50:
             pass
-        elif min_n_frames_batch <= 1600:
+        elif min_xlen <= 1600 or min_ylen <= 100:
             batch_size = int(batch_size / 2)
         else:
             batch_size = int(batch_size / 4)
