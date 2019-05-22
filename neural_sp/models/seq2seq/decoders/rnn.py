@@ -433,8 +433,6 @@ class RNNDecoder(nn.Module):
             loss (FloatTensor): `[B, L, vocab]`
 
         """
-        logits = self.output_ctc(eouts)
-
         # Compute the auxiliary CTC loss
         elensmbl_ctc = np2tensor(np.fromiter(elens, dtype=np.int64), -1).int()
         ys_ctc = [np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys]  # always fwd
@@ -444,11 +442,11 @@ class RNNDecoder(nn.Module):
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
+        logits = self.output_ctc(eouts)
         loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
                                  ys_ctc, elensmbl_ctc, ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
-
         if self.device_id >= 0:
             loss = loss.cuda(self.device_id)
 
@@ -508,6 +506,7 @@ class RNNDecoder(nn.Module):
         logits = torch.cat(logits, dim=1)
         loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
                                ignore_index=self.pad, size_average=False) / bs
+        # TODO(hirofumi): adaptive_softmax
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)
@@ -515,29 +514,18 @@ class RNNDecoder(nn.Module):
 
         return loss, acc, ppl
 
-    def forward_att(self, eouts, elens, ys, ys_hist):
+    def teacher_forcing(self, eouts, elens, ys_in_pad):
         """Compute XE loss for the attention-based sequence-to-sequence model.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
             elens (list): A list of length `[B]`
-            ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            ys_hist (list):
+            ys_in_pad (list): `[B, L, emb_dim]`
         Returns:
-            loss (FloatTensor): `[B, L, vocab]`
-            acc (float):
-            ppl (float):
+            logits (FloatTensor): `[B, L, vocab]`
 
         """
         bs = eouts.size(0)
-
-        # Append <sos> and <eos>
-        eos = eouts.new_zeros(1).fill_(self.eos).long()
-        _ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64), self.device_id).long() for y in ys]
-        ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
-        ys_out = [torch.cat([y, eos], dim=0) for y in _ys]
-        ys_in_pad = pad_list(ys_in, self.pad)
-        ys_out_pad = pad_list(ys_out, self.pad)
 
         # Initialization
         if self.contextualize:
@@ -563,10 +551,6 @@ class RNNDecoder(nn.Module):
             y_emb = self.embed(self.output(
                 logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
 
-            # Recurrency
-            dec_in = attn_v if self.input_feeding else cv
-            dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
-
             # Update LM states for LM fusion
             lmout = None
             if self.lm is not None:
@@ -574,16 +558,44 @@ class RNNDecoder(nn.Module):
                     logits[-1]).detach().argmax(-1)) if is_sample else ys_lm_emb[:, t:t + 1]
                 lmout, lmstate = self.lm.decode(y_lm_emb, lmstate)
 
-            # Score
+            # Recurrency -> Score -> Generate
+            dec_in = attn_v if self.input_feeding else cv
+            dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
-
-            # Generate
             attn_v, lm_feat = self.generate(cv, dstates['dout_gen'], lmout)
             logits.append(attn_v)
 
         logits = torch.cat(logits, dim=1)
         if self.adaptive_softmax is None:
             logits = self.output(logits)
+
+        return logits
+
+    def forward_att(self, eouts, elens, ys, ys_hist):
+        """Compute XE loss for the attention-based sequence-to-sequence model.
+
+        Args:
+            eouts (FloatTensor): `[B, T, dec_n_units]`
+            elens (list): A list of length `[B]`
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            ys_hist (list):
+        Returns:
+            loss (FloatTensor): `[1]`
+            acc (float):
+            ppl (float):
+
+        """
+        bs = eouts.size(0)
+
+        # Append <sos> and <eos>
+        eos = eouts.new_zeros(1).fill_(self.eos).long()
+        _ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64), self.device_id).long() for y in ys]
+        ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
+        ys_out = [torch.cat([y, eos], dim=0) for y in _ys]
+        ys_in_pad = pad_list(ys_in, self.pad)
+        ys_out_pad = pad_list(ys_out, self.pad)
+
+        logits = self.teacher_forcing(eouts, elens, ys_in_pad)
 
         # Compute XE sequence loss
         if self.adaptive_softmax is None:
@@ -799,27 +811,23 @@ class RNNDecoder(nn.Module):
                 for b in range(bs):
                     y[b] = ([self.eos] + refs_id[b])[t]
 
-            # Recurrency (1st)
-            y_emb = self.embed(y)
-            dec_in = attn_v if self.input_feeding else cv
-            dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
-
             # Update LM states for LM fusion
             lmout = None
             if self.lm is not None:
                 lmout, lmstate = self.lm.decode(self.lm.encode(y), lmstate)
 
-            # Score
+            # Recurrency -> Score -> Generate
+            y_emb = self.embed(y)
+            dec_in = attn_v if self.input_feeding else cv
+            dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
-
-            # Generate
             attn_v, lm_feat = self.generate(cv, dstates['dout_gen'], lmout)
+
+            # Pick up 1-best
             if self.adaptive_softmax is None:
                 y = self.output(attn_v).detach().argmax(-1)
             else:
                 y = self.adaptive_softmax.predict(attn_v.view(-1, attn_v.size(2))).detach().unsqueeze(1)
-
-            # Pick up 1-best
             best_hyps_tmp += [y]
             aws_tmp += [aw]
 
@@ -1003,6 +1011,18 @@ class RNNDecoder(nn.Module):
                 for i_beam in range(len(beam)):
                     prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam[i_beam]['hyp_id'][-1]
 
+                    lmout, lmstate = None, None
+                    if self.lm is not None:
+                        # Update LM states for LM fusion
+                        lmout, lmstate = self.lm.decode(
+                            self.lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx).long()),
+                            (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
+                    elif lm_weight > 0 and lm is not None:
+                        # Update LM states for shallow fusion
+                        lmout, lmstate = lm.decode(
+                            lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx).long()),
+                            (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
+
                     # Recurrency for the main model
                     y = eouts.new_zeros(1, 1).fill_(prev_idx).long()
                     dstates = self.recurrency(self.embed(y),
@@ -1035,18 +1055,6 @@ class RNNDecoder(nn.Module):
                                 beam[i_beam]['ensmbl_aws'][i_e][-1])
                             ensmbl_cv += [cv_e]
                             ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi)] why unsqueeze?
-
-                    lmout, lmstate = None, None
-                    if self.lm is not None:
-                        # Update LM states for LM fusion
-                        lmout, lmstate = self.lm.decode(
-                            self.lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx).long()),
-                            (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
-                    elif lm_weight > 0 and lm is not None:
-                        # Update LM states for shallow fusion
-                        lmout, lmstate = lm.decode(
-                            lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx).long()),
-                            (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
 
                     # Generate for the main model
                     attn_v, lm_feat = self.generate(cv, dstates['dout_gen'], lmout)

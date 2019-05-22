@@ -239,8 +239,6 @@ class TransformerDecoder(nn.Module):
             loss (FloatTensor): `[1]`
 
         """
-        logits = self.output_ctc(eouts)
-
         # Compute the auxiliary CTC loss
         elens_ctc = np2tensor(np.fromiter(elens, dtype=np.int32), -1).int()
         ys_ctc = [np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys]  # always fwd
@@ -250,11 +248,11 @@ class TransformerDecoder(nn.Module):
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
+        logits = self.output_ctc(eouts)
         loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
                                  ys_ctc, elens_ctc, ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
-
         if self.device_id >= 0:
             loss = loss.cuda(self.device_id)
 
