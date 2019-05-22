@@ -73,6 +73,7 @@ def kldiv_lsm_ctc(logits, ylens, size_average=False):
     log_probs = F.log_softmax(logits, dim=-1)
     kl_div = torch.mul(probs, log_probs - log_uniform)
     loss = np.sum([kl_div[b, :ylens[b]].sum() for b in range(bs)])
+    # assert loss >= 0
     if size_average:
         loss /= bs
     return loss
