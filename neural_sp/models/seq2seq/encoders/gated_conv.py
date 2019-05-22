@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 from collections import OrderedDict
+import logging
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -31,6 +32,7 @@ class GatedConvEncoder(nn.Module):
         dropout (float) probability to drop nodes in hidden-hidden connection
         batch_norm (bool): if True, apply batch normalization
         bottleneck_dim (int): dimension of the bottleneck layer after the last layer
+        param_init (float):
 
     """
 
@@ -40,7 +42,8 @@ class GatedConvEncoder(nn.Module):
                  channels,
                  kernel_sizes,
                  dropout,
-                 bottleneck_dim=0):
+                 bottleneck_dim=0,
+                 param_init=0.1):
 
         super(GatedConvEncoder, self).__init__()
 
@@ -71,9 +74,27 @@ class GatedConvEncoder(nn.Module):
 
         self.layers = nn.Sequential(layers)
 
+        # Initialize parameters
+        self.reset_parameters(param_init)
+
     @property
     def output_dim(self):
         return self._output_dim
+
+    def reset_parameters(self, param_init):
+        """Initialize parameters with kaiming_uniform style."""
+        logger = logging.getLogger('training')
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            if p.dim() == 1:
+                nn.init.constant_(p, val=0)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+            elif p.dim() in [2, 4]:
+                nn.init.kaiming_uniform_(p, mode='fan_in', nonlinearity='relu')
+                # nn.init.kaiming_normal_(p, mode='fan_in', nonlinearity='relu')
+                logger.info('Initialize %s with %s / %.3f' % (n, 'kaiming_uniform', param_init))
+            else:
+                raise ValueError
 
     def forward(self, xs, xlens):
         """Forward computation.

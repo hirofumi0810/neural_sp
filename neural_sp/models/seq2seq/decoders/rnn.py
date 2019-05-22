@@ -18,10 +18,6 @@ import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-try:
-    import warpctc_pytorch
-except:
-    raise ImportError('Install warpctc_pytorch.')
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
@@ -39,8 +35,6 @@ from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import tensor2np
 
 random.seed(1)
-
-logger = logging.getLogger("decoding")
 
 
 class RNNDecoder(nn.Module):
@@ -88,6 +82,7 @@ class RNNDecoder(nn.Module):
         global_weight (float):
         mtl_per_batch (bool):
         adaptive_softmax (bool):
+        param_init (float):
 
     """
 
@@ -134,7 +129,8 @@ class RNNDecoder(nn.Module):
                  share_lm_softmax=False,
                  global_weight=1.0,
                  mtl_per_batch=False,
-                 adaptive_softmax=False):
+                 adaptive_softmax=False,
+                 param_init=0.1):
 
         super(RNNDecoder, self).__init__()
 
@@ -208,6 +204,7 @@ class RNNDecoder(nn.Module):
                 self.output_ctc = LinearND(enc_n_units, vocab)
             self.decode_ctc_greedy = GreedyDecoder(blank=blank)
             self.decode_ctc_beam = BeamSearchDecoder(blank=blank)
+            import warpctc_pytorch
             self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
 
         if ctc_weight < global_weight:
@@ -336,9 +333,33 @@ class RNNDecoder(nn.Module):
                         raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
                     self.output.fc.weight = self.embed.embed.weight
 
+        # Initialize parameters
+        self.reset_parameters(param_init)
+
     @property
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
+
+    def reset_parameters(self, param_init):
+        """Initialize parameters with uniform distribution."""
+        logger = logging.getLogger('training')
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            if 'lm.' in n:
+                continue  # for the external LM
+            if p.dim() == 1:
+                if 'linear_lm_gate.fc.bias' in n:
+                    # Initialize bias in gating with -1 for cold fusion
+                    nn.init.constant_(p, val=-1)  # bias
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', -1))
+                else:
+                    nn.init.constant_(p, val=0)  # bias
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+            elif p.dim() in [2, 4]:
+                nn.init.uniform_(p, a=-param_init, b=param_init)
+                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
+            else:
+                raise ValueError
 
     def start_scheduled_sampling(self):
         self._ss_prob = self.ss_prob
@@ -432,10 +453,10 @@ class RNNDecoder(nn.Module):
             loss = loss.cuda(self.device_id)
 
         # Label smoothing for CTC
-        # if self.lsm_prob > 0:
-        #     loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits,
-        #                                                       ylens=elens,
-        #                                                       size_average=True) * self.lsm_prob
+        if self.lsm_prob > 0:
+            loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits,
+                                                              ylens=elens,
+                                                              size_average=True) * self.lsm_prob
 
         return loss
 
@@ -875,6 +896,8 @@ class RNNDecoder(nn.Module):
             scores (list):
 
         """
+        logger = logging.getLogger("decoding")
+
         bs, _, enc_n_units = eouts.size()
         n_models = len(ensmbl_decs) + 1
 

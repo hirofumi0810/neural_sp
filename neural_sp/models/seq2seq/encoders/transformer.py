@@ -51,6 +51,7 @@ class TransformerEncoder(nn.Module):
         conv_batch_norm (bool): apply batch normalization only in the CNN blocks
         conv_residual (bool): add residual connection between each CNN block
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
+        param_init (float): only for CNN layers before Transformer layers
 
     """
 
@@ -76,7 +77,8 @@ class TransformerEncoder(nn.Module):
                  conv_poolings=[],
                  conv_batch_norm=False,
                  conv_residual=False,
-                 conv_bottleneck_dim=0):
+                 conv_bottleneck_dim=0,
+                 param_init=0.1):
 
         super(TransformerEncoder, self).__init__()
 
@@ -110,24 +112,25 @@ class TransformerEncoder(nn.Module):
                                     dropout=0,
                                     batch_norm=conv_batch_norm,
                                     residual=conv_residual,
-                                    bottleneck_dim=d_model)
+                                    bottleneck_dim=d_model,
+                                    param_init=param_init)
             self._output_dim = self.conv.output_dim
         else:
             self._output_dim = input_dim * n_splices * n_stacks
             self.conv = None
 
-            self.embed_in = LinearND(self._output_dim, d_model,
-                                     dropout=0)  # NOTE: do not apply dropout here
+            self.embed = LinearND(self._output_dim, d_model,
+                                  dropout=0)  # NOTE: do not apply dropout here
 
         if pe_type:
-            self.pos_emb_in = PositionalEncoding(d_model, dropout_in, pe_type)
-        self.layer_norm_in = nn.LayerNorm(d_model, eps=layer_norm_eps)
+            self.pos_emb = PositionalEncoding(d_model, dropout_in, pe_type)
+        self.norm_in = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         # Self-attention layers
         self.layers = nn.ModuleList(
             [TransformerEncoderBlock(d_model, d_ff, attn_type, attn_n_heads,
                                      dropout, dropout_att, layer_norm_eps) for l in range(n_layers)])
-        self.layer_norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if last_proj_dim != self.output_dim:
             self.bridge = LinearND(self._output_dim, last_proj_dim, dropout=dropout)
@@ -136,9 +139,32 @@ class TransformerEncoder(nn.Module):
             self.bridge = None
             self._output_dim = d_model
 
+        # Initialize parameters
+        self.reset_parameters()
+
     @property
     def output_dim(self):
         return self._output_dim
+
+    def reset_parameters(self, param_init):
+        """Initialize parameters with xavier_uniform style."""
+        logger = logging.getLogger('training')
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            if 'conv' in n:
+                continue  # for CNN layers before Transformer layers
+            if p.dim() == 1:
+                nn.init.constant_(p, val=0)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+            elif p.dim() == 2:
+                if 'embed' in n:
+                    nn.init.normal_(p, mean=0, std=self.d_model**-0.5)
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'normal', self.d_model**-0.5))
+                else:
+                    nn.init.xavier_uniform_(p, gain=1.0)
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'xavier_uniform', param_init))
+            else:
+                raise ValueError
 
     def forward(self, xs, xlens, task):
         """Forward computation.
@@ -158,19 +184,19 @@ class TransformerEncoder(nn.Module):
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
         if self.conv is None:
-            xs = self.embed_in(xs) * (self.d_model ** 0.5)
+            xs = self.embed(xs) * (self.d_model ** 0.5)
         else:
             # Path through CNN blocks before RNN layers
             xs, xlens = self.conv(xs, xlens)
 
         # Positional encoding & layer normalization
         if self.pe_type:
-            xs = self.pos_emb_in(xs)
-        xs = self.layer_norm_in(xs)
+            xs = self.pos_emb(xs)
+        xs = self.norm_in(xs)
 
         for i in range(len(self.layers)):
             xs, xx_aw = self.layers[i](xs, xlens)
-        xs = self.layer_norm_top(xs)
+        xs = self.norm_top(xs)
 
         # Bridge layer
         if self.bridge is not None:

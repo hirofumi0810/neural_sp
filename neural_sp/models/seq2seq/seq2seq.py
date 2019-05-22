@@ -96,7 +96,8 @@ class Seq2seq(ModelBase):
                                               n_units=512,
                                               n_layers=3,
                                               bottleneck_dim=100,
-                                              dropout=0)
+                                              dropout=0,
+                                              param_init=args.param_init)
 
         # Encoder
         if 'transformer' in args.enc_type:
@@ -122,8 +123,11 @@ class Seq2seq(ModelBase):
                 conv_poolings=args.conv_poolings,
                 conv_batch_norm=args.conv_batch_norm,
                 conv_residual=args.conv_residual,
-                conv_bottleneck_dim=args.conv_bottleneck_dim)
+                conv_bottleneck_dim=args.conv_bottleneck_dim,
+                param_init=args.param_init)
         else:
+            subsample = [1] * args.enc_n_layers
+            subsample[:args.enc_n_layers] = list(map(int, args.subsample.split('_')[:args.enc_n_layers]))
             self.enc = RNNEncoder(
                 input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
                 rnn_type=args.enc_type,
@@ -134,8 +138,7 @@ class Seq2seq(ModelBase):
                 n_layers_sub2=args.enc_n_layers_sub2,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
-                subsample=list(map(int, args.subsample.split('_')[:args.enc_n_layers])) +
-                [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
+                subsample=subsample,
                 subsample_type=args.subsample_type,
                 last_proj_dim=args.d_model if 'transformer' in args.dec_type else args.dec_n_units,
                 n_stacks=args.n_stacks,
@@ -150,8 +153,9 @@ class Seq2seq(ModelBase):
                 conv_bottleneck_dim=args.conv_bottleneck_dim,
                 residual=args.enc_residual,
                 nin=args.enc_nin,
-                task_specific_layer=args.task_specific_layer)
-            # NOTE: pure CNN/TDS encoders are also included
+                task_specific_layer=args.task_specific_layer,
+                param_init=args.param_init)
+            # NOTE: pure Conv/TDS/GatedConv encoders are also included
 
         if args.freeze_encoder:
             for p in self.enc.parameters():
@@ -246,7 +250,8 @@ class Seq2seq(ModelBase):
                     share_lm_softmax=args.share_lm_softmax,
                     global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                     mtl_per_batch=args.mtl_per_batch,
-                    adaptive_softmax=args.adaptive_softmax)
+                    adaptive_softmax=args.adaptive_softmax,
+                    param_init=args.param_init)
             setattr(self, 'dec_' + dir, dec)
 
         # sub task
@@ -291,7 +296,8 @@ class Seq2seq(ModelBase):
                                      ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
                         input_feeding=args.input_feeding,
                         global_weight=getattr(self, sub + '_weight'),
-                        mtl_per_batch=args.mtl_per_batch)
+                        mtl_per_batch=args.mtl_per_batch,
+                        param_init=args.param_init)
                 setattr(self, 'dec_fwd_' + sub, dec_sub)
 
         if args.input_type == 'text':
@@ -304,36 +310,6 @@ class Seq2seq(ModelBase):
                                           dropout=args.dropout_emb,
                                           ignore_index=self.pad)
 
-        # Initialize parameters in CNN layers before RNN layers
-        self.reset_parameters(args.param_init,
-                              #   dist='xavier_uniform',
-                              #   dist='kaiming_uniform',
-                              dist='lecun',
-                              keys=['conv'], ignore_keys=['score'])
-
-        # Initialize parameters in the encoder
-        if 'transformer' in args.enc_type:
-            self.reset_parameters(args.param_init, dist='xavier_uniform',
-                                  keys=['enc'], ignore_keys=['embed_in'])
-            self.reset_parameters(args.d_model**-0.5, dist='normal',
-                                  keys=['embed_in'])
-        else:
-            self.reset_parameters(args.param_init, dist=args.param_init_dist,
-                                  keys=['enc'], ignore_keys=['conv'])
-
-        # Initialize parameters in the decoder
-        if args.dec_type == 'transformer':
-            self.reset_parameters(args.param_init, dist='xavier_uniform',
-                                  keys=['dec'], ignore_keys=['embed'])
-            self.reset_parameters(args.d_model**-0.5, dist='normal',
-                                  keys=['embed'])
-        else:
-            self.reset_parameters(args.param_init, dist=args.param_init_dist,
-                                  keys=['dec'])
-
-        # Initialize bias vectors with zero
-        self.reset_parameters(0, dist='constant', keys=['bias'])
-
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
             self.reset_parameters(args.param_init, dist='orthogonal',
@@ -342,10 +318,7 @@ class Seq2seq(ModelBase):
         # Initialize bias in forget gate with 1
         # self.init_forget_gate_bias_with_one()
 
-        # Initialize bias in gating with -1 for cold fusion
-        if args.lm_fusion:
-            self.reset_parameters(-1, dist='constant', keys=['linear_lm_gate.fc.bias'])
-
+        # Fix all parameters except for the gating parts in deep fusion
         if args.lm_fusion_type == 'deep' and args.lm_fusion:
             for n, p in self.named_parameters():
                 if 'output' in n or 'output_bn' in n or 'linear' in n:

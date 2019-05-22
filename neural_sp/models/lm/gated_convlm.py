@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 from collections import OrderedDict
+import logging
 import numpy as np
 import torch
 import torch.nn as nn
@@ -169,10 +170,22 @@ class GatedConvLM(ModelBase):
                 self.output.fc.weight = self.embed.embed.weight
 
         # Initialize parameters
-        self.reset_parameters(args.param_init, dist=args.param_init_dist)
+        self.reset_parameters(args.param_init)
 
-        # Initialize bias vectors with zero
-        self.reset_parameters(0, dist='constant', keys=['bias'])
+    def reset_parameters(self, param_init):
+        """Initialize parameters with kaiming_uniform style."""
+        logger = logging.getLogger('training')
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            if p.dim() == 1:
+                nn.init.constant_(p, val=0)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+            elif p.dim() in [2, 4]:
+                nn.init.kaiming_uniform_(p, mode='fan_in', nonlinearity='relu')
+                # nn.init.kaiming_normal_(p, mode='fan_in', nonlinearity='relu')
+                logger.info('Initialize %s with %s / %.3f' % (n, 'kaiming_uniform', param_init))
+            else:
+                raise ValueError
 
     def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0,
                 ylens=[]):

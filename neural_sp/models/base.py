@@ -65,62 +65,6 @@ class ModelBase(nn.Module):
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters())).idx
 
-    def reset_parameters(self, param_init, dist, keys=[None], ignore_keys=[None]):
-        """Initialize parameters. All biases are initialized with zero unless otherwise specified.
-
-        Args:
-            param_init (float):
-            dist (str): uniform or normal or orthogonal or constant
-            keys (list):
-            ignore_keys (list):
-
-        """
-        for n, p in self.named_parameters():
-            if keys != [None] and len(list(filter(lambda k: k in n, keys))) == 0:
-                continue
-            if ignore_keys != [None] and len(list(filter(lambda k: k in n, ignore_keys))) > 0:
-                continue
-
-            if p.dim() == 1:
-                if dist == 'constant':
-                    nn.init.constant_(p, val=param_init)
-                    logger.info('Initialize %s with %.3f' % (n, param_init))
-                else:
-                    nn.init.constant_(p, val=0)
-                    logger.info('Initialize %s with 0' % (n))
-            else:
-                if dist == 'uniform':
-                    nn.init.uniform_(p, a=-param_init, b=param_init)
-                elif dist == 'normal':
-                    assert param_init > 0
-                    nn.init.normal_(p, mean=0, std=param_init)
-                elif dist == 'orthogonal':
-                    nn.init.orthogonal_(p, gain=1)
-                elif dist == 'constant':
-                    nn.init.constant_(p, val=param_init)
-                elif dist == 'lecun':
-                    if p.dim() == 2:
-                        n = p.size(1)  # linear weight
-                        nn.init.normal_(p, mean=0, std=1. / math.sqrt(n))
-                    elif p.dim() == 4:
-                        n = p.size(1)  # conv weight
-                        for k in p.size()[2:]:
-                            n *= k
-                        nn.init.normal_(p, mean=0, std=1. / math.sqrt(n))
-                    else:
-                        raise ValueError(p.dim())
-                elif dist == 'xavier_uniform':
-                    nn.init.xavier_uniform_(p, gain=1.0)
-                elif dist == 'xavier_normal':
-                    nn.init.xavier_normal_(p, gain=1.0)
-                elif dist == 'kaiming_uniform':
-                    nn.init.kaiming_uniform_(p, mode='fan_in', nonlinearity='relu')
-                elif dist == 'kaiming_normal':
-                    nn.init.kaiming_normal_(p, mode='fan_in', nonlinearity='relu')
-                else:
-                    raise NotImplementedError(dist)
-                logger.info('Initialize %s with %s / %.3f' % (n, dist, param_init))
-
     def init_forget_gate_bias_with_one(self):
         """Initialize bias in forget gate with 1. See detail in
 

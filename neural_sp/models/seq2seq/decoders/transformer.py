@@ -17,10 +17,6 @@ import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-try:
-    import warpctc_pytorch
-except:
-    raise ImportError('Install warpctc_pytorch.')
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
@@ -40,8 +36,6 @@ from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import tensor2np
 
 random.seed(1)
-
-logger = logging.getLogger("decoding")
 
 
 class TransformerDecoder(nn.Module):
@@ -131,6 +125,7 @@ class TransformerDecoder(nn.Module):
                 self.output_ctc = LinearND(d_model, vocab)
             self.decode_ctc_greedy = GreedyDecoder(blank=blank)
             self.decode_ctc_beam = BeamSearchDecoder(blank=blank)
+            import warpctc_pytorch
             self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
 
         if ctc_weight < global_weight:
@@ -149,6 +144,7 @@ class TransformerDecoder(nn.Module):
                 self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
                     d_model, vocab,
                     cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
+                    # cutoffs=[self.vocab // 25, 3 * self.vocab // 5],
                     div_value=4.0)
                 self.output = None
             else:
@@ -164,11 +160,32 @@ class TransformerDecoder(nn.Module):
                 if tie_embedding:
                     self.output.fc.weight = self.embed.embed.weight
 
-            self.layer_norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
+            self.norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
+
+        # Initialize parameters
+        self.reset_parameters()
 
     @property
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
+
+    def reset_parameters(self, param_init):
+        """Initialize parameters with xavier_uniform style."""
+        logger = logging.getLogger('training')
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            if p.dim() == 1:
+                nn.init.constant_(p, val=0)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+            elif p.dim() == 2:
+                if 'embed' in n:
+                    nn.init.normal_(p, mean=0, std=self.d_model**-0.5)
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'normal', self.d_model**-0.5))
+                else:
+                    nn.init.xavier_uniform_(p, gain=1.0)
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'xavier_uniform', param_init))
+            else:
+                raise ValueError
 
     def forward(self, eouts, elens, ys, task='all', ys_hist=[]):
         """Forward computation.
@@ -245,10 +262,10 @@ class TransformerDecoder(nn.Module):
             loss = loss.cuda(self.device_id)
 
         # Label smoothing for CTC
-        # if self.lsm_prob > 0 and self.ctc_weight == 1:
-        #     loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits,
-        #                                                       ylens=elens,
-        #                                                       size_average=True) * self.lsm_prob
+        if self.lsm_prob > 0 and self.ctc_weight == 1:
+            loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits,
+                                                              ylens=elens,
+                                                              size_average=True) * self.lsm_prob
 
         return loss
 
@@ -285,7 +302,7 @@ class TransformerDecoder(nn.Module):
         for l in range(self.n_layers):
             ys_emb, yy_aw, xy_aw = self.layers[l](eouts, elens, ys_emb, ylens)
 
-        logits = self.layer_norm_top(ys_emb)
+        logits = self.norm_top(ys_emb)
         if self.adaptive_softmax is None:
             logits = self.output(logits)
 
@@ -351,7 +368,7 @@ class TransformerDecoder(nn.Module):
             for l in range(self.n_layers):
                 out, yy_aw, xy_aw = self.layers[l](eouts, elens, out, ylens + 1)
                 # xy_aw: `[B, head, T, L]`
-            out = self.layer_norm_top(out)
+            out = self.norm_top(out)
             logits_t = self.output(out)
 
             # Pick up 1-best

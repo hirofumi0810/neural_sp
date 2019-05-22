@@ -10,8 +10,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import numpy as np
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -123,10 +123,7 @@ class RNNLM(ModelBase):
                 self.output.fc.weight = self.embed.embed.weight
 
         # Initialize parameters
-        self.reset_parameters(args.param_init, dist=args.param_init_dist)
-
-        # Initialize bias vectors with zero
-        self.reset_parameters(0, dist='constant', keys=['bias'])
+        self.reset_parameters(args.param_init)
 
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
@@ -135,6 +132,20 @@ class RNNLM(ModelBase):
 
         # Initialize bias in forget gate with 1
         # self.init_forget_gate_bias_with_one()
+
+    def reset_parameters(self, param_init):
+        """Initialize parameters with uniform distribution."""
+        logger = logging.getLogger('training')
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            if p.dim() == 1:
+                nn.init.constant_(p, val=0)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+            elif p.dim() == 2:
+                nn.init.uniform_(p, a=-param_init, b=param_init)
+                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
+            else:
+                raise ValueError
 
     def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0,
                 ylens=[]):

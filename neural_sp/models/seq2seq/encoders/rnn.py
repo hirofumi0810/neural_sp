@@ -23,8 +23,6 @@ from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
 from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
 
-logger = logging.getLogger("training")
-
 
 class RNNEncoder(nn.Module):
     """RNN encoder.
@@ -56,6 +54,7 @@ class RNNEncoder(nn.Module):
         n_layers_sub2 (int): number of layers in the 2nd auxiliary task
         nin (bool): insert 1*1 conv + batch normalization + ReLU
         task_specific_layer (bool):
+        param_init (float):
 
     """
 
@@ -84,9 +83,12 @@ class RNNEncoder(nn.Module):
                  n_layers_sub1=0,
                  n_layers_sub2=0,
                  nin=False,
-                 task_specific_layer=False):
+                 task_specific_layer=False,
+                 param_init=0.1):
 
         super(RNNEncoder, self).__init__()
+
+        logger = logging.getLogger("training")
 
         if len(subsample) > 0 and len(subsample) != n_layers:
             raise ValueError('subsample must be the same size as n_layers.')
@@ -140,12 +142,14 @@ class RNNEncoder(nn.Module):
                            for c in conv_strides.split('_')] if len(conv_strides) > 0 else []
                 poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
                             for c in conv_poolings.split('_')] if len(conv_poolings) > 0 else []
+            if 'conv_' in rnn_type:
+                self.subsample = [1] * self.n_layers
+                logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
         else:
             channels = []
             kernel_sizes = []
             strides = []
             poolings = []
-            logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
 
         if len(channels) > 0:
             if rnn_type == 'tds':
@@ -161,7 +165,8 @@ class RNNEncoder(nn.Module):
                                              channels=channels,
                                              kernel_sizes=kernel_sizes,
                                              dropout=dropout,
-                                             bottleneck_dim=last_proj_dim)
+                                             bottleneck_dim=last_proj_dim,
+                                             param_init=param_init)
             else:
                 assert n_stacks == 1 and n_splices == 1
                 self.conv = ConvEncoder(input_dim,
@@ -173,7 +178,8 @@ class RNNEncoder(nn.Module):
                                         dropout=0,
                                         batch_norm=conv_batch_norm,
                                         residual=conv_residual,
-                                        bottleneck_dim=conv_bottleneck_dim)
+                                        bottleneck_dim=conv_bottleneck_dim,
+                                        param_init=param_init)
             self._output_dim = self.conv.output_dim
         else:
             self._output_dim = input_dim * n_splices * n_stacks
@@ -245,7 +251,7 @@ class RNNEncoder(nn.Module):
                     self._output_dim = n_units * self.n_dirs
 
                     # Projection layer
-                    if n_projs > 0 and i != n_layers - 1:
+                    if n_projs > 0 and l != n_layers - 1:
                         self.proj += [LinearND(n_units * self.n_dirs, n_projs)]
                         self._output_dim = n_projs
 
@@ -285,9 +291,28 @@ class RNNEncoder(nn.Module):
                     self.bridge = LinearND(self._output_dim, last_proj_dim, dropout=dropout)
                     self._output_dim = last_proj_dim
 
+        # Initialize parameters
+        self.reset_parameters(param_init)
+
     @property
     def output_dim(self):
         return self._output_dim
+
+    def reset_parameters(self, param_init):
+        """Initialize parameters with uniform distribution."""
+        logger = logging.getLogger('training')
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            if 'conv' in n or 'tds' in n or 'gated_conv' in n:
+                continue  # for CNN layers before RNN layers
+            if p.dim() == 1:
+                nn.init.constant_(p, val=0)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+            elif p.dim() in [2, 4]:
+                nn.init.uniform_(p, a=-param_init, b=param_init)
+                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
+            else:
+                raise ValueError
 
     def forward(self, xs, xlens, task):
         """Forward computation.

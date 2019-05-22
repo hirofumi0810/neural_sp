@@ -11,10 +11,128 @@ from __future__ import division
 from __future__ import print_function
 
 from collections import OrderedDict
+import logging
+import math
 import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
+
+
+class TDSEncoder(nn.Module):
+    """TDS (tim-depth separable convolutional) encoder.
+
+    Args:
+        input_dim (int) dimension of input features (freq * channel)
+        in_channel (int) number of channels of input features
+        channels (list) number of channles in TDS layers
+        kernel_sizes (list) size of kernels in TDS layers
+        strides (list): strides in TDS layers
+        poolings (list) size of poolings in TDS layers
+        dropout (float) probability to drop nodes in hidden-hidden connection
+        batch_norm (bool): if True, apply batch normalization
+        bottleneck_dim (int): dimension of the bottleneck layer after the last layer
+
+    """
+
+    def __init__(self,
+                 input_dim,
+                 in_channel,
+                 channels,
+                 kernel_sizes,
+                 dropout,
+                 bottleneck_dim=0):
+
+        super(TDSEncoder, self).__init__()
+
+        self.in_channel = in_channel
+        assert input_dim % in_channel == 0
+        self.input_freq = input_dim // in_channel
+        self.bridge = None
+
+        assert len(channels) > 0
+        assert len(channels) == len(kernel_sizes)
+
+        layers = OrderedDict()
+        in_ch = in_channel
+        in_freq = self.input_freq
+        for l in range(len(channels)):
+            # subsample
+            if in_ch != channels[l]:
+                layers['subsample%d' % l] = SubsampelBlock(in_channel=in_ch,
+                                                           out_channel=channels[l],
+                                                           in_freq=in_freq,
+                                                           dropout=dropout)
+
+            # Conv
+            layers['tds%d_block%d' % (channels[l], l)] = TDSBlock(channel=channels[l],
+                                                                  kernel_size=kernel_sizes[l][0],
+                                                                  in_freq=in_freq,
+                                                                  dropout=dropout)
+
+            in_ch = channels[l]
+
+        self._output_dim = int(in_ch * in_freq)
+
+        if bottleneck_dim > 0:
+            self.bridge = LinearND(self._output_dim, bottleneck_dim)
+            self._output_dim = bottleneck_dim
+
+        self.layers = nn.Sequential(layers)
+
+        # Initialize parameters
+        self.reset_parameters()
+
+    @property
+    def output_dim(self):
+        return self._output_dim
+
+    def reset_parameters(self):
+        """Initialize parameters with uniform distribution."""
+        logger = logging.getLogger('training')
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            if p.dim() == 1:
+                nn.init.constant_(p, val=0)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+            elif p.dim() == 2:
+                fan_in = p.size(1)
+                nn.init.uniform_(p, a=-math.sqrt(4 / fan_in), b=math.sqrt(4 / fan_in))  # linear weight
+                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', math.sqrt(4 / fan_in)))
+            elif p.dim() == 4:
+                fan_in = p.size(1) * p[0][0].numel()
+                nn.init.uniform_(p, a=-math.sqrt(4 / fan_in), b=math.sqrt(4 / fan_in))  # conv weight
+                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', math.sqrt(4 / fan_in)))
+            else:
+                raise ValueError
+
+    def forward(self, xs, xlens):
+        """Forward computation.
+
+        Args:
+            xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
+            xlens (list): A list of length `[B]`
+        Returns:
+            xs (FloatTensor): `[B, T', out_ch * feat_dim]`
+            xlens (list): A list of length `[B]`
+
+        """
+        bs, time, input_dim = xs.size()
+        xs = xs.contiguous().view(bs, time, self.in_channel, input_dim // self.in_channel).transpose(2, 1)
+        # `[B, in_ch, T, input_dim // in_ch]`
+
+        xs = self.layers(xs)  # `[B, out_ch, T, feat_dim]`
+        bs, out_ch, time, freq = xs.size()
+        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, out_ch * feat_dim]`
+
+        # Bridge layer
+        if self.bridge is not None:
+            xs = self.bridge(xs)
+
+        # Update xlens
+        xlens = [xlen // 8 for xlen in xlens]
+
+        return xs, xlens
 
 
 class TDSBlock(nn.Module):
@@ -132,97 +250,3 @@ class SubsampelBlock(nn.Module):
         xs = xs.view(bs, time, out_ch, feat_dim).contiguous().transpose(2, 1)
 
         return xs
-
-
-class TDSEncoder(nn.Module):
-    """TDS (tim-depth separable convolutional) encoder.
-
-    Args:
-        input_dim (int) dimension of input features (freq * channel)
-        in_channel (int) number of channels of input features
-        channels (list) number of channles in TDS layers
-        kernel_sizes (list) size of kernels in TDS layers
-        strides (list): strides in TDS layers
-        poolings (list) size of poolings in TDS layers
-        dropout (float) probability to drop nodes in hidden-hidden connection
-        batch_norm (bool): if True, apply batch normalization
-        bottleneck_dim (int): dimension of the bottleneck layer after the last layer
-
-    """
-
-    def __init__(self,
-                 input_dim,
-                 in_channel,
-                 channels,
-                 kernel_sizes,
-                 dropout,
-                 bottleneck_dim=0):
-
-        super(TDSEncoder, self).__init__()
-
-        self.in_channel = in_channel
-        assert input_dim % in_channel == 0
-        self.input_freq = input_dim // in_channel
-        self.bridge = None
-
-        assert len(channels) > 0
-        assert len(channels) == len(kernel_sizes)
-
-        layers = OrderedDict()
-        in_ch = in_channel
-        in_freq = self.input_freq
-        for l in range(len(channels)):
-            # subsample
-            if in_ch != channels[l]:
-                layers['subsample%d' % l] = SubsampelBlock(in_channel=in_ch,
-                                                           out_channel=channels[l],
-                                                           in_freq=in_freq,
-                                                           dropout=dropout)
-
-            # Conv
-            layers['tds%d_block%d' % (channels[l], l)] = TDSBlock(channel=channels[l],
-                                                                  kernel_size=kernel_sizes[l][0],
-                                                                  in_freq=in_freq,
-                                                                  dropout=dropout)
-
-            in_ch = channels[l]
-
-        self._output_dim = int(in_ch * in_freq)
-
-        if bottleneck_dim > 0:
-            self.bridge = LinearND(self._output_dim, bottleneck_dim)
-            self._output_dim = bottleneck_dim
-
-        self.layers = nn.Sequential(layers)
-
-    @property
-    def output_dim(self):
-        return self._output_dim
-
-    def forward(self, xs, xlens):
-        """Forward computation.
-
-        Args:
-            xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
-            xlens (list): A list of length `[B]`
-        Returns:
-            xs (FloatTensor): `[B, T', out_ch * feat_dim]`
-            xlens (list): A list of length `[B]`
-
-        """
-        bs, time, input_dim = xs.size()
-        xs = xs.contiguous().view(bs, time, self.in_channel, input_dim // self.in_channel).transpose(2, 1)
-        # `[B, in_ch, T, input_dim // in_ch]`
-
-        xs = self.layers(xs)  # `[B, out_ch, T, feat_dim]`
-        bs, out_ch, time, freq = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, out_ch * feat_dim]`
-
-        # Bridge layer
-        if self.bridge is not None:
-            xs = self.bridge(xs)
-
-        # Update xlens
-        xlens = [xlen // 8 for xlen in xlens]
-
-        return xs, xlens

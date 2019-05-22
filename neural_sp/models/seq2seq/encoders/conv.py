@@ -10,12 +10,132 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
+import math
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
+
+
+class ConvEncoder(nn.Module):
+    """CNN encoder.
+
+    Args:
+        input_dim (int): dimension of input features (freq * channel)
+        in_channel (int): number of channels of input features
+        channels (list): number of channles in CNN blocks
+        kernel_sizes (list): size of kernels in CNN blocks
+        strides (list): strides in CNN blocks
+        poolings (list): size of poolings in CNN blocks
+        dropout (float): probability to drop nodes in hidden-hidden connection
+        batch_norm (bool): apply batch normalization
+        residual (bool): add residual connections
+        bottleneck_dim (int): dimension of the bridge layer after the last layer
+        param_init (float):
+
+    """
+
+    def __init__(self,
+                 input_dim,
+                 in_channel,
+                 channels,
+                 kernel_sizes,
+                 strides,
+                 poolings,
+                 dropout,
+                 batch_norm=False,
+                 residual=False,
+                 bottleneck_dim=0,
+                 param_init=0.1):
+
+        super(ConvEncoder, self).__init__()
+
+        self.in_channel = in_channel
+        assert input_dim % in_channel == 0
+        self.input_freq = input_dim // in_channel
+        self.residual = residual
+        self.bridge = None
+
+        assert len(channels) > 0
+        assert len(channels) == len(kernel_sizes) == len(strides) == len(poolings)
+
+        self.layers = nn.ModuleList()
+        in_ch = in_channel
+        in_freq = self.input_freq
+        for l in range(len(channels)):
+            block = Conv2LBlock(input_dim=in_freq,
+                                in_channel=in_ch,
+                                out_channel=channels[l],
+                                kernel_size=kernel_sizes[l],
+                                stride=strides[l],
+                                pooling=poolings[l],
+                                dropout=dropout,
+                                batch_norm=batch_norm,
+                                residual=residual)
+            self.layers += [block]
+            in_freq = block.input_dim
+            in_ch = channels[l]
+
+        self._output_dim = int(in_ch * in_freq)
+
+        if bottleneck_dim > 0:
+            self.bridge = LinearND(self._output_dim, bottleneck_dim)
+            self._output_dim = bottleneck_dim
+
+        # Initialize parameters
+        self.reset_parameters(param_init)
+
+    @property
+    def output_dim(self):
+        return self._output_dim
+
+    def reset_parameters(self, param_init):
+        """Initialize parameters with lecun style."""
+        logger = logging.getLogger('training')
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            if p.dim() == 1:
+                nn.init.constant_(p, val=0)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+            elif p.dim() == 2:
+                fan_in = p.size(1)
+                nn.init.normal_(p, mean=0, std=1. / math.sqrt(fan_in))  # linear weight
+                logger.info('Initialize %s with %s / %.3f' % (n, 'lecun', param_init))
+            elif p.dim() == 4:
+                fan_in = p.size(1) * p[0][0].numel()
+                nn.init.normal_(p, mean=0, std=1. / math.sqrt(fan_in))  # conv weight
+                logger.info('Initialize %s with %s / %.3f' % (n, 'lecun', param_init))
+            else:
+                raise ValueError
+
+    def forward(self, xs, xlens):
+        """Forward computation.
+
+        Args:
+            xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
+            xlens (list): A list of length `[B]`
+        Returns:
+            xs (FloatTensor): `[B, T', out_ch * feat_dim]`
+            xlens (list): A list of length `[B]`
+
+        """
+        bs, time, input_dim = xs.size()
+        xs = xs.view(bs, time, self.in_channel, input_dim // self.in_channel).contiguous().transpose(2, 1)
+        # `[B, in_ch, T, input_dim // in_ch]`
+
+        for block in self.layers:
+            xs, xlens = block(xs, xlens)
+        bs, out_ch, time, freq = xs.size()
+        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T', out_ch * feat_dim]`
+
+        # Bridge layer
+        if self.bridge is not None:
+            xs = self.bridge(xs)
+
+        return xs, xlens
 
 
 class Conv1LBlock(nn.Module):
@@ -170,100 +290,6 @@ class Conv2LBlock(nn.Module):
         if self.pool is not None:
             xs = self.pool(xs)
             xlens = update_lens(xlens, self.pool, dim=0)
-
-        return xs, xlens
-
-
-class ConvEncoder(nn.Module):
-    """CNN encoder.
-
-    Args:
-        input_dim (int): dimension of input features (freq * channel)
-        in_channel (int): number of channels of input features
-        channels (list): number of channles in CNN blocks
-        kernel_sizes (list): size of kernels in CNN blocks
-        strides (list): strides in CNN blocks
-        poolings (list): size of poolings in CNN blocks
-        dropout (float): probability to drop nodes in hidden-hidden connection
-        batch_norm (bool): apply batch normalization
-        residual (bool): add residual connections
-        bottleneck_dim (int): dimension of the bridge layer after the last layer
-
-    """
-
-    def __init__(self,
-                 input_dim,
-                 in_channel,
-                 channels,
-                 kernel_sizes,
-                 strides,
-                 poolings,
-                 dropout,
-                 batch_norm=False,
-                 residual=False,
-                 bottleneck_dim=0):
-
-        super(ConvEncoder, self).__init__()
-
-        self.in_channel = in_channel
-        assert input_dim % in_channel == 0
-        self.input_freq = input_dim // in_channel
-        self.residual = residual
-        self.bridge = None
-
-        assert len(channels) > 0
-        assert len(channels) == len(kernel_sizes) == len(strides) == len(poolings)
-
-        self.layers = nn.ModuleList()
-        in_ch = in_channel
-        in_freq = self.input_freq
-        for l in range(len(channels)):
-            block = Conv2LBlock(input_dim=in_freq,
-                                in_channel=in_ch,
-                                out_channel=channels[l],
-                                kernel_size=kernel_sizes[l],
-                                stride=strides[l],
-                                pooling=poolings[l],
-                                dropout=dropout,
-                                batch_norm=batch_norm,
-                                residual=residual)
-            self.layers += [block]
-            in_freq = block.input_dim
-            in_ch = channels[l]
-
-        self._output_dim = int(in_ch * in_freq)
-
-        if bottleneck_dim > 0:
-            self.bridge = LinearND(self._output_dim, bottleneck_dim)
-            self._output_dim = bottleneck_dim
-
-    @property
-    def output_dim(self):
-        return self._output_dim
-
-    def forward(self, xs, xlens):
-        """Forward computation.
-
-        Args:
-            xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
-            xlens (list): A list of length `[B]`
-        Returns:
-            xs (FloatTensor): `[B, T', out_ch * feat_dim]`
-            xlens (list): A list of length `[B]`
-
-        """
-        bs, time, input_dim = xs.size()
-        xs = xs.view(bs, time, self.in_channel, input_dim // self.in_channel).contiguous().transpose(2, 1)
-        # `[B, in_ch, T, input_dim // in_ch]`
-
-        for block in self.layers:
-            xs, xlens = block(xs, xlens)
-        bs, out_ch, time, freq = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T', out_ch * feat_dim]`
-
-        # Bridge layer
-        if self.bridge is not None:
-            xs = self.bridge(xs)
 
         return xs, xlens
 
