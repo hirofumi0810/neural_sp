@@ -54,14 +54,14 @@ class LMBase(ModelBase):
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, hidden, reporter = self.teacher_forcing(ys, hidden, reporter, n_caches)
+                loss, hidden, reporter = self._forward(ys, hidden, reporter, n_caches)
         else:
             self.train()
-            loss, hidden, reporter = self.teacher_forcing(ys, hidden, reporter)
+            loss, hidden, reporter = self._forward(ys, hidden, reporter)
 
         return loss, hidden, reporter
 
-    def teacher_forcing(self, ys, hidden, reporter, n_caches=0):
+    def _forward(self, ys, hidden, reporter, n_caches=0):
         ys = [np2tensor(y, self.device_id).long() for y in ys]
         ys = pad_list(ys, self.pad)
         ys_in = ys[:, :-1]
