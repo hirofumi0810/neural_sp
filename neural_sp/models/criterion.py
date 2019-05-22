@@ -64,16 +64,19 @@ def kldiv_lsm_ctc(logits, ylens, size_average=False):
     bs, _, vocab = logits.size()
 
     # Create uniform distribution
-    log_uniform = logits.new_zeros(logits.size()).fill_(math.log(1 / (vocab - 2)))
+    uniform = logits.new_zeros(logits.size()).fill_(1 / (vocab - 2))
+    log_uniform = torch.log(uniform)
+    uniform[:, :, 2] = 0  # eos
+    uniform[:, :, 3] = 0  # pad
     log_uniform[:, :, 2] = 0  # eos
     log_uniform[:, :, 3] = 0  # pad
 
     # Compute XE for label smoothing
-    probs = F.softmax(logits, dim=-1)
     log_probs = F.log_softmax(logits, dim=-1)
-    kl_div = torch.mul(probs, log_probs - log_uniform)
+    kl_div = torch.mul(uniform, log_uniform - log_probs)
+
     loss = np.sum([kl_div[b, :ylens[b]].sum() for b in range(bs)])
-    # assert loss >= 0
+    assert loss >= 0
     if size_average:
         loss /= bs
     return loss

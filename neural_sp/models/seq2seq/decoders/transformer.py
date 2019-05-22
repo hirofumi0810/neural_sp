@@ -257,7 +257,7 @@ class TransformerDecoder(nn.Module):
             loss = loss.cuda(self.device_id)
 
         # Label smoothing for CTC
-        if self.lsm_prob > 0 and self.ctc_weight == 1:
+        if self.lsm_prob > 0:
             loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits,
                                                               ylens=elens,
                                                               size_average=True) * self.lsm_prob
