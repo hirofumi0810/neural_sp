@@ -79,10 +79,30 @@ class GatedConvLM(ModelBase):
             last_dim = 900
 
         elif model_size == '8B':
-            raise NotImplementedError
+            layers['conv1'] = GLUBlock(1, args.emb_dim, 512,
+                                       dropout=args.dropout_hidden)
+            for i in range(1, 4, 1):
+                layers['conv2-%d' % i] = GLUBlock(5, 512, 512,
+                                                  bottlececk_dim=128,
+                                                  dropout=args.dropout_hidden)
+            for i in range(1, 4, 1):
+                layers['conv3-%d' % i] = GLUBlock(5, 512, 512,
+                                                  bottlececk_dim=256,
+                                                  dropout=args.dropout_hidden)
+            layers['conv4'] = GLUBlock(1, 512, 2048,
+                                       bottlececk_dim=1024,
+                                       dropout=args.dropout_hidden)
+            last_dim = 2048
 
         elif model_size == '9':
-            raise NotImplementedError
+            layers['conv1'] = GLUBlock(4, args.emb_dim, 807,
+                                       dropout=args.dropout_hidden)
+            for i in range(1, 4, 1):
+                layers['conv2-%d-1' % i] = GLUBlock(4, 807, 807,
+                                                    dropout=args.dropout_hidden)
+                layers['conv2-%d-2' % i] = GLUBlock(4, 807, 807,
+                                                    dropout=args.dropout_hidden)
+            last_dim = 807
 
         elif model_size == '13':
             layers['conv1'] = GLUBlock(4, args.emb_dim, 1268,

@@ -49,7 +49,7 @@ dropout_hidden=0.5
 dropout_out=0.0
 dropout_emb=0.2
 weight_decay=1e-6
-adaptive_softmax=false
+adaptive_softmax=true
 
 ### path to save the model
 model=/n/sd3/inaguma/result/wikitext2
