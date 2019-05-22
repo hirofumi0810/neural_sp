@@ -515,7 +515,7 @@ class RNNDecoder(nn.Module):
         return loss, acc, ppl
 
     def teacher_forcing(self, eouts, elens, ys_in_pad):
-        """Compute XE loss for the attention-based sequence-to-sequence model.
+        """Teacher forcing for attention-based decoder.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`

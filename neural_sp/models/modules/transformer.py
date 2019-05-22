@@ -72,12 +72,12 @@ class SublayerConnection(nn.Module):
     def __init__(self, d_model, dropout, layer_norm_eps=1e-6):
         super(SublayerConnection, self).__init__()
 
-        self.layer_norm = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        # self.layer_norm = LayerNorm(d_model, eps=layer_norm_eps)
+        self.norm = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        # self.norm = LayerNorm(d_model, eps=layer_norm_eps)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs, sublayer):
-        xs_norm = self.layer_norm(xs)
+        xs_norm = self.norm(xs)
         output = sublayer(xs_norm)
 
         # NOTE: output may be tuple paired with attention weights

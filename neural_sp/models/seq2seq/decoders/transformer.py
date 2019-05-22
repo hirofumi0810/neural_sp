@@ -264,6 +264,31 @@ class TransformerDecoder(nn.Module):
 
         return loss
 
+    def teacher_forcing(self, eouts, elens, ys_in_pad, ylens):
+        """Teacher forcing for attention-based decoder.
+
+        Args:
+            eouts (FloatTensor): `[B, T, d_model]`
+            elens (list): A list of length `[B]`
+            ys_in_pad (list): `[B, L, emb_dim]`
+            ylens (list): A list of length `[B]`
+        Returns:
+            logits (FloatTensor): `[B, L, vocab]`
+
+        """
+        # Add positional embedding
+        ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
+        if self.pe_type:
+            ys_emb = self.pos_emb(ys_emb)
+
+        for l in range(self.n_layers):
+            ys_emb, yy_aw, xy_aw = self.layers[l](ys_emb, ylens, eouts, elens)
+        logits = self.norm_top(ys_emb)
+        if self.adaptive_softmax is None:
+            logits = self.output(logits)
+
+        return logits
+
     def forward_att(self, eouts, elens, ys):
         """Compute XE loss for the sequence-to-sequence model.
 
@@ -289,17 +314,7 @@ class TransformerDecoder(nn.Module):
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, self.pad)
 
-        # Add positional embedding
-        ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
-        if self.pe_type:
-            ys_emb = self.pos_emb(ys_emb)
-
-        for l in range(self.n_layers):
-            ys_emb, yy_aw, xy_aw = self.layers[l](ys_emb, ylens, eouts, elens)
-
-        logits = self.norm_top(ys_emb)
-        if self.adaptive_softmax is None:
-            logits = self.output(logits)
+        logits = self.teacher_forcing(eouts, elens, ys_in_pad, ylens)
 
         # Compute XE sequence loss
         if self.adaptive_softmax is None:
