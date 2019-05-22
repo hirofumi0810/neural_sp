@@ -127,7 +127,8 @@ class Seq2seq(ModelBase):
                 param_init=args.param_init)
         else:
             subsample = [1] * args.enc_n_layers
-            subsample[:args.enc_n_layers] = list(map(int, args.subsample.split('_')[:args.enc_n_layers]))
+            for l, s in enumerate(list(map(int, args.subsample.split('_')[:args.enc_n_layers]))):
+                subsample[l] = s
             self.enc = RNNEncoder(
                 input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
                 rnn_type=args.enc_type,
