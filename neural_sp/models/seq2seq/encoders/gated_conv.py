@@ -47,7 +47,7 @@ class GatedConvEncoder(nn.Module):
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
         self.input_freq = input_dim // in_channel
-        self.bottleneck_dim = bottleneck_dim
+        self.bridge = None
 
         assert len(channels) > 0
         assert len(channels) == len(kernel_sizes)
@@ -66,7 +66,7 @@ class GatedConvEncoder(nn.Module):
         self._output_dim = int(input_dim)
 
         if bottleneck_dim > 0:
-            self.bottleneck = LinearND(self._output_dim, bottleneck_dim)
+            self.bridge = LinearND(self._output_dim, bottleneck_dim)
             self._output_dim = bottleneck_dim
 
         self.layers = nn.Sequential(layers)
@@ -82,29 +82,24 @@ class GatedConvEncoder(nn.Module):
             xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
             xlens (list): A list of length `[B]`
         Returns:
-            xs (FloatTensor): `[B, T', feat_dim]`
+            xs (FloatTensor): `[B, T', out_ch * feat_dim]`
             xlens (list): A list of length `[B]`
 
         """
         bs, time, input_dim = xs.size()
+        xs = xs.transpose(2, 1).unsqueeze(3)  # `[B, in_ch (input_dim), T, 1]`
 
-        # Reshape to `[B, in_ch (input_dim), T, 1]`
-        xs = xs.transpose(2, 1).unsqueeze(3)
-
-        xs = self.layers(xs)  # `[B, out_ch (feat_dim), T, 1]`
-
-        # Collapse feature dimension
+        xs = self.layers(xs)  # `[B, out_ch, T, 1]`
         bs, out_ch, time, freq = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)
+        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, out_ch * feat_dim]`
 
         # weight normalization + GLU for the last fully-connected layer
         xs = F.glu(self.fc_glu(xs), dim=2)
 
-        # Reduce dimension
-        if self.bottleneck_dim > 0:
-            xs = self.bottleneck(xs)
+        # Bridge layer
+        if self.bridge is not None:
+            xs = self.bridge(xs)
 
-        # Update xlens
-        # xlens = [xlen // 8 for xlen in xlens]
+        # NOTE: no subsampling is conducted
 
         return xs, xlens

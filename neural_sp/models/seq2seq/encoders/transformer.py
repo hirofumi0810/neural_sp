@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import torch.nn as nn
 
 from neural_sp.models.modules.linear import LinearND
@@ -18,6 +19,8 @@ from neural_sp.models.modules.transformer import PositionwiseFeedForward
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
+
+logger = logging.getLogger("training")
 
 
 class TransformerEncoder(nn.Module):
@@ -37,6 +40,7 @@ class TransformerEncoder(nn.Module):
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
         layer_norm_eps (float):
+        last_proj_dim (int): dimension of the last projection layer
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
@@ -62,6 +66,7 @@ class TransformerEncoder(nn.Module):
                  dropout=0,
                  dropout_att=0,
                  layer_norm_eps=1e-6,
+                 last_proj_dim=0,
                  n_stacks=1,
                  n_splices=1,
                  conv_in_channel=1,
@@ -92,10 +97,11 @@ class TransformerEncoder(nn.Module):
             kernel_sizes = []
             strides = []
             poolings = []
+            logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
 
         if len(channels) > 0:
             assert n_stacks == 1 and n_splices == 1
-            self.conv = ConvEncoder(input_dim * n_stacks,
+            self.conv = ConvEncoder(input_dim,
                                     in_channel=conv_in_channel,
                                     channels=channels,
                                     kernel_sizes=kernel_sizes,
@@ -123,7 +129,12 @@ class TransformerEncoder(nn.Module):
                                      dropout, dropout_att, layer_norm_eps) for l in range(n_layers)])
         self.layer_norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
-        self._output_dim = d_model
+        if last_proj_dim != self.output_dim:
+            self.bridge = LinearND(self._output_dim, last_proj_dim, dropout=dropout)
+            self._output_dim = last_proj_dim
+        else:
+            self.bridge = None
+            self._output_dim = d_model
 
     @property
     def output_dim(self):
@@ -146,14 +157,11 @@ class TransformerEncoder(nn.Module):
                  'ys_sub1': {'xs': None, 'xlens': None},
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
-        # Path through CNN blocks before RNN layers
         if self.conv is None:
-            # Transform to d_model dimension
             xs = self.embed_in(xs) * (self.d_model ** 0.5)
         else:
+            # Path through CNN blocks before RNN layers
             xs, xlens = self.conv(xs, xlens)
-
-        bs, max_xlen = xs.size()[:2]
 
         # Positional encoding & layer normalization
         if self.pe_type:
@@ -164,9 +172,12 @@ class TransformerEncoder(nn.Module):
             xs, xx_aw = self.layers[i](xs, xlens)
         xs = self.layer_norm_top(xs)
 
+        # Bridge layer
+        if self.bridge is not None:
+            xs = self.bridge(xs)
+
         eouts['ys']['xs'] = xs
         eouts['ys']['xlens'] = xlens
-
         return eouts
 
 

@@ -51,7 +51,6 @@ class Seq2seq(ModelBase):
         self.enc_n_units = args.enc_n_units
         if args.enc_type in ['blstm', 'bgru', 'conv_blstm', 'conv_bgru']:
             self.enc_n_units *= 2
-        self.bridge_layer = args.bridge_layer
 
         # for OOV resolution
         self.enc_n_layers = args.enc_n_layers
@@ -113,6 +112,7 @@ class Seq2seq(ModelBase):
                 dropout=args.dropout_enc,
                 dropout_att=args.dropout_att,
                 layer_norm_eps=args.layer_norm_eps,
+                last_proj_dim=args.d_model if 'transformer' in args.dec_type else args.dec_n_units,
                 n_stacks=args.n_stacks,
                 n_splices=args.n_splices,
                 conv_in_channel=args.conv_in_channel,
@@ -137,6 +137,7 @@ class Seq2seq(ModelBase):
                 subsample=list(map(int, args.subsample.split('_')[:args.enc_n_layers])) +
                 [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
                 subsample_type=args.subsample_type,
+                last_proj_dim=args.d_model if 'transformer' in args.dec_type else args.dec_n_units,
                 n_stacks=args.n_stacks,
                 n_splices=args.n_splices,
                 conv_in_channel=args.conv_in_channel,
@@ -155,23 +156,6 @@ class Seq2seq(ModelBase):
         if args.freeze_encoder:
             for p in self.enc.parameters():
                 p.requires_grad = False
-
-        # Bridge layer between the encoder and decoder
-        self.is_bridge = False
-        if (args.enc_type in ['conv', 'tds', 'gated_conv', 'transformer', 'conv_transformer'] and args.ctc_weight < 1) or args.dec_type == 'transformer' or args.bridge_layer:
-            self.bridge = LinearND(self.enc.output_dim,
-                                   args.d_model if args.dec_type == 'transformer' else args.dec_n_units,
-                                   dropout=args.dropout_enc)
-            self.is_bridge = True
-            if self.sub1_weight > 0:
-                self.bridge_sub1 = LinearND(self.enc.output_dim,
-                                            args.d_model if args.dec_type == 'transformer' else args.dec_n_units,
-                                            dropout=args.dropout_enc)
-            if self.sub2_weight > 0:
-                self.bridge_sub2 = LinearND(self.enc.output_dim,
-                                            args.d_model if args.dec_type == 'transformer' else args.dec_n_units,
-                                            dropout=args.dropout_enc)
-            self.enc_n_units = args.dec_n_units
 
         # main task
         directions = []
@@ -196,8 +180,7 @@ class Seq2seq(ModelBase):
                     unk=self.unk,
                     pad=self.pad,
                     blank=self.blank,
-                    # enc_n_units=self.enc.output_dim,
-                    enc_n_units=args.dec_n_units,
+                    enc_n_units=self.enc.output_dim,
                     attn_type=args.transformer_attn_type,
                     attn_n_heads=args.transformer_attn_n_heads,
                     n_layers=args.transformer_dec_n_layers,
@@ -223,8 +206,7 @@ class Seq2seq(ModelBase):
                     unk=self.unk,
                     pad=self.pad,
                     blank=self.blank,
-                    # enc_n_units=self.enc.output_dim,
-                    enc_n_units=args.dec_n_units,
+                    enc_n_units=self.enc.output_dim,
                     attn_type=args.attn_type,
                     attn_dim=args.attn_dim,
                     attn_sharpening_factor=args.attn_sharpening,
@@ -533,14 +515,6 @@ class Seq2seq(ModelBase):
                 for sub in ['sub1', 'sub2']:
                     enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
                     enc_outs['ys_' + sub]['xlens'] = enc_outs['ys']['xlens'][:]
-
-            # Bridge between the encoder and decoder
-            if self.main_weight > 0 and self.is_bridge:
-                enc_outs['ys']['xs'] = self.bridge(enc_outs['ys']['xs'])
-            if self.sub1_weight > 0 and self.is_bridge:
-                enc_outs['ys_sub1']['xs'] = self.bridge_sub1(enc_outs['ys_sub1']['xs'])
-            if self.sub2_weight > 0 and self.is_bridge:
-                enc_outs['ys_sub2']['xs'] = self.bridge_sub2(enc_outs['ys_sub2']['xs'])
 
             return enc_outs
 

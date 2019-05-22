@@ -187,7 +187,7 @@ class ConvEncoder(nn.Module):
         dropout (float): probability to drop nodes in hidden-hidden connection
         batch_norm (bool): apply batch normalization
         residual (bool): add residual connections
-        bottleneck_dim (int): dimension of the bottleneck layer after the last layer
+        bottleneck_dim (int): dimension of the bridge layer after the last layer
 
     """
 
@@ -209,7 +209,7 @@ class ConvEncoder(nn.Module):
         assert input_dim % in_channel == 0
         self.input_freq = input_dim // in_channel
         self.residual = residual
-        self.bottleneck_dim = bottleneck_dim
+        self.bridge = None
 
         assert len(channels) > 0
         assert len(channels) == len(kernel_sizes) == len(strides) == len(poolings)
@@ -234,7 +234,7 @@ class ConvEncoder(nn.Module):
         self._output_dim = int(in_ch * in_freq)
 
         if bottleneck_dim > 0:
-            self.bottleneck = LinearND(self._output_dim, bottleneck_dim)
+            self.bridge = LinearND(self._output_dim, bottleneck_dim)
             self._output_dim = bottleneck_dim
 
     @property
@@ -248,25 +248,22 @@ class ConvEncoder(nn.Module):
             xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
             xlens (list): A list of length `[B]`
         Returns:
-            xs (FloatTensor): `[B, T', feat_dim]`
+            xs (FloatTensor): `[B, T', out_ch * feat_dim]`
             xlens (list): A list of length `[B]`
 
         """
         bs, time, input_dim = xs.size()
-
-        # Reshape to `[B, in_ch, T, input_dim // in_ch]`
         xs = xs.view(bs, time, self.in_channel, input_dim // self.in_channel).contiguous().transpose(2, 1)
+        # `[B, in_ch, T, input_dim // in_ch]`
 
         for block in self.layers:
             xs, xlens = block(xs, xlens)
-
-        # Collapse feature dimension
         bs, out_ch, time, freq = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)
+        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T', out_ch * feat_dim]`
 
-        # Reduce dimension
-        if self.bottleneck_dim > 0:
-            xs = self.bottleneck(xs)
+        # Bridge layer
+        if self.bridge is not None:
+            xs = self.bridge(xs)
 
         return xs, xlens
 

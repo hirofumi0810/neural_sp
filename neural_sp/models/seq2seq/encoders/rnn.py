@@ -40,6 +40,7 @@ class RNNEncoder(nn.Module):
         subsample (list): subsample in the corresponding RNN layers
             ex.) [False, True, True, False] means that subsample is conducted in the 2nd and 3rd layers.
         subsample_type (str): drop or concat or max_pool
+        last_proj_dim (int): dimension of the last projection layer
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
@@ -70,6 +71,7 @@ class RNNEncoder(nn.Module):
                  subsample_type='drop',
                  n_stacks=1,
                  n_splices=1,
+                 last_proj_dim=0,
                  conv_in_channel=1,
                  conv_channels=0,
                  conv_kernel_sizes=[],
@@ -109,6 +111,11 @@ class RNNEncoder(nn.Module):
         self.subsample = subsample
         self.subsample_type = subsample_type
 
+        # Setting for bridge layers
+        self.bridge = None
+        self.bridge_sub1 = None
+        self.bridge_sub2 = None
+
         # Setting for residual connections
         self.residual = residual
         if residual:
@@ -146,13 +153,15 @@ class RNNEncoder(nn.Module):
                                        in_channel=conv_in_channel,
                                        channels=channels,
                                        kernel_sizes=kernel_sizes,
-                                       dropout=dropout)
+                                       dropout=dropout,
+                                       bottleneck_dim=last_proj_dim)
             elif rnn_type == 'gated_conv':
                 self.conv = GatedConvEncoder(input_dim=input_dim * n_stacks,
                                              in_channel=conv_in_channel,
                                              channels=channels,
                                              kernel_sizes=kernel_sizes,
-                                             dropout=dropout)
+                                             dropout=dropout,
+                                             bottleneck_dim=last_proj_dim)
             else:
                 assert n_stacks == 1 and n_splices == 1
                 self.conv = ConvEncoder(input_dim,
@@ -236,25 +245,29 @@ class RNNEncoder(nn.Module):
                     self._output_dim = n_units * self.n_dirs
 
                     # Projection layer
-                    if n_projs > 0:
+                    if n_projs > 0 and i != n_layers - 1:
                         self.proj += [LinearND(n_units * self.n_dirs, n_projs)]
                         self._output_dim = n_projs
 
                     # Task specific layer
                     if l == n_layers_sub1 - 1 and task_specific_layer:
-                        self.rnn_sub1_tsl = rnn_i(self._output_dim, n_units, 1,
-                                                  bias=True,
-                                                  batch_first=True,
-                                                  dropout=0,
-                                                  bidirectional=self.bidirectional)
-                        self.dropout_sub1_tsl = nn.Dropout(p=dropout)
+                        self.rnn_sub1 = rnn_i(self._output_dim, n_units, 1,
+                                              bias=True,
+                                              batch_first=True,
+                                              dropout=0,
+                                              bidirectional=self.bidirectional)
+                        self.dropout_sub1 = nn.Dropout(p=dropout)
+                        if last_proj_dim != self.output_dim:
+                            self.bridge_sub1 = LinearND(n_units, last_proj_dim, dropout=dropout)
                     if l == n_layers_sub2 - 1 and task_specific_layer:
-                        self.rnn_sub2_tsl = rnn_i(self._output_dim, n_units, 1,
-                                                  bias=True,
-                                                  batch_first=True,
-                                                  dropout=0,
-                                                  bidirectional=self.bidirectional)
-                        self.dropout_sub2_tsl = nn.Dropout(p=dropout)
+                        self.rnn_sub2 = rnn_i(self._output_dim, n_units, 1,
+                                              bias=True,
+                                              batch_first=True,
+                                              dropout=0,
+                                              bidirectional=self.bidirectional)
+                        self.dropout_sub2 = nn.Dropout(p=dropout)
+                        if last_proj_dim != self.output_dim:
+                            self.bridge_sub2 = LinearND(n_units, last_proj_dim, dropout=dropout)
 
                     # Network in network (1*1 conv + batch normalization + ReLU)
                     # NOTE: exclude the last layer
@@ -267,6 +280,10 @@ class RNNEncoder(nn.Module):
                         self.nin_bn += [nn.BatchNorm2d(self._output_dim)]
                         if n_layers_sub1 > 0 or n_layers_sub2 > 0:
                             assert task_specific_layer
+
+                if last_proj_dim != self.output_dim:
+                    self.bridge = LinearND(self._output_dim, last_proj_dim, dropout=dropout)
+                    self._output_dim = last_proj_dim
 
     @property
     def output_dim(self):
@@ -333,13 +350,15 @@ class RNNEncoder(nn.Module):
                 # Pick up outputs in the sub task before the projection layer
                 if l == self.n_layers_sub1 - 1:
                     if self.task_specific_layer:
-                        self.rnn_sub1_tsl.flatten_parameters()
+                        self.rnn_sub1.flatten_parameters()
                         xs_sub1 = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
-                        xs_sub1, _ = self.rnn_sub1_tsl(xs_sub1, hx=None)
+                        xs_sub1, _ = self.rnn_sub1(xs_sub1, hx=None)
                         xs_sub1 = pad_packed_sequence(xs_sub1, batch_first=True)[0]
-                        xs_sub1 = self.dropout_sub1_tsl(xs_sub1)
+                        xs_sub1 = self.dropout_sub1(xs_sub1)
                     else:
                         xs_sub1 = xs.clone()[perm_ids_unsort]
+                    if self.bridge_sub1 is not None:
+                        xs_sub1 = self.bridge_sub1(xs_sub1)
                     xlens_sub1 = xlens[perm_ids_unsort].tolist()
 
                     if task == 'ys_sub1':
@@ -349,13 +368,15 @@ class RNNEncoder(nn.Module):
 
                 if l == self.n_layers_sub2 - 1:
                     if self.task_specific_layer:
-                        self.rnn_sub2_tsl.flatten_parameters()
+                        self.rnn_sub2.flatten_parameters()
                         xs_sub2 = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
-                        xs_sub2, _ = self.rnn_sub2_tsl(xs_sub2, hx=None)
+                        xs_sub2, _ = self.rnn_sub2(xs_sub2, hx=None)
                         xs_sub2 = pad_packed_sequence(xs_sub2, batch_first=True)[0]
-                        xs_sub2 = self.dropout_sub2_tsl(xs_sub2)
+                        xs_sub2 = self.dropout_sub2(xs_sub2)
                     else:
                         xs_sub2 = xs.clone()[perm_ids_unsort]
+                    if self.bridge_sub2 is not None:
+                        xs_sub2 = self.bridge_sub2(xs_sub2)
                     xlens_sub2 = xlens[perm_ids_unsort].tolist()
 
                     if task == 'ys_sub2':
@@ -363,12 +384,12 @@ class RNNEncoder(nn.Module):
                         eouts[task]['xlens'] = xlens_sub2
                         return eouts
 
-                # Projection layer
-                if self.n_projs > 0:
-                    xs = torch.tanh(self.proj[l](xs))
-
                 # NOTE: Exclude the last layer
                 if l != len(self.rnn) - 1:
+                    # Projection layer
+                    if self.n_projs > 0:
+                        xs = torch.tanh(self.proj[l](xs))
+
                     # Subsampling
                     if self.subsample[l] > 1:
                         if self.subsample_type == 'drop':
@@ -415,6 +436,10 @@ class RNNEncoder(nn.Module):
                         xs = xs + residual
                     residual = xs
 
+        # Bridge layer
+        if self.bridge is not None:
+            xs = self.bridge(xs)
+
         # Unsort
         xs = xs[perm_ids_unsort]
         xlens = xlens[perm_ids_unsort].tolist()
@@ -428,7 +453,6 @@ class RNNEncoder(nn.Module):
         if self.n_layers_sub2 >= 1 and task == 'all':
             eouts['ys_sub2']['xs'] = xs_sub2
             eouts['ys_sub2']['xlens'] = xlens_sub2
-
         return eouts
 
 
