@@ -46,6 +46,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
         super(MultiheadAttentionMechanism, self).__init__()
 
+        assert attn_dim % n_heads == 0
         self.d_k = attn_dim // n_heads
         self.n_heads = n_heads
         self.key = None
