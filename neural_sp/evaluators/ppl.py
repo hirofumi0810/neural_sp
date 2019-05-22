@@ -20,15 +20,15 @@ from neural_sp.models.lm.rnnlm import RNNLM
 logger = logging.getLogger("decoding").getChild('ppl')
 
 
-def eval_ppl(models, dataset, batch_size=1, bptt=-1,
+def eval_ppl(models, dataset, batch_size=1, bptt=None,
              recog_params=None, n_caches=0, progressbar=False):
-    """Evaluate a Seq2seq or RNNLM by perprexity and loss.
+    """Evaluate a Seq2seq or (RNN/GatedConv)LM by perprexity and loss.
 
     Args:
         models (list): the models to evaluate
         dataset: An instance of a `Dataset' class
-        batch_size (int):
-        bptt (int):
+        batch_size (int): size of mini-batch
+        bptt (int): BPTT length
         recog_params (dict):
         n_caches (int):
         progressbar (bool): if True, visualize the progressbar
@@ -58,7 +58,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=-1,
         pbar = tqdm(total=len(dataset))
     while True:
         if is_lm:
-            ys, is_new_epoch = dataset.next(batch_size)
+            ys, is_new_epoch = dataset.next(batch_size, bptt)
             bs, time = ys.shape[:2]
             if n_caches > 0:
                 assert isinstance(model, RNNLM)
