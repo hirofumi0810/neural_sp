@@ -18,19 +18,23 @@ vocab_size=33278
 # LM configuration
 #########################
 # topology
-lm_type=gated_conv_small
+lm_type=gated_conv_custom
+kernel_size=4
+n_units=1024
+n_projs=512
+n_layers=6
 emb_dim=300
 tie_embedding=false
 # optimization
 batch_size=50
 bptt=200
 optimizer=nesterov
-learning_rate=1.0
-n_epochs=50
-convert_to_sgd_epoch=50
-print_step=50
+learning_rate=2.0
+n_epochs=100
+convert_to_sgd_epoch=100
+print_step=100
 decay_start_epoch=10
-decay_rate=0.5
+decay_rate=0.75
 decay_patient_n_epochs=0
 # decay_type=epoch
 decay_type=metric
@@ -38,7 +42,6 @@ not_improved_patient_n_epochs=20
 eval_start_epoch=1
 # initialization
 param_init=0.05
-param_init_dist=kaiming_uniform
 pretrained_model=
 # regularization
 clip_grad_norm=0.1
@@ -46,7 +49,7 @@ dropout_hidden=0.5
 dropout_out=0.0
 dropout_emb=0.2
 weight_decay=1e-6
-adaptive_softmax=true
+adaptive_softmax=false
 
 ### path to save the model
 model=/n/sd3/inaguma/result/wikitext2
@@ -135,6 +138,10 @@ if [ ${stage} -le 3 ]; then
         --model ${model}/lm \
         --unit ${unit} \
         --lm_type ${lm_type} \
+        --kernel_size ${kernel_size} \
+        --n_units ${n_units} \
+        --n_projs ${n_projs} \
+        --n_layers ${n_layers} \
         --emb_dim ${emb_dim} \
         --tie_embedding ${tie_embedding} \
         --batch_size ${batch_size} \
@@ -151,7 +158,6 @@ if [ ${stage} -le 3 ]; then
         --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
         --eval_start_epoch ${eval_start_epoch} \
         --param_init ${param_init} \
-        --param_init_dist ${param_init_dist} \
         --pretrained_model ${pretrained_model} \
         --clip_grad_norm ${clip_grad_norm} \
         --dropout_hidden ${dropout_hidden} \

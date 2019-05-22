@@ -319,7 +319,7 @@ def main():
 
 def make_model_name(args):
     dir_name = args.lm_type
-    if 'gated_conv' not in args.lm_type:
+    if 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
         dir_name += str(args.n_units) + 'H'
         dir_name += str(args.n_projs) + 'P'
         dir_name += str(args.n_layers) + 'L'

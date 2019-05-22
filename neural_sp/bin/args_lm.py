@@ -46,11 +46,13 @@ def parse():
                         help='')
     # topology
     parser.add_argument('--lm_type', type=str, default='lstm',
-                        choices=['lstm', 'gru', 'gated_conv_small',
+                        choices=['lstm', 'gru', 'gated_conv_custom',
                                  'gated_conv_8', 'gated_conv_8B', 'gated_conv_9',
                                  'gated_conv_13', 'gated_conv_14', 'gated_conv_14B'],
                         help='type of language model')
-    parser.add_argument('--n_units', type=int, default=512,
+    parser.add_argument('--kernel_size', type=int, default=4,
+                        help='kernel size for GatedConvLM')
+    parser.add_argument('--n_units', type=int, default=1024,
                         help='number of units in each layer')
     parser.add_argument('--n_projs', type=int, default=0,
                         help='number of units in the projection layer')
