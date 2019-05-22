@@ -23,10 +23,8 @@ from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
-from neural_sp.models.modules.transformer import SublayerConnection
-from neural_sp.models.modules.transformer import PositionwiseFeedForward
 from neural_sp.models.modules.transformer import PositionalEncoding
-from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
+from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.ctc_greedy import GreedyDecoder
@@ -133,12 +131,13 @@ class TransformerDecoder(nn.Module):
                 [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_n_heads,
                                          dropout, dropout_att, layer_norm_eps)
                  for _ in range(n_layers)])
+            self.norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
             self.embed = Embedding(vocab, d_model,
                                    dropout=0,  # NOTE: do not apply dropout here
                                    ignore_index=pad)
             if pe_type:
-                self.pos_emb_out = PositionalEncoding(d_model, dropout_emb, pe_type)
+                self.pos_emb = PositionalEncoding(d_model, dropout_emb, pe_type)
 
             if adaptive_softmax:
                 self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -160,8 +159,6 @@ class TransformerDecoder(nn.Module):
                 if tie_embedding:
                     self.output.fc.weight = self.embed.embed.weight
 
-            self.norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
-
         # Initialize parameters
         self.reset_parameters()
 
@@ -169,7 +166,7 @@ class TransformerDecoder(nn.Module):
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
 
-    def reset_parameters(self, param_init):
+    def reset_parameters(self):
         """Initialize parameters with xavier_uniform style."""
         logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
@@ -183,7 +180,7 @@ class TransformerDecoder(nn.Module):
                     logger.info('Initialize %s with %s / %.3f' % (n, 'normal', self.d_model**-0.5))
                 else:
                     nn.init.xavier_uniform_(p, gain=1.0)
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'xavier_uniform', param_init))
+                    logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
             else:
                 raise ValueError
 
@@ -297,10 +294,10 @@ class TransformerDecoder(nn.Module):
         # Add positional embedding
         ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
         if self.pe_type:
-            ys_emb = self.pos_emb_out(ys_emb)
+            ys_emb = self.pos_emb(ys_emb)
 
         for l in range(self.n_layers):
-            ys_emb, yy_aw, xy_aw = self.layers[l](eouts, elens, ys_emb, ylens)
+            ys_emb, yy_aw, xy_aw = self.layers[l](ys_emb, ylens, eouts, elens)
 
         logits = self.norm_top(ys_emb)
         if self.adaptive_softmax is None:
@@ -363,11 +360,11 @@ class TransformerDecoder(nn.Module):
             # Add positional embedding
             out = self.embed(ys) * (self.d_model ** 0.5)
             if self.pe_type:
-                out = self.pos_emb_out(out)
+                out = self.pos_emb(out)
 
             for l in range(self.n_layers):
-                out, yy_aw, xy_aw = self.layers[l](eouts, elens, out, ylens + 1)
-                # xy_aw: `[B, head, T, L]`
+                out, yy_aw, xy_aw = self.layers[l](out, ylens + 1, eouts, elens)
+                # xy_aw: `[B, n_heads, T, L]`
             out = self.norm_top(out)
             logits_t = self.output(out)
 
@@ -444,91 +441,3 @@ class TransformerDecoder(nn.Module):
             best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width, lm, lm_weight)
             # TODO(hirofumi): add decoding paramters
         return best_hyps
-
-
-class TransformerDecoderBlock(nn.Module):
-    """A single layer of the transformer decoder.
-
-        Args:
-            d_model (int): dimension of keys/values/queries in
-                           MultiheadAttentionMechanism, also the input size of
-                           the first-layer of the PositionwiseFeedForward
-            d_ff (int): second-layer of the PositionwiseFeedForward
-            attn_type (str):
-            attn_n_heads (int): number of heads for multi-head attention
-            dropout (float): dropout probabilities for linear layers
-            dropout_att (float): dropout probabilities for attention probabilities
-            attn_type (str): type of self-attention, scaled_dot_product or average
-            layer_norm_eps (float):
-
-    """
-
-    def __init__(self,
-                 d_model,
-                 d_ff,
-                 attn_type,
-                 attn_n_heads,
-                 dropout,
-                 dropout_att,
-                 layer_norm_eps):
-        super(TransformerDecoderBlock, self).__init__()
-
-        self.attn_type = attn_type
-
-        # self-attention
-        if attn_type == "scaled_dot_product":
-            self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
-                                                         query_dim=d_model,
-                                                         attn_dim=d_model,
-                                                         n_heads=attn_n_heads,
-                                                         dropout=dropout_att)
-        elif attn_type == "average":
-            raise NotImplementedError
-            # self.self_attn = AverageAttention(d_model, dropout, layer_norm=True)
-        else:
-            raise NotImplementedError(attn_type)
-        self.add_norm_self_attn = SublayerConnection(d_model, dropout, layer_norm_eps)
-
-        # attention for encoder stacks
-        self.src_attn = MultiheadAttentionMechanism(key_dim=d_model,
-                                                    query_dim=d_model,
-                                                    attn_dim=d_model,
-                                                    n_heads=attn_n_heads,
-                                                    dropout=dropout_att)
-        self.add_norm_src_attn = SublayerConnection(d_model, dropout, layer_norm_eps)
-
-        # feed-forward
-        self.ff = PositionwiseFeedForward(d_model, d_ff, dropout)
-        self.add_norm_ff = SublayerConnection(d_model, dropout, layer_norm_eps)
-
-    def forward(self, x, xlens, y, ylens):
-        """Transformer decoder layer definition.
-
-        Args:
-            x (FloatTensor): encoder outputs. `[B, T, d_model]`
-            xlens (list): `[B]`
-            y (FloatTensor): `[B, L, d_model]`
-            ylens (list): `[B]`
-        Returns:
-            y (FloatTensor): `[B, L, d_model]`
-            yy_aw (FloatTensor)`[B, L, L]`
-            xy_aw (FloatTensor): `[B, L, T]`
-
-        """
-        # self-attention
-        if self.attn_type == "scaled_dot_product":
-            y, yy_aw = self.add_norm_self_attn(y, lambda y: self.self_attn(
-                key=y, key_lens=ylens, value=y, query=y, diagonal=True))
-        elif self.attn_type == "average":
-            raise NotImplementedError
-        self.self_attn.reset()
-
-        # attention for encoder stacks
-        y, xy_aw = self.add_norm_src_attn(y, lambda y: self.src_attn(
-            key=x, key_lens=xlens, value=x, query=y))
-        self.src_attn.reset()
-
-        # position-wise feed-forward
-        y = self.add_norm_ff(y, lambda y: self.ff(y))
-
-        return y, yy_aw, xy_aw

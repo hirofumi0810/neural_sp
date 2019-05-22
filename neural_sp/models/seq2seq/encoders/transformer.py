@@ -14,11 +14,11 @@ import logging
 import torch.nn as nn
 
 from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.modules.transformer import SublayerConnection
 from neural_sp.models.modules.transformer import PositionwiseFeedForward
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
-from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
 
 logger = logging.getLogger("training")
 
@@ -146,7 +146,7 @@ class TransformerEncoder(nn.Module):
     def output_dim(self):
         return self._output_dim
 
-    def reset_parameters(self, param_init):
+    def reset_parameters(self):
         """Initialize parameters with xavier_uniform style."""
         logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
@@ -162,7 +162,7 @@ class TransformerEncoder(nn.Module):
                     logger.info('Initialize %s with %s / %.3f' % (n, 'normal', self.d_model**-0.5))
                 else:
                     nn.init.xavier_uniform_(p, gain=1.0)
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'xavier_uniform', param_init))
+                    logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
             else:
                 raise ValueError
 

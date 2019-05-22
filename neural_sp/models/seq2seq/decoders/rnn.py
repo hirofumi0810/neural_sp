@@ -24,11 +24,11 @@ from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.ctc_greedy import GreedyDecoder
-from neural_sp.models.seq2seq.decoders.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list

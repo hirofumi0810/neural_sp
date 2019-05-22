@@ -15,6 +15,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
+
 
 class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer.
@@ -113,5 +115,97 @@ class PositionwiseFeedForward(nn.Module):
         return self.w_2(self.dropout(F.relu(self.w_1(xs))))
 
 
-def gelu(x):
-    return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
+class TransformerDecoderBlock(nn.Module):
+    """A single layer of the transformer decoder.
+
+        Args:
+            d_model (int): dimension of keys/values/queries in
+                           MultiheadAttentionMechanism, also the input size of
+                           the first-layer of the PositionwiseFeedForward
+            d_ff (int): second-layer of the PositionwiseFeedForward
+            attn_type (str):
+            attn_n_heads (int): number of heads for multi-head attention
+            dropout (float): dropout probabilities for linear layers
+            dropout_att (float): dropout probabilities for attention probabilities
+            attn_type (str): type of self-attention, scaled_dot_product or average
+            layer_norm_eps (float):
+            source_attention (bool): if False, ignore source-target attention
+
+    """
+
+    def __init__(self,
+                 d_model,
+                 d_ff,
+                 attn_type,
+                 attn_n_heads,
+                 dropout,
+                 dropout_att,
+                 layer_norm_eps,
+                 source_attention=True):
+        super(TransformerDecoderBlock, self).__init__()
+
+        self.attn_type = attn_type
+        self.source_attention = source_attention
+
+        # self-attention
+        if attn_type == "scaled_dot_product":
+            self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
+                                                         query_dim=d_model,
+                                                         attn_dim=d_model,
+                                                         n_heads=attn_n_heads,
+                                                         dropout=dropout_att)
+        elif attn_type == "average":
+            raise NotImplementedError
+            # self.self_attn = AverageAttention(d_model, dropout, layer_norm=True)
+        else:
+            raise NotImplementedError(attn_type)
+        self.add_norm_self_attn = SublayerConnection(d_model, dropout, layer_norm_eps)
+
+        if source_attention:
+            # attention for encoder stacks
+            self.src_attn = MultiheadAttentionMechanism(key_dim=d_model,
+                                                        query_dim=d_model,
+                                                        attn_dim=d_model,
+                                                        n_heads=attn_n_heads,
+                                                        dropout=dropout_att)
+            self.add_norm_src_attn = SublayerConnection(d_model, dropout, layer_norm_eps)
+
+        # feed-forward
+        self.ff = PositionwiseFeedForward(d_model, d_ff, dropout)
+        self.add_norm_ff = SublayerConnection(d_model, dropout, layer_norm_eps)
+
+    def forward(self, ys, ylens, xs=None, xlens=None):
+        """Transformer decoder layer definition.
+
+        Args:
+            xs (FloatTensor): encoder outputs. `[B, T, d_model]`
+            xlens (list): `[B]`
+            ys (FloatTensor): `[B, L, d_model]`
+            ylens (list): `[B]`
+        Returns:
+            ys (FloatTensor): `[B, L, d_model]`
+            yy_aw (FloatTensor)`[B, L, L]`
+            xy_aw (FloatTensor): `[B, L, T]`
+
+        """
+        print(ys.size())
+        # self-attention
+        if self.attn_type == "scaled_dot_product":
+            ys, yy_aw = self.add_norm_self_attn(ys, lambda ys: self.self_attn(
+                key=ys, key_lens=ylens, value=ys, query=ys, diagonal=True))
+        elif self.attn_type == "average":
+            raise NotImplementedError
+        self.self_attn.reset()
+
+        if self.source_attention:
+            # attention for encoder stacks
+            ys, xy_aw = self.add_norm_src_attn(ys, lambda ys: self.src_attn(
+                key=xs, key_lens=xlens, value=xs, query=ys))
+            self.src_attn.reset()
+        else:
+            xy_aw = None
+
+        # position-wise feed-forward
+        ys = self.add_norm_ff(ys, lambda ys: self.ff(ys))
+
+        return ys, yy_aw, xy_aw

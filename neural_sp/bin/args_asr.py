@@ -281,14 +281,14 @@ def parse():
     parser.add_argument('--d_ff', type=int, default=2048,
                         help='')
     parser.add_argument('--transformer_enc_n_layers', type=int, default=6,
-                        help='')
+                        help='number of encoder Transformer layers')
     parser.add_argument('--transformer_dec_n_layers', type=int, default=6,
-                        help='')
+                        help='number of decoder Transformer layers')
     parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot_product',
                         choices=['scaled_dot_product', 'average'],
-                        help='type of attention for transformer')
+                        help='type of attention for Transformer')
     parser.add_argument('--transformer_attn_n_heads', type=int, default=8,
-                        help='number of heads in the self-attention layer')
+                        help='number of heads in the attention layer for Transformer')
     parser.add_argument('--pe_type', type=str, default='add',
                         choices=['add', 'concat', 'learned_add', 'learned_concat', False],
                         help='type of positional encoding')
