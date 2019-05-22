@@ -97,7 +97,9 @@ def parse():
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
-                        choices=['blstm', 'lstm', 'bgru', 'gru', 'conv', 'transformer', 'tds', 'gated_conv'],
+                        choices=['blstm', 'lstm', 'bgru', 'gru', 'conv',
+                                 'conv_blstm', 'conv_lstm', 'conv_gru', 'conv_blstm',
+                                 'transformer', 'conv_transformer', 'tds', 'gated_conv'],
                         help='type of the encoder')
     parser.add_argument('--enc_n_units', type=int, default=512,
                         help='number of units in each encoder RNN layer')
@@ -345,6 +347,9 @@ def parse():
                         help='path to the RMMLM')
     parser.add_argument('--recog_lm_bwd', type=str, default=None, nargs='?',
                         help='path to the RMMLM in the reverse direction')
+    parser.add_argument('--recog_lm_usage', type=str, default='shallow_fusion', nargs='?',
+                        choices=['shallow_fusion', 'rescoring'],
+                        help='usage of the external LM')
     parser.add_argument('--recog_resolving_unk', type=strtobool, default=False,
                         help='resolving UNK for the word-based model')
     parser.add_argument('--recog_fwd_bwd_attention', type=strtobool, default=False,

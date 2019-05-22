@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import numpy as np
 import torch
 import torch.nn as nn
@@ -22,13 +23,15 @@ from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
 from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
 
+logger = logging.getLogger("training")
+
 
 class RNNEncoder(nn.Module):
     """RNN encoder.
 
     Args:
         input_dim (int): dimension of input features (freq * channel)
-        rnn_type (str): blstm or lstm or bgru or gru or cnn or tds
+        rnn_type (str): type of encoder (including pure CNN layers)
         n_units (int): number of units in each layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of layers
@@ -91,7 +94,7 @@ class RNNEncoder(nn.Module):
             raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1.')
 
         self.rnn_type = rnn_type
-        self.bidirectional = True if rnn_type in ['blstm', 'bgru'] else False
+        self.bidirectional = True if rnn_type in ['blstm', 'bgru', 'conv_blstm', 'conv_bgru'] else False
         self.n_units = n_units
         self.n_dirs = 2 if self.bidirectional else 1
         self.n_projs = n_projs
@@ -118,7 +121,7 @@ class RNNEncoder(nn.Module):
         self.dropout_in = nn.Dropout(p=dropout_in)
 
         # Setting for CNNs before RNNs
-        if conv_channels:
+        if conv_channels and rnn_type not in ['blstm', 'lstm', 'bgru', 'gru']:
             channels = [int(c) for c in conv_channels.split('_')] if len(conv_channels) > 0 else []
             kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
                             for c in conv_kernel_sizes.split('_')] if len(conv_kernel_sizes) > 0 else []
@@ -135,6 +138,7 @@ class RNNEncoder(nn.Module):
             kernel_sizes = []
             strides = []
             poolings = []
+            logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
 
         if len(channels) > 0:
             if rnn_type == 'tds':
@@ -176,7 +180,7 @@ class RNNEncoder(nn.Module):
                 elif 'gru' in rnn_type:
                     rnn = nn.GRU
                 else:
-                    raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
+                    raise ValueError('rnn_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
 
                 self.rnn = rnn(self._output_dim, n_units, n_layers,
                                bias=True,
@@ -221,7 +225,7 @@ class RNNEncoder(nn.Module):
                     elif 'gru' in rnn_type:
                         rnn_i = nn.GRU
                     else:
-                        raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
+                        raise ValueError('rnn_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
 
                     self.rnn += [rnn_i(self._output_dim, n_units, 1,
                                        bias=True,

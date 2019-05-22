@@ -19,10 +19,10 @@ n_stacks=1
 n_skips=1
 sequence_summary_network=false
 conv_in_channel=3
-conv_channels=
-conv_kernel_sizes=
-conv_strides=
-conv_poolings=
+conv_channels="32_32"
+conv_kernel_sizes="(3,3)_(3,3)"
+conv_strides="(1,1)_(1,1)"
+conv_poolings="(1,1)_(1,1)"
 conv_batch_norm=false
 conv_residual=false
 conv_bottleneck_dim=0
@@ -87,13 +87,13 @@ mtl_per_batch=true
 task_specific_layer=false
 
 ### path to save the model
-model=/n/sd8/inaguma/result/timit
+model=/n/sd3/inaguma/result/timit
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/timit
+export data=/n/sd3/inaguma/corpus/timit
 
 ### path to original data
 TIMITDATATOP=/n/rd21/corpora_1/TIMIT

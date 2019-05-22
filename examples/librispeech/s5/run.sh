@@ -24,25 +24,14 @@ n_stacks=1
 n_skips=1
 sequence_summary_network=false
 conv_in_channel=1
-conv_channels=
-conv_kernel_sizes=
-conv_strides=
-conv_poolings=
+conv_channels="32_32"
+conv_kernel_sizes="(3,3)_(3,3)"
+conv_strides="(1,1)_(1,1)"
+conv_poolings="(2,2)_(2,2)"
 conv_batch_norm=false
 conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_2_2_2_1"
-# VGG
-# conv_channels="32_32"
-# conv_kernel_sizes="(3,3)_(3,3)"
-# conv_strides="(1,1)_(1,1)"
-# conv_poolings="(2,2)_(2,2)"
-# subsample="1_1_1_1_1"
-# GatedConv
-# enc_type=gated_conv
-# conv_channels="200_220_242_266_292_321_353_388_426_468_514_565_621_683_751_826_908"
-# conv_kernel_sizes="(13,1)_(14,1)_(15,1)_(16,1)_(17,1)_(18,1)_(19,1)_(20,1)_(21,1)_(22,1)_(23,1)_(24,1)_(25,1)_(26,1)_(27,1)_(28,1)_(29,1)"
-# subsample="1_1_1_1_1"
 enc_type=blstm
 enc_n_units=512
 enc_n_projs=0
@@ -112,6 +101,21 @@ share_lm_softmax=false
 # contextualization
 contextualize=
 
+# TDS
+# enc_type=tds
+# conv_channels="10_10_14_14_14_18_18_18_18_18_18"
+# conv_kernel_sizes="(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)"
+# subsample="1_1_1_1_1"
+# clip_grad_norm=15.0
+# dropout_enc=0.2
+# lsm_prob=0.05
+
+# GatedConv
+# enc_type=gated_conv
+# conv_channels="200_220_242_266_292_321_353_388_426_468_514_565_621_683_751_826_908"
+# conv_kernel_sizes="(13,1)_(14,1)_(15,1)_(16,1)_(17,1)_(18,1)_(19,1)_(20,1)_(21,1)_(22,1)_(23,1)_(24,1)_(25,1)_(26,1)_(27,1)_(28,1)_(29,1)"
+# subsample="1_1_1_1_1"
+
 #########################
 # LM configuration
 #########################
@@ -129,11 +133,11 @@ lm_batch_size=64
 lm_bptt=100
 lm_optimizer=adam
 lm_learning_rate=1e-3
-lm_n_epochs=40
-lm_convert_to_sgd_epoch=40
+lm_n_epochs=25
+lm_convert_to_sgd_epoch=25
 lm_print_step=2000
 lm_decay_start_epoch=10
-lm_decay_rate=0.9
+lm_decay_rate=0.8
 lm_decay_patient_n_epochs=0
 lm_decay_type=epoch
 lm_not_improved_patient_n_epochs=10
@@ -144,9 +148,9 @@ lm_param_init_dist=uniform
 lm_pretrained_model=
 # regularization
 lm_clip_grad_norm=1.0
-lm_dropout_hidden=0.5
+lm_dropout_hidden=0.0
 lm_dropout_out=0.0
-lm_dropout_emb=0.2
+lm_dropout_emb=0.0
 lm_weight_decay=1e-6
 lm_backward=
 lm_adaptive_softmax=false
@@ -353,7 +357,7 @@ if [ ${stage} -le 3 ]; then
         done
 
         # use external data
-        if [ ${use_external_text} ]; then
+        if ${use_external_text}; then
             if [ ! -e ${data}/local/lm_train/librispeech-lm-norm.txt.gz ]; then
                 wget http://www.openslr.org/resources/11/librispeech-lm-norm.txt.gz -P ${data}/local/lm_train/
             fi
@@ -366,7 +370,7 @@ if [ ${stage} -le 3 ]; then
         touch ${data}/.done_stage_3_${data_size}${lm_data_size}_${unit}${wp_type}${vocab_size}_${use_external_text} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    if [ ${use_external_text} ]; then
+    if ${use_external_text}; then
         lm_train_set="${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}_external.tsv"
     else
         lm_train_set="${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv"

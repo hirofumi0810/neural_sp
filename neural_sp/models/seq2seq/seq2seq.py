@@ -49,7 +49,7 @@ class Seq2seq(ModelBase):
         self.n_splices = args.n_splices
         self.enc_type = args.enc_type
         self.enc_n_units = args.enc_n_units
-        if args.enc_type in ['blstm', 'bgru']:
+        if args.enc_type in ['blstm', 'bgru', 'conv_blstm', 'conv_bgru']:
             self.enc_n_units *= 2
         self.bridge_layer = args.bridge_layer
 
@@ -100,7 +100,7 @@ class Seq2seq(ModelBase):
                                               dropout=0)
 
         # Encoder
-        if args.enc_type == 'transformer':
+        if 'transformer' in args.enc_type:
             self.enc = TransformerEncoder(
                 input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
                 attn_type=args.transformer_attn_type,
@@ -108,8 +108,7 @@ class Seq2seq(ModelBase):
                 n_layers=args.transformer_enc_n_layers,
                 d_model=args.d_model,
                 d_ff=args.d_ff,
-                # pe_type=args.pe_type,
-                pe_type=False,
+                pe_type=args.pe_type,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
                 dropout_att=args.dropout_att,
@@ -135,7 +134,7 @@ class Seq2seq(ModelBase):
                 n_layers_sub2=args.enc_n_layers_sub2,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
-                subsample=list(map(int, args.subsample.split('_'))) +
+                subsample=list(map(int, args.subsample.split('_')[:args.enc_n_layers])) +
                 [1] * (args.enc_n_layers - len(args.subsample.split('_'))),
                 subsample_type=args.subsample_type,
                 n_stacks=args.n_stacks,
@@ -159,16 +158,18 @@ class Seq2seq(ModelBase):
 
         # Bridge layer between the encoder and decoder
         self.is_bridge = False
-        if (args.enc_type in ['conv', 'tds', 'gated_conv', 'transformer'] and args.ctc_weight < 1)or args.dec_type == 'transformer' or args.bridge_layer:
+        if (args.enc_type in ['conv', 'tds', 'gated_conv', 'transformer', 'conv_transformer'] and args.ctc_weight < 1) or args.dec_type == 'transformer' or args.bridge_layer:
             self.bridge = LinearND(self.enc.output_dim,
                                    args.d_model if args.dec_type == 'transformer' else args.dec_n_units,
                                    dropout=args.dropout_enc)
             self.is_bridge = True
             if self.sub1_weight > 0:
-                self.bridge_sub1 = LinearND(self.enc.output_dim, args.dec_n_units,
+                self.bridge_sub1 = LinearND(self.enc.output_dim,
+                                            args.d_model if args.dec_type == 'transformer' else args.dec_n_units,
                                             dropout=args.dropout_enc)
             if self.sub2_weight > 0:
-                self.bridge_sub2 = LinearND(self.enc.output_dim, args.dec_n_units,
+                self.bridge_sub2 = LinearND(self.enc.output_dim,
+                                            args.d_model if args.dec_type == 'transformer' else args.dec_n_units,
                                             dropout=args.dropout_enc)
             self.enc_n_units = args.dec_n_units
 
@@ -195,7 +196,8 @@ class Seq2seq(ModelBase):
                     unk=self.unk,
                     pad=self.pad,
                     blank=self.blank,
-                    enc_n_units=self.enc.output_dim,
+                    # enc_n_units=self.enc.output_dim,
+                    enc_n_units=args.dec_n_units,
                     attn_type=args.transformer_attn_type,
                     attn_n_heads=args.transformer_attn_n_heads,
                     n_layers=args.transformer_dec_n_layers,
@@ -221,7 +223,8 @@ class Seq2seq(ModelBase):
                     unk=self.unk,
                     pad=self.pad,
                     blank=self.blank,
-                    enc_n_units=self.enc.output_dim,
+                    # enc_n_units=self.enc.output_dim,
+                    enc_n_units=args.dec_n_units,
                     attn_type=args.attn_type,
                     attn_dim=args.attn_dim,
                     attn_sharpening_factor=args.attn_sharpening,
@@ -319,7 +322,7 @@ class Seq2seq(ModelBase):
                                           dropout=args.dropout_emb,
                                           ignore_index=self.pad)
 
-        # Initialize parameters in CNN layers
+        # Initialize parameters in CNN layers before RNN layers
         self.reset_parameters(args.param_init,
                               #   dist='xavier_uniform',
                               #   dist='kaiming_uniform',
@@ -327,7 +330,7 @@ class Seq2seq(ModelBase):
                               keys=['conv'], ignore_keys=['score'])
 
         # Initialize parameters in the encoder
-        if args.enc_type == 'transformer':
+        if 'transformer' in args.enc_type:
             self.reset_parameters(args.param_init, dist='xavier_uniform',
                                   keys=['enc'], ignore_keys=['embed_in'])
             self.reset_parameters(args.d_model**-0.5, dist='normal',
@@ -526,7 +529,7 @@ class Seq2seq(ModelBase):
             # encoder
             enc_outs = self.enc(xs, xlens, task.split('.')[0])
 
-            if self.main_weight < 1 and self.enc_type in ['conv', 'tds', 'gated_conv', 'transformer']:
+            if self.main_weight < 1 and self.enc_type in ['conv', 'tds', 'gated_conv', 'transformer', 'conv_transformer']:
                 for sub in ['sub1', 'sub2']:
                     enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
                     enc_outs['ys_' + sub]['xlens'] = enc_outs['ys']['xlens'][:]

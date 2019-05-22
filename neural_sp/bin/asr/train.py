@@ -64,20 +64,26 @@ def main():
         args.batch_size -= 10
         args.print_step //= args.n_gpus
 
+    # Compute subsampling factor
     subsample_factor = 1
     subsample_factor_sub1 = 1
     subsample_factor_sub2 = 1
     subsample = [int(s) for s in args.subsample.split('_')]
     if args.conv_poolings:
         for p in args.conv_poolings.split('_'):
-            p = int(p.split(',')[0].replace('(', ''))
-            if p > 1:
-                subsample_factor *= p
+            subsample_factor *= int(p.split(',')[0].replace('(', ''))
+    else:
+        subsample_factor = np.prod(subsample)
     if args.train_set_sub1:
-        subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
+        if args.conv_poolings:
+            subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
+        else:
+            subsample_factor_sub1 = subsample_factor
     if args.train_set_sub2:
-        subsample_factor_sub2 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub2 - 1])
-    subsample_factor *= np.prod(subsample)
+        if args.conv_poolings:
+            subsample_factor_sub2 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub2 - 1])
+        else:
+            subsample_factor_sub2 = subsample_factor
 
     skip_thought = 'skip' in args.enc_type
 
@@ -540,8 +546,8 @@ def main():
 def make_model_name(args, subsample_factor):
 
     # encoder
-    dir_name = args.enc_type
-    if args.conv_channels and len(args.conv_channels.split('_')) > 0:
+    dir_name = args.enc_type.replace('conv_', '')
+    if args.conv_channels and len(args.conv_channels.split('_')) > 0 and 'conv' in args.enc_type:
         tmp = dir_name
         dir_name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
         if args.conv_batch_norm:
@@ -549,7 +555,7 @@ def make_model_name(args, subsample_factor):
         if args.conv_residual:
             dir_name += 'res'
         dir_name += tmp
-    if args.enc_type == 'transformer':
+    if 'transformer' in args.enc_type:
         dir_name += str(args.d_model) + 'H'
         dir_name += str(args.transformer_enc_n_layers) + 'L'
     else:
