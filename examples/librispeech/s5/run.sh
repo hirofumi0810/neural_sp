@@ -9,6 +9,7 @@ echo ===========================================================================
 
 stage=0
 gpu=
+skip_lm=true
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char
@@ -336,7 +337,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
 fi
 
 mkdir -p ${model}
-if [ ${stage} -le 3 ]; then
+if ! ${skip_lm} && [ ${stage} -le 3 ]; then
     echo ============================================================================
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
