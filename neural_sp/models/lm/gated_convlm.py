@@ -12,18 +12,12 @@ from __future__ import print_function
 
 from collections import OrderedDict
 import logging
-import numpy as np
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.glu import GLUBlock
-from neural_sp.models.torch_utils import compute_accuracy
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
 
 
 class GatedConvLM(LMBase):
@@ -39,7 +33,6 @@ class GatedConvLM(LMBase):
         self.n_units = args.n_units
         self.n_layers = args.n_layers
         self.tie_embedding = args.tie_embedding
-        self.backward = args.backward
 
         self.vocab = args.vocab
         self.eos = 2
@@ -200,79 +193,6 @@ class GatedConvLM(LMBase):
                 logger.info('Initialize %s with %s / %.3f' % (n, 'kaiming_uniform', param_init))
             else:
                 raise ValueError
-
-    def _forward(self, ys, hidden, reporter, n_caches=0):
-        ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64) if self.backward else y, self.device_id).long()
-              for y in ys]
-        ys = pad_list(ys, self.pad)
-        ys_in = ys[:, : -1]
-        ys_out = ys[:, 1:]
-
-        lmout, hidden = self.decode(self.encode(ys_in), hidden)
-        if self.adaptive_softmax is None:
-            logits = self.generate(lmout)
-        else:
-            logits = lmout
-
-        # Compute XE sequence loss
-        if n_caches > 0 and len(self.cache_ids) > 0:
-            assert ys_out.size(1) == 1
-            assert ys_out.size(0) == 1
-            if self.adaptive_softmax is None:
-                probs = F.softmax(logits, dim=-1)
-            else:
-                probs = self.adaptive_softmax.log_prob(logits).exp()
-            cache_probs = probs.new_zeros(probs.size())
-
-            # Truncate cache
-            self.cache_ids = self.cache_ids[-n_caches:]  # list of `[B, 1]`
-            self.cache_keys = self.cache_keys[-n_caches:]  # list of `[B, 1, n_units]`
-
-            # Compute inner-product over caches
-            cache_attn = F.softmax(self.cache_theta * torch.matmul(
-                torch.cat(self.cache_keys, dim=1), lmout.transpose(2, 1)).squeeze(2), dim=1)
-
-            # For visualization
-            if len(self.cache_ids) == n_caches:
-                self.cache_attn += [cache_attn.cpu().numpy()]
-                self.cache_attn = self.cache_attn[-n_caches:]
-
-            # Sum all probabilities
-            for offset, idx in enumerate(self.cache_ids):
-                cache_probs[:, :, idx] += cache_attn[:, offset]
-            probs = (1 - self.cache_lambda) * probs + self.cache_lambda * cache_probs
-            loss = -torch.log(probs[:, :, ys_out[:, -1]])
-        else:
-            if self.adaptive_softmax is None:
-                loss = F.cross_entropy(logits.view((-1, logits.size(2))),
-                                       ys_out.contiguous().view(-1),
-                                       ignore_index=self.pad, size_average=True)
-            else:
-                loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
-                                             ys_out.contiguous().view(-1)).loss
-
-        if n_caches > 0:
-            # Register to cache
-            self.cache_ids += [ys_out[0, -1].item()]
-            self.cache_keys += [lmout]
-
-        # Compute token-level accuracy in teacher-forcing
-        if self.adaptive_softmax is None:
-            acc = compute_accuracy(logits, ys_out, pad=self.pad)
-        else:
-            acc = compute_accuracy(self.adaptive_softmax.log_prob(
-                logits.view((-1, logits.size(2)))), ys_out, pad=self.pad)
-
-        observation = {'loss.lm': loss.item(),
-                       'acc.lm': acc,
-                       'ppl.lm': np.exp(loss.item())}
-
-        # Report here
-        if reporter is not None:
-            is_eval = not self.training
-            reporter.add(observation, is_eval)
-
-        return loss, hidden, reporter
 
     def decode(self, ys_emb, hidden=None):
         """Decode function.
