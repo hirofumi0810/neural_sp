@@ -14,10 +14,10 @@ import torch
 
 
 def tensor2np(x):
-    """Convert tensor to np.ndarray.
+    """Convert torch.Tensor to np.ndarray.
 
     Args:
-        x (FloatTensor):
+        x (Tensor):
     Returns:
         np.ndarray
 
@@ -26,7 +26,7 @@ def tensor2np(x):
 
 
 def np2tensor(array, device_id=-1):
-    """Convert form np.ndarray to Variable.
+    """Convert form np.ndarray to torch.Tensor.
 
     Args:
         array (np.ndarray): A tensor of any sizes
@@ -35,13 +35,10 @@ def np2tensor(array, device_id=-1):
         var (Tensor):
 
     """
-    # assert isinstance(array, np.ndarray)
-    # var = torch.from_numpy(array).pin_memory())
-    var = torch.from_numpy(array)
+    tensor = torch.from_numpy(array)
     if device_id < 0:
-        return var
-    # return var.cuda(device_id, async=True)
-    return var.cuda(device_id)
+        return tensor
+    return tensor.cuda(device_id)
 
 
 def pad_list(xs, pad_value=0.0, pad_left=False):
