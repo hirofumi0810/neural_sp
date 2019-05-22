@@ -48,7 +48,8 @@ def parse():
     parser.add_argument('--lm_type', type=str, default='lstm',
                         choices=['lstm', 'gru', 'gated_conv_custom',
                                  'gated_conv_8', 'gated_conv_8B', 'gated_conv_9',
-                                 'gated_conv_13', 'gated_conv_14', 'gated_conv_14B'],
+                                 'gated_conv_13', 'gated_conv_14', 'gated_conv_14B',
+                                 'transformer'],
                         help='type of language model')
     parser.add_argument('--kernel_size', type=int, default=4,
                         help='kernel size for GatedConvLM')
@@ -85,7 +86,7 @@ def parse():
     parser.add_argument('--print_step', type=int, default=100,
                         help='step to print log')
     parser.add_argument('--decay_type', type=str, default='epoch',
-                        choices=['epoch', 'metric'],
+                        choices=['epoch', 'metric', 'warmup'],
                         help='')
     parser.add_argument('--decay_start_epoch', type=int, default=10,
                         help='')
@@ -98,6 +99,10 @@ def parse():
     parser.add_argument('--not_improved_patient_n_epochs', type=int, default=5,
                         help='')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
+                        help='')
+    parser.add_argument('--warmup_start_learning_rate', type=float, default=0,
+                        help='')
+    parser.add_argument('--warmup_n_steps', type=int, default=4000,
                         help='')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
@@ -115,6 +120,8 @@ def parse():
                         help='dropout probability for the output layer')
     parser.add_argument('--dropout_emb', type=float, default=0.0,
                         help='dropout probability for the embedding layer')
+    parser.add_argument('--dropout_att', type=float, default=0.1,
+                        help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help='')
     parser.add_argument('--logits_temp', type=float, default=1.0,
@@ -142,5 +149,22 @@ def parse():
                         help='theta paramter for cache')
     parser.add_argument('--recog_cache_lambda', type=float, default=0.2,
                         help='lambda paramter for cache')
+    # transformer
+    parser.add_argument('--d_model', type=int, default=512,
+                        help='')
+    parser.add_argument('--d_ff', type=int, default=2048,
+                        help='')
+    parser.add_argument('--transformer_n_layers', type=int, default=12,
+                        help='number of encoder Transformer layers')
+    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot_product',
+                        choices=['scaled_dot_product', 'average'],
+                        help='type of attention for transformer')
+    parser.add_argument('--transformer_attn_n_heads', type=int, default=8,
+                        help='number of heads in the self-attention layer')
+    parser.add_argument('--pe_type', type=str, default='add',
+                        choices=['add', 'concat', 'learned_add', 'learned_concat', False],
+                        help='type of positional encoding')
+    parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
+                        help='')
     args = parser.parse_args()
     return args

@@ -188,7 +188,6 @@ class TransformerDecoderBlock(nn.Module):
             xy_aw (FloatTensor): `[B, L, T]`
 
         """
-        print(ys.size())
         # self-attention
         if self.attn_type == "scaled_dot_product":
             ys, yy_aw = self.add_norm_self_attn(ys, lambda ys: self.self_attn(

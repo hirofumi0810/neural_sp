@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
+from neural_sp.models.lm.transformerlm import TransformerLM
 
 logger = logging.getLogger("decoding").getChild('ppl')
 
@@ -43,7 +44,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
     model = models[0]
     is_lm = False
     skip_thought = False
-    if isinstance(model, RNNLM) or isinstance(model, GatedConvLM):
+    if isinstance(model, RNNLM) or isinstance(model, GatedConvLM) or isinstance(model, TransformerLM):
         is_lm = True
     elif 'skip' in model.enc_type:
         skip_thought = True
@@ -62,7 +63,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
             bs, time = ys.shape[:2]
             if n_caches > 0:
                 assert isinstance(model, RNNLM)
-                # NOTE: cache is not supported for GatedConvLM now
+                # NOTE: cache is not supported for GatedConvLM/TransformerLM now
                 for t in range(time - 1):
                     loss, hidden = model(ys[:, t:t + 2], hidden, is_eval=True, n_caches=n_caches)[:2]
                     total_loss += loss.item() * bs

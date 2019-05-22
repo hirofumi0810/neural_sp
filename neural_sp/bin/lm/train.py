@@ -33,6 +33,7 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
+from neural_sp.models.lm.transformerlm import TransformerLM
 from neural_sp.utils import mkdir_join
 
 
@@ -89,6 +90,9 @@ def main():
 
     args.vocab = train_set.vocab
 
+    if args.lm_type == 'transformer':
+        args.decay_type = 'warmup'
+
     # Set save path
     if args.resume:
         save_path = os.path.dirname(args.resume)
@@ -104,6 +108,8 @@ def main():
     # Model setting
     if 'gated_conv' in args.lm_type:
         model = GatedConvLM(args)
+    elif args.lm_type == 'transformer':
+        model = TransformerLM(args)
     else:
         model = RNNLM(args)
     model.save_path = save_path
@@ -164,7 +170,12 @@ def main():
                                    decay_rate=args.decay_rate,
                                    decay_patient_n_epochs=args.decay_patient_n_epochs,
                                    lower_better=True,
-                                   best_value=ppl_dev_best)
+                                   best_value=ppl_dev_best,
+                                   model_size=args.d_model,
+                                   warmup_start_learning_rate=args.warmup_start_learning_rate,
+                                   warmup_n_steps=args.warmup_n_steps,
+                                   factor=10,
+                                   transformer=args.lm_type == 'transformer')
 
     train_set.epoch = epoch - 1  # start from index:0
 
@@ -210,7 +221,7 @@ def main():
         model.module.optimizer.step()
         loss_train = loss.item()
         del loss
-        if 'gated_conv' not in args.lm_type:
+        if 'gated_conv' not in args.lm_type and args.lm_type != 'transformer':
             hidden = model.module.repackage_hidden(hidden)
         reporter.step(is_eval=False)
 
@@ -319,7 +330,11 @@ def main():
 
 def make_model_name(args):
     dir_name = args.lm_type
-    if 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
+    if args.lm_type == 'transformer':
+        dir_name += str(args.d_model) + 'dmodel'
+        dir_name += str(args.d_ff) + 'dff'
+        dir_name += str(args.transformer_n_layers) + 'L'
+    elif 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
         dir_name += str(args.n_units) + 'H'
         dir_name += str(args.n_projs) + 'P'
         dir_name += str(args.n_layers) + 'L'
