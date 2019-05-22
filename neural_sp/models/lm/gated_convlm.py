@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.base import ModelBase
+from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.glu import GLUBlock
@@ -26,12 +26,14 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
-class GatedConvLM(ModelBase):
+class GatedConvLM(LMBase):
     """Gated convolutional neural network language model with Gated Linear Units (GLU)."""
 
     def __init__(self, args):
 
-        super(ModelBase, self).__init__()
+        super(LMBase, self).__init__()
+        logger = logging.getLogger('training')
+        logger.info(self.__class__.__name__)
 
         self.emb_dim = args.emb_dim
         self.n_units = args.n_units
@@ -199,34 +201,6 @@ class GatedConvLM(ModelBase):
             else:
                 raise ValueError
 
-    def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0,
-                ylens=[]):
-        """Forward computation.
-
-        Args:
-            ys (list): A list of length `[B]`, which contains arrays of size `[L]`
-            hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
-            reporter ():
-            is_eval (bool): if True, the history will not be saved.
-                This should be used in inference model for memory efficiency.
-            n_caches (int):
-            ylens (list): not used
-        Returns:
-            loss (FloatTensor): `[1]`
-            hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
-            reporter ():
-
-        """
-        if is_eval:
-            self.eval()
-            with torch.no_grad():
-                loss, hidden, reporter = self._forward(ys, hidden, reporter, n_caches)
-        else:
-            self.train()
-            loss, hidden, reporter = self._forward(ys, hidden, reporter)
-
-        return loss, hidden, reporter
-
     def _forward(self, ys, hidden, reporter, n_caches=0):
         ys = [np2tensor(np.fromiter(y[::-1], dtype=np.int64) if self.backward else y, self.device_id).long()
               for y in ys]
@@ -300,17 +274,6 @@ class GatedConvLM(ModelBase):
 
         return loss, hidden, reporter
 
-    def encode(self, ys):
-        """Encode function.
-
-        Args:
-            ys (LongTensor):
-        Returns:
-            ys_emb (FloatTensor): `[B, L, emb_dim]`
-
-        """
-        return self.embed(ys)
-
     def decode(self, ys_emb, hidden=None):
         """Decode function.
 
@@ -331,14 +294,3 @@ class GatedConvLM(ModelBase):
         ys_emb = ys_emb.squeeze(3)
 
         return ys_emb, hidden
-
-    def generate(self, hidden):
-        """Generate function.
-
-        Args:
-            hidden (FloatTensor): `[B, T, n_units]`
-        Returns:
-            logits (FloatTensor): `[B, T, vocab]`
-
-        """
-        return self.output(hidden)

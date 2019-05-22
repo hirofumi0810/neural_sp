@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import math
 import numpy as np
 import torch
 import torch.nn as nn
@@ -35,7 +34,9 @@ class ModelBase(nn.Module):
     """A base class for all models. All models have to inherit this class."""
 
     def __init__(self, *args, **kwargs):
-        raise NotImplementedError()
+
+        super().__init__()
+        logger.info('Overriding ModelBase class.')
 
     @property
     def torch_version(self):
