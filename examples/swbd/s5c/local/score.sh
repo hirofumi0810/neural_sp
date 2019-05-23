@@ -31,6 +31,7 @@ eos_threshold=1.0
 lm=
 lm_bwd=
 lm_weight=0.2
+lm_usage=shallow_fusion
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -71,7 +72,7 @@ for set in eval2000; do
         recog_dir=${recog_dir}_${metric}
     fi
     if [ ! -z ${lm} ]; then
-        recog_dir=${recog_dir}_lm${lm_weight}
+        recog_dir=${recog_dir}_lm${lm_weight}_${lm_usage}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
@@ -121,11 +122,7 @@ for set in eval2000; do
     mkdir -p ${recog_dir}
 
     if [ $(echo ${model} | grep 'train_sp') ]; then
-        if [ $(echo ${model} | grep 'fisher_swbd') ]; then
-            recog_set=${data}/dataset/${set}_sp_fisher_swbd_wpbpe30000.tsv
-        else
-            recog_set=${data}/dataset/${set}_sp_swbd_wpbpe10000.tsv
-        fi
+        recog_set=${data}/dataset/${set}_sp_swbd_wpbpe10000.tsv
     else
         if [ $(echo ${model} | grep 'fisher_swbd') ]; then
             recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe30000.tsv
@@ -153,6 +150,7 @@ for set in eval2000; do
         --recog_lm ${lm} \
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
+        --recog_lm_usage ${lm_usage} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \

@@ -23,7 +23,7 @@ batch_size=1
 beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=0.1
+length_penalty=0.0
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
@@ -31,6 +31,7 @@ eos_threshold=1.0
 lm=
 lm_bwd=
 lm_weight=1.0
+lm_usage=shallow_fusion
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -70,7 +71,7 @@ for set in test_dev93 test_eval92; do
         recog_dir=${recog_dir}_${metric}
     fi
     if [ ! -z ${lm} ]; then
-        recog_dir=${recog_dir}_lm${lm_weight}
+        recog_dir=${recog_dir}_lm${lm_weight}_${lm_usage}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
@@ -144,6 +145,7 @@ for set in test_dev93 test_eval92; do
         --recog_lm ${lm} \
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
+        --recog_lm_usage ${lm_usage} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \

@@ -20,7 +20,7 @@ data=/n/sd8/inaguma/corpus/librispeech
 unit=
 metric=edit_distance
 batch_size=1
-beam_width=10
+beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
@@ -31,6 +31,7 @@ eos_threshold=1.5
 lm=
 lm_bwd=
 lm_weight=0.3
+lm_usage=shallow_fusion
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -70,7 +71,7 @@ for set in dev_clean dev_other test_clean test_other; do
         recog_dir=${recog_dir}_${metric}
     fi
     if [ ! -z ${lm} ]; then
-        recog_dir=${recog_dir}_lm${lm_weight}
+        recog_dir=${recog_dir}_lm${lm_weight}_${lm_usage}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
@@ -119,8 +120,16 @@ for set in dev_clean dev_other test_clean test_other; do
     fi
     mkdir -p ${recog_dir}
 
+    if [ $(echo ${model} | grep '960') ]; then
+        recog_set=${data}/dataset/${set}_960_wpbpe30000.tsv
+    elif [ $(echo ${model} | grep '460') ]; then
+        recog_set=${data}/dataset/${set}_460_wpbpe10000.tsv
+    elif [ $(echo ${model} | grep '100') ]; then
+        recog_set=${data}/dataset/${set}_100_wpbpe1000.tsv
+    fi
+
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
-        --recog_sets ${data}/dataset/${set}_960_wpbpe30000.tsv \
+        --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
@@ -138,6 +147,7 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_lm ${lm} \
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
+        --recog_lm_usage ${lm_usage} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
