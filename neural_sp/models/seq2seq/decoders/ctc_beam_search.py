@@ -52,96 +52,82 @@ class BeamSearchDecoder(object):
         best_hyps = []
 
         for b in range(bs):
-            # Elements in the beam are (prefix, (p_blank, p_no_blank))
+            # Elements in the beam are (prefix, (p_b, p_no_blank))
             # Initialize the beam with the empty sequence, a probability of
-            # 1 for ending in blank and zero for ending in non-blank
-            # (in log space).
+            # 1 for ending in blank and zero for ending in non-blank (in log space).
             beam = [{'hyp': [],
-                     'p_blank': LOG_1,
-                     'p_nonblank': LOG_1,
-                     'lm_score': LOG_1,
-                     'lm_hxs': None,
-                     'lm_cxs': None}]
+                     'p_b': LOG_1,
+                     'p_nb': LOG_0,
+                     'clm_score': LOG_1,
+                     'clm_hxs': None,
+                     'clm_cxs': None}]
 
             for t in range(xlens[b]):
                 new_beam = []
 
                 # Pick up the top-k scores
                 log_probs_topk, indices_topk = torch.topk(
-                    log_probs[b:b + 1, t], k=beam_width, dim=-1, largest=True, sorted=True)
+                    log_probs[b:b + 1, t], k=min(beam_width, vocab), dim=-1, largest=True, sorted=True)
 
-                for c in tensor2np(indices_topk)[0]:
-                    p_t = log_probs[b, t, c].item()
+                for i_beam in range(len(beam)):
+                    hyp = beam[i_beam]['hyp']
+                    p_b = beam[i_beam]['p_b']
+                    p_nb = beam[i_beam]['p_nb']
+                    clm_score = beam[i_beam]['clm_score']
+                    clm_hxs = beam[i_beam]['clm_hxs']
+                    clm_cxs = beam[i_beam]['clm_cxs']
 
-                    # The variables p_blank and p_nonblank are respectively the
-                    # probabilities for the prefix given that it ends in a
-                    # blank and does not end in a blank at this time step.
-                    for i_beam in range(len(beam)):
-                        prefix = beam[i_beam]['hyp']
-                        p_blank = beam[i_beam]['p_blank']
-                        p_nonblank = beam[i_beam]['p_nonblank']
-                        lm_score = beam[i_beam]['lm_score']
-                        lm_hxs = beam[i_beam]['lm_hxs']
-                        lm_cxs = beam[i_beam]['lm_cxs']
+                    # case 1. hyp is not extended
+                    new_p_b = np.logaddexp(p_b + log_probs[b, t, self.blank].item(),
+                                           p_nb + log_probs[b, t, self.blank].item())
+                    if len(hyp) > 0:
+                        new_p_nb = p_nb + log_probs[b, t, hyp[-1]].item()
+                    else:
+                        new_p_nb = LOG_0
+                    new_beam.append({'hyp': hyp,
+                                     'p_b': new_p_b,
+                                     'p_nb': new_p_nb,
+                                     'clm_score': clm_score,
+                                     'clm_hxs': clm_hxs[:] if clm_hxs is not None else None,
+                                     'clm_cxs': clm_cxs[:] if clm_cxs is not None else None})
 
-                        # If we propose a blank the prefix doesn't change.
-                        # Only the probability of ending in blank gets updated.
+                    # case 2. hyp is extended
+                    new_p_b = LOG_0
+                    for c in tensor2np(indices_topk)[0]:
+                        p_t = log_probs[b, t, c].item()
+
                         if c == self.blank:
-                            new_p_blank = np.logaddexp(p_blank + p_t, p_nonblank + p_t)
-                            new_beam.append({'hyp': beam[i_beam]['hyp'],
-                                             'p_blank': new_p_blank,
-                                             'p_nonblank': LOG_0,
-                                             'lm_score': lm_score,
-                                             'lm_hxs': lm_hxs[:] if lm_hxs is not None else None,
-                                             'lm_cxs': lm_cxs[:] if lm_cxs is not None else None})
                             continue
 
-                        # Extend the prefix by the new character c and it to the
-                        # beam. Only the probability of not ending in blank gets
-                        # updated.
-                        prefix_end = prefix[-1] if len(prefix) > 0 else None
-                        new_p_blank = LOG_0
-                        new_p_nonblank = LOG_0
-                        if c != prefix_end:
-                            new_p_nonblank = np.logaddexp(p_blank + p_t, p_nonblank + p_t)
+                        last_token = hyp[-1] if len(hyp) > 0 else None
+                        if c == last_token:
+                            new_p_nb = p_b + p_t
+                            # TODO(hirofumi): apply character LM here
                         else:
-                            # We don't include the previous probability of not ending
-                            # in blank (p_nonblank) if c is repeated at the end. The CTC
-                            # algorithm merges characters not separated by a
-                            # blank.
-                            new_p_nonblank = p_blank + p_t
+                            new_p_nb = np.logaddexp(p_b + p_t, p_nb + p_t)
+                            # TODO(hirofumi): apply character LM here
+                            if c == self.space:
+                                pass
+                                # TODO(hirofumi): apply word LM here
 
                         # Update LM states
-                        lmstate = None
+                        clmstate = None
                         if lm_weight > 0 and lm is not None:
-                            lmout, lmstate = lm.decode(
-                                lm.encode(log_probs.new_zeros(1, 1).fill_(c).long()), (lm_hxs, lm_cxs))
-                            lm_scores = F.log_softmax(lm.generate(lmout).squeeze(1), dim=-1)
-                            lm_score = lm_scores[0, c]
+                            clmout, clmstate = lm.decode(
+                                lm.encode(log_probs.new_zeros(1, 1).fill_(c).long()), (clm_hxs, clm_cxs))
+                            clm_scores = F.log_softmax(lm.generate(clmout).squeeze(1), dim=-1)
+                            clm_score = clm_scores[0, c]
 
                         new_beam.append({'hyp': beam[i_beam]['hyp'] + [c],
-                                         'p_blank': new_p_blank,
-                                         'p_nonblank': new_p_nonblank,
-                                         'lm_score': lm_score,
-                                         'lm_hxs': lmstate[0][:] if lmstate is not None else None,
-                                         'lm_cxs': lmstate[1][:] if lmstate is not None else None})
+                                         'p_b': new_p_b,
+                                         'p_nb': new_p_nb,
+                                         'clm_score': clm_score,
+                                         'clm_hxs': clmstate[0][:] if clmstate is not None else None,
+                                         'clm_cxs': clmstate[1][:] if clmstate is not None else None})
 
-                        # If c is repeated at the end we also update the unchanged
-                        # prefix. This is the merging case.
-                        if c == prefix_end:
-                            new_p_nonblank = p_nonblank + p_t
-                            new_beam.append({'hyp': beam[i_beam]['hyp'],
-                                             'p_blank': new_p_blank,
-                                             'p_nonblank': new_p_nonblank,
-                                             'lm_score': lm_score,
-                                             'lm_hxs': lmstate[0][:] if lmstate is not None else None,
-                                             'lm_cxs': lmstate[1][:] if lmstate is not None else None})
-
-                # Sort and trim the beam before moving on to the
-                # next time-step.
+                # Sort and trim the beam before moving on to the next time-step.
                 beam = sorted(new_beam,
-                              key=lambda x: np.logaddexp(x['p_blank'], x['p_nonblank'])
-                              + x['lm_score'] * lm_weight,
+                              key=lambda x: np.logaddexp(x['p_b'], x['p_nb']) + x['clm_score'] * lm_weight,
                               reverse=True)
                 beam = beam[:beam_width]
 
