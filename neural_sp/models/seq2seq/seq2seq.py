@@ -17,7 +17,6 @@ import torch
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
 from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn import RNNDecoder
@@ -570,7 +569,8 @@ class Seq2seq(ModelBase):
 
                 best_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                    params['recog_beam_width'], lm, params['recog_lm_weight'])
+                    params['recog_beam_width'], lm, params['recog_lm_weight'],
+                    lm_usage=params['recog_lm_usage'])
                 return best_hyps_id, None, (None, None)
 
             #########################

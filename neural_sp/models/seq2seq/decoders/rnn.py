@@ -1525,15 +1525,16 @@ class RNNDecoder(nn.Module):
         self.dict_cache_lm = {}
         self.total_step = 0
 
-    def decode_ctc(self, eouts, xlens, beam_width=1, lm=None, lm_weight=0.0):
+    def decode_ctc(self, eouts, xlens, beam_width=1, lm=None, lm_weight=0.0,
+                   lm_usage='rescoring'):
         """Decoding by the CTC layer in the inference stage.
 
-            This is only used for Joint CTC-Attention model.
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
             beam_width (int): size of beam
-            lm ():
-            lm_weight (float):
+            lm (RNNLM or GatedConvLM or TransformerLM):
+            lm_weight (float): language model weight (the vocabulary is the same as CTC)
+            lm_usage (str): rescoring or shallow_fusion
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
 
@@ -1542,8 +1543,9 @@ class RNNDecoder(nn.Module):
         if beam_width == 1:
             best_hyps = self.decode_ctc_greedy(log_probs, xlens)
         else:
-            best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width, lm, lm_weight)
-            # TODO(hirofumi): add decoding paramters
+            best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width,
+                                             lm, lm_weight,
+                                             lm_usage=lm_usage)
         return best_hyps
 
     def ctc_log_probs(self, eouts, temperature=1):

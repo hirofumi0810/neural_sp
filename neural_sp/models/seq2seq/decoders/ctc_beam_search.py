@@ -14,6 +14,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from neural_sp.models.torch_utils import np2tensor
+from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import tensor2np
 
 LOG_0 = -float("inf")
@@ -31,9 +33,10 @@ class BeamSearchDecoder(object):
     def __init__(self, blank, space=-1):
         self.blank = blank
         self.space = space  # only for character-level CTC
+        self.eos = 2
 
     def __call__(self, log_probs, xlens, beam_width=1,
-                 lm=None, lm_weight=0, length_penalty=0):
+                 lm=None, lm_weight=0, length_penalty=0, lm_usage='rescoring'):
         """Performs inference for the given output probabilities.
 
         Args:
@@ -41,9 +44,10 @@ class BeamSearchDecoder(object):
                 (e.g. post-softmax) for each time step. `[B, T, vocab]`
             xlens (list): A list of length `[B]`
             beam_width (int): the size of beam
-            lm (RNNLM or GatedConvLM):
-            lm_weight (float): language model weight
-            length_penalty (float): insertion bonus
+            lm (RNNLM or GatedConvLM or TransformerLM):
+            lm_weight (float): language model weight (the vocabulary is the same as CTC)
+            length_penalty (float): insertion penalty
+            lm_usage (str): rescoring or shallow_fusion
         Returns:
             best_hyps (list): Best path hypothesis. `[B, L]`
 
@@ -55,7 +59,7 @@ class BeamSearchDecoder(object):
             # Elements in the beam are (prefix, (p_b, p_no_blank))
             # Initialize the beam with the empty sequence, a probability of
             # 1 for ending in blank and zero for ending in non-blank (in log space).
-            beam = [{'hyp': [],
+            beam = [{'hyp': [self.eos],
                      'p_b': LOG_1,
                      'p_nb': LOG_0,
                      'clm_score': LOG_1,
@@ -80,11 +84,12 @@ class BeamSearchDecoder(object):
                     # case 1. hyp is not extended
                     new_p_b = np.logaddexp(p_b + log_probs[b, t, self.blank].item(),
                                            p_nb + log_probs[b, t, self.blank].item())
-                    if len(hyp) > 0:
+                    if len(hyp) > 1:
                         new_p_nb = p_nb + log_probs[b, t, hyp[-1]].item()
                     else:
                         new_p_nb = LOG_0
                     new_beam.append({'hyp': hyp,
+                                     'score': np.logaddexp(new_p_b, new_p_nb) + clm_score * lm_weight,
                                      'p_b': new_p_b,
                                      'p_nb': new_p_nb,
                                      'clm_score': clm_score,
@@ -99,7 +104,7 @@ class BeamSearchDecoder(object):
                         if c == self.blank:
                             continue
 
-                        last_token = hyp[-1] if len(hyp) > 0 else None
+                        last_token = hyp[-1] if len(hyp) > 1 else None
                         if c == last_token:
                             new_p_nb = p_b + p_t
                             # TODO(hirofumi): apply character LM here
@@ -110,28 +115,38 @@ class BeamSearchDecoder(object):
                                 pass
                                 # TODO(hirofumi): apply word LM here
 
-                        # Update LM states
-                        clmstate = None
-                        if lm_weight > 0 and lm is not None:
+                        # Update LM states for shallow fusion
+                        if lm_weight > 0 and lm is not None and lm_usage == 'shallow_fusion':
                             clmout, clmstate = lm.decode(
                                 lm.encode(log_probs.new_zeros(1, 1).fill_(c).long()), (clm_hxs, clm_cxs))
-                            clm_scores = F.log_softmax(lm.generate(clmout).squeeze(1), dim=-1)
-                            clm_score = clm_scores[0, c]
+                            clm_score = F.log_softmax(lm.generate(clmout), dim=-1)[0, 0, c]
 
                         new_beam.append({'hyp': beam[i_beam]['hyp'] + [c],
+                                         'score': np.logaddexp(new_p_b, new_p_nb) + clm_score * lm_weight,
                                          'p_b': new_p_b,
                                          'p_nb': new_p_nb,
                                          'clm_score': clm_score,
-                                         'clm_hxs': clmstate[0][:] if clmstate is not None else None,
-                                         'clm_cxs': clmstate[1][:] if clmstate is not None else None})
+                                         'clm_hxs': clm_hxs[:] if clm_hxs is not None else None,
+                                         'clm_cxs': clm_cxs[:] if clm_cxs is not None else None})
 
-                # Sort and trim the beam before moving on to the next time-step.
-                beam = sorted(new_beam,
-                              key=lambda x: np.logaddexp(x['p_b'], x['p_nb']) + x['clm_score'] * lm_weight,
-                              reverse=True)
-                beam = beam[:beam_width]
+                # Pruning
+                beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
 
-            best_hyp = beam[0]['hyp']
+            # Rescoing lattice
+            if lm_weight > 0 and lm is not None and lm_usage == 'rescoring':
+                new_beam = []
+                device_id = torch.cuda.device_of(log_probs).idx
+                for i_beam in range(len(beam)):
+                    ys = [np2tensor(np.fromiter([self.eos] + beam[i_beam]['hyp'],
+                                                dtype=np.int64), device_id).long()]
+                    ys_pad = pad_list(ys, lm.pad)
+                    clmout, _ = lm.decode(lm.encode(ys_pad), None)
+                    clm_score = F.log_softmax(lm.generate(clmout), dim=-1).sum()
+                    new_beam.append({'hyp': beam[i_beam]['hyp'],
+                                     'score': np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb']) + clm_score * lm_weight})
+                beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
+
+            best_hyp = beam[0]['hyp'][1:]
             best_hyps.append(np.array(best_hyp))
 
         return np.array(best_hyps)
