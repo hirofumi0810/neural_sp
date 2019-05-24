@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 import numpy as np
 
 import torch
@@ -35,16 +34,17 @@ def cross_entropy_lsm(logits, ys, ylens, lsm_prob, size_average=False):
     bs, _, vocab = logits.size()
 
     # Create one-hot vector
-    ys_lsm = logits.new_zeros(logits.size()).fill_(lsm_prob / (vocab - 1 - 2))
-    ys_lsm[:, :, 0] = 0  # blank
-    ys_lsm[:, :, 3] = 0  # pad
+    log_probs_uniform = logits.new_zeros(logits.size()).fill_(lsm_prob / (vocab - 1 - 2))
+    log_probs_uniform[:, :, 0] = 0  # blank
+    log_probs_uniform[:, :, 3] = 0  # pad
     for b in range(bs):
         for t in range(ylens[b]):
-            ys_lsm[b, t, ys[b, t]] = 1 - lsm_prob
+            log_probs_uniform[b, t, ys[b, t]] = 1 - lsm_prob
 
     # Compute XE for label smoothing
     log_probs = F.log_softmax(logits, dim=-1)
-    loss = np.sum([(- ys_lsm[b, :ylens[b]] * log_probs[b, :ylens[b]]).sum() for b in range(bs)])
+    xe = -torch.mul(log_probs_uniform, log_probs)
+    loss = np.sum([xe[b, :ylens[b]].sum() for b in range(bs)])
     if size_average:
         loss /= bs
     return loss
@@ -71,12 +71,40 @@ def kldiv_lsm_ctc(logits, ylens, size_average=False):
     log_uniform[:, :, 2] = 0  # eos
     log_uniform[:, :, 3] = 0  # pad
 
-    # Compute XE for label smoothing
+    # Compute KL divergence for label smoothing
     log_probs = F.log_softmax(logits, dim=-1)
     kl_div = torch.mul(uniform, log_uniform - log_probs)
-
     loss = np.sum([kl_div[b, :ylens[b]].sum() for b in range(bs)])
     assert loss >= 0
+    if size_average:
+        loss /= bs
+    return loss
+
+
+def kldiv_lsm_ctc_v2(logits, ylens, size_average=False):
+    """Compute KL divergence loss for label smoothing of CTC models.
+
+    Args:
+        logits (FloatTensor): `[B, T, vocab]`
+        ylens (list): A list of length `[B]`
+        size_average (bool):
+    Returns:
+        loss (FloatTensor): `[1]`
+
+    """
+    bs, _, vocab = logits.size()
+
+    # Create uniform distribution
+    log_uniform = logits.new_zeros(logits.size()).fill_(math.log(1 / (vocab - 2)))
+    log_uniform[:, :, 2] = 0  # eos
+    log_uniform[:, :, 3] = 0  # pad
+
+    # Compute KL divergence for label smoothing
+    probs = F.softmax(logits, dim=-1)
+    log_probs = F.log_softmax(logits, dim=-1)
+    kl_div = torch.mul(probs, log_probs - log_uniform)
+    loss = np.sum([kl_div[b, :ylens[b]].sum() for b in range(bs)])
+    # assert loss >= 0
     if size_average:
         loss /= bs
     return loss
