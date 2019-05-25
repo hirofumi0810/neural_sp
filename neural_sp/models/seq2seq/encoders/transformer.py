@@ -236,6 +236,7 @@ class TransformerEncoderBlock(nn.Module):
         # self-attention
         self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
                                                      query_dim=d_model,
+                                                     attn_type=attn_type,
                                                      attn_dim=d_model,
                                                      n_heads=attn_n_heads,
                                                      dropout=dropout_att)

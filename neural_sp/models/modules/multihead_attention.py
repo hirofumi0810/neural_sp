@@ -23,6 +23,7 @@ class MultiheadAttentionMechanism(nn.Module):
     Args:
         key_dim (int): dimensions of key
         query_dim (int): dimensions of query
+        attn_type (str): type of attention mechanisms
         attn_dim: (int) dimension of the attention layer
         sharpening_factor (float): sharpening factor in the softmax layer
             for attention weights
@@ -40,12 +41,14 @@ class MultiheadAttentionMechanism(nn.Module):
     def __init__(self,
                  key_dim,
                  query_dim,
+                 attn_type,
                  attn_dim,
                  dropout=0,
-                 n_heads=4):
+                 n_heads=8):
 
         super(MultiheadAttentionMechanism, self).__init__()
 
+        self.attn_type = attn_type
         assert attn_dim % n_heads == 0
         self.d_k = attn_dim // n_heads
         self.n_heads = n_heads
@@ -56,9 +59,16 @@ class MultiheadAttentionMechanism(nn.Module):
         # attention dropout applied AFTER the softmax layer
         self.attn_dropout = nn.Dropout(p=dropout)
 
-        self.w_key = LinearND(key_dim, attn_dim, bias=False)
-        self.w_value = LinearND(key_dim, attn_dim, bias=False)
-        self.w_query = LinearND(query_dim, attn_dim, bias=False)
+        if attn_type == 'scaled_dot':
+            self.w_key = LinearND(key_dim, attn_dim, bias=False)
+            self.w_value = LinearND(key_dim, attn_dim, bias=False)
+            self.w_query = LinearND(query_dim, attn_dim, bias=False)
+        elif attn_type == 'add':
+            self.w_key = LinearND(key_dim, attn_dim, bias=True)
+            self.w_value = LinearND(key_dim, attn_dim, bias=False)
+            self.w_query = LinearND(query_dim, attn_dim, bias=False)
+            self.v = LinearND(attn_dim, n_heads, bias=False)
+
         self.w_out = LinearND(attn_dim, key_dim)
 
     def reset(self):
@@ -70,55 +80,59 @@ class MultiheadAttentionMechanism(nn.Module):
         """Forward computation.
 
         Args:
-            key (FloatTensor): `[B, key_len, key_dim]`
+            key (FloatTensor): `[B, klen, key_dim]`
             key_lens (list): A list of length `[B]`
-            value (FloatTensor): `[B, key_len, value_dim]`
-            query (FloatTensor): `[B, query_len, query_dim]`
+            value (FloatTensor): `[B, klen, value_dim]`
+            query (FloatTensor): `[B, qlen, query_dim]`
             aw (FloatTensor): dummy (not used)
             diagonal (bool): for Transformer decoder to hide future information
         Returns:
-            cv (FloatTensor): `[B, query_len, value_dim]`
-            aw (FloatTensor): `[B, key_len, n_heads]`
+            cv (FloatTensor): `[B, qlen, value_dim]`
+            aw (FloatTensor): `[B, klen, n_heads]`
 
         """
-        bs, key_len = key.size()[: 2]
-        query_len = query.size(1)
-
-        # Pre-computation of encoder-side features for computing scores
-        if self.key is None:
-            key = self.w_key(key).view(bs, key_len, self.n_heads, self.d_k)
-            self.key = key.permute(0, 2, 3, 1).contiguous()
-            value = self.w_value(value).view(bs, key_len, self.n_heads, self.d_k)
-            self.value = value.permute(0, 2, 1, 3).contiguous()
+        bs, klen = key.size()[: 2]
+        qlen = query.size(1)
 
         # Mask attention distribution
         if self.mask is None:
-            self.mask = key.new_ones(bs, self.n_heads, query_len, key_len).byte()
+            self.mask = key.new_ones(bs, self.n_heads, qlen, klen).byte()
             for b in range(bs):
-                if key_lens[b] < key_len:
+                if key_lens[b] < klen:
                     self.mask[b, :, :, key_lens[b]:] = 0
 
-            # hide future information for transformer decoder
+            # Hide future information for Transformer decoder
             if diagonal:
-                assert query_len == key_len
-                subsequent_mask = torch.tril(key.new_ones((query_len, key_len)).byte(), diagonal=0)
+                assert qlen == klen
+                subsequent_mask = torch.tril(key.new_ones((qlen, klen)).byte(), diagonal=0)
                 subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(
-                    bs, self.n_heads, -1, -1)  # `[B, n_heads, query_len, key_len]`
+                    bs, self.n_heads, -1, -1)  # `[B, n_heads, qlen, klen]`
                 self.mask = self.mask & subsequent_mask
 
-        query = self.w_query(query).view(bs, query_len, self.n_heads, self.d_k)
-        query = query.permute(0, 2, 1, 3).contiguous()  # `[B, n_heads, query_len, d_k]`
-        e = torch.matmul(query, self.key) * (self.d_k ** -0.5)
+        if self.key is None:
+            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
+            value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
+            self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
+            self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
+        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
+        query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
+
+        if self.attn_type == 'scaled_dot':
+            e = torch.matmul(query, self.key.transpose(3, 2)) * (self.d_k ** -0.5)
+        elif self.attn_type == 'add':
+            e = torch.tanh(self.key.unsqueeze(2) + query.unsqueeze(3))
+            e = e.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
+            e = self.v(e).permute(0, 3, 1, 2)
 
         # Compute attention weights
-        e = e.masked_fill_(self.mask == 0, -1024)  # `[B, n_heads, query_len, key_len]`
+        e = e.masked_fill_(self.mask == 0, -1024)  # `[B, n_heads, qlen, klen]`
         aw = F.softmax(e, dim=-1)
         aw = self.attn_dropout(aw)
-        cv = torch.matmul(aw, self.value)  # `[B, n_heads, query_len, d_k]`
-        cv = cv.permute(0, 2, 3, 1).contiguous().view(bs, query_len, self.d_k * self.n_heads)
+        cv = torch.matmul(aw, self.value)  # `[B, n_heads, qlen, d_k]`
+        cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
         cv = self.w_out(cv)
 
-        aw = aw.permute(0, 2, 3, 1)[:, 0, :, :]
-        # TODO(hiroufmi): fix for Transformer
+        aw = aw.permute(0, 3, 1, 2)[:, :, :, 0]
+        # TODO(hirofumi): fix for Transformer
 
         return cv, aw

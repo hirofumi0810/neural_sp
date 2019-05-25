@@ -127,7 +127,7 @@ class TransformerDecoderBlock(nn.Module):
             attn_n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
-            attn_type (str): type of self-attention, scaled_dot_product or average
+            attn_type (str): type of self-attention, scaled_dot or average
             layer_norm_eps (float):
             source_attention (bool): if False, ignore source-target attention
 
@@ -148,23 +148,23 @@ class TransformerDecoderBlock(nn.Module):
         self.source_attention = source_attention
 
         # self-attention
-        if attn_type == "scaled_dot_product":
-            self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
-                                                         query_dim=d_model,
-                                                         attn_dim=d_model,
-                                                         n_heads=attn_n_heads,
-                                                         dropout=dropout_att)
-        elif attn_type == "average":
+        if attn_type == "average":
             raise NotImplementedError
             # self.self_attn = AverageAttention(d_model, dropout, layer_norm=True)
         else:
-            raise NotImplementedError(attn_type)
+            self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
+                                                         query_dim=d_model,
+                                                         attn_type=attn_type,
+                                                         attn_dim=d_model,
+                                                         n_heads=attn_n_heads,
+                                                         dropout=dropout_att)
         self.add_norm_self_attn = SublayerConnection(d_model, dropout, layer_norm_eps)
 
         if source_attention:
             # attention for encoder stacks
             self.src_attn = MultiheadAttentionMechanism(key_dim=d_model,
                                                         query_dim=d_model,
+                                                        attn_type=attn_type,
                                                         attn_dim=d_model,
                                                         n_heads=attn_n_heads,
                                                         dropout=dropout_att)
@@ -189,12 +189,12 @@ class TransformerDecoderBlock(nn.Module):
 
         """
         # self-attention
-        if self.attn_type == "scaled_dot_product":
+        if self.attn_type == "average":
+            raise NotImplementedError
+        else:
             ys, yy_aw = self.add_norm_self_attn(ys, lambda ys: self.self_attn(
                 key=ys, key_lens=ylens, value=ys, query=ys, diagonal=True))
-        elif self.attn_type == "average":
-            raise NotImplementedError
-        self.self_attn.reset()
+            self.self_attn.reset()
 
         if self.source_attention:
             # attention for encoder stacks

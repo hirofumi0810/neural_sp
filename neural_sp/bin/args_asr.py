@@ -214,6 +214,11 @@ def parse():
                         help='')
     parser.add_argument('--pretrained_model', default=False, nargs='?',
                         help='')
+    # knowledge distillation
+    parser.add_argument('--teacher', default=False, nargs='?',
+                        help='')
+    parser.add_argument('--distillation_temperature', type=float, default=1.0,
+                        help='')
     # regularization
     parser.add_argument('--clip_grad_norm', type=float, default=5.0,
                         help='')
@@ -284,8 +289,8 @@ def parse():
                         help='number of encoder Transformer layers')
     parser.add_argument('--transformer_dec_n_layers', type=int, default=6,
                         help='number of decoder Transformer layers')
-    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot_product',
-                        choices=['scaled_dot_product', 'average'],
+    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
+                        choices=['scaled_dot', 'add', 'average'],
                         help='type of attention for Transformer')
     parser.add_argument('--transformer_attn_n_heads', type=int, default=8,
                         help='number of heads in the attention layer for Transformer')
