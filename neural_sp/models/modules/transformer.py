@@ -41,10 +41,7 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)  # for batch dimension
-        # self.pe = pe
         self.register_buffer('pe', pe)
-
-        # TODO(hirofumi): add concat option
 
         self.dropout = nn.Dropout(p=dropout)
 
@@ -129,7 +126,7 @@ class TransformerDecoderBlock(nn.Module):
             dropout_att (float): dropout probabilities for attention probabilities
             attn_type (str): type of self-attention, scaled_dot or average
             layer_norm_eps (float):
-            source_attention (bool): if False, ignore source-target attention
+            src_attention (bool): if False, ignore source-target attention
 
     """
 
@@ -141,11 +138,11 @@ class TransformerDecoderBlock(nn.Module):
                  dropout,
                  dropout_att,
                  layer_norm_eps,
-                 source_attention=True):
+                 src_attention=True):
         super(TransformerDecoderBlock, self).__init__()
 
         self.attn_type = attn_type
-        self.source_attention = source_attention
+        self.src_attention = src_attention
 
         # self-attention
         if attn_type == "average":
@@ -160,8 +157,8 @@ class TransformerDecoderBlock(nn.Module):
                                                          dropout=dropout_att)
         self.add_norm_self_attn = SublayerConnection(d_model, dropout, layer_norm_eps)
 
-        if source_attention:
-            # attention for encoder stacks
+        # attention for encoder stacks
+        if src_attention:
             self.src_attn = MultiheadAttentionMechanism(key_dim=d_model,
                                                         query_dim=d_model,
                                                         attn_type=attn_type,
@@ -193,13 +190,13 @@ class TransformerDecoderBlock(nn.Module):
             raise NotImplementedError
         else:
             ys, yy_aw = self.add_norm_self_attn(ys, lambda ys: self.self_attn(
-                key=ys, key_lens=ylens, value=ys, query=ys, diagonal=True))
+                key=ys, klens=ylens, value=ys, query=ys, diagonal=True))
             self.self_attn.reset()
 
-        if self.source_attention:
-            # attention for encoder stacks
+        # attention for encoder stacks
+        if self.src_attention:
             ys, xy_aw = self.add_norm_src_attn(ys, lambda ys: self.src_attn(
-                key=xs, key_lens=xlens, value=xs, query=ys))
+                key=xs, klens=xlens, value=xs, query=ys))
             self.src_attn.reset()
         else:
             xy_aw = None

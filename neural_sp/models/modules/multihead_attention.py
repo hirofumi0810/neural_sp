@@ -76,12 +76,12 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value = None
         self.mask = None
 
-    def forward(self, key, key_lens, value, query, aw=None, diagonal=False):
+    def forward(self, key, klens, value, query, aw=None, diagonal=False):
         """Forward computation.
 
         Args:
             key (FloatTensor): `[B, klen, key_dim]`
-            key_lens (list): A list of length `[B]`
+            klens (list): A list of length `[B]`
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, qlen, query_dim]`
             aw (FloatTensor): dummy (not used)
@@ -98,8 +98,8 @@ class MultiheadAttentionMechanism(nn.Module):
         if self.mask is None:
             self.mask = key.new_ones(bs, self.n_heads, qlen, klen).byte()
             for b in range(bs):
-                if key_lens[b] < klen:
-                    self.mask[b, :, :, key_lens[b]:] = 0
+                if klens[b] < klen:
+                    self.mask[b, :, :, klens[b]:] = 0
 
             # Hide future information for Transformer decoder
             if diagonal:
