@@ -53,7 +53,7 @@ class Controller(object):
             assert warmup_n_steps > 0
             self.lr_init = factor * (model_size ** -0.5)
         else:
-            if warmup_start_learning_rate > 0:
+            if warmup_start_learning_rate > 0 and warmup_n_steps > 0:
                 self.lr_init = warmup_start_learning_rate
             else:
                 self.lr_init = learning_rate
