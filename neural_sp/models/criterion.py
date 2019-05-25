@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import numpy as np
 
 import torch
@@ -50,38 +51,32 @@ def cross_entropy_lsm(logits, ys, ylens, lsm_prob, size_average=False):
     return loss
 
 
-def kldiv_lsm_ctc(logits, ylens, size_average=False):
-    """Compute KL divergence loss for label smoothing of CTC models.
+def distillation(logits_student, logits_teacher, ylens, temperature=1, size_average=False):
+    """Compute cross entropy loss for knowledge distillation of sequence-to-sequence models.
 
     Args:
-        logits (FloatTensor): `[B, T, vocab]`
+        logits_student (FloatTensor): `[B, T, vocab]`
+        logits_teacher (FloatTensor): `[B, T, vocab]`
         ylens (list): A list of length `[B]`
+        temperature (float):
         size_average (bool):
     Returns:
         loss (FloatTensor): `[1]`
 
     """
-    bs, _, vocab = logits.size()
+    bs, _, vocab = logits_student.size()
 
-    # Create uniform distribution
-    uniform = logits.new_zeros(logits.size()).fill_(1 / (vocab - 2))
-    log_uniform = torch.log(uniform)
-    uniform[:, :, 2] = 0  # eos
-    uniform[:, :, 3] = 0  # pad
-    log_uniform[:, :, 2] = 0  # eos
-    log_uniform[:, :, 3] = 0  # pad
-
-    # Compute KL divergence for label smoothing
-    log_probs = F.log_softmax(logits, dim=-1)
-    kl_div = torch.mul(uniform, log_uniform - log_probs)
-    loss = np.sum([kl_div[b, :ylens[b]].sum() for b in range(bs)])
-    assert loss >= 0
+    # Compute XE for knowledge distillation
+    probs_teacher = F.softmax(logits_teacher / temperature, dim=-1).data
+    log_probs_student = F.log_softmax(logits_student / temperature, dim=-1)
+    xe = -torch.mul(probs_teacher, log_probs_student)
+    loss = np.sum([xe[b, :ylens[b]].sum() for b in range(bs)])
     if size_average:
         loss /= bs
     return loss
 
 
-def kldiv_lsm_ctc_v2(logits, ylens, size_average=False):
+def kldiv_lsm_ctc(logits, ylens, size_average=False):
     """Compute KL divergence loss for label smoothing of CTC models.
 
     Args:

@@ -22,6 +22,7 @@ import torch.nn.functional as F
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import kldiv_lsm_ctc
+from neural_sp.models.criterion import distillation
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
@@ -213,6 +214,7 @@ class RNNDecoder(nn.Module):
                 self.score = MultiheadAttentionMechanism(
                     key_dim=self.enc_n_units,
                     query_dim=n_units if n_projs == 0 else n_projs,
+                    attn_type=attn_type,
                     attn_dim=attn_dim,
                     n_heads=attn_n_heads,
                     dropout=dropout_att)
@@ -364,7 +366,7 @@ class RNNDecoder(nn.Module):
     def start_scheduled_sampling(self):
         self._ss_prob = self.ss_prob
 
-    def forward(self, eouts, elens, ys, task='all', ys_hist=[]):
+    def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_dist=None):
         """Forward computation.
 
         Args:
@@ -373,6 +375,7 @@ class RNNDecoder(nn.Module):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             task (str): all or ys or ys_sub*
             ys_hist (list):
+            teacher_dist (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
             observation (dict):
@@ -410,7 +413,8 @@ class RNNDecoder(nn.Module):
 
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task and 'lmobj' not in task and 'lm' not in task)):
-            loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys, ys_hist)
+            loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys, ys_hist,
+                                                          teacher_dist=teacher_dist)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
@@ -514,18 +518,31 @@ class RNNDecoder(nn.Module):
 
         return loss, acc, ppl
 
-    def teacher_forcing(self, eouts, elens, ys_in_pad):
-        """Teacher forcing for attention-based decoder.
+    def forward_att(self, eouts, elens, ys, ys_hist=[], return_logits=False, teacher_dist=None):
+        """Compute XE loss for the attention-based sequence-to-sequence model.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
             elens (list): A list of length `[B]`
-            ys_in_pad (list): `[B, L, emb_dim]`
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            ys_hist (list):
+            return_logits (bool): return logits for knowledge distillation
+            teacher_dist (FloatTensor): `[B, L, vocab]`
         Returns:
-            logits (FloatTensor): `[B, L, vocab]`
+            loss (FloatTensor): `[1]`
+            acc (float):
+            ppl (float):
 
         """
         bs = eouts.size(0)
+
+        # Append <sos> and <eos>
+        eos = eouts.new_zeros(1).fill_(self.eos).long()
+        _ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64), self.device_id).long() for y in ys]
+        ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
+        ys_in_pad = pad_list(ys_in, self.pad)
+        ys_out = [torch.cat([y, eos], dim=0) for y in _ys]
+        ys_out_pad = pad_list(ys_out, self.pad)
 
         # Initialization
         if self.contextualize:
@@ -568,45 +585,26 @@ class RNNDecoder(nn.Module):
         logits = torch.cat(logits, dim=1)
         if self.adaptive_softmax is None:
             logits = self.output(logits)
-
-        return logits
-
-    def forward_att(self, eouts, elens, ys, ys_hist):
-        """Compute XE loss for the attention-based sequence-to-sequence model.
-
-        Args:
-            eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length `[B]`
-            ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            ys_hist (list):
-        Returns:
-            loss (FloatTensor): `[1]`
-            acc (float):
-            ppl (float):
-
-        """
-        bs = eouts.size(0)
-
-        # Append <sos> and <eos>
-        eos = eouts.new_zeros(1).fill_(self.eos).long()
-        _ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64), self.device_id).long() for y in ys]
-        ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
-        ys_out = [torch.cat([y, eos], dim=0) for y in _ys]
-        ys_in_pad = pad_list(ys_in, self.pad)
-        ys_out_pad = pad_list(ys_out, self.pad)
-
-        logits = self.teacher_forcing(eouts, elens, ys_in_pad)
+        if return_logits:
+            return logits
 
         # Compute XE sequence loss
         if self.adaptive_softmax is None:
-            if self.lsm_prob > 0:
-                # Label smoothing
-                loss = cross_entropy_lsm(logits, ys_out_pad,
-                                         ylens=[y.size(0) for y in ys_out],
-                                         lsm_prob=self.lsm_prob, size_average=False) / bs
+            if teacher_dist is not None:
+                # Knowledge distillation
+                loss = distillation(logits, teacher_dist,
+                                    ylens=[y.size(0) for y in ys_out],
+                                    temperature=1,
+                                    size_average=False) / bs
             else:
-                loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                       ignore_index=self.pad, size_average=False) / bs
+                if self.lsm_prob > 0:
+                    # Label smoothing
+                    loss = cross_entropy_lsm(logits, ys_out_pad,
+                                             ylens=[y.size(0) for y in ys_out],
+                                             lsm_prob=self.lsm_prob, size_average=False) / bs
+                else:
+                    loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                                           ignore_index=self.pad, size_average=False) / bs
 
             # Focal loss
             if self.fl_weight > 0:

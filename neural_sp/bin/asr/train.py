@@ -50,6 +50,7 @@ def main():
 
     args = parse()
     args_pt = copy.deepcopy(args)
+    args_teacher = copy.deepcopy(args)
 
     # Load a conf file
     if args.resume:
@@ -69,18 +70,18 @@ def main():
     subsample_factor_sub1 = 1
     subsample_factor_sub2 = 1
     subsample = [int(s) for s in args.subsample.split('_')]
-    if args.conv_poolings:
+    if args.conv_poolings and 'conv' in args.enc_type:
         for p in args.conv_poolings.split('_'):
             subsample_factor *= int(p.split(',')[0].replace('(', ''))
     else:
         subsample_factor = np.prod(subsample)
     if args.train_set_sub1:
-        if args.conv_poolings:
+        if args.conv_poolings and 'conv' in args.enc_type:
             subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
         else:
             subsample_factor_sub1 = subsample_factor
     if args.train_set_sub2:
-        if args.conv_poolings:
+        if args.conv_poolings and 'conv' in args.enc_type:
             subsample_factor_sub2 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub2 - 1])
         else:
             subsample_factor_sub2 = subsample_factor
@@ -190,10 +191,7 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
 
     # Model setting
-    if skip_thought:
-        model = SkipThought(args)
-    else:
-        model = Seq2seq(args)
+    model = SkipThought(args) if skip_thought else Seq2seq(args)
     model.save_path = save_path
 
     if args.resume:
@@ -243,14 +241,10 @@ def main():
 
         # Initialize with pre-trained model's parameters
         if args.pretrained_model and os.path.isfile(args.pretrained_model):
-            # Load a conf file
+            # Load the ASR model
             conf_pt = load_config(os.path.join(os.path.dirname(args.pretrained_model), 'conf.yml'))
-
-            # Merge conf with args
             for k, v in conf_pt.items():
                 setattr(args_pt, k, v)
-
-            # Load the ASR model
             model_pt = Seq2seq(args_pt)
             model_pt, _ = load_checkpoint(model_pt, args.pretrained_model)
 
@@ -266,6 +260,19 @@ def main():
                         continue
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
+
+        if args.teacher and os.path.isfile(args.teacher):
+            # Load the ASR model
+            conf_teacher = load_config(os.path.join(os.path.dirname(args.teacher), 'conf.yml'))
+            for k, v in conf_teacher.items():
+                setattr(args_teacher, k, v)
+            # Setting for knowledge distillation
+            args_teacher.ss_prob = 0
+            args.lsm_prob = 0
+            model_teacher = Seq2seq(args_teacher)
+            model_teacher, _ = load_checkpoint(model_teacher, args.teacher)
+        else:
+            model_teacher = None
 
         # Set optimizer
         model.set_optimizer(
@@ -300,6 +307,8 @@ def main():
                                    deterministic=False,
                                    benchmark=True)
         model.cuda()
+        if model_teacher is not None:
+            model_teacher.cuda()
 
     logger.info('PID: %s' % os.getpid())
     logger.info('USERNAME: %s' % os.uname()[1])
@@ -324,16 +333,12 @@ def main():
             tasks = ['ys.ctc'] + tasks
         if args.lmobj_weight > 0:
             tasks = ['ys.lmobj'] + tasks
-        if args.lm_fusion is not None and 'mtl' in args.lm_fusion_type:
-            tasks = ['ys.lm'] + tasks
         for sub in ['sub1', 'sub2']:
             if getattr(args, 'train_set_' + sub):
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) > 0:
                     tasks = ['ys_' + sub] + tasks
                 if getattr(args, 'ctc_weight_' + sub) > 0:
                     tasks = ['ys_' + sub + '.ctc'] + tasks
-                if getattr(args, 'lmobj_weight_' + sub) > 0:
-                    tasks = ['ys_' + sub + '.lmobj'] + tasks
     else:
         tasks = ['all']
 
@@ -355,7 +360,8 @@ def main():
                                        ys_next=batch_train['ys_next'],
                                        reporter=reporter)
             else:
-                loss, reporter = model(batch_train, reporter=reporter, task=task)
+                loss, reporter = model(batch_train, reporter=reporter, task=task,
+                                       teacher=model_teacher)
             if len(model.device_ids) > 1:
                 loss.backward(torch.ones(len(model.device_ids)))
             else:
@@ -651,7 +657,6 @@ def make_model_name(args, subsample_factor):
 
     # Pre-training
     if args.pretrained_model and os.path.isfile(args.pretrained_model):
-        # Load a conf file
         conf_pt = load_config(os.path.join(os.path.dirname(args.pretrained_model), 'conf.yml'))
         dir_name += '_' + conf_pt['unit'] + 'pt'
     if args.freeze_encoder:
@@ -659,6 +664,10 @@ def make_model_name(args, subsample_factor):
 
     if args.adaptive_softmax:
         dir_name += '_adaptiveSM'
+
+    # knowledge distillation
+    if args.teacher:
+        dir_name += '_distillation'
 
     return dir_name
 

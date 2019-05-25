@@ -345,7 +345,7 @@ class Seq2seq(ModelBase):
                 for dir_sub in directions:
                     getattr(self, 'dec_' + dir_sub + '_' + sub).start_scheduled_sampling()
 
-    def forward(self, batch, reporter=None, task='all', is_eval=False):
+    def forward(self, batch, reporter=None, task='all', is_eval=False, teacher=None):
         """Forward computation.
 
         Args:
@@ -361,6 +361,7 @@ class Seq2seq(ModelBase):
             task (str): all or ys* or ys_sub*
             is_eval (bool): the history will not be saved.
                 This should be used in inference model for memory efficiency.
+            teacher (Seq2seq): used for knowledge distillation
         Returns:
             loss (FloatTensor): `[1]`
             reporter ():
@@ -372,11 +373,25 @@ class Seq2seq(ModelBase):
                 loss, reporter = self._forward(batch, task, reporter)
         else:
             self.train()
-            loss, reporter = self._forward(batch, task, reporter)
+            loss, reporter = self._forward(batch, task, reporter, teacher)
 
         return loss, reporter
 
-    def _forward(self, batch, task, reporter):
+    def generate_logits(self, batch):
+        # Encode input features
+        if self.input_type == 'speech':
+            enc_outs = self.encode(batch['xs'], task='ys')
+        else:
+            enc_outs = self.encode(batch['ys_sub1'], task='ys')
+
+        # for the forward decoder in the main task
+        logits = self.dec_fwd.forward_att(
+            enc_outs['ys']['xs'], enc_outs['ys']['xlens'], batch['ys'],
+            return_logits=True)
+
+        return logits
+
+    def _forward(self, batch, task, reporter, teacher=None):
         # Encode input features
         if self.input_type == 'speech':
             if self.mtl_per_batch:
@@ -393,8 +408,16 @@ class Seq2seq(ModelBase):
 
         # for the forward decoder in the main task
         if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
-            loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']
-                                             ['xlens'], batch['ys'], task, batch['ys_hist'])
+            if teacher is not None:
+                teacher.eval()
+                teacher_dist = teacher.generate_logits(batch)
+                # TODO: label smoothing?
+                # TODO: scheduled sampling?
+                # TODO: dropout?
+            else:
+                teacher_dist = None
+            loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'],
+                                             batch['ys'], task, batch['ys_hist'], teacher_dist)
             loss += loss_fwd
             observation['loss.att'] = obs_fwd['loss_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
@@ -421,7 +444,8 @@ class Seq2seq(ModelBase):
             # for the forward decoder in the sub tasks
             if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc', 'ys_' + sub + '.lmobj']:
                 loss_sub, obs_fwd_sub = getattr(self, 'dec_fwd_' + sub)(
-                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'], batch['ys_' + sub], task)
+                    enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'],
+                    batch['ys_' + sub], task)
                 loss += loss_sub
                 observation['loss.att-' + sub] = obs_fwd_sub['loss_att']
                 observation['loss.ctc-' + sub] = obs_fwd_sub['loss_ctc']
@@ -553,7 +577,7 @@ class Seq2seq(ModelBase):
             else:
                 raise ValueError(task)
 
-            # encode
+            # Encode input features
             if self.input_type == 'speech' and self.mtl_per_batch and 'bwd' in dir:
                 enc_outs = self.encode(xs, task, flip=True)
             else:
