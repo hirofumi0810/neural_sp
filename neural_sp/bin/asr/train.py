@@ -350,7 +350,6 @@ def main():
 
         # Change tasks depending on task
         for task in tasks:
-            model.module.optimizer.zero_grad()
             if skip_thought:
                 loss, reporter = model(batch_train['ys'],
                                        ys_prev=batch_train['ys_prev'],
@@ -359,14 +358,17 @@ def main():
             else:
                 loss, reporter = model(batch_train, reporter=reporter, task=task,
                                        teacher=model_teacher)
+            loss /= args.accum_grad_n_steps
             if len(model.device_ids) > 1:
                 loss.backward(torch.ones(len(model.device_ids)))
             else:
                 loss.backward()
             loss.detach()  # Trancate the graph
-            if args.clip_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
-            model.module.optimizer.step()
+            if step % args.accum_grad_n_steps == 0:
+                if args.clip_grad_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
+                model.module.optimizer.step()
+                model.module.optimizer.zero_grad()
             loss_train = loss.item()
             del loss
 
