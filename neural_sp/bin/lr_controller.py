@@ -47,6 +47,7 @@ class Controller(object):
         self.not_improved_n_epochs = 0
         self.lower_better = lower_better
         self.best_value = best_value
+        self.transformer = transformer
 
         # for warmup
         if transformer:
@@ -126,8 +127,8 @@ class Controller(object):
             optimizer ():
 
         """
-        if self.warmup_start_lr > 0:
-            # linearly increse
+        if self.warmup_start_lr > 0 and not self.transformer:
+            # increase linearly
             self.lr = (self.lr_max - self.warmup_start_lr) / self.warmup_n_steps * step + self.lr_init
         else:
             # based on the original transformer paper
