@@ -90,9 +90,6 @@ def main():
 
     args.vocab = train_set.vocab
 
-    if args.lm_type == 'transformer':
-        args.decay_type = 'warmup'
-
     # Set save path
     if args.resume:
         save_path = os.path.dirname(args.resume)
@@ -158,7 +155,8 @@ def main():
         # Set optimizer
         model.set_optimizer(optimizer=args.optimizer,
                             learning_rate=float(args.learning_rate),
-                            weight_decay=float(args.weight_decay))
+                            weight_decay=float(args.weight_decay),
+                            transformer=args.lm_type == 'transformer')
 
         epoch, step = 1, 1
         ppl_dev_best = 10000

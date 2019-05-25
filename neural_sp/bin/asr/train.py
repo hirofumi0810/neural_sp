@@ -175,9 +175,6 @@ def main():
         assert args.unit == args.lm_conf.unit
         assert args.vocab == args.lm_conf.vocab
 
-    if args.enc_type == 'transformer':
-        args.decay_type = 'warmup'
-
     # Set save path
     if args.resume:
         save_path = os.path.dirname(args.resume)
@@ -279,7 +276,7 @@ def main():
             optimizer=args.optimizer,
             learning_rate=float(args.learning_rate),
             weight_decay=float(args.weight_decay),
-            transformer=args.enc_type == 'transformer' or args.dec_type == 'transformer')
+            transformer='transformer' in args.enc_type or args.dec_type == 'transformer')
 
         epoch, step = 1, 1
         metric_dev_best = 10000
@@ -296,7 +293,7 @@ def main():
                                    warmup_start_learning_rate=args.warmup_start_learning_rate,
                                    warmup_n_steps=args.warmup_n_steps,
                                    factor=10,
-                                   transformer=args.enc_type == 'transformer' or args.dec_type == 'transformer')
+                                   transformer='transformer' in args.enc_type or args.dec_type == 'transformer')
 
     train_set.epoch = epoch - 1  # start from index:0
 

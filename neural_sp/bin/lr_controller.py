@@ -50,6 +50,7 @@ class Controller(object):
 
         # for warmup
         if transformer:
+            self.decay_type = 'warmup'
             assert warmup_n_steps > 0
             self.lr_init = factor * (model_size ** -0.5)
         else:
