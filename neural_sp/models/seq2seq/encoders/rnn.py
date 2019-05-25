@@ -287,9 +287,9 @@ class RNNEncoder(nn.Module):
                         if n_layers_sub1 > 0 or n_layers_sub2 > 0:
                             assert task_specific_layer
 
-                if last_proj_dim != self.output_dim:
-                    self.bridge = LinearND(self._output_dim, last_proj_dim, dropout=dropout)
-                    self._output_dim = last_proj_dim
+            if last_proj_dim != self.output_dim:
+                self.bridge = LinearND(self._output_dim, last_proj_dim, dropout=dropout)
+                self._output_dim = last_proj_dim
 
         # Initialize parameters
         self.reset_parameters(param_init)
