@@ -24,6 +24,9 @@ from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
+import matplotlib
+matplotlib.use('Agg')
+
 random.seed(1)
 
 
@@ -141,23 +144,10 @@ class TransformerLM(LMBase):
 
         return ys_emb, hidden
 
-    def plot_attention(self, figsize=(20, 8)):
-        """Decode function.
-
-        Args:
-            ys_emb (FloatTensor): `[B, L, emb_dim]`
-            hidden: dummy
-        Returns:
-            ys_emb (FloatTensor): `[B, L, n_units]`
-            hidden: dummy
-
-        """
-        import matplotlib
-        matplotlib.use('Agg')
+    def plot_attention(self):
+        """Plot attention for each head in all layers."""
         from matplotlib import pyplot as plt
-        import seaborn as sns
-        plt.style.use('ggplot')
-        sns.set_style("white")
+        from matplotlib.ticker import MaxNLocator
 
         save_path = mkdir_join(self.save_path, 'att_weights')
 
@@ -168,14 +158,18 @@ class TransformerLM(LMBase):
 
         for l in range(self.n_layers):
             yy_aws = getattr(self, 'yy_aws_layer%d' % l)
+
+            plt.clf()
+            fig, axes = plt.subplots(self.n_heads // 4, 4, figsize=(20, 8))
             for h in range(self.n_heads):
-                plt.clf()
-                plt.figure(figsize=figsize)
-                sns.heatmap(yy_aws[0, :, :, h], cmap='viridis',
-                            xticklabels=False,
-                            yticklabels=False)
-                # plt.ylabel(u'Output labels (←)', fontsize=8)
-                # plt.yticks(rotation=0)
-                plt.savefig(os.path.join(save_path,
-                                         'layer' + str(l) + '_head' + str(h) + '.png'), dvi=500)
-                plt.close()
+                ax = axes[h // 4, h % 4]
+                ax.imshow(yy_aws[0, h, :, :], aspect="auto")
+                ax.grid(False)
+                ax.set_xlabel("Input (head%d)" % h)
+                ax.set_ylabel("Output (head%d)" % h)
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+            fig.tight_layout()
+            fig.savefig(os.path.join(save_path, 'layer' + str(l) + '.png'), dvi=500)
+            plt.close()
