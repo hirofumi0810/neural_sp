@@ -258,19 +258,6 @@ def main():
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
-        if args.teacher and os.path.isfile(args.teacher):
-            # Load the ASR model
-            conf_teacher = load_config(os.path.join(os.path.dirname(args.teacher), 'conf.yml'))
-            for k, v in conf_teacher.items():
-                setattr(args_teacher, k, v)
-            # Setting for knowledge distillation
-            args_teacher.ss_prob = 0
-            args.lsm_prob = 0
-            model_teacher = Seq2seq(args_teacher)
-            model_teacher, _ = load_checkpoint(model_teacher, args.teacher)
-        else:
-            model_teacher = None
-
         # Set optimizer
         model.set_optimizer(
             optimizer=args.optimizer,
@@ -296,6 +283,19 @@ def main():
                                    transformer='transformer' in args.enc_type or args.dec_type == 'transformer')
 
     train_set.epoch = epoch - 1  # start from index:0
+
+    if args.teacher and os.path.isfile(args.teacher):
+        # Load the teacher ASR model
+        conf_teacher = load_config(os.path.join(os.path.dirname(args.teacher), 'conf.yml'))
+        for k, v in conf_teacher.items():
+            setattr(args_teacher, k, v)
+        # Setting for knowledge distillation
+        args_teacher.ss_prob = 0
+        args.lsm_prob = 0
+        model_teacher = Seq2seq(args_teacher)
+        model_teacher, _ = load_checkpoint(model_teacher, args.teacher)
+    else:
+        model_teacher = None
 
     # GPU setting
     if args.n_gpus >= 1:
