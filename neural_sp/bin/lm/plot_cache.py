@@ -20,9 +20,7 @@ from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_lm import Dataset
-from neural_sp.models.lm.gated_convlm import GatedConvLM
-from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.lm.transformerlm import TransformerLM
+from neural_sp.models.lm.lm import select_lm
 from neural_sp.utils import mkdir_join
 
 
@@ -59,12 +57,7 @@ def main():
 
         if i == 0:
             # Load the LM
-            if 'gated_conv' in args.lm_type:
-                model = GatedConvLM(args)
-            elif args.lm_type == 'transformer':
-                model = TransformerLM(args)
-            else:
-                model = RNNLM(args)
+            model = select_lm(args)
             model, checkpoint = load_checkpoint(model, args.recog_model[0])
             epoch = checkpoint['epoch']
             model.save_path = dir_name

@@ -31,9 +31,7 @@ from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
-from neural_sp.models.lm.gated_convlm import GatedConvLM
-from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.lm.transformerlm import TransformerLM
+from neural_sp.models.lm.lm import select_lm
 from neural_sp.utils import mkdir_join
 
 
@@ -103,12 +101,7 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
 
     # Model setting
-    if 'gated_conv' in args.lm_type:
-        model = GatedConvLM(args)
-    elif args.lm_type == 'transformer':
-        model = TransformerLM(args)
-    else:
-        model = RNNLM(args)
+    model = select_lm(args)
     model.save_path = save_path
 
     if args.resume:
@@ -243,6 +236,8 @@ def main():
         # Save fugures of loss and accuracy
         if step % (args.print_step * 10) == 0:
             reporter.snapshot()
+            if args.lm_type == 'transformer':
+                model.module.plot_attention()
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:

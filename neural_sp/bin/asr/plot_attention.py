@@ -23,8 +23,7 @@ from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_asr import Dataset
-from neural_sp.models.lm.gated_convlm import GatedConvLM
-from neural_sp.models.lm.rnnlm import RNNLM
+from neural_sp.models.lm.lm import select_lm
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.utils import mkdir_join
 
@@ -73,36 +72,25 @@ def main():
             ensemble_models = [model]
             if len(args.recog_model) > 1:
                 for recog_model_e in args.recog_model[1:]:
-                    # Load a conf file
+                    # Load the ASR model
                     conf_e = load_config(os.path.join(os.path.dirname(recog_model_e), 'conf.yml'))
-
-                    # Overwrite conf
                     args_e = copy.deepcopy(args)
                     for k, v in conf_e.items():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
-
                     model_e = Seq2seq(args_e)
                     model_e, _ = load_checkpoint(model_e, recog_model_e)
                     model_e.cuda()
                     ensemble_models += [model_e]
 
-            # For shallow fusion
+            # Load the LM for shallow fusion
             if not args.lm_fusion:
                 if args.recog_lm is not None and args.recog_lm_weight > 0:
-                    # Load a LM conf file
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm), 'conf.yml'))
-
-                    # Merge conf with args
                     args_lm = argparse.Namespace()
                     for k, v in conf_lm.items():
                         setattr(args_lm, k, v)
-
-                    # Load the pre-trianed LM
-                    if args_lm.lm_type == 'gated_cnn':
-                        lm = GatedConvLM(args_lm)
-                    else:
-                        lm = RNNLM(args_lm)
+                    lm = select_lm(args_lm)
                     lm, _ = load_checkpoint(lm, args.recog_lm)
                     if args_lm.backward:
                         model.lm_bwd = lm
@@ -111,19 +99,11 @@ def main():
 
                 if args.recog_lm_bwd is not None and args.recog_lm_weight > 0 and \
                         (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
-                    # Load a LM conf file
                     conf_lm = load_config(os.path.join(args.recog_lm_bwd, 'conf.yml'))
-
-                    # Merge conf with args
                     args_lm_bwd = argparse.Namespace()
                     for k, v in conf_lm.items():
                         setattr(args_lm_bwd, k, v)
-
-                    # Load the pre-trianed LM
-                    if args_lm_bwd.lm_type == 'gated_cnn':
-                        lm_bwd = GatedConvLM(args_lm_bwd)
-                    else:
-                        lm_bwd = RNNLM(args_lm_bwd)
+                    lm_bwd = select_lm(args_lm_bwd)
                     lm_bwd, _ = load_checkpoint(lm_bwd, args.recog_lm_bwd)
                     model.lm_bwd = lm_bwd
 

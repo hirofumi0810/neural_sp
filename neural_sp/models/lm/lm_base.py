@@ -34,7 +34,7 @@ class LMBase(ModelBase):
         raise NotImplementedError
 
     def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0,
-                ylens=[]):
+                ylens=[], predict_last=False):
         """Forward computation.
 
         Args:
@@ -45,6 +45,7 @@ class LMBase(ModelBase):
                 This should be used in inference model for memory efficiency.
             n_caches (int):
             ylens (list): not used
+            predict_last (bool): used for TransformerLM and GatedConvLM
         Returns:
             loss (FloatTensor): `[1]`
             hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
@@ -54,14 +55,14 @@ class LMBase(ModelBase):
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, hidden, reporter = self._forward(ys, hidden, reporter, n_caches)
+                loss, hidden, reporter = self._forward(ys, hidden, reporter, n_caches, predict_last)
         else:
             self.train()
             loss, hidden, reporter = self._forward(ys, hidden, reporter)
 
         return loss, hidden, reporter
 
-    def _forward(self, ys, hidden, reporter, n_caches=0):
+    def _forward(self, ys, hidden, reporter, n_caches=0, predict_last=False):
         ys = [np2tensor(y, self.device_id).long() for y in ys]
         ys = pad_list(ys, self.pad)
         ys_in = ys[:, :-1]
@@ -72,6 +73,10 @@ class LMBase(ModelBase):
             logits = self.generate(lmout)
         else:
             logits = lmout
+
+        if predict_last:
+            ys_out = ys_out[:, -1].unsqueeze(1)
+            logits = logits[:, -1].unsqueeze(1)
 
         # Compute XE sequence loss
         if n_caches > 0 and len(self.cache_ids) > 0:
