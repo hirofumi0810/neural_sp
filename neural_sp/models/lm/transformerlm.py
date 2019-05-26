@@ -57,7 +57,7 @@ class TransformerLM(LMBase):
                                dropout=0,  # NOTE: do not apply dropout here
                                ignore_index=self.pad)
         if args.pe_type:
-            self.pos_emb = PositionalEncoding(args.d_model, args.dropout_emb, args.pe_type)
+            self.pos_enc = PositionalEncoding(args.d_model, args.dropout_emb, args.pe_type)
 
         self.layers = nn.ModuleList(
             [TransformerDecoderBlock(args.d_model, args.d_ff,
@@ -66,7 +66,7 @@ class TransformerLM(LMBase):
                                      args.dropout_hidden, args.dropout_att, args.layer_norm_eps,
                                      src_attention=False)
              for _ in range(self.n_layers)])
-        self.norm_top = nn.LayerNorm(args.d_model, eps=args.layer_norm_eps)
+        self.norm_out = nn.LayerNorm(args.d_model, eps=args.layer_norm_eps)
 
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -125,11 +125,11 @@ class TransformerLM(LMBase):
         # Add positional embedding
         ys_emb = ys_emb * (self.d_model ** 0.5)
         if self.pe_type:
-            ys_emb = self.pos_emb(ys_emb)
+            ys_emb = self.pos_enc(ys_emb)
 
         ylens = [ys_emb.size(1) - 1] * bs
         for l in range(self.n_layers):
             ys_emb, yy_aw, _ = self.layers[l](ys_emb, ylens)
-        ys_emb = self.norm_top(ys_emb)
+        ys_emb = self.norm_out(ys_emb)
 
         return ys_emb, hidden
