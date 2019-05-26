@@ -163,7 +163,7 @@ def main():
     args.vocab_sub2 = train_set.vocab_sub2
     args.input_dim = train_set.input_dim
 
-    # Load a LM conf file for cold fusion & LM initialization
+    # Load a LM conf file for LM fusion & LM initialization
     if args.lm_fusion:
         if args.model:
             lm_conf = load_config(os.path.join(os.path.dirname(args.lm_fusion), 'conf.yml'))
@@ -188,8 +188,7 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
 
     # Model setting
-    model = SkipThought(args) if skip_thought else Seq2seq(args)
-    model.save_path = save_path
+    model = SkipThought(args, save_path) if skip_thought else Seq2seq(args, save_path)
 
     if args.resume:
         # Set optimizer

@@ -57,10 +57,9 @@ def main():
 
         if i == 0:
             # Load the LM
-            model = select_lm(args)
+            model = select_lm(args, dir_name)
             model, checkpoint = load_checkpoint(model, args.recog_model[0])
             epoch = checkpoint['epoch']
-            model.save_path = dir_name
 
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)

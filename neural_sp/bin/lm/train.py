@@ -101,8 +101,7 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
 
     # Model setting
-    model = select_lm(args)
-    model.save_path = save_path
+    model = select_lm(args, save_path)
 
     if args.resume:
         # Set optimizer

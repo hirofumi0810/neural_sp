@@ -30,11 +30,13 @@ random.seed(1)
 class TransformerLM(LMBase):
     """Transformer language model."""
 
-    def __init__(self, args):
+    def __init__(self, args, save_path=None):
 
         super(LMBase, self).__init__()
         logger = logging.getLogger('training')
         logger.info(self.__class__.__name__)
+
+        self.save_path = save_path
 
         self.d_model = args.d_model
         self.d_ff = args.d_ff

@@ -36,9 +36,11 @@ logger = logging.getLogger("training")
 class Seq2seq(ModelBase):
     """Attention-based RNN sequence-to-sequence model (including CTC)."""
 
-    def __init__(self, args):
+    def __init__(self, args, save_path=None):
 
         super(ModelBase, self).__init__()
+
+        self.save_path = save_path
 
         # for encoder
         self.input_type = args.input_type
@@ -168,14 +170,14 @@ class Seq2seq(ModelBase):
         if self.bwd_weight > 0:
             directions.append('bwd')
         for dir in directions:
-            # Cold fusion
+            # Load the LM for LM fusion & LM initialization
             if args.lm_fusion and dir == 'fwd':
                 lm = RNNLM(args.lm_conf)
                 lm, _ = load_checkpoint(lm, args.lm_fusion)
             else:
                 args.lm_conf = False
                 lm = None
-            # TODO(hirofumi): cold fusion for backward RNNLM
+                # TODO(hirofumi): cold fusion for backward RNNLM
 
             # Decoder
             if args.dec_type == 'transformer':

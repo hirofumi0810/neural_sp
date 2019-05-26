@@ -77,12 +77,11 @@ def main():
         if i == 0:
             # Load the ASR model
             if skip_thought:
-                model = SkipThought(args)
+                model = SkipThought(args, dir_name)
             else:
-                model = Seq2seq(args)
+                model = Seq2seq(args, dir_name)
             model, checkpoint = load_checkpoint(model, args.recog_model[0])
             epoch = checkpoint['epoch']
-            model.save_path = dir_name
 
             # ensemble (different models)
             ensemble_models = [model]

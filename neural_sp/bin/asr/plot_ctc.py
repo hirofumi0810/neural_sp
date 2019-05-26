@@ -68,10 +68,9 @@ def main():
 
         if i == 0:
             # Load the ASR model
-            model = Seq2seq(args)
+            model = Seq2seq(args, dir_name)
             model, checkpoint = load_checkpoint(model, args.recog_model[0])
             epoch = checkpoint['epoch']
-            model.save_path = dir_name
 
             if not args.recog_unit:
                 args.recog_unit = args.unit

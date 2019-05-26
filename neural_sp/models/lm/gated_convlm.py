@@ -23,11 +23,13 @@ from neural_sp.models.modules.glu import GLUBlock
 class GatedConvLM(LMBase):
     """Gated convolutional neural network language model with Gated Linear Units (GLU)."""
 
-    def __init__(self, args):
+    def __init__(self, args, save_path=None):
 
         super(LMBase, self).__init__()
         logger = logging.getLogger('training')
         logger.info(self.__class__.__name__)
+
+        self.save_path = save_path
 
         self.emb_dim = args.emb_dim
         self.n_units = args.n_units

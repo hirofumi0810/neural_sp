@@ -15,11 +15,11 @@ from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.lm.transformerlm import TransformerLM
 
 
-def select_lm(args):
+def select_lm(args, save_path):
     if args.lm_type == 'gated_cnn':
-        lm = GatedConvLM(args)
+        lm = GatedConvLM(args, save_path)
     elif args.lm_type == 'transformer':
-        lm = TransformerLM(args)
+        lm = TransformerLM(args, save_path)
     else:
-        lm = RNNLM(args)
+        lm = RNNLM(args, save_path)
     return lm
