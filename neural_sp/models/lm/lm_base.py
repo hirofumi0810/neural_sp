@@ -149,6 +149,9 @@ class LMBase(ModelBase):
         """
         return self.embed(ys)
 
+    def decode(self, ys_emb, hidden=None):
+        raise NotImplementedError
+
     def generate(self, hidden):
         """Generate function.
 
@@ -159,3 +162,6 @@ class LMBase(ModelBase):
 
         """
         return self.output(hidden)
+
+    def plot_attention(self):
+        raise NotImplementedError
