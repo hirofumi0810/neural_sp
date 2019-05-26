@@ -11,7 +11,9 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
+import os
 import random
+import shutil
 import torch.nn as nn
 
 from neural_sp.models.lm.lm_base import LMBase
@@ -19,6 +21,8 @@ from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
+from neural_sp.models.torch_utils import tensor2np
+from neural_sp.utils import mkdir_join
 
 random.seed(1)
 
@@ -36,6 +40,7 @@ class TransformerLM(LMBase):
         self.d_ff = args.d_ff
         self.pe_type = args.pe_type
         self.n_layers = args.transformer_n_layers
+        self.n_heads = args.transformer_attn_n_heads
         self.tie_embedding = args.tie_embedding
 
         self.vocab = args.vocab
@@ -120,16 +125,55 @@ class TransformerLM(LMBase):
             hidden: dummy
 
         """
-        bs, max_ylen = ys_emb.size()[:2]
-
         # Add positional embedding
         ys_emb = ys_emb * (self.d_model ** 0.5)
         if self.pe_type:
             ys_emb = self.pos_enc(ys_emb)
 
-        ylens = [ys_emb.size(1) - 1] * bs
+        ylens = [ys_emb.size(1) - 1] * ys_emb.size(0)
         for l in range(self.n_layers):
-            ys_emb, yy_aw, _ = self.layers[l](ys_emb, ylens)
+            ys_emb, yy_aws, _ = self.layers[l](ys_emb, ylens)
+            if not self.training:
+                setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
         ys_emb = self.norm_out(ys_emb)
 
         return ys_emb, hidden
+
+    def plot_attention(self, figsize=(20, 8)):
+        """Decode function.
+
+        Args:
+            ys_emb (FloatTensor): `[B, L, emb_dim]`
+            hidden: dummy
+        Returns:
+            ys_emb (FloatTensor): `[B, L, n_units]`
+            hidden: dummy
+
+        """
+        import matplotlib
+        matplotlib.use('Agg')
+        from matplotlib import pyplot as plt
+        import seaborn as sns
+        plt.style.use('ggplot')
+        sns.set_style("white")
+
+        save_path = mkdir_join(self.save_path, 'att_weights')
+
+        # Clean directory
+        if save_path is not None and os.path.isdir(save_path):
+            shutil.rmtree(save_path)
+            os.mkdir(save_path)
+
+        for l in range(self.n_layers):
+            yy_aws = getattr(self, 'yy_aws_layer%d' % l)
+            for h in range(self.n_heads):
+                plt.clf()
+                plt.figure(figsize=figsize)
+                sns.heatmap(yy_aws[0, :, :, h], cmap='viridis',
+                            xticklabels=False,
+                            yticklabels=False)
+                # plt.ylabel(u'Output labels (←)', fontsize=8)
+                # plt.yticks(rotation=0)
+                plt.savefig(os.path.join(save_path,
+                                         'layer' + str(l) + '_head' + str(h) + '.png'), dvi=500)
+                plt.close()
