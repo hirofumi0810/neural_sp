@@ -110,10 +110,10 @@ class Seq2seq(ModelBase):
                 d_model=args.d_model,
                 d_ff=args.d_ff,
                 pe_type=args.pe_type,
+                layer_norm_eps=args.layer_norm_eps,
                 dropout_in=args.dropout_in,
                 dropout=args.dropout_enc,
                 dropout_att=args.dropout_att,
-                layer_norm_eps=args.layer_norm_eps,
                 last_proj_dim=args.d_model if 'transformer' in args.dec_type else args.dec_n_units,
                 n_stacks=args.n_stacks,
                 n_splices=args.n_splices,
@@ -192,14 +192,16 @@ class Seq2seq(ModelBase):
                     n_layers=args.transformer_dec_n_layers,
                     d_model=args.d_model,
                     d_ff=args.d_ff,
-                    pe_type=args.pe_type,
-                    tie_embedding=args.tie_embedding,
                     vocab=self.vocab,
+                    tie_embedding=args.tie_embedding,
+                    pe_type=args.pe_type,
+                    layer_norm_eps=args.layer_norm_eps,
                     dropout=args.dropout_dec,
                     dropout_emb=args.dropout_emb,
                     dropout_att=args.dropout_att,
                     lsm_prob=args.lsm_prob,
-                    layer_norm_eps=args.layer_norm_eps,
+                    fl_weight=args.focal_loss_weight,
+                    fl_gamma=args.focal_loss_gamma,
                     ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
                     ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
@@ -228,8 +230,8 @@ class Seq2seq(ModelBase):
                     residual=args.dec_residual,
                     bottleneck_dim=args.dec_bottleneck_dim,
                     emb_dim=args.emb_dim,
-                    tie_embedding=args.tie_embedding,
                     vocab=self.vocab,
+                    tie_embedding=args.tie_embedding,
                     dropout=args.dropout_dec,
                     dropout_emb=args.dropout_emb,
                     dropout_att=args.dropout_att,
@@ -536,6 +538,12 @@ class Seq2seq(ModelBase):
             ctc_probs, indices_topk = getattr(self, 'dec_' + dir).ctc_probs_topk(
                 enc_outs[task]['xs'], temperature, topk)
             return ctc_probs, indices_topk, enc_outs[task]['xlens']
+
+    def plot_attention(self):
+        if 'transformer' in self.enc_type:
+            self.enc_fwd._plot_attention(self.save_path)
+        if 'transformer' in self.dec_type:
+            self.dec_fwd._plot_attention(self.save_path)
 
     def decode(self, xs, params, idx2token, nbest=1, exclude_eos=False,
                refs_id=None, refs_text=None, utt_ids=None, speakers=None,

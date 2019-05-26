@@ -13,7 +13,9 @@ from __future__ import print_function
 from collections import OrderedDict
 import logging
 import numpy as np
+import os
 import random
+import shutil
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -32,6 +34,10 @@ from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import tensor2np
+from neural_sp.utils import mkdir_join
+
+import matplotlib
+matplotlib.use('Agg')
 
 random.seed(1)
 
@@ -50,14 +56,16 @@ class TransformerDecoder(nn.Module):
         n_layers (int): number of decoder layers.
         d_model (int): size of the model
         d_ff (int): size of the inner FF layer
-        pe_type (str): concat or add or learn or False
-        tie_embedding (bool):
         vocab (int): number of nodes in softmax layer
+        tie_embedding (bool):
+        pe_type (str): concat or add or learn or False
+        layer_norm_eps (float):
         dropout (float): dropout probabilities for linear layers
         dropout_emb (float): probability to drop nodes of the embedding layer
         dropout_att (float): dropout probabilities for attention distributions
         lsm_prob (float): label smoothing probability
-        layer_norm_eps (float):
+        fl_weight (float):
+        fl_gamma (float):
         ctc_weight (float):
         ctc_fc_list (list):
         backward (bool): decode in the backward order
@@ -78,14 +86,16 @@ class TransformerDecoder(nn.Module):
                  n_layers,
                  d_model,
                  d_ff,
-                 pe_type,
-                 tie_embedding,
                  vocab,
+                 tie_embedding=False,
+                 pe_type='add',
+                 layer_norm_eps=1e-6,
                  dropout=0.0,
                  dropout_emb=0.0,
                  dropout_att=0.0,
                  lsm_prob=0.0,
-                 layer_norm_eps=1e-6,
+                 fl_weight=0.0,
+                 fl_gamma=2.0,
                  ctc_weight=0.0,
                  ctc_fc_list=[],
                  backward=False,
@@ -104,6 +114,8 @@ class TransformerDecoder(nn.Module):
         self.n_layers = n_layers
         self.pe_type = pe_type
         self.lsm_prob = lsm_prob
+        self.fl_weight = fl_weight
+        self.fl_gamma = fl_gamma
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
         self.backward = backward
@@ -290,13 +302,16 @@ class TransformerDecoder(nn.Module):
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, self.pad)
 
-        # Add positional embedding
+        # Positional encoding
         ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
         if self.pe_type:
             ys_emb = self.pos_emb(ys_emb)
 
         for l in range(self.n_layers):
-            ys_emb, yy_aw, xy_aw = self.layers[l](ys_emb, ylens, eouts, elens)
+            ys_emb, yy_aws, xy_aws = self.layers[l](ys_emb, ylens, eouts, elens)
+            if not self.training:
+                setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
+                setattr(self, 'xy_aws_layer%d' % l, tensor2np(xy_aws))
         logits = self.norm_top(ys_emb)
         if self.adaptive_softmax is None:
             logits = self.output(logits)
@@ -366,14 +381,13 @@ class TransformerDecoder(nn.Module):
         xy_aws_tmp = [None] * bs
         eos_flags = [False] * bs
         for t in range(int(np.floor(max_xlen * max_len_ratio)) + 1):
-            # Add positional embedding
+            # Positional encoding
             out = self.embed(ys) * (self.d_model ** 0.5)
             if self.pe_type:
                 out = self.pos_emb(out)
 
             for l in range(self.n_layers):
-                out, yy_aw, xy_aw = self.layers[l](out, ylens + 1, eouts, elens)
-                # xy_aw: `[B, n_heads, T, L]`
+                out, yy_aws, xy_aws = self.layers[l](out, ylens + 1, eouts, elens)
             out = self.norm_top(out)
             logits_t = self.output(out)
 
@@ -386,8 +400,8 @@ class TransformerDecoder(nn.Module):
                 if not eos_flags[b]:
                     if y[b].item() == self.eos:
                         eos_flags[b] = True
-                        yy_aws_tmp[b] = yy_aw[b:b + 1]  # TODO: fix this
-                        xy_aws_tmp[b] = xy_aw[b:b + 1]
+                        yy_aws_tmp[b] = yy_aws[b:b + 1]  # TODO: fix this
+                        xy_aws_tmp[b] = xy_aws[b:b + 1]
                     ylens[b] += 1
                     # NOTE: include <eos>
 
@@ -450,3 +464,34 @@ class TransformerDecoder(nn.Module):
             best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width, lm, lm_weight)
             # TODO(hirofumi): add decoding paramters
         return best_hyps
+
+    def _plot_attention(self, save_path):
+        """Plot attention for each head in all layers."""
+        from matplotlib import pyplot as plt
+        from matplotlib.ticker import MaxNLocator
+
+        for attn in ['yy', 'xs']:
+            save_path = mkdir_join(save_path, 'dec_%s_att_weights' % attn)
+
+            # Clean directory
+            if save_path is not None and os.path.isdir(save_path):
+                shutil.rmtree(save_path)
+                os.mkdir(save_path)
+
+            for l in range(self.n_layers):
+                aws = getattr(self, '%s_aws_layer%d' % (attn, l))
+
+                plt.clf()
+                fig, axes = plt.subplots(self.n_heads // 4, 4, figsize=(20, 8))
+                for h in range(self.n_heads):
+                    ax = axes[h // 4, h % 4]
+                    ax.imshow(aws[0, h, :, :], aspect="auto")
+                    ax.grid(False)
+                    ax.set_xlabel("Input (head%d)" % h)
+                    ax.set_ylabel("Output (head%d)" % h)
+                    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+                fig.tight_layout()
+                fig.savefig(os.path.join(save_path, 'layer' + str(l) + '.png'), dvi=500)
+                plt.close()

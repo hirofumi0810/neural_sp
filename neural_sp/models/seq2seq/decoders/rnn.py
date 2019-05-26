@@ -56,8 +56,8 @@ class RNNDecoder(nn.Module):
         residual (bool):
         bottleneck_dim (int): dimension of the bottleneck layer before the softmax layer for label generation
         emb_dim (int): dimension of the embedding in target spaces.
-        tie_embedding (bool):
         vocab (int): number of nodes in softmax layer
+        tie_embedding (bool):
         attn_dim (int):
         attn_sharpening_factor (float):
         attn_sigmoid_smoothing (bool):
@@ -70,6 +70,8 @@ class RNNDecoder(nn.Module):
         lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
         ss_type (str): constant or saturation
+        fl_weight (float):
+        fl_gamma (float):
         ctc_weight (float):
         ctc_fc_list (list):
         input_feeding (bool):
@@ -102,8 +104,8 @@ class RNNDecoder(nn.Module):
                  loop_type,
                  bottleneck_dim,
                  emb_dim,
-                 tie_embedding,
                  vocab,
+                 tie_embedding=False,
                  attn_dim=0,
                  attn_sharpening_factor=0.0,
                  attn_sigmoid_smoothing=False,
@@ -1557,3 +1559,6 @@ class RNNDecoder(nn.Module):
             topk = probs.size(-1)
         _, topk_ids = torch.topk(probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
         return tensor2np(probs), tensor2np(topk_ids)
+
+    def plot_attention(self, save_path):
+        raise NotImplementedError

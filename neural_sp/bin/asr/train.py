@@ -414,6 +414,7 @@ def main():
         # Save fugures of loss and accuracy
         if step % (args.print_step * 10) == 0:
             reporter.snapshot()
+            model.plot_attention()
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:

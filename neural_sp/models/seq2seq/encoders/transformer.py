@@ -11,6 +11,8 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
+import os
+import shutil
 import torch.nn as nn
 
 from neural_sp.models.modules.linear import LinearND
@@ -19,6 +21,11 @@ from neural_sp.models.modules.transformer import SublayerConnection
 from neural_sp.models.modules.transformer import PositionwiseFeedForward
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
+from neural_sp.models.torch_utils import tensor2np
+from neural_sp.utils import mkdir_join
+
+import matplotlib
+matplotlib.use('Agg')
 
 logger = logging.getLogger("training")
 
@@ -36,10 +43,10 @@ class TransformerEncoder(nn.Module):
                    the first-layer of the PositionwiseFeedForward
         d_ff (int): dimension of the second layer of the PositionwiseFeedForward
         pe_type (str): concat or add or learn or False
+        layer_norm_eps (float):
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
-        layer_norm_eps (float):
         last_proj_dim (int): dimension of the last projection layer
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
@@ -62,11 +69,11 @@ class TransformerEncoder(nn.Module):
                  n_layers,
                  d_model,
                  d_ff,
-                 pe_type,
+                 pe_type='add',
+                 layer_norm_eps=1e-6,
                  dropout_in=0,
                  dropout=0,
                  dropout_att=0,
-                 layer_norm_eps=1e-6,
                  last_proj_dim=0,
                  n_stacks=1,
                  n_splices=1,
@@ -123,14 +130,14 @@ class TransformerEncoder(nn.Module):
                                   dropout=0)  # NOTE: do not apply dropout here
 
         if pe_type:
-            self.pos_emb = PositionalEncoding(d_model, dropout_in, pe_type)
+            self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
         self.norm_in = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         # Self-attention layers
         self.layers = nn.ModuleList(
             [TransformerEncoderBlock(d_model, d_ff, attn_type, attn_n_heads,
                                      dropout, dropout_att, layer_norm_eps) for l in range(n_layers)])
-        self.norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if last_proj_dim != self.output_dim:
             self.bridge = LinearND(self._output_dim, last_proj_dim, dropout=dropout)
@@ -191,12 +198,14 @@ class TransformerEncoder(nn.Module):
 
         # Positional encoding & layer normalization
         if self.pe_type:
-            xs = self.pos_emb(xs)
+            xs = self.pos_enc(xs)
         xs = self.norm_in(xs)
 
-        for i in range(len(self.layers)):
-            xs, xx_aw = self.layers[i](xs, xlens)
-        xs = self.norm_top(xs)
+        for l in range(len(self.layers)):
+            xs, xx_aws = self.layers[l](xs, xlens)
+            if not self.training:
+                setattr(self, 'xx_aws_layer%d' % l, tensor2np(xx_aws))
+        xs = self.norm_out(xs)
 
         # Bridge layer
         if self.bridge is not None:
@@ -205,6 +214,36 @@ class TransformerEncoder(nn.Module):
         eouts['ys']['xs'] = xs
         eouts['ys']['xlens'] = xlens
         return eouts
+
+    def _plot_attention(self, save_path):
+        """Plot attention for each head in all layers."""
+        from matplotlib import pyplot as plt
+        from matplotlib.ticker import MaxNLocator
+
+        save_path = mkdir_join(save_path, 'enc_xx_att_weights')
+
+        # Clean directory
+        if save_path is not None and os.path.isdir(save_path):
+            shutil.rmtree(save_path)
+            os.mkdir(save_path)
+
+        for l in range(self.n_layers):
+            xx_aws = getattr(self, 'xx_aws_layer%d' % l)
+
+            plt.clf()
+            fig, axes = plt.subplots(self.n_heads // 4, 4, figsize=(20, 8))
+            for h in range(self.n_heads):
+                ax = axes[h // 4, h % 4]
+                ax.imshow(xx_aws[0, h, :, :], aspect="auto")
+                ax.grid(False)
+                ax.set_xlabel("Input (head%d)" % h)
+                ax.set_ylabel("Output (head%d)" % h)
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+            fig.tight_layout()
+            fig.savefig(os.path.join(save_path, 'layer' + str(l) + '.png'), dvi=500)
+            plt.close()
 
 
 class TransformerEncoderBlock(nn.Module):
@@ -254,14 +293,14 @@ class TransformerEncoderBlock(nn.Module):
             xlens (list): `[B]`
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
-            xx_aw (FloatTensor):
+            xx_aws (FloatTensor): `[B, T, T]`
 
         """
         # self-attention
-        xs, xx_aw = self.add_norm_self_attn(xs, sublayer=lambda xs: self.self_attn(
-            key=xs, key_lens=xlens, value=xs, query=xs))
+        xs, xx_aws = self.add_norm_self_attn(xs, sublayer=lambda xs: self.self_attn(
+            key=xs, klens=xlens, value=xs, query=xs))
         self.self_attn.reset()
 
         # position-wise feed-forward
         xs = self.add_norm_ff(xs, sublayer=lambda xs: self.ff(xs))
-        return xs, xx_aw
+        return xs, xx_aws
