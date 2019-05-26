@@ -313,6 +313,15 @@ class TransformerDecoder(nn.Module):
             else:
                 loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
                                        ignore_index=self.pad, size_average=False) / bs
+
+            # Focal loss
+            if self.fl_weight > 0:
+                fl = focal_loss(logits, ys_out_pad,
+                                ylens=[y.size(0) for y in ys_out],
+                                alpha=self.fl_weight,
+                                gamma=self.fl_gamma,
+                                size_average=False) / bs
+                loss = loss * (1 - self.fl_weight) + fl * self.fl_weight
         else:
             loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
                                          ys_out_pad.view(-1)).loss

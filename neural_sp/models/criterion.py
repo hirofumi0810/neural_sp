@@ -105,13 +105,14 @@ def kldiv_lsm_ctc(logits, ylens, size_average=False):
     return loss
 
 
-def focal_loss(logits, ys, ylens, gamma, size_average=False):
+def focal_loss(logits, ys, ylens, alpha, gamma, size_average=False):
     """Compute focal loss.
 
     Args:
         logits (FloatTensor): `[B, T, vocab]`
         ys (LongTensor): Indices of labels. `[B, L]`
         ylens (list): A list of length `[B]`
+        alpha (float):
         gamma (float):
         size_average (bool):
     Returns:
@@ -120,17 +121,11 @@ def focal_loss(logits, ys, ylens, gamma, size_average=False):
     """
     bs = ys.size(0)
 
-    # Create one-hot vector
-    ys_onehot = to_onehot(ys, vocab=logits.size(-1), ylens=ylens)
-
-    raise ValueError
-
     # Compute focal loss
     log_probs = F.log_softmax(logits, dim=-1)
-    probs = F.softmax(logits, dim=-1)
-    ones = torch.ones_like(log_probs)
-    loss = np.sum([(- ys_onehot[b, :ylens[b]] * log_probs[b, :ylens[b]] * torch.pow(ones[b, :ylens[b]] - probs[b, :ylens[b]], gamma)).sum()
-                   for b in range(bs)])
+    probs_inv = -F.softmax(logits, dim=-1) + 1
+    fl = - alpha * torch.mul(torch.pow(probs_inv, gamma), log_probs)
+    loss = np.sum([fl[b, :ylens[b]].sum() for b in range(bs)])
     if size_average:
         loss /= bs
     return loss

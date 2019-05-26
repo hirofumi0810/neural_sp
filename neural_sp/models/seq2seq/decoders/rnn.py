@@ -610,7 +610,9 @@ class RNNDecoder(nn.Module):
             if self.fl_weight > 0:
                 fl = focal_loss(logits, ys_out_pad,
                                 ylens=[y.size(0) for y in ys_out],
-                                gamma=self.fl_gamma, size_average=False) / bs
+                                alpha=self.fl_weight,
+                                gamma=self.fl_gamma,
+                                size_average=False) / bs
                 loss = loss * (1 - self.fl_weight) + fl * self.fl_weight
         else:
             loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
