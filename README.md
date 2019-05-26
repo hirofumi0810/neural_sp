@@ -88,7 +88,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### WSJ (WER)
 | model                            | test_dev93 | test_eval92 |
 | -------------------------------- | ---------- | ----------- |
-| BPE1k attn + conv + CTC + RNNLM  | 9.6        | 6.9         |
+| BPE1k attn + conv + CTC + RNNLM  | 9.2        | 6.6         |
 
 ### CSJ (WER/CER)
 | model                                         | eval1   | eval2   | eval3   |

@@ -6,9 +6,10 @@ Char attention + conv       | 15.0       | 11.3        | 12.8       | 9.4       
 Char attention + conv + CTC | 15.0       | 12.3        | 12.8       | 10.2        |
 
 
-                             |          no LM           |           RNNLM          |
-                             | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
-BPE1k attention              | 14.4       | 12.0        | 11.4       | 9.5         |
-BPE1k attention + CTC        | 14.4       | 11.3        | 11.2       | 8.8         |
-BPE1k attention + conv       | 14.7       | 11.6        | 10.8       | 8.2         |
-BPE1k attention + conv + CTC | 12.9       | 10.6        | 9.6        | 6.9         |
+                                                   |          no LM           |           RNNLM          |
+                                                   | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
+BPE1k attention                                    | 14.4       | 12.0        | 11.4       | 9.5         |
+BPE1k attention + CTC                              | 14.4       | 11.3        | 11.2       | 8.8         |
+BPE1k attention + conv                             | 14.7       | 11.6        | 10.8       | 8.2         |
+BPE1k attention + conv + CTC                       | 12.9       | 10.6        | 9.6        | 6.9         |
+BPE1k attention + conv + CTC + deep RNNLM (2L->4L) | 12.9       | 10.6        | 9.2        | 6.6         |
