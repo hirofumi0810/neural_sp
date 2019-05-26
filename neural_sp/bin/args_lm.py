@@ -156,8 +156,8 @@ def parse():
                         help='')
     parser.add_argument('--transformer_n_layers', type=int, default=12,
                         help='number of encoder Transformer layers')
-    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot_product',
-                        choices=['scaled_dot_product', 'average'],
+    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
+                        choices=['scaled_dot', 'add', 'average'],
                         help='type of attention for transformer')
     parser.add_argument('--transformer_attn_n_heads', type=int, default=8,
                         help='number of heads in the self-attention layer')

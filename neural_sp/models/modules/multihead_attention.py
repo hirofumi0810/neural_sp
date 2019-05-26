@@ -68,6 +68,8 @@ class MultiheadAttentionMechanism(nn.Module):
             self.w_value = LinearND(key_dim, attn_dim, bias=False)
             self.w_query = LinearND(query_dim, attn_dim, bias=False)
             self.v = LinearND(attn_dim, n_heads, bias=False)
+        else:
+            raise NotImplementedError(attn_type)
 
         self.w_out = LinearND(attn_dim, key_dim)
 
@@ -88,7 +90,7 @@ class MultiheadAttentionMechanism(nn.Module):
             diagonal (bool): for Transformer decoder to hide future information
         Returns:
             cv (FloatTensor): `[B, qlen, value_dim]`
-            aw (FloatTensor): `[B, klen, n_heads]`
+            aw (FloatTensor): `[B, n_heads, qlen, klen]`
 
         """
         bs, klen = key.size()[: 2]
@@ -131,8 +133,5 @@ class MultiheadAttentionMechanism(nn.Module):
         cv = torch.matmul(aw, self.value)  # `[B, n_heads, qlen, d_k]`
         cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
         cv = self.w_out(cv)
-
-        aw = aw.permute(0, 3, 1, 2)[:, :, :, 0]
-        # TODO(hirofumi): fix for Transformer
 
         return cv, aw
