@@ -41,7 +41,7 @@ def load_config(config_path):
 
     """
     with open(config_path, "r") as f:
-        conf = yaml.load(f)
+        conf = yaml.load(f, Loader=yaml.FullLoader)
 
     params = conf['param']
     return params
