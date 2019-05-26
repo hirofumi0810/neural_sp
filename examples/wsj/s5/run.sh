@@ -74,6 +74,7 @@ warmup_n_steps=4000
 ### initialization
 param_init=0.1
 pretrained_model=
+teacher=
 ### regularization
 clip_grad_norm=5.0
 dropout_in=0.0
@@ -134,7 +135,7 @@ lm_param_init_dist=uniform
 lm_pretrained_model=
 # regularization
 lm_clip_grad_norm=1.0
-lm_dropout_hidden=0.5
+lm_dropout_hidden=0.2
 lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_weight_decay=1e-6
@@ -438,6 +439,7 @@ if [ ${stage} -le 4 ]; then
         --warmup_n_steps ${warmup_n_steps} \
         --param_init ${param_init} \
         --pretrained_model ${pretrained_model} \
+        --teacher ${teacher} \
         --clip_grad_norm ${clip_grad_norm} \
         --dropout_in ${dropout_in} \
         --dropout_enc ${dropout_enc} \
