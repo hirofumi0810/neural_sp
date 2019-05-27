@@ -58,7 +58,7 @@ ctc_fc_list="512"
 ### optimization
 batch_size=50
 optimizer=adam
-learning_rate=1e-3
+learning_rate=1e-4
 n_epochs=25
 convert_to_sgd_epoch=25
 print_step=500
