@@ -215,6 +215,10 @@ def main():
             hidden = model.module.repackage_hidden(hidden)
         reporter.step(is_eval=False)
 
+        # Update learning rate
+        if step < args.warmup_n_steps:
+            model.module.optimizer = lr_controller.warmup(model.module.optimizer, step=step)
+
         if step % args.print_step == 0:
             # Compute loss in the dev set
             ys_dev = dev_set.next()[0]
