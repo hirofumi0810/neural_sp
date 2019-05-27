@@ -42,7 +42,7 @@ class Seq2seq(ModelBase):
 
         self.save_path = save_path
 
-        # for encoder
+        # for encoder, decoder
         self.input_type = args.input_type
         self.input_dim = args.input_dim
         self.n_stacks = args.n_stacks
@@ -52,14 +52,12 @@ class Seq2seq(ModelBase):
         self.enc_n_units = args.enc_n_units
         if args.enc_type in ['blstm', 'bgru', 'conv_blstm', 'conv_bgru']:
             self.enc_n_units *= 2
+        self.dec_type = args.dec_type
 
         # for OOV resolution
         self.enc_n_layers = args.enc_n_layers
         self.enc_n_layers_sub1 = args.enc_n_layers_sub1
         self.subsample = [int(s) for s in args.subsample.split('_')]
-
-        # for attention layer
-        self.attn_n_heads = args.attn_n_heads
 
         # for decoder
         self.vocab = args.vocab
@@ -541,7 +539,7 @@ class Seq2seq(ModelBase):
 
     def plot_attention(self):
         if 'transformer' in self.enc_type:
-            self.enc_fwd._plot_attention(self.save_path)
+            self.enc._plot_attention(self.save_path)
         if 'transformer' in self.dec_type:
             self.dec_fwd._plot_attention(self.save_path)
 
