@@ -13,6 +13,7 @@ from __future__ import print_function
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 
@@ -110,7 +111,7 @@ class PositionwiseFeedForward(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs):
-        return self.w_2(self.dropout(torch.relu(self.w_1(xs))))
+        return self.w_2(self.dropout(F.relu(self.w_1(xs))))
 
 
 class TransformerEncoderBlock(nn.Module):

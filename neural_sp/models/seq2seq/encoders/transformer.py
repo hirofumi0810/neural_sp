@@ -207,7 +207,7 @@ class TransformerEncoder(nn.Module):
         eouts['ys']['xlens'] = xlens
         return eouts
 
-    def _plot_attention(self, save_path, n_cols=8):
+    def _plot_attention(self, save_path, n_cols=2):
         """Plot attention for each head in all layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator

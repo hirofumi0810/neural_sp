@@ -37,6 +37,7 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
+from neural_sp.models.lm.lm import select_lm
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.models.seq2seq.skip_thought import SkipThought
 from neural_sp.utils import mkdir_join
@@ -194,7 +195,7 @@ def main():
         # Set optimizer
         epoch = int(args.resume.split('-')[-1])
         model.set_optimizer(optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] + 1 else conf['optimizer'],
-                            learning_rate=float(conf['learning_rate']),  # on-the-fly
+                            lr=float(conf['learning_rate']),  # on-the-fly
                             weight_decay=float(conf['weight_decay']))
 
         # Restore the last saved model
@@ -207,7 +208,7 @@ def main():
         # Resume between convert_to_sgd_epoch and convert_to_sgd_epoch + 1
         if epoch == conf['convert_to_sgd_epoch'] + 1:
             model.set_optimizer(optimizer='sgd',
-                                learning_rate=args.learning_rate,
+                                lr=args.learning_rate,
                                 weight_decay=float(conf['weight_decay']))
             logger.info('========== Convert to SGD ==========')
     else:
@@ -260,7 +261,7 @@ def main():
         # Set optimizer
         model.set_optimizer(
             optimizer=args.optimizer,
-            learning_rate=float(args.learning_rate),
+            lr=float(args.learning_rate),
             weight_decay=float(args.weight_decay),
             transformer='transformer' in args.enc_type or args.dec_type == 'transformer')
 
@@ -268,7 +269,7 @@ def main():
         metric_dev_best = 10000
 
         # Set learning rate controller
-        lr_controller = Controller(learning_rate=float(args.learning_rate),
+        lr_controller = Controller(lr=float(args.learning_rate),
                                    decay_type=args.decay_type,
                                    decay_start_epoch=args.decay_start_epoch,
                                    decay_rate=args.decay_rate,
@@ -276,25 +277,35 @@ def main():
                                    lower_better=True,
                                    best_value=metric_dev_best,
                                    model_size=args.d_model,
-                                   warmup_start_learning_rate=args.warmup_start_learning_rate,
+                                   warmup_start_lr=args.warmup_start_learning_rate,
                                    warmup_n_steps=args.warmup_n_steps,
-                                   lr_init_factor=10,
+                                   lr_factor=args.learning_rate_factor,
                                    transformer='transformer' in args.enc_type or args.dec_type == 'transformer')
 
     train_set.epoch = epoch - 1  # start from index:0
 
+    # Load the teacher ASR model
     if args.teacher and os.path.isfile(args.teacher):
-        # Load the teacher ASR model
         conf_teacher = load_config(os.path.join(os.path.dirname(args.teacher), 'conf.yml'))
         for k, v in conf_teacher.items():
             setattr(args_teacher, k, v)
         # Setting for knowledge distillation
         args_teacher.ss_prob = 0
         args.lsm_prob = 0
-        model_teacher = Seq2seq(args_teacher)
-        model_teacher, _ = load_checkpoint(model_teacher, args.teacher)
+        teacher = Seq2seq(args_teacher)
+        teacher, _ = load_checkpoint(teacher, args.teacher)
+
+        # Load the teacher LM
+        if args.teacher_lm and os.path.isfile(args.teacher_lm):
+            conf_lm = load_config(os.path.join(os.path.dirname(args.teacher_lm), 'conf.yml'))
+            args_lm = argparse.Namespace()
+            for k, v in conf_lm.items():
+                setattr(args_lm, k, v)
+            teacher_lm = select_lm(args_lm)
+            teacher_lm, _ = load_checkpoint(teacher_lm, args.teacher_lm)
     else:
-        model_teacher = None
+        teacher = None
+        teacher_lm = None
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -303,8 +314,10 @@ def main():
                                    deterministic=False,
                                    benchmark=True)
         model.cuda()
-        if model_teacher is not None:
-            model_teacher.cuda()
+        if teacher is not None:
+            teacher.cuda()
+        if teacher_lm is not None:
+            teacher_lm.cuda()
 
     logger.info('PID: %s' % os.getpid())
     logger.info('USERNAME: %s' % os.uname()[1])
@@ -356,7 +369,7 @@ def main():
                                        reporter=reporter)
             else:
                 loss, reporter = model(batch_train, reporter=reporter, task=task,
-                                       teacher=model_teacher)
+                                       teacher=teacher, teacher_lm=teacher_lm)
             loss /= args.accum_grad_n_steps
             if len(model.device_ids) > 1:
                 loss.backward(torch.ones(len(model.device_ids)))
@@ -414,7 +427,7 @@ def main():
         # Save fugures of loss and accuracy
         if step % (args.print_step * 10) == 0:
             reporter.snapshot()
-            model.plot_attention()
+            model.module.plot_attention()
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
@@ -520,9 +533,9 @@ def main():
                 # Convert to fine-tuning stage
                 if epoch == args.convert_to_sgd_epoch:
                     model.module.set_optimizer('sgd',
-                                               learning_rate=args.learning_rate,
+                                               lr=args.learning_rate,
                                                weight_decay=float(args.weight_decay))
-                    lr_controller = Controller(learning_rate=args.learning_rate,
+                    lr_controller = Controller(lr=args.learning_rate,
                                                decay_type='epoch',
                                                decay_start_epoch=epoch,
                                                decay_rate=0.5,
@@ -561,7 +574,8 @@ def make_model_name(args, subsample_factor):
             dir_name += 'res'
         dir_name += tmp
     if 'transformer' in args.enc_type:
-        dir_name += str(args.d_model) + 'H'
+        dir_name += str(args.d_model) + 'dmodel'
+        dir_name += str(args.d_ff) + 'dff'
         dir_name += str(args.transformer_enc_n_layers) + 'L'
     else:
         dir_name += str(args.enc_n_units) + 'H'
@@ -582,7 +596,8 @@ def make_model_name(args, subsample_factor):
     if args.ctc_weight < 1:
         dir_name += '_' + args.dec_type
         if args.dec_type == 'transformer':
-            dir_name += str(args.d_model) + 'H'
+            dir_name += str(args.d_model) + 'dmodel'
+            dir_name += str(args.d_ff) + 'dff'
             dir_name += str(args.transformer_dec_n_layers) + 'L'
             dir_name += '_' + args.transformer_attn_type
         else:
@@ -667,6 +682,8 @@ def make_model_name(args, subsample_factor):
     # knowledge distillation
     if args.teacher:
         dir_name += '_distillation'
+    if args.teacher_lm:
+        dir_name += '_lm'
 
     return dir_name
 

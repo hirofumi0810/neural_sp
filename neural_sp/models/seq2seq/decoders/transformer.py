@@ -458,7 +458,7 @@ class TransformerDecoder(nn.Module):
             # TODO(hirofumi): add decoding paramters
         return best_hyps
 
-    def _plot_attention(self, save_path, n_cols=8):
+    def _plot_attention(self, save_path, n_cols=2):
         """Plot attention for each head in all layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator

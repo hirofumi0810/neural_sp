@@ -17,7 +17,7 @@ class Controller(object):
     """Controll learning rate per epoch.
 
     Args:
-        learning_rate (float): learning rate
+        lr (float): learning rate
         decay_type (str): epoch or metric
         decay_start_epoch (int): the epoch to start decay
         decay_rate (float): the rate to decay the current learning rate
@@ -27,19 +27,19 @@ class Controller(object):
             If False, the higher, the better.
         best_value (float): the worst value of evaluation metric
         model_size (int):
-        warmup_start_learning_rate (float):
+        warmup_start_lr (float):
         warmup_n_steps (int):
-        lr_init_factor (float):
+        lr_factor (float):
         transformer (bool):
 
     """
 
-    def __init__(self, learning_rate, decay_type, decay_start_epoch, decay_rate,
+    def __init__(self, lr, decay_type, decay_start_epoch, decay_rate,
                  decay_patient_n_epochs=0, lower_better=True, best_value=10000,
-                 model_size=1, warmup_start_learning_rate=0, warmup_n_steps=4000,
-                 lr_init_factor=1, transformer=False):
+                 model_size=1, warmup_start_lr=0, warmup_n_steps=4000,
+                 lr_factor=1, transformer=False):
 
-        self.lr_max = learning_rate
+        self.lr_max = lr
         self.decay_type = decay_type
         self.decay_start_epoch = decay_start_epoch
         self.decay_rate = decay_rate
@@ -53,13 +53,13 @@ class Controller(object):
         if transformer:
             self.decay_type = 'warmup'
             assert warmup_n_steps > 0
-            self.lr_init = lr_init_factor * (model_size ** -0.5)
+            self.lr_init = lr_factor * (model_size ** -0.5)
         else:
-            if warmup_start_learning_rate > 0 and warmup_n_steps > 0:
-                self.lr_init = warmup_start_learning_rate
+            if warmup_start_lr > 0 and warmup_n_steps > 0:
+                self.lr_init = warmup_start_lr
             else:
-                self.lr_init = learning_rate
-        self.warmup_start_lr = warmup_start_learning_rate
+                self.lr_init = lr
+        self.warmup_start_lr = warmup_start_lr
         self.warmup_n_steps = warmup_n_steps
 
         self.lr = self.lr_init
@@ -132,8 +132,8 @@ class Controller(object):
             self.lr = (self.lr_max - self.warmup_start_lr) / self.warmup_n_steps * step + self.lr_init
         else:
             # based on the original transformer paper
-            self.lr = self.lr_init * min(step ** -0.5,
-                                         step * (self.warmup_n_steps ** -1.5))
+            self.lr = self.lr_init * min(step ** (-0.5),
+                                         step * (self.warmup_n_steps ** (-1.5)))
 
         # Update optimizer
         for param_group in optimizer.param_groups:

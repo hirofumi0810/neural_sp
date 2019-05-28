@@ -107,7 +107,7 @@ def main():
         # Set optimizer
         epoch = int(args.resume.split('-')[-1])
         model.set_optimizer(optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] + 1 else conf['optimizer'],
-                            learning_rate=float(conf['learning_rate']),  # on-the-fly
+                            lr=float(conf['learning_rate']),  # on-the-fly
                             weight_decay=float(conf['weight_decay']))
 
         # Restore the last saved model
@@ -120,7 +120,7 @@ def main():
         # Resume between convert_to_sgd_epoch and convert_to_sgd_epoch + 1
         if epoch == conf['convert_to_sgd_epoch'] + 1:
             model.set_optimizer(optimizer='sgd',
-                                learning_rate=args.learning_rate,
+                                lr=args.learning_rate,
                                 weight_decay=float(conf['weight_decay']))
             logger.info('========== Convert to SGD ==========')
     else:
@@ -146,7 +146,7 @@ def main():
 
         # Set optimizer
         model.set_optimizer(optimizer=args.optimizer,
-                            learning_rate=float(args.learning_rate),
+                            lr=float(args.learning_rate),
                             weight_decay=float(args.weight_decay),
                             transformer=args.lm_type == 'transformer')
 
@@ -154,7 +154,7 @@ def main():
         ppl_dev_best = 10000
 
         # Set learning rate controller
-        lr_controller = Controller(learning_rate=float(args.learning_rate),
+        lr_controller = Controller(lr=float(args.learning_rate),
                                    decay_type=args.decay_type,
                                    decay_start_epoch=args.decay_start_epoch,
                                    decay_rate=args.decay_rate,
@@ -162,9 +162,9 @@ def main():
                                    lower_better=True,
                                    best_value=ppl_dev_best,
                                    model_size=args.d_model,
-                                   warmup_start_learning_rate=args.warmup_start_learning_rate,
+                                   warmup_start_lr=args.warmup_start_learning_rate,
                                    warmup_n_steps=args.warmup_n_steps,
-                                   lr_init_factor=10,
+                                   lr_factor=args.learning_rate_factor,
                                    transformer=args.lm_type == 'transformer')
 
     train_set.epoch = epoch - 1  # start from index:0
@@ -296,9 +296,9 @@ def main():
                 # Convert to fine-tuning stage
                 if epoch == args.convert_to_sgd_epoch:
                     model.module.set_optimizer('sgd',
-                                               learning_rate=args.learning_rate,
+                                               lr=args.learning_rate,
                                                weight_decay=float(args.weight_decay))
-                    lr_controller = Controller(learning_rate=args.learning_rate,
+                    lr_controller = Controller(lr=args.learning_rate,
                                                decay_type='epoch',
                                                decay_start_epoch=epoch,
                                                decay_rate=0.5,
@@ -329,22 +329,25 @@ def make_model_name(args):
     if args.lm_type == 'transformer':
         dir_name += str(args.d_model) + 'dmodel'
         dir_name += str(args.d_ff) + 'dff'
-        dir_name += str(args.transformer_n_layers) + 'L'
+        dir_name += str(args.n_layers) + 'L'
+        dir_name += str(args.attn_n_heads) + 'head'
     elif 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
         dir_name += str(args.n_units) + 'H'
         dir_name += str(args.n_projs) + 'P'
         dir_name += str(args.n_layers) + 'L'
-    dir_name += '_emb' + str(args.emb_dim)
+    if args.lm_type != 'transformer':
+        dir_name += '_emb' + str(args.emb_dim)
     dir_name += '_' + args.optimizer
     dir_name += '_lr' + str(args.learning_rate)
     dir_name += '_bs' + str(args.batch_size)
     dir_name += '_bptt' + str(args.bptt)
     if args.tie_embedding:
         dir_name += '_tie'
-    if args.residual:
-        dir_name += '_residual'
-    if args.use_glu:
-        dir_name += '_glu'
+    if 'gated_conv' not in args.lm_type and args.lm_type != 'transformer':
+        if args.residual:
+            dir_name += '_residual'
+        if args.use_glu:
+            dir_name += '_glu'
     if args.backward:
         dir_name += '_bwd'
     if args.serialize:
@@ -353,6 +356,8 @@ def make_model_name(args):
         dir_name += '_' + str(args.min_n_tokens) + 'tokens'
     if args.adaptive_softmax:
         dir_name += '_adaptiveSM'
+    if args.warmup_n_steps > 0:
+        dir_name += '_warmpup' + str(args.warmup_n_steps)
     return dir_name
 
 

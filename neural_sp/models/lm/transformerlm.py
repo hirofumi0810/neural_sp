@@ -44,8 +44,8 @@ class TransformerLM(LMBase):
         self.d_model = args.d_model
         self.d_ff = args.d_ff
         self.pe_type = args.pe_type
-        self.n_layers = args.transformer_n_layers
-        self.n_heads = args.transformer_attn_n_heads
+        self.n_layers = args.n_layers
+        self.n_heads = args.attn_n_heads
         self.tie_embedding = args.tie_embedding
 
         self.vocab = args.vocab
@@ -63,15 +63,14 @@ class TransformerLM(LMBase):
         self.cache_attn = []
 
         self.embed = Embedding(vocab=self.vocab,
-                               emb_dim=args.d_model,
+                               emb_dim=self.d_model,
                                dropout=0,  # NOTE: do not apply dropout here
                                ignore_index=self.pad)
         self.pos_enc = PositionalEncoding(args.d_model, args.dropout_emb, args.pe_type)
 
         self.layers = nn.ModuleList(
             [TransformerDecoderBlock(args.d_model, args.d_ff,
-                                     args.transformer_attn_type,
-                                     args.transformer_attn_n_heads,
+                                     args.attn_type, args.attn_n_heads,
                                      args.dropout_hidden, args.dropout_att, args.layer_norm_eps,
                                      src_attention=False)
              for _ in range(self.n_layers)])
@@ -86,7 +85,7 @@ class TransformerLM(LMBase):
             self.output = None
         else:
             self.adaptive_softmax = None
-            self.output = LinearND(args.d_model, self.vocab)
+            self.output = LinearND(self.d_model, self.vocab)
 
             # Optionally tie weights as in:
             # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -129,11 +128,10 @@ class TransformerLM(LMBase):
             hidden: dummy
 
         """
-        # Positional encoding
+        ylens = [ys_emb.size(1) - 1] * ys_emb.size(0)
+
         ys_emb = ys_emb * (self.d_model ** 0.5)
         ys_emb = self.pos_enc(ys_emb)
-
-        ylens = [ys_emb.size(1) - 1] * ys_emb.size(0)
         for l in range(self.n_layers):
             ys_emb, yy_aws, _ = self.layers[l](ys_emb, ylens)
             if not self.training:
@@ -142,7 +140,7 @@ class TransformerLM(LMBase):
 
         return ys_emb, hidden
 
-    def plot_attention(self, n_cols=8):
+    def plot_attention(self, n_cols=4):
         """Plot attention for each head in all layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator

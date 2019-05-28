@@ -177,6 +177,8 @@ def parse():
                         help='type of optimizer')
     parser.add_argument('--learning_rate', type=float, default=1e-3,
                         help='initial learning rate')
+    parser.add_argument('--learning_rate_factor', type=float, default=10,
+                        help='factor of learning rate for Transformer')
     parser.add_argument('--eps', type=float, default=1e-6,
                         help='')
     parser.add_argument('--n_epochs', type=int, default=25,
@@ -205,9 +207,9 @@ def parse():
                         help='first epoch to start evalaution')
     parser.add_argument('--warmup_start_learning_rate', type=float, default=0,
                         help='initial learning rate for learning rate warm up')
-    parser.add_argument('--warmup_n_steps', type=int, default=4000,
+    parser.add_argument('--warmup_n_steps', type=int, default=0,
                         help='number of steps to warm up learing rate')
-    parser.add_argument('--accum_n_steps', type=int, default=1,
+    parser.add_argument('--accum_grad_n_steps', type=int, default=1,
                         help='number of steps to accumulate gradients')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
@@ -218,6 +220,8 @@ def parse():
                         help='')
     # knowledge distillation
     parser.add_argument('--teacher', default=False, nargs='?',
+                        help='')
+    parser.add_argument('--teacher_lm', default=False, nargs='?',
                         help='')
     parser.add_argument('--distillation_temperature', type=float, default=1.0,
                         help='')

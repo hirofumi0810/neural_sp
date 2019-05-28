@@ -59,7 +59,7 @@ def parse():
                         help='number of units in the projection layer')
     parser.add_argument('--n_layers', type=int, default=5,
                         help='number of layers')
-    parser.add_argument('--emb_dim', type=int, default=5,
+    parser.add_argument('--emb_dim', type=int, default=1024,
                         help='number of dimensions in the embedding layer')
     parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
                         help='Tie input and output embedding')
@@ -77,6 +77,8 @@ def parse():
                         help='type of optimizer')
     parser.add_argument('--learning_rate', type=float, default=1e-3,
                         help='initial learning rate')
+    parser.add_argument('--learning_rate_factor', type=float, default=1,
+                        help='factor of learning rate for Transformer')
     parser.add_argument('--eps', type=float, default=1e-6,
                         help='')
     parser.add_argument('--n_epochs', type=int, default=50,
@@ -102,7 +104,7 @@ def parse():
                         help='first epoch to start evalaution')
     parser.add_argument('--warmup_start_learning_rate', type=float, default=0,
                         help='initial learning rate for learning rate warm up')
-    parser.add_argument('--warmup_n_steps', type=int, default=4000,
+    parser.add_argument('--warmup_n_steps', type=int, default=0,
                         help='number of steps to warm up learing rate')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
@@ -154,12 +156,10 @@ def parse():
                         help='')
     parser.add_argument('--d_ff', type=int, default=2048,
                         help='')
-    parser.add_argument('--transformer_n_layers', type=int, default=12,
-                        help='number of encoder Transformer layers')
-    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
+    parser.add_argument('--attn_type', type=str, default='scaled_dot',
                         choices=['scaled_dot', 'add', 'average'],
                         help='type of attention for transformer')
-    parser.add_argument('--transformer_attn_n_heads', type=int, default=8,
+    parser.add_argument('--attn_n_heads', type=int, default=8,
                         help='number of heads in the self-attention layer')
     parser.add_argument('--pe_type', type=str, default='add',
                         choices=['add', 'concat', 'learned_add', 'learned_concat', False],
