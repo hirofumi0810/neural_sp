@@ -66,6 +66,7 @@ learning_rate=1e-3
 n_epochs=25
 convert_to_sgd_epoch=20
 print_step=200
+metric=edit_distance
 decay_type=epoch
 decay_start_epoch=10
 decay_rate=0.85
@@ -226,44 +227,46 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
 fi
 
 # main
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+# dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
+# wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+dict=${data}/dict/train_all_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
+wp_model=${data}/dict/train_all_${wp_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2, main)                  "
     echo ============================================================================
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict}
-    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
-    offset=$(cat ${dict} | wc -l)
-    if [ ${unit} = wp ]; then
-        cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
-            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
-        # NOTE: sort by frequency
-    else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
-    fi
-    echo "vocab size:" $(cat ${dict} | wc -l)
-
-    # Compute OOV rate
-    if [ ${unit} = word ]; then
-        mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
-        echo "OOV rate:" > ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
-        for x in ${train_set} ${dev_set} ${test_set}; do
-            cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-                > ${data}/dict/word_count/${x}_${data_size}.txt || exit 1;
-            compute_oov_rate.py ${data}/dict/word_count/${x}_${data_size}.txt ${dict} ${x} \
-                >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
-        done
-        cat ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
-    fi
+    # echo "Making a dictionary..."
+    # echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
+    # echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
+    # echo "<pad> 3" >> ${dict}
+    # [ ${unit} = char ] && echo "<space> 4" >> ${dict}
+    # offset=$(cat ${dict} | wc -l)
+    # if [ ${unit} = wp ]; then
+    #     cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    #     spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
+        #         --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
+    #     spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+        #         sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
+    #     # NOTE: sort by frequency
+    # else
+    #     text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} | \
+        #         awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+    # fi
+    # echo "vocab size:" $(cat ${dict} | wc -l)
+    #
+    # # Compute OOV rate
+    # if [ ${unit} = word ]; then
+    #     mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
+    #     echo "OOV rate:" > ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
+    #     for x in ${train_set} ${dev_set} ${test_set}; do
+    #         cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+        #             > ${data}/dict/word_count/${x}_${data_size}.txt || exit 1;
+    #         compute_oov_rate.py ${data}/dict/word_count/${x}_${data_size}.txt ${dict} ${x} \
+        #             >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
+    #     done
+    #     cat ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
+    # fi
 
     echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
@@ -281,31 +284,33 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
 fi
 
 # sub1
-dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
-wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}
+# dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
+# wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_size_sub1}
+dict_sub1=${data}/dict/train_all_${unit_sub1}${wp_type_sub1}${vocab_size_sub1}.txt
+wp_model_sub1=${data}/dict/train_all_${wp_type_sub1}${vocab_size_sub1}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit_sub1}${wp_type_sub1}${vocab_size_sub1} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2, sub1)                  "
     echo ============================================================================
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict_sub1}
-    [ ${unit_sub1} = char ] && echo "<space> 4" >> ${dict_sub1}
-    offset=$(cat ${dict_sub1} | wc -l)
-    if [ ${unit_sub1} = wp ]; then
-        cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} \
-            --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
-        # NOTE: sort by frequency
-    else
-        text2dict.py ${data}/${train_set}/text --unit ${unit_sub1} --vocab_size ${vocab_size_sub1} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
-    fi
-    echo "vocab size:" $(cat ${dict_sub1} | wc -l)
+    # echo "Making a dictionary..."
+    # echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
+    # echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
+    # echo "<pad> 3" >> ${dict_sub1}
+    # [ ${unit_sub1} = char ] && echo "<space> 4" >> ${dict_sub1}
+    # offset=$(cat ${dict_sub1} | wc -l)
+    # if [ ${unit_sub1} = wp ]; then
+    #     cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+    #     spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size_sub1} \
+        #         --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
+    #     spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
+        #         sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1}
+    #     # NOTE: sort by frequency
+    # else
+    #     text2dict.py ${data}/${train_set}/text --unit ${unit_sub1} --vocab_size ${vocab_size_sub1} | \
+        #         awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
+    # fi
+    # echo "vocab size:" $(cat ${dict_sub1} | wc -l)
 
     echo "Making dataset tsv files for ASR ..."
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
@@ -385,6 +390,7 @@ if [ ${stage} -le 4 ]; then
         --n_epochs ${n_epochs} \
         --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
         --print_step ${print_step} \
+        --metric ${metric} \
         --decay_type ${decay_type} \
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \

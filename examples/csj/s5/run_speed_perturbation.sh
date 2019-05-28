@@ -61,6 +61,7 @@ learning_rate=1e-3
 n_epochs=20
 convert_to_sgd_epoch=15
 print_step=600
+metric=edit_distance
 decay_type=epoch
 decay_start_epoch=5
 decay_rate=0.8
@@ -321,6 +322,7 @@ if [ ${stage} -le 4 ]; then
         --n_epochs ${n_epochs} \
         --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
         --print_step ${print_step} \
+        --metric ${metric} \
         --decay_type ${decay_type} \
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \
