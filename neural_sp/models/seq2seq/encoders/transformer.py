@@ -207,7 +207,7 @@ class TransformerEncoder(nn.Module):
         eouts['ys']['xlens'] = xlens
         return eouts
 
-    def _plot_attention(self, save_path, n_cols=2):
+    def _plot_attention(self, save_path, n_cols=2, n_figures=2):
         """Plot attention for each head in all layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
@@ -222,20 +222,21 @@ class TransformerEncoder(nn.Module):
         for l in range(self.n_layers):
             xx_aws = getattr(self, 'xx_aws_layer%d' % l)
 
-            plt.clf()
-            fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
-            for h in range(self.n_heads):
-                if self.n_heads > n_cols:
-                    ax = axes[h // n_cols, h % n_cols]
-                else:
-                    ax = axes[h]
-                ax.imshow(xx_aws[0, h, :, :], aspect="auto")
-                ax.grid(False)
-                ax.set_xlabel("Input (head%d)" % h)
-                ax.set_ylabel("Output (head%d)" % h)
-                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+            for u in range(n_figures):
+                plt.clf()
+                fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
+                for h in range(self.n_heads):
+                    if self.n_heads > n_cols:
+                        ax = axes[h // n_cols, h % n_cols]
+                    else:
+                        ax = axes[h]
+                    ax.imshow(xx_aws[-1 - u, h, :, :], aspect="auto")
+                    ax.grid(False)
+                    ax.set_xlabel("Input (head%d)" % h)
+                    ax.set_ylabel("Output (head%d)" % h)
+                    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
-            fig.tight_layout()
-            fig.savefig(os.path.join(save_path, 'layer' + str(l) + '.png'), dvi=500)
-            plt.close()
+                fig.tight_layout()
+                fig.savefig(os.path.join(save_path, 'utt%d-layer%d.png' % (u, l)), dvi=500)
+                plt.close()
