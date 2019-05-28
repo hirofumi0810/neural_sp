@@ -293,13 +293,13 @@ class TransformerDecoder(nn.Module):
 
         # Append <sos> and <eos>
         eos = eouts.new_zeros((1,)).fill_(self.eos).long()
-        ylens = [len(y) for y in ys]
         ys = [np2tensor(np.fromiter(y[::-1] if self.backward else y, dtype=np.int64), self.device_id).long()
               for y in ys]
         ys_in = [torch.cat([eos, y], dim=0) for y in ys]
         ys_out = [torch.cat([y, eos], dim=0) for y in ys]
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, self.pad)
+        ylens = [y.size(0) for y in ys_in]
 
         ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
         ys_emb = self.pos_enc(ys_emb)
@@ -318,8 +318,7 @@ class TransformerDecoder(nn.Module):
         if self.adaptive_softmax is None:
             if self.lsm_prob > 0:
                 # Label smoothing
-                loss = cross_entropy_lsm(logits, ys_out_pad,
-                                         ylens=[y.size(0) for y in ys_out],
+                loss = cross_entropy_lsm(logits, ys_out_pad, ylens,
                                          lsm_prob=self.lsm_prob, size_average=False) / bs
             else:
                 loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
@@ -327,8 +326,7 @@ class TransformerDecoder(nn.Module):
 
             # Focal loss
             if self.fl_weight > 0:
-                fl = focal_loss(logits, ys_out_pad,
-                                ylens=[y.size(0) for y in ys_out],
+                fl = focal_loss(logits, ys_out_pad, ylens,
                                 alpha=self.fl_weight,
                                 gamma=self.fl_gamma,
                                 size_average=False) / bs

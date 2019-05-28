@@ -128,7 +128,7 @@ class TransformerLM(LMBase):
             hidden: dummy
 
         """
-        ylens = [ys_emb.size(1) - 1] * ys_emb.size(0)
+        ylens = [ys_emb.size(1)] * ys_emb.size(0)
 
         ys_emb = ys_emb * (self.d_model ** 0.5)
         ys_emb = self.pos_enc(ys_emb)

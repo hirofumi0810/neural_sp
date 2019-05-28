@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.torch_utils import make_pad_mask
 
 
 class AttentionMechanism(nn.Module):
@@ -125,10 +126,8 @@ class AttentionMechanism(nn.Module):
 
         # Mask attention distribution
         if self.mask is None:
-            self.mask = key.new_ones(bs, klen)
-            for b in range(bs):
-                if klens[b] < klen:
-                    self.mask[b, klens[b]:] = 0
+            device_id = torch.cuda.device_of(key.data).idx
+            self.mask = make_pad_mask(klens, device_id).expand(bs, klen)  # `[B, qlen, klen]`
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None:

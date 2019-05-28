@@ -66,6 +66,28 @@ def pad_list(xs, pad_value=0.0, pad_left=False):
     return xs_pad
 
 
+def make_pad_mask(seq_lens, device_id=-1):
+    """Make mask for padding.
+    Args:
+        seq_lens (list): A list of length `[B]`
+        device_id (int):
+    Returns:
+        mask (IntTensor): `[B, T]`
+
+    """
+    bs = len(seq_lens)
+    max_time = max(seq_lens)
+
+    seq_range = torch.arange(0, max_time, dtype=torch.int64)
+    seq_range_expand = seq_range.unsqueeze(0).expand(bs, max_time)
+    seq_length_expand = seq_range_expand.new(seq_lens).unsqueeze(-1)
+    mask = seq_range_expand < seq_length_expand
+
+    if device_id >= 0:
+        mask = mask.cuda(device_id)
+    return mask
+
+
 def compute_accuracy(logits, ys_ref, pad):
     """Compute accuracy.
     Args:

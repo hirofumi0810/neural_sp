@@ -66,15 +66,18 @@ class SublayerConnection(nn.Module):
           |                                         |
           -------------------------------------------
     Args:
+        d_model (int):
+        dropout (float):
         layer_norm_eps (float): epsilon parameter for layer normalization
-
+        stocastic (float):
     """
 
-    def __init__(self, d_model, dropout, layer_norm_eps=1e-6):
+    def __init__(self, d_model, dropout, layer_norm_eps=1e-6, stocastic=0):
         super(SublayerConnection, self).__init__()
 
         self.norm = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.dropout = nn.Dropout(dropout)
+        self.stocastic = stocastic
 
     def forward(self, xs, sublayer):
         xs_norm = self.norm(xs)
@@ -158,7 +161,7 @@ class TransformerEncoderBlock(nn.Module):
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
-            xlens (list): `[B]`
+            xlens (list): A list of length `[B]`
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
             xx_aws (FloatTensor): `[B, T, T]`
@@ -237,9 +240,9 @@ class TransformerDecoderBlock(nn.Module):
 
         Args:
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
-            xlens (list): `[B]`
+            xlens (list): A list of length `[B]`
             ys (FloatTensor): `[B, L, d_model]`
-            ylens (list): `[B]`
+            ylens (list): A list of length `[B]`
         Returns:
             ys (FloatTensor): `[B, L, d_model]`
             yy_aw (FloatTensor)`[B, L, L]`
@@ -259,7 +262,7 @@ class TransformerDecoderBlock(nn.Module):
             # self.src_attn.reset()
             # TODO(hirofumi): cache
             ys, xy_aw = self.add_norm_src_attn(ys, lambda ys: self.src_attn(
-                key=xs, klens=xlens, value=xs, query=ys))
+                key=xs, klens=xlens, value=xs, query=ys, qlens=ylens))
         else:
             xy_aw = None
 

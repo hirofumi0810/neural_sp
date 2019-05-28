@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.torch_utils import make_pad_mask
 
 
 class MultiheadAttentionMechanism(nn.Module):
@@ -78,7 +79,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value = None
         self.mask = None
 
-    def forward(self, key, klens, value, query, aw=None, diagonal=False):
+    def forward(self, key, klens, value, query, qlens=None, aw=None, diagonal=False):
         """Forward computation.
 
         Args:
@@ -99,18 +100,21 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # Mask attention distribution
         # if self.mask is None:
-        self.mask = key.new_ones(bs, self.n_heads, klen).byte()
-        for b in range(bs):
-            if klens[b] < klen:
-                self.mask[b, :, klens[b]:] = 0
-        self.mask = self.mask.unsqueeze(2)
+        device_id = torch.cuda.device_of(key.data).idx
+        mask = make_pad_mask(klens, device_id).unsqueeze(1).expand(bs, qlen, klen)  # `[B, qlen, klen]`
+        if qlens is not None:
+            query_mask = make_pad_mask(qlens, device_id).unsqueeze(2).expand(bs, qlen, klen)  # `[B, qlen, klen]`
+        elif klen == qlen:
+            assert klen == qlen
+            query_mask = make_pad_mask(klens, device_id).unsqueeze(2).expand(bs, qlen, klen)  # `[B, qlen, klen]`
+        self.mask = (mask * query_mask).unsqueeze(1)  # `[B, 1, qlen, klen]`
 
         # Hide future information for self-attention in the Transformer decoder
         if diagonal:
             assert qlen == klen
             subsequent_mask = torch.tril(key.new_ones((qlen, klen)).byte(), diagonal=0)
             subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(
-                bs, self.n_heads, -1, -1)  # `[B, n_heads, qlen, klen]`
+                bs, self.n_heads, qlen, klen)  # `[B, n_heads, qlen, klen]`
             self.mask = self.mask & subsequent_mask
 
         # if self.key is None:
@@ -129,7 +133,7 @@ class MultiheadAttentionMechanism(nn.Module):
             e = self.v(e).permute(0, 3, 1, 2)
 
         # Compute attention weights
-        e = e.masked_fill_(self.mask == 0, -1024)  # `[B, n_heads, qlen, klen]`
+        e = e.masked_fill_(self.mask == 0, -1e9)  # `[B, n_heads, qlen, klen]`
         aw = F.softmax(e, dim=-1)
         aw = self.attn_dropout(aw)
         cv = torch.matmul(aw, self.value)  # `[B, n_heads, qlen, d_k]`
