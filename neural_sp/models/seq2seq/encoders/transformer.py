@@ -16,10 +16,8 @@ import shutil
 import torch.nn as nn
 
 from neural_sp.models.modules.linear import LinearND
-from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
-from neural_sp.models.modules.transformer import SublayerConnection
-from neural_sp.models.modules.transformer import PositionwiseFeedForward
 from neural_sp.models.modules.transformer import PositionalEncoding
+from neural_sp.models.modules.transformer import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
@@ -242,63 +240,3 @@ class TransformerEncoder(nn.Module):
             fig.tight_layout()
             fig.savefig(os.path.join(save_path, 'layer' + str(l) + '.png'), dvi=500)
             plt.close()
-
-
-class TransformerEncoderBlock(nn.Module):
-    """A single layer of the transformer encoder.
-
-    Args:
-        d_model (int): dimension of keys/values/queries in
-                   MultiheadAttentionMechanism, also the input size of
-                   the first-layer of the PositionwiseFeedForward
-        d_ff (int): second-layer of the PositionwiseFeedForward
-        attn_type (str):
-        attn_n_heads (int): number of heads for multi-head attention
-        dropout (float): dropout probabilities for linear layers
-        dropout_att (float): dropout probabilities for attention distributions
-        layer_norm_eps (float):
-
-    """
-
-    def __init__(self,
-                 d_model,
-                 d_ff,
-                 attn_type,
-                 attn_n_heads,
-                 dropout,
-                 dropout_att,
-                 layer_norm_eps):
-        super(TransformerEncoderBlock, self).__init__()
-
-        # self-attention
-        self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
-                                                     query_dim=d_model,
-                                                     attn_type=attn_type,
-                                                     attn_dim=d_model,
-                                                     n_heads=attn_n_heads,
-                                                     dropout=dropout_att)
-        self.add_norm_self_attn = SublayerConnection(d_model, dropout, layer_norm_eps)
-
-        # feed-forward
-        self.ff = PositionwiseFeedForward(d_model, d_ff, dropout)
-        self.add_norm_ff = SublayerConnection(d_model, dropout, layer_norm_eps)
-
-    def forward(self, xs, xlens):
-        """Transformer encoder layer definition.
-
-        Args:
-            xs (FloatTensor): `[B, T, d_model]`
-            xlens (list): `[B]`
-        Returns:
-            xs (FloatTensor): `[B, T, d_model]`
-            xx_aws (FloatTensor): `[B, T, T]`
-
-        """
-        # self-attention
-        self.self_attn.reset()
-        xs, xx_aws = self.add_norm_self_attn(xs, sublayer=lambda xs: self.self_attn(
-            key=xs, klens=xlens, value=xs, query=xs))
-
-        # position-wise feed-forward
-        xs = self.add_norm_ff(xs, sublayer=lambda xs: self.ff(xs))
-        return xs, xx_aws
