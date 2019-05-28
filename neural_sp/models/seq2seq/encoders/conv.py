@@ -266,11 +266,10 @@ class Conv2LBlock(nn.Module):
 
         """
         residual = xs
+
         xs = self.conv1(xs)
         if self.batch_norm:
             xs = self.batch_norm1(xs)
-        if self.residual and xs.size() == residual.size():
-            xs += residual
         xs = F.relu(xs)
         if self.dropout1 is not None:
             xs = self.dropout1(xs)
@@ -280,7 +279,7 @@ class Conv2LBlock(nn.Module):
         xs = self.conv2(xs)
         if self.batch_norm:
             xs = self.batch_norm2(xs)
-        if self.residual:
+        if self.residual and xs.size() == residual.size():
             xs += residual
         xs = F.relu(xs)
         if self.dropout2 is not None:
