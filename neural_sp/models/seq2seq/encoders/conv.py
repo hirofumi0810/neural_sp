@@ -275,7 +275,6 @@ class Conv2LBlock(nn.Module):
             xs = self.dropout1(xs)
         xlens = update_lens(xlens, self.conv1, dim=0)
 
-        residual = xs
         xs = self.conv2(xs)
         if self.batch_norm:
             xs = self.batch_norm2(xs)
