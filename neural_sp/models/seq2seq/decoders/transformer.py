@@ -140,16 +140,15 @@ class TransformerDecoder(nn.Module):
             self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
 
         if ctc_weight < global_weight:
+            self.embed = Embedding(vocab, d_model,
+                                   dropout=0,  # NOTE: do not apply dropout here
+                                   ignore_index=pad)
+            self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
             self.layers = nn.ModuleList(
                 [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_n_heads,
                                          dropout, dropout_att, layer_norm_eps)
                  for _ in range(n_layers)])
             self.norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
-
-            self.embed = Embedding(vocab, d_model,
-                                   dropout=0,  # NOTE: do not apply dropout here
-                                   ignore_index=pad)
-            self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
 
             if adaptive_softmax:
                 self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -302,10 +301,8 @@ class TransformerDecoder(nn.Module):
         ys_in_pad = pad_list(ys_in, self.pad)
         ys_out_pad = pad_list(ys_out, self.pad)
 
-        # Positional encoding
         ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
         ys_emb = self.pos_enc(ys_emb)
-
         for l in range(self.n_layers):
             ys_emb, yy_aws, xy_aws = self.layers[l](ys_emb, ylens, eouts, elens)
             if not self.training:
@@ -380,10 +377,8 @@ class TransformerDecoder(nn.Module):
         xy_aws_tmp = [None] * bs
         eos_flags = [False] * bs
         for t in range(int(np.floor(max_xlen * max_len_ratio)) + 1):
-            # Positional encoding
             out = self.embed(ys) * (self.d_model ** 0.5)
             out = self.pos_enc(out)
-
             for l in range(self.n_layers):
                 out, yy_aws, xy_aws = self.layers[l](out, ylens + 1, eouts, elens)
             out = self.norm_top(out)
@@ -463,7 +458,7 @@ class TransformerDecoder(nn.Module):
             # TODO(hirofumi): add decoding paramters
         return best_hyps
 
-    def _plot_attention(self, save_path):
+    def _plot_attention(self, save_path, n_cols=8):
         """Plot attention for each head in all layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
@@ -480,9 +475,12 @@ class TransformerDecoder(nn.Module):
                 aws = getattr(self, '%s_aws_layer%d' % (attn, l))
 
                 plt.clf()
-                fig, axes = plt.subplots(self.n_heads // 4, 4, figsize=(20, 8))
+                fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
                 for h in range(self.n_heads):
-                    ax = axes[h // 4, h % 4]
+                    if self.n_heads > n_cols:
+                        ax = axes[h // n_cols, h % n_cols]
+                    else:
+                        ax = axes[h]
                     ax.imshow(aws[0, h, :, :], aspect="auto")
                     ax.grid(False)
                     ax.set_xlabel("Input (head%d)" % h)

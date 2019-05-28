@@ -98,26 +98,22 @@ class MultiheadAttentionMechanism(nn.Module):
         qlen = query.size(1)
 
         # Mask attention distribution
-        if self.mask is None:
-            self.mask = key.new_ones(bs, self.n_heads, klen).byte()
-            for b in range(bs):
-                if klens[b] < klen:
-                    self.mask[b, :, klens[b]:] = 0
-            self.mask = self.mask.unsqueeze(2)
+        # if self.mask is None:
+        self.mask = key.new_ones(bs, self.n_heads, klen).byte()
+        for b in range(bs):
+            if klens[b] < klen:
+                self.mask[b, :, klens[b]:] = 0
+        self.mask = self.mask.unsqueeze(2)
 
-            # Hide future information for self-attention in the Transformer decoder
-            if diagonal:
-                assert qlen == klen
-                subsequent_mask = torch.tril(key.new_ones((qlen, klen)).byte(), diagonal=0)
-                subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(
-                    bs, self.n_heads, -1, -1)  # `[B, n_heads, qlen, klen]`
-                self.mask = self.mask & subsequent_mask
+        # Hide future information for self-attention in the Transformer decoder
+        if diagonal:
+            assert qlen == klen
+            subsequent_mask = torch.tril(key.new_ones((qlen, klen)).byte(), diagonal=0)
+            subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(
+                bs, self.n_heads, -1, -1)  # `[B, n_heads, qlen, klen]`
+            self.mask = self.mask & subsequent_mask
 
         # if self.key is None:
-        #     key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-        #     value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
-        #     self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
-        #     self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
         key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
         value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
         self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`

@@ -164,7 +164,7 @@ class TransformerEncoderBlock(nn.Module):
 
         """
         # self-attention
-        self.self_attn.reset()
+        # self.self_attn.reset()
         xs, xx_aws = self.add_norm_self_attn(xs, sublayer=lambda xs: self.self_attn(
             key=xs, klens=xlens, value=xs, query=xs))
 
@@ -208,7 +208,6 @@ class TransformerDecoderBlock(nn.Module):
         # self-attention
         if attn_type == "average":
             raise NotImplementedError
-            # self.self_attn = AverageAttention(d_model, dropout, layer_norm=True)
         else:
             self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
                                                          query_dim=d_model,

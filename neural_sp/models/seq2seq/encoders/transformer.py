@@ -130,8 +130,6 @@ class TransformerEncoder(nn.Module):
                                   dropout=0)  # NOTE: do not apply dropout here
 
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
-
-        # Self-attention layers
         self.layers = nn.ModuleList(
             [TransformerEncoderBlock(d_model, d_ff, attn_type, attn_n_heads,
                                      dropout, dropout_att, layer_norm_eps) for l in range(n_layers)])
@@ -194,9 +192,7 @@ class TransformerEncoder(nn.Module):
             # Path through CNN blocks before RNN layers
             xs, xlens = self.conv(xs, xlens)
 
-        # Positional encoding
         xs = self.pos_enc(xs)
-
         for l in range(self.n_layers):
             xs, xx_aws = self.layers[l](xs, xlens)
             if not self.training:
@@ -211,7 +207,7 @@ class TransformerEncoder(nn.Module):
         eouts['ys']['xlens'] = xlens
         return eouts
 
-    def _plot_attention(self, save_path):
+    def _plot_attention(self, save_path, n_cols=8):
         """Plot attention for each head in all layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
@@ -227,9 +223,12 @@ class TransformerEncoder(nn.Module):
             xx_aws = getattr(self, 'xx_aws_layer%d' % l)
 
             plt.clf()
-            fig, axes = plt.subplots(self.n_heads // 4, 4, figsize=(20, 8))
+            fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
             for h in range(self.n_heads):
-                ax = axes[h // 4, h % 4]
+                if self.n_heads > n_cols:
+                    ax = axes[h // n_cols, h % n_cols]
+                else:
+                    ax = axes[h]
                 ax.imshow(xx_aws[0, h, :, :], aspect="auto")
                 ax.grid(False)
                 ax.set_xlabel("Input (head%d)" % h)

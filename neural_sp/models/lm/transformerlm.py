@@ -142,7 +142,7 @@ class TransformerLM(LMBase):
 
         return ys_emb, hidden
 
-    def plot_attention(self):
+    def plot_attention(self, n_cols=8):
         """Plot attention for each head in all layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
@@ -158,9 +158,12 @@ class TransformerLM(LMBase):
             yy_aws = getattr(self, 'yy_aws_layer%d' % l)
 
             plt.clf()
-            fig, axes = plt.subplots(self.n_heads // 4, 4, figsize=(20, 8))
+            fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
             for h in range(self.n_heads):
-                ax = axes[h // 4, h % 4]
+                if self.n_heads > n_cols:
+                    ax = axes[h // n_cols, h % n_cols]
+                else:
+                    ax = axes[h]
                 ax.imshow(yy_aws[0, h, :, :], aspect="auto")
                 ax.grid(False)
                 ax.set_xlabel("Input (head%d)" % h)
