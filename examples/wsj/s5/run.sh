@@ -75,6 +75,7 @@ warmup_n_steps=4000
 param_init=0.1
 pretrained_model=
 teacher=
+teacher_lm=
 ### regularization
 clip_grad_norm=5.0
 dropout_in=0.0
@@ -131,7 +132,6 @@ lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
 lm_param_init=0.05
-lm_param_init_dist=uniform
 lm_pretrained_model=
 # regularization
 lm_clip_grad_norm=1.0
@@ -440,6 +440,7 @@ if [ ${stage} -le 4 ]; then
         --param_init ${param_init} \
         --pretrained_model ${pretrained_model} \
         --teacher ${teacher} \
+        --teacher_lm ${teacher_lm} \
         --clip_grad_norm ${clip_grad_norm} \
         --dropout_in ${dropout_in} \
         --dropout_enc ${dropout_enc} \

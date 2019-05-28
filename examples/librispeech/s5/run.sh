@@ -144,7 +144,6 @@ lm_not_improved_patient_n_epochs=10
 lm_eval_start_epoch=1
 # initialization
 lm_param_init=0.05
-lm_param_init_dist=uniform
 lm_pretrained_model=
 # regularization
 lm_clip_grad_norm=1.0
