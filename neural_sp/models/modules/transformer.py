@@ -13,7 +13,6 @@ from __future__ import print_function
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 
@@ -34,24 +33,28 @@ class PositionalEncoding(nn.Module):
 
         self.pe_type = pe_type
 
-        # Compute the positional encodings once in log space.
-        pe = torch.zeros(max_len, d_model, dtype=torch.float32)
-        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)  # for batch dimension
-        self.register_buffer('pe', pe)
+        if pe_type:
+            # Compute the positional encodings once in log space.
+            pe = torch.zeros(max_len, d_model, dtype=torch.float32)
+            position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+            div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
+            pe[:, 0::2] = torch.sin(position * div_term)
+            pe[:, 1::2] = torch.cos(position * div_term)
+            pe = pe.unsqueeze(0)  # for batch dimension
+            self.register_buffer('pe', pe)
 
-        self.dropout = nn.Dropout(p=dropout)
+            self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, xs):
+        if not self.pe_type:
+            return xs
+
         if self.pe_type == 'add':
             xs = xs + self.pe[:, :xs.size(1)]
         elif self.pe_type == 'concat':
             xs = torch.cat([xs, self.pe[:, :xs.size(1)]], dim=-1)
         else:
-            raise NotImplementedError
+            raise NotImplementedError(self.pe_type)
         return self.dropout(xs)
 
 
@@ -70,7 +73,6 @@ class SublayerConnection(nn.Module):
         super(SublayerConnection, self).__init__()
 
         self.norm = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        # self.norm = LayerNorm(d_model, eps=layer_norm_eps)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs, sublayer):
@@ -79,14 +81,13 @@ class SublayerConnection(nn.Module):
 
         # NOTE: output may be tuple paired with attention weights
         if isinstance(output, tuple):
-            xs_norm, aw = output
+            xs_norm, aws = output
         else:
             xs_norm = output
-        xs_norm = self.dropout(xs_norm)
-        xs_norm = xs_norm + xs
+        xs_norm = self.dropout(xs_norm) + xs
 
         if isinstance(output, tuple):
-            return xs_norm, aw
+            return xs_norm, aws
         else:
             return xs_norm
 
@@ -109,7 +110,7 @@ class PositionwiseFeedForward(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs):
-        return self.w_2(self.dropout(F.relu(self.w_1(xs))))
+        return self.w_2(self.dropout(torch.relu(self.w_1(xs))))
 
 
 class TransformerDecoderBlock(nn.Module):
@@ -189,15 +190,16 @@ class TransformerDecoderBlock(nn.Module):
         if self.attn_type == "average":
             raise NotImplementedError
         else:
+            # self.self_attn.reset()
             ys, yy_aw = self.add_norm_self_attn(ys, lambda ys: self.self_attn(
                 key=ys, klens=ylens, value=ys, query=ys, diagonal=True))
-            self.self_attn.reset()
 
         # attention for encoder stacks
         if self.src_attention:
+            # self.src_attn.reset()
+            # TODO(hirofumi): cache
             ys, xy_aw = self.add_norm_src_attn(ys, lambda ys: self.src_attn(
                 key=xs, klens=xlens, value=xs, query=ys))
-            self.src_attn.reset()
         else:
             xy_aw = None
 

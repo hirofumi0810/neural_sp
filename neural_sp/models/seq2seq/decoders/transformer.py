@@ -112,6 +112,7 @@ class TransformerDecoder(nn.Module):
         self.enc_n_units = enc_n_units
         self.d_model = d_model
         self.n_layers = n_layers
+        self.n_heads = attn_n_heads
         self.pe_type = pe_type
         self.lsm_prob = lsm_prob
         self.fl_weight = fl_weight
@@ -148,8 +149,7 @@ class TransformerDecoder(nn.Module):
             self.embed = Embedding(vocab, d_model,
                                    dropout=0,  # NOTE: do not apply dropout here
                                    ignore_index=pad)
-            if pe_type:
-                self.pos_emb = PositionalEncoding(d_model, dropout_emb, pe_type)
+            self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
 
             if adaptive_softmax:
                 self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -304,8 +304,7 @@ class TransformerDecoder(nn.Module):
 
         # Positional encoding
         ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
-        if self.pe_type:
-            ys_emb = self.pos_emb(ys_emb)
+        ys_emb = self.pos_enc(ys_emb)
 
         for l in range(self.n_layers):
             ys_emb, yy_aws, xy_aws = self.layers[l](ys_emb, ylens, eouts, elens)
@@ -383,8 +382,7 @@ class TransformerDecoder(nn.Module):
         for t in range(int(np.floor(max_xlen * max_len_ratio)) + 1):
             # Positional encoding
             out = self.embed(ys) * (self.d_model ** 0.5)
-            if self.pe_type:
-                out = self.pos_emb(out)
+            out = self.pos_enc(out)
 
             for l in range(self.n_layers):
                 out, yy_aws, xy_aws = self.layers[l](out, ylens + 1, eouts, elens)
@@ -470,13 +468,13 @@ class TransformerDecoder(nn.Module):
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
-        for attn in ['yy', 'xs']:
-            save_path = mkdir_join(save_path, 'dec_%s_att_weights' % attn)
+        for attn in ['yy', 'xy']:
+            _save_path = mkdir_join(save_path, 'dec_%s_att_weights' % attn)
 
             # Clean directory
-            if save_path is not None and os.path.isdir(save_path):
-                shutil.rmtree(save_path)
-                os.mkdir(save_path)
+            if _save_path is not None and os.path.isdir(_save_path):
+                shutil.rmtree(_save_path)
+                os.mkdir(_save_path)
 
             for l in range(self.n_layers):
                 aws = getattr(self, '%s_aws_layer%d' % (attn, l))
@@ -493,5 +491,5 @@ class TransformerDecoder(nn.Module):
                     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
                 fig.tight_layout()
-                fig.savefig(os.path.join(save_path, 'layer' + str(l) + '.png'), dvi=500)
+                fig.savefig(os.path.join(_save_path, 'layer' + str(l) + '.png'), dvi=500)
                 plt.close()

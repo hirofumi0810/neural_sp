@@ -86,6 +86,7 @@ class MultiheadAttentionMechanism(nn.Module):
             klens (list): A list of length `[B]`
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, qlen, query_dim]`
+            qlens (list): A list of length `[B]`
             aw (FloatTensor): dummy (not used)
             diagonal (bool): for Transformer decoder to hide future information
         Returns:
@@ -98,12 +99,13 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # Mask attention distribution
         if self.mask is None:
-            self.mask = key.new_ones(bs, self.n_heads, qlen, klen).byte()
+            self.mask = key.new_ones(bs, self.n_heads, klen).byte()
             for b in range(bs):
                 if klens[b] < klen:
-                    self.mask[b, :, :, klens[b]:] = 0
+                    self.mask[b, :, klens[b]:] = 0
+            self.mask = self.mask.unsqueeze(2)
 
-            # Hide future information for Transformer decoder
+            # Hide future information for self-attention in the Transformer decoder
             if diagonal:
                 assert qlen == klen
                 subsequent_mask = torch.tril(key.new_ones((qlen, klen)).byte(), diagonal=0)
@@ -111,11 +113,15 @@ class MultiheadAttentionMechanism(nn.Module):
                     bs, self.n_heads, -1, -1)  # `[B, n_heads, qlen, klen]`
                 self.mask = self.mask & subsequent_mask
 
-        if self.key is None:
-            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-            value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
-            self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
-            self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
+        # if self.key is None:
+        #     key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
+        #     value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
+        #     self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
+        #     self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
+        key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
+        value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
+        self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
+        self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
 

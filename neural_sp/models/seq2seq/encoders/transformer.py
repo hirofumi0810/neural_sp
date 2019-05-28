@@ -90,6 +90,8 @@ class TransformerEncoder(nn.Module):
         super(TransformerEncoder, self).__init__()
 
         self.d_model = d_model
+        self.n_layers = n_layers
+        self.n_heads = attn_n_heads
         self.pe_type = pe_type
 
         # Setting for CNNs before RNNs
@@ -129,9 +131,7 @@ class TransformerEncoder(nn.Module):
             self.embed = LinearND(self._output_dim, d_model,
                                   dropout=0)  # NOTE: do not apply dropout here
 
-        if pe_type:
-            self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
-        self.norm_in = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
 
         # Self-attention layers
         self.layers = nn.ModuleList(
@@ -196,12 +196,10 @@ class TransformerEncoder(nn.Module):
             # Path through CNN blocks before RNN layers
             xs, xlens = self.conv(xs, xlens)
 
-        # Positional encoding & layer normalization
-        if self.pe_type:
-            xs = self.pos_enc(xs)
-        xs = self.norm_in(xs)
+        # Positional encoding
+        xs = self.pos_enc(xs)
 
-        for l in range(len(self.layers)):
+        for l in range(self.n_layers):
             xs, xx_aws = self.layers[l](xs, xlens)
             if not self.training:
                 setattr(self, 'xx_aws_layer%d' % l, tensor2np(xx_aws))
@@ -297,9 +295,9 @@ class TransformerEncoderBlock(nn.Module):
 
         """
         # self-attention
+        self.self_attn.reset()
         xs, xx_aws = self.add_norm_self_attn(xs, sublayer=lambda xs: self.self_attn(
             key=xs, klens=xlens, value=xs, query=xs))
-        self.self_attn.reset()
 
         # position-wise feed-forward
         xs = self.add_norm_ff(xs, sublayer=lambda xs: self.ff(xs))
