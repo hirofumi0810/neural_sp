@@ -111,14 +111,21 @@ class Seq2seq(ModelBase):
         if self.bwd_weight > 0:
             directions.append('bwd')
         for dir in directions:
-            # Load the LM for LM fusion & LM initialization
+            # Load the LM for LM fusion
             if args.lm_fusion and dir == 'fwd':
-                lm = RNNLM(args.lm_conf)
-                lm, _ = load_checkpoint(lm, args.lm_fusion)
+                lm_fusion = RNNLM(args.lm_conf)
+                lm_fusion, _ = load_checkpoint(lm_fusion, args.lm_fusion)
             else:
-                args.lm_conf = False
-                lm = None
-                # TODO(hirofumi): cold fusion for backward RNNLM
+                lm_fusion = None
+                # TODO(hirofumi): for backward RNNLM
+
+            # Load the LM for LM initialization
+            if args.lm_init and dir == 'fwd':
+                lm_init = RNNLM(args.lm_conf)
+                lm_init, _ = load_checkpoint(lm_init, args.lm_init)
+            else:
+                lm_init = None
+                # TODO(hirofumi): for backward RNNLM
 
             # Decoder
             if args.dec_type == 'transformer':
@@ -170,9 +177,7 @@ class Seq2seq(ModelBase):
                     ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
                     ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
-                    # lm=args.lm_conf,
-                    lm=lm,  # TODO(hirofumi): load RNNLM in the model init.
-                    lm_init=args.lm_init,
+                    lm_init=lm_init,
                     lmobj_weight=args.lmobj_weight,
                     share_lm_softmax=args.share_lm_softmax,
                     global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
@@ -215,11 +220,10 @@ class Seq2seq(ModelBase):
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                     input_feeding=args.input_feeding,
                     backward=(dir == 'bwd'),
-                    # lm=args.lm_conf,
-                    lm=lm,  # TODO(hirofumi): load RNNLM in the model init.
+                    lm_fusion=lm_fusion,
                     lm_fusion_type=args.lm_fusion_type,
                     contextualize=args.contextualize,
-                    lm_init=args.lm_init,
+                    lm_init=lm_init,
                     lmobj_weight=args.lmobj_weight,
                     share_lm_softmax=args.share_lm_softmax,
                     global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,

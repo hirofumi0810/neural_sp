@@ -166,11 +166,11 @@ def main():
     args.input_dim = train_set.input_dim
 
     # Load a LM conf file for LM fusion & LM initialization
-    if args.lm_fusion:
-        if args.model:
+    if not args.resume and (args.lm_fusion or args.lm_init):
+        if args.lm_fusion:
             lm_conf = load_config(os.path.join(os.path.dirname(args.lm_fusion), 'conf.yml'))
-        elif args.resume:
-            lm_conf = load_config(os.path.join(os.path.dirname(args.resume), 'conf_lm.yml'))
+        elif args.lm_init:
+            lm_conf = load_config(os.path.join(os.path.dirname(args.lm_init), 'conf.yml'))
         args.lm_conf = argparse.Namespace()
         for k, v in lm_conf.items():
             setattr(args.lm_conf, k, v)

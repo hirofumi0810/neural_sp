@@ -35,6 +35,7 @@ class RNNLM(LMBase):
         self.rnn_type = args.lm_type
         assert args.lm_type in ['lstm', 'gru']
         self.n_units = args.n_units
+        self.n_projs = args.n_projs
         self.n_layers = args.n_layers
         self.residual = args.residual
         self.use_glu = args.use_glu
@@ -57,9 +58,9 @@ class RNNLM(LMBase):
                                ignore_index=self.pad)
 
         self.fast_impl = False
+        rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
         if args.n_projs == 0 and not args.residual:
             self.fast_impl = True
-            rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
             self.rnn = rnn(args.emb_dim, args.n_units, args.n_layers,
                            bias=True,
                            batch_first=True,
@@ -75,12 +76,11 @@ class RNNLM(LMBase):
                 self.proj = torch.nn.ModuleList()
             rnn_idim = args.emb_dim
             for l in range(args.n_layers):
-                self.rnn += [getattr(nn, args.lm_type.upper())(
-                    rnn_idim, args.n_units, 1,
-                    bias=True,
-                    batch_first=True,
-                    dropout=0,
-                    bidirectional=False)]
+                self.rnn += [rnn(rnn_idim, args.n_units, 1,
+                                 bias=True,
+                                 batch_first=True,
+                                 dropout=0,
+                                 bidirectional=False)]
                 self.dropout += [nn.Dropout(p=args.dropout_hidden)]
                 rnn_idim = args.n_units
 
@@ -171,6 +171,10 @@ class RNNLM(LMBase):
                     ys_emb, h_l = self.rnn[l](ys_emb, hx=hidden[0][l:l + 1])
                 new_hxs.append(h_l)
                 ys_emb = self.dropout[l](ys_emb)
+
+                # Projection layer
+                if l < self.n_layers - 1 and self.n_projs > 0:
+                    ys_emb = torch.tanh(self.proj[l](ys_emb))
 
                 # Residual connection
                 if self.residual and l > 0:

@@ -56,7 +56,6 @@ class RNNTransducer(nn.Module):
         lsm_prob (float): label smoothing probability
         ctc_weight (float):
         ctc_fc_list (list):
-        lm (RNNLM or GatedConvLM):
         lm_init (RNNLM):
         lmobj_weight (float):
         share_lm_softmax (bool):
@@ -87,8 +86,7 @@ class RNNTransducer(nn.Module):
                  lsm_prob=0.0,
                  ctc_weight=0.0,
                  ctc_fc_list=[],
-                 lm=None,
-                 lm_init=False,
+                 lm_init=None,
                  lmobj_weight=0.0,
                  share_lm_softmax=False,
                  global_weight=1.0,
@@ -97,13 +95,14 @@ class RNNTransducer(nn.Module):
                  end_pointing=False):
 
         super(RNNTransducer, self).__init__()
+        logger = logging.getLogger('training')
 
         self.eos = eos
         self.unk = unk
         self.pad = pad
         self.blank = blank
         self.vocab = vocab
-        self.pred_type = rnn_type
+        self.rnn_type = rnn_type
         assert rnn_type in ['lstm_transducer', 'gru_transducer']
         self.enc_n_units = enc_n_units
         self.dec_n_units = n_units
@@ -113,8 +112,6 @@ class RNNTransducer(nn.Module):
         self.lsm_prob = lsm_prob
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
-        self.lm = lm
-        self.lm_init = lm_init
         self.lmobj_weight = lmobj_weight
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
@@ -141,12 +138,6 @@ class RNNTransducer(nn.Module):
             import warprnnt_pytorch
             self.warprnnt_loss = warprnnt_pytorch.RNNTLoss()
 
-            # for decoder initialization with pre-trained LM
-            if lm_init:
-                assert lm_init.predictor.vocab == vocab
-                assert lm_init.predictor.n_units == n_units
-                assert lm_init.predictor.n_layers == 1  # TODO(hirofumi): on-the-fly
-
             # for MTL with LM objective
             if lmobj_weight > 0:
                 if share_lm_softmax:
@@ -155,23 +146,36 @@ class RNNTransducer(nn.Module):
                     self.output_lmobj = LinearND(n_units, vocab)
 
             # Prediction network
-            self.pred = nn.ModuleList()
-            self.dropout = nn.ModuleList()
-            if self.n_projs > 0:
-                self.proj = nn.ModuleList()
+            self.fast_impl = False
             rnn = nn.LSTM if rnn_type == 'lstm_transducer' else nn.GRU
-            dec_idim = enc_n_units
-            self.pred += [rnn(emb_dim, n_units, bias=True, batch_first=True, dropout=0)]
-            dec_idim = n_units
-            if self.n_projs > 0:
-                self.proj += [LinearND(n_units, n_projs)]
-                dec_idim = n_projs
-            self.dropout += [nn.Dropout(p=dropout)]
-            for l in range(n_layers - 1):
-                self.pred += [rnn(dec_idim, n_units)]
-                if self.n_projs > 0:
-                    self.proj += [LinearND(n_units, n_projs)]
-                self.dropout += [nn.Dropout(p=dropout)]
+            if n_projs == 0 and not residual:
+                self.fast_impl = True
+                self.rnn = rnn(emb_dim, n_units, n_layers,
+                               bias=True,
+                               batch_first=True,
+                               dropout=dropout,
+                               bidirectional=False)
+                # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
+                dec_idim = n_units
+                self.dropout_top = nn.Dropout(p=dropout)
+            else:
+                self.rnn = torch.nn.ModuleList()
+                self.dropout = torch.nn.ModuleList()
+                if n_projs > 0:
+                    self.proj = torch.nn.ModuleList()
+                dec_idim = emb_dim
+                for l in range(n_layers):
+                    self.rnn += [rnn(dec_idim, n_units, 1,
+                                     bias=True,
+                                     batch_first=True,
+                                     dropout=0,
+                                     bidirectional=False)]
+                    self.dropout += [nn.Dropout(p=dropout)]
+                    dec_idim = n_units
+
+                    if l != self.n_layers - 1 and n_projs > 0:
+                        self.proj += [LinearND(dec_idim, n_projs)]
+                        dec_idim = n_projs
 
             self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
@@ -183,6 +187,22 @@ class RNNTransducer(nn.Module):
         # Initialize parameters
         self.reset_parameters(param_init)
 
+        # prediction network initialization with pre-trained LM
+        if lm_init is not None:
+            assert lm_init.vocab == vocab
+            assert lm_init.n_units == n_units
+            assert lm_init.n_projs == n_projs
+            assert lm_init.n_layers == n_layers
+            assert lm_init.residual == residual
+
+            param_dict = dict(lm_init.named_parameters())
+            for n, p in self.named_parameters():
+                if n in param_dict.keys() and p.size() == param_dict[n].size():
+                    if 'output' in n:
+                        continue
+                    p.data = param_dict[n].data
+                    logger.info('Overwrite %s' % n)
+
     @property
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
@@ -192,16 +212,9 @@ class RNNTransducer(nn.Module):
         logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
-            if 'lm.' in n:
-                continue  # for the external LM
             if p.dim() == 1:
-                if 'linear_lm_gate.fc.bias' in n:
-                    # Initialize bias in gating with -1 for cold fusion
-                    nn.init.constant_(p, val=-1)  # bias
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', -1))
-                else:
-                    nn.init.constant_(p, val=0)  # bias
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, val=0)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
             elif p.dim() in [2, 4]:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
@@ -232,9 +245,6 @@ class RNNTransducer(nn.Module):
                        'acc_lmobj': None,
                        'ppl_lmobj': None}
         loss = eouts.new_zeros((1,))
-
-        # if self.lm is not None:
-        #     self.lm.eval()
 
         # CTC loss
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
@@ -329,7 +339,7 @@ class RNNTransducer(nn.Module):
         ys_out_pad = pad_list(_ys, 0).int()
 
         # Update prediction network
-        out_pred, _ = self.recurrency(ys_in_pad, None)
+        out_pred, _ = self.recurrency(self.embed(ys_in_pad), None)
         out_pred = out_pred.unsqueeze(1)  # `[B, 1, L, dec_n_units]`
         eouts = eouts.unsqueeze(2)  # `[B, 1, L, dec_n_units]`
 
@@ -367,32 +377,76 @@ class RNNTransducer(nn.Module):
         out = torch.tanh(self.output_bn(torch.cat((out_trans, out_pred), dim=dim)))
         return self.output(out)
 
-    def recurrency(self, ys, dstates):
+    def recurrency(self, ys_emb, dstates):
         """Update prediction network.
         Args:
-            ys (LongTensor):
+            ys_emb (FloatTensor): `[B, L, emb_dim]`
             dstates ():
         Returns:
             out_pred (FloatTensor):
             dstates ():
 
         """
-        residual = None
-        out_pred = self.embed(ys)
-        for l in range(self.n_layers):
-            out_pred, dstates = self.pred[l](out_pred, hx=dstates)
-            out_pred = self.dropout[l](out_pred)
+        if dstates is None or dstates[0] is None:
+            dstates = self.initialize_hidden(ys_emb.size(0))
 
-            if l != len(self.pred) - 1:
+        residual = None
+        if self.fast_impl:
+            # Path through RNN
+            ys_emb, dstates = self.rnn(ys_emb, hx=dstates)
+            ys_emb = self.dropout_top(ys_emb)
+        else:
+            new_hxs, new_cxs = [], []
+            for l in range(self.n_layers):
+                # Path through RNN
+                if self.rnn_type == 'lstm_transducer':
+                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(dstates[0][l:l + 1], dstates[1][l:l + 1]))
+                    new_cxs.append(c_l)
+                elif self.rnn_type == 'gru_transducer':
+                    ys_emb, h_l = self.rnn[l](ys_emb, hx=dstates[0][l:l + 1])
+                new_hxs.append(h_l)
+                ys_emb = self.dropout[l](ys_emb)
+
                 # Projection layer
-                if self.n_projs > 0:
-                    out_pred = torch.tanh(self.proj[l](out_pred))
+                if l < self.n_layers - 1 and self.n_projs > 0:
+                    ys_emb = torch.tanh(self.proj[l](ys_emb))
 
                 # Residual connection
-                if self.residual and residual is not None:
-                    out_pred = out_pred + residual
-                residual = out_pred
-        return out_pred, dstates
+                if self.residual and l > 0:
+                    ys_emb = ys_emb + residual
+                residual = ys_emb
+                # NOTE: Exclude residual connection from the raw inputs
+
+        return ys_emb, dstates
+
+    def initialize_hidden(self, batch_size):
+        """Initialize hidden states.
+
+        Args:
+            batch_size (int):
+        Returns:
+            hidden (tuple):
+                hxs (FloatTensor): `[n_layers, B, dec_n_units]`
+                cxs (FloatTensor): `[n_layers, B, dec_n_units]`
+
+        """
+        w = next(self.parameters())
+        if self.fast_impl:
+            h_n = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
+            c_n = None
+            if self.rnn_type == 'lstm_transducer':
+                c_n = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
+            return (h_n, c_n)
+        else:
+            hxs, cxs = [], []
+            for l in range(self.n_layers):
+                if self.rnn_type == 'lstm_transducer':
+                    cxs.append(w.new_zeros(1, batch_size, self.dec_n_units))
+                hxs.append(w.new_zeros(1, batch_size, self.dec_n_units))
+            hxs = torch.cat(hxs, dim=0)
+            if self.rnn_type == 'lstm_transducer':
+                cxs = torch.cat(cxs, dim=0)
+            return (hxs, cxs)
 
     def greedy(self, eouts, elens, max_len_ratio,
                exclude_eos=False, idx2token=None, refs_id=None,
@@ -420,7 +474,7 @@ class RNNTransducer(nn.Module):
             best_hyp_utt = []
             # Initialization
             y = eouts.new_zeros(1, 1).long()
-            out_pred, dstates = self.recurrency(y, None)
+            out_pred, dstates = self.recurrency(self.embed(y), None)
             for t in range(xlen_max):
                 # Pick up 1-best per frame
                 out = self.joint_dist(eouts[b:b + 1, t:t + 1], out_pred)
@@ -434,7 +488,7 @@ class RNNTransducer(nn.Module):
                     if oracle:
                         y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(best_hyp_utt) - 1]).long()
                     else:
-                        out_pred, dstates = self.recurrency(y, dstates)
+                        out_pred, dstates = self.recurrency(self.embed(y), dstates)
 
                     # early stop
                     if self.end_pointing and y[0].item() == self.eos:

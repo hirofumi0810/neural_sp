@@ -104,6 +104,7 @@ class TransformerDecoder(nn.Module):
                  adaptive_softmax=False):
 
         super(TransformerDecoder, self).__init__()
+        logger = logging.getLogger('training')
 
         self.eos = eos
         self.unk = unk

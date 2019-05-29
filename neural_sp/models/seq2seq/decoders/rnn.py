@@ -76,7 +76,7 @@ class RNNDecoder(nn.Module):
         ctc_fc_list (list):
         input_feeding (bool):
         backward (bool): decode in the backward order
-        lm (RNNLM or GatedConvLM):
+        lm_fusion (RNNLM):
         lm_fusion_type (str): type of LM fusion
         contextualize (str): hierarchical_encoder or ...
         lm_init (RNNLM):
@@ -124,10 +124,10 @@ class RNNDecoder(nn.Module):
                  ctc_fc_list=[],
                  input_feeding=False,
                  backward=False,
-                 lm=None,
+                 lm_fusion=None,
                  lm_fusion_type='cold',
                  contextualize='',
-                 lm_init=False,
+                 lm_init=None,
                  lmobj_weight=0.0,
                  share_lm_softmax=False,
                  global_weight=1.0,
@@ -136,6 +136,7 @@ class RNNDecoder(nn.Module):
                  param_init=0.1):
 
         super(RNNDecoder, self).__init__()
+        logger = logging.getLogger('training')
 
         self.eos = eos
         self.unk = unk
@@ -167,12 +168,8 @@ class RNNDecoder(nn.Module):
         if input_feeding:
             assert loop_type == 'normal'
         self.bwd = backward
-        self.lm = lm
         self.lm_fusion_type = lm_fusion_type
         self.contextualize = contextualize
-        self.lm_init = lm_init
-        if lm_init:
-            assert loop_type == 'lmdecoder'
         self.lmobj_weight = lmobj_weight
         if lmobj_weight > 0:
             assert loop_type == 'lmdecoder'
@@ -232,12 +229,6 @@ class RNNDecoder(nn.Module):
                     conv_kernel_size=attn_conv_kernel_size,
                     dropout=dropout_att)
 
-            # for decoder initialization with pre-trained LM
-            if lm_init:
-                assert lm_init.predictor.vocab == vocab
-                assert lm_init.predictor.n_units == n_units
-                assert lm_init.predictor.n_layers == 1  # TODO(hirofumi): on-the-fly
-
             # for MTL with LM objective
             if lmobj_weight > 0 and loop_type == 'lmdecoder':
                 if share_lm_softmax:
@@ -289,20 +280,20 @@ class RNNDecoder(nn.Module):
 
             # LM fusion
             dout_dim = n_projs if self.n_projs > 0 else n_units
-            if self.lm is not None:
+            if lm_fusion is not None:
                 self.linear_dec_feat = LinearND(n_units + enc_n_units, n_units)
                 if lm_fusion_type in ['cold', 'deep']:
-                    self.linear_lm_feat = LinearND(self.lm.n_units, n_units)
+                    self.linear_lm_feat = LinearND(lm_fusion.n_units, n_units)
                     self.linear_lm_gate = LinearND(n_units * 2, n_units)
                 elif lm_fusion_type == 'cold_prob':
-                    self.linear_lm_feat = LinearND(self.lm.vocab, n_units)
+                    self.linear_lm_feat = LinearND(lm_fusion.vocab, n_units)
                     self.linear_lm_gate = LinearND(n_units * 2, n_units)
                 else:
                     raise ValueError(lm_fusion_type)
                 self.output_bn = LinearND(n_units * 2, bottleneck_dim)
 
                 # fix LM parameters
-                for p in self.lm.parameters():
+                for p in lm_fusion.parameters():
                     p.requires_grad = False
             elif contextualize:
                 raise NotImplementedError
@@ -340,6 +331,16 @@ class RNNDecoder(nn.Module):
         # Initialize parameters
         self.reset_parameters(param_init)
 
+        self.lm = lm_fusion
+
+        # decoder initialization with pre-trained LM
+        if lm_init is not None:
+            assert loop_type == 'lmdecoder'
+            assert lm_init.vocab == vocab
+            assert lm_init.n_units == n_units
+            assert lm_init.n_layers == 1  # TODO(hirofumi): on-the-fly
+            raise NotImplementedError
+
     @property
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
@@ -349,8 +350,6 @@ class RNNDecoder(nn.Module):
         logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
-            if 'lm.' in n:
-                continue  # for the external LM
             if p.dim() == 1:
                 if 'linear_lm_gate.fc.bias' in n:
                     # Initialize bias in gating with -1 for cold fusion
