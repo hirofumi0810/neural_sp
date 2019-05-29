@@ -7,16 +7,16 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/timit
+data=/n/sd3/inaguma/corpus/timit
 
 batch_size=1
 beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=0.03
-coverage_penalty=0.03
+length_penalty=0.1
+coverage_penalty=0.0
 coverage_threshold=0.0
-gnmt_decoding=true
+gnmt_decoding=false
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 
 . ./cmd.sh
@@ -42,11 +42,10 @@ for set in dev test; do
     if ${gnmt_decoding}; then
         recog_dir=${recog_dir}_gnmt
     fi
-    fi
     mkdir -p ${recog_dir}
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_attention.py \
-        --recog_sets ${data}/dataset/${set}.csv \
+        --recog_sets ${data}/dataset/${set}.tsv \
         --recog_dir ${recog_dir} \
         --recog_model ${model} \
         --recog_batch_size ${batch_size} \

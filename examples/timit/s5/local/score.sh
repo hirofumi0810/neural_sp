@@ -7,16 +7,16 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/timit
+data=/n/sd3/inaguma/corpus/timit
 
 batch_size=1
 beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=0.03
-coverage_penalty=0.03
+length_penalty=0.1
+coverage_penalty=0.0
 coverage_threshold=0.0
-gnmt_decoding=true
+gnmt_decoding=false
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 
 . ./cmd.sh
