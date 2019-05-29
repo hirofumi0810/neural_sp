@@ -30,6 +30,7 @@ from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.ctc_greedy import GreedyDecoder
+from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
@@ -38,7 +39,7 @@ from neural_sp.models.torch_utils import tensor2np
 random.seed(1)
 
 
-class RNNDecoder(nn.Module):
+class RNNDecoder(DecoderBase):
     """RNN decoder.
 
     Args:
@@ -341,10 +342,6 @@ class RNNDecoder(nn.Module):
             assert lm_init.n_layers == 1  # TODO(hirofumi): on-the-fly
             raise NotImplementedError
 
-    @property
-    def device_id(self):
-        return torch.cuda.device_of(next(self.parameters()).data).idx
-
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
         logger = logging.getLogger('training')
@@ -387,7 +384,8 @@ class RNNDecoder(nn.Module):
                        'loss_lmobj': None,
                        'acc_att': None, 'acc_lmobj': None,
                        'ppl_att': None, 'ppl_lmobj': None}
-        loss = eouts.new_zeros((1,))
+        w = next(self.parameters())
+        loss = w.new_zeros((1,))
 
         # if self.lm is not None:
         #     self.lm.eval()
@@ -467,8 +465,8 @@ class RNNDecoder(nn.Module):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
             loss (FloatTensor): `[1]`
-            acc (float):
-            ppl (float):
+            acc (float): accuracy
+            ppl (float): perplexity
 
         """
         bs = len(ys)

@@ -30,6 +30,7 @@ from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.ctc_greedy import GreedyDecoder
+from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
@@ -42,7 +43,7 @@ matplotlib.use('Agg')
 random.seed(1)
 
 
-class TransformerDecoder(nn.Module):
+class TransformerDecoder(DecoderBase):
     """Transformer decoder.
 
     Args:
@@ -173,10 +174,6 @@ class TransformerDecoder(nn.Module):
 
         # Initialize parameters
         self.reset_parameters()
-
-    @property
-    def device_id(self):
-        return torch.cuda.device_of(next(self.parameters()).data).idx
 
     def reset_parameters(self):
         """Initialize parameters with xavier_uniform style."""

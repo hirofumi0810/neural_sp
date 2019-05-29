@@ -25,6 +25,7 @@ from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import BeamSearchDecoder
 from neural_sp.models.seq2seq.decoders.ctc_beam_search import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.ctc_greedy import GreedyDecoder
+from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
@@ -33,7 +34,7 @@ from neural_sp.models.torch_utils import tensor2np
 random.seed(1)
 
 
-class RNNTransducer(nn.Module):
+class RNNTransducer(DecoderBase):
     """RNN decoder.
 
     Args:
@@ -203,10 +204,6 @@ class RNNTransducer(nn.Module):
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
-    @property
-    def device_id(self):
-        return torch.cuda.device_of(next(self.parameters()).data).idx
-
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
         logger = logging.getLogger('training')
@@ -244,7 +241,8 @@ class RNNTransducer(nn.Module):
                        'loss_lmobj': None,
                        'acc_lmobj': None,
                        'ppl_lmobj': None}
-        loss = eouts.new_zeros((1,))
+        w = next(self.parameters())
+        loss = w.new_zeros((1,))
 
         # CTC loss
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
@@ -311,6 +309,40 @@ class RNNTransducer(nn.Module):
                                                               size_average=True) * self.lsm_prob
 
         return loss
+
+    def forward_lmobj(self, ys):
+        """Compute XE loss for LM objective.
+
+        Args:
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+        Returns:
+            loss (FloatTensor): `[1]`
+            acc (float): accuracy
+            ppl (float): perplexity
+
+        """
+        bs = len(ys)
+        w = next(self.parameters())
+
+        # Append <sos> and <eos>
+        eos = w.new_zeros(1).fill_(self.eos).long()
+        ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
+        ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
+        ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
+
+        # Update prediction network
+        out_pred, _ = self.recurrency(self.embed(ys_in_pad), None)
+        logits = self.output_lmobj(out_pred)
+
+        # Compute XE loss for LM objective
+        loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                               ignore_index=self.pad, size_average=False) / bs
+
+        # Compute token-level accuracy in teacher-forcing
+        acc = compute_accuracy(logits, ys_out_pad, self.pad)
+        ppl = min(np.exp(loss.item()), np.inf)
+
+        return loss, acc, ppl
 
     def forward_rnnt(self, eouts, elens, ys, ys_hist=[], return_logits=False, teacher_dist=None):
         """Compute XE loss for the attention-based sequence-to-sequence model.
