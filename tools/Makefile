@@ -23,7 +23,7 @@ CONDA=$(TOOL)/miniconda
 
 .PHONY: all clean
 
-all: miniconda.done kaldi.done python.done warp-ctc.done kaldi-io.done extra
+all: miniconda.done kaldi.done python.done warp-ctc.done warp-rnnt.done kaldi-io.done extra
 extra: sentencepiece.done nkf.done
 
 # miniconda
@@ -73,6 +73,16 @@ warp-ctc.done:
 	# . $(TOOL)/miniconda/bin/activate; pip install cffi # ??
 	. $(TOOL)/miniconda/bin/activate; cd $(TOOL)/warp-ctc/pytorch_binding && python setup.py install # maybe need to: apt-get install python-dev
 	touch warp-ctc.done
+
+# warp-rnnt
+warp-rnnt.done:
+	if [ -e $(TOOL)/warp-rnnt ]; then rm -rf $(TOOL)/warp-rnnt; fi
+	git clone https://github.com/HawkAaron/warp-transducer $(TOOL)/warp-rnnt
+	# NOTE: Requires gcc>=4.9 to build extensions with pytorch>=1.0
+	. $(TOOL)/miniconda/bin/activate; cd $(TOOL)/warp-rnnt && mkdir build && cd build && cmake .. && make -j4 ; true
+	# . $(TOOL)/miniconda/bin/activate; pip install cffi # ??
+	. $(TOOL)/miniconda/bin/activate; cd $(TOOL)/warp-rnnt/pytorch_binding && python setup.py install # maybe need to: apt-get install python-dev
+	touch warp-rnnt.done
 
 kaldi-io.done:
 	if [ -e ../utils/kaldi_io.py ]; then rm ../utils/kaldi_io.py; fi

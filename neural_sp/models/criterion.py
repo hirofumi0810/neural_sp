@@ -12,11 +12,8 @@ from __future__ import print_function
 
 import math
 import numpy as np
-
 import torch
 import torch.nn.functional as F
-
-from neural_sp.models.torch_utils import to_onehot
 
 
 def cross_entropy_lsm(logits, ys, ylens, lsm_prob, size_average=False):
@@ -51,12 +48,12 @@ def cross_entropy_lsm(logits, ys, ylens, lsm_prob, size_average=False):
     return loss
 
 
-def distillation(logits_student, logits_teacher, ylens, temperature=1, size_average=False):
+def distillation(logits_student, probs_teacher, ylens, temperature=1, size_average=False):
     """Compute cross entropy loss for knowledge distillation of sequence-to-sequence models.
 
     Args:
         logits_student (FloatTensor): `[B, T, vocab]`
-        logits_teacher (FloatTensor): `[B, T, vocab]`
+        probs_teacher (FloatTensor): `[B, T, vocab]`
         ylens (list): A list of length `[B]`
         temperature (float):
         size_average (bool):
@@ -67,7 +64,6 @@ def distillation(logits_student, logits_teacher, ylens, temperature=1, size_aver
     bs, _, vocab = logits_student.size()
 
     # Compute XE for knowledge distillation
-    probs_teacher = F.softmax(logits_teacher / temperature, dim=-1).data
     log_probs_student = F.log_softmax(logits_student / temperature, dim=-1)
     xe = -torch.mul(probs_teacher, log_probs_student)
     loss = np.sum([xe[b, :ylens[b]].sum() for b in range(bs)])
@@ -77,7 +73,7 @@ def distillation(logits_student, logits_teacher, ylens, temperature=1, size_aver
 
 
 def kldiv_lsm_ctc(logits, ylens, size_average=False):
-    """Compute KL divergence loss for label smoothing of CTC models.
+    """Compute KL divergence loss for label smoothing of CTC and Transducer models.
 
     Args:
         logits (FloatTensor): `[B, T, vocab]`
@@ -87,7 +83,8 @@ def kldiv_lsm_ctc(logits, ylens, size_average=False):
         loss (FloatTensor): `[1]`
 
     """
-    bs, _, vocab = logits.size()
+    bs = logits.size(0)
+    vocab = logits.size(-1)
 
     # Create uniform distribution
     log_uniform = logits.new_zeros(logits.size()).fill_(math.log(1 / (vocab - 2)))

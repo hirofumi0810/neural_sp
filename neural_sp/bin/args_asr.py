@@ -142,7 +142,8 @@ def parse():
     parser.add_argument('--bridge_layer', type=strtobool, default=False,
                         help='')
     parser.add_argument('--dec_type', type=str, default='lstm',
-                        choices=['lstm', 'gru', 'transformer'],
+                        choices=['lstm', 'gru', 'transformer',
+                                 'lstm_transducer', 'gru_transducer', 'self_attn_transducer'],
                         help='')
     parser.add_argument('--dec_n_units', type=int, default=512,
                         help='number of units in each decoder RNN layer')

@@ -20,6 +20,7 @@ from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn import RNNDecoder
+from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
 from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
@@ -206,6 +207,35 @@ class Seq2seq(ModelBase):
                     backward=(dir == 'bwd'),
                     global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                     mtl_per_batch=args.mtl_per_batch)
+            elif 'transducer' in args.dec_type:
+                dec = RNNTransducer(
+                    eos=self.eos,
+                    unk=self.unk,
+                    pad=self.pad,
+                    blank=self.blank,
+                    enc_n_units=self.enc.output_dim,
+                    rnn_type=args.dec_type,
+                    n_units=args.dec_n_units,
+                    n_projs=args.dec_n_projs,
+                    n_layers=args.dec_n_layers,
+                    residual=args.dec_residual,
+                    bottleneck_dim=args.dec_bottleneck_dim,
+                    emb_dim=args.emb_dim,
+                    vocab=self.vocab,
+                    dropout=args.dropout_dec,
+                    dropout_emb=args.dropout_emb,
+                    lsm_prob=args.lsm_prob,
+                    ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
+                    ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
+                        '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
+                    # lm=args.lm_conf,
+                    lm=lm,  # TODO(hirofumi): load RNNLM in the model init.
+                    lm_init=args.lm_init,
+                    lmobj_weight=args.lmobj_weight,
+                    share_lm_softmax=args.share_lm_softmax,
+                    global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
+                    mtl_per_batch=args.mtl_per_batch,
+                    param_init=args.param_init)
             else:
                 dec = RNNDecoder(
                     eos=self.eos,
@@ -347,7 +377,8 @@ class Seq2seq(ModelBase):
                 for dir_sub in directions:
                     getattr(self, 'dec_' + dir_sub + '_' + sub).start_scheduled_sampling()
 
-    def forward(self, batch, reporter=None, task='all', is_eval=False, teacher=None):
+    def forward(self, batch, reporter=None, task='all', is_eval=False,
+                teacher=None, teacher_lm=None):
         """Forward computation.
 
         Args:
@@ -364,6 +395,7 @@ class Seq2seq(ModelBase):
             is_eval (bool): the history will not be saved.
                 This should be used in inference model for memory efficiency.
             teacher (Seq2seq): used for knowledge distillation
+            teacher_lm (RNNLM): used for knowledge distillation
         Returns:
             loss (FloatTensor): `[1]`
             reporter ():
@@ -375,11 +407,11 @@ class Seq2seq(ModelBase):
                 loss, reporter = self._forward(batch, task, reporter)
         else:
             self.train()
-            loss, reporter = self._forward(batch, task, reporter, teacher)
+            loss, reporter = self._forward(batch, task, reporter, teacher, teacher_lm)
 
         return loss, reporter
 
-    def generate_logits(self, batch):
+    def generate_probs(self, batch, lm=None, lm_weight=0, temperature=1):
         # Encode input features
         if self.input_type == 'speech':
             enc_outs = self.encode(batch['xs'], task='ys')
@@ -390,10 +422,22 @@ class Seq2seq(ModelBase):
         logits = self.dec_fwd.forward_att(
             enc_outs['ys']['xs'], enc_outs['ys']['xlens'], batch['ys'],
             return_logits=True)
+        teacher_probs = torch.softmax(logits / temperature, dim=-1).data
 
-        return logits
+        if lm is not None and lm_weight > 0:
+            # Append <sos> and <eos>
+            eos = logits.new_zeros(1).fill_(self.eos).long()
+            _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long()
+                   for y in batch['ys']]
+            ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
+            ys_in_pad = pad_list(ys_in, self.pad)
+            lmout, _ = lm.decode(lm.encode(ys_in_pad), None)
+            lm_probs = torch.softmax(lm.generate(lmout), dim=-1).data
+            teacher_probs = (1 - lm_weight) * teacher_probs + lm_weight * lm_probs
 
-    def _forward(self, batch, task, reporter, teacher=None):
+        return teacher_probs
+
+    def _forward(self, batch, task, reporter, teacher=None, teacher_lm=None):
         # Encode input features
         if self.input_type == 'speech':
             if self.mtl_per_batch:
@@ -412,21 +456,26 @@ class Seq2seq(ModelBase):
         if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
             if teacher is not None:
                 teacher.eval()
-                teacher_dist = teacher.generate_logits(batch)
+                if teacher_lm is not None:
+                    teacher_lm.eval()
+                teacher_probs = teacher.generate_probs(batch, lm=teacher_lm, lm_weight=0.1)
                 # TODO: label smoothing?
                 # TODO: scheduled sampling?
                 # TODO: dropout?
             else:
-                teacher_dist = None
+                teacher_probs = None
             loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'],
-                                             batch['ys'], task, batch['ys_hist'], teacher_dist)
+                                             batch['ys'], task, batch['ys_hist'], teacher_probs)
             loss += loss_fwd
-            observation['loss.att'] = obs_fwd['loss_att']
+            if isinstance(self.dec_fwd, RNNTransducer):
+                observation['loss.transducer'] = obs_fwd['loss_transducer']
+            else:
+                observation['loss.att'] = obs_fwd['loss_att']
+                observation['acc.att'] = obs_fwd['acc_att']
+                observation['ppl.att'] = obs_fwd['ppl_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
             observation['loss.lmobj'] = obs_fwd['loss_lmobj']
-            observation['acc.att'] = obs_fwd['acc_att']
             observation['acc.lmobj'] = obs_fwd['acc_lmobj']
-            observation['ppl.att'] = obs_fwd['ppl_att']
             observation['ppl.lmobj'] = obs_fwd['ppl_lmobj']
 
         # for the backward decoder in the main task
@@ -434,11 +483,11 @@ class Seq2seq(ModelBase):
             loss_bwd, obs_bwd = self.dec_bwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'], batch['ys'], task)
             loss += loss_bwd
             observation['loss.att-bwd'] = obs_bwd['loss_att']
+            observation['acc.att-bwd'] = obs_bwd['acc_att']
+            observation['ppl.att-bwd'] = obs_bwd['ppl_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
             observation['loss.lmobj-bwd'] = obs_bwd['loss_lmobj']
-            observation['acc.att-bwd'] = obs_bwd['acc_att']
             observation['acc.lmobj-bwd'] = obs_bwd['acc_lmobj']
-            observation['ppl.att-bwd'] = obs_bwd['ppl_att']
             observation['ppl.lmobj-bwd'] = obs_bwd['ppl_lmobj']
 
         # only fwd for sub tasks
@@ -449,12 +498,15 @@ class Seq2seq(ModelBase):
                     enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'],
                     batch['ys_' + sub], task)
                 loss += loss_sub
-                observation['loss.att-' + sub] = obs_fwd_sub['loss_att']
+                if isinstance(getattr(self, 'dec_fwd_' + sub), RNNTransducer):
+                    observation['loss.transducer-' + sub] = obs_fwd_sub['loss_transducer']
+                else:
+                    observation['loss.att-' + sub] = obs_fwd_sub['loss_att']
+                    observation['acc.att-' + sub] = obs_fwd_sub['acc_att']
+                    observation['ppl.att-' + sub] = obs_fwd_sub['ppl_att']
                 observation['loss.ctc-' + sub] = obs_fwd_sub['loss_ctc']
                 observation['loss.lmobj-' + sub] = obs_fwd_sub['loss_lmobj']
-                observation['acc.att-' + sub] = obs_fwd_sub['acc_att']
                 observation['acc.lmobj-' + sub] = obs_fwd_sub['acc_lmobj']
-                observation['ppl.att-' + sub] = obs_fwd_sub['ppl_att']
                 observation['ppl.lmobj-' + sub] = obs_fwd_sub['ppl_lmobj']
 
         if reporter is not None:
