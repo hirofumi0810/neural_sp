@@ -22,7 +22,7 @@ from neural_sp.models.torch_utils import pad_list
 
 
 class LMBase(ModelBase):
-    """RNN language model."""
+    """Base class for language models."""
 
     def __init__(self, args):
 

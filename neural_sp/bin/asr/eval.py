@@ -26,7 +26,7 @@ from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
-from neural_sp.models.lm.lm import select_lm
+from neural_sp.models.lm.select import select_lm
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.models.seq2seq.skip_thought import SkipThought
 

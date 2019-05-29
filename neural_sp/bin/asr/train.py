@@ -37,7 +37,7 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
-from neural_sp.models.lm.lm import select_lm
+from neural_sp.models.lm.select import select_lm
 from neural_sp.models.seq2seq.seq2seq import Seq2seq
 from neural_sp.models.seq2seq.skip_thought import SkipThought
 from neural_sp.utils import mkdir_join
@@ -88,6 +88,7 @@ def main():
             subsample_factor_sub2 = subsample_factor
 
     skip_thought = 'skip' in args.enc_type
+    transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
@@ -263,7 +264,7 @@ def main():
             optimizer=args.optimizer,
             lr=float(args.learning_rate),
             weight_decay=float(args.weight_decay),
-            transformer='transformer' in args.enc_type or args.dec_type == 'transformer')
+            transformer=transformer)
 
         epoch, step = 1, 1
         metric_dev_best = 10000
@@ -280,7 +281,7 @@ def main():
                                    warmup_start_lr=args.warmup_start_learning_rate,
                                    warmup_n_steps=args.warmup_n_steps,
                                    lr_factor=args.learning_rate_factor,
-                                   transformer='transformer' in args.enc_type or args.dec_type == 'transformer')
+                                   transformer=transformer)
 
     train_set.epoch = epoch - 1  # start from index:0
 
@@ -387,7 +388,7 @@ def main():
         reporter.step(is_eval=False)
 
         # Update learning rate
-        if step < args.warmup_n_steps:
+        if step < args.warmup_n_steps or transformer:
             model.module.optimizer = lr_controller.warmup(model.module.optimizer, step=step)
 
         if step % args.print_step == 0:
@@ -464,10 +465,10 @@ def main():
                                                 epoch=epoch)
                         logger.info('PER (%s): %.2f %%' % (dev_set.set, metric_dev))
                 elif args.metric == 'ppl':
-                    metric_dev = eval_ppl([model.module], dev_set, recog_params=recog_params)[0]
+                    metric_dev = eval_ppl([model.module], dev_set, batch_size=args.batch_size)[0]
                     logger.info('PPL (%s): %.2f' % (dev_set.set, metric_dev))
                 elif args.metric == 'loss':
-                    metric_dev = eval_ppl([model.module], dev_set, recog_params=recog_params)[1]
+                    metric_dev = eval_ppl([model.module], dev_set, batch_size=args.batch_size)[1]
                     logger.info('Loss (%s): %.2f' % (dev_set.set, metric_dev))
                 else:
                     raise NotImplementedError(args.metric)
@@ -509,10 +510,10 @@ def main():
                                                       epoch=epoch)
                                 logger.info('PER (%s): %.2f %%' % (s.set, per_test))
                         elif args.metric == 'ppl':
-                            ppl_test = eval_ppl([model.module], s, recog_params=recog_params)[0]
+                            ppl_test = eval_ppl([model.module], s, batch_size=args.batch_size)[0]
                             logger.info('PPL (%s): %.2f' % (s.set, ppl_test))
                         elif args.metric == 'loss':
-                            loss_test = eval_ppl([model.module], s, recog_params=recog_params)[1]
+                            loss_test = eval_ppl([model.module], s, batch_size=args.batch_size)[1]
                             logger.info('Loss (%s): %.2f' % (s.set, loss_test))
                         else:
                             raise NotImplementedError(args.metric)
@@ -577,6 +578,7 @@ def make_model_name(args, subsample_factor):
         dir_name += str(args.d_model) + 'dmodel'
         dir_name += str(args.d_ff) + 'dff'
         dir_name += str(args.transformer_enc_n_layers) + 'L'
+        dir_name += str(args.transformer_attn_n_heads) + 'head'
     else:
         dir_name += str(args.enc_n_units) + 'H'
         dir_name += str(args.enc_n_projs) + 'P'
@@ -599,7 +601,7 @@ def make_model_name(args, subsample_factor):
             dir_name += str(args.d_model) + 'dmodel'
             dir_name += str(args.d_ff) + 'dff'
             dir_name += str(args.transformer_dec_n_layers) + 'L'
-            dir_name += '_' + args.transformer_attn_type
+            dir_name += str(args.transformer_attn_n_heads) + 'head'
         else:
             dir_name += str(args.dec_n_units) + 'H'
             dir_name += str(args.dec_n_projs) + 'P'

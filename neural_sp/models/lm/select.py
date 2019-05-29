@@ -4,7 +4,7 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Select a language model."""
+"""Select a language model"""
 
 from __future__ import absolute_import
 from __future__ import division

@@ -20,7 +20,7 @@ from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_lm import Dataset
-from neural_sp.models.lm.lm import select_lm
+from neural_sp.models.lm.select import select_lm
 from neural_sp.utils import mkdir_join
 
 

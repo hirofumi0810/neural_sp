@@ -31,7 +31,7 @@ from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
-from neural_sp.models.lm.lm import select_lm
+from neural_sp.models.lm.select import select_lm
 from neural_sp.utils import mkdir_join
 
 
@@ -216,7 +216,7 @@ def main():
         reporter.step(is_eval=False)
 
         # Update learning rate
-        if step < args.warmup_n_steps:
+        if step < args.warmup_n_steps or args.lm_type == 'transformer':
             model.module.optimizer = lr_controller.warmup(model.module.optimizer, step=step)
 
         if step % args.print_step == 0:
