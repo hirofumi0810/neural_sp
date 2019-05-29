@@ -18,9 +18,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 
-class ConvEncoder(nn.Module):
+class ConvEncoder(EncoderBase):
     """CNN encoder.
 
     Args:
@@ -52,6 +53,7 @@ class ConvEncoder(nn.Module):
                  param_init=0.1):
 
         super(ConvEncoder, self).__init__()
+        logger = logging.getLogger("training")
 
         self.in_channel = in_channel
         assert input_dim % in_channel == 0

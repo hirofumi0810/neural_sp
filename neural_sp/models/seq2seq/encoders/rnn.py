@@ -22,9 +22,10 @@ from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
 from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
+from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 
-class RNNEncoder(nn.Module):
+class RNNEncoder(EncoderBase):
     """RNN encoder.
 
     Args:
@@ -87,7 +88,6 @@ class RNNEncoder(nn.Module):
                  param_init=0.1):
 
         super(RNNEncoder, self).__init__()
-
         logger = logging.getLogger("training")
 
         if len(subsample) > 0 and len(subsample) != n_layers:
@@ -286,10 +286,6 @@ class RNNEncoder(nn.Module):
         # Initialize parameters
         self.reset_parameters(param_init)
 
-    @property
-    def output_dim(self):
-        return self._output_dim
-
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
         logger = logging.getLogger('training')
@@ -471,11 +467,3 @@ class RNNEncoder(nn.Module):
             eouts['ys_sub2']['xs'] = xs_sub2
             eouts['ys_sub2']['xlens'] = xlens_sub2
         return eouts
-
-
-def to2d(xs, size):
-    return xs.contiguous().view((int(np.prod(size[: -1])), int(size[-1])))
-
-
-def to3d(xs, size):
-    return xs.view(size)

@@ -17,9 +17,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 
-class TDSEncoder(nn.Module):
+class TDSEncoder(EncoderBase):
     """TDS (tim-depth separable convolutional) encoder.
 
     Args:
@@ -44,6 +45,7 @@ class TDSEncoder(nn.Module):
                  bottleneck_dim=0):
 
         super(TDSEncoder, self).__init__()
+        logger = logging.getLogger("training")
 
         self.in_channel = in_channel
         assert input_dim % in_channel == 0

@@ -19,16 +19,15 @@ from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
+from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
 import matplotlib
 matplotlib.use('Agg')
 
-logger = logging.getLogger("training")
 
-
-class TransformerEncoder(nn.Module):
+class TransformerEncoder(EncoderBase):
     """Transformer encoder.
 
     Args:
@@ -86,6 +85,7 @@ class TransformerEncoder(nn.Module):
                  param_init=0.1):
 
         super(TransformerEncoder, self).__init__()
+        logger = logging.getLogger("training")
 
         self.d_model = d_model
         self.n_layers = n_layers

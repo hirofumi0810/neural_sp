@@ -17,9 +17,10 @@ import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.glu import GLUBlock
+from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 
-class GatedConvEncoder(nn.Module):
+class GatedConvEncoder(EncoderBase):
     """Gated convolutional neural netwrok encoder.
 
     Args:
@@ -46,6 +47,7 @@ class GatedConvEncoder(nn.Module):
                  param_init=0.1):
 
         super(GatedConvEncoder, self).__init__()
+        logger = logging.getLogger("training")
 
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
