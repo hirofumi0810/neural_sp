@@ -187,7 +187,7 @@ def main():
                 per = eval_phone(ensemble_models, dataset, recog_params,
                                  epoch=epoch - 1,
                                  recog_dir=args.recog_dir,
-                                 progressbar=True)[0]
+                                 progressbar=True)
                 per_avg += per
             else:
                 raise ValueError(args.recog_unit)
