@@ -59,13 +59,7 @@ class RNNLM(LMBase):
         self.fast_impl = False
         if args.n_projs == 0 and not args.residual:
             self.fast_impl = True
-            if 'lstm' in args.lm_type:
-                rnn = nn.LSTM
-            elif 'gru' in args.lm_type:
-                rnn = nn.GRU
-            else:
-                raise ValueError('rnn_type must be "(b)lstm" or "(b)gru".')
-
+            rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
             self.rnn = rnn(args.emb_dim, args.n_units, args.n_layers,
                            bias=True,
                            batch_first=True,

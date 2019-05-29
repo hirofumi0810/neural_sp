@@ -198,9 +198,7 @@ class RNNEncoder(nn.Module):
                     raise ValueError('rnn_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
 
                 self.rnn = rnn(self._output_dim, n_units, n_layers,
-                               bias=True,
-                               batch_first=True,
-                               dropout=dropout,
+                               bias=True, batch_first=True, dropout=dropout,
                                bidirectional=self.bidirectional)
                 # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
                 self._output_dim = n_units * self.n_dirs
@@ -243,9 +241,7 @@ class RNNEncoder(nn.Module):
                         raise ValueError('rnn_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
 
                     self.rnn += [rnn_i(self._output_dim, n_units, 1,
-                                       bias=True,
-                                       batch_first=True,
-                                       dropout=0,
+                                       bias=True, batch_first=True, dropout=0,
                                        bidirectional=self.bidirectional)]
                     self.dropout += [nn.Dropout(p=dropout)]
                     self._output_dim = n_units * self.n_dirs
@@ -258,18 +254,14 @@ class RNNEncoder(nn.Module):
                     # Task specific layer
                     if l == n_layers_sub1 - 1 and task_specific_layer:
                         self.rnn_sub1 = rnn_i(self._output_dim, n_units, 1,
-                                              bias=True,
-                                              batch_first=True,
-                                              dropout=0,
+                                              bias=True, batch_first=True, dropout=0,
                                               bidirectional=self.bidirectional)
                         self.dropout_sub1 = nn.Dropout(p=dropout)
                         if last_proj_dim != self.output_dim:
                             self.bridge_sub1 = LinearND(n_units, last_proj_dim, dropout=dropout)
                     if l == n_layers_sub2 - 1 and task_specific_layer:
                         self.rnn_sub2 = rnn_i(self._output_dim, n_units, 1,
-                                              bias=True,
-                                              batch_first=True,
-                                              dropout=0,
+                                              bias=True, batch_first=True, dropout=0,
                                               bidirectional=self.bidirectional)
                         self.dropout_sub2 = nn.Dropout(p=dropout)
                         if last_proj_dim != self.output_dim:
@@ -362,7 +354,7 @@ class RNNEncoder(nn.Module):
             xs = self.dropout_top(xs)
         else:
             residual = None
-            for l in range(len(self.rnn)):
+            for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()
                 # NOTE: this is necessary for multi-GPUs setting
 
@@ -410,7 +402,7 @@ class RNNEncoder(nn.Module):
                         return eouts
 
                 # NOTE: Exclude the last layer
-                if l != len(self.rnn) - 1:
+                if l != self.n_layers - 1:
                     # Projection layer
                     if self.n_projs > 0:
                         xs = torch.tanh(self.proj[l](xs))

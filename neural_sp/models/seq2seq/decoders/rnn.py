@@ -368,7 +368,7 @@ class RNNDecoder(nn.Module):
     def start_scheduled_sampling(self):
         self._ss_prob = self.ss_prob
 
-    def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_dist=None):
+    def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_probs=None):
         """Forward computation.
 
         Args:
@@ -377,7 +377,7 @@ class RNNDecoder(nn.Module):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             task (str): all or ys or ys_sub*
             ys_hist (list):
-            teacher_dist (FloatTensor): `[B, L, vocab]`
+            teacher_probs (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
             observation (dict):
@@ -414,9 +414,9 @@ class RNNDecoder(nn.Module):
                 loss += loss_lmobj * self.lmobj_weight
 
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task and 'lmobj' not in task and 'lm' not in task)):
+        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task and 'lmobj' not in task)):
             loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys, ys_hist,
-                                                          teacher_dist=teacher_dist)
+                                                          teacher_probs=teacher_probs)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
@@ -439,18 +439,15 @@ class RNNDecoder(nn.Module):
             loss (FloatTensor): `[B, L, vocab]`
 
         """
-        # Compute the auxiliary CTC loss
-        elensmbl_ctc = np2tensor(np.fromiter(elens, dtype=np.int64), -1).int()
-        ys_ctc = [np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys]  # always fwd
-        ylens = np2tensor(np.fromiter([y.size(0) for y in ys_ctc], dtype=np.int64), -1).int()
-        ys_ctc = torch.cat(ys_ctc, dim=0).int()
-        # NOTE: Concatenate all elements in ys for warpctc_pytorch
+        # Concatenate all elements in ys for warpctc_pytorch
+        elens = np2tensor(np.fromiter(elens, dtype=np.int64)).int()
+        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int64)).int()
+        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys], dim=0).int()
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
-        logits = self.output_ctc(eouts)
-        loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
-                                 ys_ctc, elensmbl_ctc, ylens)
+        logits = self.output_ctc(eouts).transpose(1, 0).cpu()  # time-major
+        loss = self.warpctc_loss(logits, ys_ctc, elens, ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         if self.device_id >= 0:
@@ -479,13 +476,11 @@ class RNNDecoder(nn.Module):
         w = next(self.parameters())
 
         # Append <sos> and <eos>
-        eos = w.new_zeros((1,)).fill_(self.eos).long()
+        eos = w.new_zeros(1).fill_(self.eos).long()
         ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
                         self.device_id).long() for y in ys]
-        ys_in = [torch.cat([eos, y], dim=0) for y in ys]
-        ys_out = [torch.cat([y, eos], dim=0) for y in ys]
-        ys_in_pad = pad_list(ys_in, self.pad)
-        ys_out_pad = pad_list(ys_out, self.pad)
+        ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
+        ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
         # Initialization
         dstates = self.init_dec_state(bs)
@@ -497,10 +492,8 @@ class RNNDecoder(nn.Module):
 
         logits = []
         for t in range(ys_in_pad.size(1)):
-            # Recurrency
+            # Recurrency -> Generate
             dstates = self.recurrency(ys_emb[:, t:t + 1], cv, dstates['dstate'])
-
-            # Generate
             if self.loop_type == 'lmdecoder':
                 logits_t = self.output_lmobj(dstates['dout_lmdec'])
             elif self.loop_type == 'normal':
@@ -520,7 +513,7 @@ class RNNDecoder(nn.Module):
 
         return loss, acc, ppl
 
-    def forward_att(self, eouts, elens, ys, ys_hist=[], return_logits=False, teacher_dist=None):
+    def forward_att(self, eouts, elens, ys, ys_hist=[], return_logits=False, teacher_probs=None):
         """Compute XE loss for the attention-based sequence-to-sequence model.
 
         Args:
@@ -529,7 +522,7 @@ class RNNDecoder(nn.Module):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             ys_hist (list):
             return_logits (bool): return logits for knowledge distillation
-            teacher_dist (FloatTensor): `[B, L, vocab]`
+            teacher_probs (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
             acc (float):
@@ -540,11 +533,11 @@ class RNNDecoder(nn.Module):
 
         # Append <sos> and <eos>
         eos = eouts.new_zeros(1).fill_(self.eos).long()
-        _ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64), self.device_id).long() for y in ys]
-        ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
-        ys_in_pad = pad_list(ys_in, self.pad)
-        ys_out = [torch.cat([y, eos], dim=0) for y in _ys]
-        ys_out_pad = pad_list(ys_out, self.pad)
+        _ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
+                         self.device_id).long() for y in ys]
+        ylens = [len(y) + 1 for y in ys]  # +1 for <eos>
+        ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)
+        ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in _ys], self.pad)
 
         # Initialization
         if self.contextualize:
@@ -592,17 +585,15 @@ class RNNDecoder(nn.Module):
 
         # Compute XE sequence loss
         if self.adaptive_softmax is None:
-            if teacher_dist is not None:
+            if teacher_probs is not None:
                 # Knowledge distillation
-                loss = distillation(logits, teacher_dist,
-                                    ylens=[y.size(0) for y in ys_out],
+                loss = distillation(logits, teacher_probs, ylens,
                                     temperature=1,
                                     size_average=False) / bs
             else:
                 if self.lsm_prob > 0:
                     # Label smoothing
-                    loss = cross_entropy_lsm(logits, ys_out_pad,
-                                             ylens=[y.size(0) for y in ys_out],
+                    loss = cross_entropy_lsm(logits, ys_out_pad, ylens,
                                              lsm_prob=self.lsm_prob, size_average=False) / bs
                 else:
                     loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
@@ -610,8 +601,7 @@ class RNNDecoder(nn.Module):
 
             # Focal loss
             if self.fl_weight > 0:
-                fl = focal_loss(logits, ys_out_pad,
-                                ylens=[y.size(0) for y in ys_out],
+                fl = focal_loss(logits, ys_out_pad, ylens,
                                 alpha=self.fl_weight,
                                 gamma=self.fl_gamma,
                                 size_average=False) / bs
@@ -769,7 +759,7 @@ class RNNDecoder(nn.Module):
     def greedy(self, eouts, elens, max_len_ratio,
                exclude_eos=False, idx2token=None, refs_id=None,
                speakers=None, oracle=False):
-        """Greedy decoding in the inference stage (used only for evaluation during training).
+        """Greedy decoding.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
@@ -785,7 +775,7 @@ class RNNDecoder(nn.Module):
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
 
         """
-        bs, max_xlen, enc_n_units = eouts.size()
+        bs, xlen_max, _ = eouts.size()
 
         # Initialization
         dstates = self.init_dec_state(bs)
@@ -795,23 +785,21 @@ class RNNDecoder(nn.Module):
         aw = None
         lmstate = (None, None)
         lm_feat = eouts.new_zeros(bs, 1, self.dec_n_units)
-
-        # Start from <sos> (<eos> in case of the backward decoder)
         y = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
         best_hyps_tmp, aws_tmp = [], []
-        ylens = np.zeros((bs,), dtype=np.int64)
+        ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
         if oracle:
             assert refs_id is not None
             ylen_max = max([len(refs_id[b]) for b in range(bs)]) + 1
         else:
-            ylen_max = int(math.floor(max_xlen * max_len_ratio)) + 1
+            ylen_max = int(math.floor(xlen_max * max_len_ratio)) + 1
         for t in range(ylen_max):
-            if oracle:
+            if oracle and t > 0:
                 y = eouts.new_zeros(bs, 1).long()
                 for b in range(bs):
-                    y[b] = ([self.eos] + refs_id[b])[t]
+                    y[b] = refs_id[b, t - 1]
 
             # Update LM states for LM fusion
             lmout = None
@@ -874,7 +862,7 @@ class RNNDecoder(nn.Module):
                     lm=None, lm_rev=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False, refs_id=None, utt_ids=None, speakers=None,
                     ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[]):
-        """Beam search decoding in the inference stage.
+        """Beam search decoding.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
@@ -908,7 +896,7 @@ class RNNDecoder(nn.Module):
         """
         logger = logging.getLogger("decoding")
 
-        bs, _, enc_n_units = eouts.size()
+        bs = eouts.size(0)
         n_models = len(ensmbl_decs) + 1
 
         oracle = params['recog_oracle']
@@ -1559,6 +1547,3 @@ class RNNDecoder(nn.Module):
             topk = probs.size(-1)
         _, topk_ids = torch.topk(probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
         return tensor2np(probs), tensor2np(topk_ids)
-
-    def plot_attention(self, save_path):
-        raise NotImplementedError
