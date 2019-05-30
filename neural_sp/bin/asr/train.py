@@ -286,6 +286,8 @@ def main():
     train_set.epoch = epoch - 1  # start from index:0
 
     # Load the teacher ASR model
+    teacher = None
+    teacher_lm = None
     if args.teacher and os.path.isfile(args.teacher):
         conf_teacher = load_config(os.path.join(os.path.dirname(args.teacher), 'conf.yml'))
         for k, v in conf_teacher.items():
@@ -304,9 +306,6 @@ def main():
                 setattr(args_lm, k, v)
             teacher_lm = select_lm(args_lm)
             teacher_lm, _ = load_checkpoint(teacher_lm, args.teacher_lm)
-    else:
-        teacher = None
-        teacher_lm = None
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -357,9 +356,11 @@ def main():
     start_time_step = time.time()
     not_improved_n_epochs = 0
     pbar_epoch = tqdm(total=len(train_set))
+    accum_n_tokens = 0
     while True:
         # Compute loss in the training set
         batch_train, is_new_epoch = train_set.next()
+        accum_n_tokens += sum([len(y) for y in batch_train['ys']])
 
         # Change tasks depending on task
         for task in tasks:
@@ -371,17 +372,18 @@ def main():
             else:
                 loss, reporter = model(batch_train, reporter=reporter, task=task,
                                        teacher=teacher, teacher_lm=teacher_lm)
-            loss /= args.accum_grad_n_steps
+            # loss /= args.accum_grad_n_steps
             if len(model.device_ids) > 1:
                 loss.backward(torch.ones(len(model.device_ids)))
             else:
                 loss.backward()
             loss.detach()  # Trancate the graph
-            if step % args.accum_grad_n_steps == 0:
+            if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
                 if args.clip_grad_norm > 0:
                     torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
                 model.module.optimizer.step()
                 model.module.optimizer.zero_grad()
+                accum_n_tokens = 0
             loss_train = loss.item()
             del loss
 
@@ -630,6 +632,8 @@ def make_model_name(args, subsample_factor):
         dir_name += '_fl' + str(args.focal_loss_weight)
     if args.warmup_n_steps > 0:
         dir_name += '_warmpup' + str(args.warmup_n_steps)
+    if args.accum_grad_n_tokens > 0:
+        dir_name += '_accum' + str(args.accum_grad_n_tokens)
 
     # LM integration
     if args.lm_fusion:
@@ -677,6 +681,8 @@ def make_model_name(args, subsample_factor):
         dir_name += '_' + conf_pt['unit'] + 'pt'
     if args.freeze_encoder:
         dir_name += '_encfreeze'
+    if args.lm_init:
+        dir_name += '_lminit'
 
     if args.adaptive_softmax:
         dir_name += '_adaptiveSM'

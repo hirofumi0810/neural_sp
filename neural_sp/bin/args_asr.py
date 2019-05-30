@@ -181,7 +181,7 @@ def parse():
     parser.add_argument('--learning_rate_factor', type=float, default=10,
                         help='factor of learning rate for Transformer')
     parser.add_argument('--eps', type=float, default=1e-6,
-                        help='')
+                        help='epsilon parameter for Adadelta optimizer')
     parser.add_argument('--n_epochs', type=int, default=25,
                         help='number of epochs to train the model')
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
@@ -210,15 +210,15 @@ def parse():
                         help='initial learning rate for learning rate warm up')
     parser.add_argument('--warmup_n_steps', type=int, default=0,
                         help='number of steps to warm up learing rate')
-    parser.add_argument('--accum_grad_n_steps', type=int, default=1,
-                        help='number of steps to accumulate gradients')
+    parser.add_argument('--accum_grad_n_tokens', type=int, default=0,
+                        help='total number of tokens to accumulate gradients')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
                         help='')
     parser.add_argument('--rec_weight_orthogonal', type=strtobool, default=False,
                         help='')
     parser.add_argument('--pretrained_model', default=False, nargs='?',
-                        help='')
+                        help='path to the pretrained seq2seq model')
     # knowledge distillation
     parser.add_argument('--teacher', default=False, nargs='?',
                         help='')
@@ -240,14 +240,14 @@ def parse():
     parser.add_argument('--dropout_att', type=float, default=0.0,
                         help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=0,
-                        help='')
+                        help='weight decay parameter')
     parser.add_argument('--ss_prob', type=float, default=0.0,
-                        help='')
+                        help='probability of scheduled sampling')
     parser.add_argument('--ss_type', type=str, default='constant',
                         choices=['constant', 'saturation'],
-                        help='')
+                        help='type of scheduled sampling')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
-                        help='')
+                        help='probability of label smoothing')
     parser.add_argument('--focal_loss_weight', type=float, default=0.0,
                         help='')
     parser.add_argument('--focal_loss_gamma', type=float, default=2.0,
@@ -279,14 +279,14 @@ def parse():
                                  'cache', 'cache_bi'],
                         help='type of LM fusion')
     parser.add_argument('--lm_fusion', type=str, default=False, nargs='?',
-                        help='LM for LM fusion during training')
+                        help='path to LM for LM fusion during training')
     # LM initialization, objective
     parser.add_argument('--lm_init', type=str, default=False, nargs='?',
-                        help='')
+                        help='path to LM for initialization of the decoder network')
     parser.add_argument('--lmobj_weight', type=float, default=0.0, nargs='?',
                         help='LM objective weight for the main task')
     parser.add_argument('--share_lm_softmax', type=strtobool, default=False, nargs='?',
-                        help='')
+                        help='share the softmax layer between ASR and LM')
     # transformer
     parser.add_argument('--d_model', type=int, default=512,
                         help='')
