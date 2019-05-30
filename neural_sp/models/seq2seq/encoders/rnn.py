@@ -307,16 +307,16 @@ class RNNEncoder(EncoderBase):
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
-            xlens (list): `[B]`
+            xlens (list): A list of length `[B]`
             task (str): all or ys or ys_sub1 or ys_sub2
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T // prod(subsample), n_units (*2)]`
-                xlens (list): `[B]`
+                xlens (IntTensor): `[B]`
                 xs_sub1 (FloatTensor): `[B, T // prod(subsample), n_units (*2)]`
-                xlens_sub1 (list): `[B]`
+                xlens_sub1 (IntTensor): `[B]`
                 xs_sub2 (FloatTensor): `[B, T // prod(subsample), n_units (*2)]`
-                xlens_sub2 (list): `[B]`
+                xlens_sub2 (IntTensor): `[B]`
 
         """
         eouts = {'ys': {'xs': None, 'xlens': None},
@@ -340,33 +340,21 @@ class RNNEncoder(EncoderBase):
                 return eouts
 
         if self.fast_impl:
-            self.rnn.flatten_parameters()
-            # NOTE: this is necessary for multi-GPUs setting
-
-            # Path through RNN
-            xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
-            xs, _ = self.rnn(xs, hx=None)
-            xs = pad_packed_sequence(xs, batch_first=True)[0]
+            self.rnn.flatten_parameters()  # for multi-GPUs
+            xs = pass_rnn_with_padding(xs, xlens, self.rnn)
             xs = self.dropout_top(xs)
         else:
             residual = None
             for l in range(self.n_layers):
-                self.rnn[l].flatten_parameters()
-                # NOTE: this is necessary for multi-GPUs setting
-
-                # Path through RNN
-                xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
-                xs, _ = self.rnn[l](xs, hx=None)
-                xs = pad_packed_sequence(xs, batch_first=True)[0]
+                self.rnn[l].flatten_parameters()  # for multi-GPUs
+                xs = pass_rnn_with_padding(xs, xlens, self.rnn[l])
                 xs = self.dropout[l](xs)
 
                 # Pick up outputs in the sub task before the projection layer
                 if l == self.n_layers_sub1 - 1:
                     if self.task_specific_layer:
-                        self.rnn_sub1.flatten_parameters()
-                        xs_sub1 = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
-                        xs_sub1, _ = self.rnn_sub1(xs_sub1, hx=None)
-                        xs_sub1 = pad_packed_sequence(xs_sub1, batch_first=True)[0]
+                        self.rnn_sub1.flatten_parameters()  # for multi-GPUs
+                        xs_sub1 = pass_rnn_with_padding(xs, xlens, self.rnn_sub1)
                         xs_sub1 = self.dropout_sub1(xs_sub1)
                     else:
                         xs_sub1 = xs.clone()[perm_ids_unsort]
@@ -381,10 +369,8 @@ class RNNEncoder(EncoderBase):
 
                 if l == self.n_layers_sub2 - 1:
                     if self.task_specific_layer:
-                        self.rnn_sub2.flatten_parameters()
-                        xs_sub2 = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
-                        xs_sub2, _ = self.rnn_sub2(xs_sub2, hx=None)
-                        xs_sub2 = pad_packed_sequence(xs_sub2, batch_first=True)[0]
+                        self.rnn_sub2.flatten_parameters()  # for multi-GPUs
+                        xs_sub2 = pass_rnn_with_padding(xs, xlens, self.rnn_sub2)
                         xs_sub2 = self.dropout_sub2(xs_sub2)
                     else:
                         xs_sub2 = xs.clone()[perm_ids_unsort]
@@ -467,3 +453,10 @@ class RNNEncoder(EncoderBase):
             eouts['ys_sub2']['xs'] = xs_sub2
             eouts['ys_sub2']['xlens'] = xlens_sub2
         return eouts
+
+
+def pass_rnn_with_padding(xs, xlens, rnn):
+    xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
+    xs, _ = rnn(xs, hx=None)
+    xs = pad_packed_sequence(xs, batch_first=True)[0]
+    return xs
