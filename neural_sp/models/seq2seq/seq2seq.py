@@ -26,6 +26,7 @@ from neural_sp.models.seq2seq.encoders.select import select_encoder
 from neural_sp.models.seq2seq.frontends.sequence_summary import SequenceSummaryNetwork
 from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.frontends.splicing import splice
+from neural_sp.models.seq2seq.frontends.spec_augment import SpecAugment
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
@@ -45,9 +46,6 @@ class Seq2seq(ModelBase):
         # for encoder, decoder
         self.input_type = args.input_type
         self.input_dim = args.input_dim
-        self.n_stacks = args.n_stacks
-        self.n_skips = args.n_skips
-        self.n_splices = args.n_splices
         self.enc_type = args.enc_type
         self.enc_n_units = args.enc_n_units
         if args.enc_type in ['blstm', 'bgru', 'conv_blstm', 'conv_bgru']:
@@ -88,6 +86,21 @@ class Seq2seq(ModelBase):
         self.fwd_weight_sub2 = self.sub2_weight - self.ctc_weight_sub2
 
         # Feature extraction
+        self.n_stacks = args.n_stacks
+        self.n_skips = args.n_skips
+        self.n_splices = args.n_splices
+        self.is_specaug = args.n_freq_masks > 0 or args.n_time_masks > 0
+        self.specaug = None
+        if self.is_specaug:
+            assert args.n_stacks == 1 and args.n_skips == 1
+            assert args.n_splices == 1
+            self.specaug = SpecAugment(F=args.freq_width,
+                                       T=args.time_width,
+                                       n_freq_masks=args.n_freq_masks,
+                                       n_time_masks=args.n_time_masks,
+                                       p=args.time_width_upper)
+
+        # Frontend
         self.ssn = None
         if args.sequence_summary_network:
             assert args.input_type == 'speech'
@@ -373,7 +386,7 @@ class Seq2seq(ModelBase):
         if lm is not None and lm_weight > 0:
             # Append <sos> and <eos>
             eos = logits.new_zeros(1).fill_(self.eos).long()
-            _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long()
+            _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id)
                    for y in batch['ys']]
             ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
             ys_in_pad = pad_list(ys_in, self.pad)
@@ -487,7 +500,7 @@ class Seq2seq(ModelBase):
                 if self.n_splices > 1:
                     xs = [splice(x, self.n_splices, self.n_stacks) for x in xs]
 
-                xlens = [len(x) for x in xs]
+                xlens = torch.IntTensor([len(x) for x in xs])
                 # Flip acoustic features in the reverse order
                 if flip:
                     xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
@@ -495,9 +508,13 @@ class Seq2seq(ModelBase):
                     xs = [np2tensor(x, self.device_id).float() for x in xs]
                 xs = pad_list(xs, 0.0)
 
+                # SpecAugment
+                if self.is_specaug and self.training:
+                    xs = self.specaug(xs)
+
             elif self.input_type == 'text':
-                xlens = [len(x) for x in xs]
-                xs = [np2tensor(np.fromiter(x, dtype=np.int64), self.device_id).long() for x in xs]
+                xlens = torch.IntTensor([len(x) for x in xs])
+                xs = [np2tensor(np.fromiter(x, dtype=np.int64), self.device_id) for x in xs]
                 xs = pad_list(xs, self.pad)
                 xs = self.embed_in(xs)
 

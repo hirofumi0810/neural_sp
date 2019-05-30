@@ -583,7 +583,8 @@ def make_model_name(args, subsample_factor):
         dir_name += str(args.transformer_attn_n_heads) + 'head'
     else:
         dir_name += str(args.enc_n_units) + 'H'
-        dir_name += str(args.enc_n_projs) + 'P'
+        if args.enc_n_projs > 0:
+            dir_name += str(args.enc_n_projs) + 'P'
         dir_name += str(args.enc_n_layers) + 'L'
         if args.enc_residual:
             dir_name += 'res'
@@ -606,7 +607,8 @@ def make_model_name(args, subsample_factor):
             dir_name += str(args.transformer_attn_n_heads) + 'head'
         else:
             dir_name += str(args.dec_n_units) + 'H'
-            dir_name += str(args.dec_n_projs) + 'P'
+            if args.dec_n_projs > 0:
+                dir_name += str(args.dec_n_projs) + 'P'
             dir_name += str(args.dec_n_layers) + 'L'
             dir_name += '_' + args.dec_loop_type
             if args.dec_residual:
@@ -670,6 +672,12 @@ def make_model_name(args, subsample_factor):
                     dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
+
+    # SpecAugment
+    if args.n_freq_masks > 0:
+        dir_name += '_' + str(args.freq_width) + 'FM' + str(args.n_freq_masks)
+    if args.n_time_masks > 0:
+        dir_name += '_' + str(args.time_width) + 'TM' + str(args.n_time_masks)
 
     # contextualization
     if args.contextualize:

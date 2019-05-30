@@ -254,6 +254,17 @@ def parse():
                         help='')
     parser.add_argument('--adaptive_softmax', type=strtobool, default=False,
                         help='use adaptive softmax')
+    # SpecAugment
+    parser.add_argument('--freq_width', type=int, default=27,
+                        help='')
+    parser.add_argument('--n_freq_masks', type=int, default=0,
+                        help='')
+    parser.add_argument('--time_width', type=int, default=70,
+                        help='')
+    parser.add_argument('--n_time_masks', type=int, default=0,
+                        help='')
+    parser.add_argument('--time_width_upper', type=float, default=0.2,
+                        help='')
     # MTL
     parser.add_argument('--ctc_weight', type=float, default=0.0,
                         help='CTC loss weight for the main task')
