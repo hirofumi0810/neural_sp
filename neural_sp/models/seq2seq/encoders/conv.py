@@ -162,8 +162,8 @@ class Conv1LBlock(nn.Module):
                               stride=tuple(stride),
                               padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv, dim=1)[0]
-        self.batch_norm = nn.BatchNorm2d(out_channel) if batch_norm else None
-        self.dropout = nn.Dropout2d(p=dropout) if dropout > 0 else None
+        self.batch_norm = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
+        self.dropout = nn.Dropout2d(p=dropout)
 
         # Max Pooling
         self.pool = None
@@ -189,11 +189,9 @@ class Conv1LBlock(nn.Module):
 
         """
         xs = self.conv(xs)
-        if self.batch_norm is not None:
-            xs = self.batch_norm(xs)
+        xs = self.batch_norm(xs)
         xs = F.relu(xs)
-        if self.dropout is not None:
-            xs = self.dropout(xs)
+        xs = self.dropout(xs)
         xlens = update_lens(xlens, self.conv, dim=0)
 
         if self.pool is not None:
@@ -228,9 +226,8 @@ class Conv2LBlock(nn.Module):
                                stride=tuple(stride),
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv1, dim=1)[0]
-        if batch_norm:
-            self.batch_norm1 = nn.BatchNorm2d(out_channel)
-        self.dropout1 = nn.Dropout2d(p=dropout) if dropout > 0 else None
+        self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
+        self.dropout1 = nn.Dropout2d(p=dropout)
 
         # 2nd layer
         self.conv2 = nn.Conv2d(in_channels=out_channel,
@@ -239,9 +236,8 @@ class Conv2LBlock(nn.Module):
                                stride=tuple(stride),
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv2, dim=1)[0]
-        if batch_norm:
-            self.batch_norm2 = nn.BatchNorm2d(out_channel)
-        self.dropout2 = nn.Dropout2d(p=dropout) if dropout > 0 else None
+        self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
+        self.dropout2 = nn.Dropout2d(p=dropout)
 
         # Max Pooling
         self.pool = None
@@ -261,30 +257,26 @@ class Conv2LBlock(nn.Module):
 
         Args:
             xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
-            xlens (list): A list of length `[B]`
+            xlens (IntTensor): `[B]`
         Returns:
             xs (FloatTensor): `[B, T', feat_dim]`
-            xlens (list): A list of length `[B]`
+            xlens (IntTensor): `[B]`
 
         """
         residual = xs
 
         xs = self.conv1(xs)
-        if self.batch_norm:
-            xs = self.batch_norm1(xs)
+        xs = self.batch_norm1(xs)
         xs = F.relu(xs)
-        if self.dropout1 is not None:
-            xs = self.dropout1(xs)
+        xs = self.dropout1(xs)
         xlens = update_lens(xlens, self.conv1, dim=0)
 
         xs = self.conv2(xs)
-        if self.batch_norm:
-            xs = self.batch_norm2(xs)
+        xs = self.batch_norm2(xs)
         if self.residual and xs.size() == residual.size():
             xs += residual
         xs = F.relu(xs)
-        if self.dropout2 is not None:
-            xs = self.dropout2(xs)
+        xs = self.dropout2(xs)
         xlens = update_lens(xlens, self.conv2, dim=0)
 
         if self.pool is not None:
@@ -294,14 +286,21 @@ class Conv2LBlock(nn.Module):
         return xs, xlens
 
 
-def update_lens(xlens, layer, dim=0):
+def update_lens(seq_lens, layer, dim=0):
+    """Update lenghts (frequency or time).
+    Args:
+        seq_lens (list or IntTensor):
+        layer (nn.Conv2d or nn.MaxPool2d):
+        dim (int):
+    Returns:
+        seq_lens (IntTensor):
+    """
     assert type(layer) in [nn.Conv2d, nn.MaxPool2d]
     if type(layer) == nn.MaxPool2d and layer.ceil_mode:
-        def update(xlen): return np.ceil(
-            (xlen + 1 + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
+        def update(seq_len): return math.ceil(
+            (seq_len + 1 + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
     else:
-        def update(xlen): return np.floor(
-            (xlen + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
-    xlens = [update(xlen) for xlen in xlens]
-    xlens = torch.from_numpy(np.array(xlens, dtype=np.int64))
-    return xlens
+        def update(seq_len): return math.floor(
+            (seq_len + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
+    seq_lens = [update(seq_len) for seq_len in seq_lens]
+    return torch.IntTensor(seq_lens)
