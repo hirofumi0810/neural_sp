@@ -10,12 +10,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.torch_utils import make_pad_mask
+
+NEG_INF = float(np.finfo(np.float32).min)
 
 
 class AttentionMechanism(nn.Module):
@@ -110,7 +113,7 @@ class AttentionMechanism(nn.Module):
 
         Args:
             key (FloatTensor): `[B, klen, key_dim]`
-            klens (list): A list of length `[B]`
+            klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
             aw (FloatTensor): `[B, klen, 1 (n_heads)]`
@@ -164,7 +167,7 @@ class AttentionMechanism(nn.Module):
             cv = torch.stack(last_state, dim=0).unsqueeze(1)
         else:
             # Compute attention weights, context vector
-            e = e.masked_fill_(self.mask == 0, -1024)  # `[B, klen]`
+            e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, klen]`
             if self.sigmoid_smoothing:
                 aw = F.sigmoid(e) / F.sigmoid(e).sum(-1).unsqueeze(-1)
             else:

@@ -10,12 +10,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.torch_utils import make_pad_mask
+
+NEG_INF = float(np.finfo(np.float32).min)
 
 
 class MultiheadAttentionMechanism(nn.Module):
@@ -84,10 +87,10 @@ class MultiheadAttentionMechanism(nn.Module):
 
         Args:
             key (FloatTensor): `[B, klen, key_dim]`
-            klens (list): A list of length `[B]`
+            klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, qlen, query_dim]`
-            qlens (list): A list of length `[B]`
+            qlens (IntTensor): `[B]`
             aw (FloatTensor): dummy (not used)
             diagonal (bool): for Transformer decoder to hide future information
         Returns:
@@ -133,7 +136,7 @@ class MultiheadAttentionMechanism(nn.Module):
             e = self.v(e).permute(0, 3, 1, 2)
 
         # Compute attention weights
-        e = e.masked_fill_(self.mask == 0, -1e9)  # `[B, n_heads, qlen, klen]`
+        e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
         aw = F.softmax(e, dim=-1)
         aw = self.attn_dropout(aw)
         cv = torch.matmul(aw, self.value)  # `[B, n_heads, qlen, d_k]`

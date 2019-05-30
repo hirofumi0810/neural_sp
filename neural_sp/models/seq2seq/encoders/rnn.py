@@ -324,7 +324,10 @@ class RNNEncoder(EncoderBase):
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
         # Sort by lenghts in the descending order for pack_padded_sequence
-        xlens, perm_ids = torch.LongTensor(xlens).sort(0, descending=True)
+        xlens = torch.IntTensor(xlens)
+        if self.device_id > 0:
+            xlens = xlens.cuda(self.device_id)
+        xlens, perm_ids = xlens.sort(0, descending=True)
         xs = xs[perm_ids]
         _, perm_ids_unsort = perm_ids.sort()
 
@@ -441,7 +444,7 @@ class RNNEncoder(EncoderBase):
 
         # Unsort
         xs = xs[perm_ids_unsort]
-        xlens = xlens[perm_ids_unsort].tolist()
+        xlens = xlens[perm_ids_unsort]
 
         if task in ['all', 'ys']:
             eouts['ys']['xs'] = xs

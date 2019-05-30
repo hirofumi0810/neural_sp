@@ -226,7 +226,7 @@ class RNNTransducer(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             task (str): all or ys or ys_sub*
             ys_hist (list):
@@ -280,23 +280,22 @@ class RNNTransducer(DecoderBase):
         """Compute CTC loss.
 
         Args:
-            eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length `[B]`
+            eouts (FloatTensor): `[B, T, d_model]`
+            elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
-            loss (FloatTensor): `[B, L, vocab]`
+            loss (FloatTensor): `[1]`
 
         """
         # Concatenate all elements in ys for warpctc_pytorch
-        elens = np2tensor(np.fromiter(elens, dtype=np.int64)).int()
-        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int64)).int()
-        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys], dim=0).int()
+        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
+        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int32)) for y in ys], dim=0)
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
         logits = self.output_ctc(eouts)
         loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
-                                 ys_ctc, elens, ylens)
+                                 ys_ctc, elens.cpu(), ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         if self.device_id >= 0:
@@ -326,7 +325,7 @@ class RNNTransducer(DecoderBase):
 
         # Append <sos> and <eos>
         eos = w.new_zeros(1).fill_(self.eos).long()
-        ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
+        ys = [np2tensor(np.fromiter(y, dtype=np.int32), self.device_id).long() for y in ys]
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
@@ -349,7 +348,7 @@ class RNNTransducer(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             ys_hist (list):
             return_logits (bool): return logits for knowledge distillation
@@ -363,11 +362,11 @@ class RNNTransducer(DecoderBase):
         # Append <null> and <eos>
         null = eouts.new_zeros(1).long()
         if self.end_pointing:
-            _ys = [np2tensor(np.fromiter([y] + [self.eos], dtype=np.int64), self.device_id).long() for y in ys]
+            _ys = [np2tensor(np.fromiter([y] + [self.eos], dtype=np.int32), self.device_id).long() for y in ys]
         else:
-            _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id).long() for y in ys]
+            _ys = [np2tensor(np.fromiter(y, dtype=np.int32), self.device_id).long() for y in ys]
         ys_in_pad = pad_list([torch.cat([null, y], dim=0) for y in _ys], self.pad)
-        ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int64), self.device_id).int()
+        ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32), self.device_id)
         ys_out_pad = pad_list(_ys, 0).int()
 
         # Update prediction network
@@ -382,7 +381,8 @@ class RNNTransducer(DecoderBase):
         out = self.joint_dist(eouts, out_pred)
 
         # Compute Transducer loss
-        elens = np2tensor(np.fromiter(elens, dtype=np.int64), self.device_id).int()
+        if self.device_id >= 0:
+            elens = elens.cuda(self.device_id)
         log_probs = F.log_softmax(out, dim=-1)
         loss = self.warprnnt_loss(log_probs, ys_out_pad, elens, ylens)
         # NOTE: Transducer loss has already been normalized by bs
@@ -487,7 +487,7 @@ class RNNTransducer(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             max_len_ratio (int): maximum sequence length of tokens
             exclude_eos (bool):
             idx2token ():

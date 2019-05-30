@@ -161,7 +161,7 @@ class TransformerEncoderBlock(nn.Module):
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
-            xlens (list): A list of length `[B]`
+            xlens (IntTensor): `[B]`
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
             xx_aws (FloatTensor): `[B, T, T]`
@@ -240,9 +240,9 @@ class TransformerDecoderBlock(nn.Module):
 
         Args:
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
-            xlens (list): A list of length `[B]`
+            xlens (IntTensor): `[B]`
             ys (FloatTensor): `[B, L, d_model]`
-            ylens (list): A list of length `[B]`
+            ylens (IntTensor): `[B]`
         Returns:
             ys (FloatTensor): `[B, L, d_model]`
             yy_aw (FloatTensor)`[B, L, L]`

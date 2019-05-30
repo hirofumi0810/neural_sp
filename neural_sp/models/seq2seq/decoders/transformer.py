@@ -121,7 +121,7 @@ class TransformerDecoder(DecoderBase):
         self.fl_gamma = fl_gamma
         self.ctc_weight = ctc_weight
         self.ctc_fc_list = ctc_fc_list
-        self.backward = backward
+        self.bwd = backward
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
 
@@ -198,7 +198,7 @@ class TransformerDecoder(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             task (str): all or ys or ys_sub*
             ys_hist (list): dummy (not used)
@@ -242,22 +242,21 @@ class TransformerDecoder(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
             loss (FloatTensor): `[1]`
 
         """
         # Concatenate all elements in ys for warpctc_pytorch
-        elens = np2tensor(np.fromiter(elens, dtype=np.int64)).int()
-        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int64)).int()
-        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys], dim=0).int()
+        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
+        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int32)) for y in ys], dim=0)
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
         logits = self.output_ctc(eouts)
         loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
-                                 ys_ctc, elens, ylens)
+                                 ys_ctc, elens.cpu(), ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         if self.device_id >= 0:
@@ -276,7 +275,7 @@ class TransformerDecoder(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             return_logits (bool): return logits for knowledge distillation
         Returns:
@@ -289,9 +288,9 @@ class TransformerDecoder(DecoderBase):
 
         # Append <sos> and <eos>
         eos = eouts.new_zeros(1).fill_(self.eos).long()
-        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
+        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int32),
                         self.device_id).long() for y in ys]
-        ylens = [y.size(0) + 1 for y in ys]  # +1 for <eos>
+        ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
@@ -346,7 +345,7 @@ class TransformerDecoder(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             max_len_ratio (int): maximum sequence length of tokens
             exclude_eos (bool):
             idx2token ():
@@ -364,7 +363,7 @@ class TransformerDecoder(DecoderBase):
         ys = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
         best_hyps_tmp = []
-        ylens = np.zeros((bs,), dtype=np.int32)
+        ylens = torch.zeros(bs).int()
         yy_aws_tmp = [None] * bs
         xy_aws_tmp = [None] * bs
         eos_flags = [False] * bs
@@ -409,7 +408,7 @@ class TransformerDecoder(DecoderBase):
         #     # TODO(hirofumi): fix for MHA
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
-        if self.backward:
+        if self.bwd:
             # Reverse the order
             best_hyps = [best_hyps_tmp[b, :ylens[b]][::-1] for b in range(bs)]
             # aws = [xy_aws_tmp[b, :ylens[b]][::-1] for b in range(bs)]
@@ -419,7 +418,7 @@ class TransformerDecoder(DecoderBase):
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
-            if self.backward:
+            if self.bwd:
                 best_hyps = [best_hyps[b][1:] if eos_flags[b]
                              else best_hyps[b] for b in range(bs)]
             else:

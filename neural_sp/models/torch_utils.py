@@ -36,9 +36,9 @@ def np2tensor(array, device_id=-1):
 
     """
     tensor = torch.from_numpy(array)
-    if device_id < 0:
-        return tensor
-    return tensor.cuda(device_id)
+    if device_id >= 0:
+        tensor = tensor.cuda(device_id)
+    return tensor
 
 
 def pad_list(xs, pad_value=0.0, pad_left=False):
@@ -58,7 +58,6 @@ def pad_list(xs, pad_value=0.0, pad_left=False):
     for b in range(bs):
         if len(xs[b]) == 0:
             continue
-
         if pad_left:
             xs_pad[b, -xs[b].size(0):] = xs[b]
         else:
@@ -69,16 +68,16 @@ def pad_list(xs, pad_value=0.0, pad_left=False):
 def make_pad_mask(seq_lens, device_id=-1):
     """Make mask for padding.
     Args:
-        seq_lens (list): A list of length `[B]`
+        seq_lens (IntTensor): `[B]`
         device_id (int):
     Returns:
         mask (IntTensor): `[B, T]`
 
     """
-    bs = len(seq_lens)
+    bs = seq_lens.size(0)
     max_time = max(seq_lens)
 
-    seq_range = torch.arange(0, max_time, dtype=torch.int64)
+    seq_range = torch.arange(0, max_time, dtype=torch.int32)
     seq_range_expand = seq_range.unsqueeze(0).expand(bs, max_time)
     seq_length_expand = seq_range_expand.new(seq_lens).unsqueeze(-1)
     mask = seq_range_expand < seq_length_expand
@@ -103,24 +102,3 @@ def compute_accuracy(logits, ys_ref, pad):
     denominator = torch.sum(mask)
     acc = float(numerator) * 100 / float(denominator)
     return acc
-
-
-def to_onehot(ys, vocab, ylens=None):
-    """
-    Args:
-        ys (LongTensor): Indices of labels. `[B, L]`
-        ylens (list): A list of length `[B]`
-    Returns:
-
-    """
-    bs, max_ylen = ys.size()[:2]
-
-    ys_onehot = torch.zeros_like(ys).expand(ys.size(0), ys.size(1), vocab)
-    for b in range(bs):
-        if ylens is None:
-            for t in range(max_ylen):
-                ys_onehot[b, t, ys[b, t]] = 1
-        else:
-            for t in range(ylens[b]):
-                ys_onehot[b, t, ys[b, t]] = 1
-    return ys_onehot

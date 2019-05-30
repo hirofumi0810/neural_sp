@@ -140,7 +140,7 @@ class ConvEncoder(EncoderBase):
         return xs, xlens
 
 
-class Conv1LBlock(nn.Module):
+class Conv1LBlock(EncoderBase):
     """1-layer CNN block without residual connection."""
 
     def __init__(self,
@@ -201,7 +201,7 @@ class Conv1LBlock(nn.Module):
         return xs, xlens
 
 
-class Conv2LBlock(nn.Module):
+class Conv2LBlock(EncoderBase):
     """2-layer CNN block."""
 
     def __init__(self,
@@ -286,12 +286,13 @@ class Conv2LBlock(nn.Module):
         return xs, xlens
 
 
-def update_lens(seq_lens, layer, dim=0):
+def update_lens(seq_lens, layer, dim=0, device_id=-1):
     """Update lenghts (frequency or time).
     Args:
         seq_lens (list or IntTensor):
         layer (nn.Conv2d or nn.MaxPool2d):
         dim (int):
+        device_id (int):
     Returns:
         seq_lens (IntTensor):
     """
@@ -303,4 +304,7 @@ def update_lens(seq_lens, layer, dim=0):
         def update(seq_len): return math.floor(
             (seq_len + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
     seq_lens = [update(seq_len) for seq_len in seq_lens]
-    return torch.IntTensor(seq_lens)
+    seq_lens = torch.IntTensor(seq_lens)
+    if device_id >= 0:
+        seq_lens = seq_lens.cuda(device_id)
+    return seq_lens

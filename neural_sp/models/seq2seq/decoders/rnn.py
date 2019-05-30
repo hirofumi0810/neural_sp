@@ -369,7 +369,7 @@ class RNNDecoder(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             task (str): all or ys or ys_sub*
             ys_hist (list):
@@ -430,22 +430,21 @@ class RNNDecoder(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
             loss (FloatTensor): `[B, L, vocab]`
 
         """
         # Concatenate all elements in ys for warpctc_pytorch
-        elens = np2tensor(np.fromiter(elens, dtype=np.int64)).int()
-        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int64)).int()
-        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int64)).long() for y in ys], dim=0).int()
+        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
+        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int32)) for y in ys], dim=0)
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
         logits = self.output_ctc(eouts)
         loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
-                                 ys_ctc, elens, ylens)
+                                 ys_ctc, elens.cpu(), ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         if self.device_id >= 0:
@@ -475,7 +474,7 @@ class RNNDecoder(DecoderBase):
 
         # Append <sos> and <eos>
         eos = w.new_zeros(1).fill_(self.eos).long()
-        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
+        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int32),
                         self.device_id).long() for y in ys]
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
@@ -516,7 +515,7 @@ class RNNDecoder(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             ys_hist (list):
             return_logits (bool): return logits for knowledge distillation
@@ -531,9 +530,9 @@ class RNNDecoder(DecoderBase):
 
         # Append <sos> and <eos>
         eos = eouts.new_zeros(1).fill_(self.eos).long()
-        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
+        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int32),
                         self.device_id).long() for y in ys]
-        ylens = [y.size(0) + 1 for y in ys]  # +1 for <eos>
+        ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
@@ -761,7 +760,7 @@ class RNNDecoder(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             max_len_ratio (int): maximum sequence length of tokens
             exclude_eos (bool):
             idx2token ():
@@ -864,7 +863,7 @@ class RNNDecoder(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length `[B]`
+            elens (IntTensor): `[B]`
             params (dict):
                 beam_width (int): size of beam
                 max_len_ratio (int): maximum sequence length of tokens
@@ -1513,12 +1512,13 @@ class RNNDecoder(DecoderBase):
         self.dict_cache_lm = {}
         self.total_step = 0
 
-    def decode_ctc(self, eouts, xlens, beam_width=1, lm=None, lm_weight=0.0,
+    def decode_ctc(self, eouts, elens, beam_width=1, lm=None, lm_weight=0.0,
                    lm_usage='rescoring'):
         """Decoding by the CTC layer in the inference stage.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
+            elens (IntTensor): `[B]`
             beam_width (int): size of beam
             lm (RNNLM or GatedConvLM or TransformerLM):
             lm_weight (float): language model weight (the vocabulary is the same as CTC)
@@ -1529,9 +1529,9 @@ class RNNDecoder(DecoderBase):
         """
         log_probs = F.log_softmax(self.output_ctc(eouts), dim=-1)
         if beam_width == 1:
-            best_hyps = self.decode_ctc_greedy(log_probs, xlens)
+            best_hyps = self.decode_ctc_greedy(log_probs, elens)
         else:
-            best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width,
+            best_hyps = self.decode_ctc_beam(log_probs, elens, beam_width,
                                              lm, lm_weight,
                                              lm_usage=lm_usage)
         return best_hyps

@@ -22,7 +22,7 @@ def cross_entropy_lsm(logits, ys, ylens, lsm_prob, size_average=False):
     Args:
         logits (FloatTensor): `[B, T, vocab]`
         ys (LongTensor): Indices of labels. `[B, L]`.
-        ylens (list): A list of length `[B]`
+        ylens (IntTensor): `[B]`
         lsm_prob (float):
         size_average (bool):
     Returns:
@@ -54,7 +54,7 @@ def distillation(logits_student, probs_teacher, ylens, temperature=1, size_avera
     Args:
         logits_student (FloatTensor): `[B, T, vocab]`
         probs_teacher (FloatTensor): `[B, T, vocab]`
-        ylens (list): A list of length `[B]`
+        ylens (IntTensor): `[B]`
         temperature (float):
         size_average (bool):
     Returns:
@@ -77,7 +77,7 @@ def kldiv_lsm_ctc(logits, ylens, size_average=False):
 
     Args:
         logits (FloatTensor): `[B, T, vocab]`
-        ylens (list): A list of length `[B]`
+        ylens (IntTensor): `[B]`
         size_average (bool):
     Returns:
         loss (FloatTensor): `[1]`
@@ -108,7 +108,7 @@ def focal_loss(logits, ys, ylens, alpha, gamma, size_average=False):
     Args:
         logits (FloatTensor): `[B, T, vocab]`
         ys (LongTensor): Indices of labels. `[B, L]`
-        ylens (list): A list of length `[B]`
+        ylens (IntTensor): `[B]`
         alpha (float):
         gamma (float):
         size_average (bool):
