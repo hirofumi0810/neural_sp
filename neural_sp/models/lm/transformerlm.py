@@ -14,6 +14,7 @@ import logging
 import os
 import random
 import shutil
+import torch
 import torch.nn as nn
 
 from neural_sp.models.lm.lm_base import LMBase
@@ -128,7 +129,7 @@ class TransformerLM(LMBase):
             hidden: dummy
 
         """
-        ylens = [ys_emb.size(1)] * ys_emb.size(0)
+        ylens = torch.IntTensor([ys_emb.size(1)] * ys_emb.size(0))
 
         ys_emb = ys_emb * (self.d_model ** 0.5)
         ys_emb = self.pos_enc(ys_emb)
