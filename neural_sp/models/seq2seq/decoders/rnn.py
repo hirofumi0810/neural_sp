@@ -443,8 +443,9 @@ class RNNDecoder(DecoderBase):
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
-        logits = self.output_ctc(eouts).transpose(1, 0).cpu()  # time-major
-        loss = self.warpctc_loss(logits, ys_ctc, elens, ylens)
+        logits = self.output_ctc(eouts)
+        loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
+                                 ys_ctc, elens, ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
         if self.device_id >= 0:
