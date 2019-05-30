@@ -4,16 +4,9 @@
 __pycache__
 .dropbox.attr
 .ftpconfig
-warp-ctc
-pytorch-ctc
-nohup.out
-.done*
 .nfs*
 *.done
 
-vocab
-log
 examples/*/*/steps
 examples/*/*/utils
-kaldi_io.py
 neural_sp.egg-info

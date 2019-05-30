@@ -23,7 +23,8 @@ CONDA=$(TOOL)/miniconda
 
 .PHONY: all clean
 
-all: miniconda.done kaldi.done python.done warp-ctc.done warp-rnnt.done kaldi-io.done extra
+all: miniconda.done kaldi.done python extra
+python: neural_sp.done warp-ctc.done warp-rnnt.done
 extra: sentencepiece.done nkf.done
 
 # miniconda
@@ -51,12 +52,12 @@ kaldi.done:
 endif
 
 # python (including upgrade check)
-python.done:
+neural_sp.done:
 	. $(CONDA)/bin/activate; pip list
 	. $(CONDA)/bin/activate; pip install pip --upgrade
 	. $(CONDA)/bin/activate; pip install -e ..  # setup.py
 	. $(CONDA)/bin/activate; pip install torch==$(PYTORCH_VERSION) matplotlib
-	touch python.done
+	touch neural_sp.done
 
 # warp-ctc
 warp-ctc.done:
@@ -84,12 +85,8 @@ warp-rnnt.done:
 	. $(TOOL)/miniconda/bin/activate; cd $(TOOL)/warp-rnnt/pytorch_binding && python setup.py install # maybe need to: apt-get install python-dev
 	touch warp-rnnt.done
 
-kaldi-io.done:
-	if [ -e ../utils/kaldi_io.py ]; then rm ../utils/kaldi_io.py; fi
-	if [ -e $(TOOL)/kaldi-io-for-python ]; then rm -rf $(TOOL)/kaldi-io-for-python; fi
-	. $(TOOL)/miniconda/bin/activate; git clone https://github.com/vesis84/kaldi-io-for-python.git $(TOOL)/kaldi-io-for-python
-	cd ../utils; ln -s $(TOOL)/kaldi-io-for-python/kaldi_io/kaldi_io.py .
-	touch kalid-io.done
+# check_install:
+# 	. $(TOOL)/miniconda/bin/activate; python check_install.py
 
 sentencepiece.done:
 	if [ -e $(TOOL)/sentencepiece ]; then rm -rf $(TOOL)/sentencepiece; fi

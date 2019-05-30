@@ -16,6 +16,7 @@ from __future__ import print_function
 import numpy as np
 import os
 import pandas as pd
+import kaldiio
 
 from neural_sp.datasets.base import Base
 from neural_sp.datasets.token_converter.character import Char2idx
@@ -26,7 +27,6 @@ from neural_sp.datasets.token_converter.word import Idx2word
 from neural_sp.datasets.token_converter.word import Word2idx
 from neural_sp.datasets.token_converter.wordpiece import Idx2wp
 from neural_sp.datasets.token_converter.wordpiece import Wp2idx
-from utils import kaldi_io
 
 np.random.seed(1)
 
@@ -152,7 +152,7 @@ class Dataset(Base):
                 setattr(self, 'df_sub' + str(i), df_sub)
             else:
                 setattr(self, 'df_sub' + str(i), None)
-        self.input_dim = kaldi_io.read_mat(self.df['feat_path'][0]).shape[-1]
+        self.input_dim = kaldiio.load_mat(self.df['feat_path'][0]).shape[-1]
 
         if corpus == 'swbd':
             self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
@@ -258,7 +258,7 @@ class Dataset(Base):
         if self.skip_thought:
             xs = []
         else:
-            xs = [kaldi_io.read_mat(self.df['feat_path'][i]) for i in df_indices]
+            xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in df_indices]
 
         # outputs
         if self.is_test:
