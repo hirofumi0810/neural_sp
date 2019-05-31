@@ -102,29 +102,29 @@ class MultiheadAttentionMechanism(nn.Module):
         qlen = query.size(1)
 
         # Mask attention distribution
-        # if self.mask is None:
-        device_id = torch.cuda.device_of(key.data).idx
-        mask = make_pad_mask(klens, device_id).unsqueeze(1).expand(bs, qlen, klen)  # `[B, qlen, klen]`
-        if qlens is not None:
-            query_mask = make_pad_mask(qlens, device_id).unsqueeze(2).expand(bs, qlen, klen)  # `[B, qlen, klen]`
-        elif klen == qlen:
-            assert klen == qlen
-            query_mask = make_pad_mask(klens, device_id).unsqueeze(2).expand(bs, qlen, klen)  # `[B, qlen, klen]`
-        self.mask = (mask * query_mask).unsqueeze(1)  # `[B, 1, qlen, klen]`
+        if self.mask is None:
+            device_id = torch.cuda.device_of(key.data).idx
+            mask = make_pad_mask(klens, device_id).unsqueeze(1).expand(bs, qlen, klen)  # `[B, qlen, klen]`
+            if qlens is not None:
+                query_mask = make_pad_mask(qlens, device_id).unsqueeze(2).expand(bs, qlen, klen)  # `[B, qlen, klen]`
+            elif klen == qlen:
+                assert klen == qlen
+                query_mask = make_pad_mask(klens, device_id).unsqueeze(2).expand(bs, qlen, klen)  # `[B, qlen, klen]`
+            self.mask = (mask * query_mask).expand(bs, self.n_heads, qlen, klen)  # `[B, n_heads, qlen, klen]`
 
-        # Hide future information for self-attention in the Transformer decoder
-        if diagonal:
-            assert qlen == klen
-            subsequent_mask = torch.tril(key.new_ones((qlen, klen)).byte(), diagonal=0)
-            subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(
-                bs, self.n_heads, qlen, klen)  # `[B, n_heads, qlen, klen]`
-            self.mask = self.mask & subsequent_mask
+            # Hide future information for self-attention in the Transformer decoder
+            if diagonal:
+                assert qlen == klen
+                subsequent_mask = torch.tril(key.new_ones((qlen, klen)).byte(), diagonal=0)
+                subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(
+                    bs, self.n_heads, qlen, klen)  # `[B, n_heads, qlen, klen]`
+                self.mask = self.mask & subsequent_mask
 
-        # if self.key is None:
-        key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-        value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
-        self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
-        self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
+        if self.key is None:
+            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
+            value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
+            self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
+            self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
 

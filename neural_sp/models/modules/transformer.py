@@ -156,24 +156,27 @@ class TransformerEncoderBlock(nn.Module):
         self.ff = PositionwiseFeedForward(d_model, d_ff, dropout)
         self.add_norm_ff = SublayerConnection(d_model, dropout, layer_norm_eps)
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, cache=False):
         """Transformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
             xlens (IntTensor): `[B]`
+            cache (bool):
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
             xx_aws (FloatTensor): `[B, T, T]`
 
         """
         # self-attention
-        # self.self_attn.reset()
+        if not cache:
+            self.self_attn.reset()
         xs, xx_aws = self.add_norm_self_attn(xs, sublayer=lambda xs: self.self_attn(
             key=xs, klens=xlens, value=xs, query=xs))
 
         # position-wise feed-forward
         xs = self.add_norm_ff(xs, sublayer=lambda xs: self.ff(xs))
+
         return xs, xx_aws
 
 
@@ -253,14 +256,13 @@ class TransformerDecoderBlock(nn.Module):
         if self.attn_type == "average":
             raise NotImplementedError
         else:
-            # self.self_attn.reset()
+            self.self_attn.reset()
             ys, yy_aw = self.add_norm_self_attn(ys, lambda ys: self.self_attn(
                 key=ys, klens=ylens, value=ys, query=ys, diagonal=True))
 
         # attention for encoder stacks
         if self.src_attention:
-            # self.src_attn.reset()
-            # TODO(hirofumi): cache
+            self.src_attn.reset()
             ys, xy_aw = self.add_norm_src_attn(ys, lambda ys: self.src_attn(
                 key=xs, klens=xlens, value=xs, query=ys, qlens=ylens))
         else:
