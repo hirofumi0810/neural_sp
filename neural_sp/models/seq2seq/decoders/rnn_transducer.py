@@ -182,7 +182,8 @@ class RNNTransducer(DecoderBase):
                                    dropout=dropout_emb,
                                    ignore_index=pad)
 
-            self.output_bn = LinearND(n_units * 2, bottleneck_dim, bias=True)
+            self.w_trans = LinearND(n_units, bottleneck_dim, bias=True)
+            self.w_pred = LinearND(n_units, bottleneck_dim, bias=False)
             self.output = LinearND(bottleneck_dim, vocab)
 
         # Initialize parameters
@@ -325,7 +326,7 @@ class RNNTransducer(DecoderBase):
 
         # Append <sos> and <eos>
         eos = w.new_zeros(1).fill_(self.eos).long()
-        ys = [np2tensor(np.fromiter(y, dtype=np.int32), self.device_id).long() for y in ys]
+        ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
@@ -355,35 +356,30 @@ class RNNTransducer(DecoderBase):
             teacher_dist (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
-            acc (float):
-            ppl (float):
 
         """
         # Append <null> and <eos>
         null = eouts.new_zeros(1).long()
         if self.end_pointing:
-            _ys = [np2tensor(np.fromiter([y] + [self.eos], dtype=np.int32), self.device_id).long() for y in ys]
+            _ys = [np2tensor(np.fromiter([y] + [self.eos], dtype=np.int64), self.device_id) for y in ys]
         else:
-            _ys = [np2tensor(np.fromiter(y, dtype=np.int32), self.device_id).long() for y in ys]
+            _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
+        ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
         ys_in_pad = pad_list([torch.cat([null, y], dim=0) for y in _ys], self.pad)
-        ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32), self.device_id)
-        ys_out_pad = pad_list(_ys, 0).int()
+        ys_out_pad = pad_list(_ys, 0).int()  # int for warprnnt_loss
 
         # Update prediction network
         out_pred, _ = self.recurrency(self.embed(ys_in_pad), None)
-        out_pred = out_pred.unsqueeze(1)  # `[B, 1, L, dec_n_units]`
-        eouts = eouts.unsqueeze(2)  # `[B, 1, L, dec_n_units]`
 
         # Compute output distribution
-        size = [max(i, j) for i, j in zip(eouts.size()[:-1], out_pred.size()[:-1])]
-        eouts = eouts.expand(torch.Size(size + [eouts.shape[-1]]))
-        out_pred = out_pred.expand(torch.Size(size + [out_pred.shape[-1]]))
-        out = self.joint_dist(eouts, out_pred)
+        out = self.joint(eouts, out_pred)
 
         # Compute Transducer loss
-        if self.device_id >= 0:
-            elens = elens.cuda(self.device_id)
         log_probs = F.log_softmax(out, dim=-1)
+        if self.device_id >= 0:
+            ys_out_pad = ys_out_pad.cuda(self.device_id)
+            elens = elens.cuda(self.device_id)
+            ylens = ylens.cuda(self.device_id)
         loss = self.warprnnt_loss(log_probs, ys_out_pad, elens, ylens)
         # NOTE: Transducer loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warprnnt_pytorch
@@ -397,16 +393,17 @@ class RNNTransducer(DecoderBase):
 
         return loss
 
-    def joint_dist(self, out_trans, out_pred):
+    def joint(self, out_trans, out_pred):
         """
         Args:
-            out_trans (FloatTensor): `[B, T, L, dec_n_units]`
-            out_pred (FloatTensor): `[B, T, L, dec_n_units]`
+            out_trans (FloatTensor): `[B, T, dec_n_units]`
+            out_pred (FloatTensor): `[B, L, dec_n_units]`
         Returns:
             out (FloatTensor): `[B, T, L, vocab]`
         """
-        dim = len(out_trans.shape) - 1
-        out = torch.tanh(self.output_bn(torch.cat((out_trans, out_pred), dim=dim)))
+        out_trans = out_trans.unsqueeze(2)  # `[B, T, 1, dec_n_units]`
+        out_pred = out_pred.unsqueeze(1)  # `[B, 1, L, dec_n_units]`
+        out = torch.tanh(self.w_trans(out_trans) + self.w_pred(out_pred))
         return self.output(out)
 
     def recurrency(self, ys_emb, dstates):
@@ -509,7 +506,7 @@ class RNNTransducer(DecoderBase):
             out_pred, dstates = self.recurrency(self.embed(y), None)
             for t in range(xlen_max):
                 # Pick up 1-best per frame
-                out = self.joint_dist(eouts[b:b + 1, t:t + 1], out_pred)
+                out = self.joint(eouts[b:b + 1, t:t + 1], out_pred)
                 y = F.log_softmax(out, dim=-1).detach().argmax(-1)
 
                 # Update prediction network only when predicting blank labels
