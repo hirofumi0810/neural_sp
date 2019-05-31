@@ -37,7 +37,7 @@ class MultiheadAttentionMechanism(nn.Module):
             This is used for location-based attention.
         conv_kernel_size (int): size of kernel.
             This must be the odd number.
-        dropout (float):
+        dropout (float): dropout probability
         n_heads (int): number of heads in the multi-head attention
 
     """

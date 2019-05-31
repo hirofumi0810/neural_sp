@@ -33,6 +33,20 @@ LOG_1 = 0
 
 
 class CTC(DecoderBase):
+    """RNN Transducer.
+
+    Args:
+        eos (int): index for <eos> (shared with <sos>)
+        blank (int): index for <blank>
+        enc_n_units (int):
+        vocab (int): number of nodes in softmax layer
+        dropout (float): dropout probability for the RNN layer
+        lsm_prob (float): label smoothing probability
+        fc_list (list):
+        param_init (float):
+
+    """
+
     def __init__(self,
                  eos,
                  blank,
@@ -48,7 +62,7 @@ class CTC(DecoderBase):
 
         self.lsm_prob = lsm_prob
 
-        # Fully-connected layers for CTC
+        # Fully-connected layers before the softmax
         if len(fc_list) > 0:
             fc_layers = OrderedDict()
             for i in range(len(fc_list)):

@@ -62,9 +62,9 @@ class RNNDecoder(DecoderBase):
         attn_conv_out_channels (int):
         attn_conv_kernel_size (int):
         attn_n_heads (int): number of attention heads
-        dropout (float): probability to drop nodes in the RNN layer
-        dropout_emb (float): probability to drop nodes of the embedding layer
-        dropout_att (float): dropout probabilities for attention distributions
+        dropout (float): dropout probability for the RNN layer
+        dropout_emb (float): dropout probability for the embedding layer
+        dropout_att (float): dropout probability for attention distributions
         lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
         ss_type (str): constant or saturation

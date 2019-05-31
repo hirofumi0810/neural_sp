@@ -34,8 +34,8 @@ class RNNEncoder(EncoderBase):
         n_units (int): number of units in each layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of layers
-        dropout_in (float): probability to drop nodes in input-hidden connection
-        dropout (float): probability to drop nodes in hidden-hidden connection
+        dropout_in (float): dropout probability for input-hidden connection
+        dropout (float): dropout probability for hidden-hidden connection
         subsample (list): subsample in the corresponding RNN layers
             ex.) [False, True, True, False] means that subsample is conducted in the 2nd and 3rd layers.
         subsample_type (str): drop or concat or max_pool
@@ -325,8 +325,6 @@ class RNNEncoder(EncoderBase):
 
         # Sort by lenghts in the descending order for pack_padded_sequence
         xlens = torch.IntTensor(xlens)
-        if self.device_id > 0:
-            xlens = xlens.cuda(self.device_id)
         xlens, perm_ids = xlens.sort(0, descending=True)
         xs = xs[perm_ids]
         _, perm_ids_unsort = perm_ids.sort()

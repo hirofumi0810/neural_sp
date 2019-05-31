@@ -21,7 +21,6 @@ import torch.nn.functional as F
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.seq2seq.decoders.ctc import CTC
-# from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
@@ -32,7 +31,7 @@ random.seed(1)
 
 
 class RNNTransducer(DecoderBase):
-    """RNN decoder.
+    """RNN Transducer.
 
     Args:
         eos (int): index for <eos> (shared with <sos>)
@@ -49,8 +48,8 @@ class RNNTransducer(DecoderBase):
         emb_dim (int): dimension of the embedding in target spaces.
         vocab (int): number of nodes in softmax layer
         tie_embedding (bool):
-        dropout (float): probability to drop nodes in the RNN layer
-        dropout_emb (float): probability to drop nodes of the embedding layer
+        dropout (float): dropout probability for the RNN layer
+        dropout_emb (float): dropout probability for the embedding layer
         lsm_prob (float): label smoothing probability
         ctc_weight (float):
         ctc_fc_list (list):

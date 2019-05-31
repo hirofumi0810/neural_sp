@@ -26,7 +26,7 @@ from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.seq2seq.decoders.ctc import CTC
-from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
+# from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
@@ -58,9 +58,9 @@ class TransformerDecoder(DecoderBase):
         tie_embedding (bool):
         pe_type (str): concat or add or learn or False
         layer_norm_eps (float):
-        dropout (float): dropout probabilities for linear layers
-        dropout_emb (float): probability to drop nodes of the embedding layer
-        dropout_att (float): dropout probabilities for attention distributions
+        dropout (float): dropout probability for linear layers
+        dropout_emb (float): dropout probability for the embedding layer
+        dropout_att (float): dropout probability for attention distributions
         lsm_prob (float): label smoothing probability
         fl_weight (float):
         fl_gamma (float):
