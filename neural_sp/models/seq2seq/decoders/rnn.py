@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from collections import OrderedDict
 import logging
 import math
 import numpy as np
@@ -21,15 +20,13 @@ import torch.nn.functional as F
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
-from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.criterion import distillation
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
-from neural_sp.models.seq2seq.decoders.ctc_beam_search import BeamSearchDecoder
-from neural_sp.models.seq2seq.decoders.ctc_beam_search import CTCPrefixScore
-from neural_sp.models.seq2seq.decoders.ctc_greedy import GreedyDecoder
+from neural_sp.models.seq2seq.decoders.ctc import CTC
+from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
@@ -164,7 +161,6 @@ class RNNDecoder(DecoderBase):
         self.fl_weight = fl_weight
         self.fl_gamma = fl_gamma
         self.ctc_weight = ctc_weight
-        self.ctc_fc_list = ctc_fc_list
         self.input_feeding = input_feeding
         if input_feeding:
             assert loop_type == 'normal'
@@ -193,20 +189,14 @@ class RNNDecoder(DecoderBase):
         self.lmstate_final = (None, None)
 
         if ctc_weight > 0:
-            # Fully-connected layers for CTC
-            if len(ctc_fc_list) > 0:
-                fc_layers = OrderedDict()
-                for i in range(len(ctc_fc_list)):
-                    input_dim = enc_n_units if i == 0 else ctc_fc_list[i - 1]
-                    fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i], dropout=dropout)
-                fc_layers['fc' + str(len(ctc_fc_list))] = LinearND(ctc_fc_list[-1], vocab, dropout=0)
-                self.output_ctc = nn.Sequential(fc_layers)
-            else:
-                self.output_ctc = LinearND(enc_n_units, vocab)
-            self.decode_ctc_greedy = GreedyDecoder(blank=blank)
-            self.decode_ctc_beam = BeamSearchDecoder(blank=blank)
-            import warpctc_pytorch
-            self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
+            self.ctc = CTC(eos=eos,
+                           blank=blank,
+                           enc_n_units=enc_n_units,
+                           vocab=vocab,
+                           dropout=dropout,
+                           lsm_prob=lsm_prob,
+                           fc_list=ctc_fc_list,
+                           param_init=param_init)
 
         if ctc_weight < global_weight:
             # Attention layer
@@ -392,7 +382,7 @@ class RNNDecoder(DecoderBase):
 
         # CTC loss
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
-            loss_ctc = self.forward_ctc(eouts, elens, ys)
+            loss_ctc = self.ctc(eouts, elens, ys)
             observation['loss_ctc'] = loss_ctc.item()
             if self.mtl_per_batch:
                 loss += loss_ctc
@@ -424,39 +414,6 @@ class RNNDecoder(DecoderBase):
 
         observation['loss'] = loss.item()
         return loss, observation
-
-    def forward_ctc(self, eouts, elens, ys):
-        """Compute CTC loss.
-
-        Args:
-            eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (IntTensor): `[B]`
-            ys (list): A list of length `[B]`, which contains a list of size `[L]`
-        Returns:
-            loss (FloatTensor): `[B, L, vocab]`
-
-        """
-        # Concatenate all elements in ys for warpctc_pytorch
-        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
-        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int32)) for y in ys], dim=0)
-        # NOTE: do not copy to GPUs here
-
-        # Compute CTC loss
-        logits = self.output_ctc(eouts)
-        loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
-                                 ys_ctc, elens.cpu(), ylens)
-        # NOTE: ctc loss has already been normalized by bs
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
-        if self.device_id >= 0:
-            loss = loss.cuda(self.device_id)
-
-        # Label smoothing for CTC
-        if self.lsm_prob > 0:
-            loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits,
-                                                              ylens=elens,
-                                                              size_average=True) * self.lsm_prob
-
-        return loss
 
     def forward_lmobj(self, ys):
         """Compute XE loss for LM objective.
@@ -1511,37 +1468,3 @@ class RNNDecoder(DecoderBase):
         self.dict_cache_sp = {}
         self.dict_cache_lm = {}
         self.total_step = 0
-
-    def decode_ctc(self, eouts, elens, beam_width=1, lm=None, lm_weight=0.0,
-                   lm_usage='rescoring'):
-        """Decoding by the CTC layer in the inference stage.
-
-        Args:
-            eouts (FloatTensor): `[B, T, enc_units]`
-            elens (IntTensor): `[B]`
-            beam_width (int): size of beam
-            lm (RNNLM or GatedConvLM or TransformerLM):
-            lm_weight (float): language model weight (the vocabulary is the same as CTC)
-            lm_usage (str): rescoring or shallow_fusion
-        Returns:
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-
-        """
-        log_probs = F.log_softmax(self.output_ctc(eouts), dim=-1)
-        if beam_width == 1:
-            best_hyps = self.decode_ctc_greedy(log_probs, elens)
-        else:
-            best_hyps = self.decode_ctc_beam(log_probs, elens, beam_width,
-                                             lm, lm_weight,
-                                             lm_usage=lm_usage)
-        return best_hyps
-
-    def ctc_log_probs(self, eouts, temperature=1):
-        return F.log_softmax(self.output_ctc(eouts) / temperature, dim=-1)
-
-    def ctc_probs_topk(self, eouts, temperature, topk):
-        probs = F.softmax(self.output_ctc(eouts) / temperature, dim=-1)
-        if topk is None:
-            topk = probs.size(-1)
-        _, topk_ids = torch.topk(probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
-        return tensor2np(probs), tensor2np(topk_ids)

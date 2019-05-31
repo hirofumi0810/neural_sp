@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from collections import OrderedDict
 import logging
 import numpy as np
 import os
@@ -22,14 +21,12 @@ import torch.nn.functional as F
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
-from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
-from neural_sp.models.seq2seq.decoders.ctc_beam_search import BeamSearchDecoder
-from neural_sp.models.seq2seq.decoders.ctc_beam_search import CTCPrefixScore
-from neural_sp.models.seq2seq.decoders.ctc_greedy import GreedyDecoder
+from neural_sp.models.seq2seq.decoders.ctc import CTC
+from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
@@ -120,26 +117,19 @@ class TransformerDecoder(DecoderBase):
         self.fl_weight = fl_weight
         self.fl_gamma = fl_gamma
         self.ctc_weight = ctc_weight
-        self.ctc_fc_list = ctc_fc_list
         self.bwd = backward
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
 
         if ctc_weight > 0:
-            # Fully-connected layers for CTC
-            if len(ctc_fc_list) > 0:
-                fc_layers = OrderedDict()
-                for i in range(len(ctc_fc_list)):
-                    input_dim = d_model if i == 0 else ctc_fc_list[i - 1]
-                    fc_layers['fc' + str(i)] = LinearND(input_dim, ctc_fc_list[i], dropout=dropout)
-                fc_layers['fc' + str(len(ctc_fc_list))] = LinearND(ctc_fc_list[-1], vocab, dropout=0)
-                self.output_ctc = nn.Sequential(fc_layers)
-            else:
-                self.output_ctc = LinearND(d_model, vocab)
-            self.decode_ctc_greedy = GreedyDecoder(blank=blank)
-            self.decode_ctc_beam = BeamSearchDecoder(blank=blank)
-            import warpctc_pytorch
-            self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
+            self.ctc = CTC(eos=eos,
+                           blank=blank,
+                           enc_n_units=enc_n_units,
+                           vocab=vocab,
+                           dropout=dropout,
+                           lsm_prob=lsm_prob,
+                           fc_list=ctc_fc_list,
+                           param_init=0.1)
 
         if ctc_weight < global_weight:
             self.embed = Embedding(vocab, d_model,
@@ -216,7 +206,7 @@ class TransformerDecoder(DecoderBase):
 
         # CTC loss
         if self.ctc_weight > 0 and (not self.mtl_per_batch or (self.mtl_per_batch and 'ctc' in task)):
-            loss_ctc = self.forward_ctc(eouts, elens, ys)
+            loss_ctc = self.ctc(eouts, elens, ys)
             observation['loss_ctc'] = loss_ctc.item()
             if self.mtl_per_batch:
                 loss += loss_ctc
@@ -236,39 +226,6 @@ class TransformerDecoder(DecoderBase):
 
         observation['loss'] = loss.item()
         return loss, observation
-
-    def forward_ctc(self, eouts, elens, ys):
-        """Compute CTC loss.
-
-        Args:
-            eouts (FloatTensor): `[B, T, d_model]`
-            elens (IntTensor): `[B]`
-            ys (list): A list of length `[B]`, which contains a list of size `[L]`
-        Returns:
-            loss (FloatTensor): `[1]`
-
-        """
-        # Concatenate all elements in ys for warpctc_pytorch
-        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
-        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int32)) for y in ys], dim=0)
-        # NOTE: do not copy to GPUs here
-
-        # Compute CTC loss
-        logits = self.output_ctc(eouts)
-        loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
-                                 ys_ctc, elens.cpu(), ylens)
-        # NOTE: ctc loss has already been normalized by bs
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
-        if self.device_id >= 0:
-            loss = loss.cuda(self.device_id)
-
-        # Label smoothing for CTC
-        if self.lsm_prob > 0:
-            loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits,
-                                                              ylens=elens,
-                                                              size_average=True) * self.lsm_prob
-
-        return loss
 
     def forward_att(self, eouts, elens, ys, return_logits=False):
         """Compute XE loss for the sequence-to-sequence model.
@@ -427,27 +384,6 @@ class TransformerDecoder(DecoderBase):
 
         # return best_hyps, aws
         return best_hyps, None
-
-    def decode_ctc(self, eouts, xlens, beam_width=1, lm=None, lm_weight=0.0):
-        """Decoding by the CTC layer in the inference stage.
-
-            This is only used for Joint CTC-Attention model.
-        Args:
-            eouts (FloatTensor): `[B, T, d_model]`
-            beam_width (int): size of beam
-            lm ():
-            lm_weight (float):
-        Returns:
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-
-        """
-        log_probs = F.log_softmax(self.output_ctc(eouts), dim=-1)
-        if beam_width == 1:
-            best_hyps = self.decode_ctc_greedy(log_probs, xlens)
-        else:
-            best_hyps = self.decode_ctc_beam(log_probs, xlens, beam_width, lm, lm_weight)
-            # TODO(hirofumi): add decoding paramters
-        return best_hyps
 
     def _plot_attention(self, save_path, n_cols=2):
         """Plot attention for each head in all layers."""

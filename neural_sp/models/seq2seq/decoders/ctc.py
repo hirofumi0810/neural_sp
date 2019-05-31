@@ -1,48 +1,153 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright 2018 Kyoto University (Hirofumi Inaguma)
+# Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Beam search (prefix search) decoder in numpy implementation."""
+"""CTC decoder."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from collections import OrderedDict
+from itertools import groupby
+import logging
 import numpy as np
+import random
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
+from neural_sp.models.criterion import kldiv_lsm_ctc
+from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import tensor2np
 
-LOG_0 = -float("inf")
+random.seed(1)
+
+LOG_0 = float(np.finfo(np.float32).min)
 LOG_1 = 0
 
 
-class BeamSearchDecoder(object):
-    """Beam search decoder.
+class CTC(DecoderBase):
+    def __init__(self,
+                 eos,
+                 blank,
+                 enc_n_units,
+                 vocab,
+                 dropout=0.0,
+                 lsm_prob=0.0,
+                 fc_list=[],
+                 param_init=0.1):
 
-    Arga:
-        blank (int): the index of the blank label
+        super(CTC, self).__init__()
+        logger = logging.getLogger('training')
 
-    """
+        self.lsm_prob = lsm_prob
 
-    def __init__(self, blank, space=-1):
-        self.blank = blank
-        self.space = space  # only for character-level CTC
-        self.eos = 2
+        # Fully-connected layers for CTC
+        if len(fc_list) > 0:
+            fc_layers = OrderedDict()
+            for i in range(len(fc_list)):
+                input_dim = enc_n_units if i == 0 else fc_list[i - 1]
+                fc_layers['fc' + str(i)] = LinearND(input_dim, fc_list[i], dropout=dropout)
+            fc_layers['fc' + str(len(fc_list))] = LinearND(fc_list[-1], vocab, dropout=0)
+            self.output = nn.Sequential(fc_layers)
+        else:
+            self.output = LinearND(enc_n_units, vocab)
 
-    def __call__(self, log_probs, xlens, beam_width=1,
-                 lm=None, lm_weight=0, length_penalty=0, lm_usage='rescoring'):
-        """Performs inference for the given output probabilities.
+        import warpctc_pytorch
+        self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
+
+    def reset_parameters(self, param_init):
+        """Initialize parameters with uniform distribution."""
+        logger = logging.getLogger('training')
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            if p.dim() == 1:
+                nn.init.constant_(p, val=0)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+            elif p.dim() in [2, 4]:
+                nn.init.uniform_(p, a=-param_init, b=param_init)
+                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
+            else:
+                raise ValueError
+
+    def forward(self, eouts, elens, ys):
+        """Compute CTC loss.
 
         Args:
-            log_probs (FloatTensor): The output log-scale probabilities
-                (e.g. post-softmax) for each time step. `[B, T, vocab]`
-            xlens (list): A list of length `[B]`
+            eouts (FloatTensor): `[B, T, dec_n_units]`
+            elens (list): A list of length `[B]`
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+        Returns:
+            loss (FloatTensor): `[B, L, vocab]`
+
+        """
+        # Concatenate all elements in ys for warpctc_pytorch
+        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
+        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int32)) for y in ys], dim=0)
+        # NOTE: do not copy to GPUs here
+
+        # Compute CTC loss
+        logits = self.output(eouts)
+        loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
+                                 ys_ctc, elens.cpu(), ylens)
+        # NOTE: ctc loss has already been normalized by bs
+        # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        if self.device_id >= 0:
+            loss = loss.cuda(self.device_id)
+
+        # Label smoothing for CTC
+        if self.lsm_prob > 0:
+            loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits,
+                                                              ylens=elens,
+                                                              size_average=True) * self.lsm_prob
+
+        return loss
+
+    def greedy(self, eouts, elens):
+        """Greedy decoding.
+
+        Args:
+            eouts (FloatTensor): `[B, T, enc_n_units]`
+            elens (np.ndarray): `[B]`
+        Returns:
+            best_hyps (np.ndarray): Best path hypothesis. `[B, labels_max_seq_len]`
+
+        """
+        bs = eouts.size(0)
+        best_hyps = []
+
+        log_probs = F.log_softmax(self.output(eouts), dim=-1)
+
+        # Pickup argmax class
+        for b in range(bs):
+            indices = []
+            time = elens[b]
+            for t in range(time):
+                argmax = log_probs[b, t].argmax(0).item()
+                indices.append(argmax)
+
+            # Step 1. Collapse repeated labels
+            collapsed_indices = [x[0] for x in groupby(indices)]
+
+            # Step 2. Remove all blank labels
+            best_hyp = [x for x in filter(lambda x: x != self.blank, collapsed_indices)]
+            best_hyps.append(np.array(best_hyp))
+
+        return np.array(best_hyps)
+
+    def beam_search(self, eouts, elens, beam_width=1,
+                    lm=None, lm_weight=0, length_penalty=0, lm_usage='rescoring'):
+        """Beam search decoding.
+
+        Args:
+            eouts (FloatTensor): `[B, T, enc_n_units]`
+            elens (list): A list of length `[B]`
             beam_width (int): the size of beam
             lm (RNNLM or GatedConvLM or TransformerLM):
             lm_weight (float): language model weight (the vocabulary is the same as CTC)
@@ -52,21 +157,23 @@ class BeamSearchDecoder(object):
             best_hyps (list): Best path hypothesis. `[B, L]`
 
         """
-        bs, _, vocab = log_probs.size()
+        bs, _, vocab = eouts.size()
         best_hyps = []
+
+        log_probs = F.log_softmax(self.output(eouts), dim=-1)
 
         for b in range(bs):
             # Elements in the beam are (prefix, (p_b, p_no_blank))
             # Initialize the beam with the empty sequence, a probability of
             # 1 for ending in blank and zero for ending in non-blank (in log space).
-            beam = [{'hyp': [self.eos],
+            beam = [{'hyp': [self.eos],  # <eos> is used for LM
                      'p_b': LOG_1,
                      'p_nb': LOG_0,
                      'clm_score': LOG_1,
                      'clm_hxs': None,
                      'clm_cxs': None}]
 
-            for t in range(xlens[b]):
+            for t in range(elens[b]):
                 new_beam = []
 
                 # Pick up the top-k scores
