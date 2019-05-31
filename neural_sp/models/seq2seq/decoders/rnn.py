@@ -24,7 +24,7 @@ from neural_sp.models.criterion import distillation
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
-from neural_sp.models.seq2seq.decoders.attention import AttentionMechanism
+from neural_sp.models.modules.singlehead_attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
