@@ -506,8 +506,8 @@ class RNNTransducer(DecoderBase):
             out_pred, dstates = self.recurrency(self.embed(y), None)
             for t in range(xlen_max):
                 # Pick up 1-best per frame
-                out = self.joint(eouts[b:b + 1, t:t + 1], out_pred)
-                y = F.log_softmax(out, dim=-1).detach().argmax(-1)
+                out = self.joint(eouts[b:b + 1, t:t + 1], out_pred.squeeze(1))
+                y = F.log_softmax(out.squeeze(2), dim=-1).detach().argmax(-1)
 
                 # Update prediction network only when predicting blank labels
                 if y[0].item() != self.blank:
