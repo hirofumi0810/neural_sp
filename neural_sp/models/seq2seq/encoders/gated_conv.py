@@ -79,10 +79,6 @@ class GatedConvEncoder(EncoderBase):
         # Initialize parameters
         self.reset_parameters(param_init)
 
-    @property
-    def output_dim(self):
-        return self._output_dim
-
     def reset_parameters(self, param_init):
         """Initialize parameters with kaiming_uniform style."""
         logger = logging.getLogger('training')

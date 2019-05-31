@@ -85,10 +85,6 @@ class TDSEncoder(EncoderBase):
         # Initialize parameters
         self.reset_parameters()
 
-    @property
-    def output_dim(self):
-        return self._output_dim
-
     def reset_parameters(self):
         """Initialize parameters with uniform distribution."""
         logger = logging.getLogger('training')
@@ -132,7 +128,7 @@ class TDSEncoder(EncoderBase):
             xs = self.bridge(xs)
 
         # Update xlens
-        xlens = [xlen // 8 for xlen in xlens]
+        xlens /= 8
 
         return xs, xlens
 

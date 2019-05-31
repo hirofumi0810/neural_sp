@@ -363,10 +363,11 @@ class RNNEncoder(EncoderBase):
                         xs_sub1 = xs.clone()[perm_ids_unsort]
                     if self.bridge_sub1 is not None:
                         xs_sub1 = self.bridge_sub1(xs_sub1)
+                    xlens_sub1 = xlens[perm_ids_unsort]
 
                     if task == 'ys_sub1':
                         eouts[task]['xs'] = xs_sub1
-                        eouts[task]['xlens'] = xlens[perm_ids_unsort]
+                        eouts[task]['xlens'] = xlens_sub1
                         return eouts
 
                 if l == self.n_layers_sub2 - 1:
@@ -378,10 +379,11 @@ class RNNEncoder(EncoderBase):
                         xs_sub2 = xs.clone()[perm_ids_unsort]
                     if self.bridge_sub2 is not None:
                         xs_sub2 = self.bridge_sub2(xs_sub2)
+                    xlens_sub2 = xlens[perm_ids_unsort]
 
                     if task == 'ys_sub2':
                         eouts[task]['xs'] = xs_sub2
-                        eouts[task]['xlens'] = xlens[perm_ids_unsort]
+                        eouts[task]['xlens'] = xlens_sub2
                         return eouts
 
                 # NOTE: Exclude the last layer

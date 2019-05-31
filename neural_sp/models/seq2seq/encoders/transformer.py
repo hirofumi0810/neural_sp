@@ -145,10 +145,6 @@ class TransformerEncoder(EncoderBase):
         # Initialize parameters
         self.reset_parameters()
 
-    @property
-    def output_dim(self):
-        return self._output_dim
-
     def reset_parameters(self):
         """Initialize parameters with xavier_uniform style."""
         logger = logging.getLogger('training')
