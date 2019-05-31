@@ -241,6 +241,8 @@ def parse():
                         help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='weight decay parameter')
+    parser.add_argument('--gaussian_noise', type=bool, default=False,
+                        help='add Gaussian noise to input features')
     parser.add_argument('--ss_prob', type=float, default=0.0,
                         help='probability of scheduled sampling')
     parser.add_argument('--ss_type', type=str, default='constant',

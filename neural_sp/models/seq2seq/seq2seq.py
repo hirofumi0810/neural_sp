@@ -23,6 +23,7 @@ from neural_sp.models.seq2seq.decoders.rnn import RNNDecoder
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.encoders.select import select_encoder
+from neural_sp.models.seq2seq.frontends.gaussian_noise import add_gaussian_noise
 from neural_sp.models.seq2seq.frontends.sequence_summary import SequenceSummaryNetwork
 from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.frontends.splicing import splice
@@ -86,6 +87,7 @@ class Seq2seq(ModelBase):
         self.fwd_weight_sub2 = self.sub2_weight - self.ctc_weight_sub2
 
         # Feature extraction
+        self.gaussian_noise = args.gaussian_noise
         self.n_stacks = args.n_stacks
         self.n_skips = args.n_skips
         self.n_splices = args.n_splices
@@ -499,8 +501,8 @@ class Seq2seq(ModelBase):
                 # Splicing
                 if self.n_splices > 1:
                     xs = [splice(x, self.n_splices, self.n_stacks) for x in xs]
-
                 xlens = torch.IntTensor([len(x) for x in xs])
+
                 # Flip acoustic features in the reverse order
                 if flip:
                     xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
@@ -511,6 +513,10 @@ class Seq2seq(ModelBase):
                 # SpecAugment
                 if self.is_specaug and self.training:
                     xs = self.specaug(xs)
+
+                # Gaussian noise injection
+                if self.gaussian_noise:
+                    xs = add_gaussian_noise(xs)
 
             elif self.input_type == 'text':
                 xlens = torch.IntTensor([len(x) for x in xs])

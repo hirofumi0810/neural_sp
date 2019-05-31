@@ -674,6 +674,8 @@ def make_model_name(args, subsample_factor):
         dir_name += '_tsl'
 
     # SpecAugment
+    if args.gaussian_noise:
+        dir_name += '_noise'
     if args.n_freq_masks > 0:
         dir_name += '_' + str(args.freq_width) + 'FM' + str(args.n_freq_masks)
     if args.n_time_masks > 0:
