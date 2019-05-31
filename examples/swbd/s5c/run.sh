@@ -89,9 +89,9 @@ lsm_prob=0.1
 focal_loss=0.0
 # SpecAugment
 freq_width=27  # or 15
-n_freq_masks=2
+n_freq_masks=0
 time_width=70
-n_time_masks=2
+n_time_masks=0
 time_width_upper=0.2
 ### MTL
 ctc_weight=0.0
