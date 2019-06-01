@@ -296,12 +296,12 @@ class Seq2seq(ModelBase):
         if args.input_type == 'text':
             if args.vocab == args.vocab_sub1:
                 # Share the embedding layer between input and output
-                self.embed_in = dec.embed
+                self.embed = dec.embed
             else:
-                self.embed_in = Embedding(vocab=args.vocab_sub1,
-                                          emb_dim=args.emb_dim,
-                                          dropout=args.dropout_emb,
-                                          ignore_index=self.pad)
+                self.embed = Embedding(vocab=args.vocab_sub1,
+                                       emb_dim=args.emb_dim,
+                                       dropout=args.dropout_emb,
+                                       ignore_index=self.pad)
 
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
@@ -518,15 +518,15 @@ class Seq2seq(ModelBase):
                 if self.gaussian_noise:
                     xs = add_gaussian_noise(xs)
 
+                # Sequence summary network
+                if self.ssn is not None:
+                    xs += self.ssn(xs, xlens)
+
             elif self.input_type == 'text':
                 xlens = torch.IntTensor([len(x) for x in xs])
                 xs = [np2tensor(np.fromiter(x, dtype=np.int64), self.device_id) for x in xs]
                 xs = pad_list(xs, self.pad)
-                xs = self.embed_in(xs)
-
-            # sequence summary network
-            if self.ssn is not None:
-                xs += self.ssn(xs, xlens)
+                xs = self.embed(xs)
 
             # encoder
             enc_outs = self.enc(xs, xlens, task.split('.')[0])
