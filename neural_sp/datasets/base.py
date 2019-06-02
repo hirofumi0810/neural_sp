@@ -109,9 +109,6 @@ class Base(object):
                 self.queue_size += self.n_ques
                 time.sleep(3)
 
-            # print(self.queue.qsize())
-            # print(self.queue_size)
-
             self.iteration += len(self.df_indices_list[self.n_ques - self.queue_size])
             self.queue_size -= 1
             batch = self.queue.get()
@@ -181,9 +178,9 @@ class Base(object):
         if not self.dynamic_batching:
             return batch_size
 
-        if min_xlen <= 800 and min_ylen <= 50:
+        if min_xlen <= 800:
             pass
-        elif min_xlen <= 1600 or min_ylen <= 100:
+        elif min_xlen <= 1600 or 70 < min_ylen <= 100:
             batch_size = int(batch_size / 2)
         else:
             batch_size = int(batch_size / 4)
