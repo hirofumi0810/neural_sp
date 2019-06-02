@@ -60,6 +60,9 @@ class CTC(DecoderBase):
         super(CTC, self).__init__()
         logger = logging.getLogger('training')
 
+        self.eos = eos
+        self.blank = blank
+        self.vocab = vocab
         self.lsm_prob = lsm_prob
 
         # Fully-connected layers before the softmax
