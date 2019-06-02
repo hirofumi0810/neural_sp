@@ -53,16 +53,15 @@ class Controller(object):
         if transformer:
             self.decay_type = 'warmup'
             assert warmup_n_steps > 0
-            self.lr_init = lr_factor * (model_size ** -0.5)
+            self.lr_start = lr_factor * (model_size ** -0.5)
         else:
-            if warmup_start_lr > 0 and warmup_n_steps > 0:
-                self.lr_init = warmup_start_lr
+            if warmup_n_steps > 0:
+                self.lr_start = warmup_start_lr
             else:
-                self.lr_init = lr
-        self.warmup_start_lr = warmup_start_lr
+                self.lr_start = lr
         self.warmup_n_steps = warmup_n_steps
 
-        self.lr = self.lr_init
+        self.lr = self.lr_start
 
     def decay(self, optimizer, epoch, value):
         """Decay learning rate per epoch.
@@ -127,13 +126,13 @@ class Controller(object):
             optimizer ():
 
         """
-        if self.warmup_start_lr > 0 and not self.transformer:
+        if self.warmup_n_steps > 0 and not self.transformer:
             # increase linearly
-            self.lr = (self.lr_max - self.warmup_start_lr) / self.warmup_n_steps * step + self.lr_init
+            self.lr = (self.lr_max - self.lr_start) / self.warmup_n_steps * step + self.lr_start
         else:
             # based on the original transformer paper
-            self.lr = self.lr_init * min(step ** (-0.5),
-                                         step * (self.warmup_n_steps ** (-1.5)))
+            self.lr = self.lr_start * min(step ** (-0.5),
+                                          step * (self.warmup_n_steps ** (-1.5)))
 
         # Update optimizer
         for param_group in optimizer.param_groups:
