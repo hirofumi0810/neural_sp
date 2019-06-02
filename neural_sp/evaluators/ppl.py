@@ -22,7 +22,7 @@ logger = logging.getLogger("decoding").getChild('ppl')
 
 
 def eval_ppl(models, dataset, batch_size=1, bptt=None,
-             recog_params=None, n_caches=0, progressbar=False):
+             n_caches=0, progressbar=False):
     """Evaluate a Seq2seq or (RNN/GatedConv)LM by perprexity and loss.
 
     Args:
@@ -30,7 +30,6 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
         dataset: An instance of a `Dataset' class
         batch_size (int): size of mini-batch
         bptt (int): BPTT length
-        recog_params (dict):
         n_caches (int):
         progressbar (bool): if True, visualize the progressbar
     Returns:
@@ -79,7 +78,8 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
                 if progressbar:
                     pbar.update(bs * (time - 1))
         else:
-            batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
+            batch, is_new_epoch = dataset.next(batch_size)
+            bs = len(batch['ys'])
             if skip_thought:
                 loss, _ = model(batch['ys'],
                                 ys_prev=batch['ys_prev'],
@@ -87,12 +87,12 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
                                 is_eval=True)
             else:
                 loss, _ = model(batch, task='all', is_eval=True)
-            total_loss += loss.item()
+            total_loss += loss.item() * bs
             del loss
             n_tokens += sum([len(y) for y in batch['ys']])
 
             if progressbar:
-                pbar.update(1)
+                pbar.update(bs)
 
         if is_new_epoch:
             break
