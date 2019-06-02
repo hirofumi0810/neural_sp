@@ -19,6 +19,7 @@ import pandas as pd
 import kaldiio
 
 from neural_sp.datasets.base import Base
+# from neural_sp.datasets.parallel import multiprocess
 from neural_sp.datasets.token_converter.character import Char2idx
 from neural_sp.datasets.token_converter.character import Idx2char
 from neural_sp.datasets.token_converter.phone import Idx2phone
@@ -259,6 +260,7 @@ class Dataset(Base):
             xs = []
         else:
             xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in df_indices]
+            # xs = multiprocess(kaldiio.load_mat, self.df['feat_path'][df_indices], core=4)
 
         # outputs
         if self.is_test:
@@ -272,10 +274,8 @@ class Dataset(Base):
                 for idx in self.df['prev_utt'][i]:
                     ys_hist[j].append(list(map(int, str(self.df['token_id'][idx]).split())))
 
-        ys_prev = []
-        ys_next = []
-        text_prev = []
-        text_next = []
+        ys_prev, ys_next = [], []
+        text_prev, text_next = [], []
         if self.skip_thought:
             for i in df_indices:
                 if i - 1 in self.df.index and self.df['session'][i - 1] == self.df['session'][i]:
