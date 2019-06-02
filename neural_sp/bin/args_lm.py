@@ -61,6 +61,8 @@ def parse():
                         help='number of layers')
     parser.add_argument('--emb_dim', type=int, default=1024,
                         help='number of dimensions in the embedding layer')
+    parser.add_argument('--n_units_null_context', type=int, default=0, nargs='?',
+                        help='')
     parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
                         help='Tie input and output embedding')
     parser.add_argument('--residual', type=strtobool, default=False, nargs='?',

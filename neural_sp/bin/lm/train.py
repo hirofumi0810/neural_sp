@@ -348,6 +348,8 @@ def make_model_name(args):
             dir_name += '_residual'
         if args.use_glu:
             dir_name += '_glu'
+        if args.n_units_null_context > 0:
+            dir_name += '_nullcv' + str(args.n_units_null_context)
     if args.backward:
         dir_name += '_bwd'
     if args.serialize:

@@ -39,6 +39,7 @@ class RNNLM(LMBase):
         self.n_layers = args.n_layers
         self.residual = args.residual
         self.use_glu = args.use_glu
+        self.n_units_cv = args.n_units_null_context
 
         self.vocab = args.vocab
         self.eos = 2
@@ -61,7 +62,8 @@ class RNNLM(LMBase):
         rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
         if args.n_projs == 0 and not args.residual:
             self.fast_impl = True
-            self.rnn = rnn(args.emb_dim, args.n_units, args.n_layers,
+            self.rnn = rnn(args.emb_dim + args.n_units_null_context,
+                           args.n_units, args.n_layers,
                            bias=True,
                            batch_first=True,
                            dropout=args.dropout_hidden,
@@ -74,7 +76,7 @@ class RNNLM(LMBase):
             self.dropout = torch.nn.ModuleList()
             if args.n_projs > 0:
                 self.proj = torch.nn.ModuleList()
-            rnn_idim = args.emb_dim
+            rnn_idim = args.emb_dim + args.n_units_null_context
             for l in range(args.n_layers):
                 self.rnn += [rnn(rnn_idim, args.n_units, 1,
                                  bias=True,
@@ -154,6 +156,10 @@ class RNNLM(LMBase):
         """
         if hidden is None or hidden[0] is None:
             hidden = self.initialize_hidden(ys_emb.size(0))
+
+        if self.n_units_cv > 0:
+            cv = ys_emb.new_zeros(ys_emb.size(0), ys_emb.size(1), self.n_units_cv)
+            ys_emb = torch.cat([ys_emb, cv], dim=-1)
 
         residual = None
         if self.fast_impl:
