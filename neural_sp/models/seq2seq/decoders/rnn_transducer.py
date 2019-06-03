@@ -209,7 +209,7 @@ class RNNTransducer(DecoderBase):
                 raise ValueError
 
     def start_scheduled_sampling(self):
-        self._ss_prob = self.ss_prob
+        self._ss_prob = 0
 
     def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_dist=None):
         """Forward computation.
