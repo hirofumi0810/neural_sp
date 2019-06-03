@@ -15,7 +15,7 @@ model_bwd=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/wsj
+data=/n/sd3/inaguma/corpus/wsj
 
 unit=
 metric=edit_distance
@@ -121,9 +121,15 @@ for set in test_dev93 test_eval92; do
     mkdir -p ${recog_dir}
 
     if [ $(echo ${model} | grep 'train_si284_sp') ]; then
-        recog_set=${data}/dataset/${set}_sp_wpbpe1000.tsv
+        recog_set=${data}/dataset/${set}_si284_sp_wpbpe1000.tsv
+    elif [ $(echo ${model} | grep 'train_si284') ]; then
+        recog_set=${data}/dataset/${set}_si284_wpbpe1000.tsv
+    elif [ $(echo ${model} | grep 'train_si84_sp') ]; then
+        recog_set=${data}/dataset/${set}_si84_sp_char.tsv
+    elif [ $(echo ${model} | grep 'train_si84') ]; then
+        recog_set=${data}/dataset/${set}_si84_char.tsv
     else
-        recog_set=${data}/dataset/${set}_wpbpe1000.tsv
+        exit 1
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \

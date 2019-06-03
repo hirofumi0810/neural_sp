@@ -27,7 +27,7 @@ tmpdir=${data}/local/lm_tmp
 lexicon=${data}/local/lang${lang_suffix}_tmp/lexiconp.txt
 mkdir -p $tmpdir
 
-for x in train_si284 test_eval92 test_dev93; do
+for x in train_si84 train_si284 test_eval92 test_dev93; do
   mkdir -p ${data}/$x
   cp $srcdir/${x}_wav.scp ${data}/$x/wav.scp || exit 1;
   cp $srcdir/$x.txt ${data}/$x/text || exit 1;
