@@ -65,6 +65,9 @@ class CTC(DecoderBase):
         self.vocab = vocab
         self.lsm_prob = lsm_prob
 
+        self.space = -1
+        # TODO(hirofumi): fix layer
+
         # Fully-connected layers before the softmax
         if len(fc_list) > 0:
             fc_layers = OrderedDict()
