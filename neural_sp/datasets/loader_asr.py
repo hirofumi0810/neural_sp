@@ -18,7 +18,7 @@ import os
 import pandas as pd
 import kaldiio
 
-from neural_sp.datasets.base import Base
+from neural_sp.datasets.loader_base import Base
 # from neural_sp.datasets.parallel import multiprocess
 from neural_sp.datasets.token_converter.character import Char2idx
 from neural_sp.datasets.token_converter.character import Idx2char

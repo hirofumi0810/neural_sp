@@ -18,7 +18,7 @@ import pandas as pd
 import random
 import os
 
-from neural_sp.datasets.base import Base
+from neural_sp.datasets.loader_base import Base
 from neural_sp.datasets.token_converter.character import Char2idx
 from neural_sp.datasets.token_converter.character import Idx2char
 from neural_sp.datasets.token_converter.phone import Idx2phone
