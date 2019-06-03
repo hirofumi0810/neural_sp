@@ -35,7 +35,7 @@ from neural_sp.models.torch_utils import pad_list
 logger = logging.getLogger("training")
 
 
-class Seq2seq(ModelBase):
+class Speech2Text(ModelBase):
     """Attention-based RNN sequence-to-sequence model (including CTC)."""
 
     def __init__(self, args, save_path=None):
@@ -355,7 +355,7 @@ class Seq2seq(ModelBase):
             task (str): all or ys* or ys_sub*
             is_eval (bool): the history will not be saved.
                 This should be used in inference model for memory efficiency.
-            teacher (Seq2seq): used for knowledge distillation
+            teacher (Speech2Text): used for knowledge distillation
             teacher_lm (RNNLM): used for knowledge distillation
         Returns:
             loss (FloatTensor): `[1]`
@@ -589,7 +589,7 @@ class Seq2seq(ModelBase):
             utt_ids (list):
             speakers (list):
             task (str): ys* or ys_sub1* or ys_sub2*
-            ensemble_models (list): list of Seq2seq classes
+            ensemble_models (list): list of Speech2Text classes
         Returns:
             best_hyps_id (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`

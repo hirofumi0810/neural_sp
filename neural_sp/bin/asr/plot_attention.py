@@ -24,7 +24,7 @@ from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.models.lm.select import select_lm
-from neural_sp.models.seq2seq.seq2seq import Seq2seq
+from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
 
 
@@ -63,7 +63,7 @@ def main():
 
         if i == 0:
             # Load the ASR model
-            model = Seq2seq(args, dir_name)
+            model = Speech2Text(args, dir_name)
             model, checkpoint = load_checkpoint(model, args.recog_model[0])
             epoch = checkpoint['epoch']
 
@@ -77,7 +77,7 @@ def main():
                     for k, v in conf_e.items():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
-                    model_e = Seq2seq(args_e)
+                    model_e = Speech2Text(args_e)
                     model_e, _ = load_checkpoint(model_e, recog_model_e)
                     model_e.cuda()
                     ensemble_models += [model_e]

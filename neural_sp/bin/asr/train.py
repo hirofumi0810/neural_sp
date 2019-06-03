@@ -38,7 +38,7 @@ from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.select import select_lm
-from neural_sp.models.seq2seq.seq2seq import Seq2seq
+from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.models.seq2seq.skip_thought import SkipThought
 from neural_sp.utils import mkdir_join
 
@@ -190,7 +190,7 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
 
     # Model setting
-    model = SkipThought(args, save_path) if skip_thought else Seq2seq(args, save_path)
+    model = SkipThought(args, save_path) if skip_thought else Speech2Text(args, save_path)
 
     if args.resume:
         # Set optimizer
@@ -243,7 +243,7 @@ def main():
             conf_pt = load_config(os.path.join(os.path.dirname(args.pretrained_model), 'conf.yml'))
             for k, v in conf_pt.items():
                 setattr(args_pt, k, v)
-            model_pt = Seq2seq(args_pt)
+            model_pt = Speech2Text(args_pt)
             model_pt, _ = load_checkpoint(model_pt, args.pretrained_model)
 
             # Overwrite parameters
@@ -295,7 +295,7 @@ def main():
         # Setting for knowledge distillation
         args_teacher.ss_prob = 0
         args.lsm_prob = 0
-        teacher = Seq2seq(args_teacher)
+        teacher = Speech2Text(args_teacher)
         teacher, _ = load_checkpoint(teacher, args.teacher)
 
         # Load the teacher LM
