@@ -38,7 +38,9 @@ make KALDI=/path/to/kaldi
 - WikiText2
 
 ### Front-end
+- Frame stacking
 - Sequence summary network [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1438.html)]
+- SpecAugment [[link](https://arxiv.org/abs/1904.08779)]
 
 ### Encoder
 - CNN encoder
@@ -49,23 +51,23 @@ make KALDI=/path/to/kaldi
 - Gated CNN encoder (GLU) [link]
 
 ### Connectionist Temporal Classification (CTC) decoder
-- beam search
-- Shallow fusion [link]
+- Shallow fusion
 
 ### Attention-based decoder
 - RNN decoder
-  - Beam search
-  - Shallow fusion [link]
+  - Shallow fusion
   - Cold fusion [[link](https://arxiv.org/abs/1708.06426)]
   - Deep fusion [[link](https://arxiv.org/abs/1503.03535)]
   - Forward-backward attention decoding [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
   - Ensemble decoding
   - Adaptive softmax [[link](https://arxiv.org/abs/1609.04309)]
 - Transformer decoder
+- RNN transducer [[link](https://arxiv.org/abs/1211.3711)]
 
 ### Language model (LM)
 - RNNLM (recurrent neural network language model)
 - Gated convolutional LM [[link](https://arxiv.org/abs/1612.08083)]
+- Transformer LM
 
 ### Output units
 - Phoneme
@@ -86,29 +88,29 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 
 ## ASR Performance
 ### WSJ (WER)
-| model                            | test_dev93 | test_eval92 |
-| -------------------------------- | ---------- | ----------- |
-| BPE1k attn + conv + CTC + RNNLM  | 9.2        | 6.6         |
+| model                    | test_dev93 | test_eval92 |
+| ------------------------ | ---------- | ----------- |
+| BPE1k LAS + CTC + RNNLM  | 9.2        | 6.4         |
 
 ### CSJ (WER/CER)
-| model                                         | eval1   | eval2   | eval3   |
-| --------------------------------------------- | ------- | ------- | ------- |
-| BPE10k attn + char CTC init. + add 2L + RNNLM | 7.4/5.8 | 5.7/4.5 | 6.0/4.5 |
+| model                                        | eval1   | eval2   | eval3   |
+| -------------------------------------------- | ------- | ------- | ------- |
+| BPE10k LAS + char CTC init. + add 2L + RNNLM | 7.4/5.8 | 5.7/4.5 | 6.0/4.5 |
 
 ### Switchboard (WER)
-| model                | SWB  | CH   |
-| -------------------- | ---- | ---- |
-| BPE10k attn + RNNLM  | 11.1 | 22.2 |
+| model               | SWB  | CH   |
+| ------------------- | ---- | ---- |
+| BPE10k LAS + RNNLM  | 11.1 | 22.2 |
 
 ### Librispeech (WER)
-| model                | dev-clean | dev-other | test-clean | test-other |
-| -------------------- | --------- | --------- | ---------- | ---------- |
-| BPE30k attn + RNNLM  | 3.6       | 11.2      | 3.9        | 12.2       |
+| model               | dev-clean | dev-other | test-clean | test-other |
+| ------------------- | --------- | --------- | ---------- | ---------- |
+| BPE30k LAS + RNNLM  | 3.6       | 11.2      | 3.9        | 12.2       |
 
 ### TEDLIUM2 (WER)
-| model                       | dev  | test |
-| --------------------------- | ---- | ---- |
-| BPE10k attn + conv + RNNLM  | 11.4 | 11.0 |
+| model               | dev  | test |
+| ------------------- | ---- | ---- |
+| BPE10k LAS + RNNLM  | 10.9 | 11.2 |
 
 
 ## LM Performance

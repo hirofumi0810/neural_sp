@@ -1,4 +1,4 @@
-                              |          no LM           |           RNNLM          |
-                              | dev        | test        | dev        | test        |
-BPE10k attention              | 12.9       | 12.5        | 12.2       | 11.5        |
-BPE10k attention + conv       | 12.7       | 12.3        | 11.4       | 11.0        |
+                          |          no LM           |           RNNLM          |
+                          | dev        | test        | dev        | test        |
+BPE10k attention w/o conv | 12.3       | 11.9        | 10.9       | 11.2        |
+BPE10k attention          | 12.7       | 12.3        | 11.3       | 11.6        |

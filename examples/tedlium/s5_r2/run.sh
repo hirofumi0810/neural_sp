@@ -33,7 +33,7 @@ conv_batch_norm=false
 conv_residual=false
 conv_bottleneck_dim=0
 subsample="1_2_2_2_1"
-enc_type=conv_blstm
+enc_type=blstm
 enc_n_units=512
 enc_n_projs=0
 enc_n_layers=5
@@ -56,7 +56,7 @@ emb_dim=512
 tie_embedding=false
 ctc_fc_list="512"
 ### optimization
-batch_size=50
+batch_size=30
 optimizer=adam
 learning_rate=1e-3
 n_epochs=25
@@ -87,6 +87,12 @@ ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
 focal_loss=0.0
+# SpecAugment
+freq_width=27
+n_freq_masks=0
+time_width=70
+n_time_masks=0
+time_width_upper=0.2
 ### MTL
 ctc_weight=0.0
 bwd_weight=0.0
@@ -118,7 +124,7 @@ lm_optimizer=adam
 lm_learning_rate=1e-3
 lm_n_epochs=40
 lm_convert_to_sgd_epoch=40
-lm_print_step=200
+lm_print_step=400
 lm_decay_start_epoch=10
 lm_decay_rate=0.9
 lm_decay_patient_n_epochs=0
@@ -130,21 +136,21 @@ lm_param_init=0.05
 lm_pretrained_model=
 # regularization
 lm_clip_grad_norm=1.0
-lm_dropout_hidden=0.5
+lm_dropout_hidden=0.2
 lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_weight_decay=1e-6
 lm_backward=
 
 ### path to save the model
-model=/n/sd8/inaguma/result/tedlium2
+model=/n/sd3/inaguma/result/tedlium2
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/tedlium2
+export data=/n/sd3/inaguma/corpus/tedlium2
 
 ### path to original data
 export db=/n/rd21/corpora_7/tedlium
@@ -418,6 +424,11 @@ if [ ${stage} -le 4 ]; then
         --ss_type ${ss_type} \
         --lsm_prob ${lsm_prob} \
         --focal_loss_weight ${focal_loss} \
+        --freq_width ${freq_width} \
+        --n_freq_masks ${n_freq_masks} \
+        --time_width ${time_width} \
+        --n_time_masks ${n_time_masks} \
+        --time_width_upper ${time_width_upper} \
         --ctc_weight ${ctc_weight} \
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \
