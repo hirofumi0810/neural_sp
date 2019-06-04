@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import random
 
 
 class SpecAugment(object):
@@ -44,21 +43,32 @@ class SpecAugment(object):
         self.n_time_masks = n_time_masks
         self.p = p
 
-    @staticmethod
+        self._freq_mask = None
+        self._time_mask = None
+
+    @property
     def librispeech_basic(self):
         raise NotImplementedError
 
-    @staticmethod
+    @property
     def librispeech_double(self):
         raise NotImplementedError
 
-    @staticmethod
+    @property
     def switchboard_mild(self):
         raise NotImplementedError
 
-    @staticmethod
+    @property
     def switchboard_strong(self):
         raise NotImplementedError
+
+    @property
+    def freq_mask(self):
+        return self._freq_mask
+
+    @property
+    def time_mask(self):
+        return self._time_mask
 
     def __call__(self, xs):
         """
@@ -69,31 +79,32 @@ class SpecAugment(object):
 
         """
         # xs = self.time_warp(xs)
-        xs = self.freq_mask(xs)
-        xs = self.time_mask(xs)
+        xs = self.mask_freq_dim(xs)
+        xs = self.mask_time_dim(xs)
         return xs
 
     def time_warp(xs, W=40):
         raise NotImplementedError
 
-    def freq_mask(self, xs, replace_with_zero=False):
+    def mask_freq_dim(self, xs, replace_with_zero=False):
         n_bins = xs.size(-1)
 
         for i in range(0, self.n_freq_masks):
-            f = np.random.uniform(low=0, high=self.F)
-            f = int(f)
-            f_0 = random.randint(0, n_bins - f)
+            f = int(np.random.uniform(low=0, high=self.F))
+            f_0 = int(np.random.uniform(low=0, high=n_bins - f))
             xs[:, :, f_0:f_0 + f] = 0
-
+            assert f_0 <= f_0 + f
+            self._freq_mask = (f_0, f_0 + f)
         return xs
 
-    def time_mask(self, xs, replace_with_zero=False):
+    def mask_time_dim(self, xs, replace_with_zero=False):
         n_frames = xs.size(1)
 
         for i in range(self.n_time_masks):
-            t = np.random.uniform(low=0, high=self.T)
-            t = min(int(t), int(n_frames * self.p))
-            t0 = random.randint(0, n_frames - t)
-            xs[:, t0:t0 + t] = 0
-
+            t = int(np.random.uniform(low=0, high=self.T))
+            t = min(t, int(n_frames * self.p))
+            t_0 = int(np.random.uniform(low=0, high=n_frames - t))
+            xs[:, t_0:t_0 + t] = 0
+            assert t_0 <= t_0 + t
+            self._time_mask = (t_0, t_0 + t)
         return xs
