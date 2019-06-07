@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import logging
 import math
 import numpy as np
@@ -229,42 +230,41 @@ class RNNDecoder(DecoderBase):
 
             # Decoder
             self.rnn = nn.ModuleList()
+            self.proj = nn.ModuleList()
             self.dropout = nn.ModuleList()
-            if self.n_projs > 0:
-                self.proj = nn.ModuleList()
-            rnn_cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
+            rnncell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             if loop_type == 'normal':
                 dec_idim = n_units if input_feeding else enc_n_units
-                self.rnn += [rnn_cell(emb_dim + dec_idim, n_units)]
+                self.rnn += [rnncell(emb_dim + dec_idim, n_units)]
                 dec_idim = n_units
                 if self.n_projs > 0:
                     self.proj += [LinearND(n_units, n_projs)]
                     dec_idim = n_projs
                 self.dropout += [nn.Dropout(p=dropout)]
                 for l in range(n_layers - 1):
-                    self.rnn += [rnn_cell(dec_idim, n_units)]
+                    self.rnn += [rnncell(dec_idim, n_units)]
                     if self.n_projs > 0:
                         self.proj += [LinearND(n_units, n_projs)]
                     self.dropout += [nn.Dropout(p=dropout)]
             elif loop_type == 'lmdecoder':
                 # 1st layer
-                self.rnn += [rnn_cell(emb_dim, n_units)]
+                self.rnn += [rnncell(emb_dim, n_units)]
                 if self.n_projs > 0:
                     self.proj += [LinearND(n_units, n_projs)]
                 self.dropout += [nn.Dropout(p=dropout)]
                 # 2nd layer
                 if self.n_projs > 0:
-                    self.rnn += [rnn_cell(n_projs + enc_n_units, n_units)]
+                    self.rnn += [rnncell(n_projs + enc_n_units, n_units)]
                     self.proj += [LinearND(n_units, n_projs)]
                 else:
-                    self.rnn += [rnn_cell(n_units + enc_n_units, n_units)]
+                    self.rnn += [rnncell(n_units + enc_n_units, n_units)]
                 self.dropout += [nn.Dropout(p=dropout)]
                 for l in range(n_layers - 2):
                     if self.n_projs > 0:
-                        self.rnn += [rnn_cell(n_projs, n_units)]
+                        self.rnn += [rnncell(n_projs, n_units)]
                         self.proj += [LinearND(n_units, n_projs)]
                     else:
-                        self.rnn += [rnn_cell(n_units, n_units)]
+                        self.rnn += [rnncell(n_units, n_units)]
                     self.dropout += [nn.Dropout(p=dropout)]
             else:
                 raise NotImplementedError(loop_type)
@@ -322,15 +322,41 @@ class RNNDecoder(DecoderBase):
         # Initialize parameters
         self.reset_parameters(param_init)
 
+        # resister the external LM
         self.lm = lm_fusion
 
         # decoder initialization with pre-trained LM
         if lm_init is not None:
-            assert loop_type == 'lmdecoder'
             assert lm_init.vocab == vocab
             assert lm_init.n_units == n_units
-            assert lm_init.n_layers == 1  # TODO(hirofumi): on-the-fly
-            raise NotImplementedError
+            assert lm_init.emb_dim == emb_dim
+            logger.info('===== Initialize the decoder with pre-trained RNNLM')
+            assert lm_init.n_projs == 0  # TODO(hirofumi): fix later
+
+            if loop_type == 'lmdecoder':
+                assert n_layers < lm_init.n_layers
+                assert lm_init.n_layers == 1
+                assert lm_init.n_units_null_context == 0
+
+            # RNN
+            if lm_init.fast_impl:
+                for n, p in lm_init.rnn.named_parameters():
+                    l = int(n.split('_')[2].replace('l', ''))
+                    n = '_'.join(n.split('_')[:2])
+                    assert getattr(self.rnn[l], n).size() == p.size()
+                    getattr(self.rnn[l], n).data = p.data
+                    logger.info('Overwrite %s' % n)
+            else:
+                for l in range(lm_init.n_layers):
+                    for n, p in lm_init.rnn[l].named_parameters():
+                        assert getattr(self.rnn[l], n).size() == p.size()
+                        getattr(self.rnn[l], n).data = p.data
+                        logger.info('Overwrite %s' % n)
+
+            # embedding
+            assert self.embed.embed.weight.size() == lm_init.embed.embed.weight.size()
+            self.embed.embed.weight.data = lm_init.embed.embed.weight.data
+            logger.info('Overwrite %s' % 'embed.embed.weight')
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
@@ -430,14 +456,14 @@ class RNNDecoder(DecoderBase):
         w = next(self.parameters())
 
         # Append <sos> and <eos>
-        eos = w.new_zeros(1).fill_(self.eos).long()
+        eos = w.new_zeros(1).fill_(self.eos)
         ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
                         self.device_id) for y in ys]
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
         # Initialization
-        dstates = self.init_dec_state(bs)
+        dstates = self.zero_state(bs)
         cv = w.new_zeros((bs, 1, self.enc_n_units))
         attn_v = w.new_zeros((bs, 1, self.dec_n_units))
 
@@ -486,7 +512,7 @@ class RNNDecoder(DecoderBase):
         bs = eouts.size(0)
 
         # Append <sos> and <eos>
-        eos = eouts.new_zeros(1).fill_(self.eos).long()
+        eos = eouts.new_zeros(1).fill_(self.eos)
         ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
                         self.device_id) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
@@ -497,13 +523,13 @@ class RNNDecoder(DecoderBase):
         if self.contextualize:
             raise NotImplementedError
         else:
-            dstates = self.init_dec_state(bs)
+            dstates = self.zero_state(bs)
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
         lmstate = (None, None)
-        lm_feat = eouts.new_zeros(bs, 1, self.dec_n_units)
+        lmfeat = eouts.new_zeros(bs, 1, self.dec_n_units)
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
@@ -528,7 +554,7 @@ class RNNDecoder(DecoderBase):
             dec_in = attn_v if self.input_feeding else cv
             dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
-            attn_v, lm_feat = self.generate(cv, dstates['dout_gen'], lmout)
+            attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
             logits.append(attn_v)
 
         logits = torch.cat(logits, dim=1)
@@ -574,7 +600,7 @@ class RNNDecoder(DecoderBase):
 
         return loss, acc, ppl
 
-    def init_dec_state(self, batch_size):
+    def zero_state(self, batch_size):
         """Initialize decoder state.
 
         Args:
@@ -687,28 +713,28 @@ class RNNDecoder(DecoderBase):
             lmout (FloatTensor): `[B, 1, lm_n_units]`
         Returns:
             attn_v (FloatTensor): `[B, 1, vocab]`
-            gated_lm_feat (FloatTensor): `[B, 1 , dec_n_units]`
+            gated_lmfeat (FloatTensor): `[B, 1 , dec_n_units]`
 
         """
-        gated_lm_feat = None
+        gated_lmfeat = None
         if self.lm is not None:
             # LM fusion
             dec_feat = self.linear_dec_feat(torch.cat([dout, cv], dim=-1))
 
             if self.lm_fusion_type in ['cold', 'deep']:
-                lm_feat = self.linear_lm_feat(lmout)
-                gate = torch.sigmoid(self.linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
-                gated_lm_feat = gate * lm_feat
+                lmfeat = self.linear_lm_feat(lmout)
+                gate = torch.sigmoid(self.linear_lm_gate(torch.cat([dec_feat, lmfeat], dim=-1)))
+                gated_lmfeat = gate * lmfeat
             elif self.lm_fusion_type == 'cold_prob':
-                lm_feat = self.linear_lm_feat(self.lm.generate(lmout))
-                gate = torch.sigmoid(self.linear_lm_gate(torch.cat([dec_feat, lm_feat], dim=-1)))
-                gated_lm_feat = gate * lm_feat
+                lmfeat = self.linear_lm_feat(self.lm.generate(lmout))
+                gate = torch.sigmoid(self.linear_lm_gate(torch.cat([dec_feat, lmfeat], dim=-1)))
+                gated_lmfeat = gate * lmfeat
 
-            out = self.output_bn(torch.cat([dec_feat, gated_lm_feat], dim=-1))
+            out = self.output_bn(torch.cat([dec_feat, gated_lmfeat], dim=-1))
         else:
             out = self.output_bn(torch.cat([dout, cv], dim=-1))
         attn_v = torch.tanh(out)
-        return attn_v, gated_lm_feat
+        return attn_v, gated_lmfeat
 
     def greedy(self, eouts, elens, max_len_ratio,
                exclude_eos=False, idx2token=None, refs_id=None,
@@ -732,16 +758,16 @@ class RNNDecoder(DecoderBase):
         bs, xlen_max, _ = eouts.size()
 
         # Initialization
-        dstates = self.init_dec_state(bs)
+        dstates = self.zero_state(bs)
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
         lmstate = (None, None)
-        lm_feat = eouts.new_zeros(bs, 1, self.dec_n_units)
-        y = eouts.new_zeros(bs, 1).fill_(self.eos).long()
+        lmfeat = eouts.new_zeros(bs, 1, self.dec_n_units)
+        y = eouts.new_zeros(bs, 1).fill_(self.eos)
 
-        best_hyps_tmp, aws_tmp = [], []
+        best_hyps_batch, aws_tmp = [], []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
         if oracle:
@@ -751,7 +777,7 @@ class RNNDecoder(DecoderBase):
             ylen_max = int(math.floor(xlen_max * max_len_ratio)) + 1
         for t in range(ylen_max):
             if oracle and t > 0:
-                y = eouts.new_zeros(bs, 1).long()
+                y = eouts.new_zeros(bs, 1)
                 for b in range(bs):
                     y[b] = refs_id[b, t - 1]
 
@@ -765,14 +791,14 @@ class RNNDecoder(DecoderBase):
             dec_in = attn_v if self.input_feeding else cv
             dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
             cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
-            attn_v, lm_feat = self.generate(cv, dstates['dout_gen'], lmout)
+            attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
 
             # Pick up 1-best
             if self.adaptive_softmax is None:
-                y = self.output(attn_v).detach().argmax(-1)
+                y = self.output(attn_v).argmax(-1)
             else:
-                y = self.adaptive_softmax.predict(attn_v.view(-1, attn_v.size(2))).detach().unsqueeze(1)
-            best_hyps_tmp += [y]
+                y = self.adaptive_softmax.predict(attn_v.view(-1, attn_v.size(2))).unsqueeze(1)
+            best_hyps_batch += [y]
             aws_tmp += [aw]
 
             # Count lengths of hypotheses
@@ -791,16 +817,16 @@ class RNNDecoder(DecoderBase):
         self.lmstate_final = lmstate
 
         # Concatenate in L dimension
-        best_hyps_tmp = tensor2np(torch.cat(best_hyps_tmp, dim=1))
+        best_hyps_batch = tensor2np(torch.cat(best_hyps_batch, dim=1))
         aws_tmp = tensor2np(torch.stack(aws_tmp, dim=1))
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.bwd:
             # Reverse the order
-            best_hyps = [best_hyps_tmp[b, :ylens[b]][::-1] for b in range(bs)]
+            best_hyps = [best_hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
             aws = [aws_tmp[b, :ylens[b]][::-1] for b in range(bs)]
         else:
-            best_hyps = [best_hyps_tmp[b, :ylens[b]] for b in range(bs)]
+            best_hyps = [best_hyps_batch[b, :ylens[b]] for b in range(bs)]
             aws = [aws_tmp[b, :ylens[b]] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
@@ -814,7 +840,8 @@ class RNNDecoder(DecoderBase):
 
     def beam_search(self, eouts, elens, params, idx2token,
                     lm=None, lm_rev=None, ctc_log_probs=None,
-                    nbest=1, exclude_eos=False, refs_id=None, utt_ids=None, speakers=None,
+                    nbest=1, exclude_eos=False,
+                    refs_id=None, utt_ids=None, speakers=None,
                     ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[]):
         """Beam search decoding.
 
@@ -822,17 +849,17 @@ class RNNDecoder(DecoderBase):
             eouts (FloatTensor): `[B, T, dec_n_units]`
             elens (IntTensor): `[B]`
             params (dict):
-                beam_width (int): size of beam
-                max_len_ratio (int): maximum sequence length of tokens
-                min_len_ratio (float): minimum sequence length of tokens
-                length_penalty (float): length penalty
-                coverage_penalty (float): coverage penalty
-                coverage_threshold (float): threshold for coverage penalty
-                lm_weight (float): weight of LM score
-                n_caches (int):
+                recog_beam_width (int): size of beam
+                recog_max_len_ratio (int): maximum sequence length of tokens
+                recog_min_len_ratio (float): minimum sequence length of tokens
+                recog_length_penalty (float): length penalty
+                recog_coverage_penalty (float): coverage penalty
+                recog_coverage_threshold (float): threshold for coverage penalty
+                recog_lm_weight (float): weight of LM score
+                recog_n_caches (int):
             idx2token (): converter from index to token
-            lm (torch.nn.Module):
-            lm_rev (torch.nn.Module):
+            lm (RNNLM or GatedConvLM or TransformerLM):
+            lm_rev (RNNLM or GatedConvLM or TransformerLM):
             ctc_log_probs (FloatTensor):
             nbest (int):
             exclude_eos (bool):
@@ -843,9 +870,10 @@ class RNNDecoder(DecoderBase):
             ensmbl_elens (list) list of list
             ensmbl_decs (list): list of torch.nn.Module
         Returns:
-            nbest_hyps_idx (list): A list of length `[B]`, which contains list of n hypotheses
+            nbest_hyps_idx (list): A list of length `[B]`, which contains list of N hypotheses
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
             scores (list):
+            cache_info (tuple):
 
         """
         logger = logging.getLogger("decoding")
@@ -889,21 +917,16 @@ class RNNDecoder(DecoderBase):
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
-            dstates = self.init_dec_state(1)
+            dstates = self.zero_state(1)
             cv = eouts.new_zeros(1, 1, self.dec_n_units if self.input_feeding else self.enc_n_units)
             self.score.reset()
-            lm_hxs, lm_cxs = None, None
-
-            hxs_hist = eouts.new_zeros((1, self.dec_n_units))
-            cxs_hist = eouts.new_zeros((1, self.dec_n_units))
-            cv_hist = eouts.new_zeros(bs, 1, self.dec_n_units)
+            lmstate = None
 
             # Ensemble initialization
-            ensmbl_dstates = []
-            ensmbl_cv = []
+            ensmbl_dstate, ensmbl_cv = [], []
             if n_models > 1:
                 for dec in ensmbl_decs:
-                    ensmbl_dstates += [dec.init_dec_state(1)]
+                    ensmbl_dstate += [dec.zero_state(1)]
                     ensmbl_cv += [eouts.new_zeros(1, 1, dec.dec_n_units if dec.input_feeding else dec.enc_n_units)]
                     dec.score.reset()
 
@@ -911,14 +934,13 @@ class RNNDecoder(DecoderBase):
                 self.reset_global_cache()
             else:
                 if lm_state_carry_over:
-                    lm_hxs, lm_cxs = self.lmstate_final
+                    lmstate = self.lmstate_final
                 if asr_state_carry_over:
                     dstates = self.dstates_final
             self.prev_spk = speakers[b]
 
-            complete = []
-            beam = [{'hyp_id': [self.eos],
-                     'ref_id': [self.eos],
+            end_hyps = []
+            hyps = [{'hyp': [self.eos],
                      'score': 0.0,
                      'hist_score': [0.0],
                      'score_attn': 0.0,
@@ -926,13 +948,9 @@ class RNNDecoder(DecoderBase):
                      'score_lm': 0.0,
                      'dstates': dstates,
                      'cv': cv,
-                     'cv_hist': cv_hist,
-                     'hxs_hist': hxs_hist,
-                     'cxs_hist': cxs_hist,
                      'aws': [None],
-                     'lm_hxs': lm_hxs,
-                     'lm_cxs': lm_cxs,
-                     'ensmbl_dstates': ensmbl_dstates,
+                     'lmstate': lmstate,
+                     'ensmbl_dstate': ensmbl_dstate,
                      'ensmbl_cv': ensmbl_cv,
                      'ensmbl_aws':[[None]] * (n_models - 1),
                      'ctc_state': ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
@@ -951,57 +969,53 @@ class RNNDecoder(DecoderBase):
             else:
                 ylen_max = int(math.floor(elens[b] * max_len_ratio)) + 1
             for t in range(ylen_max):
-                new_beam = []
-                for i_beam in range(len(beam)):
-                    prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam[i_beam]['hyp_id'][-1]
+                new_hyps = []
+                for beam in hyps:
+                    prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam['hyp'][-1]
 
-                    lmout, lmstate = None, None
                     if self.lm is not None:
                         # Update LM states for LM fusion
                         lmout, lmstate = self.lm.decode(
-                            self.lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx).long()),
-                            (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
+                            self.lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx)), beam['lmstate'])
                     elif lm_weight > 0 and lm is not None:
                         # Update LM states for shallow fusion
                         lmout, lmstate = lm.decode(
-                            lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx).long()),
-                            (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
+                            lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx)), beam['lmstate'])
+                    else:
+                        lmout, lmstate = None, None
 
                     # Recurrency for the main model
-                    y = eouts.new_zeros(1, 1).fill_(prev_idx).long()
-                    dstates = self.recurrency(self.embed(y),
-                                              beam[i_beam]['cv'],
-                                              beam[i_beam]['dstates']['dstate'])
+                    dstates = self.recurrency(self.embed(eouts.new_zeros(1, 1).fill_(prev_idx)),
+                                              beam['cv'],
+                                              beam['dstates']['dstate'])
                     # Recurrency for the ensemble
-                    ensmbl_dstates = []
+                    ensmbl_dstate = []
                     if n_models > 1:
-                        for i_e, dec in enumerate(ensmbl_decs):
-                            ensmbl_dstates += [dec.recurrency(dec.embed(y),
-                                                              beam[i_beam]['ensmbl_cv'][i_e],
-                                                              beam[i_beam]['ensmbl_dstates'][i_e]['dstate'])]
+                        ensmbl_dstate = [dec.recurrency(dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx)),
+                                                        beam['ensmbl_cv'][i_e],
+                                                        beam['ensmbl_dstate'][i_e]['dstate'])
+                                         for i_e, dec in enumerate(ensmbl_decs)]
 
                     # Score for the main model
                     cv, aw = self.score(eouts[b:b + 1, :elens[b]],
                                         elens[b:b + 1],
                                         eouts[b:b + 1, :elens[b]],
                                         dstates['dout_score'],
-                                        beam[i_beam]['aws'][-1])
+                                        beam['aws'][-1])
                     # Score for the ensemble
-                    ensmbl_cv = []
-                    ensmbl_aws = []
+                    ensmbl_cv, ensmbl_aws = [], []
                     if n_models > 1:
                         for i_e, dec in enumerate(ensmbl_decs):
-                            cv_e, aw_e = dec.score(
-                                ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
-                                ensmbl_elens[i_e][b:b + 1],
-                                ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
-                                ensmbl_dstates[i_e]['dout_score'],
-                                beam[i_beam]['ensmbl_aws'][i_e][-1])
+                            cv_e, aw_e = dec.score(ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
+                                                   ensmbl_elens[i_e][b:b + 1],
+                                                   ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
+                                                   ensmbl_dstate[i_e]['dout_score'],
+                                                   beam['ensmbl_aws'][i_e][-1])
                             ensmbl_cv += [cv_e]
                             ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi)] why unsqueeze?
 
                     # Generate for the main model
-                    attn_v, lm_feat = self.generate(cv, dstates['dout_gen'], lmout)
+                    attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
                     if self.adaptive_softmax is None:
                         probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
                     else:
@@ -1027,9 +1041,9 @@ class RNNDecoder(DecoderBase):
                         # Compute inner-product over caches
                         if 'speech_fifo' in cache_type:
                             is_cache = True
-                            if 'online' in cache_type and len(self.fifo_cache_ids + beam[i_beam]['cache_ids']) > 0:
-                                cache_ids = (self.fifo_cache_ids + beam[i_beam]['cache_ids'])[-n_caches:]
-                                cache_sp_key = beam[i_beam]['cache_sp_key'][-n_caches:]
+                            if 'online' in cache_type and len(self.fifo_cache_ids + beam['cache_ids']) > 0:
+                                cache_ids = (self.fifo_cache_ids + beam['cache_ids'])[-n_caches:]
+                                cache_sp_key = beam['cache_sp_key'][-n_caches:]
                                 if len(cache_sp_key) > 0:
                                     cache_sp_key = torch.cat(cache_sp_key, dim=1)
                                     if self.fifo_cache_sp_key is not None:
@@ -1048,17 +1062,17 @@ class RNNDecoder(DecoderBase):
                                 cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
                                     cache_sp_key, torch.cat([cv, dstates['dout_gen']], dim=-1).transpose(2, 1)), dim=1)  # `[1, L, 1]`
                                 # Sum all probabilities
-                                for c in set(beam[i_beam]['cache_ids']):
+                                for c in set(beam['cache_ids']):
                                     for offset in [i for i, key in enumerate(cache_ids) if key == c]:
                                         cache_probs_sp[0, c] += cache_sp_attn[0, offset, 0]
                                 probs = (1 - cache_lambda_sp) * probs + cache_lambda_sp * cache_probs_sp
 
                         if 'lm_fifo' in cache_type:
                             is_cache = True
-                            if 'online' in cache_type and len(self.fifo_cache_ids + beam[i_beam]['cache_ids']) > 0:
+                            if 'online' in cache_type and len(self.fifo_cache_ids + beam['cache_ids']) > 0:
                                 assert lm_weight > 0
-                                cache_ids = (self.fifo_cache_ids + beam[i_beam]['cache_ids'])[-n_caches:]
-                                cache_lm_key = beam[i_beam]['cache_lm_key'][-n_caches:]
+                                cache_ids = (self.fifo_cache_ids + beam['cache_ids'])[-n_caches:]
+                                cache_lm_key = beam['cache_lm_key'][-n_caches:]
                                 if len(cache_lm_key) > 0:
                                     cache_lm_key = torch.cat(cache_lm_key, dim=1)
                                     if self.fifo_cache_lm_key is not None:
@@ -1077,7 +1091,7 @@ class RNNDecoder(DecoderBase):
                                 cache_lm_attn = F.softmax(cache_theta_lm * torch.matmul(
                                     cache_lm_key, lmout.transpose(2, 1)), dim=1)  # `[1, L, 1]`
                                 # Sum all probabilities
-                                for c in set(beam[i_beam]['cache_ids']):
+                                for c in set(beam['cache_ids']):
                                     for offset in [i for i, key in enumerate(cache_ids) if key == c]:
                                         cache_probs_lm[0, c] += cache_lm_attn[0, offset, 0]
                                 lm_probs = (1 - cache_lambda_lm) * lm_probs + cache_lambda_lm * cache_probs_lm
@@ -1113,7 +1127,7 @@ class RNNDecoder(DecoderBase):
                     if n_models > 1:
                         for i_e, dec in enumerate(ensmbl_decs):
                             attn_v_e, _ = dec.generate(ensmbl_cv[i_e],
-                                                       ensmbl_dstates[i_e]['dout_gen'],
+                                                       ensmbl_dstate[i_e]['dout_gen'],
                                                        lmout)
                             if dec.adaptive_softmax is None:
                                 local_scores_attn += F.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
@@ -1123,49 +1137,49 @@ class RNNDecoder(DecoderBase):
                         local_scores_attn /= n_models
 
                     # Attention scores
-                    scores_attn = beam[i_beam]['score_attn'] + local_scores_attn
-                    global_scores = scores_attn * (1 - ctc_weight)
+                    scores_attn = beam['score_attn'] + local_scores_attn
+                    total_scores = scores_attn * (1 - ctc_weight)
 
                     # Add LM score <after> top-K selection
-                    global_scores_topk, topk_ids = torch.topk(
-                        global_scores, k=beam_width, dim=1, largest=True, sorted=True)
+                    total_scores_topk, topk_ids = torch.topk(
+                        total_scores, k=beam_width, dim=1, largest=True, sorted=True)
                     if lm_weight > 0 and lm is not None:
-                        global_scores_lm = beam[i_beam]['score_lm'] + torch.log(lm_probs)[0, topk_ids[0]]
-                        global_scores_topk += global_scores_lm * lm_weight
+                        total_scores_lm = beam['score_lm'] + torch.log(lm_probs)[0, topk_ids[0]]
+                        total_scores_topk += total_scores_lm * lm_weight
                     else:
-                        global_scores_lm = torch.zeros((beam_width), dtype=torch.float32)
+                        total_scores_lm = torch.zeros((beam_width), dtype=torch.float32)
 
                     # Add LM score <before> top-K selection
                     # if lm_weight > 0 and lm is not None:
-                    #     global_scores_lm = beam[i_beam]['score_lm'] + torch.log(lm_probs)
-                    #     global_scores += global_scores_lm * lm_weight
+                    #     total_scores_lm = beam['score_lm'] + torch.log(lm_probs)
+                    #     total_scores += total_scores_lm * lm_weight
                     # else:
-                    #     global_scores_lm = torch.zeros((self.vocab), dtype=torch.float32)
-                    # global_scores_topk, topk_ids = torch.topk(
-                    #     global_scores, k=beam_width, dim=1, largest=True, sorted=True)
+                    #     total_scores_lm = torch.zeros((self.vocab), dtype=torch.float32)
+                    # total_scores_topk, topk_ids = torch.topk(
+                    #     total_scores, k=beam_width, dim=1, largest=True, sorted=True)
 
                     # Add length penalty
                     lp = 1.0
                     if lp_weight > 0:
                         if gnmt_decoding:
-                            lp = (math.pow(5 + (len(beam[i_beam]['hyp_id']) - 1 + 1),
+                            lp = (math.pow(5 + (len(beam['hyp']) - 1 + 1),
                                            lp_weight)) / math.pow(6, lp_weight)
-                            global_scores_topk /= lp
+                            total_scores_topk /= lp
                         else:
-                            global_scores_topk += (len(beam[i_beam]['hyp_id']) - 1 + 1) * lp_weight
+                            total_scores_topk += (len(beam['hyp']) - 1 + 1) * lp_weight
                             # NOTE: -1 means removing <sos>
 
                     # Add coverage penalty
                     cp = 0.0
                     aw_mat = None
                     if cp_weight > 0:
-                        aw_mat = torch.stack(beam[i_beam]['aws'][1:] + [aw], dim=-1)  # `[B, T, len(hyp), n_heads]`
+                        aw_mat = torch.stack(beam['aws'][1:] + [aw], dim=-1)  # `[B, T, len(hyp), n_heads]`
                         aw_mat = aw_mat[:, :, :, 0]
                         if gnmt_decoding:
                             aw_mat = torch.log(aw_mat.sum(-1))
                             cp = torch.where(aw_mat < 0, aw_mat, aw_mat.new_zeros(aw_mat.size())).sum()
                             # TODO (hirofumi): mask by elens[b]
-                            global_scores_topk += cp * cp_weight
+                            total_scores_topk += cp * cp_weight
                         else:
                             # Recompute converage penalty in each step
                             if cp_threshold == 0:
@@ -1173,159 +1187,152 @@ class RNNDecoder(DecoderBase):
                             else:
                                 cp = torch.where(aw_mat > cp_threshold, aw_mat,
                                                  aw_mat.new_zeros(aw_mat.size())).sum() / self.score.n_heads
-                            global_scores_topk += cp * cp_weight
+                            total_scores_topk += cp * cp_weight
 
                     # CTC score
                     if ctc_weight > 0 and ctc_log_probs is not None:
                         ctc_scores, ctc_states = ctc_prefix_score(
-                            beam[i_beam]['hyp_id'], tensor2np(topk_ids[0]), beam[i_beam]['ctc_state'])
-                        global_scores_ctc = torch.from_numpy(ctc_scores).cuda(self.device_id)
-                        global_scores_topk += global_scores_ctc * ctc_weight
+                            beam['hyp'], tensor2np(topk_ids[0]), beam['ctc_state'])
+                        total_scores_ctc = torch.from_numpy(ctc_scores).cuda(self.device_id)
+                        total_scores_topk += total_scores_ctc * ctc_weight
                         # Sort again
-                        global_scores_topk, joint_ids_topk = torch.topk(
-                            global_scores_topk, k=beam_width, dim=1, largest=True, sorted=True)
+                        total_scores_topk, joint_ids_topk = torch.topk(
+                            total_scores_topk, k=beam_width, dim=1, largest=True, sorted=True)
                         topk_ids = topk_ids[:, joint_ids_topk[0]]
                     else:
-                        global_scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
+                        total_scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
 
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
-                        total_score = global_scores_topk[0, k].item()
+                        total_score = total_scores_topk[0, k].item()
 
                         # Exclude short hypotheses
                         if idx == self.eos:
-                            if len(beam[i_beam]['hyp_id']) - 1 < elens[b] * min_len_ratio:
+                            if len(beam['hyp']) - 1 < elens[b] * min_len_ratio:
                                 continue
                             # EOS threshold
-                            max_score_except_eos = local_scores_attn[0, :idx].max(0)[0].item()
-                            max_score_except_eos = max(
-                                max_score_except_eos, local_scores_attn[0, idx + 1:].max(0)[0].item())
-                            if local_scores_attn[0, idx].item() <= eos_threshold * max_score_except_eos:
+                            max_score_no_eos = local_scores_attn[0, :idx].max(0)[0].item()
+                            max_score_no_eos = max(max_score_no_eos, local_scores_attn[0, idx + 1:].max(0)[0].item())
+                            if local_scores_attn[0, idx].item() <= eos_threshold * max_score_no_eos:
                                 continue
 
-                        new_beam.append(
-                            {'hyp_id': beam[i_beam]['hyp_id'] + [idx],
-                             'ref_id': beam[i_beam]['ref_id'] + refs_id[b][t:t + 1] if oracle else [],
+                        new_hyps.append(
+                            {'hyp': beam['hyp'] + [idx],
                              'score': total_score,
-                             'hist_score': beam[i_beam]['hist_score'] + [total_score],
+                             'hist_score': beam['hist_score'] + [total_score],
                              'score_attn': scores_attn[0, idx].item(),
                              'score_cp': cp,
-                             'score_ctc': global_scores_ctc[k].item(),
-                             'score_lm': global_scores_lm[k].item(),
-                             #  'score_lm': global_scores_lm[0, idx].item(),
+                             'score_ctc': total_scores_ctc[k].item(),
+                             'score_lm': total_scores_lm[k].item(),
+                             #  'score_lm': total_scores_lm[0, idx].item(),
                              'dstates': dstates,
                              'cv': attn_v if self.input_feeding else cv,
-                             'cv_hist': cv_hist,
-                             'hxs_hist': hxs_hist,
-                             'cxs_hist': cxs_hist,
-                             'aws': beam[i_beam]['aws'] + [aw],
-                             'lm_hxs': lmstate[0][:] if lmstate is not None else None,
-                             'lm_cxs': lmstate[1][:] if lmstate is not None else None,
-                             'ensmbl_dstates': ensmbl_dstates,
+                             'aws': beam['aws'] + [aw],
+                             'lmstate': lmstate,
+                             'ensmbl_dstate': ensmbl_dstate,
                              'ensmbl_cv': ensmbl_cv,
                              'ensmbl_aws': ensmbl_aws,
                              'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
                              'ctc_score': ctc_scores[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
-                             'cache_ids': beam[i_beam]['cache_ids'] + [idx],
-                             'cache_sp_key': beam[i_beam]['cache_sp_key'] + [torch.cat([cv, dstates['dout_gen']], dim=-1)],
-                             'cache_lm_key': beam[i_beam]['cache_lm_key'] + [lmout],
-                             'cache_idx_hist': beam[i_beam]['cache_idx_hist'] + [cache_ids],
-                             'cache_sp_attn_hist': beam[i_beam]['cache_sp_attn_hist'] + [cache_sp_attn] if cache_sp_attn is not None else [],
-                             'cache_lm_attn_hist': beam[i_beam]['cache_lm_attn_hist'] + [cache_lm_attn] if cache_lm_attn is not None else [],
+                             'cache_ids': beam['cache_ids'] + [idx],
+                             'cache_sp_key': beam['cache_sp_key'] + [torch.cat([cv, dstates['dout_gen']], dim=-1)],
+                             'cache_lm_key': beam['cache_lm_key'] + [lmout],
+                             'cache_idx_hist': beam['cache_idx_hist'] + [cache_ids],
+                             'cache_sp_attn_hist': beam['cache_sp_attn_hist'] + [cache_sp_attn] if cache_sp_attn is not None else [],
+                             'cache_lm_attn_hist': beam['cache_lm_attn_hist'] + [cache_lm_attn] if cache_lm_attn is not None else [],
                              })
 
-                new_beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
+                # Local pruning
+                new_hyps_tmp = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
-                # Remove complete hypotheses
-                not_complete = []
-                for cand in new_beam[:beam_width]:
+                # Remove end_hyps hypotheses
+                new_hyps = []
+                for hyp in new_hyps_tmp:
                     if oracle:
                         if t == len(refs_id[b]):
-                            complete += [cand]
+                            end_hyps += [hyp]
                         else:
-                            not_complete += [cand]
+                            new_hyps += [hyp]
                     else:
-                        if cand['hyp_id'][-1] == self.eos:
-                            complete += [cand]
+                        if hyp['hyp'][-1] == self.eos:
+                            end_hyps += [hyp]
                         else:
-                            not_complete += [cand]
-
-                # Pruning
-                if len(complete) >= beam_width:
-                    complete = complete[:beam_width]
+                            new_hyps += [hyp]
+                if len(end_hyps) >= beam_width:
+                    end_hyps = end_hyps[:beam_width]
                     break
-                beam = not_complete[:beam_width]
+                hyps = new_hyps[:]
 
-            # Pruning
-            if len(complete) == 0:
-                complete = beam[:]
-            elif len(complete) < nbest and nbest > 1:
-                complete.extend(beam[:nbest - len(complete)])
+            # Global pruning
+            if len(end_hyps) == 0:
+                end_hyps = hyps[:]
+            elif len(end_hyps) < nbest and nbest > 1:
+                end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
             # backward LM rescoring
             if lm_rev is not None and lm_weight > 0:
-                for i in range(len(complete)):
+                for i in range(len(end_hyps)):
                     # Initialize
                     lm_rev_hxs, lm_rev_cxs = None, None
                     score_lm_rev = 0.0
                     lp = 1.0
 
                     # Append <eos>
-                    if complete[i]['hyp_id'][-1] != self.eos:
-                        complete[i]['hyp_id'].append(self.eos)
+                    if end_hyps[i]['hyp'][-1] != self.eos:
+                        end_hyps[i]['hyp'].append(self.eos)
                         logger.info('Append <eos>.')
 
                     if lp_weight > 0 and gnmt_decoding:
-                        lp = (math.pow(5 + (len(complete[i]['hyp_id']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
-                    for t_ in range(len(complete[i]['hyp_id'][::-1]) - 1):
+                        lp = (math.pow(5 + (len(end_hyps[i]['hyp']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
+                    for t_ in range(len(end_hyps[i]['hyp'][::-1]) - 1):
                         lm_out_rev, (lm_rev_hxs, lm_rev_cxs) = lm_rev.decode(
-                            lm_rev.encode(eouts.new_zeros(1, 1).fill_(complete[i]['hyp_id'][::-1][t_]).long()),
+                            lm_rev.encode(eouts.new_zeros(1, 1).fill_(end_hyps[i]['hyp'][::-1][t_])),
                             (lm_rev_hxs, lm_rev_cxs))
                         lm_log_probs = F.log_softmax(lm_rev.generate(lm_out_rev).squeeze(1), dim=-1)
-                        score_lm_rev += lm_log_probs[0, complete[i]['hyp_id'][::-1][t_ + 1]]
+                        score_lm_rev += lm_log_probs[0, end_hyps[i]['hyp'][::-1][t_ + 1]]
                     if gnmt_decoding:
                         score_lm_rev /= lp  # normalize
-                    complete[i]['score'] += score_lm_rev * lm_weight
-                    complete[i]['score_lm_rev'] = score_lm_rev
+                    end_hyps[i]['score'] += score_lm_rev * lm_weight
+                    end_hyps[i]['score_lm_rev'] = score_lm_rev
 
             # Sort by score
-            complete = sorted(complete, key=lambda x: x['score'], reverse=True)
+            end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
 
             # N-best list
             if self.bwd:
                 # Reverse the order
-                nbest_hyps_idx += [[np.array(complete[n]['hyp_id'][1:][::-1]) for n in range(nbest)]]
-                aws += [[complete[n]['aws'][1:][::-1] for n in range(nbest)]]
-                scores += [[complete[n]['hist_score'][1:][::-1] for n in range(nbest)]]
+                nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:][::-1]) for n in range(nbest)]]
+                aws += [[end_hyps[n]['aws'][1:][::-1] for n in range(nbest)]]
+                scores += [[end_hyps[n]['hist_score'][1:][::-1] for n in range(nbest)]]
             else:
-                nbest_hyps_idx += [[np.array(complete[n]['hyp_id'][1:]) for n in range(nbest)]]
-                aws += [[complete[n]['aws'][1:] for n in range(nbest)]]
-                scores += [[complete[n]['hist_score'][1:] for n in range(nbest)]]
+                nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
+                aws += [[end_hyps[n]['aws'][1:] for n in range(nbest)]]
+                scores += [[end_hyps[n]['hist_score'][1:] for n in range(nbest)]]
 
             # Check <eos>
-            eos_flag = [True if complete[n]['hyp_id'][-1] == self.eos else False for n in range(nbest)]
+            eos_flag = [True if end_hyps[n]['hyp'][-1] == self.eos else False for n in range(nbest)]
             eos_flags.append(eos_flag)
 
             if utt_ids is not None:
                 logger.info('Utt-id: %s' % utt_ids[b])
             if refs_id is not None and self.vocab == idx2token.vocab:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
-            for k in range(len(complete)):
+            for k in range(len(end_hyps)):
                 if self.bwd:
-                    logger.info('Hyp: %s' % idx2token(complete[k]['hyp_id'][1:][::-1]))
+                    logger.info('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:][::-1]))
                 else:
-                    logger.info('Hyp: %s' % idx2token(complete[k]['hyp_id'][1:]))
-                logger.info('log prob (hyp): %.7f' % complete[k]['score'])
-                logger.info('log prob (hyp, att): %.7f' % (complete[k]['score_attn'] * (1 - ctc_weight)))
-                logger.info('log prob (hyp, cp): %.7f' % (complete[k]['score_cp'] * cp_weight))
+                    logger.info('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:]))
+                logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
+                logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
+                logger.info('log prob (hyp, cp): %.7f' % (end_hyps[k]['score_cp'] * cp_weight))
                 if ctc_weight > 0 and ctc_log_probs is not None:
-                    logger.info('log prob (hyp, ctc): %.7f' % (complete[k]['score_ctc'] * ctc_weight))
+                    logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                 if lm_weight > 0 and lm is not None:
-                    logger.info('log prob (hyp, lm): %.7f' % (complete[k]['score_lm'] * lm_weight))
+                    logger.info('log prob (hyp, lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_rev is not None:
-                        logger.info('log prob (hyp, lm reverse): %.7f' % (complete[k]['score_lm_rev'] * lm_weight))
+                        logger.info('log prob (hyp, lm reverse): %.7f' % (end_hyps[k]['score_lm_rev'] * lm_weight))
                 if n_caches > 0:
-                    logger.info('Cache: %d' % (len(self.fifo_cache_ids) + len(complete[k]['cache_ids'])))
+                    logger.info('Cache: %d' % (len(self.fifo_cache_ids) + len(end_hyps[k]['cache_ids'])))
 
         # Concatenate in L dimension
         for b in range(len(aws)):
@@ -1346,40 +1353,40 @@ class RNNDecoder(DecoderBase):
         cache_sp_attn_hist = None
         cache_lm_attn_hist = None
         if n_caches > 0:
-            hyp_len = len(complete[0]['hyp_id'][1:])
+            hyp_len = len(end_hyps[0]['hyp'][1:])
 
-            if 'speech_fifo' in cache_type and len(complete[0]['cache_ids']) > 0:
-                self.fifo_cache_ids = (self.fifo_cache_ids + complete[0]['cache_ids'])[-n_caches:]
-                cache_idx_hist = complete[0]['cache_idx_hist']
-                cache_sp_key = complete[0]['cache_sp_key'][-n_caches:]
+            if 'speech_fifo' in cache_type and len(end_hyps[0]['cache_ids']) > 0:
+                self.fifo_cache_ids = (self.fifo_cache_ids + end_hyps[0]['cache_ids'])[-n_caches:]
+                cache_idx_hist = end_hyps[0]['cache_idx_hist']
+                cache_sp_key = end_hyps[0]['cache_sp_key'][-n_caches:]
                 cache_sp_key = torch.cat(cache_sp_key, dim=1)
                 if self.fifo_cache_sp_key is not None:
                     cache_sp_key = torch.cat([self.fifo_cache_sp_key, cache_sp_key], dim=1)
                 # Truncate
                 self.fifo_cache_sp_key = cache_sp_key[:, -n_caches:]  # `[1, L, enc_n_units]`
-                if len(complete[0]['cache_sp_attn_hist']) > 0:
+                if len(end_hyps[0]['cache_sp_attn_hist']) > 0:
                     cache_sp_attn_hist = torch.zeros(
-                        (1, complete[0]['cache_sp_attn_hist'][-1].size(1), hyp_len), dtype=torch.float32)
-                    for i, p in enumerate(complete[0]['cache_sp_attn_hist']):
+                        (1, end_hyps[0]['cache_sp_attn_hist'][-1].size(1), hyp_len), dtype=torch.float32)
+                    for i, p in enumerate(end_hyps[0]['cache_sp_attn_hist']):
                         if p.size(1) < n_caches:
                             cache_sp_attn_hist[0, : p.size(1), i] = p[0, :, 0].cpu()
                         else:
                             cache_sp_attn_hist[0, : n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
 
-            if ('lm_fifo' in cache_type) and len(complete[0]['cache_ids']) > 0:
+            if ('lm_fifo' in cache_type) and len(end_hyps[0]['cache_ids']) > 0:
                 assert lm_weight > 0
-                self.fifo_cache_ids = (self.fifo_cache_ids + complete[0]['cache_ids'])[-n_caches:]
-                cache_idx_hist = complete[0]['cache_idx_hist']
-                cache_lm_key = complete[0]['cache_lm_key'][-n_caches:]
+                self.fifo_cache_ids = (self.fifo_cache_ids + end_hyps[0]['cache_ids'])[-n_caches:]
+                cache_idx_hist = end_hyps[0]['cache_idx_hist']
+                cache_lm_key = end_hyps[0]['cache_lm_key'][-n_caches:]
                 cache_lm_key = torch.cat(cache_lm_key, dim=1)
                 if self.fifo_cache_lm_key is not None:
                     cache_lm_key = torch.cat([self.fifo_cache_lm_key, cache_lm_key], dim=1)
                 # Truncate
                 self.fifo_cache_lm_key = cache_lm_key[:, -n_caches:]  # `[1, L, lm_n_units]`
-                if len(complete[0]['cache_lm_attn_hist']) > 0:
-                    cache_lm_attn_hist = torch.zeros((1, complete[0]['cache_lm_attn_hist'][-1].size(1), hyp_len),
+                if len(end_hyps[0]['cache_lm_attn_hist']) > 0:
+                    cache_lm_attn_hist = torch.zeros((1, end_hyps[0]['cache_lm_attn_hist'][-1].size(1), hyp_len),
                                                      dtype=torch.float32)  # `[B, n_keys, n_values]`
-                    for i, p in enumerate(complete[0]['cache_lm_attn_hist']):
+                    for i, p in enumerate(end_hyps[0]['cache_lm_attn_hist']):
                         if p.size(1) < n_caches:
                             cache_lm_attn_hist[0, : p.size(1), i] = p[0, :, 0].cpu()
                         else:
@@ -1391,69 +1398,69 @@ class RNNDecoder(DecoderBase):
                     cache_idx_hist = [self.unk if i < 0 else i for i in cache_idx_hist]
                     cache_sp_key = [v['key']for k, v in sorted(self.dict_cache_sp.items(), key=lambda x: x[0])]
                     cache_sp_key = torch.cat(cache_sp_key, dim=1)
-                    cache_sp_attn_hist = torch.cat(complete[0]['cache_sp_attn_hist'], dim=-1).cpu().numpy()
+                    cache_sp_attn_hist = torch.cat(end_hyps[0]['cache_sp_attn_hist'], dim=-1).cpu().numpy()
 
-                for t, idx in enumerate(complete[0]['hyp_id'][1:]):
+                for t, idx in enumerate(end_hyps[0]['hyp'][1:]):
                     if idx == self.eos:
                         continue
                     if idx != self.unk and idx in self.dict_cache_sp.keys():
                         if cache_type in ['speech_dict_overwrite', 'joint_dict_overwrite']:
                             self.dict_cache_sp[idx]['value'] = (
-                                self.dict_cache_sp[idx]['value'] + complete[0]['cache_sp_key'][t]) / 2
+                                self.dict_cache_sp[idx]['value'] + end_hyps[0]['cache_sp_key'][t]) / 2
                         else:
-                            self.dict_cache_sp[idx]['value'] = complete[0]['cache_sp_key'][t]
+                            self.dict_cache_sp[idx]['value'] = end_hyps[0]['cache_sp_key'][t]
                         self.dict_cache_sp[idx]['time'] = self.total_step + t + 1
                         self.dict_cache_sp[idx]['count'] += 1
                     else:
                         if idx == self.unk:
                             self.dict_cache_sp[idx - (self.total_step + t + 1)] = {
-                                'key': complete[0]['cache_sp_key'][t],
-                                'value': complete[0]['cache_sp_key'][t],
+                                'key': end_hyps[0]['cache_sp_key'][t],
+                                'value': end_hyps[0]['cache_sp_key'][t],
                                 'count': 1,
                                 'time': self.total_step + t + 1}
                         else:
                             self.dict_cache_sp[idx] = {
-                                'key': complete[0]['cache_sp_key'][t],
-                                'value': complete[0]['cache_sp_key'][t],
+                                'key': end_hyps[0]['cache_sp_key'][t],
+                                'value': end_hyps[0]['cache_sp_key'][t],
                                 'count': 1,
                                 'time': self.total_step + t + 1}
                         if len(self.dict_cache_sp.keys()) > n_caches:
                             oldest_id = sorted(self.dict_cache_sp.items(), key=lambda x: x[1]['time'])[0][0]
                             self.dict_cache_sp.pop(oldest_id)
-                self.total_step += len(complete[0]['hyp_id'][1:])
+                self.total_step += len(end_hyps[0]['hyp'][1:])
 
             if 'lm_dict' in cache_type:
                 if len(self.dict_cache_lm.keys()) > 0:
                     cache_idx_hist = sorted(list(self.dict_cache_lm.keys()))
                     cache_lm_key = [v['key']for k, v in sorted(self.dict_cache_lm.items(), key=lambda x: x[0])]
                     cache_lm_key = torch.cat(cache_lm_key, dim=1)
-                    cache_lm_attn_hist = torch.cat(complete[0]['cache_lm_attn_hist'], dim=-1).cpu().numpy()
+                    cache_lm_attn_hist = torch.cat(end_hyps[0]['cache_lm_attn_hist'], dim=-1).cpu().numpy()
 
-                for t, idx in enumerate(complete[0]['hyp_id'][1:]):
+                for t, idx in enumerate(end_hyps[0]['hyp'][1:]):
                     if idx == self.eos:
                         continue
                     if idx in self.dict_cache_lm.keys():
                         if cache_type in ['lm_dict_overwrite', 'joint_dict_overwrite']:
                             self.dict_cache_lm[idx]['value'] = (
-                                self.dict_cache_lm[idx]['value'] + complete[0]['cache_lm_key'][t]) / 2
+                                self.dict_cache_lm[idx]['value'] + end_hyps[0]['cache_lm_key'][t]) / 2
                         else:
-                            self.dict_cache_lm[idx]['value'] = complete[0]['cache_lm_key'][t]
+                            self.dict_cache_lm[idx]['value'] = end_hyps[0]['cache_lm_key'][t]
                         self.dict_cache_lm[idx]['time'] = self.total_step + t + 1
                         self.dict_cache_lm[idx]['count'] += 1
                     else:
                         self.dict_cache_lm[idx] = {
-                            'key': complete[0]['cache_lm_key'][t],
-                            'value': complete[0]['cache_lm_key'][t],
+                            'key': end_hyps[0]['cache_lm_key'][t],
+                            'value': end_hyps[0]['cache_lm_key'][t],
                             'count': 1,
                             'time': self.total_step + t + 1}
                         if len(self.dict_cache_lm.keys()) > n_caches:
                             oldest_id = sorted(self.dict_cache_lm.items(), key=lambda x: x[1]['time'])[0][0]
                             self.dict_cache_lm.pop(oldest_id)
-                self.total_step += len(complete[0]['hyp_id'][1:])
+                self.total_step += len(end_hyps[0]['hyp'][1:])
 
         # Store ASR/LM state
-        self.dstates_final = complete[0]['dstates']
-        self.lmstate_final = (complete[0]['lm_hxs'], complete[0]['lm_cxs'])
+        self.dstates_final = end_hyps[0]['dstates']
+        self.lmstate_final = end_hyps[0]['lmstate']
 
         if 'speech' in cache_type:
             return nbest_hyps_idx, aws, scores, (cache_sp_attn_hist, cache_idx_hist)
