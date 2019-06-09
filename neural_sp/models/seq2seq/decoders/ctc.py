@@ -161,78 +161,104 @@ class CTC(DecoderBase):
 
         return np.array(best_hyps)
 
-    def beam_search(self, eouts, elens, beam_width=1,
-                    lm=None, lm_weight=0, length_penalty=0, lm_usage='rescoring'):
+    def beam_search(self, eouts, elens, params, idx2token, lm=None,
+                    nbest=1, refs_id=None, utt_ids=None, speakers=None):
         """Beam search decoding.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (list): A list of length `[B]`
-            beam_width (int): the size of beam
+            params (dict):
+                recog_beam_width (int): size of beam
+                recog_length_penalty (float): length penalty
+                recog_lm_weight (float): weight of LM score
+                recog_lm_usage (str): rescoring or shallow_fusion
+            idx2token (): converter from index to token
             lm (RNNLM or GatedConvLM or TransformerLM):
-            lm_weight (float): language model weight (the vocabulary is the same as CTC)
-            length_penalty (float): insertion penalty
-            lm_usage (str): rescoring or shallow_fusion
+            nbest (int):
+            refs_id (list):
+            utt_ids (list):
+            speakers (list):
         Returns:
             best_hyps (list): Best path hypothesis. `[B, L]`
 
         """
-        bs, _, vocab = eouts.size()
-        best_hyps = []
+        logger = logging.getLogger("decoding")
 
+        bs = eouts.size(0)
+
+        beam_width = params['recog_beam_width']
+        lp_weight = params['recog_length_penalty']
+        lm_weight = params['recog_lm_weight']
+        lm_usage = params['recog_lm_usage']
+
+        best_hyps = []
         log_probs = F.log_softmax(self.output(eouts), dim=-1)
 
         for b in range(bs):
             # Elements in the beam are (prefix, (p_b, p_no_blank))
             # Initialize the beam with the empty sequence, a probability of
             # 1 for ending in blank and zero for ending in non-blank (in log space).
-            beam = [{'hyp': [self.eos],  # <eos> is used for LM
+            beam = [{'hyp_id': [self.eos],  # <eos> is used for LM
                      'p_b': LOG_1,
                      'p_nb': LOG_0,
-                     'clm_score': LOG_1,
-                     'clm_hxs': None,
-                     'clm_cxs': None}]
+                     'score_lm': LOG_1,
+                     'lm_hxs': None,
+                     'lm_cxs': None
+                     }]
 
             for t in range(elens[b]):
                 new_beam = []
 
                 # Pick up the top-k scores
-                log_probs_topk, indices_topk = torch.topk(
-                    log_probs[b:b + 1, t], k=min(beam_width, vocab), dim=-1, largest=True, sorted=True)
+                log_probs_topk, topk_ids = torch.topk(
+                    log_probs[b:b + 1, t], k=min(beam_width, self.vocab), dim=-1, largest=True, sorted=True)
 
                 for i_beam in range(len(beam)):
-                    hyp = beam[i_beam]['hyp']
+                    hyp_id = beam[i_beam]['hyp_id'][:]
                     p_b = beam[i_beam]['p_b']
                     p_nb = beam[i_beam]['p_nb']
-                    clm_score = beam[i_beam]['clm_score']
-                    clm_hxs = beam[i_beam]['clm_hxs']
-                    clm_cxs = beam[i_beam]['clm_cxs']
+                    score_lm = beam[i_beam]['score_lm']
+                    lm_hxs = beam[i_beam]['lm_hxs']
+                    lm_cxs = beam[i_beam]['lm_cxs']
 
                     # case 1. hyp is not extended
                     new_p_b = np.logaddexp(p_b + log_probs[b, t, self.blank].item(),
                                            p_nb + log_probs[b, t, self.blank].item())
-                    if len(hyp) > 1:
-                        new_p_nb = p_nb + log_probs[b, t, hyp[-1]].item()
+                    if len(hyp_id) > 1:
+                        new_p_nb = p_nb + log_probs[b, t, hyp_id[-1]].item()
                     else:
                         new_p_nb = LOG_0
-                    new_beam.append({'hyp': hyp,
-                                     'score': np.logaddexp(new_p_b, new_p_nb) + clm_score * lm_weight,
+                    score_ctc = np.logaddexp(new_p_b, new_p_nb)
+                    score_lp = len(hyp_id[1:]) * lp_weight
+                    new_beam.append({'hyp_id': hyp_id,
+                                     'score': score_ctc + score_lm + score_lp,
                                      'p_b': new_p_b,
                                      'p_nb': new_p_nb,
-                                     'clm_score': clm_score,
-                                     'clm_hxs': clm_hxs[:] if clm_hxs is not None else None,
-                                     'clm_cxs': clm_cxs[:] if clm_cxs is not None else None})
+                                     'score_ctc': score_ctc,
+                                     'score_lm': score_lm,
+                                     'score_lp': score_lp,
+                                     'lm_hxs': lm_hxs[:] if lm_hxs is not None else None,
+                                     'lm_cxs': lm_cxs[:] if lm_cxs is not None else None,
+                                     })
+
+                    # Update LM states for shallow fusion
+                    if lm_weight > 0 and lm is not None and lm_usage == 'shallow_fusion':
+                        lmout, lmstate = lm.decode(
+                            lm.encode(eouts.new_zeros(1, 1).fill_(hyp_id[-1]).long()),
+                            (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
+                        lm_log_probs = F.log_softmax(lm.generate(lmout), dim=-1)
 
                     # case 2. hyp is extended
                     new_p_b = LOG_0
-                    for c in tensor2np(indices_topk)[0]:
+                    for c in tensor2np(topk_ids)[0]:
                         p_t = log_probs[b, t, c].item()
 
                         if c == self.blank:
                             continue
 
-                        last_token = hyp[-1] if len(hyp) > 1 else None
-                        if c == last_token:
+                        c_prev = hyp_id[-1] if len(hyp_id) > 1 else None
+                        if c == c_prev:
                             new_p_nb = p_b + p_t
                             # TODO(hirofumi): apply character LM here
                         else:
@@ -242,19 +268,21 @@ class CTC(DecoderBase):
                                 pass
                                 # TODO(hirofumi): apply word LM here
 
-                        # Update LM states for shallow fusion
+                        score_ctc = np.logaddexp(new_p_b, new_p_nb)
+                        score_lp = (len(hyp_id[1:]) + 1) * lp_weight
                         if lm_weight > 0 and lm is not None and lm_usage == 'shallow_fusion':
-                            clmout, clmstate = lm.decode(
-                                lm.encode(log_probs.new_zeros(1, 1).fill_(c).long()), (clm_hxs, clm_cxs))
-                            clm_score = F.log_softmax(lm.generate(clmout), dim=-1)[0, 0, c]
-
-                        new_beam.append({'hyp': beam[i_beam]['hyp'] + [c],
-                                         'score': np.logaddexp(new_p_b, new_p_nb) + clm_score * lm_weight,
+                            local_score_lm = lm_log_probs[0, 0, c].item() * lm_weight
+                            score_lm += local_score_lm
+                        new_beam.append({'hyp_id': hyp_id + [c],
+                                         'score': score_ctc + score_lm + score_lp,
                                          'p_b': new_p_b,
                                          'p_nb': new_p_nb,
-                                         'clm_score': clm_score,
-                                         'clm_hxs': clm_hxs[:] if clm_hxs is not None else None,
-                                         'clm_cxs': clm_cxs[:] if clm_cxs is not None else None})
+                                         'score_ctc': score_ctc,
+                                         'score_lm': score_lm,
+                                         'score_lp': score_lp,
+                                         'lm_hxs': lm_hxs[:] if lm_hxs is not None else None,
+                                         'lm_cxs': lm_cxs[:] if lm_cxs is not None else None,
+                                         })
 
                 # Pruning
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
@@ -262,19 +290,32 @@ class CTC(DecoderBase):
             # Rescoing lattice
             if lm_weight > 0 and lm is not None and lm_usage == 'rescoring':
                 new_beam = []
-                device_id = torch.cuda.device_of(log_probs).idx
                 for i_beam in range(len(beam)):
-                    ys = [np2tensor(np.fromiter([self.eos] + beam[i_beam]['hyp'],
-                                                dtype=np.int64), device_id).long()]
+                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp_id']), self.device_id)]
                     ys_pad = pad_list(ys, lm.pad)
-                    clmout, _ = lm.decode(lm.encode(ys_pad), None)
-                    clm_score = F.log_softmax(lm.generate(clmout), dim=-1).sum()
-                    new_beam.append({'hyp': beam[i_beam]['hyp'],
-                                     'score': np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb']) + clm_score * lm_weight})
+                    lmout, _ = lm.decode(lm.encode(ys_pad), None)
+                    score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
+                    score_lm = F.log_softmax(lm.generate(lmout), dim=-1).sum() * lm_weight
+                    score_lp = len(beam[i_beam]['hyp_id'][1:]) * lp_weight
+                    new_beam.append({'hyp_id': beam[i_beam]['hyp_id'],
+                                     'score': score_ctc + score_lm + score_lp,
+                                     'score_ctc': score_ctc,
+                                     'score_lp': score_lp,
+                                     'score_lm': score_lm})
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
 
-            best_hyp = beam[0]['hyp'][1:]
-            best_hyps.append(np.array(best_hyp))
+            best_hyps.append(np.array(beam[0]['hyp_id'][1:]))
+
+            if utt_ids is not None:
+                logger.info('Utt-id: %s' % utt_ids[b])
+            if refs_id is not None and self.vocab == idx2token.vocab:
+                logger.info('Ref: %s' % idx2token(refs_id[b]))
+            logger.info('Hyp: %s' % idx2token(beam[0]['hyp_id'][1:]))
+            logger.info('log prob (hyp): %.7f' % beam[0]['score'])
+            logger.info('log prob (CTC): %.7f' % beam[0]['score_ctc'])
+            logger.info('log prob (lp): %.7f' % beam[0]['score_lp'])
+            if lm_weight > 0 and lm is not None:
+                logger.info('log prob (hyp, lm): %.7f' % (beam[0]['score_lm']))
 
         return np.array(best_hyps)
 
