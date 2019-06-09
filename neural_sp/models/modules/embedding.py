@@ -40,5 +40,5 @@ class Embedding(nn.Module):
             y_emb (FloatTensor): `[B, L, emb_dim]`
 
         """
-        ys_emb = self.dropout(self.embed(ys))
+        ys_emb = self.dropout(self.embed(ys.long()))
         return ys_emb
