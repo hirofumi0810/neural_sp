@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import copy
 import logging
 import math
 import numpy as np
@@ -528,7 +527,7 @@ class RNNDecoder(DecoderBase):
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
-        lmstate = (None, None)
+        lmstate = None
         lmfeat = eouts.new_zeros(bs, 1, self.dec_n_units)
 
         # Pre-computation of embedding
@@ -763,7 +762,7 @@ class RNNDecoder(DecoderBase):
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
-        lmstate = (None, None)
+        lmstate = None
         lmfeat = eouts.new_zeros(bs, 1, self.dec_n_units)
         y = eouts.new_zeros(bs, 1).fill_(self.eos)
 
@@ -1223,8 +1222,8 @@ class RNNDecoder(DecoderBase):
                              'score_attn': scores_attn[0, idx].item(),
                              'score_cp': cp,
                              'score_ctc': total_scores_ctc[k].item(),
-                             'score_lm': total_scores_lm[k].item(),
-                             #  'score_lm': total_scores_lm[0, idx].item(),
+                             'score_lm': total_scores_lm[k].item(),  # after
+                             #  'score_lm': total_scores_lm[0, idx].item(),  # before
                              'dstates': dstates,
                              'cv': attn_v if self.input_feeding else cv,
                              'aws': beam['aws'] + [aw],
