@@ -25,9 +25,11 @@ from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import tensor2np
 
 random.seed(1)
+
+LOG_0 = float(np.finfo(np.float32).min)
+LOG_1 = 0
 
 
 class RNNTransducer(DecoderBase):
@@ -89,7 +91,7 @@ class RNNTransducer(DecoderBase):
                  global_weight=1.0,
                  mtl_per_batch=False,
                  param_init=0.1,
-                 end_pointing=False):
+                 end_pointing=True):
 
         super(RNNTransducer, self).__init__()
         logger = logging.getLogger('training')
@@ -113,6 +115,10 @@ class RNNTransducer(DecoderBase):
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
         self.end_pointing = end_pointing
+
+        # for cache
+        self.prev_spk = ''
+        self.lmstate_final = None
 
         if ctc_weight > 0:
             self.ctc = CTC(eos=eos,
@@ -281,14 +287,14 @@ class RNNTransducer(DecoderBase):
         w = next(self.parameters())
 
         # Append <sos> and <eos>
-        eos = w.new_zeros(1).fill_(self.eos).long()
+        eos = w.new_zeros(1).fill_(self.eos)
         ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
         # Update prediction network
-        out_pred, _ = self.recurrency(self.embed(ys_in_pad), None)
-        logits = self.output_lmobj(out_pred)
+        dout, _ = self.recurrency(self.embed(ys_in_pad), None)
+        logits = self.output_lmobj(dout)
 
         # Compute XE loss for LM objective
         loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
@@ -315,20 +321,20 @@ class RNNTransducer(DecoderBase):
 
         """
         # Append <null> and <eos>
-        null = eouts.new_zeros(1).long()
+        eos = eouts.new_zeros(1).fill_(self.eos)
         if self.end_pointing:
-            _ys = [np2tensor(np.fromiter([y] + [self.eos], dtype=np.int64), self.device_id) for y in ys]
+            _ys = [np2tensor(np.fromiter(y + [self.eos], dtype=np.int64), self.device_id) for y in ys]
         else:
             _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
-        ys_in_pad = pad_list([torch.cat([null, y], dim=0) for y in _ys], self.pad)
+        ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)
         ys_out_pad = pad_list(_ys, 0).int()  # int for warprnnt_loss
 
         # Update prediction network
-        out_pred, _ = self.recurrency(self.embed(ys_in_pad), None)
+        dout, _ = self.recurrency(self.embed(ys_in_pad), None)
 
         # Compute output distribution
-        out = self.joint(eouts, out_pred)
+        out = self.joint(eouts, dout)
 
         # Compute Transducer loss
         log_probs = F.log_softmax(out, dim=-1)
@@ -349,46 +355,46 @@ class RNNTransducer(DecoderBase):
 
         return loss
 
-    def joint(self, out_trans, out_pred):
+    def joint(self, out_trans, dout):
         """
         Args:
             out_trans (FloatTensor): `[B, T, dec_n_units]`
-            out_pred (FloatTensor): `[B, L, dec_n_units]`
+            dout (FloatTensor): `[B, L, dec_n_units]`
         Returns:
             out (FloatTensor): `[B, T, L, vocab]`
         """
         out_trans = out_trans.unsqueeze(2)  # `[B, T, 1, dec_n_units]`
-        out_pred = out_pred.unsqueeze(1)  # `[B, 1, L, dec_n_units]`
-        out = torch.tanh(self.w_trans(out_trans) + self.w_pred(out_pred))
+        dout = dout.unsqueeze(1)  # `[B, 1, L, dec_n_units]`
+        out = torch.tanh(self.w_trans(out_trans) + self.w_pred(dout))
         return self.output(out)
 
-    def recurrency(self, ys_emb, dstates):
+    def recurrency(self, ys_emb, dstate):
         """Update prediction network.
         Args:
             ys_emb (FloatTensor): `[B, L, emb_dim]`
-            dstates ():
+            dstate ():
         Returns:
-            out_pred (FloatTensor):
-            dstates ():
+            dout (FloatTensor):
+            dstate ():
 
         """
-        if dstates is None or dstates[0] is None:
-            dstates = self.initialize_hidden(ys_emb.size(0))
+        if dstate is None or dstate[0] is None:
+            dstate = self.initialize_hidden(ys_emb.size(0))
 
         residual = None
         if self.fast_impl:
             # Path through RNN
-            ys_emb, dstates = self.rnn(ys_emb, hx=dstates)
+            ys_emb, dstate = self.rnn(ys_emb, hx=dstate)
             ys_emb = self.dropout_top(ys_emb)
         else:
             new_hxs, new_cxs = [], []
             for l in range(self.n_layers):
                 # Path through RNN
                 if self.rnn_type == 'lstm_transducer':
-                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(dstates[0][l:l + 1], dstates[1][l:l + 1]))
+                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(dstate[0][l:l + 1], dstate[1][l:l + 1]))
                     new_cxs.append(c_l)
                 elif self.rnn_type == 'gru_transducer':
-                    ys_emb, h_l = self.rnn[l](ys_emb, hx=dstates[0][l:l + 1])
+                    ys_emb, h_l = self.rnn[l](ys_emb, hx=dstate[0][l:l + 1])
                 new_hxs.append(h_l)
                 ys_emb = self.dropout[l](ys_emb)
 
@@ -402,7 +408,7 @@ class RNNTransducer(DecoderBase):
                 residual = ys_emb
                 # NOTE: Exclude residual connection from the raw inputs
 
-        return ys_emb, dstates
+        return ys_emb, dstate
 
     def initialize_hidden(self, batch_size):
         """Initialize hidden states.
@@ -449,39 +455,215 @@ class RNNTransducer(DecoderBase):
             oracle (bool):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-            aw (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
+            aw: dummy
 
         """
-        bs, xlen_max, _ = eouts.size()
+        bs = eouts.size(0)
 
         best_hyps = []
         for b in range(bs):
-            best_hyp_utt = []
+            best_hyp_b = []
             # Initialization
-            y = eouts.new_zeros(1, 1).long()
-            out_pred, dstates = self.recurrency(self.embed(y), None)
-            for t in range(xlen_max):
+            y = eouts.new_zeros(bs, 1).fill_(self.eos)
+            dout, dstate = self.recurrency(self.embed(y), None)
+
+            for t in range(elens[b]):
                 # Pick up 1-best per frame
-                out = self.joint(eouts[b:b + 1, t:t + 1], out_pred.squeeze(1))
-                y = F.log_softmax(out.squeeze(2), dim=-1).detach().argmax(-1)
+                out = self.joint(eouts[b:b + 1, t:t + 1], dout.squeeze(1))
+                y = F.log_softmax(out.squeeze(2), dim=-1).argmax(-1)
+                idx = y[0].item()
 
-                # Update prediction network only when predicting blank labels
-                if y[0].item() != self.blank:
-                    if not (self.end_pointing and y[0].item() == self.eos and exclude_eos):
-                        best_hyp_utt += [y[0]]
-
-                    if oracle:
-                        y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(best_hyp_utt) - 1]).long()
-                    else:
-                        out_pred, dstates = self.recurrency(self.embed(y), dstates)
-
+                # Update prediction network only when predicting non-blank labels
+                if idx != self.blank:
                     # early stop
-                    if self.end_pointing and y[0].item() == self.eos:
+                    if self.end_pointing and idx == self.eos:
+                        if not exclude_eos:
+                            best_hyp_b += [idx]
                         break
 
-            best_hyps += [tensor2np(torch.cat(best_hyp_utt, dim=0))]
+                    best_hyp_b += [idx]
+                    if oracle:
+                        y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(best_hyp_b) - 1])
+                    dout, dstate = self.recurrency(self.embed(y), dstate)
+
+            best_hyps += [best_hyp_b]
 
         return best_hyps, None
 
-    def beam_search(self):
-        raise NotImplementedError
+    def beam_search(self, eouts, elens, params, idx2token,
+                    lm=None, lm_rev=None, ctc_log_probs=None,
+                    nbest=1, exclude_eos=False,
+                    refs_id=None, utt_ids=None, speakers=None,
+                    ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[]):
+        """Beam search decoding.
+
+        Args:
+            eouts (FloatTensor): `[B, T, dec_n_units]`
+            elens (IntTensor): `[B]`
+            params (dict):
+                recog_beam_width (int): size of hyp
+                recog_max_len_ratio (int): maximum sequence length of tokens
+                recog_min_len_ratio (float): minimum sequence length of tokens
+                recog_length_penalty (float): length penalty
+                recog_coverage_penalty (float): coverage penalty
+                recog_coverage_threshold (float): threshold for coverage penalty
+                recog_lm_weight (float): weight of LM score
+                recog_n_caches (int):
+            idx2token (): converter from index to token
+            lm (RNNLM or GatedConvLM or TransformerLM):
+            lm_rev (RNNLM or GatedConvLM or TransformerLM):
+            ctc_log_probs (FloatTensor):
+            nbest (int):
+            exclude_eos (bool):
+            refs_id (list):
+            utt_ids (list):
+            speakers (list):
+            ensmbl_eouts (list): list of FloatTensor
+            ensmbl_elens (list) list of list
+            ensmbl_decs (list): list of torch.nn.Module
+        Returns:
+            nbest_hyps_idx (list): A list of length `[B]`, which contains list of N hypotheses
+            aws: dummy
+            scores: dummy
+            cache_info: dummy
+
+        """
+        logger = logging.getLogger("decoding")
+
+        bs = eouts.size(0)
+        best_hyps = []
+
+        oracle = params['recog_oracle']
+        beam_width = params['recog_beam_width']
+        ctc_weight = params['recog_ctc_weight']
+        lm_weight = params['recog_lm_weight']
+        asr_state_carry_over = params['recog_asr_state_carry_over']
+        lm_state_carry_over = params['recog_lm_state_carry_over']
+        lm_usage = params['recog_lm_usage']
+
+        if lm is not None:
+            lm.eval()
+
+        for b in range(bs):
+            # Initialization
+            y = eouts.new_zeros(bs, 1).fill_(self.eos)
+            dout, dstate = self.recurrency(self.embed(y), None)
+            lmstate = None
+
+            if lm_state_carry_over:
+                lmstate = self.lmstate_final
+            self.prev_spk = speakers[b]
+
+            end_hyps = []
+            hyps = [{'hyp': [self.eos],
+                     'ref_id': [self.eos],
+                     'score': 0.0,
+                     'score_lm': 0.0,
+                     'score_ctc': 0.0,
+                     'dout': dout,
+                     'dstate': dstate,
+                     'lmstate': lmstate,
+                     }]
+            for t in range(elens[b]):
+                new_hyps = []
+                for hyp in hyps:
+                    prev_idx = ([self.eos] + refs_id[b])[t] if oracle else hyp['hyp'][-1]
+                    score = hyp['score']
+                    score_lm = hyp['score_lm']
+                    dout = hyp['dout']
+                    dstate = hyp['dstate']
+                    lmstate = hyp['lmstate']
+
+                    # Pick up the top-k scores
+                    out = self.joint(eouts[b:b + 1, t:t + 1], dout.squeeze(1))
+                    log_probs = F.log_softmax(out.squeeze(2), dim=-1)
+                    log_probs_topk, topk_ids = torch.topk(
+                        log_probs[0, 0], k=min(beam_width, self.vocab), dim=-1, largest=True, sorted=True)
+
+                    for k in range(beam_width):
+                        idx = topk_ids[k].item()
+                        score += log_probs_topk[k].item()
+
+                        # Update prediction network only when predicting non-blank labels
+                        if idx == self.blank:
+                            hyp_id = hyp['hyp']
+                        else:
+                            hyp_id = hyp['hyp'] + [idx]
+                            if oracle:
+                                y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(hyp_id) - 1])
+                            else:
+                                y = eouts.new_zeros(1, 1).fill_(idx)
+                                dout, dstate = self.recurrency(self.embed(y), dstate)
+
+                            # Update LM states for shallow fusion
+                            if lm_weight > 0 and lm is not None:
+                                lmout, lmstate = lm.decode(lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx)), lmstate)
+                                local_score_lm = F.log_softmax(lm.generate(lmout), dim=-1)[0, 0, idx].item() * lm_weight
+                                score_lm += local_score_lm
+                                score += local_score_lm
+
+                        new_hyps.append({'hyp': hyp_id,
+                                         'score': score,
+                                         'score_lm': score_lm,
+                                         'score_ctc': 0,  # TODO
+                                         'dout': dout,
+                                         'dstate': dstate,
+                                         'lmstate': lmstate,
+                                         })
+
+                # Local pruning
+                new_hyps_tmp = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+
+                # Remove complete hypotheses
+                new_hyps = []
+                for hyp in new_hyps_tmp:
+                    if oracle:
+                        if t == len(refs_id[b]):
+                            end_hyps += [hyp]
+                        else:
+                            new_hyps += [hyp]
+                    else:
+                        if self.end_pointing and hyp['hyp'][-1] == self.eos:
+                            end_hyps += [hyp]
+                        else:
+                            new_hyps += [hyp]
+                if len(end_hyps) >= beam_width:
+                    end_hyps = end_hyps[:beam_width]
+                    break
+                hyps = new_hyps[:]
+
+            # Rescoing lattice
+            if lm_weight > 0 and lm is not None and lm_usage == 'rescoring':
+                new_hyps = []
+                for hyp in hyps:
+                    ys = [np2tensor(np.fromiter(hyp['hyp'], dtype=np.int64), self.device_id)]
+                    ys_pad = pad_list(ys, lm.pad)
+                    lmout, _ = lm.decode(lm.encode(ys_pad), None)
+                    score_ctc = 0  # TODO:
+                    score_lm = F.log_softmax(lm.generate(lmout), dim=-1).sum() * lm_weight
+                    new_hyps.append({'hyp': hyp['hyp'],
+                                     'score': hyp['score'] + score_lm,
+                                     'score_ctc': score_ctc,
+                                     'score_lm': score_lm
+                                     })
+                hyps = sorted(new_hyps, key=lambda x: x['score'], reverse=True)
+
+            # Exclude <eos>
+            if False and exclude_eos and self.end_pointing and hyps[0]['hyp'][-1] == self.eos:
+                best_hyps.append([hyps[0]['hyp'][1:-1]])
+            else:
+                best_hyps.append([hyps[0]['hyp'][1:]])
+
+            if utt_ids is not None:
+                logger.info('Utt-id: %s' % utt_ids[b])
+            if refs_id is not None and self.vocab == idx2token.vocab:
+                logger.info('Ref: %s' % idx2token(refs_id[b]))
+            logger.info('Hyp: %s' % idx2token(hyps[0]['hyp'][1:]))
+            logger.info('log prob (hyp): %.7f' % hyps[0]['score'])
+            if ctc_weight > 0 and ctc_log_probs is not None:
+                logger.info('log prob (hyp, ctc): %.7f' % (hyps[0]['score_ctc']))
+            # logger.info('log prob (lp): %.7f' % hyps[0]['score_lp'])
+            if lm_weight > 0 and lm is not None:
+                logger.info('log prob (hyp, lm): %.7f' % (hyps[0]['score_lm']))
+
+        return np.array(best_hyps), None, None, None

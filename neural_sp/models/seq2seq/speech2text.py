@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Attention-based RNN sequence-to-sequence model (including CTC)."""
+"""Speech to text sequence-to-sequence model."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -36,7 +36,7 @@ logger = logging.getLogger("training")
 
 
 class Speech2Text(ModelBase):
-    """Attention-based RNN sequence-to-sequence model (including CTC)."""
+    """Speech to text sequence-to-sequence model."""
 
     def __init__(self, args, save_path=None):
 
@@ -621,9 +621,8 @@ class Speech2Text(ModelBase):
                     lm = getattr(self, 'lm_' + dir)
 
                 best_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
-                    enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                    params['recog_beam_width'], lm, params['recog_lm_weight'],
-                    lm_usage=params['recog_lm_usage'])
+                    enc_outs[task]['xs'], enc_outs[task]['xlens'], params, idx2token, lm,
+                    nbest, refs_id, utt_ids, speakers)
                 return best_hyps_id, None, (None, None)
 
             #########################
@@ -746,7 +745,7 @@ class Speech2Text(ModelBase):
 
                         if nbest == 1:
                             best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
-                            aws = [aw[0] for aw in aws]
+                            aws = [aw[0] for aw in aws] if aws is not None else aws
                         else:
                             return nbest_hyps_id, aws, scores, cache_info
                         # NOTE: nbest >= 2 is used for MWER training only

@@ -34,36 +34,37 @@ class DecoderBase(ModelBase):
     def reset_parameters(self, param_init):
         raise NotImplementedError
 
-    def greedy(self):
+    def greedy(self, eouts, elens, max_len_ratio):
         raise NotImplementedError
 
-    def beam_search(self):
+    def beam_search(self, eouts, elens, params, idx2token):
         raise NotImplementedError
 
     def _plot_attention(self):
         raise NotImplementedError
 
-    def decode_ctc(self, eouts, elens, beam_width=1, lm=None, lm_weight=0.0,
-                   lm_usage='rescoring'):
-        """Decoding by the CTC layer in the inference stage.
+    def decode_ctc(self, eouts, elens, params, idx2token, lm=None,
+                   nbest=1, refs_id=None, utt_ids=None, speakers=None):
+        """Decoding with CTC scores in the inference stage.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
             elens (IntTensor): `[B]`
-            beam_width (int): size of beam
+            params (dict):
+                recog_beam_width (int): size of beam
+                recog_length_penalty (float): length penalty
+                recog_lm_weight (float): weight of LM score
+                recog_lm_usage (str): rescoring or shallow_fusion
             lm (RNNLM or GatedConvLM or TransformerLM):
-            lm_weight (float): language model weight (the vocabulary is the same as CTC)
-            lm_usage (str): rescoring or shallow_fusion
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
 
         """
-        if beam_width == 1:
+        if params['recog_beam_width'] == 1:
             best_hyps = self.ctc.greedy(eouts, elens)
         else:
-            best_hyps = self.ctc.beam_search(eouts, elens, beam_width,
-                                             lm, lm_weight,
-                                             lm_usage=lm_usage)
+            best_hyps = self.ctc.beam_search(eouts, elens, params, idx2token, lm,
+                                             nbest, refs_id, utt_ids, speakers)
         return best_hyps
 
     def ctc_log_probs(self, eouts, temperature=1):
