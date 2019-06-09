@@ -456,7 +456,7 @@ class RNNDecoder(DecoderBase):
 
         # Append <sos> and <eos>
         eos = w.new_zeros(1).fill_(self.eos)
-        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
+        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y),
                         self.device_id) for y in ys]
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
@@ -512,7 +512,7 @@ class RNNDecoder(DecoderBase):
 
         # Append <sos> and <eos>
         eos = eouts.new_zeros(1).fill_(self.eos)
-        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
+        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y),
                         self.device_id) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)

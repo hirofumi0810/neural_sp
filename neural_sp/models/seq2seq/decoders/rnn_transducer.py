@@ -61,6 +61,7 @@ class RNNTransducer(DecoderBase):
         global_weight (float):
         mtl_per_batch (bool):
         param_init (float):
+        start_pointing (bool):
         end_pointing (bool):
 
     """
@@ -91,6 +92,7 @@ class RNNTransducer(DecoderBase):
                  global_weight=1.0,
                  mtl_per_batch=False,
                  param_init=0.1,
+                 start_pointing=False,
                  end_pointing=True):
 
         super(RNNTransducer, self).__init__()
@@ -114,6 +116,9 @@ class RNNTransducer(DecoderBase):
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
+
+        # VAD
+        self.start_pointing = start_pointing
         self.end_pointing = end_pointing
 
         # for cache
@@ -289,7 +294,7 @@ class RNNTransducer(DecoderBase):
 
         # Append <sos> and <eos>
         eos = w.new_zeros(1).fill_(self.eos)
-        ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
+        ys = [np2tensor(np.fromiter(y), self.device_id) for y in ys]
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
@@ -324,9 +329,9 @@ class RNNTransducer(DecoderBase):
         # Append <null> and <eos>
         eos = eouts.new_zeros(1).fill_(self.eos)
         if self.end_pointing:
-            _ys = [np2tensor(np.fromiter(y + [self.eos], dtype=np.int64), self.device_id) for y in ys]
+            _ys = [np2tensor(np.fromiter(y + [self.eos]), self.device_id) for y in ys]
         else:
-            _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
+            _ys = [np2tensor(np.fromiter(y), self.device_id) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)
         ys_out_pad = pad_list(_ys, 0).int()  # int for warprnnt_loss
@@ -670,7 +675,7 @@ class RNNTransducer(DecoderBase):
             if lm_weight > 0 and lm is not None and lm_usage == 'rescoring':
                 new_hyps = []
                 for hyp in hyps:
-                    ys = [np2tensor(np.fromiter(hyp['hyp'], dtype=np.int64), self.device_id)]
+                    ys = [np2tensor(np.fromiter(hyp['hyp']), self.device_id)]
                     ys_pad = pad_list(ys, lm.pad)
                     lmout, _ = lm.decode(lm.encode(ys_pad), None)
                     score_ctc = 0  # TODO:
