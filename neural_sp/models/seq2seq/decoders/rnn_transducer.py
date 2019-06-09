@@ -10,8 +10,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from collections import OrderedDict
 import logging
-# import math
 import numpy as np
 import random
 import torch
@@ -119,6 +119,7 @@ class RNNTransducer(DecoderBase):
         # for cache
         self.prev_spk = ''
         self.lmstate_final = None
+        self.state_cache = OrderedDict()
 
         if ctc_weight > 0:
             self.ctc = CTC(eos=eos,
@@ -372,29 +373,39 @@ class RNNTransducer(DecoderBase):
         """Update prediction network.
         Args:
             ys_emb (FloatTensor): `[B, L, emb_dim]`
-            dstate ():
+            dstate (dict):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
         Returns:
             dout (FloatTensor):
-            dstate ():
+            new_dstate (dict):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
 
         """
-        if dstate is None or dstate[0] is None:
-            dstate = self.initialize_hidden(ys_emb.size(0))
+        if dstate is None:
+            dstate = self.zero_state(ys_emb.size(0))
+        new_dstate = {'hxs': None, 'cxs': None}
 
         residual = None
         if self.fast_impl:
             # Path through RNN
-            ys_emb, dstate = self.rnn(ys_emb, hx=dstate)
+            if self.rnn_type == 'lstm_transducer':
+                ys_emb, (new_dstate['hxs'], new_dstate['cxs']) = self.rnn(
+                    ys_emb, hx=(dstate['hxs'], dstate['cxs']))
+            elif self.rnn_type == 'gru_transducer':
+                ys_emb, new_dstate['hxs'] = self.rnn(ys_emb, hx=dstate['hxs'])
             ys_emb = self.dropout_top(ys_emb)
         else:
             new_hxs, new_cxs = [], []
             for l in range(self.n_layers):
                 # Path through RNN
                 if self.rnn_type == 'lstm_transducer':
-                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(dstate[0][l:l + 1], dstate[1][l:l + 1]))
+                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(dstate['hxs'][l:l + 1],
+                                                                 dstate['cxs'][l:l + 1]))
                     new_cxs.append(c_l)
                 elif self.rnn_type == 'gru_transducer':
-                    ys_emb, h_l = self.rnn[l](ys_emb, hx=dstate[0][l:l + 1])
+                    ys_emb, h_l = self.rnn[l](ys_emb, hx=dstate['hxs'][l:l + 1])
                 new_hxs.append(h_l)
                 ys_emb = self.dropout[l](ys_emb)
 
@@ -408,36 +419,40 @@ class RNNTransducer(DecoderBase):
                 residual = ys_emb
                 # NOTE: Exclude residual connection from the raw inputs
 
-        return ys_emb, dstate
+            # Repackage
+            new_dstate['hxs'] = torch.cat(new_hxs, dim=0)
+            if self.rnn_type == 'lstm_transducer':
+                new_dstate['cxs'] = torch.cat(new_cxs, dim=0)
 
-    def initialize_hidden(self, batch_size):
+        return ys_emb, new_dstate
+
+    def zero_state(self, batch_size):
         """Initialize hidden states.
 
         Args:
             batch_size (int):
         Returns:
-            hidden (tuple):
-                hxs (FloatTensor): `[n_layers, B, dec_n_units]`
-                cxs (FloatTensor): `[n_layers, B, dec_n_units]`
+            zero_state (dict):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
 
         """
         w = next(self.parameters())
+        zero_state = {'hxs': None, 'cxs': None}
         if self.fast_impl:
-            h_n = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
-            c_n = None
+            zero_state['hxs'] = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
             if self.rnn_type == 'lstm_transducer':
-                c_n = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
-            return (h_n, c_n)
+                zero_state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
         else:
             hxs, cxs = [], []
             for l in range(self.n_layers):
                 if self.rnn_type == 'lstm_transducer':
                     cxs.append(w.new_zeros(1, batch_size, self.dec_n_units))
                 hxs.append(w.new_zeros(1, batch_size, self.dec_n_units))
-            hxs = torch.cat(hxs, dim=0)
+            zero_state['hxs'] = torch.cat(hxs, dim=0)  # `[n_layers, B, dec_n_units]`
             if self.rnn_type == 'lstm_transducer':
-                cxs = torch.cat(cxs, dim=0)
-            return (hxs, cxs)
+                zero_state['cxs'] = torch.cat(cxs, dim=0)  # `[n_layers, B, dec_n_units]`
+        return zero_state
 
     def greedy(self, eouts, elens, max_len_ratio,
                exclude_eos=False, idx2token=None, refs_id=None,
@@ -556,6 +571,7 @@ class RNNTransducer(DecoderBase):
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
+                     'lattice': [],
                      'ref_id': [self.eos],
                      'score': 0.0,
                      'score_lm': 0.0,
@@ -585,29 +601,46 @@ class RNNTransducer(DecoderBase):
                         score += log_probs_topk[k].item()
 
                         # Update prediction network only when predicting non-blank labels
+                        lattice = hyp['lattice'] + [idx]
                         if idx == self.blank:
                             hyp_id = hyp['hyp']
                         else:
                             hyp_id = hyp['hyp'] + [idx]
-                            if oracle:
-                                y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(hyp_id) - 1])
+                            hyp_str = ' '.join(list(map(str, hyp_id[1:])))
+                            if hyp_str in self.state_cache.keys():
+                                # from cache
+                                dout = self.state_cache[hyp_str]['dout']
+                                new_dstate = self.state_cache[hyp_str]['dstate']
                             else:
-                                y = eouts.new_zeros(1, 1).fill_(idx)
-                                dout, dstate = self.recurrency(self.embed(y), dstate)
+                                if oracle:
+                                    y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(hyp_id) - 1])
+                                else:
+                                    y = eouts.new_zeros(1, 1).fill_(idx)
+                                dout, new_dstate = self.recurrency(self.embed(y), dstate)
 
-                            # Update LM states for shallow fusion
-                            if lm_weight > 0 and lm is not None:
-                                lmout, lmstate = lm.decode(lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx)), lmstate)
-                                local_score_lm = F.log_softmax(lm.generate(lmout), dim=-1)[0, 0, idx].item() * lm_weight
-                                score_lm += local_score_lm
-                                score += local_score_lm
+                                # Update LM states for shallow fusion
+                                if lm_weight > 0 and lm is not None:
+                                    lmout, lmstate = lm.decode(
+                                        lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx)), lmstate)
+                                    local_score_lm = F.log_softmax(lm.generate(lmout), dim=-1)[0, 0, idx].item()
+                                    score_lm += local_score_lm * lm_weight
+                                    score += local_score_lm * lm_weight
+
+                                # to cache
+                                self.state_cache[hyp_str] = {
+                                    'lattice': lattice,
+                                    'dout': dout,
+                                    'dstate': new_dstate,
+                                    'lmstate': lmstate,
+                                }
 
                         new_hyps.append({'hyp': hyp_id,
+                                         'lattice': lattice,
                                          'score': score,
                                          'score_lm': score_lm,
                                          'score_ctc': 0,  # TODO
                                          'dout': dout,
-                                         'dstate': dstate,
+                                         'dstate': dstate if idx == self.blank else new_dstate,
                                          'lmstate': lmstate,
                                          })
 
@@ -629,6 +662,7 @@ class RNNTransducer(DecoderBase):
                             new_hyps += [hyp]
                 if len(end_hyps) >= beam_width:
                     end_hyps = end_hyps[:beam_width]
+                    logger.info('End-pointed at %d / %d frames' % (t, elens[b]))
                     break
                 hyps = new_hyps[:]
 
@@ -653,6 +687,9 @@ class RNNTransducer(DecoderBase):
                 best_hyps.append([hyps[0]['hyp'][1:-1]])
             else:
                 best_hyps.append([hyps[0]['hyp'][1:]])
+
+            # Reset state cache
+            self.state_cache = OrderedDict()
 
             if utt_ids is not None:
                 logger.info('Utt-id: %s' % utt_ids[b])
