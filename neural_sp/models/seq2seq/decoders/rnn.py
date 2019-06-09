@@ -1148,15 +1148,6 @@ class RNNDecoder(DecoderBase):
                     else:
                         total_scores_lm = torch.zeros((beam_width), dtype=torch.float32)
 
-                    # Add LM score <before> top-K selection
-                    # if lm_weight > 0 and lm is not None:
-                    #     total_scores_lm = beam['score_lm'] + torch.log(lm_probs)
-                    #     total_scores += total_scores_lm * lm_weight
-                    # else:
-                    #     total_scores_lm = torch.zeros((self.vocab), dtype=torch.float32)
-                    # total_scores_topk, topk_ids = torch.topk(
-                    #     total_scores, k=beam_width, dim=1, largest=True, sorted=True)
-
                     # Add length penalty
                     lp = 1.0
                     if lp_weight > 0:
@@ -1222,8 +1213,7 @@ class RNNDecoder(DecoderBase):
                              'score_attn': scores_attn[0, idx].item(),
                              'score_cp': cp,
                              'score_ctc': total_scores_ctc[k].item(),
-                             'score_lm': total_scores_lm[k].item(),  # after
-                             #  'score_lm': total_scores_lm[0, idx].item(),  # before
+                             'score_lm': total_scores_lm[k].item(),
                              'dstates': dstates,
                              'cv': attn_v if self.input_feeding else cv,
                              'aws': beam['aws'] + [aw],
