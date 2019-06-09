@@ -143,19 +143,24 @@ class RNNLM(LMBase):
             else:
                 raise ValueError
 
-    def decode(self, ys_emb, hidden):
+    def decode(self, ys_emb, state):
         """Decode function.
 
         Args:
             ys_emb (FloatTensor): `[B, L, emb_dim]`
-            hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
+            state (dict):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
         Returns:
             ys_emb (FloatTensor): `[B, L, n_units]`
-            hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
+            new_state (dict):
+                hxs (FloatTensor): `[n_layers, B, n_units]`
+                cxs (FloatTensor): `[n_layers, B, n_units]`
 
         """
-        if hidden is None or hidden[0] is None:
-            hidden = self.initialize_hidden(ys_emb.size(0))
+        if state is None:
+            state = self.zero_state(ys_emb.size(0))
+        new_state = {'hxs': None, 'cxs': None}
 
         if self.n_units_cv > 0:
             cv = ys_emb.new_zeros(ys_emb.size(0), ys_emb.size(1), self.n_units_cv)
@@ -164,17 +169,22 @@ class RNNLM(LMBase):
         residual = None
         if self.fast_impl:
             # Path through RNN
-            ys_emb, hidden = self.rnn(ys_emb, hx=hidden)
+            if self.rnn_type == 'lstm':
+                ys_emb, (new_state['hxs'], new_state['cxs']) = self.rnn(
+                    ys_emb, hx=(state['hxs'], state['cxs']))
+            elif self.rnn_type == 'gru':
+                ys_emb, new_state['hxs'] = self.rnn(ys_emb, hx=state['hxs'])
             ys_emb = self.dropout_top(ys_emb)
         else:
             new_hxs, new_cxs = [], []
             for l in range(self.n_layers):
                 # Path through RNN
                 if self.rnn_type == 'lstm':
-                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(hidden[0][l:l + 1], hidden[1][l:l + 1]))
+                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(state['hxs'][l:l + 1],
+                                                                 state['cxs'][l:l + 1]))
                     new_cxs.append(c_l)
                 elif self.rnn_type == 'gru':
-                    ys_emb, h_l = self.rnn[l](ys_emb, hx=hidden[0][l:l + 1])
+                    ys_emb, h_l = self.rnn[l](ys_emb, hx=state['hxs'][l:l + 1])
                 new_hxs.append(h_l)
                 ys_emb = self.dropout[l](ys_emb)
 
@@ -189,10 +199,9 @@ class RNNLM(LMBase):
                 # NOTE: Exclude residual connection from the raw inputs
 
             # Repackage
-            new_hxs = torch.cat(new_hxs, dim=0)
+            new_state['hxs'] = torch.cat(new_hxs, dim=0)
             if self.rnn_type == 'lstm':
-                new_cxs = torch.cat(new_cxs, dim=0)
-            hidden = (new_hxs, new_cxs)
+                new_state['cxs'] = torch.cat(new_cxs, dim=0)
 
         if self.use_glu:
             if self.residual:
@@ -201,52 +210,50 @@ class RNNLM(LMBase):
             if self.residual:
                 ys_emb = ys_emb + residual
 
-        return ys_emb, hidden
+        return ys_emb, new_state
 
-    def initialize_hidden(self, batch_size):
+    def zero_state(self, batch_size):
         """Initialize hidden states.
 
         Args:
             batch_size (int):
         Returns:
-            hidden (tuple):
+            zero_state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
 
         """
         w = next(self.parameters())
+        zero_state = {'hxs': None, 'cxs': None}
         if self.fast_impl:
-            h_n = w.new_zeros(self.n_layers, batch_size, self.n_units)
-            c_n = None
+            zero_state['hxs'] = w.new_zeros(self.n_layers, batch_size, self.n_units)
             if self.rnn_type == 'lstm':
-                c_n = w.new_zeros(self.n_layers, batch_size, self.n_units)
-            return (h_n, c_n)
+                zero_state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.n_units)
         else:
             hxs, cxs = [], []
             for l in range(self.n_layers):
                 if self.rnn_type == 'lstm':
                     cxs.append(w.new_zeros(1, batch_size, self.n_units))
                 hxs.append(w.new_zeros(1, batch_size, self.n_units))
-            hxs = torch.cat(hxs, dim=0)
+            zero_state['hxs'] = torch.cat(hxs, dim=0)  # `[n_layers, B, n_units]`
             if self.rnn_type == 'lstm':
-                cxs = torch.cat(cxs, dim=0)
-            return (hxs, cxs)
+                zero_state['cxs'] = torch.cat(cxs, dim=0)  # `[n_layers, B, n_units]`
+        return zero_state
 
-    def repackage_hidden(self, hidden):
+    def repackage_hidden(self, state):
         """Wraps hidden states in new Tensors, to detach them from their history.
 
         Args:
-            hidden (tuple):
+            state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
         Returns:
-            hidden (tuple):
+            state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
 
         """
-        hxs, cxs = hidden
-        hxs = hxs.detach()
+        state['hxs'] = state['hxs'].detach()
         if self.rnn_type == 'lstm':
-            cxs = cxs.detach()
-        return (hxs, cxs)
+            state['cxs'] = state['cxs'].detach()
+        return state

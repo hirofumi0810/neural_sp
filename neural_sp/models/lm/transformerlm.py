@@ -118,15 +118,15 @@ class TransformerLM(LMBase):
             else:
                 raise ValueError
 
-    def decode(self, ys_emb, hidden=None):
+    def decode(self, ys_emb, state=None):
         """Decode function.
 
         Args:
             ys_emb (FloatTensor): `[B, L, emb_dim]`
-            hidden: dummy
+            state: dummy
         Returns:
             ys_emb (FloatTensor): `[B, L, n_units]`
-            hidden: dummy
+            state: dummy
 
         """
         ylens = torch.IntTensor([ys_emb.size(1)] * ys_emb.size(0))
@@ -139,7 +139,7 @@ class TransformerLM(LMBase):
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
         ys_emb = self.norm_out(ys_emb)
 
-        return ys_emb, hidden
+        return ys_emb, state
 
     def plot_attention(self, n_cols=4):
         """Plot attention for each head in all layers."""

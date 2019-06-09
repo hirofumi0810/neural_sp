@@ -196,15 +196,15 @@ class GatedConvLM(LMBase):
             else:
                 raise ValueError
 
-    def decode(self, ys_emb, hidden=None):
+    def decode(self, ys_emb, state=None):
         """Decode function.
 
         Args:
             ys_emb (FloatTensor): `[B, L, emb_dim]`
-            hidden: dummy
+            state: dummy
         Returns:
             ys_emb (FloatTensor): `[B, L, n_units]`
-            hidden: dummy
+            state: dummy
 
         """
         bs, max_ylen = ys_emb.size()[:2]
@@ -215,4 +215,4 @@ class GatedConvLM(LMBase):
         ys_emb = ys_emb.transpose(2, 1).contiguous()  # `[B, T, out_ch, 1]`
         ys_emb = ys_emb.squeeze(3)
 
-        return ys_emb, hidden
+        return ys_emb, state

@@ -33,13 +33,13 @@ class LMBase(ModelBase):
     def reset_parameters(self, param_init):
         raise NotImplementedError
 
-    def forward(self, ys, hidden=None, reporter=None, is_eval=False, n_caches=0,
+    def forward(self, ys, state=None, reporter=None, is_eval=False, n_caches=0,
                 ylens=[], predict_last=False):
         """Forward computation.
 
         Args:
             ys (list): A list of length `[B]`, which contains arrays of size `[L]`
-            hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
+            state (tuple or list): (h_n, c_n) or (hxs, cxs)
             reporter ():
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
@@ -48,31 +48,31 @@ class LMBase(ModelBase):
             predict_last (bool): used for TransformerLM and GatedConvLM
         Returns:
             loss (FloatTensor): `[1]`
-            hidden (tuple or list): (h_n, c_n) or (hxs, cxs)
+            state (tuple or list): (h_n, c_n) or (hxs, cxs)
             reporter ():
 
         """
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, hidden, reporter = self._forward(ys, hidden, reporter, n_caches, predict_last)
+                loss, state, reporter = self._forward(ys, state, reporter, n_caches, predict_last)
         else:
             self.train()
-            loss, hidden, reporter = self._forward(ys, hidden, reporter)
+            loss, state, reporter = self._forward(ys, state, reporter)
 
-        return loss, hidden, reporter
+        return loss, state, reporter
 
-    def _forward(self, ys, hidden, reporter, n_caches=0, predict_last=False):
-        ys = [np2tensor(y, self.device_id).long() for y in ys]
+    def _forward(self, ys, state, reporter, n_caches=0, predict_last=False):
+        ys = [np2tensor(y, self.device_id) for y in ys]
         ys = pad_list(ys, self.pad)
         ys_in = ys[:, :-1]
         ys_out = ys[:, 1:]
 
-        lmout, hidden = self.decode(self.encode(ys_in), hidden)
+        out, state = self.decode(self.encode(ys_in), state)
         if self.adaptive_softmax is None:
-            logits = self.generate(lmout)
+            logits = self.generate(out)
         else:
-            logits = lmout
+            logits = out
 
         if predict_last:
             ys_out = ys_out[:, -1].unsqueeze(1)
@@ -94,7 +94,7 @@ class LMBase(ModelBase):
 
             # Compute inner-product over caches
             cache_attn = F.softmax(self.cache_theta * torch.matmul(
-                torch.cat(self.cache_keys, dim=1), lmout.transpose(2, 1)).squeeze(2), dim=1)
+                torch.cat(self.cache_keys, dim=1), out.transpose(2, 1)).squeeze(2), dim=1)
 
             # For visualization
             if len(self.cache_ids) == n_caches:
@@ -118,7 +118,7 @@ class LMBase(ModelBase):
         if n_caches > 0:
             # Register to cache
             self.cache_ids += [ys_out[0, -1].item()]
-            self.cache_keys += [lmout]
+            self.cache_keys += [out]
 
         # Compute token-level accuracy in teacher-forcing
         if self.adaptive_softmax is None:
@@ -136,7 +136,7 @@ class LMBase(ModelBase):
             is_eval = not self.training
             reporter.add(observation, is_eval)
 
-        return loss, hidden, reporter
+        return loss, state, reporter
 
     def encode(self, ys):
         """Encode function.
@@ -147,21 +147,21 @@ class LMBase(ModelBase):
             ys (FloatTensor): `[B, L, emb_dim]`
 
         """
-        return self.embed(ys)
+        return self.embed(ys.long())
 
-    def decode(self, ys_emb, hidden=None):
+    def decode(self, ys_emb, state=None):
         raise NotImplementedError
 
-    def generate(self, hidden):
+    def generate(self, out):
         """Generate function.
 
         Args:
-            hidden (FloatTensor): `[B, T, n_units]`
+            out (FloatTensor): `[B, T, n_units]`
         Returns:
             logits (FloatTensor): `[B, T, vocab]`
 
         """
-        return self.output(hidden)
+        return self.output(out)
 
     def plot_attention(self):
         raise NotImplementedError
