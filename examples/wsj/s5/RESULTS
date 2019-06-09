@@ -1,15 +1,20 @@
-                            |          no LM           |           RNNLM          |
-                            | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
-Char attention              | 16.4       | 12.8        | 14.0       | 10.5        |
-Char attention + CTC        | 17.7       | 14.2        | 15.5       | 11.7        |
-Char attention + conv       | 15.0       | 11.3        | 12.8       | 9.4         |
-Char attention + conv + CTC | 15.0       | 12.3        | 12.8       | 10.2        |
+                               |          no LM           |           RNNLM          |
+                               | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
+Char attention w/o conv        | 15.9       | 13.3        | 14.3       | 11.1        |
+Char attention w/o conv + CTC  | 18.5       | 15.0        | 15.4       | 12.0        |
+Char attention                 | 15.0       | 11.5        | 13.6       | 9.7         |
+Char CTC                       | 21.2       | 15.9        | ---        | ---         |
+Char attention + CTC           | 15.5       | 11.7        | 13.4       | 8.6         |
 
 
-                                                   |          no LM           |           RNNLM          |
-                                                   | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
-BPE1k attention                                    | 14.4       | 12.0        | 11.4       | 9.5         |
-BPE1k attention + CTC                              | 14.4       | 11.3        | 11.2       | 8.8         |
-BPE1k attention + conv                             | 14.7       | 11.6        | 10.8       | 8.2         |
-BPE1k attention + conv + CTC                       | 12.9       | 10.6        | 9.6        | 6.8         |
-BPE1k attention + conv + CTC + deep RNNLM (2L->4L) | 12.9       | 10.6        | 9.2        | 6.6         |
+                                                        |          no LM           |           RNNLM          |
+                                                        | test_dev93 | test_eval92 | test_dev93 | test_eval92 |
+BPE1k attention w/o conv                                | 14.5       | 11.9        | 11.6       | 9.0         |
+BPE1k attention w/o conv + CTC                          | 14.0       | 11.4        | 10.7       | 8.1         |
+BPE1k attention                                         | 14.6       | 11.7        | 11.0       | 8.0         |
+BPE1k CTC                                               | 18.0       | 14.7        | ---        | ---         |
+BPE1k RNN transducer                                    | ---        | ---         | ---        | ---         |
+BPE1k attention + CTC                                   | 12.8       | 9.6         | 9.9        | 6.5         |
+BPE1k attention + CTC + deep RNNLM (2L->4L)             | ---        | ---         | 9.2        | 6.4         |
+BPE1k attention + CTC + SpecAugment                     | 10.5       | 8.9         | 9.6        | 7.5         |
+BPE1k attention + CTC + SpecAugment deep RNNLM (2L->4L) | ---        | ---         | 9.2        | 7.1         |
