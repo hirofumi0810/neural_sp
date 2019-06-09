@@ -186,7 +186,7 @@ class RNNDecoder(DecoderBase):
         self.prev_spk = ''
         self.total_step = 0
         self.dstates_final = None
-        self.lmstate_final = (None, None)
+        self.lmstate_final = None
 
         if ctc_weight > 0:
             self.ctc = CTC(eos=eos,
@@ -1234,7 +1234,7 @@ class RNNDecoder(DecoderBase):
                 # Local pruning
                 new_hyps_tmp = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
-                # Remove end_hyps hypotheses
+                # Remove complete hypotheses
                 new_hyps = []
                 for hyp in new_hyps_tmp:
                     if oracle:
