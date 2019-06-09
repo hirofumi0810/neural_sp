@@ -329,7 +329,10 @@ class RNNTransducer(DecoderBase):
         # Append <null> and <eos>
         eos = eouts.new_zeros(1).fill_(self.eos)
         if self.end_pointing:
-            _ys = [np2tensor(np.fromiter(y + [self.eos]), self.device_id) for y in ys]
+            if self.start_pointing:
+                _ys = [np2tensor(np.fromiter([self.eos] + y + [self.eos]), self.device_id) for y in ys]
+            else:
+                _ys = [np2tensor(np.fromiter(y + [self.eos]), self.device_id) for y in ys]
         else:
             _ys = [np2tensor(np.fromiter(y), self.device_id) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
