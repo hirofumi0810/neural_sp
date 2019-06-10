@@ -23,6 +23,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 n_splices=1
 n_stacks=1
 n_skips=1
+max_n_frames=2000
 sequence_summary_network=false
 conv_in_channel=1
 conv_channels="32_32"
@@ -88,6 +89,12 @@ ss_type=constant
 lsm_prob=0.1
 focal_loss=0.0
 adaptive_softmax=false
+# SpecAugment
+freq_width=27
+n_freq_masks=0
+time_width=70
+n_time_masks=0
+time_width_upper=0.2
 ### MTL
 ctc_weight=0.0
 bwd_weight=0.0
@@ -111,6 +118,7 @@ lm_n_units=1024
 lm_n_projs=0
 lm_n_layers=2
 lm_emb_dim=1024
+lm_n_units_null_context=0
 lm_tie_embedding=true
 lm_residual=true
 lm_use_glu=true
@@ -255,8 +263,10 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     touch ${data}/.done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+# dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
+# wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
+dict=${data}/dict/train_all_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
+wp_model=${data}/dict/train_all_${wp_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
@@ -362,6 +372,7 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
         --n_projs ${lm_n_projs} \
         --n_layers ${lm_n_layers} \
         --emb_dim ${lm_emb_dim} \
+        --n_units_null_context ${lm_n_units_null_context} \
         --tie_embedding ${lm_tie_embedding} \
         --residual ${lm_residual} \
         --use_glu ${lm_use_glu} \
@@ -410,6 +421,7 @@ if [ ${stage} -le 4 ]; then
         --n_splices ${n_splices} \
         --n_stacks ${n_stacks} \
         --n_skips ${n_skips} \
+        --max_n_frames ${max_n_frames} \
         --sequence_summary_network ${sequence_summary_network} \
         --conv_in_channel ${conv_in_channel} \
         --conv_channels ${conv_channels} \
@@ -472,6 +484,11 @@ if [ ${stage} -le 4 ]; then
         --lsm_prob ${lsm_prob} \
         --focal_loss_weight ${focal_loss} \
         --adaptive_softmax ${adaptive_softmax} \
+        --freq_width ${freq_width} \
+        --n_freq_masks ${n_freq_masks} \
+        --time_width ${time_width} \
+        --n_time_masks ${n_time_masks} \
+        --time_width_upper ${time_width_upper} \
         --ctc_weight ${ctc_weight} \
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \

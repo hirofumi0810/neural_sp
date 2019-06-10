@@ -25,6 +25,7 @@ vocab_size_sub1=
 n_splices=1
 n_stacks=1
 n_skips=1
+max_n_frames=2000
 sequence_summary_network=false
 conv_in_channel=1
 conv_channels="32_32"
@@ -92,6 +93,12 @@ ss_type=constant
 lsm_prob=0.1
 focal_loss=0.0
 adaptive_softmax=false
+# SpecAugment
+freq_width=27
+n_freq_masks=0
+time_width=70
+n_time_masks=0
+time_width_upper=0.2
 ### MTL
 ctc_weight=0.0
 ctc_weight_sub1=0.2
@@ -350,6 +357,7 @@ if [ ${stage} -le 4 ]; then
         --n_splices ${n_splices} \
         --n_stacks ${n_stacks} \
         --n_skips ${n_skips} \
+        --max_n_frames ${max_n_frames} \
         --sequence_summary_network ${sequence_summary_network} \
         --conv_in_channel ${conv_in_channel} \
         --conv_channels ${conv_channels} \
@@ -414,6 +422,11 @@ if [ ${stage} -le 4 ]; then
         --lsm_prob ${lsm_prob} \
         --focal_loss_weight ${focal_loss} \
         --adaptive_softmax ${adaptive_softmax} \
+        --freq_width ${freq_width} \
+        --n_freq_masks ${n_freq_masks} \
+        --time_width ${time_width} \
+        --n_time_masks ${n_time_masks} \
+        --time_width_upper ${time_width_upper} \
         --ctc_weight ${ctc_weight} \
         --ctc_weight_sub1 ${ctc_weight_sub1} \
         --bwd_weight ${bwd_weight} \

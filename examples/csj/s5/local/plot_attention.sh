@@ -65,7 +65,7 @@ for set in eval1 eval2 eval3; do
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
     fi
-    if [ ! -z ${lm} ]; then
+    if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
         recog_dir=${recog_dir}_lm${lm_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
@@ -89,7 +89,7 @@ for set in eval1 eval2 eval3; do
     if ${asr_state_carry_over}; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${lm_weight} != 0.0 ] && ${lm_state_carry_over}; then
+    if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ] && ${lm_state_carry_over}; then
         recog_dir=${recog_dir}_LMcarryover
     fi
     if [ ${n_caches} != 0 ]; then
