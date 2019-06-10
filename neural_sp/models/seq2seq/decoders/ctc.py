@@ -291,7 +291,7 @@ class CTC(DecoderBase):
             if lm_weight > 0 and lm is not None and lm_usage == 'rescoring':
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp_id']), self.device_id)]
+                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp_id'], dtype=np.int64), self.device_id)]
                     ys_pad = pad_list(ys, lm.pad)
                     lmout, _ = lm.decode(lm.encode(ys_pad), None)
                     score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
