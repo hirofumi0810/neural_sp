@@ -36,7 +36,7 @@ class Controller(object):
 
     def __init__(self, lr, decay_type, decay_start_epoch, decay_rate,
                  decay_patient_n_epochs=0, lower_better=True, best_value=10000,
-                 model_size=1, warmup_start_lr=0, warmup_n_steps=4000,
+                 model_size=1, warmup_start_lr=0, warmup_n_steps=0,
                  lr_factor=1, transformer=False):
 
         self.lr_max = lr
