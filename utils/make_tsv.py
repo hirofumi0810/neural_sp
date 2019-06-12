@@ -13,7 +13,7 @@ from __future__ import print_function
 import argparse
 import codecs
 from distutils.util import strtobool
-import kaldi_io
+import kaldiio
 import os
 import re
 import sentencepiece as spm
@@ -179,7 +179,7 @@ def main():
 
         if xdim is None:
             if args.feat:
-                xdim = kaldi_io.read_mat(feat_path).shape[-1]
+                xdim = kaldiio.load_mat(feat_path).shape[-1]
             else:
                 xdim = 0
         ydim = len(token2idx.keys())
