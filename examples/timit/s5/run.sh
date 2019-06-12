@@ -17,6 +17,7 @@ gpu=
 n_splices=1
 n_stacks=1
 n_skips=1
+max_n_frames=2000
 gaussian_noise=false
 sequence_summary_network=false
 conv_in_channel=3
@@ -56,6 +57,7 @@ learning_rate=1e-3
 n_epochs=100
 convert_to_sgd_epoch=90
 print_step=20
+metric=edit_distance
 decay_type=epoch
 decay_start_epoch=20
 decay_rate=0.97
@@ -201,6 +203,7 @@ if [ ${stage} -le 4 ]; then
         --n_splices ${n_splices} \
         --n_stacks ${n_stacks} \
         --n_skips ${n_skips} \
+        --max_n_frames ${max_n_frames} \
         --gaussian_noise ${gaussian_noise} \
         --sequence_summary_network ${sequence_summary_network} \
         --conv_in_channel ${conv_in_channel} \
@@ -239,6 +242,7 @@ if [ ${stage} -le 4 ]; then
         --n_epochs ${n_epochs} \
         --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
         --print_step ${print_step} \
+        --metric ${metric} \
         --decay_type ${decay_type} \
         --decay_start_epoch ${decay_start_epoch} \
         --decay_rate ${decay_rate} \

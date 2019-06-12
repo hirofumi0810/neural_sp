@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import argparse
 import codecs
+from distutils.util import strtobool
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
@@ -26,6 +27,8 @@ parser.add_argument('--remove_word_boundary', action='store_false',
                     help='remove all whitespaces in the transcriptions')
 parser.add_argument('--nlsyms', type=str, default=False,
                     help='path to non-linguistic symbols, e.g., <NOISE> etc.')
+parser.add_argument('--speed_perturb', type=strtobool, default=False,
+                    help='use speed perturbation.')
 args = parser.parse_args()
 
 
@@ -47,7 +50,12 @@ def main():
     with codecs.open(args.text, 'r', encoding="utf-8") as f:
         pbar = tqdm(total=len(codecs.open(args.text, 'r', encoding="utf-8").readlines()))
         for line in f:
-            words = line.strip().split()[1:]
+            line = line.strip()
+
+            if args.speed_perturb and 'sp1.0' not in line:
+                continue
+
+            words = line.split()[1:]
             if '' in words:
                 words.remove('')
 

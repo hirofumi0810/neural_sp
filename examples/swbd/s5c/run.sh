@@ -10,10 +10,11 @@ echo ===========================================================================
 stage=0
 gpu=
 skip_lm=true
+speed_perturb=false
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char/phone
-vocab_size=10000
+vocab=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
 
 #########################
@@ -23,6 +24,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 n_splices=1
 n_stacks=1
 n_skips=1
+max_n_frames=2000
 sequence_summary_network=false
 conv_in_channel=1
 conv_channels="32_32"
@@ -87,6 +89,7 @@ ss_prob=0.2
 ss_type=constant
 lsm_prob=0.1
 focal_loss=0.0
+adaptive_softmax=false
 # SpecAugment
 freq_width=27
 n_freq_masks=0
@@ -105,8 +108,14 @@ lm_fusion=
 lm_init=
 lmobj_weight=0.0
 share_lm_softmax=false
-# contextualization
-contextualize=
+
+if [ ${speed_perturb} = true ]; then
+    n_epochs=20
+    convert_to_sgd_epoch=15
+    print_step=600
+    decay_start_epoch=5
+    decay_rate=0.8
+fi
 
 #########################
 # LM configuration
@@ -117,6 +126,7 @@ lm_n_units=1024
 lm_n_projs=0
 lm_n_layers=2
 lm_emb_dim=1024
+lm_n_units_null_context=0
 lm_tie_embedding=true
 lm_residual=true
 lm_use_glu=true
@@ -143,19 +153,20 @@ lm_dropout_hidden=0.5
 lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_weight_decay=1e-6
-lm_backward=
+lm_backward=false
+lm_adaptive_softmax=false
 # contextualization
 lm_serialize=true
 
 ### path to save the model
-model=/n/sd8/inaguma/result/swbd
+model=/n/sd3/inaguma/result/swbd
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/swbd
+export data=/n/sd3/inaguma/corpus/swbd
 
 ### path to original data
 SWBD_AUDIOPATH=/n/rd21/corpora_7/swb
@@ -165,8 +176,8 @@ RT03_PATH=
 FISHER_PATH=/n/rd7/fisher_english
 
 ### data size
-data_size=swbd
-lm_data_size=fisher_swbd
+datasize=swbd
+lm_datasize=fisher_swbd
 
 . ./cmd.sh
 . ./path.sh
@@ -184,43 +195,64 @@ fi
 n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 lm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
-train_set=train_${data_size}
-dev_set=dev_${data_size}
+train_set=train_${datasize}
+dev_set=dev
 test_set="eval2000"
+if [ ${speed_perturb} = true ]; then
+    train_set=train_sp_${datasize}
+    dev_set=dev_sp
+    test_set="eval2000_sp"
+fi
 
 if [ ${unit} = char ] || [ ${unit} = phone ]; then
-    vocab_size=
+    vocab=
 fi
 if [ ${unit} != wp ]; then
     wp_type=
 fi
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${data_size} ]; then
+if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${datasize} ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
 
+    # prepare swbd data and put it under data/train_swbd
     local/swbd1_data_download.sh ${SWBD_AUDIOPATH} || exit 1;
     local/swbd1_prepare_dict.sh || exit 1;
     local/swbd1_data_prep.sh ${SWBD_AUDIOPATH} || exit 1;
+
+    # prepare fisher data and put it under data/train_fisher
+    local/fisher_data_prep.sh ${FISHER_PATH}
+    local/fisher_swbd_prepare_dict.sh
+    utils/fix_data_dir.sh ${data}/train_fisher
+
+    # nomalization
+    cp ${data}/train_fisher/text ${data}/train_fisher/text.tmp.0
+    cut -f 2- -d " " ${data}/train_fisher/text.tmp.0 | \
+        sed -e 's/\[laughter\]-/[laughter]/g' | \
+        sed -e 's/\[noise\]-/[noise]/g' > ${data}/train_fisher/text.tmp.1
+    paste -d " " <(cut -f 1 -d " " ${data}/train_fisher/text.tmp.0) \
+        <(cat ${data}/train_fisher/text.tmp.1) > ${data}/train_fisher/text
+    rm ${data}/train_fisher/text.tmp*
+
     local/eval2000_data_prep.sh ${EVAL2000_AUDIOPATH} ${EVAL2000_TRANSPATH} || exit 1;
     [ ! -z ${RT03_PATH} ] && local/rt03_data_prep.sh ${RT03_PATH}
 
     # upsample audio from 8k to 16k
     # for x in train eval2000 rt03; do
-    for x in train_swbd eval2000; do
+    for x in train_swbd train_fisher eval2000; do
         sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" ${data}/${x}/wav.scp
     done
 
-    touch ${data}/.done_stage_0_${data_size} && echo "Finish data preparation (stage: 0)."
+    touch ${data}/.done_stage_0_${datasize} && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
+if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in ${train_set} ${test_set}; do
+    for x in train_${datasize} ${test_set}; do
         steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
             ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
     done
@@ -234,27 +266,39 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/${train_set} || exit 1;  # 286hr
     rm -rf ${data}/*.tmp
 
+    if [ ${datasize} = fisher_swbd ]; then
+        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+            ${data}/train_fisher ${data}/log/make_fbank/train_fisher ${data}/fbank || exit 1;
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_swbd ${data}/train_fisher || exit 1;
+    fi
+
+    if [ ${speed_perturb} = true ]; then
+        # speed-perturbed
+        speed_perturb_3way.sh ${data} train_${datasize} ${train_set}
+
+        cp -rf ${data}/dev ${data}/${dev_set}
+        cp -rf ${data}/eval2000 ${data}/${test_set}
+    fi
+
     # Compute global CMVN
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 400 \
+    dump_feat.sh --cmd "$train_cmd" --nj 1200 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
-    dump_feat.sh --cmd "$train_cmd" --nj 32 \
-        ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
-    for x in ${test_set}; do
-        dump_dir=${data}/dump/${x}_${data_size}
+    for x in ${dev_set} ${test_set}; do
+        dump_dir=${data}/dump/${x}_${datasize}
         dump_feat.sh --cmd "$train_cmd" --nj 32 \
-            ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${data_size} ${dump_dir} || exit 1;
+            ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${datasize} ${dump_dir} || exit 1;
     done
 
-    touch ${data}/.done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
+    touch ${data}/.done_stage_1_${datasize}_sp${speed_perturb} && echo "Finish feature extranction (stage: 1)."
 fi
 
-dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-nlsyms=${data}/dict/nlsyms_${data_size}.txt
-wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab}.txt; mkdir -p ${data}/dict
+nlsyms=${data}/dict/nlsyms_${train_set}.txt
+wp_model=${data}/dict/${train_set}_${wp_type}${vocab}
+if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
@@ -270,19 +314,24 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     [ ${unit} = char ] && echo "<space> 4" >> ${dict}
     offset=$(cat ${dict} | wc -l)
     if [ ${unit} = wp ]; then
-        cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        spm_train --user_defined_symbols=$(cat ${nlsyms} | tr "\n" ",") --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
+        if [ ${speed_perturb} = true ]; then
+            grep sp1.0 ${data}/${train_set}/text > ${data}/${train_set}/text.org
+            cp ${data}/${dev_set}/text ${data}/${dev_set}/text.org
+            cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
+        else
+            cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
+        fi
+        spm_train --user_defined_symbols=$(cat ${nlsyms} | tr "\n" ",") --input=${data}/dict/input.txt --vocab_size=${vocab} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
-        # NOTE: sort by frequency
+            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
     elif [ ${unit} = phone ]; then
         map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt > ${data}/${train_set}/text.phone
         map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt > ${data}/${dev_set}/text.phone
-        text2dict.py ${data}/${train_set}/text.phone --unit ${unit} | \
+        text2dict.py ${data}/${train_set}/text.phone --unit ${unit} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} | \
+        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab ${vocab} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     fi
     echo "vocab size:" $(cat ${dict} | wc -l)
@@ -303,49 +352,48 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
     # Compute OOV rate
     if [ ${unit} = word ]; then
         mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
-        echo "OOV rate:" > ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
+        echo "OOV rate:" > ${data}/dict/oov_rate/word${vocab}_${datasize}.txt
         for x in ${train_set} ${dev_set}; do
-            cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-                > ${data}/dict/word_count/${x}_${data_size}.txt || exit 1;
-            compute_oov_rate.py ${data}/dict/word_count/${x}_${data_size}.txt ${dict} ${x} \
-                >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
+            if [ ${speed_perturb} = true ]; then
+                cut -f 2- -d " " ${data}/${x}/text.org | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+                    > ${data}/dict/word_count/${x}_${datasize}.txt || exit 1;
+            else
+                cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+                    > ${data}/dict/word_count/${x}_${datasize}.txt || exit 1;
+            fi
+            compute_oov_rate.py ${data}/dict/word_count/${x}_${datasize}.txt ${dict} ${x} \
+                >> ${data}/dict/oov_rate/word${vocab}_${datasize}.txt || exit 1;
         done
-
         for set in "swbd" "ch"; do
             cut -f 2- -d " " ${data}/${test_set}/text.${set} | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
                 > ${data}/dict/word_count/${test_set}_${set}.txt || exit 1;
             compute_oov_rate.py ${data}/dict/word_count/${test_set}_${set}.txt ${dict} ${test_set}_${set} \
-                >> ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt || exit 1;
+                >> ${data}/dict/oov_rate/word${vocab}_${datasize}.txt || exit 1;
         done
-        cat ${data}/dict/oov_rate/word${vocab_size}_${data_size}.txt
+        cat ${data}/dict/oov_rate/word${vocab}_${datasize}.txt
     fi
 
     echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
-    for x in ${train_set} ${dev_set}; do
-        dump_dir=${data}/dump/${x}
-        if [ ${unit} = phone ]; then
-            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --text ${data}/${x}/text.phone \
-                ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+    if [ ${unit} = phone ]; then
+        make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --text ${data}/${x}/text.phone \
+            ${data}/${train_set} ${dict} > ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+    else
+        make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+            ${data}/${train_set} ${dict} > ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+    fi
+    for x in ${dev_set} ${test_set}; do
+        dump_dir=${data}/dump/${x}_${datasize}
+        if [ ${unit} = phone ] && [ ${x} != ${test_set} ]; then
+            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --text ${data}/${x}/text.phone  \
+                ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         else
-            if [ ${x} = ${train_set} ]; then
-                make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
-                    ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-            else
-                make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
-                    ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-            fi
+            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
+                ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         fi
     done
-    if [ ${unit} != phone ]; then
-        for x in ${test_set}; do
-            dump_dir=${data}/dump/${x}_${data_size}
-            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
-                ${data}/${x} ${dict} > ${data}/dataset/${x}_${data_size}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
-        done
-    fi
 
-    touch ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for ASR (stage: 2)."
+    touch ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}
@@ -354,8 +402,8 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
 
-    if [ ! -e ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} ]; then
-        if [ ! -e ${data}/.done_stage_0_${lm_data_size} ]; then
+    if [ ! -e ${data}/.done_stage_3_${lm_datasize}_${unit}${wp_type}${vocab} ]; then
+        if [ ! -e ${data}/.done_stage_0_${lm_datasize} ]; then
             # prepare fisher data and put it under data/train_fisher
             local/fisher_data_prep.sh ${FISHER_PATH}
             local/fisher_swbd_prepare_dict.sh
@@ -374,36 +422,36 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
 
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
-        if [ ${lm_data_size} = fisher_swbd ]; then
+        if [ ${lm_datasize} = fisher_swbd ]; then
             update_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
-                ${data}/train_fisher/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
-                > ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+                ${data}/train_fisher/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
+                > ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
         else
-            cp ${data}/dataset/${x}_${unit}${wp_type}${vocab_size}.tsv \
-                ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+            cp ${data}/dataset/${x}_${unit}${wp_type}${vocab}.tsv \
+                ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
         fi
-        cp ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
-            ${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+        cp ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
+            ${data}/dataset_lm/dev_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
 
         for x in ${test_set}; do
             make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.swbd \
-                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_swbd_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_swbd_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
             make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.ch \
-                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_ch_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv || exit 1;
+                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_ch_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
         done
 
-        touch ${data}/.done_stage_3_${lm_data_size}_${unit}${wp_type}${vocab_size} && echo "Finish creating dataset for LM (stage: 3)."
+        touch ${data}/.done_stage_3_${lm_datasize}_${unit}${wp_type}${vocab} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    lm_test_set="${data}/dataset_lm/${test_set}_swbd_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
-                 ${data}/dataset_lm/${test_set}_ch_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv"
+    lm_test_set="${data}/dataset_lm/${test_set}_swbd_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/${test_set}_ch_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv"
 
     # NOTE: support only a single GPU for LM training
     CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus swbd \
         --n_gpus 1 \
-        --train_set ${data}/dataset_lm/train_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
-        --dev_set ${data}/dataset_lm/dev_${lm_data_size}_${train_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --train_set ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/dev_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${lm_test_set} \
         --nlsyms ${nlsyms} \
         --dict ${dict} \
@@ -415,6 +463,7 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
         --n_projs ${lm_n_projs} \
         --n_layers ${lm_n_layers} \
         --emb_dim ${lm_emb_dim} \
+        --n_units_null_context ${lm_n_units_null_context} \
         --tie_embedding ${lm_tie_embedding} \
         --residual ${lm_residual} \
         --use_glu ${lm_use_glu} \
@@ -439,6 +488,7 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
         --dropout_emb ${lm_dropout_emb} \
         --weight_decay ${lm_weight_decay} \
         --backward ${lm_backward} \
+        --adaptive_softmax ${lm_adaptive_softmax} \
         --serialize ${lm_serialize} \
         --resume ${lm_resume} || exit 1;
 
@@ -453,8 +503,8 @@ if [ ${stage} -le 4 ]; then
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus swbd \
         --n_gpus ${n_gpus} \
-        --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab_size}.tsv \
-        --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab_size}.tsv \
+        --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
         --nlsyms ${nlsyms} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
@@ -463,6 +513,7 @@ if [ ${stage} -le 4 ]; then
         --n_splices ${n_splices} \
         --n_stacks ${n_stacks} \
         --n_skips ${n_skips} \
+        --max_n_frames ${max_n_frames} \
         --sequence_summary_network ${sequence_summary_network} \
         --conv_in_channel ${conv_in_channel} \
         --conv_channels ${conv_channels} \
@@ -524,6 +575,7 @@ if [ ${stage} -le 4 ]; then
         --ss_type ${ss_type} \
         --lsm_prob ${lsm_prob} \
         --focal_loss_weight ${focal_loss} \
+        --adaptive_softmax ${adaptive_softmax} \
         --freq_width ${freq_width} \
         --n_freq_masks ${n_freq_masks} \
         --time_width ${time_width} \
@@ -539,7 +591,6 @@ if [ ${stage} -le 4 ]; then
         --lm_init ${lm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
-        --contextualize ${contextualize} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."
