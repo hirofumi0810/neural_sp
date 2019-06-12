@@ -149,7 +149,7 @@ lm_param_init=0.05
 lm_pretrained_model=
 # regularization
 lm_clip_grad_norm=1.0
-lm_dropout_hidden=0.2
+lm_dropout_hidden=0.5
 lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_weight_decay=1e-6
@@ -245,7 +245,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in ${train_set} ${test_set}; do
+    for x in train_${datasize} ${test_set}; do
         steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
             ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
     done
@@ -357,16 +357,14 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
 
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
-        for x in train dev; do
-            if [ ${lm_datasize} = ${datasize} ]; then
-                cp ${data}/dataset/${x}_${lm_datasize}_${unit}${wp_type}${vocab}.tsv \
-                    ${data}/dataset_lm/${x}_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-            else
-                make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-                    ${data}/${x}_${lm_datasize} ${dict} > ${data}/dataset_lm/${x}_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-            fi
-        done
-        for x in ${test_set}; do
+        if [ ${lm_datasize} = ${datasize} ]; then
+            cp ${data}/dataset/train_${lm_datasize}_${unit}${wp_type}${vocab}.tsv \
+                ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+        else
+            make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
+                ${data}/train_${lm_datasize} ${dict} > ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+        fi
+        for x in dev ${test_set}; do
             if [ ${lm_datasize} = ${datasize} ]; then
                 cp ${data}/dataset/${x}_${lm_datasize}_${unit}${wp_type}${vocab}.tsv \
                     ${data}/dataset_lm/${x}_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
@@ -439,7 +437,7 @@ if [ ${stage} -le 4 ]; then
         --corpus csj \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${data}/dataset/eval1_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \

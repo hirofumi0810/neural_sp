@@ -212,7 +212,6 @@ lm_url=www.openslr.org/resources/11
 train_set=train_${datasize}
 dev_set=dev_clean
 test_set="dev_clean dev_other test_clean test_other"
-test_set="eval1 eval2 eval3"
 if [ ${speed_perturb} = true ]; then
     train_set=train_sp_${datasize}
     dev_set=dev_clean_sp

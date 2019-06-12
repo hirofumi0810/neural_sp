@@ -100,7 +100,7 @@ n_time_masks=0
 time_width_upper=0.2
 ### MTL
 ctc_weight=0.2
-ctc_lsm_prob=0.0
+ctc_lsm_prob=0.1
 bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=false

@@ -211,7 +211,7 @@ if [ ${unit} != wp ]; then
     wp_type=
 fi
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${datasize} ]; then
+if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
@@ -244,7 +244,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${datasize} ]; then
         sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" ${data}/${x}/wav.scp
     done
 
-    touch ${data}/.done_stage_0_${datasize} && echo "Finish data preparation (stage: 0)."
+    touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
 if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
@@ -504,7 +504,7 @@ if [ ${stage} -le 4 ]; then
         --corpus swbd \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --nlsyms ${nlsyms} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
