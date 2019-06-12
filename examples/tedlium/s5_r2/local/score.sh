@@ -70,7 +70,7 @@ for set in dev test; do
     if [ ${metric} != 'edit_distance' ]; then
         recog_dir=${recog_dir}_${metric}
     fi
-    if [ ! -z ${lm} ]; then
+    if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
         recog_dir=${recog_dir}_lm${lm_weight}_${lm_usage}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
@@ -94,7 +94,7 @@ for set in dev test; do
     if ${asr_state_carry_over}; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ! -z ${lm} ] && ${lm_state_carry_over}; then
+    if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ] && ${lm_state_carry_over}; then
         recog_dir=${recog_dir}_LMcarryover
     fi
     if [ ${n_caches} != 0 ]; then
