@@ -18,6 +18,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.seq2seq.decoders.ctc import CTC
@@ -54,6 +55,7 @@ class RNNTransducer(DecoderBase):
         dropout_emb (float): dropout probability for the embedding layer
         lsm_prob (float): label smoothing probability
         ctc_weight (float):
+        ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
         lm_init (RNNLM):
         lmobj_weight (float):
@@ -85,6 +87,7 @@ class RNNTransducer(DecoderBase):
                  dropout_emb=0.0,
                  lsm_prob=0.0,
                  ctc_weight=0.0,
+                 ctc_lsm_prob=0.0,
                  ctc_fc_list=[],
                  lm_init=None,
                  lmobj_weight=0.0,
@@ -132,7 +135,7 @@ class RNNTransducer(DecoderBase):
                            enc_n_units=enc_n_units,
                            vocab=vocab,
                            dropout=dropout,
-                           lsm_prob=lsm_prob,
+                           lsm_prob=ctc_lsm_prob,
                            fc_list=ctc_fc_list,
                            param_init=param_init)
 
@@ -327,14 +330,14 @@ class RNNTransducer(DecoderBase):
 
         """
         # Append <null> and <eos>
-        eos = eouts.new_zeros(1).fill_(self.eos)
+        eos = eouts.new_zeros(1).fill_(self.eos).long()
         if self.end_pointing:
             if self.start_pointing:
                 _ys = [np2tensor(np.fromiter([self.eos] + y + [self.eos], dtype=np.int64), self.device_id) for y in ys]
             else:
-                _ys = [np2tensor(np.fromiter(y + [self.eos]), self.device_id, dtype=np.int64) for y in ys]
+                _ys = [np2tensor(np.fromiter(y + [self.eos], dtype=np.int64), self.device_id) for y in ys]
         else:
-            _ys = [np2tensor(np.fromiter(y), self.device_id, dtype=np.int64) for y in ys]
+            _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)
         ys_out_pad = pad_list(_ys, 0).int()  # int for warprnnt_loss
@@ -343,17 +346,20 @@ class RNNTransducer(DecoderBase):
         dout, _ = self.recurrency(self.embed(ys_in_pad), None)
 
         # Compute output distribution
-        out = self.joint(eouts, dout)
+        logits = self.joint(eouts, dout)
 
         # Compute Transducer loss
-        log_probs = F.log_softmax(out, dim=-1)
-        # if self.device_id >= 0:
-        #     ys_out_pad = ys_out_pad.cuda(self.device_id)
-        #     elens = elens.cuda(self.device_id)
-        #     ylens = ylens.cuda(self.device_id)
-        loss = self.warprnnt_loss(log_probs.cpu(), ys_out_pad, elens, ylens)
+        log_probs = F.log_softmax(logits, dim=-1)
+        if self.device_id >= 0:
+            ys_out_pad = ys_out_pad.cuda(self.device_id)
+            elens = elens.cuda(self.device_id)
+            ylens = ylens.cuda(self.device_id)
+
+        loss = self.warprnnt_loss(log_probs, ys_out_pad, elens, ylens)
         # NOTE: Transducer loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warprnnt_pytorch
+        # if self.device_id >= 0:
+        #     loss = loss.cuda(self.device_id)
 
         # Label smoothing for Transducer
         # if self.lsm_prob > 0:

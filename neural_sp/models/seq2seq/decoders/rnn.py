@@ -71,6 +71,7 @@ class RNNDecoder(DecoderBase):
         fl_weight (float):
         fl_gamma (float):
         ctc_weight (float):
+        ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
         input_feeding (bool):
         backward (bool): decode in the backward order
@@ -119,6 +120,7 @@ class RNNDecoder(DecoderBase):
                  fl_weight=0.0,
                  fl_gamma=2.0,
                  ctc_weight=0.0,
+                 ctc_lsm_prob=0.0,
                  ctc_fc_list=[],
                  input_feeding=False,
                  backward=False,
@@ -194,7 +196,7 @@ class RNNDecoder(DecoderBase):
                            enc_n_units=enc_n_units,
                            vocab=vocab,
                            dropout=dropout,
-                           lsm_prob=lsm_prob,
+                           lsm_prob=ctc_lsm_prob,
                            fc_list=ctc_fc_list,
                            param_init=param_init)
 

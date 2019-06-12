@@ -77,6 +77,8 @@ def parse():
                         help='minimum number of input frames')
     parser.add_argument('--dynamic_batching', type=strtobool, default=True,
                         help='')
+    parser.add_argument('--gaussian_noise', type=strtobool, default=False,
+                        help='add Gaussian noise to input features')
     parser.add_argument('--sequence_summary_network', type=strtobool, default=False,
                         help='Use sequence summary network')
     # topology (encoder)
@@ -189,7 +191,7 @@ def parse():
     parser.add_argument('--print_step', type=int, default=200,
                         help='print log per this value')
     parser.add_argument('--metric', type=str, default='edit_distance',
-                        choices=['edit_distance', 'loss', 'acc', 'ppl', 'bleu'],
+                        choices=['edit_distance', 'loss', 'acc', 'ppl', 'bleu', 'mse'],
                         help='metric for evaluation during training')
     parser.add_argument('--decay_type', type=str, default='epoch',
                         choices=['epoch', 'metric', 'warmup'],
@@ -241,8 +243,6 @@ def parse():
                         help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='weight decay parameter')
-    parser.add_argument('--gaussian_noise', type=bool, default=False,
-                        help='add Gaussian noise to input features')
     parser.add_argument('--ss_prob', type=float, default=0.0,
                         help='probability of scheduled sampling')
     parser.add_argument('--ss_type', type=str, default='constant',
@@ -250,6 +250,8 @@ def parse():
                         help='type of scheduled sampling')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
                         help='probability of label smoothing')
+    parser.add_argument('--ctc_lsm_prob', type=float, default=0.0,
+                        help='probability of label smoothing for CTC')
     parser.add_argument('--focal_loss_weight', type=float, default=0.0,
                         help='')
     parser.add_argument('--focal_loss_gamma', type=float, default=2.0,
@@ -415,6 +417,11 @@ def parse():
                         help='Temperature parameter for the final softmax layer')
     parser.add_argument('--distillation_type', type=str, default='prob',
                         choices=['teacher_forcing', 'beam_search'],
+                        help='')
+    # encoder pretrain
+    parser.add_argument('--am_pretrain_type', type=str, default='masked_audio_lm',
+                        choices=['audio_lm', 'masked_audio_lm',
+                                 'dae', 'mass'],
                         help='')
 
     args = parser.parse_args()

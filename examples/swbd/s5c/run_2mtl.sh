@@ -94,6 +94,7 @@ focal_loss=0.0
 ### MTL
 ctc_weight=0.0
 ctc_weight_sub1=0.2
+ctc_lsm_prob=0.0
 bwd_weight=0.0
 sub1_weight=0.2
 mtl_per_batch=true
@@ -437,6 +438,7 @@ if [ ${stage} -le 4 ]; then
         --focal_loss_weight ${focal_loss} \
         --ctc_weight ${ctc_weight} \
         --ctc_weight_sub1 ${ctc_weight_sub1} \
+        --ctc_lsm_prob ${ctc_lsm_prob} \
         --bwd_weight ${bwd_weight} \
         --sub1_weight ${sub1_weight} \
         --mtl_per_batch ${mtl_per_batch} \

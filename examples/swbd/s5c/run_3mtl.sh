@@ -100,6 +100,7 @@ focal_loss=0.0
 ctc_weight=0.0
 ctc_weight_sub1=0.2
 ctc_weight_sub2=0.2
+ctc_lsm_prob=0.0
 bwd_weight=0.0
 sub1_weight=0.2
 sub2_weight=0.2
@@ -501,6 +502,7 @@ if [ ${stage} -le 4 ]; then
         --ctc_weight ${ctc_weight} \
         --ctc_weight_sub1 ${ctc_weight_sub1} \
         --ctc_weight_sub2 ${ctc_weight_sub2} \
+        --ctc_lsm_prob ${ctc_lsm_prob} \
         --bwd_weight ${bwd_weight} \
         --sub1_weight ${sub1_weight} \
         --sub2_weight ${sub2_weight} \

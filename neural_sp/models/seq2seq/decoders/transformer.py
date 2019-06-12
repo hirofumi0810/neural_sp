@@ -65,6 +65,7 @@ class TransformerDecoder(DecoderBase):
         fl_weight (float):
         fl_gamma (float):
         ctc_weight (float):
+        ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
         backward (bool): decode in the backward order
         global_weight (float):
@@ -95,6 +96,7 @@ class TransformerDecoder(DecoderBase):
                  fl_weight=0.0,
                  fl_gamma=2.0,
                  ctc_weight=0.0,
+                 ctc_lsm_prob=0.0,
                  ctc_fc_list=[],
                  backward=False,
                  global_weight=1.0,
@@ -127,7 +129,7 @@ class TransformerDecoder(DecoderBase):
                            enc_n_units=enc_n_units,
                            vocab=vocab,
                            dropout=dropout,
-                           lsm_prob=lsm_prob,
+                           lsm_prob=ctc_lsm_prob,
                            fc_list=ctc_fc_list,
                            param_init=0.1)
 

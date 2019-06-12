@@ -69,6 +69,7 @@ dropout_att=0.1
 weight_decay=1e-6
 lsm_prob=0.1
 focal_loss=0.0
+adaptive_softmax=false
 # SpecAugment
 freq_width=27
 n_freq_masks=0
@@ -77,6 +78,7 @@ n_time_masks=0
 time_width_upper=0.2
 ### MTL
 ctc_weight=0.2
+ctc_lsm_prob=0.0
 bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=false
@@ -117,7 +119,8 @@ lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_dropout_att=0.2
 lm_weight_decay=1e-6
-lm_backward=
+lm_backward=false
+lm_adaptive_softmax=false
 
 ### path to save the model
 model=/n/sd8/inaguma/result/wsj
@@ -254,8 +257,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
         spm_train --user_defined_symbols=$(cat ${nlsyms} | tr "\n" ",") --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
-        # NOTE: sort by frequency
+            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
     else
         text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} --nlsyms ${nlsyms} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
@@ -418,12 +420,14 @@ if [ ${stage} -le 4 ]; then
         --weight_decay ${weight_decay} \
         --lsm_prob ${lsm_prob} \
         --focal_loss_weight ${focal_loss} \
+        --adaptive_softmax ${adaptive_softmax} \
         --freq_width ${freq_width} \
         --n_freq_masks ${n_freq_masks} \
         --time_width ${time_width} \
         --n_time_masks ${n_time_masks} \
         --time_width_upper ${time_width_upper} \
         --ctc_weight ${ctc_weight} \
+        --ctc_lsm_prob ${ctc_lsm_prob} \
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \

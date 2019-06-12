@@ -97,6 +97,7 @@ n_time_masks=0
 time_width_upper=0.2
 ### MTL
 ctc_weight=0.0
+ctc_lsm_prob=0.0
 bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=false
@@ -106,8 +107,6 @@ lm_fusion=
 lm_init=
 lmobj_weight=0.0
 share_lm_softmax=false
-# contextualization
-contextualize=
 
 #########################
 # LM configuration
@@ -145,18 +144,18 @@ lm_dropout_hidden=0.2
 lm_dropout_out=0.0
 lm_dropout_emb=0.2
 lm_weight_decay=1e-6
-lm_backward=
+lm_backward=false
 lm_adaptive_softmax=false
 
 ### path to save the model
-model=/n/sd8/inaguma/result/csj
+model=/n/sd3/inaguma/result/csj
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/csj
+export data=/n/sd3/inaguma/corpus/csj
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -263,10 +262,8 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${data_size} ]; then
     touch ${data}/.done_stage_1_${data_size} && echo "Finish feature extranction (stage: 1)."
 fi
 
-# dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-# wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
-dict=${data}/dict/train_all_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
-wp_model=${data}/dict/train_all_${wp_type}${vocab_size}
+dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab_size}.txt; mkdir -p ${data}/dict
+wp_model=${data}/dict/${train_set}_${wp_type}${vocab_size}
 if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_type}${vocab_size} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
@@ -283,8 +280,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
-        # NOTE: sort by frequency
+            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
     else
         text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
@@ -490,6 +486,7 @@ if [ ${stage} -le 4 ]; then
         --n_time_masks ${n_time_masks} \
         --time_width_upper ${time_width_upper} \
         --ctc_weight ${ctc_weight} \
+        --ctc_lsm_prob ${ctc_lsm_prob} \
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \
@@ -498,7 +495,6 @@ if [ ${stage} -le 4 ]; then
         --lm_init ${lm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
-        --contextualize ${contextualize} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

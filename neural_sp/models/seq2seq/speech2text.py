@@ -166,6 +166,7 @@ class Speech2Text(ModelBase):
                     fl_weight=args.focal_loss_weight,
                     fl_gamma=args.focal_loss_gamma,
                     ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
+                    ctc_lsm_prob=args.ctc_lsm_prob,
                     ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                     backward=(dir == 'bwd'),
@@ -190,6 +191,7 @@ class Speech2Text(ModelBase):
                     dropout_emb=args.dropout_emb,
                     lsm_prob=args.lsm_prob,
                     ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
+                    ctc_lsm_prob=args.ctc_lsm_prob,
                     ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                     lm_init=lm_init,
@@ -231,6 +233,7 @@ class Speech2Text(ModelBase):
                     fl_weight=args.focal_loss_weight,
                     fl_gamma=args.focal_loss_gamma,
                     ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
+                    ctc_lsm_prob=args.ctc_lsm_prob,
                     ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                     input_feeding=args.input_feeding,
@@ -285,6 +288,7 @@ class Speech2Text(ModelBase):
                         fl_weight=args.focal_loss_weight,
                         fl_gamma=args.focal_loss_gamma,
                         ctc_weight=getattr(self, 'ctc_weight_' + sub),
+                        ctc_lsm_prob=args.ctc_lsm_prob,
                         ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
                                      ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
                         input_feeding=args.input_feeding,

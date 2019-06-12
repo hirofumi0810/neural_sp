@@ -23,6 +23,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 n_splices=1
 n_stacks=1
 n_skips=1
+max_n_frames=2000
 sequence_summary_network=false
 conv_in_channel=1
 conv_channels="32_32"
@@ -58,7 +59,7 @@ ctc_fc_list="512"
 ### optimization
 batch_size=50
 optimizer=adam
-learning_rate=1e-4
+learning_rate=1e-3
 n_epochs=25
 convert_to_sgd_epoch=25
 print_step=500
@@ -88,8 +89,15 @@ ss_type=constant
 lsm_prob=0.1
 focal_loss=0.0
 adaptive_softmax=false
+# SpecAugment
+freq_width=27
+n_freq_masks=0
+time_width=100
+n_time_masks=0
+time_width_upper=1.0
 ### MTL
 ctc_weight=0.0
+ctc_lsm_prob=0.0
 bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=false
@@ -99,8 +107,6 @@ lm_fusion=
 lm_init=
 lmobj_weight=0.0
 share_lm_softmax=false
-# contextualization
-contextualize=
 
 # TDS
 # enc_type=tds
@@ -126,6 +132,7 @@ lm_n_units=1024
 lm_n_projs=0
 lm_n_layers=2
 lm_emb_dim=1024
+lm_n_units_null_context=0
 lm_tie_embedding=true
 lm_residual=true
 lm_use_glu=true
@@ -134,8 +141,8 @@ lm_batch_size=64
 lm_bptt=100
 lm_optimizer=adam
 lm_learning_rate=1e-3
-lm_n_epochs=25
-lm_convert_to_sgd_epoch=25
+lm_n_epochs=40
+lm_convert_to_sgd_epoch=40
 lm_print_step=2000
 lm_decay_start_epoch=10
 lm_decay_rate=0.8
@@ -152,18 +159,18 @@ lm_dropout_hidden=0.0
 lm_dropout_out=0.0
 lm_dropout_emb=0.0
 lm_weight_decay=1e-6
-lm_backward=
+lm_backward=false
 lm_adaptive_softmax=false
 
 ### path to save the model
-model=/n/sd8/inaguma/result/librispeech
+model=/n/sd3/inaguma/result/librispeech
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/sd8/inaguma/corpus/librispeech
+export data=/n/sd3/inaguma/corpus/librispeech
 
 ### path to download data
 data_download_path=/n/rd21/corpora_7/librispeech/
@@ -299,8 +306,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
-        # NOTE: sort by frequency
+            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
     else
         text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
@@ -391,6 +397,7 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
         --n_projs ${lm_n_projs} \
         --n_layers ${lm_n_layers} \
         --emb_dim ${lm_emb_dim} \
+        --n_units_null_context ${lm_n_units_null_context} \
         --tie_embedding ${lm_tie_embedding} \
         --residual ${lm_residual} \
         --use_glu ${lm_use_glu} \
@@ -438,6 +445,7 @@ if [ ${stage} -le 4 ]; then
         --n_splices ${n_splices} \
         --n_stacks ${n_stacks} \
         --n_skips ${n_skips} \
+        --max_n_frames ${max_n_frames} \
         --sequence_summary_network ${sequence_summary_network} \
         --conv_in_channel ${conv_in_channel} \
         --conv_channels ${conv_channels} \
@@ -500,7 +508,13 @@ if [ ${stage} -le 4 ]; then
         --lsm_prob ${lsm_prob} \
         --focal_loss_weight ${focal_loss} \
         --adaptive_softmax ${adaptive_softmax} \
+        --freq_width ${freq_width} \
+        --n_freq_masks ${n_freq_masks} \
+        --time_width ${time_width} \
+        --n_time_masks ${n_time_masks} \
+        --time_width_upper ${time_width_upper} \
         --ctc_weight ${ctc_weight} \
+        --ctc_lsm_prob ${ctc_lsm_prob} \
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \
@@ -509,7 +523,6 @@ if [ ${stage} -le 4 ]; then
         --lm_init ${lm_init} \
         --lmobj_weight ${lmobj_weight} \
         --share_lm_softmax ${share_lm_softmax} \
-        --contextualize ${contextualize} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

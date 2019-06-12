@@ -88,13 +88,14 @@ ss_type=constant
 lsm_prob=0.1
 focal_loss=0.0
 # SpecAugment
-freq_width=27  # or 15
+freq_width=27
 n_freq_masks=0
 time_width=70
 n_time_masks=0
 time_width_upper=0.2
 ### MTL
 ctc_weight=0.0
+ctc_lsm_prob=0.0
 bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=false
@@ -529,6 +530,7 @@ if [ ${stage} -le 4 ]; then
         --n_time_masks ${n_time_masks} \
         --time_width_upper ${time_width_upper} \
         --ctc_weight ${ctc_weight} \
+        --ctc_lsm_prob ${ctc_lsm_prob} \
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \

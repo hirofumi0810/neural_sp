@@ -88,6 +88,7 @@ lsm_prob=0.1
 focal_loss=0.0
 ### MTL
 ctc_weight=0.0
+ctc_lsm_prob=0.0
 bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=false
@@ -371,6 +372,7 @@ if [ ${stage} -le 4 ]; then
         --lsm_prob ${lsm_prob} \
         --focal_loss_weight ${focal_loss} \
         --ctc_weight ${ctc_weight} \
+        --ctc_lsm_prob ${ctc_lsm_prob} \
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \

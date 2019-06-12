@@ -96,6 +96,7 @@ n_time_masks=0
 time_width_upper=0.2
 ### MTL
 ctc_weight=0.0
+ctc_lsm_prob=0.0
 bwd_weight=0.0
 mtl_per_batch=true
 task_specific_layer=false
@@ -236,8 +237,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${data_size}_${unit}${wp_t
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_size} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | awk -v offset=${offset} '{print $2 " " NR+offset}' >> ${dict}
-        # NOTE: sort by frequency
+            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
     else
         text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab_size ${vocab_size} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
@@ -360,6 +360,7 @@ if [ ${stage} -le 4 ]; then
         --n_time_masks ${n_time_masks} \
         --time_width_upper ${time_width_upper} \
         --ctc_weight ${ctc_weight} \
+        --ctc_lsm_prob ${ctc_lsm_prob} \
         --bwd_weight ${bwd_weight} \
         --mtl_per_batch ${mtl_per_batch} \
         --task_specific_layer ${task_specific_layer} \
