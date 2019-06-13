@@ -31,6 +31,7 @@ from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -252,9 +253,23 @@ class TransformerDecoder(DecoderBase):
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
+        # Create the self-attention mask
+        bs, ymax = ys_in_pad.size()[:2]
+        yy_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).expand(bs, ymax, ymax)
+        yy_mask = yy_mask.unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
+        subsequent_mask = torch.tril(yy_mask.new_ones((ymax, ymax)).byte(), diagonal=0)
+        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
+        yy_mask = yy_mask & subsequent_mask
+
+        # Create the source-target mask
+        xmax = eouts.size(1)
+        x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).expand(bs, ymax, xmax)
+        y_mask = make_pad_mask(ylens, self.device_id).unsqueeze(2).expand(bs, ymax, xmax)
+        xy_mask = (x_mask * y_mask).unsqueeze(1).expand(bs, self.n_heads, ymax, xmax)
+
         ys_emb = self.pos_enc(self.embed(ys_in_pad))
         for l in range(self.n_layers):
-            ys_emb, yy_aws, xy_aws = self.layers[l](ys_emb, ylens, eouts, elens)
+            ys_emb, yy_aws, xy_aws = self.layers[l](ys_emb, yy_mask, eouts, xy_mask)
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
                 setattr(self, 'xy_aws_layer%d' % l, tensor2np(xy_aws))

@@ -20,6 +20,7 @@ from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
+from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -188,9 +189,14 @@ class TransformerEncoder(EncoderBase):
             # Path through CNN blocks before RNN layers
             xs, xlens = self.conv(xs, xlens)
 
+        # Create the self-attention mask
+        bs, xmax = xs.size()[: 2]
+        xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).expand(bs, xmax, xmax)
+        xx_mask = xx_mask.unsqueeze(1).expand(bs, self.n_heads, xmax, xmax)
+
         xs = self.pos_enc(xs)
         for l in range(self.n_layers):
-            xs, xx_aws = self.layers[l](xs, xlens)
+            xs, xx_aws = self.layers[l](xs, xlens, xx_mask)
             if not self.training:
                 setattr(self, 'xx_aws_layer%d' % l, tensor2np(xx_aws))
         xs = self.norm_out(xs)

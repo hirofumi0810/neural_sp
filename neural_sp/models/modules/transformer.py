@@ -127,25 +127,19 @@ class TransformerEncoderBlock(nn.Module):
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.dropout2 = nn.Dropout(dropout)
 
-    def forward(self, xs, xlens, cache=False):
+    def forward(self, xs, xlens, xx_mask, cache=False):
         """Transformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
             xlens (IntTensor): `[B]`
+            mask ():
             cache (bool):
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
             xx_aws (FloatTensor): `[B, T, T]`
 
         """
-        bs, xmax = xs.size()[: 2]
-        device_id = torch.cuda.device_of(xs.data).idx
-
-        # Create the self-attention mask
-        xx_mask = make_pad_mask(xlens, device_id).unsqueeze(1).expand(bs, xmax, xmax)
-        xx_mask = xx_mask.unsqueeze(1).expand(bs, self.n_heads, xmax, xmax)
-
         # self-attention
         if not cache:
             self.self_attn.reset()
@@ -223,30 +217,20 @@ class TransformerDecoderBlock(nn.Module):
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.dropout3 = nn.Dropout(dropout)
 
-    def forward(self, ys, ylens, xs=None, xlens=None):
+    def forward(self, ys, yy_mask, xs=None, xy_mask=None):
         """Transformer decoder layer definition.
 
         Args:
-            xs (FloatTensor): encoder outputs. `[B, T, d_model]`
-            xlens (IntTensor): `[B]`
             ys (FloatTensor): `[B, L, d_model]`
-            ylens (IntTensor): `[B]`
+            yy_mask ():
+            xs (FloatTensor): encoder outputs. `[B, T, d_model]`
+            xy_mask ():
         Returns:
             ys (FloatTensor): `[B, L, d_model]`
             yy_aw (FloatTensor)`[B, L, L]`
             xy_aw (FloatTensor): `[B, L, T]`
 
         """
-        bs, ymax = ys.size()[: 2]
-        device_id = torch.cuda.device_of(ys.data).idx
-
-        # Create the self-attention mask
-        yy_mask = make_pad_mask(ylens, device_id).unsqueeze(1).expand(bs, ymax, ymax)
-        yy_mask = yy_mask.unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
-        subsequent_mask = torch.tril(yy_mask.new_ones((ymax, ymax)).byte(), diagonal=0)
-        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
-        yy_mask = yy_mask & subsequent_mask
-
         # self-attention
         if self.attn_type == "average":
             raise NotImplementedError
@@ -259,12 +243,6 @@ class TransformerDecoderBlock(nn.Module):
         # attention for encoder stacks
         xy_aw = None
         if self.src_attention:
-            # Create the source-target mask
-            xmax = xs.size(1)
-            x_mask = make_pad_mask(xlens, device_id).unsqueeze(1).expand(bs, ymax, xmax)
-            y_mask = make_pad_mask(ylens, device_id).unsqueeze(2).expand(bs, ymax, xmax)
-            xy_mask = (x_mask * y_mask).unsqueeze(1).expand(bs, self.n_heads, ymax, xmax)
-
             self.src_attn.reset()
             _ys = self.norm2(ys)
             _ys, xy_aw = self.src_attn(key=xs, value=xs, query=_ys, mask=xy_mask)
