@@ -161,10 +161,10 @@ def parse():
     parser.add_argument('--attn_type', type=str, default='scaled_dot',
                         choices=['scaled_dot', 'add', 'average'],
                         help='type of attention for transformer')
-    parser.add_argument('--attn_n_heads', type=int, default=8,
+    parser.add_argument('--n_heads', type=int, default=8,
                         help='number of heads in the self-attention layer')
     parser.add_argument('--pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'learned_add', 'learned_concat', False],
+                        choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
                         help='type of positional encoding')
     parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
                         help='')

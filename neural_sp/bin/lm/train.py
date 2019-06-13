@@ -330,7 +330,7 @@ def make_model_name(args):
         dir_name += str(args.d_model) + 'dmodel'
         dir_name += str(args.d_ff) + 'dff'
         dir_name += str(args.n_layers) + 'L'
-        dir_name += str(args.attn_n_heads) + 'head'
+        dir_name += str(args.n_heads) + 'head'
     elif 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
         dir_name += str(args.n_units) + 'H'
         dir_name += str(args.n_projs) + 'P'
@@ -341,6 +341,7 @@ def make_model_name(args):
     dir_name += '_lr' + str(args.learning_rate)
     dir_name += '_bs' + str(args.batch_size)
     dir_name += '_bptt' + str(args.bptt)
+    dir_name += '_dropH' + str(args.dropout_hidden) + 'E' + str(args.dropout_emb)
     if args.tie_embedding:
         dir_name += '_tie'
     if 'gated_conv' not in args.lm_type and args.lm_type != 'transformer':

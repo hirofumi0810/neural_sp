@@ -50,7 +50,7 @@ class TransformerDecoder(DecoderBase):
         blank (int): index for <blank>
         enc_n_units (int):
         attn_type (str):
-        attn_n_heads (int): number of attention heads
+        n_heads (int): number of attention heads
         n_layers (int): number of decoder layers.
         d_model (int): size of the model
         d_ff (int): size of the inner FF layer
@@ -81,7 +81,7 @@ class TransformerDecoder(DecoderBase):
                  blank,
                  enc_n_units,
                  attn_type,
-                 attn_n_heads,
+                 n_heads,
                  n_layers,
                  d_model,
                  d_ff,
@@ -113,7 +113,7 @@ class TransformerDecoder(DecoderBase):
         self.enc_n_units = enc_n_units
         self.d_model = d_model
         self.n_layers = n_layers
-        self.n_heads = attn_n_heads
+        self.n_heads = n_heads
         self.pe_type = pe_type
         self.lsm_prob = lsm_prob
         self.fl_weight = fl_weight
@@ -139,10 +139,10 @@ class TransformerDecoder(DecoderBase):
                                    ignore_index=pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
             self.layers = nn.ModuleList(
-                [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_n_heads,
+                [TransformerDecoderBlock(d_model, d_ff, attn_type, n_heads,
                                          dropout, dropout_att, layer_norm_eps)
                  for _ in range(n_layers)])
-            self.norm_top = nn.LayerNorm(d_model, eps=layer_norm_eps)
+            self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
             if adaptive_softmax:
                 self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -252,14 +252,13 @@ class TransformerDecoder(DecoderBase):
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
-        ys_emb = self.embed(ys_in_pad) * (self.d_model ** 0.5)
-        ys_emb = self.pos_enc(ys_emb)
+        ys_emb = self.pos_enc(self.embed(ys_in_pad))
         for l in range(self.n_layers):
             ys_emb, yy_aws, xy_aws = self.layers[l](ys_emb, ylens, eouts, elens)
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
                 setattr(self, 'xy_aws_layer%d' % l, tensor2np(xy_aws))
-        logits = self.norm_top(ys_emb)
+        logits = self.norm_out(ys_emb)
         if self.adaptive_softmax is None:
             logits = self.output(logits)
         if return_logits:
@@ -326,11 +325,10 @@ class TransformerDecoder(DecoderBase):
         xy_aws_tmp = [None] * bs
         eos_flags = [False] * bs
         for t in range(int(np.floor(max_xlen * max_len_ratio)) + 1):
-            out = self.embed(ys) * (self.d_model ** 0.5)
-            out = self.pos_enc(out)
+            out = self.pos_enc(self.embed(ys))
             for l in range(self.n_layers):
                 out, yy_aws, xy_aws = self.layers[l](out, ylens + 1, eouts, elens)
-            out = self.norm_top(out)
+            out = self.norm_out(out)
             logits_t = self.output(out)
 
             # Pick up 1-best
@@ -361,7 +359,7 @@ class TransformerDecoder(DecoderBase):
         best_hyps_tmp = tensor2np(best_hyps_tmp)
         # xy_aws_tmp = tensor2np(xy_aws_tmp)
 
-        # if self.score.attn_n_heads > 1:
+        # if self.score.n_heads > 1:
         #     xy_aws_tmp = xy_aws_tmp[:, :, :, 0]
         #     # TODO(hirofumi): fix for MHA
 

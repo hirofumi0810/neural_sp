@@ -151,7 +151,7 @@ class Speech2Text(ModelBase):
                     blank=self.blank,
                     enc_n_units=self.enc.output_dim,
                     attn_type=args.transformer_attn_type,
-                    attn_n_heads=args.transformer_attn_n_heads,
+                    n_heads=args.transformer_n_heads,
                     n_layers=args.transformer_dec_n_layers,
                     d_model=args.d_model,
                     d_ff=args.d_ff,
@@ -247,7 +247,8 @@ class Speech2Text(ModelBase):
                     global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                     mtl_per_batch=args.mtl_per_batch,
                     adaptive_softmax=args.adaptive_softmax,
-                    param_init=args.param_init)
+                    param_init=args.param_init,
+                    replace_sos=args.replace_sos)
             setattr(self, 'dec_' + dir, dec)
 
         # sub task
@@ -638,7 +639,7 @@ class Speech2Text(ModelBase):
                 if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
                     best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                        params['recog_max_len_ratio'], exclude_eos, idx2token, refs_id,
+                        params['recog_max_len_ratio'], idx2token, exclude_eos, refs_id,
                         speakers, params['recog_oracle'])
                 else:
                     assert params['recog_batch_size'] == 1

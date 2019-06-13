@@ -314,10 +314,10 @@ def parse():
     parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
                         choices=['scaled_dot', 'add', 'average'],
                         help='type of attention for Transformer')
-    parser.add_argument('--transformer_attn_n_heads', type=int, default=8,
+    parser.add_argument('--transformer_n_heads', type=int, default=8,
                         help='number of heads in the attention layer for Transformer')
     parser.add_argument('--pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'learned_add', 'learned_concat', False],
+                        choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
                         help='type of positional encoding')
     parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
                         help='')
@@ -422,6 +422,9 @@ def parse():
     parser.add_argument('--am_pretrain_type', type=str, default='masked_audio_lm',
                         choices=['audio_lm', 'masked_audio_lm',
                                  'dae', 'mass'],
+                        help='')
+    # special label
+    parser.add_argument('--replace_sos', type=strtobool, default=False,
                         help='')
 
     args = parser.parse_args()

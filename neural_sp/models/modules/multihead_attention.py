@@ -110,7 +110,8 @@ class MultiheadAttentionMechanism(nn.Module):
             elif klen == qlen:
                 assert klen == qlen
                 query_mask = make_pad_mask(klens, device_id).unsqueeze(2).expand(bs, qlen, klen)  # `[B, qlen, klen]`
-            self.mask = (mask * query_mask).expand(bs, self.n_heads, qlen, klen)  # `[B, n_heads, qlen, klen]`
+            mask = mask * query_mask
+            self.mask = mask.unsqueeze(1).expand(bs, self.n_heads, qlen, klen)  # `[B, n_heads, qlen, klen]`
 
             # Hide future information for self-attention in the Transformer decoder
             if diagonal:

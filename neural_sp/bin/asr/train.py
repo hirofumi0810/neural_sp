@@ -580,7 +580,7 @@ def make_model_name(args, subsample_factor):
         dir_name += str(args.d_model) + 'dmodel'
         dir_name += str(args.d_ff) + 'dff'
         dir_name += str(args.transformer_enc_n_layers) + 'L'
-        dir_name += str(args.transformer_attn_n_heads) + 'head'
+        dir_name += str(args.transformer_n_heads) + 'head'
     else:
         dir_name += str(args.enc_n_units) + 'H'
         if args.enc_n_projs > 0:
@@ -604,7 +604,7 @@ def make_model_name(args, subsample_factor):
             dir_name += str(args.d_model) + 'dmodel'
             dir_name += str(args.d_ff) + 'dff'
             dir_name += str(args.transformer_dec_n_layers) + 'L'
-            dir_name += str(args.transformer_attn_n_heads) + 'head'
+            dir_name += str(args.transformer_n_heads) + 'head'
         else:
             dir_name += str(args.dec_n_units) + 'H'
             if args.dec_n_projs > 0:
