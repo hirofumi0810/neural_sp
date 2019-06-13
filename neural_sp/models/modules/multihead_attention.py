@@ -16,7 +16,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
-from neural_sp.models.torch_utils import make_pad_mask
 
 NEG_INF = float(np.finfo(np.float32).min)
 
@@ -82,7 +81,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value = None
         self.mask = None
 
-    def forward(self, key, klens, value, query, qlens=None, aw=None, diagonal=False):
+    def forward(self, key, value, query, mask):
         """Forward computation.
 
         Args:
@@ -90,9 +89,7 @@ class MultiheadAttentionMechanism(nn.Module):
             klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, qlen, query_dim]`
-            qlens (IntTensor): `[B]`
-            aw (FloatTensor): dummy (not used)
-            diagonal (bool): for Transformer decoder to hide future information
+            mask (): `[B, n_heads, key, query]`
         Returns:
             cv (FloatTensor): `[B, qlen, value_dim]`
             aw (FloatTensor): `[B, n_heads, qlen, klen]`
@@ -101,31 +98,13 @@ class MultiheadAttentionMechanism(nn.Module):
         bs, klen = key.size()[: 2]
         qlen = query.size(1)
 
-        # Mask attention distribution
-        if self.mask is None:
-            device_id = torch.cuda.device_of(key.data).idx
-            mask = make_pad_mask(klens, device_id).unsqueeze(1).expand(bs, qlen, klen)  # `[B, qlen, klen]`
-            if qlens is not None:
-                query_mask = make_pad_mask(qlens, device_id).unsqueeze(2).expand(bs, qlen, klen)  # `[B, qlen, klen]`
-            elif klen == qlen:
-                assert klen == qlen
-                query_mask = make_pad_mask(klens, device_id).unsqueeze(2).expand(bs, qlen, klen)  # `[B, qlen, klen]`
-            mask = mask * query_mask
-            self.mask = mask.unsqueeze(1).expand(bs, self.n_heads, qlen, klen)  # `[B, n_heads, qlen, klen]`
-
-            # Hide future information for self-attention in the Transformer decoder
-            if diagonal:
-                assert qlen == klen
-                subsequent_mask = torch.tril(key.new_ones((qlen, klen)).byte(), diagonal=0)
-                subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(
-                    bs, self.n_heads, qlen, klen)  # `[B, n_heads, qlen, klen]`
-                self.mask = self.mask & subsequent_mask
-
         if self.key is None:
             key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
             value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
             self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
             self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
+            self.mask = mask
+
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
 

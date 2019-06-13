@@ -16,6 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
+from neural_sp.models.torch_utils import make_pad_mask
 
 
 class PositionalEncoding(nn.Module):
@@ -109,6 +110,8 @@ class TransformerEncoderBlock(nn.Module):
                  layer_norm_eps):
         super(TransformerEncoderBlock, self).__init__()
 
+        self.n_heads = n_heads
+
         # self-attention
         self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
                                                      query_dim=d_model,
@@ -136,18 +139,24 @@ class TransformerEncoderBlock(nn.Module):
             xx_aws (FloatTensor): `[B, T, T]`
 
         """
+        bs, xmax = xs.size()[: 2]
+        device_id = torch.cuda.device_of(xs.data).idx
+
+        # Create the self-attention mask
+        xx_mask = make_pad_mask(xlens, device_id).unsqueeze(1).expand(bs, xmax, xmax)
+        xx_mask = xx_mask.unsqueeze(1).expand(bs, self.n_heads, xmax, xmax)
+
         # self-attention
         if not cache:
             self.self_attn.reset()
-        xs_norm = self.norm1(xs)
-        xs_norm, xx_aws = self.self_attn(key=xs_norm, klens=xlens,
-                                         value=xs_norm, query=xs_norm)
-        xs = self.dropout1(xs_norm) + xs
+        _xs = self.norm1(xs)
+        _xs, xx_aws = self.self_attn(_xs, _xs, _xs, mask=xx_mask)
+        xs = self.dropout1(_xs) + xs
 
         # position-wise feed-forward
-        xs_norm = self.norm2(xs)
-        xs_norm = self.feed_forward(xs_norm)
-        xs = self.dropout2(xs_norm) + xs
+        _xs = self.norm2(xs)
+        _xs = self.feed_forward(_xs)
+        xs = self.dropout2(_xs) + xs
 
         return xs, xx_aws
 
@@ -182,6 +191,7 @@ class TransformerDecoderBlock(nn.Module):
         super(TransformerDecoderBlock, self).__init__()
 
         self.attn_type = attn_type
+        self.n_heads = n_heads
         self.src_attention = src_attention
 
         # self-attention
@@ -227,29 +237,42 @@ class TransformerDecoderBlock(nn.Module):
             xy_aw (FloatTensor): `[B, L, T]`
 
         """
+        bs, ymax = ys.size()[: 2]
+        device_id = torch.cuda.device_of(ys.data).idx
+
+        # Create the self-attention mask
+        yy_mask = make_pad_mask(ylens, device_id).unsqueeze(1).expand(bs, ymax, ymax)
+        yy_mask = yy_mask.unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
+        subsequent_mask = torch.tril(yy_mask.new_ones((ymax, ymax)).byte(), diagonal=0)
+        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
+        yy_mask = yy_mask & subsequent_mask
+
         # self-attention
         if self.attn_type == "average":
             raise NotImplementedError
         else:
             self.self_attn.reset()
-            ys_norm = self.norm1(ys)
-            ys_norm, yy_aw = self.self_attn(key=ys_norm, klens=ylens,
-                                            value=ys_norm, query=ys_norm, diagonal=True)
-            ys = self.dropout1(ys_norm) + ys
+            _ys = self.norm1(ys)
+            _ys, yy_aw = self.self_attn(_ys, _ys, _ys, mask=yy_mask)
+            ys = self.dropout1(_ys) + ys
 
         # attention for encoder stacks
+        xy_aw = None
         if self.src_attention:
+            # Create the source-target mask
+            xmax = xs.size(1)
+            x_mask = make_pad_mask(xlens, device_id).unsqueeze(1).expand(bs, ymax, xmax)
+            y_mask = make_pad_mask(ylens, device_id).unsqueeze(2).expand(bs, ymax, xmax)
+            xy_mask = (x_mask * y_mask).unsqueeze(1).expand(bs, self.n_heads, ymax, xmax)
+
             self.src_attn.reset()
-            ys_norm = self.norm2(ys)
-            ys_norm, xy_aw = self.src_attn(key=xs, klens=xlens,
-                                           value=xs, query=ys_norm, qlens=ylens)
-            ys = self.dropout2(ys_norm) + ys
-        else:
-            xy_aw = None
+            _ys = self.norm2(ys)
+            _ys, xy_aw = self.src_attn(key=xs, value=xs, query=_ys, mask=xy_mask)
+            ys = self.dropout2(_ys) + ys
 
         # position-wise feed-forward
-        ys_norm = self.norm3(ys)
-        ys_norm = self.feed_forward(ys_norm)
-        ys = self.dropout3(ys_norm) + ys
+        _ys = self.norm3(ys)
+        _ys = self.feed_forward(_ys)
+        ys = self.dropout3(_ys) + ys
 
         return ys, yy_aw, xy_aw
