@@ -253,16 +253,18 @@ class RNNDecoder(DecoderBase):
             if self.n_projs > 0:
                 dec_idim = n_projs
             # 2nd layer
-            if loop_type == 'lmdecoder':
-                dec_idim += enc_n_units
-            self.rnn += [zoneout_wrapper(cell(dec_idim, n_units))]
-            if self.n_projs > 0:
-                dec_idim = n_projs
-            # 3rd~ layers
-            for l in range(n_layers - 2):
-                self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
+            if n_layers >= 2:
+                if loop_type == 'lmdecoder':
+                    dec_idim += enc_n_units
+                self.rnn += [zoneout_wrapper(cell(dec_idim, n_units))]
                 if self.n_projs > 0:
                     dec_idim = n_projs
+            # 3rd~ layers
+            if n_layers >= 3:
+                for l in range(n_layers - 2):
+                    self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
+                    if self.n_projs > 0:
+                        dec_idim = n_projs
 
             # LM fusion
             if lm_fusion is not None:
