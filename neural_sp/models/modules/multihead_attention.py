@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import numpy as np
 import torch
 import torch.nn as nn
@@ -47,7 +48,7 @@ class MultiheadAttentionMechanism(nn.Module):
                  attn_type,
                  attn_dim,
                  dropout=0,
-                 n_heads=8):
+                 n_heads=4):
 
         super(MultiheadAttentionMechanism, self).__init__()
 
@@ -81,7 +82,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value = None
         self.mask = None
 
-    def forward(self, key, value, query, mask):
+    def forward(self, key, value, query, mask, aw=None):
         """Forward computation.
 
         Args:
@@ -90,6 +91,7 @@ class MultiheadAttentionMechanism(nn.Module):
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, qlen, query_dim]`
             mask (): `[B, n_heads, key, query]`
+            aw: dummy
         Returns:
             cv (FloatTensor): `[B, qlen, value_dim]`
             aw (FloatTensor): `[B, n_heads, qlen, klen]`
@@ -109,14 +111,15 @@ class MultiheadAttentionMechanism(nn.Module):
         query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
 
         if self.attn_type == 'scaled_dot':
-            e = torch.matmul(query, self.key.transpose(3, 2)) * (self.d_k ** -0.5)
+            e = torch.matmul(query, self.key.transpose(3, 2)) / math.sqrt(self.d_k)
         elif self.attn_type == 'add':
             e = torch.tanh(self.key.unsqueeze(2) + query.unsqueeze(3))
             e = e.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
             e = self.v(e).permute(0, 3, 1, 2)
 
         # Compute attention weights
-        e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
+        if self.mask is not None:
+            e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
         aw = F.softmax(e, dim=-1)
         aw = self.attn_dropout(aw)
         cv = torch.matmul(aw, self.value)  # `[B, n_heads, qlen, d_k]`

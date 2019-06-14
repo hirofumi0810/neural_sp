@@ -16,7 +16,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import LinearND
-from neural_sp.models.torch_utils import make_pad_mask
 
 NEG_INF = float(np.finfo(np.float32).min)
 
@@ -108,7 +107,7 @@ class AttentionMechanism(nn.Module):
         self.key = None
         self.mask = None
 
-    def forward(self, key, klens, value, query, aw=None):
+    def forward(self, key, value, query, mask=None, aw=None):
         """Forward computation.
 
         Args:
@@ -116,6 +115,7 @@ class AttentionMechanism(nn.Module):
             klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
+            mask (): `[B, qlen, klen]`
             aw (FloatTensor): `[B, klen, 1 (n_heads)]`
         Returns:
             cv (FloatTensor): `[B, 1, value_dim]`
@@ -127,17 +127,13 @@ class AttentionMechanism(nn.Module):
         if aw is None:
             aw = key.new_zeros(bs, klen, 1)
 
-        # Mask attention distribution
-        if self.mask is None:
-            device_id = torch.cuda.device_of(key.data).idx
-            self.mask = make_pad_mask(klens, device_id).expand(bs, klen)  # `[B, qlen, klen]`
-
         # Pre-computation of encoder-side features for computing scores
         if self.key is None:
             if self.attn_type in ['add', 'location', 'dot', 'luong_general']:
                 self.key = self.w_key(key)
             else:
                 self.key = key
+            self.mask = mask
 
         if self.attn_type == 'add':
             query = query.expand_as(torch.zeros((bs, klen, query.size(2))))
@@ -163,11 +159,13 @@ class AttentionMechanism(nn.Module):
             e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1)))).squeeze(2)
 
         if self.attn_type == 'no':
-            last_state = [key[b, klens[b] - 1] for b in range(bs)]
-            cv = torch.stack(last_state, dim=0).unsqueeze(1)
+            raise NotImplementedError
+            # last_state = [key[b, klens[b] - 1] for b in range(bs)]
+            # cv = torch.stack(last_state, dim=0).unsqueeze(1)
         else:
             # Compute attention weights, context vector
-            e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, klen]`
+            if self.mask is not None:
+                e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, klen]`
             if self.sigmoid_smoothing:
                 aw = F.sigmoid(e) / F.sigmoid(e).sum(-1).unsqueeze(-1)
             else:

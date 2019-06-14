@@ -16,7 +16,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
-from neural_sp.models.torch_utils import make_pad_mask
 
 
 class PositionalEncoding(nn.Module):
@@ -113,27 +112,26 @@ class TransformerEncoderBlock(nn.Module):
         self.n_heads = n_heads
 
         # self-attention
+        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
                                                      query_dim=d_model,
                                                      attn_type=attn_type,
                                                      attn_dim=d_model,
                                                      n_heads=n_heads,
                                                      dropout=dropout_att)
-        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.dropout1 = nn.Dropout(dropout)
 
         # feed-forward
-        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
         self.dropout2 = nn.Dropout(dropout)
 
-    def forward(self, xs, xlens, xx_mask, cache=False):
+    def forward(self, xs, xx_mask=None, cache=False):
         """Transformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
-            xlens (IntTensor): `[B]`
-            mask ():
+            xx_mask ():
             cache (bool):
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
@@ -192,32 +190,32 @@ class TransformerDecoderBlock(nn.Module):
         if attn_type == "average":
             raise NotImplementedError
         else:
+            self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
                                                          query_dim=d_model,
                                                          attn_type=attn_type,
                                                          attn_dim=d_model,
                                                          n_heads=n_heads,
                                                          dropout=dropout_att)
-            self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.dropout1 = nn.Dropout(dropout)
 
         # attention for encoder stacks
         if src_attention:
+            self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.src_attn = MultiheadAttentionMechanism(key_dim=d_model,
                                                         query_dim=d_model,
                                                         attn_type=attn_type,
                                                         attn_dim=d_model,
                                                         n_heads=n_heads,
                                                         dropout=dropout_att)
-            self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.dropout2 = nn.Dropout(dropout)
 
         # feed-forward
-        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
         self.dropout3 = nn.Dropout(dropout)
 
-    def forward(self, ys, yy_mask, xs=None, xy_mask=None):
+    def forward(self, ys, yy_mask=None, xs=None, xy_mask=None):
         """Transformer decoder layer definition.
 
         Args:

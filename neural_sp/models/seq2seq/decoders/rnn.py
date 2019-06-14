@@ -31,6 +31,7 @@ from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
 
 random.seed(1)
@@ -85,6 +86,7 @@ class RNNDecoder(DecoderBase):
         mtl_per_batch (bool):
         adaptive_softmax (bool):
         param_init (float):
+        replace_sos (bool):
 
     """
 
@@ -133,7 +135,8 @@ class RNNDecoder(DecoderBase):
                  global_weight=1.0,
                  mtl_per_batch=False,
                  adaptive_softmax=False,
-                 param_init=0.1):
+                 param_init=0.1,
+                 replace_sos=False):
 
         super(RNNDecoder, self).__init__()
         logger = logging.getLogger('training')
@@ -176,6 +179,7 @@ class RNNDecoder(DecoderBase):
         self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
+        self.replace_sos = replace_sos
 
         # for cache
         self.fifo_cache_ids = []
@@ -510,15 +514,20 @@ class RNNDecoder(DecoderBase):
             ppl (float):
 
         """
-        bs = eouts.size(0)
+        bs, xmax = eouts.size()[:2]
 
         # Append <sos> and <eos>
         eos = eouts.new_zeros(1).fill_(self.eos).long()
         ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
                         self.device_id) for y in ys]
-        ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-        ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
-        ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
+        if self.replace_sos:
+            ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
+            ys_in_pad = pad_list([y for y in ys], self.pad)
+            ys_out_pad = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
+        else:
+            ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
+            ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
+            ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
         # Initialization
         if self.contextualize:
@@ -537,6 +546,9 @@ class RNNDecoder(DecoderBase):
         if self.lm is not None:
             ys_lm_emb = self.lm.encode(ys_in_pad)
 
+        # Create the attention mask
+        mask = make_pad_mask(elens, self.device_id).expand(bs, xmax)
+
         logits = []
         for t in range(ys_in_pad.size(1)):
             # Sample for scheduled sampling
@@ -554,7 +566,7 @@ class RNNDecoder(DecoderBase):
             # Recurrency -> Score -> Generate
             dec_in = attn_v if self.input_feeding else cv
             dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
-            cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
+            cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw)
             attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
             logits.append(attn_v)
 
@@ -737,8 +749,8 @@ class RNNDecoder(DecoderBase):
         attn_v = torch.tanh(out)
         return attn_v, gated_lmfeat
 
-    def greedy(self, eouts, elens, max_len_ratio,
-               exclude_eos=False, idx2token=None, refs_id=None,
+    def greedy(self, eouts, elens, max_len_ratio, idx2token,
+               exclude_eos=False, refs_id=None,
                speakers=None, oracle=False):
         """Greedy decoding.
 
@@ -746,9 +758,9 @@ class RNNDecoder(DecoderBase):
             eouts (FloatTensor): `[B, T, enc_units]`
             elens (IntTensor): `[B]`
             max_len_ratio (int): maximum sequence length of tokens
+            refs_id (list):
             exclude_eos (bool):
             idx2token ():
-            refs_id (list):
             speakers (list):
             oracle (bool):
         Returns:
@@ -756,7 +768,7 @@ class RNNDecoder(DecoderBase):
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
 
         """
-        bs, xlen_max, _ = eouts.size()
+        bs, xmax, _ = eouts.size()
 
         # Initialization
         dstates = self.zero_state(bs)
@@ -766,17 +778,23 @@ class RNNDecoder(DecoderBase):
         aw = None
         lmstate = None
         lmfeat = eouts.new_zeros(bs, 1, self.dec_n_units)
-        y = eouts.new_zeros(bs, 1).fill_(self.eos)
+        if self.replace_sos:
+            y = eouts.new_zeros(bs, 1).fill_(refs_id[0][0])
+        else:
+            y = eouts.new_zeros(bs, 1).fill_(self.eos)
+
+        # Create the attention mask
+        mask = make_pad_mask(elens, self.device_id).expand(bs, xmax)
 
         best_hyps_batch, aws_tmp = [], []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
         if oracle:
             assert refs_id is not None
-            ylen_max = max([len(refs_id[b]) for b in range(bs)]) + 1
+            ymax = max([len(refs_id[b]) for b in range(bs)]) + 1
         else:
-            ylen_max = int(math.floor(xlen_max * max_len_ratio)) + 1
-        for t in range(ylen_max):
+            ymax = int(math.floor(xmax * max_len_ratio)) + 1
+        for t in range(ymax):
             if oracle and t > 0:
                 y = eouts.new_zeros(bs, 1)
                 for b in range(bs):
@@ -791,7 +809,7 @@ class RNNDecoder(DecoderBase):
             y_emb = self.embed(y)
             dec_in = attn_v if self.input_feeding else cv
             dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
-            cv, aw = self.score(eouts, elens, eouts, dstates['dout_score'], aw)
+            cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw)
             attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
 
             # Pick up 1-best
@@ -966,13 +984,16 @@ class RNNDecoder(DecoderBase):
                      }]
             if oracle:
                 assert refs_id is not None
-                ylen_max = len(refs_id[b]) + 1
+                ymax = len(refs_id[b]) + 1
             else:
-                ylen_max = int(math.floor(elens[b] * max_len_ratio)) + 1
-            for t in range(ylen_max):
+                ymax = int(math.floor(elens[b] * max_len_ratio)) + 1
+            for t in range(ymax):
                 new_hyps = []
                 for beam in hyps:
-                    prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam['hyp'][-1]
+                    if self.replace_sos and t == 0:
+                        prev_idx = refs_id[0][0]
+                    else:
+                        prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam['hyp'][-1]
 
                     if self.lm is not None:
                         # Update LM states for LM fusion
@@ -999,18 +1020,18 @@ class RNNDecoder(DecoderBase):
 
                     # Score for the main model
                     cv, aw = self.score(eouts[b:b + 1, :elens[b]],
-                                        elens[b:b + 1],
                                         eouts[b:b + 1, :elens[b]],
                                         dstates['dout_score'],
+                                        None,
                                         beam['aws'][-1])
                     # Score for the ensemble
                     ensmbl_cv, ensmbl_aws = [], []
                     if n_models > 1:
                         for i_e, dec in enumerate(ensmbl_decs):
                             cv_e, aw_e = dec.score(ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
-                                                   ensmbl_elens[i_e][b:b + 1],
                                                    ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
                                                    ensmbl_dstate[i_e]['dout_score'],
+                                                   None,
                                                    beam['ensmbl_aws'][i_e][-1])
                             ensmbl_cv += [cv_e]
                             ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi)] why unsqueeze?

@@ -329,26 +329,27 @@ class TransformerDecoder(DecoderBase):
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
 
         """
-        bs, max_xlen, d_model = eouts.size()
+        bs, xmax = eouts.size()[:2]
 
         # Start from <sos> (<eos> in case of the backward decoder)
         ys = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
-        best_hyps_tmp = []
+        # TODO(hirofumi): Create the source-target mask for batch decoding
+
+        best_hyps_batch = []
         ylens = torch.zeros(bs).int()
         yy_aws_tmp = [None] * bs
         xy_aws_tmp = [None] * bs
         eos_flags = [False] * bs
-        for t in range(int(np.floor(max_xlen * max_len_ratio)) + 1):
+        for t in range(int(np.floor(xmax * max_len_ratio)) + 1):
             out = self.pos_enc(self.embed(ys))
             for l in range(self.n_layers):
-                out, yy_aws, xy_aws = self.layers[l](out, ylens + 1, eouts, elens)
+                out, yy_aws, xy_aws = self.layers[l](out, None, eouts, None)
             out = self.norm_out(out)
-            logits_t = self.output(out)
 
             # Pick up 1-best
-            y = logits_t.detach().argmax(-1)[:, -1:]
-            best_hyps_tmp += [y]
+            y = self.output(out).argmax(-1)[:, -1:]
+            best_hyps_batch += [y]
 
             # Count lengths of hypotheses
             for b in range(bs):
@@ -367,11 +368,11 @@ class TransformerDecoder(DecoderBase):
             ys = torch.cat([ys, y], dim=-1)
 
         # Concatenate in L dimension
-        best_hyps_tmp = torch.cat(best_hyps_tmp, dim=1)
+        best_hyps_batch = torch.cat(best_hyps_batch, dim=1)
         # xy_aws_tmp = torch.stack(xy_aws_tmp, dim=0)
 
         # Convert to numpy
-        best_hyps_tmp = tensor2np(best_hyps_tmp)
+        best_hyps_batch = tensor2np(best_hyps_batch)
         # xy_aws_tmp = tensor2np(xy_aws_tmp)
 
         # if self.score.n_heads > 1:
@@ -381,20 +382,18 @@ class TransformerDecoder(DecoderBase):
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.bwd:
             # Reverse the order
-            best_hyps = [best_hyps_tmp[b, :ylens[b]][::-1] for b in range(bs)]
+            best_hyps = [best_hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
             # aws = [xy_aws_tmp[b, :ylens[b]][::-1] for b in range(bs)]
         else:
-            best_hyps = [best_hyps_tmp[b, :ylens[b]] for b in range(bs)]
+            best_hyps = [best_hyps_batch[b, :ylens[b]] for b in range(bs)]
             # aws = [xy_aws_tmp[b, :ylens[b]] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
             if self.bwd:
-                best_hyps = [best_hyps[b][1:] if eos_flags[b]
-                             else best_hyps[b] for b in range(bs)]
+                best_hyps = [best_hyps[b][1:] if eos_flags[b] else best_hyps[b] for b in range(bs)]
             else:
-                best_hyps = [best_hyps[b][:-1] if eos_flags[b]
-                             else best_hyps[b] for b in range(bs)]
+                best_hyps = [best_hyps[b][:-1] if eos_flags[b] else best_hyps[b] for b in range(bs)]
 
         # return best_hyps, aws
         return best_hyps, None

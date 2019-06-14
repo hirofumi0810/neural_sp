@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
+import math
 import os
 import shutil
 import torch.nn as nn
@@ -37,8 +38,8 @@ class TransformerEncoder(EncoderBase):
         n_heads (int): number of heads for multi-head attention
         n_layers (int): number of blocks
         d_model (int): dimension of keys/values/queries in
-                   MultiheadAttentionMechanism, also the input size of
-                   the first-layer of the PositionwiseFeedForward
+            MultiheadAttentionMechanism, also the input size of
+            the first-layer of the PositionwiseFeedForward
         d_ff (int): dimension of the second layer of the PositionwiseFeedForward
         pe_type (str): concat or add or learn or False
         layer_norm_eps (float):
@@ -158,8 +159,8 @@ class TransformerEncoder(EncoderBase):
                 logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
             elif p.dim() == 2:
                 if 'embed' in n:
-                    nn.init.normal_(p, mean=0, std=self.d_model**-0.5)
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'normal', self.d_model**-0.5))
+                    nn.init.normal_(p, mean=0, std=1 / math.sqrt(self.d_model))
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'normal', 1 / math.sqrt(self.d_model)))
                 else:
                     nn.init.xavier_uniform_(p, gain=1.0)
                     logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
@@ -196,7 +197,7 @@ class TransformerEncoder(EncoderBase):
 
         xs = self.pos_enc(xs)
         for l in range(self.n_layers):
-            xs, xx_aws = self.layers[l](xs, xlens, xx_mask)
+            xs, xx_aws = self.layers[l](xs, xx_mask)
             if not self.training:
                 setattr(self, 'xx_aws_layer%d' % l, tensor2np(xx_aws))
         xs = self.norm_out(xs)
