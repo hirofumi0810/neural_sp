@@ -19,7 +19,7 @@ from neural_sp.models.base import ModelBase
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
-from neural_sp.models.seq2seq.decoders.rnn import RNNDecoder
+from neural_sp.models.seq2seq.decoders.attention_rnn import RNNDecoder
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.encoders.select import select_encoder
