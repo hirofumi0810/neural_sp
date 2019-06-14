@@ -227,6 +227,7 @@ class Speech2Text(ModelBase):
                     dropout=args.dropout_dec,
                     dropout_emb=args.dropout_emb,
                     dropout_att=args.dropout_att,
+                    zoneout=args.zoneout,
                     ss_prob=args.ss_prob,
                     ss_type=args.ss_type,
                     lsm_prob=args.lsm_prob,

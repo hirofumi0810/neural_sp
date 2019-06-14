@@ -25,6 +25,7 @@ from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.modules.singlehead_attention import AttentionMechanism
+from neural_sp.models.modules.zoneout import zoneout_wrapper
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
@@ -66,6 +67,7 @@ class RNNDecoder(DecoderBase):
         dropout (float): dropout probability for the RNN layer
         dropout_emb (float): dropout probability for the embedding layer
         dropout_att (float): dropout probability for attention distributions
+        zoneout (float): zoneout probability for the RNN layer
         lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
         ss_type (str): constant or saturation
@@ -116,6 +118,7 @@ class RNNDecoder(DecoderBase):
                  dropout=0.0,
                  dropout_emb=0.0,
                  dropout_att=0.0,
+                 zoneout=0,
                  lsm_prob=0.0,
                  ss_prob=0.0,
                  ss_type='constant',
@@ -235,44 +238,31 @@ class RNNDecoder(DecoderBase):
 
             # Decoder
             self.rnn = nn.ModuleList()
-            self.proj = nn.ModuleList()
-            self.dropout = nn.ModuleList()
-            rnncell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
+            if self.n_projs > 0:
+                self.proj = nn.ModuleList([LinearND(n_units, n_projs) for _ in range(n_layers)])
+            self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
+            cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
+            # 1st layer
             if loop_type == 'normal':
                 dec_idim = n_units if input_feeding else enc_n_units
-                self.rnn += [rnncell(emb_dim + dec_idim, n_units)]
-                dec_idim = n_units
-                if self.n_projs > 0:
-                    self.proj += [LinearND(n_units, n_projs)]
-                    dec_idim = n_projs
-                self.dropout += [nn.Dropout(p=dropout)]
-                for l in range(n_layers - 1):
-                    self.rnn += [rnncell(dec_idim, n_units)]
-                    if self.n_projs > 0:
-                        self.proj += [LinearND(n_units, n_projs)]
-                    self.dropout += [nn.Dropout(p=dropout)]
+                dec_idim += emb_dim
             elif loop_type == 'lmdecoder':
-                # 1st layer
-                self.rnn += [rnncell(emb_dim, n_units)]
+                dec_idim = emb_dim
+            self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
+            dec_idim = n_units
+            if self.n_projs > 0:
+                dec_idim = n_projs
+            # 2nd layer
+            if loop_type == 'lmdecoder':
+                dec_idim += enc_n_units
+            self.rnn += [zoneout_wrapper(cell(dec_idim, n_units))]
+            if self.n_projs > 0:
+                dec_idim = n_projs
+            # 3rd~ layers
+            for l in range(n_layers - 2):
+                self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
                 if self.n_projs > 0:
-                    self.proj += [LinearND(n_units, n_projs)]
-                self.dropout += [nn.Dropout(p=dropout)]
-                # 2nd layer
-                if self.n_projs > 0:
-                    self.rnn += [rnncell(n_projs + enc_n_units, n_units)]
-                    self.proj += [LinearND(n_units, n_projs)]
-                else:
-                    self.rnn += [rnncell(n_units + enc_n_units, n_units)]
-                self.dropout += [nn.Dropout(p=dropout)]
-                for l in range(n_layers - 2):
-                    if self.n_projs > 0:
-                        self.rnn += [rnncell(n_projs, n_units)]
-                        self.proj += [LinearND(n_units, n_projs)]
-                    else:
-                        self.rnn += [rnncell(n_units, n_units)]
-                    self.dropout += [nn.Dropout(p=dropout)]
-            else:
-                raise NotImplementedError(loop_type)
+                    dec_idim = n_projs
 
             # LM fusion
             dout_dim = n_projs if self.n_projs > 0 else n_units

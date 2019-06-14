@@ -40,9 +40,9 @@ enc_n_layers=12
 dec_n_layers=6
 attn_type=scaled_dot
 pe_type=add
-d_model=512
+d_model=256
 d_ff=2048
-attn_n_heads=4
+n_heads=4
 tie_embedding=false
 ctc_fc_list=""
 ### optimization
@@ -66,7 +66,7 @@ dropout_in=0.0
 dropout_enc=0.1
 dropout_dec=0.1
 dropout_emb=0.1
-dropout_att=0.1
+dropout_att=0.0
 weight_decay=1e-6
 lsm_prob=0.1
 focal_loss=0.0
@@ -81,13 +81,8 @@ time_width_upper=0.2
 ctc_weight=0.2
 ctc_lsm_prob=0.1
 bwd_weight=0.0
-mtl_per_batch=true
+mtl_per_batch=false
 task_specific_layer=false
-
-if [ ${speed_perturb} = true ]; then
-    n_epochs=20
-    print_step=600
-fi
 
 #########################
 # LM configuration
@@ -98,7 +93,7 @@ lm_d_model=512
 lm_d_ff=2048
 lm_n_layers=6
 lm_attn_type=scaled_dot
-lm_attn_n_heads=8
+lm_n_heads=8
 lm_pe_type=add
 lm_tie_embedding=true
 # optimization
@@ -347,7 +342,7 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
         --corpus wsj \
         --n_gpus 1 \
         --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --nlsyms ${nlsyms} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
@@ -358,7 +353,7 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
         --d_ff ${lm_d_ff} \
         --n_layers ${lm_n_layers} \
         --attn_type ${lm_attn_type} \
-        --attn_n_heads ${lm_attn_n_heads} \
+        --n_heads ${lm_n_heads} \
         --pe_type ${lm_pe_type} \
         --tie_embedding ${lm_tie_embedding} \
         --batch_size ${lm_batch_size} \
@@ -426,7 +421,7 @@ if [ ${stage} -le 4 ]; then
         --transformer_dec_n_layers ${dec_n_layers} \
         --transformer_attn_type ${attn_type} \
         --pe_type ${pe_type} \
-        --transformer_attn_n_heads ${attn_n_heads} \
+        --transformer_n_heads ${n_heads} \
         --tie_embedding ${tie_embedding} \
         --ctc_fc_list ${ctc_fc_list} \
         --batch_size ${batch_size} \

@@ -86,6 +86,7 @@ dropout_enc=0.4
 dropout_dec=0.4
 dropout_emb=0.4
 dropout_att=0.0
+zoneout=0.0
 weight_decay=1e-6
 ss_prob=0.2
 ss_type=constant
@@ -102,7 +103,7 @@ time_width_upper=0.2
 ctc_weight=0.2
 ctc_lsm_prob=0.1
 bwd_weight=0.0
-mtl_per_batch=true
+mtl_per_batch=false
 task_specific_layer=false
 ### LM integration
 lm_fusion_type=cold
@@ -127,9 +128,15 @@ share_lm_softmax=false
 if [ ${speed_perturb} = true ]; then
     n_epochs=20
     convert_to_sgd_epoch=15
-    print_step=600
+    print_step=300
     decay_start_epoch=5
     decay_rate=0.8
+elif [ ${n_freq_masks} != 0 ] || [ ${n_time_masks} != 0 ]; then
+    n_epochs=50
+    convert_to_sgd_epoch=50
+    print_step=200
+    decay_start_epoch=20
+    decay_rate=0.9
 fi
 
 #########################
@@ -390,7 +397,7 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
         --corpus wsj \
         --n_gpus 1 \
         --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --nlsyms ${nlsyms} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
@@ -510,6 +517,7 @@ if [ ${stage} -le 4 ]; then
         --dropout_dec ${dropout_dec} \
         --dropout_emb ${dropout_emb} \
         --dropout_att ${dropout_att} \
+        --zoneout ${zoneout} \
         --weight_decay ${weight_decay} \
         --ss_prob ${ss_prob} \
         --ss_type ${ss_type} \
