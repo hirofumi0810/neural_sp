@@ -265,9 +265,8 @@ class RNNDecoder(DecoderBase):
                     dec_idim = n_projs
 
             # LM fusion
-            dout_dim = n_projs if self.n_projs > 0 else n_units
             if lm_fusion is not None:
-                self.linear_dec_feat = LinearND(n_units + enc_n_units, n_units)
+                self.linear_dec_feat = LinearND(dec_idim + enc_n_units, n_units)
                 if lm_fusion_type in ['cold', 'deep']:
                     self.linear_lm_feat = LinearND(lm_fusion.n_units, n_units)
                     self.linear_lm_gate = LinearND(n_units * 2, n_units)
@@ -284,7 +283,7 @@ class RNNDecoder(DecoderBase):
             elif contextualize:
                 raise NotImplementedError
             else:
-                self.output_bn = LinearND(dout_dim + enc_n_units, bottleneck_dim)
+                self.output_bn = LinearND(dec_idim + enc_n_units, bottleneck_dim)
 
             self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
@@ -541,10 +540,7 @@ class RNNDecoder(DecoderBase):
 
         logits = []
         for t in range(ys_in_pad.size(1)):
-            # Sample for scheduled sampling
             is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob and self.adaptive_softmax is None
-            y_emb = self.embed(self.output(
-                logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
 
             # Update LM states for LM fusion
             lmout = None
@@ -555,6 +551,7 @@ class RNNDecoder(DecoderBase):
 
             # Recurrency -> Score -> Generate
             dec_in = attn_v if self.input_feeding else cv
+            y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
             dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
             cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw)
             attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
@@ -623,8 +620,8 @@ class RNNDecoder(DecoderBase):
         dstates['dout_score'] = w.new_zeros((batch_size, 1, self.dec_n_units))
         dstates['dout_gen'] = w.new_zeros((batch_size, 1, self.dec_n_units))
         zero_state = w.new_zeros((batch_size, self.dec_n_units))
-        hxs = [zero_state for l in range(self.n_layers)]
-        cxs = [zero_state for l in range(self.n_layers)] if self.rnn_type == 'lstm' else []
+        hxs = [zero_state for _ in range(self.n_layers)]
+        cxs = [zero_state for _ in range(self.n_layers)] if self.rnn_type == 'lstm' else []
         dstates['dstate'] = (hxs, cxs)
         return dstates
 
@@ -664,10 +661,9 @@ class RNNDecoder(DecoderBase):
                 hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, cv], dim=-1), (hxs[0], cxs[0]))
             elif self.rnn_type == 'gru':
                 hxs[0] = self.rnn[0](torch.cat([y_emb, cv], dim=-1), hxs[0])
-        dout = hxs[0]
+        dout = self.dropout[0](hxs[0])
         if self.n_projs > 0:
             dout = torch.tanh(self.proj[0](dout))
-        dout = self.dropout[0](dout)
 
         if self.loop_type == 'lmdecoder' and self.lmobj_weight > 0:
             dstates_new['dout_lmdec'] = dout.unsqueeze(1)
@@ -688,10 +684,9 @@ class RNNDecoder(DecoderBase):
                     hxs[l], cxs[l] = self.rnn[l](dout, (hxs[l], cxs[l]))
                 elif self.rnn_type == 'gru':
                     hxs[l] = self.rnn[l](dout, hxs[l])
-            dout_tmp = hxs[l]
+            dout_tmp = self.dropout[l](hxs[l])
             if self.n_projs > 0:
                 dout_tmp = torch.tanh(self.proj[l](dout_tmp))
-            dout_tmp = self.dropout[l](dout_tmp)
 
             if self.loop_type == 'lmdecoder' and l == 1:
                 # the bottom layer

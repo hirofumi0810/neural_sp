@@ -164,10 +164,10 @@ class RNNTransducer(DecoderBase):
                 dec_idim = n_units
                 self.dropout_top = nn.Dropout(p=dropout)
             else:
-                self.rnn = torch.nn.ModuleList()
-                self.dropout = torch.nn.ModuleList()
+                self.rnn = nn.ModuleList()
+                self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
                 if n_projs > 0:
-                    self.proj = torch.nn.ModuleList()
+                    self.proj = nn.ModuleList([LinearND(dec_idim, n_projs) for _ in range(n_layers)])
                 dec_idim = emb_dim
                 for l in range(n_layers):
                     self.rnn += [rnn(dec_idim, n_units, 1,
@@ -175,19 +175,14 @@ class RNNTransducer(DecoderBase):
                                      batch_first=True,
                                      dropout=0,
                                      bidirectional=False)]
-                    self.dropout += [nn.Dropout(p=dropout)]
-                    dec_idim = n_units
-
-                    if l != self.n_layers - 1 and n_projs > 0:
-                        self.proj += [LinearND(dec_idim, n_projs)]
-                        dec_idim = n_projs
+                    dec_idim = n_projs if n_projs > 0 else n_units
 
             self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
                                    ignore_index=pad)
 
-            self.w_trans = LinearND(n_units, bottleneck_dim, bias=True)
-            self.w_pred = LinearND(n_units, bottleneck_dim, bias=False)
+            self.w_enc = LinearND(enc_n_units, bottleneck_dim, bias=True)
+            self.w_dec = LinearND(dec_idim, bottleneck_dim, bias=False)
             self.output = LinearND(bottleneck_dim, vocab)
 
         # Initialize parameters
@@ -370,17 +365,17 @@ class RNNTransducer(DecoderBase):
 
         return loss
 
-    def joint(self, out_trans, dout):
+    def joint(self, eout, dout):
         """
         Args:
-            out_trans (FloatTensor): `[B, T, dec_n_units]`
+            eout (FloatTensor): `[B, T, dec_n_units]`
             dout (FloatTensor): `[B, L, dec_n_units]`
         Returns:
             out (FloatTensor): `[B, T, L, vocab]`
         """
-        out_trans = out_trans.unsqueeze(2)  # `[B, T, 1, dec_n_units]`
+        eout = eout.unsqueeze(2)  # `[B, T, 1, dec_n_units]`
         dout = dout.unsqueeze(1)  # `[B, 1, L, dec_n_units]`
-        out = torch.tanh(self.w_trans(out_trans) + self.w_pred(dout))
+        out = torch.tanh(self.w_enc(eout) + self.w_dec(dout))
         return self.output(out)
 
     def recurrency(self, ys_emb, dstate):
@@ -403,7 +398,6 @@ class RNNTransducer(DecoderBase):
 
         residual = None
         if self.fast_impl:
-            # Path through RNN
             if self.rnn_type == 'lstm_transducer':
                 ys_emb, (new_dstate['hxs'], new_dstate['cxs']) = self.rnn(
                     ys_emb, hx=(dstate['hxs'], dstate['cxs']))
@@ -413,7 +407,6 @@ class RNNTransducer(DecoderBase):
         else:
             new_hxs, new_cxs = [], []
             for l in range(self.n_layers):
-                # Path through RNN
                 if self.rnn_type == 'lstm_transducer':
                     ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(dstate['hxs'][l:l + 1],
                                                                  dstate['cxs'][l:l + 1]))
@@ -422,9 +415,7 @@ class RNNTransducer(DecoderBase):
                     ys_emb, h_l = self.rnn[l](ys_emb, hx=dstate['hxs'][l:l + 1])
                 new_hxs.append(h_l)
                 ys_emb = self.dropout[l](ys_emb)
-
-                # Projection layer
-                if l < self.n_layers - 1 and self.n_projs > 0:
+                if self.n_projs > 0:
                     ys_emb = torch.tanh(self.proj[l](ys_emb))
 
                 # Residual connection
