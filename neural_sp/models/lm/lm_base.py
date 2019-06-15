@@ -68,7 +68,7 @@ class LMBase(ModelBase):
         ys_in = ys[:, :-1]
         ys_out = ys[:, 1:]
 
-        out, state = self.decode(self.encode(ys_in), state)
+        out, state = self.decode(ys_in, state)
         if self.adaptive_softmax is None:
             logits = self.generate(out)
         else:
@@ -137,17 +137,6 @@ class LMBase(ModelBase):
             reporter.add(observation, is_eval)
 
         return loss, state, reporter
-
-    def encode(self, ys):
-        """Encode function.
-
-        Args:
-            ys (LongTensor): `[B, L]`
-        Returns:
-            ys (FloatTensor): `[B, L, emb_dim]`
-
-        """
-        return self.embed(ys.long())
 
     def decode(self, ys_emb, state=None):
         raise NotImplementedError

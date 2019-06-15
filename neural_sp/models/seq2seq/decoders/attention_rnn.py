@@ -534,8 +534,6 @@ class RNNDecoder(DecoderBase):
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
-        if self.lm is not None:
-            ys_lm_emb = self.lm.encode(ys_in_pad)
 
         # Create the attention mask
         mask = make_pad_mask(elens, self.device_id).expand(bs, xmax)
@@ -547,9 +545,8 @@ class RNNDecoder(DecoderBase):
             # Update LM states for LM fusion
             lmout = None
             if self.lm is not None:
-                y_lm_emb = self.lm.encode(self.output(
-                    logits[-1]).detach().argmax(-1)) if is_sample else ys_lm_emb[:, t:t + 1]
-                lmout, lmstate = self.lm.decode(y_lm_emb, lmstate)
+                y_lm = self.output(logits[-1]).detach().argmax(-1) if is_sample else ys_in_pad[:, t:t + 1]
+                lmout, lmstate = self.lm.decode(y_lm, lmstate)
 
             # Recurrency -> Score -> Generate
             dec_in = attn_v if self.input_feeding else cv
@@ -790,11 +787,11 @@ class RNNDecoder(DecoderBase):
             # Update LM states for LM fusion
             lmout = None
             if self.lm is not None:
-                lmout, lmstate = self.lm.decode(self.lm.encode(y), lmstate)
+                lmout, lmstate = self.lm.decode(self.lm(y), lmstate)
 
             # Recurrency -> Score -> Generate
-            y_emb = self.embed(y)
             dec_in = attn_v if self.input_feeding else cv
+            y_emb = self.embed(y)
             dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
             cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw)
             attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
@@ -984,12 +981,10 @@ class RNNDecoder(DecoderBase):
 
                     if self.lm is not None:
                         # Update LM states for LM fusion
-                        lmout, lmstate = self.lm.decode(
-                            self.lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx)), beam['lmstate'])
+                        lmout, lmstate = self.lm.decode(eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
                     elif lm_weight > 0 and lm is not None:
                         # Update LM states for shallow fusion
-                        lmout, lmstate = lm.decode(
-                            lm.encode(eouts.new_zeros(1, 1).fill_(prev_idx)), beam['lmstate'])
+                        lmout, lmstate = lm.decode(eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
                     else:
                         lmout, lmstate = None, None
 
@@ -1272,7 +1267,7 @@ class RNNDecoder(DecoderBase):
             if lm_rev is not None and lm_weight > 0:
                 for i in range(len(end_hyps)):
                     # Initialize
-                    lm_rev_hxs, lm_rev_cxs = None, None
+                    lmstate_rev = None
                     score_lm_rev = 0.0
                     lp = 1.0
 
@@ -1284,10 +1279,9 @@ class RNNDecoder(DecoderBase):
                     if lp_weight > 0 and gnmt_decoding:
                         lp = (math.pow(5 + (len(end_hyps[i]['hyp']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
                     for t_ in range(len(end_hyps[i]['hyp'][::-1]) - 1):
-                        lm_out_rev, (lm_rev_hxs, lm_rev_cxs) = lm_rev.decode(
-                            lm_rev.encode(eouts.new_zeros(1, 1).fill_(end_hyps[i]['hyp'][::-1][t_])),
-                            (lm_rev_hxs, lm_rev_cxs))
-                        lm_log_probs = F.log_softmax(lm_rev.generate(lm_out_rev).squeeze(1), dim=-1)
+                        lmout_rev, lmstate_rev = lm_rev.decode(
+                            eouts.new_zeros(1, 1).fill_(end_hyps[i]['hyp'][::-1][t_]), lmstate_rev)
+                        lm_log_probs = F.log_softmax(lm_rev.generate(lmout_rev).squeeze(1), dim=-1)
                         score_lm_rev += lm_log_probs[0, end_hyps[i]['hyp'][::-1][t_ + 1]]
                     if gnmt_decoding:
                         score_lm_rev /= lp  # normalize

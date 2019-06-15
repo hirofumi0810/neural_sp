@@ -142,11 +142,11 @@ class RNNLM(LMBase):
             else:
                 raise ValueError
 
-    def decode(self, ys_emb, state):
+    def decode(self, ys, state):
         """Decode function.
 
         Args:
-            ys_emb (FloatTensor): `[B, L, emb_dim]`
+            ys (FloatTensor): `[B, L, emb_dim]`
             state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
@@ -157,6 +157,8 @@ class RNNLM(LMBase):
                 cxs (FloatTensor): `[n_layers, B, n_units]`
 
         """
+        ys_emb = self.embed(ys.long())
+
         if state is None:
             state = self.zero_state(ys_emb.size(0))
         new_state = {'hxs': None, 'cxs': None}

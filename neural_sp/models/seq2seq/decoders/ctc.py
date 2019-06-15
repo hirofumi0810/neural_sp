@@ -203,8 +203,7 @@ class CTC(DecoderBase):
                      'p_b': LOG_1,
                      'p_nb': LOG_0,
                      'score_lm': LOG_1,
-                     'lm_hxs': None,
-                     'lm_cxs': None
+                     'lmstate': None,
                      }]
 
             for t in range(elens[b]):
@@ -219,8 +218,6 @@ class CTC(DecoderBase):
                     p_b = beam[i_beam]['p_b']
                     p_nb = beam[i_beam]['p_nb']
                     score_lm = beam[i_beam]['score_lm']
-                    lm_hxs = beam[i_beam]['lm_hxs']
-                    lm_cxs = beam[i_beam]['lm_cxs']
 
                     # case 1. hyp is not extended
                     new_p_b = np.logaddexp(p_b + log_probs[b, t, self.blank].item(),
@@ -238,15 +235,13 @@ class CTC(DecoderBase):
                                      'score_ctc': score_ctc,
                                      'score_lm': score_lm,
                                      'score_lp': score_lp,
-                                     'lm_hxs': lm_hxs[:] if lm_hxs is not None else None,
-                                     'lm_cxs': lm_cxs[:] if lm_cxs is not None else None,
+                                     'lmstate': beam[i_beam]['lmstate'],
                                      })
 
                     # Update LM states for shallow fusion
                     if lm_weight > 0 and lm is not None and lm_usage == 'shallow_fusion':
                         lmout, lmstate = lm.decode(
-                            lm.encode(eouts.new_zeros(1, 1).fill_(hyp_id[-1]).long()),
-                            (beam[i_beam]['lm_hxs'], beam[i_beam]['lm_cxs']))
+                            eouts.new_zeros(1, 1).fill_(hyp_id[-1]), beam[i_beam]['lmstate'])
                         lm_log_probs = F.log_softmax(lm.generate(lmout), dim=-1)
 
                     # case 2. hyp is extended
@@ -280,8 +275,7 @@ class CTC(DecoderBase):
                                          'score_ctc': score_ctc,
                                          'score_lm': score_lm,
                                          'score_lp': score_lp,
-                                         'lm_hxs': lm_hxs[:] if lm_hxs is not None else None,
-                                         'lm_cxs': lm_cxs[:] if lm_cxs is not None else None,
+                                         'lmstate': lmstate,
                                          })
 
                 # Pruning
@@ -293,7 +287,7 @@ class CTC(DecoderBase):
                 for i_beam in range(len(beam)):
                     ys = [np2tensor(np.fromiter(beam[i_beam]['hyp_id'], dtype=np.int64), self.device_id)]
                     ys_pad = pad_list(ys, lm.pad)
-                    lmout, _ = lm.decode(lm.encode(ys_pad), None)
+                    lmout, _ = lm.decode(ys_pad, None)
                     score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
                     score_lm = F.log_softmax(lm.generate(lmout), dim=-1).sum() * lm_weight
                     score_lp = len(beam[i_beam]['hyp_id'][1:]) * lp_weight

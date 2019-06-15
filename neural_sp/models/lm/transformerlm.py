@@ -142,7 +142,7 @@ class TransformerLM(LMBase):
 
         ys_emb = self.pos_enc(ys_emb)
         for l in range(self.n_layers):
-            ys_emb, yy_aws, _ = self.layers[l](ys_emb, ylens, yy_mask)
+            ys_emb, yy_aws, _ = self.layers[l](ys_emb, yy_mask)
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
         ys_emb = self.norm_out(ys_emb)
