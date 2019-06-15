@@ -386,8 +386,7 @@ def parse():
                         help='carry over ASR decoder state')
     parser.add_argument('--recog_lm_state_carry_over', type=strtobool, default=False,
                         help='carry over LM state')
-    parser.add_argument('--recog_concat_prev_n_utterances', type=int, default=0,
-                        help='number of previous utterances to concatenate (for inference)')
+    # cache
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
     parser.add_argument('--recog_cache_theta_speech', type=float, default=0.1,
@@ -404,14 +403,6 @@ def parse():
                                  'lm_fifo', 'lm_fifo_online',
                                  'lm_dict', 'lm_dict_overwrite', ],
                         help='cache type')
-    parser.add_argument('--recog_second_pass', type=strtobool, default=False,
-                        help='')
-    parser.add_argument('--recog_word_count_list', type=str, default=False, nargs='?',
-                        help='path to the word count list file')
-    parser.add_argument('--recog_cache_word_freq', type=int, default=10000, nargs='?',
-                        help='threshold of word frequency for the dynamic cache')
-    parser.add_argument('--recog_static_cache_set', type=str, default=False, nargs='?',
-                        help='path to a tsv file for the training set')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')
