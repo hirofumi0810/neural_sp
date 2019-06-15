@@ -72,10 +72,12 @@ class RNNLM(LMBase):
             rnn_idim = args.n_units
             self.dropout_top = nn.Dropout(p=args.dropout_hidden)
         else:
-            self.rnn = torch.nn.ModuleList()
-            self.dropout = torch.nn.ModuleList()
+            self.rnn = nn.ModuleList()
+            self.dropout = nn.ModuleList([nn.Dropout(p=args.dropout_hidden)
+                                          for _ in range(args.n_layers)])
             if args.n_projs > 0:
-                self.proj = torch.nn.ModuleList()
+                self.proj = nn.ModuleList([LinearND(args.n_units, args.n_projs)
+                                           for _ in range(args.n_layers)])
             rnn_idim = args.emb_dim + args.n_units_null_context
             for l in range(args.n_layers):
                 self.rnn += [rnn(rnn_idim, args.n_units, 1,
@@ -83,11 +85,8 @@ class RNNLM(LMBase):
                                  batch_first=True,
                                  dropout=0,
                                  bidirectional=False)]
-                self.dropout += [nn.Dropout(p=args.dropout_hidden)]
                 rnn_idim = args.n_units
-
-                if l != self.n_layers - 1 and args.n_projs > 0:
-                    self.proj += [LinearND(rnn_idim, args.n_projs)]
+                if args.n_projs > 0:
                     rnn_idim = args.n_projs
 
         if self.use_glu:
@@ -187,9 +186,7 @@ class RNNLM(LMBase):
                     ys_emb, h_l = self.rnn[l](ys_emb, hx=state['hxs'][l:l + 1])
                 new_hxs.append(h_l)
                 ys_emb = self.dropout[l](ys_emb)
-
-                # Projection layer
-                if l < self.n_layers - 1 and self.n_projs > 0:
+                if self.n_projs > 0:
                     ys_emb = torch.tanh(self.proj[l](ys_emb))
 
                 # Residual connection
@@ -218,27 +215,17 @@ class RNNLM(LMBase):
         Args:
             batch_size (int):
         Returns:
-            zero_state (dict):
+            state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
 
         """
         w = next(self.parameters())
-        zero_state = {'hxs': None, 'cxs': None}
-        if self.fast_impl:
-            zero_state['hxs'] = w.new_zeros(self.n_layers, batch_size, self.n_units)
-            if self.rnn_type == 'lstm':
-                zero_state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.n_units)
-        else:
-            hxs, cxs = [], []
-            for l in range(self.n_layers):
-                if self.rnn_type == 'lstm':
-                    cxs.append(w.new_zeros(1, batch_size, self.n_units))
-                hxs.append(w.new_zeros(1, batch_size, self.n_units))
-            zero_state['hxs'] = torch.cat(hxs, dim=0)  # `[n_layers, B, n_units]`
-            if self.rnn_type == 'lstm':
-                zero_state['cxs'] = torch.cat(cxs, dim=0)  # `[n_layers, B, n_units]`
-        return zero_state
+        state = {'hxs': None, 'cxs': None}
+        state['hxs'] = w.new_zeros(self.n_layers, batch_size, self.n_units)
+        if self.rnn_type == 'lstm':
+            state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.n_units)
+        return state
 
     def repackage_hidden(self, state):
         """Wraps hidden states in new Tensors, to detach them from their history.
