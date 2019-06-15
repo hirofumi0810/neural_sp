@@ -16,6 +16,7 @@ import random
 import shutil
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.embedding import Embedding
@@ -119,21 +120,22 @@ class TransformerLM(LMBase):
             else:
                 raise ValueError
 
-    def decode(self, ys_emb, state=None):
+    def decode(self, ys, state=None):
         """Decode function.
 
         Args:
-            ys_emb (FloatTensor): `[B, L, emb_dim]`
+            ys (FloatTensor): `[B, L]`
             state: dummy
         Returns:
             ys_emb (FloatTensor): `[B, L, n_units]`
             state: dummy
 
         """
-        ylens = torch.IntTensor([ys_emb.size(1)] * ys_emb.size(0))
+        ys_emb = self.embed(ys.long())
 
         # Create the self-attention mask
         bs, ymax = ys_emb.size()[:2]
+        ylens = torch.IntTensor([ymax] * bs)
         yy_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).expand(bs, ymax, ymax)
         yy_mask = yy_mask.unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
         subsequent_mask = torch.tril(yy_mask.new_ones((ymax, ymax)).byte(), diagonal=0)

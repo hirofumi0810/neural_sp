@@ -625,7 +625,7 @@ class RNNTransducer(DecoderBase):
 
                                 # Update LM states for shallow fusion
                                 if lm_weight > 0 and lm is not None:
-                                    _, lmstate, lm_log_probs = lm.decode(
+                                    _, lmstate, lm_log_probs = lm.predict(
                                         eouts.new_zeros(1, 1).fill_(prev_idx), hyp['lmstate'])
                                     local_score_lm = lm_log_probs[0, idx].item()
                                     score_lm += local_score_lm * lm_weight
@@ -677,7 +677,7 @@ class RNNTransducer(DecoderBase):
                 for hyp in hyps:
                     ys = [np2tensor(np.fromiter(hyp['hyp'], dtype=np.int64), self.device_id)]
                     ys_pad = pad_list(ys, lm.pad)
-                    _, _, lm_log_probs = lm.decode(ys_pad, None)
+                    _, _, lm_log_probs = lm.predict(ys_pad, None)
                     score_ctc = 0  # TODO:
                     score_lm = lm_log_probs.sum() * lm_weight
                     new_hyps.append({'hyp': hyp['hyp'],

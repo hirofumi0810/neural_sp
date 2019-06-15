@@ -70,7 +70,7 @@ class LMBase(ModelBase):
 
         out, state = self.decode(ys_in, state)
         if self.adaptive_softmax is None:
-            logits = self.generate(out)
+            logits = self.output(out)
         else:
             logits = out
 
@@ -129,7 +129,7 @@ class LMBase(ModelBase):
 
         observation = {'loss.lm': loss.item(),
                        'acc.lm': acc,
-                       'ppl.lm': np.exp(loss.item())}
+                       'ppl.lm': min(np.exp(loss.item()), float(np.finfo(np.float32).max))}
 
         # Report here
         if reporter is not None:
@@ -141,16 +141,21 @@ class LMBase(ModelBase):
     def decode(self, ys_emb, state=None):
         raise NotImplementedError
 
-    def generate(self, out):
-        """Generate function.
+    def predict(self, ys, state=None):
+        """Precict function.
 
         Args:
-            out (FloatTensor): `[B, T, n_units]`
+            ys (FloatTensor): `[B, T, n_units]`
+            state (tuple):
         Returns:
-            logits (FloatTensor): `[B, T, vocab]`
+            out (FloatTensor): `[B, T, vocab]`
+            state ():
+            log_probs (FloatTensor): `[B, T, vocab]`
 
         """
-        return self.output(out)
+        out, state = self.decode(ys, state)
+        log_probs = F.log_softmax(self.output(out).squeeze(1), dim=-1)
+        return out, state, log_probs
 
     def plot_attention(self):
         raise NotImplementedError

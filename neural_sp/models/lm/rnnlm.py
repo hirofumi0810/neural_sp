@@ -146,7 +146,7 @@ class RNNLM(LMBase):
         """Decode function.
 
         Args:
-            ys (FloatTensor): `[B, L, emb_dim]`
+            ys (FloatTensor): `[B, L]`
             state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
@@ -155,7 +155,6 @@ class RNNLM(LMBase):
             new_state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
-            log_probs (FloatTensor): `[B, vocab]`
 
         """
         ys_emb = self.embed(ys.long())
@@ -210,9 +209,7 @@ class RNNLM(LMBase):
             if self.residual:
                 ys_emb = ys_emb + residual
 
-        log_probs = F.log_softmax(self.lm.generate(ys_emb).squeeze(1), dim=-1)
-
-        return ys_emb, new_state, log_probs
+        return ys_emb, new_state
 
     def zero_state(self, batch_size):
         """Initialize hidden states.

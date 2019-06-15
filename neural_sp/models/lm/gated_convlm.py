@@ -53,98 +53,97 @@ class GatedConvLM(LMBase):
                                dropout=args.dropout_emb,
                                ignore_index=self.pad)
 
-        layers = OrderedDict()
-
         model_size = args.lm_type.replace('gated_conv_', '')
 
+        blocks = OrderedDict()
         if model_size == 'custom':
-            layers['conv1'] = GLUBlock(args.kernel_size, args.emb_dim, args.n_units,
+            blocks['conv1'] = GLUBlock(args.kernel_size, args.emb_dim, args.n_units,
                                        bottlececk_dim=args.n_projs,
                                        dropout=args.dropout_hidden)
             for l in range(args.n_layers - 1):
-                layers['conv%d' % (l + 2)] = GLUBlock(args.kernel_size, args.n_units, args.n_units,
+                blocks['conv%d' % (l + 2)] = GLUBlock(args.kernel_size, args.n_units, args.n_units,
                                                       bottlececk_dim=args.n_projs,
                                                       dropout=args.dropout_hidden)
             last_dim = args.n_units
 
         elif model_size == '8':
-            layers['conv1'] = GLUBlock(4, args.emb_dim, 900,
+            blocks['conv1'] = GLUBlock(4, args.emb_dim, 900,
                                        dropout=args.dropout_hidden)
             for i in range(1, 8, 1):
-                layers['conv2-%d' % i] = GLUBlock(4, 900, 900,
+                blocks['conv2-%d' % i] = GLUBlock(4, 900, 900,
                                                   dropout=args.dropout_hidden)
             last_dim = 900
 
         elif model_size == '8B':
-            layers['conv1'] = GLUBlock(1, args.emb_dim, 512,
+            blocks['conv1'] = GLUBlock(1, args.emb_dim, 512,
                                        dropout=args.dropout_hidden)
             for i in range(1, 4, 1):
-                layers['conv2-%d' % i] = GLUBlock(5, 512, 512,
+                blocks['conv2-%d' % i] = GLUBlock(5, 512, 512,
                                                   bottlececk_dim=128,
                                                   dropout=args.dropout_hidden)
             for i in range(1, 4, 1):
-                layers['conv3-%d' % i] = GLUBlock(5, 512, 512,
+                blocks['conv3-%d' % i] = GLUBlock(5, 512, 512,
                                                   bottlececk_dim=256,
                                                   dropout=args.dropout_hidden)
-            layers['conv4'] = GLUBlock(1, 512, 2048,
+            blocks['conv4'] = GLUBlock(1, 512, 2048,
                                        bottlececk_dim=1024,
                                        dropout=args.dropout_hidden)
             last_dim = 2048
 
         elif model_size == '9':
-            layers['conv1'] = GLUBlock(4, args.emb_dim, 807,
+            blocks['conv1'] = GLUBlock(4, args.emb_dim, 807,
                                        dropout=args.dropout_hidden)
             for i in range(1, 4, 1):
-                layers['conv2-%d-1' % i] = GLUBlock(4, 807, 807,
+                blocks['conv2-%d-1' % i] = GLUBlock(4, 807, 807,
                                                     dropout=args.dropout_hidden)
-                layers['conv2-%d-2' % i] = GLUBlock(4, 807, 807,
+                blocks['conv2-%d-2' % i] = GLUBlock(4, 807, 807,
                                                     dropout=args.dropout_hidden)
             last_dim = 807
 
         elif model_size == '13':
-            layers['conv1'] = GLUBlock(4, args.emb_dim, 1268,
+            blocks['conv1'] = GLUBlock(4, args.emb_dim, 1268,
                                        dropout=args.dropout_hidden)
             for i in range(1, 13, 1):
-                layers['conv2-%d' % i] = GLUBlock(4, 1268, 1268,
+                blocks['conv2-%d' % i] = GLUBlock(4, 1268, 1268,
                                                   dropout=args.dropout_hidden)
             last_dim = 1268
 
         elif model_size == '14':
             for i in range(1, 4, 1):
-                layers['conv1-%d' % i] = GLUBlock(6, args.emb_dim if i == 1 else 850, 850,
+                blocks['conv1-%d' % i] = GLUBlock(6, args.emb_dim if i == 1 else 850, 850,
                                                   dropout=args.dropout_hidden)
-            layers['conv2'] = GLUBlock(1, 850, 850,
+            blocks['conv2'] = GLUBlock(1, 850, 850,
                                        dropout=args.dropout_hidden)
             for i in range(1, 5, 1):
-                layers['conv3-%d' % i] = GLUBlock(5, 850, 850,
+                blocks['conv3-%d' % i] = GLUBlock(5, 850, 850,
                                                   dropout=args.dropout_hidden)
-            layers['conv4'] = GLUBlock(1, 850, 850,
+            blocks['conv4'] = GLUBlock(1, 850, 850,
                                        dropout=args.dropout_hidden)
             for i in range(1, 4, 1):
-                layers['conv5-%d' % i] = GLUBlock(4, 850, 850,
+                blocks['conv5-%d' % i] = GLUBlock(4, 850, 850,
                                                   dropout=args.dropout_hidden)
-            layers['conv6'] = GLUBlock(4, 850, 1024,
+            blocks['conv6'] = GLUBlock(4, 850, 1024,
                                        dropout=args.dropout_hidden)
-            layers['conv7'] = GLUBlock(4, 1024, 2048,
+            blocks['conv7'] = GLUBlock(4, 1024, 2048,
                                        dropout=args.dropout_hidden)
             last_dim = 2048
 
         elif model_size == '14B':
-            layers['conv1'] = GLUBlock(5, args.emb_dim, 512,
+            blocks['conv1'] = GLUBlock(5, args.emb_dim, 512,
                                        dropout=args.dropout_hidden)
             for i in range(1, 4, 1):
-                layers['conv2-%d' % i] = GLUBlock(5, 512, 512,
+                blocks['conv2-%d' % i] = GLUBlock(5, 512, 512,
                                                   bottlececk_dim=128,
                                                   dropout=args.dropout_hidden)
             for i in range(1, 4, 1):
-                layers['conv3-%d' % i] = GLUBlock(5, 512 if i == 1 else 1024, 1024,
+                blocks['conv3-%d' % i] = GLUBlock(5, 512 if i == 1 else 1024, 1024,
                                                   bottlececk_dim=512,
                                                   dropout=args.dropout_hidden)
             for i in range(1, 7, 1):
-                layers['conv4-%d' % i] = GLUBlock(5, 1024 if i == 1 else 2048, 2048,
+                blocks['conv4-%d' % i] = GLUBlock(5, 1024 if i == 1 else 2048, 2048,
                                                   bottlececk_dim=1024,
                                                   dropout=args.dropout_hidden)
-            layers['conv5'] = GLUBlock(5, 2048, 4096,
+            blocks['conv5'] = GLUBlock(5, 2048, 4096,
                                        bottlececk_dim=1024,
                                        dropout=args.dropout_hidden)
             last_dim = 4096
@@ -152,7 +151,7 @@ class GatedConvLM(LMBase):
         else:
             raise NotImplementedError(model_size)
 
-        self.layers = nn.Sequential(layers)
+        self.blocks = nn.Sequential(blocks)
 
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -196,22 +195,23 @@ class GatedConvLM(LMBase):
             else:
                 raise ValueError
 
-    def decode(self, ys_emb, state=None):
+    def decode(self, ys, state=None):
         """Decode function.
 
         Args:
-            ys_emb (FloatTensor): `[B, L, emb_dim]`
+            ys (LongTensor): `[B, L]`
             state: dummy
         Returns:
             ys_emb (FloatTensor): `[B, L, n_units]`
             state: dummy
 
         """
+        ys_emb = self.embed(ys.long())
         bs, max_ylen = ys_emb.size()[:2]
 
         # NOTE: consider embed_dim as in_ch
         ys_emb = ys_emb.unsqueeze(3)
-        ys_emb = self.layers(ys_emb.transpose(2, 1))  # [B, out_ch, T, 1]
+        ys_emb = self.blocks(ys_emb.transpose(2, 1))  # [B, out_ch, T, 1]
         ys_emb = ys_emb.transpose(2, 1).contiguous()  # `[B, T, out_ch, 1]`
         ys_emb = ys_emb.squeeze(3)
 

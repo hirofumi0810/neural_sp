@@ -723,7 +723,7 @@ class RNNDecoder(DecoderBase):
                 gate = torch.sigmoid(self.linear_lm_gate(torch.cat([dec_feat, lmfeat], dim=-1)))
                 gated_lmfeat = gate * lmfeat
             elif self.lm_fusion_type == 'cold_prob':
-                lmfeat = self.linear_lm_feat(self.lm.generate(lmout))
+                lmfeat = self.linear_lm_feat(self.lm.output(lmout))
                 gate = torch.sigmoid(self.linear_lm_gate(torch.cat([dec_feat, lmfeat], dim=-1)))
                 gated_lmfeat = gate * lmfeat
 
@@ -981,11 +981,12 @@ class RNNDecoder(DecoderBase):
 
                     if self.lm is not None:
                         # Update LM states for LM fusion
-                        lmout, lmstate, lm_log_probs = self.lm.decode(
+                        lmout, lmstate, lm_log_probs = self.lm.predict(
                             eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
                     elif lm_weight > 0 and lm is not None:
                         # Update LM states for shallow fusion
-                        lmout, lmstate, lm_log_probs = lm.decode(eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
+                        lmout, lmstate, lm_log_probs = lm.predict(
+                            eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
                     else:
                         lmout, lmstate, lm_log_probs = None, None, None
 
