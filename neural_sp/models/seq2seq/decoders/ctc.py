@@ -240,9 +240,8 @@ class CTC(DecoderBase):
 
                     # Update LM states for shallow fusion
                     if lm_weight > 0 and lm is not None and lm_usage == 'shallow_fusion':
-                        lmout, lmstate = lm.decode(
+                        _, lmstate, lm_log_probs = lm.decode(
                             eouts.new_zeros(1, 1).fill_(hyp_id[-1]), beam[i_beam]['lmstate'])
-                        lm_log_probs = F.log_softmax(lm.generate(lmout), dim=-1)
 
                     # case 2. hyp is extended
                     new_p_b = LOG_0
@@ -287,9 +286,9 @@ class CTC(DecoderBase):
                 for i_beam in range(len(beam)):
                     ys = [np2tensor(np.fromiter(beam[i_beam]['hyp_id'], dtype=np.int64), self.device_id)]
                     ys_pad = pad_list(ys, lm.pad)
-                    lmout, _ = lm.decode(ys_pad, None)
+                    _, _, lm_log_probs = lm.decode(ys_pad, None)
                     score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
-                    score_lm = F.log_softmax(lm.generate(lmout), dim=-1).sum() * lm_weight
+                    score_lm = lm_log_probs.sum() * lm_weight
                     score_lp = len(beam[i_beam]['hyp_id'][1:]) * lp_weight
                     new_beam.append({'hyp_id': beam[i_beam]['hyp_id'],
                                      'score': score_ctc + score_lm + score_lp,

@@ -332,7 +332,7 @@ class TransformerDecoder(DecoderBase):
         bs, xmax = eouts.size()[:2]
 
         # Start from <sos> (<eos> in case of the backward decoder)
-        ys = eouts.new_zeros(bs, 1).fill_(self.eos).long()
+        ys_all = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
         # TODO(hirofumi): Create the source-target mask for batch decoding
 
@@ -342,7 +342,7 @@ class TransformerDecoder(DecoderBase):
         xy_aws_tmp = [None] * bs
         eos_flags = [False] * bs
         for t in range(int(np.floor(xmax * max_len_ratio)) + 1):
-            out = self.pos_enc(self.embed(ys))
+            out = self.pos_enc(self.embed(ys_all))
             for l in range(self.n_layers):
                 out, yy_aws, xy_aws = self.layers[l](out, None, eouts, None)
             out = self.norm_out(out)
@@ -365,7 +365,7 @@ class TransformerDecoder(DecoderBase):
             if sum(eos_flags) == bs:
                 break
 
-            ys = torch.cat([ys, y], dim=-1)
+            ys_all = torch.cat([ys_all, y], dim=-1)
 
         # Concatenate in L dimension
         best_hyps_batch = torch.cat(best_hyps_batch, dim=1)

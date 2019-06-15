@@ -981,12 +981,13 @@ class RNNDecoder(DecoderBase):
 
                     if self.lm is not None:
                         # Update LM states for LM fusion
-                        lmout, lmstate = self.lm.decode(eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
+                        lmout, lmstate, lm_log_probs = self.lm.decode(
+                            eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
                     elif lm_weight > 0 and lm is not None:
                         # Update LM states for shallow fusion
-                        lmout, lmstate = lm.decode(eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
+                        lmout, lmstate, lm_log_probs = lm.decode(eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
                     else:
-                        lmout, lmstate = None, None
+                        lmout, lmstate, lm_log_probs = None, None, None
 
                     # Recurrency for the main model
                     dstates = self.recurrency(self.embed(eouts.new_zeros(1, 1).fill_(prev_idx)),
@@ -1025,20 +1026,12 @@ class RNNDecoder(DecoderBase):
                     else:
                         probs = self.adaptive_softmax.log_prob(attn_v.view(-1, attn_v.size(2)))
 
-                    # Generate for LM
-                    if lm_weight > 0:
-                        if self.lm is not None:
-                            lm_probs = F.softmax(self.lm.generate(lmout).squeeze(1), dim=-1)
-                        elif lm is not None:
-                            lm_probs = F.softmax(lm.generate(lmout).squeeze(1), dim=-1)
-                        # TODO(hirofumi): support adaptive softmax for LM
-
                     # Cache decoding
                     cache_ids = None
                     cache_sp_attn = None
                     cache_lm_attn = None
-                    cache_probs_sp = probs.new_zeros(probs.size())
-                    cache_probs_lm = probs.new_zeros(probs.size())
+                    cache_sp_probs = probs.new_zeros(probs.size())
+                    cache_lm_probs = probs.new_zeros(probs.size())
                     if n_caches > 0:
                         assert self.adaptive_softmax is None
 
@@ -1068,8 +1061,8 @@ class RNNDecoder(DecoderBase):
                                 # Sum all probabilities
                                 for c in set(beam['cache_ids']):
                                     for offset in [i for i, key in enumerate(cache_ids) if key == c]:
-                                        cache_probs_sp[0, c] += cache_sp_attn[0, offset, 0]
-                                probs = (1 - cache_lambda_sp) * probs + cache_lambda_sp * cache_probs_sp
+                                        cache_sp_probs[0, c] += cache_sp_attn[0, offset, 0]
+                                probs = (1 - cache_lambda_sp) * probs + cache_lambda_sp * cache_sp_probs
 
                         if 'lm_fifo' in cache_type:
                             is_cache = True
@@ -1097,8 +1090,10 @@ class RNNDecoder(DecoderBase):
                                 # Sum all probabilities
                                 for c in set(beam['cache_ids']):
                                     for offset in [i for i, key in enumerate(cache_ids) if key == c]:
-                                        cache_probs_lm[0, c] += cache_lm_attn[0, offset, 0]
-                                lm_probs = (1 - cache_lambda_lm) * lm_probs + cache_lambda_lm * cache_probs_lm
+                                        cache_lm_probs[0, c] += cache_lm_attn[0, offset, 0]
+                                lm_probs = torch.exp(lm_log_probs)
+                                lm_probs = (1 - cache_lambda_lm) * lm_probs + cache_lambda_lm * cache_lm_probs
+                                lm_log_probs = torch.log(lm_probs)
 
                         if 'speech_dict' in cache_type and len(self.dict_cache_sp.keys()) > 0:
                             cache_ids = sorted(list(self.dict_cache_sp.keys()))
@@ -1109,8 +1104,8 @@ class RNNDecoder(DecoderBase):
                                 cache_sp_key, torch.cat([cv, dstates['dout_gen']], dim=-1).transpose(2, 1)), dim=1)  # `[1, L, 1]`
                             # Sum all probabilities
                             for offset, c in enumerate(cache_ids):
-                                cache_probs_sp[0, c] += cache_sp_attn[0, offset, 0]
-                            probs = (1 - cache_lambda_sp) * probs + cache_lambda_sp * cache_probs_sp
+                                cache_sp_probs[0, c] += cache_sp_attn[0, offset, 0]
+                            probs = (1 - cache_lambda_sp) * probs + cache_lambda_sp * cache_sp_probs
 
                         if 'lm_dict' in cache_type and len(self.dict_cache_lm.keys()) > 0:
                             cache_ids = sorted(list(self.dict_cache_lm.keys()))
@@ -1120,8 +1115,8 @@ class RNNDecoder(DecoderBase):
                                 cache_lm_key, lmout.transpose(2, 1)), dim=1)  # `[1, L, 1]`
                             # Sum all probabilities
                             for offset, c in enumerate(cache_ids):
-                                cache_probs_lm[0, c] += cache_lm_attn[0, offset, 0]
-                            probs = (1 - cache_lambda_lm) * probs + cache_lambda_lm * cache_probs_lm
+                                cache_lm_probs[0, c] += cache_lm_attn[0, offset, 0]
+                            probs = (1 - cache_lambda_lm) * probs + cache_lambda_lm * cache_lm_probs
 
                     if self.adaptive_softmax is None:
                         local_scores_attn = torch.log(probs)
@@ -1148,7 +1143,7 @@ class RNNDecoder(DecoderBase):
                     total_scores_topk, topk_ids = torch.topk(
                         total_scores, k=beam_width, dim=1, largest=True, sorted=True)
                     if lm_weight > 0 and lm is not None:
-                        total_scores_lm = beam['score_lm'] + torch.log(lm_probs)[0, topk_ids[0]]
+                        total_scores_lm = beam['score_lm'] + lm_log_probs[0, topk_ids[0]]
                         total_scores_topk += total_scores_lm * lm_weight
                     else:
                         total_scores_lm = torch.zeros((beam_width), dtype=torch.float32)
