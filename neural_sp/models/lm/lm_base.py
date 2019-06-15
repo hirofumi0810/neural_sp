@@ -146,16 +146,24 @@ class LMBase(ModelBase):
 
         Args:
             ys (FloatTensor): `[B, T, n_units]`
-            state (tuple):
+            state:
+                - RNNLM: dict
+                    hxs (FloatTensor): `[n_layers, B, n_units]`
+                    cxs (FloatTensor): `[n_layers, B, n_units]`
+                - TransformerLM: FloatTensor `[B, T', n_units]`
         Returns:
             out (FloatTensor): `[B, T, vocab]`
-            state ():
+            state:
+                - RNNLM: dict
+                    hxs (FloatTensor): `[n_layers, B, n_units]`
+                    cxs (FloatTensor): `[n_layers, B, n_units]`
+                - TransformerLM: FloatTensor `[B, T', n_units]`
             log_probs (FloatTensor): `[B, T, vocab]`
 
         """
-        out, state = self.decode(ys, state)
-        log_probs = F.log_softmax(self.output(out).squeeze(1), dim=-1)
-        return out, state, log_probs
+        out, new_state = self.decode(ys, state, is_asr=True)
+        log_probs = F.log_softmax(self.output(out), dim=-1)
+        return out, new_state, log_probs
 
     def plot_attention(self):
         raise NotImplementedError

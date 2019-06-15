@@ -120,17 +120,23 @@ class TransformerLM(LMBase):
             else:
                 raise ValueError
 
-    def decode(self, ys, state=None):
+    def decode(self, ys, state=None, is_asr=False):
         """Decode function.
 
         Args:
             ys (FloatTensor): `[B, L]`
-            state: dummy
+            state: previous tokens
+            is_asr (bool):
         Returns:
             ys_emb (FloatTensor): `[B, L, n_units]`
-            state: dummy
+            state: previous tokens
 
         """
+        # Concatenate previous tokens
+        if is_asr and state is not None:
+            ys = torch.cat([state, ys], dim=1)
+            # NOTE: this is used for ASR decoding
+
         ys_emb = self.embed(ys.long())
 
         # Create the self-attention mask
@@ -148,6 +154,9 @@ class TransformerLM(LMBase):
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
         ys_emb = self.norm_out(ys_emb)
+
+        if is_asr:
+            state = ys
 
         return ys_emb, state
 

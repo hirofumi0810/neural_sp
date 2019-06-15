@@ -21,6 +21,7 @@ import torch.nn.functional as F
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import distillation
+from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import LinearND
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
@@ -936,7 +937,7 @@ class RNNDecoder(DecoderBase):
             if speakers is not None and speakers[b] != self.prev_spk:
                 self.reset_global_cache()
             else:
-                if lm_state_carry_over:
+                if lm_state_carry_over and isinstance(lm, RNNLM):
                     lmstate = self.lmstate_final
                 if asr_state_carry_over:
                     dstates = self.dstates_final
@@ -1092,9 +1093,9 @@ class RNNDecoder(DecoderBase):
                                 for c in set(beam['cache_ids']):
                                     for offset in [i for i, key in enumerate(cache_ids) if key == c]:
                                         cache_lm_probs[0, c] += cache_lm_attn[0, offset, 0]
-                                lm_probs = torch.exp(lm_log_probs)
+                                lm_probs = torch.exp(lm_log_probs)[:, -1]
                                 lm_probs = (1 - cache_lambda_lm) * lm_probs + cache_lambda_lm * cache_lm_probs
-                                lm_log_probs = torch.log(lm_probs)
+                                lm_log_probs = torch.log(lm_probs).unsqueeze(1)
 
                         if 'speech_dict' in cache_type and len(self.dict_cache_sp.keys()) > 0:
                             cache_ids = sorted(list(self.dict_cache_sp.keys()))
@@ -1144,7 +1145,7 @@ class RNNDecoder(DecoderBase):
                     total_scores_topk, topk_ids = torch.topk(
                         total_scores, k=beam_width, dim=1, largest=True, sorted=True)
                     if lm_weight > 0 and lm is not None:
-                        total_scores_lm = beam['score_lm'] + lm_log_probs[0, topk_ids[0]]
+                        total_scores_lm = beam['score_lm'] + lm_log_probs[0, -1, topk_ids[0]]
                         total_scores_topk += total_scores_lm * lm_weight
                     else:
                         total_scores_lm = torch.zeros((beam_width), dtype=torch.float32)
@@ -1274,11 +1275,11 @@ class RNNDecoder(DecoderBase):
 
                     if lp_weight > 0 and gnmt_decoding:
                         lp = (math.pow(5 + (len(end_hyps[i]['hyp']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
-                    for t_ in range(len(end_hyps[i]['hyp'][::-1]) - 1):
+                    for t in range(len(end_hyps[i]['hyp'][::-1]) - 1):
                         lmout_rev, lmstate_rev = lm_rev.decode(
-                            eouts.new_zeros(1, 1).fill_(end_hyps[i]['hyp'][::-1][t_]), lmstate_rev)
+                            eouts.new_zeros(1, 1).fill_(end_hyps[i]['hyp'][::-1][t]), lmstate_rev)
                         lm_log_probs = F.log_softmax(lm_rev.generate(lmout_rev).squeeze(1), dim=-1)
-                        score_lm_rev += lm_log_probs[0, end_hyps[i]['hyp'][::-1][t_ + 1]]
+                        score_lm_rev += lm_log_probs[0, -1, end_hyps[i]['hyp'][::-1][t + 1]]
                     if gnmt_decoding:
                         score_lm_rev /= lp  # normalize
                     end_hyps[i]['score'] += score_lm_rev * lm_weight
