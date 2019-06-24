@@ -7,7 +7,7 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/csj
+data=/n/sd3/inaguma/corpus/csj
 
 recog_unit=
 batch_size=1

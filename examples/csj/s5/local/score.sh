@@ -15,7 +15,7 @@ model_bwd=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/csj
+data=/n/sd3/inaguma/corpus/csj
 
 unit=
 metric=edit_distance
@@ -32,6 +32,7 @@ lm=
 lm_bwd=
 lm_weight=0.3
 lm_usage=shallow_fusion
+wordlm=false
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -72,35 +73,38 @@ for set in eval1 eval2 eval3; do
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
         recog_dir=${recog_dir}_lm${lm_weight}_${lm_usage}
+        if [ ${wordlm} = true ]; then
+            recog_dir=${recog_dir}_wordlm
+        fi
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
     fi
-    if ${gnmt_decoding}; then
+    if [ ${gnmt_decoding} = true ]; then
         recog_dir=${recog_dir}_gnmt
     fi
-    if ${resolving_unk}; then
+    if [ ${resolving_unk} = true ]; then
         recog_dir=${recog_dir}_resolvingOOV
     fi
-    if ${fwd_bwd_attention}; then
+    if [ ${fwd_bwd_attention} = true ]; then
         recog_dir=${recog_dir}_fwdbwd
     fi
-    if ${bwd_attention}; then
+    if [ ${bwd_attention} = true ]; then
         recog_dir=${recog_dir}_bwd
     fi
-    if ${reverse_lm_rescoring}; then
+    if [ ${reverse_lm_rescoring} = true ]; then
         recog_dir=${recog_dir}_revLM
     fi
-    if ${asr_state_carry_over}; then
+    if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ] && ${lm_state_carry_over}; then
+    if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ] && [ ${lm_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_LMcarryover
     fi
     if [ ${n_caches} != 0 ]; then
         recog_dir=${recog_dir}_${cache_type}cache${n_caches}
     fi
-    if ${oracle}; then
+    if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
     fi
     if [ ! -z ${model7} ]; then
@@ -158,6 +162,7 @@ for set in eval1 eval2 eval3; do
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_lm_usage ${lm_usage} \
+        --recog_wordlm ${wordlm} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \

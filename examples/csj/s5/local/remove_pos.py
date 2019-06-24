@@ -41,9 +41,9 @@ def main():
             text = re.sub(r'[\s]+', ' ', text)
 
             # Remove the first and last spaces
-            if text[0] == ' ':
+            if len(text) > 0 and text[0] == ' ':
                 text = text[1:]
-            if text[-1] == ' ':
+            if len(text) > 0 and text[-1] == ' ':
                 text = text[:-1]
 
             print(utt_id + ' ' + text)
