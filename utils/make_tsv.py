@@ -111,11 +111,14 @@ def main():
         words = line.split(' ')[1:]
         if '' in words:
             words.remove('')
-
         text = ' '.join(words)
+
         if args.feat:
             feat_path = utt2featpath[utt_id]
-            xlen = utt2num_frames[utt_id]
+            if utt_id in utt2num_frames.keys():
+                xlen = utt2num_frames[utt_id]
+            else:
+                xlen = kaldiio.load_mat(feat_path).shape[-2]
             speaker = utt2spk[utt_id]
 
             if not os.path.isfile(feat_path.split(':')[0]):
@@ -144,7 +147,12 @@ def main():
                         token_ids.append(token2idx[args.unk])
 
         elif args.unit == 'wp':
-            for wp in sp.EncodeAsPieces(text):
+            # Remove space before the first special symbol
+            wps = sp.EncodeAsPieces(text)
+            if wps[0] == '▁' and wps[1][0] == '<':
+                wps = wps[1:]
+
+            for wp in wps:
                 if wp in token2idx.keys():
                     token_ids.append(token2idx[wp])
                 else:
