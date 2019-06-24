@@ -119,7 +119,7 @@ def main():
                         subsample_factor=subsample_factor,
                         subsample_factor_sub1=subsample_factor_sub1,
                         subsample_factor_sub2=subsample_factor_sub2,
-                        contextualize=args.contextualize,
+                        discourse_aware=args.discourse_aware,
                         skip_thought=skip_thought)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
@@ -138,14 +138,14 @@ def main():
                       batch_size=args.batch_size * args.n_gpus,
                       min_n_frames=args.min_n_frames,
                       max_n_frames=args.max_n_frames,
-                      shuffle=True if args.contextualize else False,
+                      shuffle=True if args.discourse_aware else False,
                       ctc=args.ctc_weight > 0,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
                       ctc_sub2=args.ctc_weight_sub2 > 0,
                       subsample_factor=subsample_factor,
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
-                      contextualize=args.contextualize,
+                      discourse_aware=args.discourse_aware,
                       skip_thought=skip_thought)
     eval_sets = []
     for s in args.eval_sets:
@@ -156,7 +156,7 @@ def main():
                               unit=args.unit,
                               wp_model=args.wp_model,
                               batch_size=1,
-                              contextualize=args.contextualize,
+                              discourse_aware=args.discourse_aware,
                               skip_thought=skip_thought,
                               is_test=True)]
 
@@ -183,7 +183,8 @@ def main():
         dir_name = os.path.basename(save_path)
     else:
         dir_name = make_model_name(args, subsample_factor)
-        save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        save_path = mkdir_join(args.model_save_dir, '_'.join(
+            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
         save_path = set_save_path(save_path)  # avoid overwriting
 
     # Set logger
@@ -686,8 +687,8 @@ def make_model_name(args, subsample_factor):
         dir_name += '_' + str(args.time_width) + 'TM' + str(args.n_time_masks)
 
     # contextualization
-    if args.contextualize:
-        dir_name += '_' + str(args.contextualize)
+    if args.discourse_aware:
+        dir_name += '_' + str(args.discourse_aware)
 
     # Pre-training
     if args.pretrained_model and os.path.isfile(args.pretrained_model):

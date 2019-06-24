@@ -6,39 +6,42 @@
 
 """Args option for the LM task."""
 
-import argparse
+import configargparse
 from distutils.util import strtobool
 
 
 def parse():
-    parser = argparse.ArgumentParser()
+    parser = configargparse.ArgumentParser(
+        config_file_parser_class=configargparse.YAMLConfigFileParser,
+        formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
+    parser.add('--config', is_config_file=True, help='config file path')
     # general
     parser.add_argument('--corpus', type=str,
-                        help='name of corpus')
+                        help='corpus name')
     parser.add_argument('--n_gpus', type=int, default=1,
                         help='number of GPUs (0 indicates CPU)')
-    parser.add_argument('--model', type=str, default=False,
+    parser.add_argument('--model_save_dir', type=str, default=False,
                         help='directory to save a model')
     parser.add_argument('--resume', type=str, default=False, nargs='?',
-                        help='path to the model to resume training')
-    parser.add_argument('--job_name', type=str, default='',
-                        help='name of job')
+                        help='model path to resume training')
+    parser.add_argument('--job_name', type=str, default=False,
+                        help='job name')
     # dataset
     parser.add_argument('--train_set', type=str,
-                        help='path to a tsv file for the training set')
+                        help='tsv file path for the training set')
     parser.add_argument('--dev_set', type=str,
-                        help='path to a tsv file for the development set')
+                        help='tsv file path for the development set')
     parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
-                        help='path to tsv files for the evaluation sets')
-    parser.add_argument('--nlsyms', type=str, nargs='?',
-                        help='path to a non-linguistic symbols file')
+                        help='tsv file paths for the evaluation sets')
+    parser.add_argument('--nlsyms', type=str, default=False, nargs='?',
+                        help='non-linguistic symbols file path')
     parser.add_argument('--dict', type=str,
-                        help='path to a dictionary file')
+                        help='dictionary file path')
     parser.add_argument('--unit', type=str, default='word',
                         choices=['word', 'wp', 'char', 'word_char'],
-                        help='Output unit')
+                        help='output unit')
     parser.add_argument('--wp_model', type=str, default=False, nargs='?',
-                        help='path to of the wordpiece model')
+                        help='wordpiece model path')
     # features
     parser.add_argument('--min_n_tokens', type=int, default=1,
                         help='minimum number of input tokens')
@@ -64,16 +67,16 @@ def parse():
     parser.add_argument('--n_units_null_context', type=int, default=0, nargs='?',
                         help='')
     parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
-                        help='Tie input and output embedding')
+                        help='tie input and output embedding')
     parser.add_argument('--residual', type=strtobool, default=False, nargs='?',
                         help='')
     parser.add_argument('--use_glu', type=strtobool, default=False, nargs='?',
-                        help='Use Gated Linear Unit (GLU) for fully-connected layers')
+                        help='use Gated Linear Unit (GLU) for fully-connected layers')
     # optimization
     parser.add_argument('--batch_size', type=int, default=256,
-                        help='')
+                        help='mini-batch size')
     parser.add_argument('--bptt', type=int, default=100,
-                        help='')
+                        help='BPTT length')
     parser.add_argument('--optimizer', type=str, default='adam',
                         choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov'],
                         help='type of optimizer')
@@ -82,7 +85,7 @@ def parse():
     parser.add_argument('--learning_rate_factor', type=float, default=1,
                         help='factor of learning rate for Transformer')
     parser.add_argument('--eps', type=float, default=1e-6,
-                        help='')
+                        help='epsilon parameter for Adadelta optimizer')
     parser.add_argument('--n_epochs', type=int, default=50,
                         help='number of epochs to traing the model')
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
@@ -139,9 +142,9 @@ def parse():
                         help='serialize text according to onset in dialogue')
     # evaluation
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
-                        help='path to tsv files for the evaluation sets')
+                        help='tsv file paths for the evaluation sets')
     parser.add_argument('--recog_model', type=str, default=None, nargs='+',
-                        help='path to the model')
+                        help='model path')
     parser.add_argument('--recog_dir', type=str, default=None,
                         help='directory to save decoding results')
     parser.add_argument('--recog_batch_size', type=int, default=1,
@@ -169,4 +172,5 @@ def parse():
     parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
                         help='')
     args = parser.parse_args()
+    # args, _ = parser.parse_known_args(parser)
     return args

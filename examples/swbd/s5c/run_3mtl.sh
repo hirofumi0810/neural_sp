@@ -25,117 +25,22 @@ vocab_sub2=300
 #########################
 # ASR configuration
 #########################
-### topology
-n_splices=1
-n_stacks=1
-n_skips=1
-max_n_frames=2000
-sequence_summary_network=false
-conv_in_channel=1
-conv_channels="32_32"
-conv_kernel_sizes="(3,3)_(3,3)"
-conv_strides="(1,1)_(1,1)"
-conv_poolings="(2,2)_(2,2)"
-conv_batch_norm=false
-conv_residual=false
-conv_bottleneck_dim=0
-subsample="1_2_2_2_1"
-enc_type=blstm
-enc_n_units=512
-enc_n_projs=0
-enc_n_layers=6
-enc_n_layers_sub1=4
-enc_n_layers_sub2=3
-enc_residual=false
-enc_nin=false
-subsample_type=drop
-attn_type=location
-attn_dim=512
-attn_n_heads=1
-attn_sigmoid=false
-dec_type=lstm
-dec_n_units=1024
-dec_n_projs=0
-dec_n_layers=1
-dec_loop_type=normal
-dec_residual=false
-input_feeding=false
-dec_bottleneck_dim=1024
-emb_dim=512
-tie_embedding=false
-ctc_fc_list="512"
-ctc_fc_list_sub1="512"
-ctc_fc_list_sub2=""
-### optimization
-batch_size=30
-optimizer=adam
-learning_rate=1e-3
-n_epochs=25
-convert_to_sgd_epoch=20
-print_step=200
-metric=edit_distance
-decay_type=epoch
-decay_start_epoch=10
-decay_rate=0.85
-decay_patient_n_epochs=0
-sort_stop_epoch=100
-not_improved_patient_n_epochs=5
-eval_start_epoch=1
-warmup_start_learning_rate=1e-4
-warmup_n_steps=4000
-### initialization
-param_init=0.1
+asr_config=conf/models/seq2seq_3mtl.yaml
 pretrained_model=
-### regularization
-clip_grad_norm=5.0
-dropout_in=0.0
-dropout_enc=0.4
-dropout_dec=0.4
-dropout_emb=0.4
-dropout_att=0.0
-zoneout=0.0
-weight_decay=1e-6
-ss_prob=0.2
-ss_type=constant
-lsm_prob=0.1
-focal_loss=0.0
-adaptive_softmax=false
-# SpecAugment
-freq_width=27
-n_freq_masks=0
-time_width=70
-n_time_masks=0
-time_width_upper=0.2
-### MTL
-ctc_weight=0.0
-ctc_weight_sub1=0.2
-ctc_weight_sub2=0.2
-ctc_lsm_prob=0.1
-bwd_weight=0.0
-sub1_weight=0.2
-sub2_weight=0.2
-mtl_per_batch=false
-task_specific_layer=true
-### LM integration
-lm_fusion_type=cold
-lm_fusion=
-lm_init=
-lmobj_weight=0.0
-share_lm_softmax=false
 
-if [ ${speed_perturb} = true ]; then
-    n_epochs=20
-    convert_to_sgd_epoch=15
-    print_step=600
-    decay_start_epoch=5
-    decay_rate=0.8
-elif [ ${n_freq_masks} != 0 ] || [ ${n_time_masks} != 0 ]; then
-    n_epochs=50
-    convert_to_sgd_epoch=50
-    print_step=400
-    decay_start_epoch=20
-    decay_rate=0.9
-fi
+# if [ ${speed_perturb} = true ]; then
+#     n_epochs=20
+#     convert_to_sgd_epoch=15
+#     print_step=600
+#     decay_start_epoch=5
+#     decay_rate=0.8
+# elif [ ${n_freq_masks} != 0 ] || [ ${n_time_masks} != 0 ]; then
+#     n_epochs=50
+#     convert_to_sgd_epoch=50
+#     print_step=400
+#     decay_start_epoch=20
+#     decay_rate=0.9
+# fi
 
 ### path to save the model
 model=/n/sd3/inaguma/result/swbd
@@ -493,6 +398,8 @@ if [ ${stage} -le 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus swbd \
+        --config ${asr_config} \
+
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
@@ -507,100 +414,11 @@ if [ ${stage} -le 4 ]; then
         --wp_model ${wp_model}.model \
         --wp_model_sub1 ${wp_model_sub1}.model \
         --wp_model_sub2 ${wp_model_sub2}.model \
-        --model ${model}/asr \
+        --model_save_dir ${model}/asr \
+        --pretrained_model ${pretrained_model} \
         --unit ${unit} \
         --unit_sub1 ${unit_sub1} \
         --unit_sub2 ${unit_sub2} \
-        --n_splices ${n_splices} \
-        --n_stacks ${n_stacks} \
-        --n_skips ${n_skips} \
-        --max_n_frames ${max_n_frames} \
-        --sequence_summary_network ${sequence_summary_network} \
-        --conv_in_channel ${conv_in_channel} \
-        --conv_channels ${conv_channels} \
-        --conv_kernel_sizes ${conv_kernel_sizes} \
-        --conv_strides ${conv_strides} \
-        --conv_poolings ${conv_poolings} \
-        --conv_batch_norm ${conv_batch_norm} \
-        --conv_residual ${conv_residual} \
-        --conv_bottleneck_dim ${conv_bottleneck_dim} \
-        --enc_type ${enc_type} \
-        --enc_n_units ${enc_n_units} \
-        --enc_n_projs ${enc_n_projs} \
-        --enc_n_layers ${enc_n_layers} \
-        --enc_n_layers_sub1 ${enc_n_layers_sub1} \
-        --enc_n_layers_sub2 ${enc_n_layers_sub2} \
-        --enc_residual ${enc_residual} \
-        --enc_nin ${enc_nin} \
-        --subsample ${subsample} \
-        --subsample_type ${subsample_type} \
-        --attn_type ${attn_type} \
-        --attn_dim ${attn_dim} \
-        --attn_n_heads ${attn_n_heads} \
-        --attn_sigmoid ${attn_sigmoid} \
-        --dec_type ${dec_type} \
-        --dec_n_units ${dec_n_units} \
-        --dec_n_projs ${dec_n_projs} \
-        --dec_n_layers ${dec_n_layers} \
-        --dec_loop_type ${dec_loop_type} \
-        --dec_residual ${dec_residual} \
-        --input_feeding ${input_feeding} \
-        --dec_bottleneck_dim ${dec_bottleneck_dim} \
-        --emb_dim ${emb_dim} \
-        --tie_embedding ${tie_embedding} \
-        --ctc_fc_list ${ctc_fc_list} \
-        --ctc_fc_list_sub1 ${ctc_fc_list_sub1} \
-        --ctc_fc_list_sub2 ${ctc_fc_list_sub2} \
-        --batch_size ${batch_size} \
-        --optimizer ${optimizer} \
-        --learning_rate ${learning_rate} \
-        --n_epochs ${n_epochs} \
-        --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
-        --print_step ${print_step} \
-        --metric ${metric} \
-        --decay_type ${decay_type} \
-        --decay_start_epoch ${decay_start_epoch} \
-        --decay_rate ${decay_rate} \
-        --decay_patient_n_epochs ${decay_patient_n_epochs} \
-        --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
-        --sort_stop_epoch ${sort_stop_epoch} \
-        --eval_start_epoch ${eval_start_epoch} \
-        --warmup_start_learning_rate ${warmup_start_learning_rate} \
-        --warmup_n_steps ${warmup_n_steps} \
-        --param_init ${param_init} \
-        --pretrained_model ${pretrained_model} \
-        --clip_grad_norm ${clip_grad_norm} \
-        --dropout_in ${dropout_in} \
-        --dropout_enc ${dropout_enc} \
-        --dropout_dec ${dropout_dec} \
-        --dropout_emb ${dropout_emb} \
-        --dropout_att ${dropout_att} \
-        --zoneout ${zoneout} \
-        --weight_decay ${weight_decay} \
-        --ss_prob ${ss_prob} \
-        --ss_type ${ss_type} \
-        --lsm_prob ${lsm_prob} \
-        --focal_loss_weight ${focal_loss} \
-        --adaptive_softmax ${adaptive_softmax} \
-        --freq_width ${freq_width} \
-        --n_freq_masks ${n_freq_masks} \
-        --time_width ${time_width} \
-        --n_time_masks ${n_time_masks} \
-        --time_width_upper ${time_width_upper} \
-        --ctc_weight ${ctc_weight} \
-        --ctc_weight_sub1 ${ctc_weight_sub1} \
-        --ctc_weight_sub2 ${ctc_weight_sub2} \
-        --ctc_lsm_prob ${ctc_lsm_prob} \
-        --bwd_weight ${bwd_weight} \
-        --sub1_weight ${sub1_weight} \
-        --sub2_weight ${sub2_weight} \
-        --mtl_per_batch ${mtl_per_batch} \
-        --task_specific_layer ${task_specific_layer} \
-        --lm_fusion_type ${lm_fusion_type} \
-        --lm_fusion ${lm_fusion} \
-        --lm_init ${lm_init} \
-        --lmobj_weight ${lmobj_weight} \
-        --share_lm_softmax ${share_lm_softmax} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

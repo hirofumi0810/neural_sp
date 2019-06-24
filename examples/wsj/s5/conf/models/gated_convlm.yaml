@@ -1,0 +1,30 @@
+# topology
+lm_type: gated_conv_14B
+emb_dim: 128
+tie_embedding: false
+# optimization
+batch_size: 50
+bptt: 200
+optimizer: nesterov
+learning_rate: 1.0
+n_epochs: 50
+convert_to_sgd_epoch: 50
+print_step: 400
+decay_start_epoch: 10
+decay_rate: 0.5
+decay_patient_n_epochs: 0
+# decay_type: epoch
+decay_type: metric
+not_improved_patient_n_epochs: 20
+eval_start_epoch: 1
+# initialization
+param_init: 0.05
+pretrained_model:
+# regularization
+clip_grad_norm: 0.1
+dropout_hidden: 0.2
+dropout_out: 0.0
+dropout_emb: 0.2
+weight_decay: 1e-6
+backward: false
+adaptive_softmax: false

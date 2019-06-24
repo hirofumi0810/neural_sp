@@ -6,61 +6,64 @@
 
 """Args option for the ASR task."""
 
-import argparse
+import configargparse
 from distutils.util import strtobool
 
 
 def parse():
-    parser = argparse.ArgumentParser()
+    parser = configargparse.ArgumentParser(
+        config_file_parser_class=configargparse.YAMLConfigFileParser,
+        formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
+    parser.add('--config', is_config_file=True, help='config file path')
     # general
     parser.add_argument('--corpus', type=str,
-                        help='name of corpus')
+                        help='corpus name')
     parser.add_argument('--n_gpus', type=int, default=1,
                         help='number of GPUs (0 indicates CPU)')
-    parser.add_argument('--model', type=str, default=False,
+    parser.add_argument('--model_save_dir', type=str, default=False,
                         help='directory to save a model')
     parser.add_argument('--resume', type=str, default=False, nargs='?',
-                        help='path to the model to resume training')
-    parser.add_argument('--job_name', type=str, default='',
-                        help='name of job')
+                        help='model path to resume training')
+    parser.add_argument('--job_name', type=str, default=False,
+                        help='job name')
     # dataset
     parser.add_argument('--train_set', type=str,
-                        help='path to a tsv file for the training set')
+                        help='tsv file path for the training set')
     parser.add_argument('--train_set_sub1', type=str, default=False,
-                        help='path to a tsv file for the training set for the 1st auxiliary task')
+                        help='tsv file path for the training set for the 1st auxiliary task')
     parser.add_argument('--train_set_sub2', type=str, default=False,
-                        help='path to a tsv file for the training set for the 2nd auxiliary task')
+                        help='tsv file path for the training set for the 2nd auxiliary task')
     parser.add_argument('--dev_set', type=str,
-                        help='path to a tsv file for the development set')
+                        help='tsv file path for the development set')
     parser.add_argument('--dev_set_sub1', type=str, default=False,
-                        help='path to a tsv file for the development set for the 1st auxiliary task')
+                        help='tsv file path for the development set for the 1st auxiliary task')
     parser.add_argument('--dev_set_sub2', type=str, default=False,
-                        help='path to a tsv file for the development set for the 2nd auxiliary task')
+                        help='tsv file path for the development set for the 2nd auxiliary task')
     parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
-                        help='path to tsv files for the evaluation sets')
-    parser.add_argument('--nlsyms', type=str, nargs='?',
-                        help='path to a non-linguistic symbols file')
+                        help='tsv file paths for the evaluation sets')
+    parser.add_argument('--nlsyms', type=str, default=False, nargs='?',
+                        help='non-linguistic symbols file path')
     parser.add_argument('--dict', type=str,
-                        help='path to a dictionary file')
+                        help='dictionary file path')
     parser.add_argument('--dict_sub1', type=str, default=False,
-                        help='path to a dictionary file for the 1st auxiliary task')
+                        help='dictionary file path for the 1st auxiliary task')
     parser.add_argument('--dict_sub2', type=str, default=False,
-                        help='path to a dictionary file for the 2nd auxiliary task')
+                        help='dictionary file path for the 2nd auxiliary task')
     parser.add_argument('--unit', type=str, default='wp',
                         choices=['word', 'wp', 'char', 'phone', 'word_char'],
-                        help='Output unit for the main task')
+                        help='output unit for the main task')
     parser.add_argument('--unit_sub1', type=str, default=False,
                         choices=['wp', 'char', 'phone'],
-                        help='Output unit for the 1st auxiliary task')
+                        help='output unit for the 1st auxiliary task')
     parser.add_argument('--unit_sub2', type=str, default=False,
                         choices=['wp', 'char', 'phone'],
-                        help='Output unit for the 2nd auxiliary task')
+                        help='output unit for the 2nd auxiliary task')
     parser.add_argument('--wp_model', type=str, default=False, nargs='?',
-                        help='path to of the wordpiece model for the main task')
+                        help='wordpiece model path for the main task')
     parser.add_argument('--wp_model_sub1', type=str, default=False, nargs='?',
-                        help='path to of the wordpiece model for the 1st auxiliary task')
+                        help='wordpiece model path for the 1st auxiliary task')
     parser.add_argument('--wp_model_sub2', type=str, default=False, nargs='?',
-                        help='path to of the wordpiece model for the 2nd auxiliary task')
+                        help='wordpiece model path for the 2nd auxiliary task')
     # features
     parser.add_argument('--input_type', type=str, default='speech',
                         choices=['speech', 'text'],
@@ -80,7 +83,7 @@ def parse():
     parser.add_argument('--gaussian_noise', type=strtobool, default=False,
                         help='add Gaussian noise to input features')
     parser.add_argument('--sequence_summary_network', type=strtobool, default=False,
-                        help='Use sequence summary network')
+                        help='use sequence summary network')
     # topology (encoder)
     parser.add_argument('--conv_in_channel', type=int, default=1, nargs='?',
                         help='input dimension of the first CNN block')
@@ -174,7 +177,7 @@ def parse():
                         help='')
     # optimization
     parser.add_argument('--batch_size', type=int, default=50,
-                        help='size of mini-batch')
+                        help='mini-batch size')
     parser.add_argument('--optimizer', type=str, default='adam',
                         choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov'],
                         help='type of optimizer')
@@ -219,8 +222,8 @@ def parse():
                         help='')
     parser.add_argument('--rec_weight_orthogonal', type=strtobool, default=False,
                         help='')
-    parser.add_argument('--pretrained_model', default=False, nargs='?',
-                        help='path to the pretrained seq2seq model')
+    parser.add_argument('--pretrained_model', type=str, default=False, nargs='?',
+                        help='pretrained seq2seq model path')
     # knowledge distillation
     parser.add_argument('--teacher', default=False, nargs='?',
                         help='')
@@ -296,10 +299,10 @@ def parse():
                                  'cache', 'cache_bi'],
                         help='type of LM fusion')
     parser.add_argument('--lm_fusion', type=str, default=False, nargs='?',
-                        help='path to LM for LM fusion during training')
+                        help='LM path for LM fusion during training')
     # LM initialization, objective
     parser.add_argument('--lm_init', type=str, default=False, nargs='?',
-                        help='path to LM for initialization of the decoder network')
+                        help='LM path for initialization of the decoder network')
     parser.add_argument('--lmobj_weight', type=float, default=0.0, nargs='?',
                         help='LM objective weight for the main task')
     parser.add_argument('--share_lm_softmax', type=strtobool, default=False, nargs='?',
@@ -324,18 +327,17 @@ def parse():
     parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
                         help='')
     # contextualization
-    parser.add_argument('--contextualize', type=str, default='', nargs='?',
-                        choices=['hierarchical_uni', 'hierarchical_bi',
-                                 'hierarchical_uni_attention', 'hierarchical_bi_attention'],
+    parser.add_argument('--discourse_aware', type=str, default=False, nargs='?',
+                        choices=['state_carry_over', 'hierarchical', ''],
                         help='')
     # decoding parameters
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
-                        help='path to tsv files for the evaluation sets')
-    parser.add_argument('--recog_model', type=str, default=None, nargs='+',
-                        help='path to the model')
-    parser.add_argument('--recog_model_bwd', type=str, default=None, nargs='?',
-                        help='path to the model in the reverse direction')
-    parser.add_argument('--recog_dir', type=str, default=None,
+                        help='tsv file paths for the evaluation sets')
+    parser.add_argument('--recog_model', type=str, default=False, nargs='+',
+                        help='model path')
+    parser.add_argument('--recog_model_bwd', type=str, default=False, nargs='?',
+                        help='model path in the reverse direction')
+    parser.add_argument('--recog_dir', type=str, default=False,
                         help='directory to save decoding results')
     parser.add_argument('--recog_unit', type=str, default=False, nargs='?',
                         choices=['word', 'wp', 'char', 'phone', 'word_char'],
@@ -367,10 +369,10 @@ def parse():
                         help='weight of LM score')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
                         help='weight of CTC score')
-    parser.add_argument('--recog_lm', type=str, default=None, nargs='?',
-                        help='path to the RMMLM')
-    parser.add_argument('--recog_lm_bwd', type=str, default=None, nargs='?',
-                        help='path to the RMMLM in the reverse direction')
+    parser.add_argument('--recog_lm', type=str, default=False, nargs='?',
+                        help='LM path')
+    parser.add_argument('--recog_lm_bwd', type=str, default=False, nargs='?',
+                        help='LM path in the reverse direction')
     parser.add_argument('--recog_lm_usage', type=str, default='shallow_fusion', nargs='?',
                         choices=['shallow_fusion', 'rescoring'],
                         help='usage of the external LM')
@@ -386,6 +388,8 @@ def parse():
                         help='carry over ASR decoder state')
     parser.add_argument('--recog_lm_state_carry_over', type=strtobool, default=False,
                         help='carry over LM state')
+    parser.add_argument('--recog_wordlm', type=strtobool, default=False,
+                        help='')
     # cache
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
@@ -421,4 +425,5 @@ def parse():
                         help='')
 
     args = parser.parse_args()
+    # args, _ = parser.parse_known_args(parser)
     return args
