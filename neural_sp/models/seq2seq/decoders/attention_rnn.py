@@ -72,8 +72,8 @@ class RNNDecoder(DecoderBase):
         lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
         ss_type (str): constant or saturation
-        fl_weight (float):
-        fl_gamma (float):
+        focal_loss_weight (float):
+        focal_loss_gamma (float):
         ctc_weight (float):
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
@@ -81,7 +81,7 @@ class RNNDecoder(DecoderBase):
         backward (bool): decode in the backward order
         lm_fusion (RNNLM):
         lm_fusion_type (str): type of LM fusion
-        contextualize (str): hierarchical_encoder or ...
+        discourse_aware (str): state_carry_over or hierarchical
         lm_init (RNNLM):
         lmobj_weight (float):
         share_lm_softmax (bool):
@@ -123,8 +123,8 @@ class RNNDecoder(DecoderBase):
                  lsm_prob=0.0,
                  ss_prob=0.0,
                  ss_type='constant',
-                 fl_weight=0.0,
-                 fl_gamma=2.0,
+                 focal_loss_weight=0.0,
+                 focal_loss_gamma=2.0,
                  ctc_weight=0.0,
                  ctc_lsm_prob=0.0,
                  ctc_fc_list=[],
@@ -132,7 +132,7 @@ class RNNDecoder(DecoderBase):
                  backward=False,
                  lm_fusion=None,
                  lm_fusion_type='cold',
-                 contextualize='',
+                 discourse_aware='',
                  lm_init=None,
                  lmobj_weight=0.0,
                  share_lm_softmax=False,
@@ -167,15 +167,14 @@ class RNNDecoder(DecoderBase):
         elif ss_type == 'saturation':
             self._ss_prob = 0  # start from 0
         self.lsm_prob = lsm_prob
-        self.fl_weight = fl_weight
-        self.fl_gamma = fl_gamma
+        self.focal_loss_weight = focal_loss_weight
+        self.focal_loss_gamma = focal_loss_gamma
         self.ctc_weight = ctc_weight
         self.input_feeding = input_feeding
         if input_feeding:
             assert loop_type == 'normal'
         self.bwd = backward
         self.lm_fusion_type = lm_fusion_type
-        self.contextualize = contextualize
         self.lmobj_weight = lmobj_weight
         if lmobj_weight > 0:
             assert loop_type == 'lmdecoder'
@@ -184,6 +183,10 @@ class RNNDecoder(DecoderBase):
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
         self.replace_sos = replace_sos
+
+        # for contextualization
+        self.discourse_aware = discourse_aware
+        self.dstate_prev = None
 
         # for cache
         self.fifo_cache_ids = []
@@ -283,7 +286,7 @@ class RNNDecoder(DecoderBase):
                 # fix LM parameters
                 for p in lm_fusion.parameters():
                     p.requires_grad = False
-            elif contextualize:
+            elif discourse_aware == 'hierarchical':
                 raise NotImplementedError
             else:
                 self.output_bn = LinearND(dec_idim + enc_n_units, bottleneck_dim)
@@ -522,10 +525,13 @@ class RNNDecoder(DecoderBase):
             ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
         # Initialization
-        if self.contextualize:
+        if self.discourse_aware == 'hierarchical':
             raise NotImplementedError
         else:
             dstates = self.zero_state(bs)
+        if self.discourse_aware == 'state_carry_over' and self.dstate_prev is not None:
+            dstates['dstate']['hxs'], dstates['dstate']['cxs'] = self.dstate_prev
+            self.dstate_prev = None
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
@@ -557,6 +563,21 @@ class RNNDecoder(DecoderBase):
             attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
             logits.append(attn_v)
 
+            if self.discourse_aware == 'state_carry_over':
+                if self.dstate_prev is None:
+                    self.dstate_prev = ([None] * bs, [None] * bs)
+                print(ylens.tolist())
+                if t in ylens.tolist():
+                    for b in ylens.tolist().index(t):
+                        self.dstate_prev[0][b] = dstates['dstate']['hxs'][b:b + 1].detach()
+                        if self.dec_type == 'lstm':
+                            self.dstate_prev[1][b] = dstates['dstate']['cxs'][b:b + 1].detach()
+
+        if self.discourse_aware == 'state_carry_over':
+            self.dstate_prev[0] = torch.cat(self.dstate_prev[0], dim=1)
+            if self.dec_type == 'lstm':
+                self.dstate_prev[1] = torch.cat(self.dstate_prev[1], dim=1)
+
         logits = torch.cat(logits, dim=1)
         if self.adaptive_softmax is None:
             logits = self.output(logits)
@@ -580,12 +601,12 @@ class RNNDecoder(DecoderBase):
                                            ignore_index=self.pad, size_average=False) / bs
 
             # Focal loss
-            if self.fl_weight > 0:
+            if self.focal_loss_weight > 0:
                 fl = focal_loss(logits, ys_out_pad, ylens,
-                                alpha=self.fl_weight,
-                                gamma=self.fl_gamma,
+                                alpha=self.focal_loss_weight,
+                                gamma=self.focal_loss_gamma,
                                 size_average=False) / bs
-                loss = loss * (1 - self.fl_weight) + fl * self.fl_weight
+                loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
         else:
             loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
                                          ys_out_pad.view(-1)).loss
@@ -619,9 +640,9 @@ class RNNDecoder(DecoderBase):
         w = next(self.parameters())
         dstates['dout_score'] = w.new_zeros((batch_size, 1, self.dec_n_units))
         dstates['dout_gen'] = w.new_zeros((batch_size, 1, self.dec_n_units))
-        zero_state = w.new_zeros((batch_size, self.dec_n_units))
-        hxs = [zero_state for _ in range(self.n_layers)]
-        cxs = [zero_state for _ in range(self.n_layers)] if self.rnn_type == 'lstm' else []
+        state = w.new_zeros((batch_size, self.dec_n_units))
+        hxs = [state for _ in range(self.n_layers)]
+        cxs = [state for _ in range(self.n_layers)] if self.rnn_type == 'lstm' else []
         dstates['dstate'] = (hxs, cxs)
         return dstates
 

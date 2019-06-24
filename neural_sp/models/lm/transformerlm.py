@@ -16,7 +16,6 @@ import random
 import shutil
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.embedding import Embedding
@@ -48,7 +47,7 @@ class TransformerLM(LMBase):
         self.d_ff = args.d_ff
         self.pe_type = args.pe_type
         self.n_layers = args.n_layers
-        self.n_heads = args.n_heads
+        self.n_heads = args.attn_n_heads
         self.tie_embedding = args.tie_embedding
 
         self.vocab = args.vocab
@@ -73,7 +72,7 @@ class TransformerLM(LMBase):
 
         self.layers = nn.ModuleList(
             [TransformerDecoderBlock(args.d_model, args.d_ff,
-                                     args.attn_type, args.n_heads,
+                                     args.attn_type, args.attn_n_heads,
                                      args.dropout_hidden, args.dropout_att, args.layer_norm_eps,
                                      src_attention=False)
              for _ in range(self.n_layers)])

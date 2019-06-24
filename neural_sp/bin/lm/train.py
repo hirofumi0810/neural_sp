@@ -94,7 +94,8 @@ def main():
         dir_name = os.path.basename(save_path)
     else:
         dir_name = make_model_name(args)
-        save_path = mkdir_join(args.model, '_'.join(os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        save_path = mkdir_join(args.model_save_dir, '_'.join(
+            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
         save_path = set_save_path(save_path)  # avoid overwriting
 
     # Set logger
@@ -330,7 +331,7 @@ def make_model_name(args):
         dir_name += str(args.d_model) + 'dmodel'
         dir_name += str(args.d_ff) + 'dff'
         dir_name += str(args.n_layers) + 'L'
-        dir_name += str(args.n_heads) + 'head'
+        dir_name += str(args.attn_n_heads) + 'head'
     elif 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
         dir_name += str(args.n_units) + 'H'
         dir_name += str(args.n_projs) + 'P'
