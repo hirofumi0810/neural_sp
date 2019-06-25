@@ -121,6 +121,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
         <(cat ${data}/train_fisher/text.tmp.1) > ${data}/train_fisher/text
     rm ${data}/train_fisher/text.tmp*
 
+    # eval2000
     local/eval2000_data_prep.sh ${EVAL2000_AUDIOPATH} ${EVAL2000_TRANSPATH} || exit 1;
     [ ! -z ${RT03_PATH} ] && local/rt03_data_prep.sh ${RT03_PATH}
 
@@ -289,56 +290,38 @@ if [ ${stage} -le 3 ]; then
     echo ============================================================================
 
     if [ ! -e ${data}/.done_stage_3_${lm_datasize}_${unit}${wp_type}${vocab} ]; then
-        if [ ! -e ${data}/.done_stage_0_${lm_datasize} ]; then
-            # prepare fisher data and put it under data/train_fisher
-            local/fisher_data_prep.sh ${FISHER_PATH}
-            local/fisher_swbd_prepare_dict.sh
-            utils/fix_data_dir.sh ${data}/train_fisher
-
-            # nomalization
-            cp ${data}/train_fisher/text ${data}/train_fisher/text.tmp.0
-            cut -f 2- -d " " ${data}/train_fisher/text.tmp.0 | \
-                sed -e 's/\[laughter\]-/[laughter]/g' |
-            sed -e 's/\[noise\]-/[noise]/g' > ${data}/train_fisher/text.tmp.1
-
-            paste -d " " <(cut -f 1 -d " " ${data}/train_fisher/text.tmp.0) \
-                <(cat ${data}/train_fisher/text.tmp.1) > ${data}/train_fisher/text
-            rm ${data}/train_fisher/text.tmp*
-        fi
-
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
         if [ ${lm_datasize} = fisher_swbd ]; then
             update_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
                 ${data}/train_fisher/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-                > ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                > ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         else
-            cp ${data}/dataset/${x}_${unit}${wp_type}${vocab}.tsv \
-                ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+            cp ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
+                ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         fi
-        cp ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
-            ${data}/dataset_lm/dev_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-
+        cp ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
+            ${data}/dataset_lm/dev_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         for x in ${test_set}; do
             make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.swbd \
-                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_swbd_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_swbd_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
             make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.ch \
-                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_ch_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_ch_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         done
 
         touch ${data}/.done_stage_3_${lm_datasize}_${unit}${wp_type}${vocab} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    lm_test_set="${data}/dataset_lm/${test_set}_swbd_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
-                 ${data}/dataset_lm/${test_set}_ch_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv"
+    lm_test_set="${data}/dataset_lm/${test_set}_swbd_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/${test_set}_ch_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv"
 
     # NOTE: support only a single GPU for LM training
     CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus swbd \
         --config ${lm_config} \
         --n_gpus 1 \
-        --train_set ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset_lm/dev_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
+        --train_set ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/dev_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${lm_test_set} \
         --nlsyms ${nlsyms} \
         --dict ${dict} \
@@ -346,7 +329,6 @@ if [ ${stage} -le 3 ]; then
         --model_save_dir ${model}/lm \
         --pretrained_model ${lm_pretrained_model} \
         --unit ${unit} \
-        --serialize ${lm_serialize} \
         --resume ${lm_resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;

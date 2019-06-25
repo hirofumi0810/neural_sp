@@ -15,7 +15,7 @@ model_bwd=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/swbd
+data=/n/sd3/inaguma/corpus/swbd
 
 unit=
 batch_size=1
