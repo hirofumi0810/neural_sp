@@ -235,8 +235,8 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
         > ${data}/${test_set}/text.tmp
     mv ${data}/${test_set}/text.tmp ${data}/${test_set}/text
 
-    grep -v en ${data}/${test_set}/text > ${data}/${test_set}/text.swbd
-    grep -v sw ${data}/${test_set}/text > ${data}/${test_set}/text.ch
+    grep -v '^en_' ${data}/${test_set}/text > ${data}/${test_set}/text.swbd
+    grep -v '^sw_' ${data}/${test_set}/text > ${data}/${test_set}/text.ch
 
     # Compute OOV rate
     if [ ${unit} = word ]; then

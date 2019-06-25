@@ -191,7 +191,11 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
     echo ============================================================================
 
     echo "make a non-linguistic symbol list"
-    cut -f 2- -d " " ${data}/${train_set}/text | tr " " "\n" | sort | uniq | grep "\[" > ${nlsyms}
+    if [ ${speed_perturb} = true ]; then
+        grep sp1.0 ${data}/${train_set}/text | cut -f 2- -d " " | grep -o -P '\[[^\]]*\]' | sort | uniq > ${nlsyms}
+    else
+        cut -f 2- -d " " ${data}/${train_set}/text | grep -o -P '\[[^\]]*\]' | sort | uniq > ${nlsyms}
+    fi
     cat ${nlsyms}
 
     echo "Making a dictionary..."
@@ -233,8 +237,8 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
         > ${data}/${test_set}/text.tmp
     mv ${data}/${test_set}/text.tmp ${data}/${test_set}/text
 
-    grep -v en ${data}/${test_set}/text > ${data}/${test_set}/text.swbd
-    grep -v sw ${data}/${test_set}/text > ${data}/${test_set}/text.ch
+    grep -v '^en_' ${data}/${test_set}/text > ${data}/${test_set}/text.swbd
+    grep -v '^sw_' ${data}/${test_set}/text > ${data}/${test_set}/text.ch
 
     # Compute OOV rate
     if [ ${unit} = word ]; then
