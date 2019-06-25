@@ -84,11 +84,11 @@ fi
 n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 
 train_set=train_${datasize}
-dev_set=dev
+dev_set=dev_${datasize}
 test_set="eval1 eval2 eval3"
 if [ ${speed_perturb} = true ]; then
     train_set=train_sp_${datasize}
-    dev_set=dev_sp
+    dev_set=dev_sp_${datasize}
     test_set="eval1_sp eval2_sp eval3_sp"
 fi
 
@@ -163,7 +163,9 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     # Apply global CMVN & dump features
     dump_feat.sh --cmd "$train_cmd" --nj 1200 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
-    for x in ${dev_set} ${test_set}; do
+    dump_feat.sh --cmd "$train_cmd" --nj 32 \
+        ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
+    for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
         dump_feat.sh --cmd "$train_cmd" --nj 32 \
             ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${datasize} ${dump_dir} || exit 1;

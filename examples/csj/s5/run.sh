@@ -92,11 +92,11 @@ n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 lm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 train_set=train_${datasize}
-dev_set=dev
+dev_set=dev_${datasize}
 test_set="eval1 eval2 eval3"
 if [ ${speed_perturb} = true ]; then
     train_set=train_sp_${datasize}
-    dev_set=dev_sp
+    dev_set=dev_sp_${datasize}
     test_set="eval1_sp eval2_sp eval3_sp"
 fi
 
@@ -163,7 +163,9 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     # Apply global CMVN & dump features
     dump_feat.sh --cmd "$train_cmd" --nj 1200 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
-    for x in ${dev_set} ${test_set}; do
+    dump_feat.sh --cmd "$train_cmd" --nj 32 \
+        ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
+    for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
         dump_feat.sh --cmd "$train_cmd" --nj 32 \
             ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${datasize} ${dump_dir} || exit 1;
@@ -225,7 +227,9 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
     mkdir -p ${data}/dataset
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
         ${data}/${train_set} ${dict} > ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-    for x in ${dev_set} ${test_set}; do
+    make_dataset.sh --feat ${data}/dump/${dev_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+        ${data}/${dev_set} ${dict} > ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+    for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
@@ -247,35 +251,30 @@ if [ ${stage} -le 3 ]; then
         mkdir -p ${data}/dataset_lm
         if [ ${lm_datasize} = ${datasize} ]; then
             cp ${data}/dataset/train_${lm_datasize}_${unit}${wp_type}${vocab}.tsv \
-                ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         else
             make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-                ${data}/train_${lm_datasize} ${dict} > ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                ${data}/train_${lm_datasize} ${dict} > ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         fi
         for x in dev ${test_set}; do
-            if [ ${lm_datasize} = ${datasize} ]; then
-                cp ${data}/dataset/${x}_${lm_datasize}_${unit}${wp_type}${vocab}.tsv \
-                    ${data}/dataset_lm/${x}_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-            else
-                make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-                    ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-            fi
+            cp ${data}/dataset/${x}_${lm_datasize}_${unit}${wp_type}${vocab}.tsv \
+                ${data}/dataset_lm/${x}_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         done
 
         touch ${data}/.done_stage_3_${datasize}${lm_datasize}_${unit}${wp_type}${vocab} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    lm_test_set="${data}/dataset_lm/eval1_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
-                 ${data}/dataset_lm/eval2_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
-                 ${data}/dataset_lm/eval3_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv"
+    lm_test_set="${data}/dataset_lm/eval1_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/eval2_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/eval3_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv"
 
     # NOTE: support only a single GPU for LM training
     CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus csj \
         --config ${lm_config} \
         --n_gpus 1 \
-        --train_set ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset_lm/dev_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
+        --train_set ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/dev_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${lm_test_set} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
@@ -297,7 +296,7 @@ if [ ${stage} -le 4 ]; then
         --config ${asr_config} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${data}/dataset/eval1_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
