@@ -9,7 +9,6 @@ echo ===========================================================================
 
 stage=0
 gpu=
-skip_lm=true
 speed_perturb=false
 
 ### vocabulary
@@ -20,95 +19,8 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 #########################
 # ASR configuration
 #########################
-### topology
-n_splices=1
-n_stacks=1
-n_skips=1
-max_n_frames=2000
-sequence_summary_network=false
-conv_in_channel=1
-conv_channels="32_32"
-conv_kernel_sizes="(3,3)_(3,3)"
-conv_strides="(1,1)_(1,1)"
-conv_poolings="(2,2)_(2,2)"
-conv_batch_norm=false
-conv_residual=false
-conv_bottleneck_dim=0
-subsample="1_2_2_2_1"
-enc_type=blstm
-enc_n_units=512
-enc_n_projs=0
-enc_n_layers=5
-enc_residual=false
-enc_nin=false
-subsample_type=drop
-attn_type=location
-attn_dim=512
-attn_n_heads=1
-attn_sigmoid=false
-dec_type=lstm
-dec_n_units=1024
-dec_n_projs=0
-dec_n_layers=1
-dec_loop_type=normal
-dec_residual=false
-input_feeding=false
-dec_bottleneck_dim=1024
-emb_dim=512
-tie_embedding=false
-ctc_fc_list="512"
-### optimization
-batch_size=50
-optimizer=adam
-learning_rate=1e-3
-n_epochs=25
-convert_to_sgd_epoch=25
-print_step=500
-metric=edit_distance
-decay_type=epoch
-decay_start_epoch=10
-decay_rate=0.85
-decay_patient_n_epochs=0
-sort_stop_epoch=100
-not_improved_patient_n_epochs=5
-eval_start_epoch=1
-warmup_start_learning_rate=1e-4
-warmup_n_steps=0
-### initialization
-param_init=0.1
+asr_config=conf/models/seq2seq.yaml
 pretrained_model=
-### regularization
-clip_grad_norm=5.0
-dropout_in=0.0
-dropout_enc=0.4
-dropout_dec=0.4
-dropout_emb=0.4
-dropout_att=0.0
-zoneout=0.0
-weight_decay=1e-6
-ss_prob=0.2
-ss_type=constant
-lsm_prob=0.1
-focal_loss=0.0
-adaptive_softmax=false
-# SpecAugment
-freq_width=27
-n_freq_masks=0
-time_width=100
-n_time_masks=0
-time_width_upper=1.0
-### MTL
-ctc_weight=0.0
-ctc_lsm_prob=0.1
-bwd_weight=0.0
-mtl_per_batch=false
-task_specific_layer=false
-### LM integration
-lm_fusion_type=cold
-lm_fusion=
-lm_init=
-lmobj_weight=0.0
-share_lm_softmax=false
 
 # TDS
 # enc_type=tds
@@ -125,58 +37,27 @@ share_lm_softmax=false
 # conv_kernel_sizes="(13,1)_(14,1)_(15,1)_(16,1)_(17,1)_(18,1)_(19,1)_(20,1)_(21,1)_(22,1)_(23,1)_(24,1)_(25,1)_(26,1)_(27,1)_(28,1)_(29,1)"
 # subsample="1_1_1_1_1"
 
-if [ ${speed_perturb} = true ]; then
-    n_epochs=20
-    convert_to_sgd_epoch=15
-    print_step=1500
-    decay_start_epoch=5
-    decay_rate=0.8
-elif [ ${n_freq_masks} != 0 ] || [ ${n_time_masks} != 0 ]; then
-    n_epochs=50
-    convert_to_sgd_epoch=50
-    print_step=1000
-    decay_start_epoch=20
-    decay_rate=0.9
-fi
+# if [ ${speed_perturb} = true ]; then
+#     n_epochs=20
+#     convert_to_sgd_epoch=15
+#     print_step=1500
+#     decay_start_epoch=5
+#     decay_rate=0.8
+# elif [ ${n_freq_masks} != 0 ] || [ ${n_time_masks} != 0 ]; then
+#     n_epochs=50
+#     convert_to_sgd_epoch=50
+#     print_step=1000
+#     decay_start_epoch=20
+#     decay_rate=0.9
+# fi
 
 #########################
 # LM configuration
 #########################
-# topology
-lm_type=lstm
-lm_n_units=1024
-lm_n_projs=0
-lm_n_layers=2
-lm_emb_dim=1024
-lm_n_units_null_context=0
-lm_tie_embedding=true
-lm_residual=true
-lm_use_glu=true
-# optimization
-lm_batch_size=64
-lm_bptt=100
-lm_optimizer=adam
-lm_learning_rate=1e-3
-lm_n_epochs=40
-lm_convert_to_sgd_epoch=40
-lm_print_step=2000
-lm_decay_start_epoch=10
-lm_decay_rate=0.8
-lm_decay_patient_n_epochs=0
-lm_decay_type=epoch
-lm_not_improved_patient_n_epochs=10
-lm_eval_start_epoch=1
-# initialization
-lm_param_init=0.05
+lm_config=conf/models/rnnlm.yaml
+# lm_config=conf/models/gated_convlm.yaml
+# lm_config=conf/models/transformerlm.yaml
 lm_pretrained_model=
-# regularization
-lm_clip_grad_norm=1.0
-lm_dropout_hidden=0.0
-lm_dropout_out=0.0
-lm_dropout_emb=0.0
-lm_weight_decay=1e-6
-lm_backward=false
-lm_adaptive_softmax=false
 
 ### path to save the model
 model=/n/sd3/inaguma/result/librispeech
@@ -379,7 +260,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
 fi
 
 mkdir -p ${model}
-if ! ${skip_lm} && [ ${stage} -le 3 ]; then
+if [ ${stage} -le 3 ]; then
     echo ============================================================================
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
@@ -407,59 +288,30 @@ if ! ${skip_lm} && [ ${stage} -le 3 ]; then
             zcat ${data}/local/lm_train/librispeech-lm-norm.txt.gz | shuf | awk '{print "unpaired-text-"NR, tolower($0)}' > ${data}/dataset_lm/text
             update_dataset.sh --unit ${unit} --wp_model ${wp_model} \
                 ${data}/dataset_lm/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-                > ${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}_external.tsv || exit 1;
+                > ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}_external.tsv || exit 1;
         fi
 
         touch ${data}/.done_stage_3_${datasize}${lm_datasize}_${unit}${wp_type}${vocab}_${use_external_text} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
     if ${use_external_text}; then
-        lm_train_set="${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}_external.tsv"
+        lm_train_set="${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}_external.tsv"
     else
-        lm_train_set="${data}/dataset_lm/train_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv"
+        lm_train_set="${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv"
     fi
 
     # NOTE: support only a single GPU for LM training
     CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus librispeech \
+        --config ${lm_config} \
         --n_gpus 1 \
         --train_set ${lm_train_set} \
-        --dev_set ${data}/dataset_lm/dev_${lm_datasize}_${train_set}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/dev_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
-        --model ${model}/lm \
-        --unit ${unit} \
-        --lm_type ${lm_type} \
-        --n_units ${lm_n_units} \
-        --n_projs ${lm_n_projs} \
-        --n_layers ${lm_n_layers} \
-        --emb_dim ${lm_emb_dim} \
-        --n_units_null_context ${lm_n_units_null_context} \
-        --tie_embedding ${lm_tie_embedding} \
-        --residual ${lm_residual} \
-        --use_glu ${lm_use_glu} \
-        --batch_size ${lm_batch_size} \
-        --bptt ${lm_bptt} \
-        --optimizer ${lm_optimizer} \
-        --learning_rate ${lm_learning_rate} \
-        --n_epochs ${lm_n_epochs} \
-        --convert_to_sgd_epoch ${lm_convert_to_sgd_epoch} \
-        --print_step ${lm_print_step} \
-        --decay_start_epoch ${lm_decay_start_epoch} \
-        --decay_rate ${lm_decay_rate} \
-        --decay_patient_n_epochs ${lm_decay_patient_n_epochs} \
-        --decay_type ${lm_decay_type} \
-        --not_improved_patient_n_epochs ${lm_not_improved_patient_n_epochs} \
-        --eval_start_epoch ${lm_eval_start_epoch} \
-        --param_init ${lm_param_init} \
+        --model_save_dir ${model}/lm \
         --pretrained_model ${lm_pretrained_model} \
-        --clip_grad_norm ${lm_clip_grad_norm} \
-        --dropout_hidden ${lm_dropout_hidden} \
-        --dropout_out ${lm_dropout_out} \
-        --dropout_emb ${lm_dropout_emb} \
-        --weight_decay ${lm_weight_decay} \
-        --backward ${lm_backward} \
-        --adaptive_softmax ${lm_adaptive_softmax} \
+        --unit ${unit} \
         --resume ${lm_resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
@@ -472,95 +324,15 @@ if [ ${stage} -le 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus librispeech \
+        --config ${asr_config} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
-        --model ${model}/asr \
-        --unit ${unit} \
-        --n_splices ${n_splices} \
-        --n_stacks ${n_stacks} \
-        --n_skips ${n_skips} \
-        --max_n_frames ${max_n_frames} \
-        --sequence_summary_network ${sequence_summary_network} \
-        --conv_in_channel ${conv_in_channel} \
-        --conv_channels ${conv_channels} \
-        --conv_kernel_sizes ${conv_kernel_sizes} \
-        --conv_strides ${conv_strides} \
-        --conv_poolings ${conv_poolings} \
-        --conv_batch_norm ${conv_batch_norm} \
-        --conv_residual ${conv_residual} \
-        --conv_bottleneck_dim ${conv_bottleneck_dim} \
-        --enc_type ${enc_type} \
-        --enc_n_units ${enc_n_units} \
-        --enc_n_projs ${enc_n_projs} \
-        --enc_n_layers ${enc_n_layers} \
-        --enc_residual ${enc_residual} \
-        --enc_nin ${enc_nin} \
-        --subsample ${subsample} \
-        --subsample_type ${subsample_type} \
-        --attn_type ${attn_type} \
-        --attn_dim ${attn_dim} \
-        --attn_n_heads ${attn_n_heads} \
-        --attn_sigmoid ${attn_sigmoid} \
-        --dec_type ${dec_type} \
-        --dec_n_units ${dec_n_units} \
-        --dec_n_projs ${dec_n_projs} \
-        --dec_n_layers ${dec_n_layers} \
-        --dec_loop_type ${dec_loop_type} \
-        --dec_residual ${dec_residual} \
-        --input_feeding ${input_feeding} \
-        --dec_bottleneck_dim ${dec_bottleneck_dim} \
-        --emb_dim ${emb_dim} \
-        --tie_embedding ${tie_embedding} \
-        --ctc_fc_list ${ctc_fc_list} \
-        --batch_size ${batch_size} \
-        --optimizer ${optimizer} \
-        --learning_rate ${learning_rate} \
-        --n_epochs ${n_epochs} \
-        --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
-        --print_step ${print_step} \
-        --metric ${metric} \
-        --decay_type ${decay_type} \
-        --decay_start_epoch ${decay_start_epoch} \
-        --decay_rate ${decay_rate} \
-        --decay_patient_n_epochs ${decay_patient_n_epochs} \
-        --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
-        --sort_stop_epoch ${sort_stop_epoch} \
-        --eval_start_epoch ${eval_start_epoch} \
-        --warmup_start_learning_rate ${warmup_start_learning_rate} \
-        --warmup_n_steps ${warmup_n_steps} \
-        --param_init ${param_init} \
+        --model_save_dir ${model}/asr \
         --pretrained_model ${pretrained_model} \
-        --clip_grad_norm ${clip_grad_norm} \
-        --dropout_in ${dropout_in} \
-        --dropout_enc ${dropout_enc} \
-        --dropout_dec ${dropout_dec} \
-        --dropout_emb ${dropout_emb} \
-        --dropout_att ${dropout_att} \
-        --zoneout ${zoneout} \
-        --weight_decay ${weight_decay} \
-        --ss_prob ${ss_prob} \
-        --ss_type ${ss_type} \
-        --lsm_prob ${lsm_prob} \
-        --focal_loss_weight ${focal_loss} \
-        --adaptive_softmax ${adaptive_softmax} \
-        --freq_width ${freq_width} \
-        --n_freq_masks ${n_freq_masks} \
-        --time_width ${time_width} \
-        --n_time_masks ${n_time_masks} \
-        --time_width_upper ${time_width_upper} \
-        --ctc_weight ${ctc_weight} \
-        --ctc_lsm_prob ${ctc_lsm_prob} \
-        --bwd_weight ${bwd_weight} \
-        --mtl_per_batch ${mtl_per_batch} \
-        --task_specific_layer ${task_specific_layer} \
-        --lm_fusion_type ${lm_fusion_type} \
-        --lm_fusion ${lm_fusion} \
-        --lm_init ${lm_init} \
-        --lmobj_weight ${lmobj_weight} \
-        --share_lm_softmax ${share_lm_softmax} \
+        --unit ${unit} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."
