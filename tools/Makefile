@@ -91,7 +91,8 @@ warp-rnnt.done:
 sentencepiece.done:
 	if [ -e $(TOOL)/sentencepiece ]; then rm -rf $(TOOL)/sentencepiece; fi
 	git clone https://github.com/google/sentencepiece.git $(TOOL)/sentencepiece
-	cd $(TOOL)/sentencepiece && mkdir build && cd build && (cmake3 .. || cmake ..) && $(MAKE)
+	command -v bazel > /dev/null || echo "SentencePiece requires Bazel, see https://bazel.build/"
+	cd $(TOOL)/sentencepiece && bazel build src:all --incompatible_disable_deprecated_attr_params=false
 	touch sentencepiece.done
 
 nkf.done:
