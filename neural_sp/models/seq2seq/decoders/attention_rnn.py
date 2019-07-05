@@ -49,11 +49,11 @@ class RNNDecoder(DecoderBase):
         blank (int): index for <blank>
         enc_n_units (int):
         attn_type (str):
-        rnn_type (str): lstm or gru
+        rnn_type (str): lstm/gru
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of RNN layers
-        loop_type (str): normal or lmdecoder
+        loop_type (str): normal/lmdecoder
         residual (bool):
         bottleneck_dim (int): dimension of the bottleneck layer before the softmax layer for label generation
         emb_dim (int): dimension of the embedding in target spaces.
@@ -71,7 +71,7 @@ class RNNDecoder(DecoderBase):
         zoneout (float): zoneout probability for the RNN layer
         lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
-        ss_type (str): constant or saturation
+        ss_type (str): constant/saturation
         focal_loss_weight (float):
         focal_loss_gamma (float):
         ctc_weight (float):
@@ -81,7 +81,7 @@ class RNNDecoder(DecoderBase):
         backward (bool): decode in the backward order
         lm_fusion (RNNLM):
         lm_fusion_type (str): type of LM fusion
-        discourse_aware (str): state_carry_over or hierarchical
+        discourse_aware (str): state_carry_over/hierarchical
         lm_init (RNNLM):
         lmobj_weight (float):
         share_lm_softmax (bool):
@@ -387,7 +387,7 @@ class RNNDecoder(DecoderBase):
             eouts (FloatTensor): `[B, T, dec_n_units]`
             elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            task (str): all or ys or ys_sub*
+            task (str): all/ys/ys_sub*
             ys_hist (list):
             teacher_probs (FloatTensor): `[B, L, vocab]`
         Returns:
@@ -770,8 +770,8 @@ class RNNDecoder(DecoderBase):
             speakers (list):
             oracle (bool):
         Returns:
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-            aw (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
+            hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
+            aws (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
 
         """
         bs, xmax, _ = eouts.size()
@@ -782,17 +782,13 @@ class RNNDecoder(DecoderBase):
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
-        lmstate = None
-        lmfeat = eouts.new_zeros(bs, 1, self.dec_n_units)
-        if self.replace_sos:
-            y = eouts.new_zeros(bs, 1).fill_(refs_id[0][0])
-        else:
-            y = eouts.new_zeros(bs, 1).fill_(self.eos)
+        lmout, lmstate = None, None
+        y = eouts.new_zeros(bs, 1).fill_(refs_id[0][0] if self.replace_sos else self.eos)
 
         # Create the attention mask
         mask = make_pad_mask(elens, self.device_id).expand(bs, xmax)
 
-        best_hyps_batch, aws_tmp = [], []
+        hyps_batch, aws_batch = [], []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
         if oracle:
@@ -807,14 +803,12 @@ class RNNDecoder(DecoderBase):
                     y[b] = refs_id[b, t - 1]
 
             # Update LM states for LM fusion
-            lmout = None
             if self.lm is not None:
                 lmout, lmstate = self.lm.decode(self.lm(y), lmstate)
 
             # Recurrency -> Score -> Generate
             dec_in = attn_v if self.input_feeding else cv
-            y_emb = self.embed(y)
-            dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
+            dstates = self.recurrency(self.embed(y), dec_in, dstates['dstate'])
             cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw)
             attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
 
@@ -823,8 +817,8 @@ class RNNDecoder(DecoderBase):
                 y = self.output(attn_v).argmax(-1)
             else:
                 y = self.adaptive_softmax.predict(attn_v.view(-1, attn_v.size(2))).unsqueeze(1)
-            best_hyps_batch += [y]
-            aws_tmp += [aw]
+            hyps_batch += [y]
+            aws_batch += [aw]
 
             # Count lengths of hypotheses
             for b in range(bs):
@@ -842,26 +836,26 @@ class RNNDecoder(DecoderBase):
         self.lmstate_final = lmstate
 
         # Concatenate in L dimension
-        best_hyps_batch = tensor2np(torch.cat(best_hyps_batch, dim=1))
-        aws_tmp = tensor2np(torch.stack(aws_tmp, dim=1))
+        hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
+        aws_batch = tensor2np(torch.stack(aws_batch, dim=1))
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.bwd:
             # Reverse the order
-            best_hyps = [best_hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
-            aws = [aws_tmp[b, :ylens[b]][::-1] for b in range(bs)]
+            hyps = [hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
+            aws = [aws_batch[b, :ylens[b]][::-1] for b in range(bs)]
         else:
-            best_hyps = [best_hyps_batch[b, :ylens[b]] for b in range(bs)]
-            aws = [aws_tmp[b, :ylens[b]] for b in range(bs)]
+            hyps = [hyps_batch[b, :ylens[b]] for b in range(bs)]
+            aws = [aws_batch[b, :ylens[b]] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
             if self.bwd:
-                best_hyps = [best_hyps[b][1:] if eos_flags[b] else best_hyps[b] for b in range(bs)]
+                hyps = [hyps[b][1:] if eos_flags[b] else hyps[b] for b in range(bs)]
             else:
-                best_hyps = [best_hyps[b][:-1] if eos_flags[b] else best_hyps[b] for b in range(bs)]
+                hyps = [hyps[b][:-1] if eos_flags[b] else hyps[b] for b in range(bs)]
 
-        return best_hyps, aws
+        return hyps, aws
 
     def beam_search(self, eouts, elens, params, idx2token,
                     lm=None, lm_rev=None, ctc_log_probs=None,
@@ -883,8 +877,8 @@ class RNNDecoder(DecoderBase):
                 recog_lm_weight (float): weight of LM score
                 recog_n_caches (int):
             idx2token (): converter from index to token
-            lm (RNNLM or GatedConvLM or TransformerLM):
-            lm_rev (RNNLM or GatedConvLM or TransformerLM):
+            lm (RNNLM/GatedConvLM/TransformerLM):
+            lm_rev (RNNLM/GatedConvLM/TransformerLM):
             ctc_log_probs (FloatTensor):
             nbest (int):
             exclude_eos (bool):
@@ -1017,18 +1011,16 @@ class RNNDecoder(DecoderBase):
                                               beam['cv'],
                                               beam['dstates']['dstate'])
                     # Recurrency for the ensemble
-                    ensmbl_dstate = []
-                    if n_models > 1:
-                        ensmbl_dstate = [dec.recurrency(dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx)),
-                                                        beam['ensmbl_cv'][i_e],
-                                                        beam['ensmbl_dstate'][i_e]['dstate'])
-                                         for i_e, dec in enumerate(ensmbl_decs)]
+                    ensmbl_dstate = [dec.recurrency(dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx)),
+                                                    beam['ensmbl_cv'][i_e],
+                                                    beam['ensmbl_dstate'][i_e]['dstate'])
+                                     for i_e, dec in enumerate(ensmbl_decs)]
 
                     # Score for the main model
                     cv, aw = self.score(eouts[b:b + 1, :elens[b]],
                                         eouts[b:b + 1, :elens[b]],
                                         dstates['dout_score'],
-                                        None,
+                                        None,  # mask
                                         beam['aws'][-1])
                     # Score for the ensemble
                     ensmbl_cv, ensmbl_aws = [], []
@@ -1037,10 +1029,10 @@ class RNNDecoder(DecoderBase):
                             cv_e, aw_e = dec.score(ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
                                                    ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
                                                    ensmbl_dstate[i_e]['dout_score'],
-                                                   None,
+                                                   None,  # mask
                                                    beam['ensmbl_aws'][i_e][-1])
                             ensmbl_cv += [cv_e]
-                            ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi)] why unsqueeze?
+                            ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi): unsqueeze?
 
                     # Generate for the main model
                     attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
