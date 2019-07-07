@@ -102,7 +102,7 @@ class Reporter(object):
                 #         tf_writer.add_histogram(n, p.data.cpu().numpy(), self._step + 1)
                 #         tf_writer.add_histogram(n + '/grad', p.grad.data.cpu().numpy(), self._step + 1)
 
-    def step(self, is_eval):
+    def step(self, is_eval=False):
         self._step += 1
         if is_eval:
             self.steps.append(self._step)

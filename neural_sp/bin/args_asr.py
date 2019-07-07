@@ -179,7 +179,7 @@ def parse():
     parser.add_argument('--batch_size', type=int, default=50,
                         help='mini-batch size')
     parser.add_argument('--optimizer', type=str, default='adam',
-                        choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov'],
+                        choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov', 'noam'],
                         help='type of optimizer')
     parser.add_argument('--learning_rate', type=float, default=1e-3,
                         help='initial learning rate')
@@ -308,24 +308,20 @@ def parse():
     parser.add_argument('--share_lm_softmax', type=strtobool, default=False, nargs='?',
                         help='share the softmax layer between ASR and LM')
     # transformer
-    parser.add_argument('--d_model', type=int, default=512,
-                        help='')
+    parser.add_argument('--d_model', type=int, default=256,
+                        help='number of units in self-attention layers in Transformer')
     parser.add_argument('--d_ff', type=int, default=2048,
-                        help='')
-    parser.add_argument('--transformer_enc_n_layers', type=int, default=6,
-                        help='number of encoder Transformer layers')
-    parser.add_argument('--transformer_dec_n_layers', type=int, default=6,
-                        help='number of decoder Transformer layers')
+                        help='number of units in feed-forward fully-conncected layers in Transformer')
     parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
                         choices=['scaled_dot', 'add', 'average'],
                         help='type of attention for Transformer')
-    parser.add_argument('--transformer_n_heads', type=int, default=8,
+    parser.add_argument('--transformer_attn_n_heads', type=int, default=4,
                         help='number of heads in the attention layer for Transformer')
     parser.add_argument('--pe_type', type=str, default='add',
                         choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
                         help='type of positional encoding')
     parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
-                        help='')
+                        help='epsilon value for layer narmalization')
     # contextualization
     parser.add_argument('--discourse_aware', type=str, default=False, nargs='?',
                         choices=['state_carry_over', 'hierarchical', ''],

@@ -157,7 +157,7 @@ def load_checkpoint(model, checkpoint_path, resume=False):
         logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
 
     return_values = {
-        'lr_controller': checkpoint['lr_controller'],
+        'optimizer': checkpoint['optimizer'],
         'epoch': epoch + 1,
         'step': checkpoint['step'] + 1,
         'metric_dev_best': checkpoint['metric_dev_best']
@@ -165,16 +165,16 @@ def load_checkpoint(model, checkpoint_path, resume=False):
     return model, return_values
 
 
-def save_checkpoint(model, save_path, lr_controller, epoch, step, metric_dev_best,
+def save_checkpoint(model, save_path, optimizer, epoch, step, metric_dev_best,
                     remove_old_checkpoints=False):
     """Save checkpoint.
 
     Args:
         model (torch.nn.Module):
         save_path (str): path to the directory to save a model
-        lr_controller ():
-        epoch (int): the currnet epoch
-        step (int): the current step
+        optimizer (LRScheduler): optimizer
+        epoch (int): currnet epoch
+        step (int): current step
         metric_dev_best (float):
         remove_old_checkpoints (bool): if True, all checkpoints
             other than the best one will be deleted
@@ -190,8 +190,7 @@ def save_checkpoint(model, save_path, lr_controller, epoch, step, metric_dev_bes
     # Save parameters, optimizer, step index etc.
     checkpoint = {
         "state_dict": model.state_dict(),
-        "optimizer": model.optimizer.state_dict(),
-        "lr_controller": lr_controller,
+        "optimizer": optimizer.state_dict(),
         "epoch": epoch,
         "step": step,
         "metric_dev_best": metric_dev_best

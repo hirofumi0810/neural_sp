@@ -20,8 +20,8 @@ def select_encoder(args):
         encoder = TransformerEncoder(
             input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
             attn_type=args.transformer_attn_type,
-            n_heads=args.transformer_n_heads,
-            n_layers=args.transformer_enc_n_layers,
+            attn_n_heads=args.transformer_attn_n_heads,
+            n_layers=args.enc_n_layers,
             d_model=args.d_model,
             d_ff=args.d_ff,
             pe_type=args.pe_type,

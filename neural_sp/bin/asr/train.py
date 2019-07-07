@@ -22,14 +22,12 @@ import torch
 from tqdm import tqdm
 
 from neural_sp.bin.args_asr import parse
-from neural_sp.bin.lr_controller import Controller
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import set_save_path
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import save_checkpoint
-from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
@@ -40,6 +38,9 @@ from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.select import select_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.models.seq2seq.skip_thought import SkipThought
+from neural_sp.trainers.optimizer import set_optimizer
+from neural_sp.trainers.reporter import Reporter
+from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.utils import mkdir_join
 
 
@@ -88,7 +89,6 @@ def main():
             subsample_factor_sub2 = subsample_factor
 
     skip_thought = 'skip' in args.enc_type
-    transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
@@ -196,22 +196,24 @@ def main():
     if args.resume:
         # Set optimizer
         epoch = int(args.resume.split('-')[-1])
-        model.set_optimizer(optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] + 1 else conf['optimizer'],
-                            lr=float(conf['learning_rate']),  # on-the-fly
-                            weight_decay=float(conf['weight_decay']))
+        optimizer = set_optimizer(model,
+                                  optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] + 1 else conf['optimizer'],
+                                  lr=float(conf['learning_rate']),  # on-the-fly
+                                  weight_decay=float(conf['weight_decay']))
 
         # Restore the last saved model
         model, checkpoint = load_checkpoint(model, args.resume, resume=True)
-        lr_controller = checkpoint['lr_controller']
+        optimizer = checkpoint['optimizer']
         epoch = checkpoint['epoch']
         step = checkpoint['step']
         metric_dev_best = checkpoint['metric_dev_best']
 
         # Resume between convert_to_sgd_epoch and convert_to_sgd_epoch + 1
         if epoch == conf['convert_to_sgd_epoch'] + 1:
-            model.set_optimizer(optimizer='sgd',
-                                lr=args.learning_rate,
-                                weight_decay=float(conf['weight_decay']))
+            optimizer = set_optimizer(model,
+                                      optimizer='sgd',
+                                      lr=args.learning_rate,
+                                      weight_decay=float(conf['weight_decay']))
             logger.info('========== Convert to SGD ==========')
     else:
         # Save the conf file as a yaml file
@@ -260,29 +262,30 @@ def main():
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
-        # Set optimizer
-        model.set_optimizer(
-            optimizer=args.optimizer,
-            lr=float(args.learning_rate),
-            weight_decay=float(args.weight_decay),
-            transformer=transformer)
-
         epoch, step = 1, 1
         metric_dev_best = 10000
 
-        # Set learning rate controller
-        lr_controller = Controller(lr=float(args.learning_rate),
-                                   decay_type=args.decay_type,
-                                   decay_start_epoch=args.decay_start_epoch,
-                                   decay_rate=args.decay_rate,
-                                   decay_patient_n_epochs=args.decay_patient_n_epochs,
-                                   lower_better=True,
-                                   best_value=metric_dev_best,
-                                   model_size=args.d_model,
-                                   warmup_start_lr=args.warmup_start_learning_rate,
-                                   warmup_n_steps=args.warmup_n_steps,
-                                   lr_factor=args.learning_rate_factor,
-                                   transformer=transformer)
+        # Set optimizer
+        optimizer = set_optimizer(model,
+                                  optimizer=args.optimizer,
+                                  lr=float(args.learning_rate),
+                                  weight_decay=float(args.weight_decay))
+
+        # wrap optimizer by learning rate scheduler
+        noam = 'transformer' in args.enc_type or args.dec_type == 'transformer'
+        optimizer = LRScheduler(optimizer,
+                                lr_max=float(args.learning_rate),
+                                decay_type=args.decay_type,
+                                decay_start_epoch=args.decay_start_epoch,
+                                decay_rate=args.decay_rate,
+                                decay_patient_n_epochs=args.decay_patient_n_epochs,
+                                lower_better=True,
+                                best_value=metric_dev_best,
+                                model_size=args.d_model,
+                                warmup_start_lr=args.warmup_start_learning_rate,
+                                warmup_n_steps=args.warmup_n_steps,
+                                lr_factor=args.learning_rate_factor,
+                                noam=noam)
 
     train_set.epoch = epoch - 1  # start from index:0
 
@@ -363,7 +366,7 @@ def main():
         batch_train, is_new_epoch = train_set.next()
         accum_n_tokens += sum([len(y) for y in batch_train['ys']])
 
-        # Change tasks depending on task
+        # Change mini-batch depending on task
         for task in tasks:
             if skip_thought:
                 loss, reporter = model(batch_train['ys'],
@@ -382,22 +385,17 @@ def main():
             if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
                 if args.clip_grad_norm > 0:
                     torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
-                model.module.optimizer.step()
-                model.module.optimizer.zero_grad()
+                optimizer.step()
+                optimizer.zero_grad()
                 accum_n_tokens = 0
             loss_train = loss.item()
             del loss
-
-        reporter.step(is_eval=False)
-
-        # Update learning rate
-        if step < args.warmup_n_steps or transformer:
-            model.module.optimizer = lr_controller.warmup(model.module.optimizer, step=step)
+        reporter.step()
 
         if step % args.print_step == 0:
             # Compute loss in the dev set
             batch_dev = dev_set.next()[0]
-            # Change tasks depending on task
+            # Change mini-batch depending on task
             for task in tasks:
                 if skip_thought:
                     loss, reporter = model(batch_dev['ys'],
@@ -422,7 +420,7 @@ def main():
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
                         (step, train_set.epoch_detail,
                          loss_train, loss_dev,
-                         lr_controller.lr, len(batch_train['utt_ids']),
+                         optimizer.lr, len(batch_train['utt_ids']),
                          xlen, ylen, duration_step / 60))
             start_time_step = time.time()
         step += args.n_gpus
@@ -440,7 +438,7 @@ def main():
 
             if epoch < args.eval_start_epoch:
                 # Save the model
-                save_checkpoint(model.module, model.module.save_path, lr_controller,
+                save_checkpoint(model.module, model.module.save_path, optimizer,
                                 epoch, step - 1, metric_dev_best,
                                 remove_old_checkpoints=True)
                 reporter._epoch += 1
@@ -478,8 +476,7 @@ def main():
                 reporter.epoch(metric_dev)
 
                 # Update learning rate
-                model.module.optimizer = lr_controller.decay(
-                    model.module.optimizer, epoch=epoch, value=metric_dev)
+                optimizer.decay(epoch=epoch, value=metric_dev)
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
@@ -487,7 +484,7 @@ def main():
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    save_checkpoint(model.module, model.module.save_path, lr_controller,
+                    save_checkpoint(model.module, model.module.save_path, optimizer,
                                     epoch, step - 1, metric_dev_best,
                                     remove_old_checkpoints=True)
 
@@ -536,14 +533,16 @@ def main():
 
                 # Convert to fine-tuning stage
                 if epoch == args.convert_to_sgd_epoch:
-                    model.module.set_optimizer('sgd',
-                                               lr=args.learning_rate,
-                                               weight_decay=float(args.weight_decay))
-                    lr_controller = Controller(lr=args.learning_rate,
-                                               decay_type='epoch',
-                                               decay_start_epoch=epoch,
-                                               decay_rate=0.5,
-                                               lower_better=True)
+                    optimizer = set_optimizer(model,
+                                              optimizer='sgd',
+                                              lr=args.learning_rate,
+                                              weight_decay=float(args.weight_decay))
+                    optimizer = LRScheduler(optimizer,
+                                            lr_max=args.learning_rate,
+                                            decay_type='epoch',
+                                            decay_start_epoch=epoch,
+                                            decay_rate=0.5,
+                                            lower_better=True)
                     logger.info('========== Convert to SGD ==========')
 
             pbar_epoch = tqdm(total=len(train_set))
@@ -580,8 +579,8 @@ def make_model_name(args, subsample_factor):
     if 'transformer' in args.enc_type:
         dir_name += str(args.d_model) + 'dmodel'
         dir_name += str(args.d_ff) + 'dff'
-        dir_name += str(args.transformer_enc_n_layers) + 'L'
-        dir_name += str(args.transformer_n_heads) + 'head'
+        dir_name += str(args.enc_n_layers) + 'L'
+        dir_name += str(args.transformer_attn_n_heads) + 'head'
     else:
         dir_name += str(args.enc_n_units) + 'H'
         if args.enc_n_projs > 0:
@@ -604,8 +603,8 @@ def make_model_name(args, subsample_factor):
         if args.dec_type == 'transformer':
             dir_name += str(args.d_model) + 'dmodel'
             dir_name += str(args.d_ff) + 'dff'
-            dir_name += str(args.transformer_dec_n_layers) + 'L'
-            dir_name += str(args.transformer_n_heads) + 'head'
+            dir_name += str(args.dec_n_layers) + 'L'
+            dir_name += str(args.transformer_attn_n_heads) + 'head'
         else:
             dir_name += str(args.dec_n_units) + 'H'
             if args.dec_n_projs > 0:

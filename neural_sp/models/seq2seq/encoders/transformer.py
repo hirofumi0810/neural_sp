@@ -35,7 +35,7 @@ class TransformerEncoder(EncoderBase):
     Args:
         input_dim (int): dimension of input features (freq * channel)
         attn_type (str): type of attention
-        n_heads (int): number of heads for multi-head attention
+        attn_n_heads (int): number of heads for multi-head attention
         n_layers (int): number of blocks
         d_model (int): dimension of keys/values/queries in
             MultiheadAttentionMechanism, also the input size of
@@ -64,7 +64,7 @@ class TransformerEncoder(EncoderBase):
     def __init__(self,
                  input_dim,
                  attn_type,
-                 n_heads,
+                 attn_n_heads,
                  n_layers,
                  d_model,
                  d_ff,
@@ -91,7 +91,7 @@ class TransformerEncoder(EncoderBase):
 
         self.d_model = d_model
         self.n_layers = n_layers
-        self.n_heads = n_heads
+        self.attn_n_heads = attn_n_heads
         self.pe_type = pe_type
 
         # Setting for CNNs before RNNs
@@ -133,7 +133,7 @@ class TransformerEncoder(EncoderBase):
 
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
         self.layers = nn.ModuleList(
-            [TransformerEncoderBlock(d_model, d_ff, attn_type, n_heads,
+            [TransformerEncoderBlock(d_model, d_ff, attn_type, attn_n_heads,
                                      dropout, dropout_att, layer_norm_eps) for l in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
@@ -193,7 +193,7 @@ class TransformerEncoder(EncoderBase):
         # Create the self-attention mask
         bs, xmax = xs.size()[: 2]
         xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).expand(bs, xmax, xmax)
-        xx_mask = xx_mask.unsqueeze(1).expand(bs, self.n_heads, xmax, xmax)
+        xx_mask = xx_mask.unsqueeze(1).expand(bs, self.attn_n_heads, xmax, xmax)
 
         xs = self.pos_enc(xs)
         for l in range(self.n_layers):
@@ -229,9 +229,9 @@ class TransformerEncoder(EncoderBase):
             xx_aws = getattr(self, 'xx_aws_layer%d' % l)
 
             plt.clf()
-            fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
-            for h in range(self.n_heads):
-                if self.n_heads > n_cols:
+            fig, axes = plt.subplots(self.attn_n_heads // n_cols, n_cols, figsize=(20, 8))
+            for h in range(self.attn_n_heads):
+                if self.attn_n_heads > n_cols:
                     ax = axes[h // n_cols, h % n_cols]
                 else:
                     ax = axes[h]

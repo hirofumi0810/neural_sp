@@ -51,7 +51,7 @@ class TransformerDecoder(DecoderBase):
         blank (int): index for <blank>
         enc_n_units (int):
         attn_type (str):
-        n_heads (int): number of attention heads
+        attn_n_heads (int): number of attention heads
         n_layers (int): number of decoder layers.
         d_model (int): size of the model
         d_ff (int): size of the inner FF layer
@@ -63,8 +63,8 @@ class TransformerDecoder(DecoderBase):
         dropout_emb (float): dropout probability for the embedding layer
         dropout_att (float): dropout probability for attention distributions
         lsm_prob (float): label smoothing probability
-        fl_weight (float):
-        fl_gamma (float):
+        focal_loss_weight (float):
+        focal_loss_gamma (float):
         ctc_weight (float):
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
@@ -82,7 +82,7 @@ class TransformerDecoder(DecoderBase):
                  blank,
                  enc_n_units,
                  attn_type,
-                 n_heads,
+                 attn_n_heads,
                  n_layers,
                  d_model,
                  d_ff,
@@ -94,8 +94,8 @@ class TransformerDecoder(DecoderBase):
                  dropout_emb=0.0,
                  dropout_att=0.0,
                  lsm_prob=0.0,
-                 fl_weight=0.0,
-                 fl_gamma=2.0,
+                 focal_loss_weight=0.0,
+                 focal_loss_gamma=2.0,
                  ctc_weight=0.0,
                  ctc_lsm_prob=0.0,
                  ctc_fc_list=[],
@@ -114,11 +114,11 @@ class TransformerDecoder(DecoderBase):
         self.enc_n_units = enc_n_units
         self.d_model = d_model
         self.n_layers = n_layers
-        self.n_heads = n_heads
+        self.attn_n_heads = attn_n_heads
         self.pe_type = pe_type
         self.lsm_prob = lsm_prob
-        self.fl_weight = fl_weight
-        self.fl_gamma = fl_gamma
+        self.focal_loss_weight = focal_loss_weight
+        self.focal_loss_gamma = focal_loss_gamma
         self.ctc_weight = ctc_weight
         self.bwd = backward
         self.global_weight = global_weight
@@ -140,7 +140,7 @@ class TransformerDecoder(DecoderBase):
                                    ignore_index=pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
             self.layers = nn.ModuleList(
-                [TransformerDecoderBlock(d_model, d_ff, attn_type, n_heads,
+                [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_n_heads,
                                          dropout, dropout_att, layer_norm_eps)
                  for _ in range(n_layers)])
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -256,16 +256,16 @@ class TransformerDecoder(DecoderBase):
         # Create the self-attention mask
         bs, ymax = ys_in_pad.size()[:2]
         yy_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).expand(bs, ymax, ymax)
-        yy_mask = yy_mask.unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
+        yy_mask = yy_mask.unsqueeze(1).expand(bs, self.attn_n_heads, ymax, ymax)
         subsequent_mask = torch.tril(yy_mask.new_ones((ymax, ymax)).byte(), diagonal=0)
-        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
+        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.attn_n_heads, ymax, ymax)
         yy_mask = yy_mask & subsequent_mask
 
         # Create the source-target mask
         xmax = eouts.size(1)
         x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).expand(bs, ymax, xmax)
         y_mask = make_pad_mask(ylens, self.device_id).unsqueeze(2).expand(bs, ymax, xmax)
-        xy_mask = (x_mask * y_mask).unsqueeze(1).expand(bs, self.n_heads, ymax, xmax)
+        xy_mask = (x_mask * y_mask).unsqueeze(1).expand(bs, self.attn_n_heads, ymax, xmax)
 
         ys_emb = self.pos_enc(self.embed(ys_in_pad))
         for l in range(self.n_layers):
@@ -290,12 +290,12 @@ class TransformerDecoder(DecoderBase):
                                        ignore_index=self.pad, size_average=False) / bs
 
             # Focal loss
-            if self.fl_weight > 0:
+            if self.focal_loss_weight > 0:
                 fl = focal_loss(logits, ys_out_pad, ylens,
-                                alpha=self.fl_weight,
-                                gamma=self.fl_gamma,
+                                alpha=self.focal_loss_weight,
+                                gamma=self.focal_loss_gamma,
                                 size_average=False) / bs
-                loss = loss * (1 - self.fl_weight) + fl * self.fl_weight
+                loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
         else:
             loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
                                          ys_out_pad.view(-1)).loss
@@ -375,7 +375,7 @@ class TransformerDecoder(DecoderBase):
         best_hyps_batch = tensor2np(best_hyps_batch)
         # xy_aws_tmp = tensor2np(xy_aws_tmp)
 
-        # if self.score.n_heads > 1:
+        # if self.score.attn_n_heads > 1:
         #     xy_aws_tmp = xy_aws_tmp[:, :, :, 0]
         #     # TODO(hirofumi): fix for MHA
 
@@ -418,9 +418,9 @@ class TransformerDecoder(DecoderBase):
                 aws = getattr(self, '%s_aws_layer%d' % (attn, l))
 
                 plt.clf()
-                fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
-                for h in range(self.n_heads):
-                    if self.n_heads > n_cols:
+                fig, axes = plt.subplots(self.attn_n_heads // n_cols, n_cols, figsize=(20, 8))
+                for h in range(self.attn_n_heads):
+                    if self.attn_n_heads > n_cols:
                         ax = axes[h // n_cols, h % n_cols]
                     else:
                         ax = axes[h]
