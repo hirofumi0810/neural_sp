@@ -177,7 +177,6 @@ def set_lm_name(args):
     dir_name += '_lr' + str(args.learning_rate)
     dir_name += '_bs' + str(args.batch_size)
     dir_name += '_bptt' + str(args.bptt)
-    dir_name += '_dropH' + str(args.dropout_hidden) + 'E' + str(args.dropout_emb)
     if args.tie_embedding:
         dir_name += '_tie'
     if 'gated_conv' not in args.lm_type and args.lm_type != 'transformer':
@@ -187,14 +186,22 @@ def set_lm_name(args):
             dir_name += '_glu'
         if args.n_units_null_context > 0:
             dir_name += '_nullcv' + str(args.n_units_null_context)
+
+    # regularization
+    dir_name += '_dropI' + str(args.dropout_in) + 'H' + str(args.dropout_hidden)
+    if args.lsm_prob > 0:
+        dir_name += '_ls' + str(args.lsm_prob)
+    if args.warmup_n_steps > 0:
+        dir_name += '_warmpup' + str(args.warmup_n_steps)
+    if args.accum_grad_n_tokens > 0:
+        dir_name += '_accum' + str(args.accum_grad_n_tokens)
+
     if args.backward:
         dir_name += '_bwd'
     if args.serialize:
         dir_name += '_serialize'
-    if args.min_n_tokens > 0:
+    if args.min_n_tokens > 1:
         dir_name += '_' + str(args.min_n_tokens) + 'tokens'
     if args.adaptive_softmax:
         dir_name += '_adaptiveSM'
-    if args.warmup_n_steps > 0:
-        dir_name += '_warmpup' + str(args.warmup_n_steps)
     return dir_name

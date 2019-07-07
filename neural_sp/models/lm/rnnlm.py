@@ -40,6 +40,7 @@ class RNNLM(LMBase):
         self.residual = args.residual
         self.use_glu = args.use_glu
         self.n_units_cv = args.n_units_null_context
+        self.lsm_prob = args.lsm_prob
 
         self.vocab = args.vocab
         self.eos = 2
@@ -55,7 +56,7 @@ class RNNLM(LMBase):
 
         self.embed = Embedding(vocab=self.vocab,
                                emb_dim=args.emb_dim,
-                               dropout=args.dropout_emb,
+                               dropout=args.dropout_in,
                                ignore_index=self.pad)
 
         self.fast_impl = False

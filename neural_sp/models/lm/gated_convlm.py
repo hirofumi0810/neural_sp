@@ -34,7 +34,7 @@ class GatedConvLM(LMBase):
         self.emb_dim = args.emb_dim
         self.n_units = args.n_units
         self.n_layers = args.n_layers
-        self.tie_embedding = args.tie_embedding
+        self.lsm_prob = args.lsm_prob
 
         self.vocab = args.vocab
         self.eos = 2
@@ -50,7 +50,7 @@ class GatedConvLM(LMBase):
 
         self.embed = Embedding(vocab=self.vocab,
                                emb_dim=args.emb_dim,
-                               dropout=args.dropout_emb,
+                               dropout=args.dropout_in,
                                ignore_index=self.pad)
 
         model_size = args.lm_type.replace('gated_conv_', '')

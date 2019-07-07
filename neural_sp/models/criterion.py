@@ -31,7 +31,7 @@ def cross_entropy_lsm(logits, ys, ylens, lsm_prob, pad):
     bs, _, vocab = logits.size()
 
     logits = logits.view(-1, vocab)
-    ys = ys.view(-1)
+    ys = ys.contiguous().view(-1)
     target_dist = logits.new_zeros(logits.size())
     target_dist.fill_(lsm_prob / (vocab - 1))
     ys_masked = ys.masked_fill(ys == pad, 0)

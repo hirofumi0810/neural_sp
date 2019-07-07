@@ -26,9 +26,10 @@ eval_start_epoch: 1
 param_init: 0.05
 # regularization
 clip_grad_norm: 1.0
+dropout_in: 0.2
 dropout_hidden: 0.2
 dropout_out: 0.0
-dropout_emb: 0.2
 weight_decay: 1e-6
+lsm_prob: 0.1
 backward: false
 adaptive_softmax: false

@@ -123,16 +123,18 @@ def parse():
     # regularization
     parser.add_argument('--clip_grad_norm', type=float, default=5.0,
                         help='')
+    parser.add_argument('--dropout_in', type=float, default=0.0,
+                        help='dropout probability for the input embedding layer')
     parser.add_argument('--dropout_hidden', type=float, default=0.0,
                         help='dropout probability for the hidden layers')
     parser.add_argument('--dropout_out', type=float, default=0.0,
                         help='dropout probability for the output layer')
-    parser.add_argument('--dropout_emb', type=float, default=0.0,
-                        help='dropout probability for the embedding layer')
     parser.add_argument('--dropout_att', type=float, default=0.1,
                         help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help='')
+    parser.add_argument('--lsm_prob', type=float, default=0.0,
+                        help='probability of label smoothing')
     parser.add_argument('--logits_temp', type=float, default=1.0,
                         help='')
     parser.add_argument('--backward', type=strtobool, default=False, nargs='?',

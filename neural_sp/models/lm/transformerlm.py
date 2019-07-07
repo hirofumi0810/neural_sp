@@ -48,7 +48,7 @@ class TransformerLM(LMBase):
         self.pe_type = args.pe_type
         self.n_layers = args.n_layers
         self.n_heads = args.attn_n_heads
-        self.tie_embedding = args.tie_embedding
+        self.lsm_prob = args.lsm_prob
 
         self.vocab = args.vocab
         self.eos = 2
@@ -68,7 +68,7 @@ class TransformerLM(LMBase):
                                emb_dim=self.d_model,
                                dropout=0,  # NOTE: do not apply dropout here
                                ignore_index=self.pad)
-        self.pos_enc = PositionalEncoding(args.d_model, args.dropout_emb, args.pe_type)
+        self.pos_enc = PositionalEncoding(args.d_model, args.dropout_in, args.pe_type)
 
         self.layers = nn.ModuleList(
             [TransformerDecoderBlock(args.d_model, args.d_ff,
