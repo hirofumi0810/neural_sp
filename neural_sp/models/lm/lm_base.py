@@ -110,9 +110,10 @@ class LMBase(ModelBase):
             loss = -torch.log(probs[:, :, ys_out[:, -1]])
         else:
             if self.adaptive_softmax is None:
-                if self.lsm_prob > 0:
+                if self.lsm_prob > 0 and self.training:
                     # Label smoothing
-                    loss = cross_entropy_lsm(logits, ys_out, ylens,
+                    loss = cross_entropy_lsm(logits.view((-1, logits.size(2))),
+                                             ys_out.contiguous().view(-1),
                                              self.lsm_prob, self.pad)
                 else:
                     loss = F.cross_entropy(logits.view((-1, logits.size(2))),
