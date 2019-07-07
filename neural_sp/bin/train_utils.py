@@ -119,15 +119,15 @@ def load_checkpoint(model, checkpoint_path, resume=False):
     Returns:
         model (torch.nn.Module):
         checkpoints (dict):
-            epoch (int): the currnet epoch
-            step (int): the current step
-            metric_dev_best (float): the current best performance
+            epoch (int): currnet epoch
+            step (int): current step
+            metric_dev_best (float): current best performance
 
     """
     if not os.path.isfile(checkpoint_path):
         raise ValueError('There is no checkpoint')
 
-    epoch = int(os.path.basename(checkpoint_path).split('-')[-1])
+    epoch = int(os.path.basename(checkpoint_path).split('-')[-1]) - 1
 
     if os.path.isfile(checkpoint_path):
         checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
@@ -139,7 +139,7 @@ def load_checkpoint(model, checkpoint_path, resume=False):
 
     # Restore optimizer
     if resume:
-        logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
+        logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
 
         if hasattr(model, 'optimizer'):
             model.optimizer.load_state_dict(checkpoint['optimizer'])
@@ -154,12 +154,12 @@ def load_checkpoint(model, checkpoint_path, resume=False):
         else:
             raise ValueError('Set optimizer.')
     else:
-        logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch, checkpoint_path))
+        logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
 
     return_values = {
         'optimizer': checkpoint['optimizer'],
-        'epoch': epoch + 1,
-        'step': checkpoint['step'] + 1,
+        'epoch': epoch,
+        'step': checkpoint['step'],
         'metric_dev_best': checkpoint['metric_dev_best']
     }
     return model, return_values

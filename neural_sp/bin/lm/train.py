@@ -108,9 +108,10 @@ def main():
     if args.resume:
         # Set optimizer
         epoch = int(args.resume.split('-')[-1])
-        model.set_optimizer(optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] + 1 else conf['optimizer'],
-                            lr=float(conf['learning_rate']),  # on-the-fly
-                            weight_decay=float(conf['weight_decay']))
+        optimizer = set_optimizer(model,
+                                  optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] else conf['optimizer'],
+                                  lr=float(conf['learning_rate']),  # on-the-fly
+                                  weight_decay=float(conf['weight_decay']))
 
         # Restore the last saved model
         model, checkpoint = load_checkpoint(model, args.resume, resume=True)
@@ -119,11 +120,18 @@ def main():
         step = checkpoint['step']
         ppl_dev_best = checkpoint['metric_dev_best']
 
-        # Resume between convert_to_sgd_epoch and convert_to_sgd_epoch + 1
-        if epoch == conf['convert_to_sgd_epoch'] + 1:
-            model.set_optimizer(optimizer='sgd',
-                                lr=args.learning_rate,
-                                weight_decay=float(conf['weight_decay']))
+        # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
+        if epoch == conf['convert_to_sgd_epoch']:
+            optimizer = set_optimizer(model,
+                                      optimizer='sgd',
+                                      lr=float(args.learning_rate),
+                                      weight_decay=float(conf['weight_decay']))
+            optimizer = LRScheduler(optimizer,
+                                    lr_max=args.learning_rate,
+                                    decay_type='epoch',
+                                    decay_start_epoch=0,
+                                    decay_rate=0.5,
+                                    lower_better=True)
             logger.info('========== Convert to SGD ==========')
     else:
         # Save the conf file as a yaml file
@@ -146,7 +154,7 @@ def main():
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
         logger.info(model)
 
-        epoch, step = 1, 1
+        epoch, step = 0, 0
         ppl_dev_best = 10000
 
         # Set optimizer
@@ -169,8 +177,6 @@ def main():
                                 warmup_n_steps=args.warmup_n_steps,
                                 lr_factor=args.learning_rate_factor,
                                 noam=args.lm_type == 'transformer')
-
-    train_set.epoch = epoch - 1  # start from index:0
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -198,24 +204,30 @@ def main():
     start_time_step = time.time()
     not_improved_n_epochs = 0
     pbar_epoch = tqdm(total=len(train_set))
+    accum_n_tokens = 0
     while True:
         # Compute loss in the training set
         ys_train, is_new_epoch = train_set.next()
-
+        accum_n_tokens += sum([len(y) for y in ys_train])
         optimizer.zero_grad()
         loss, hidden, reporter = model(ys_train, hidden, reporter)
+        # loss /= args.accum_grad_n_steps
         if len(model.device_ids) > 1:
             loss.backward(torch.ones(len(model.device_ids)))
         else:
             loss.backward()
         loss.detach()  # Trancate the graph
-        if args.clip_grad_norm > 0:
-            torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
-        optimizer.step()
+        if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
+            if args.clip_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
+            optimizer.step()
+            optimizer.zero_grad()
+            accum_n_tokens = 0
         loss_train = loss.item()
         del loss
         hidden = model.module.repackage_state(hidden)
         reporter.step()
+        # step += args.n_gpus
 
         if step % args.print_step == 0:
             # Compute loss in the dev set
@@ -242,13 +254,14 @@ def main():
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
+            epoch += 1
             duration_epoch = time.time() - start_time_epoch
             logger.info('========== EPOCH:%d (%.2f min) ==========' % (epoch, duration_epoch / 60))
 
             if epoch < args.eval_start_epoch:
                 # Save the model
                 save_checkpoint(model, save_path, optimizer,
-                                epoch, step - 1, ppl_dev_best,
+                                epoch, step, ppl_dev_best,
                                 remove_old_checkpoints=args.lm_type != 'transformer')
             else:
                 start_time_eval = time.time()
@@ -267,7 +280,7 @@ def main():
 
                     # Save the model
                     save_checkpoint(model, save_path, optimizer,
-                                    epoch, step - 1, ppl_dev_best,
+                                    epoch, step, ppl_dev_best,
                                     remove_old_checkpoints=args.lm_type != 'transformer')
 
                     # test
@@ -298,7 +311,7 @@ def main():
                     optimizer = LRScheduler(optimizer,
                                             lr_max=args.learning_rate,
                                             decay_type='epoch',
-                                            decay_start_epoch=epoch,
+                                            decay_start_epoch=0,
                                             decay_rate=0.5,
                                             lower_better=True)
                     logger.info('========== Convert to SGD ==========')
@@ -310,7 +323,6 @@ def main():
 
             start_time_step = time.time()
             start_time_epoch = time.time()
-            epoch += 1
 
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.2f hour' % (duration_train / 3600))

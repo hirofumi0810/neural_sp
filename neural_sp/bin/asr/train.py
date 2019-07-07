@@ -197,7 +197,7 @@ def main():
         # Set optimizer
         epoch = int(args.resume.split('-')[-1])
         optimizer = set_optimizer(model,
-                                  optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] + 1 else conf['optimizer'],
+                                  optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] else conf['optimizer'],
                                   lr=float(conf['learning_rate']),  # on-the-fly
                                   weight_decay=float(conf['weight_decay']))
 
@@ -208,12 +208,18 @@ def main():
         step = checkpoint['step']
         metric_dev_best = checkpoint['metric_dev_best']
 
-        # Resume between convert_to_sgd_epoch and convert_to_sgd_epoch + 1
-        if epoch == conf['convert_to_sgd_epoch'] + 1:
+        # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
+        if epoch == conf['convert_to_sgd_epoch']:
             optimizer = set_optimizer(model,
                                       optimizer='sgd',
-                                      lr=args.learning_rate,
+                                      lr=float(args.learning_rate),
                                       weight_decay=float(conf['weight_decay']))
+            optimizer = LRScheduler(optimizer,
+                                    lr_max=args.learning_rate,
+                                    decay_type='epoch',
+                                    decay_start_epoch=0,
+                                    decay_rate=0.5,
+                                    lower_better=True)
             logger.info('========== Convert to SGD ==========')
     else:
         # Save the conf file as a yaml file
@@ -262,7 +268,7 @@ def main():
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
-        epoch, step = 1, 1
+        epoch, step = 0, 0
         metric_dev_best = 10000
 
         # Set optimizer
@@ -286,8 +292,6 @@ def main():
                                 warmup_n_steps=args.warmup_n_steps,
                                 lr_factor=args.learning_rate_factor,
                                 noam=noam)
-
-    train_set.epoch = epoch - 1  # start from index:0
 
     # Load the teacher ASR model
     teacher = None
@@ -391,6 +395,7 @@ def main():
             loss_train = loss.item()
             del loss
         reporter.step()
+        step += args.n_gpus
 
         if step % args.print_step == 0:
             # Compute loss in the dev set
@@ -418,12 +423,11 @@ def main():
                 xlen = max(len(x) for x in batch_train['ys'])
                 ylen = max(len(y) for y in batch_train['ys_sub1'])
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
-                        (step, train_set.epoch_detail,
+                        (step, epoch + 1 + train_set.epoch_detail,
                          loss_train, loss_dev,
                          optimizer.lr, len(batch_train['utt_ids']),
                          xlen, ylen, duration_step / 60))
             start_time_step = time.time()
-        step += args.n_gpus
         pbar_epoch.update(len(batch_train['utt_ids']))
 
         # Save fugures of loss and accuracy
@@ -433,13 +437,14 @@ def main():
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
+            epoch += 1
             duration_epoch = time.time() - start_time_epoch
             logger.info('========== EPOCH:%d (%.2f min) ==========' % (epoch, duration_epoch / 60))
 
             if epoch < args.eval_start_epoch:
                 # Save the model
                 save_checkpoint(model, save_path, optimizer,
-                                epoch, step - 1, metric_dev_best,
+                                epoch, step, metric_dev_best,
                                 remove_old_checkpoints=not noam)
                 reporter._epoch += 1
                 # TODO(hirofumi): fix later
@@ -485,7 +490,7 @@ def main():
 
                     # Save the model
                     save_checkpoint(model, save_path, optimizer,
-                                    epoch, step - 1, metric_dev_best,
+                                    epoch, step, metric_dev_best,
                                     remove_old_checkpoints=not noam)
 
                     # test
@@ -540,7 +545,7 @@ def main():
                     optimizer = LRScheduler(optimizer,
                                             lr_max=args.learning_rate,
                                             decay_type='epoch',
-                                            decay_start_epoch=epoch,
+                                            decay_start_epoch=0,
                                             decay_rate=0.5,
                                             lower_better=True)
                     logger.info('========== Convert to SGD ==========')
@@ -552,7 +557,6 @@ def main():
 
             start_time_step = time.time()
             start_time_epoch = time.time()
-            epoch += 1
 
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.2f hour' % (duration_train / 3600))
