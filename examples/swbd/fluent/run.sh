@@ -19,7 +19,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 #########################
 # ASR configuration
 #########################
-asr_config=conf/models/seq2seq.yaml
+asr_config=conf/asr/seq2seq.yaml
 pretrained_model=
 
 # if [ ${speed_perturb} = true ]; then
@@ -39,9 +39,9 @@ pretrained_model=
 #########################
 # LM configuration
 #########################
-lm_config=conf/models/rnnlm.yaml
-# lm_config=conf/models/gated_convlm.yaml
-# lm_config=conf/models/transformerlm.yaml
+lm_config=conf/lm/rnnlm.yaml
+# lm_config=conf/lm/gated_convlm.yaml
+# lm_config=conf/lm/transformerlm.yaml
 lm_pretrained_model=
 
 ### path to save the model

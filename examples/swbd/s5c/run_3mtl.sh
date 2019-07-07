@@ -25,7 +25,7 @@ vocab_sub2=300
 #########################
 # ASR configuration
 #########################
-asr_config=conf/models/seq2seq_3mtl.yaml
+asr_config=conf/asr/rnn_seq2seq_3mtl.yaml
 pretrained_model=
 
 # if [ ${speed_perturb} = true ]; then

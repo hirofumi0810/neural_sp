@@ -22,7 +22,7 @@ vocab_sub1=
 #########################
 # ASR configuration
 #########################
-asr_config=conf/models/seq2seq_2mtl.yaml
+asr_config=conf/asr/rnn_seq2seq_2mtl.yaml
 pretrained_model=
 
 # if [ ${speed_perturb} = true ]; then
