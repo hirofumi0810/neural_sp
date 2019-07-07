@@ -230,7 +230,7 @@ class RNNLM(LMBase):
             state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.n_units)
         return state
 
-    def repackage_hidden(self, state):
+    def repackage_state(self, state):
         """Wraps hidden states in new Tensors, to detach them from their history.
 
         Args:

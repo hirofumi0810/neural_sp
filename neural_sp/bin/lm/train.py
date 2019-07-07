@@ -214,8 +214,7 @@ def main():
         optimizer.step()
         loss_train = loss.item()
         del loss
-        if 'gated_conv' not in args.lm_type and args.lm_type != 'transformer':
-            hidden = model.module.repackage_hidden(hidden)
+        hidden = model.module.repackage_state(hidden)
         reporter.step()
 
         if step % args.print_step == 0:

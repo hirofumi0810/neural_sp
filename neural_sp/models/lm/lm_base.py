@@ -138,6 +138,9 @@ class LMBase(ModelBase):
 
         return loss, state, reporter
 
+    def repackage_state(self, state):
+        return state
+
     def decode(self, ys_emb, state=None):
         raise NotImplementedError
 
