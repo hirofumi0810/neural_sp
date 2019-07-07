@@ -22,7 +22,7 @@ vocab_sub1=
 #########################
 # ASR configuration
 #########################
-asr_config=conf/models/seq2seq_2mtl.yaml
+asr_config=conf/asr/rnn_seq2seq_2mtl.yaml
 pretrained_model=
 
 # if [ ${speed_perturb} = true ]; then
@@ -296,14 +296,14 @@ if [ ${stage} -le 4 ]; then
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set_sub1 ${data}/dataset/${dev_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
         --eval_sets ${data}/dataset/eval1_${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --unit ${unit} \
+        --unit_sub1 ${unit_sub1} \
         --dict ${dict} \
         --dict_sub1 ${dict_sub1} \
         --wp_model ${wp_model}.model \
         --wp_model_sub1 ${wp_model_sub1}.model \
         --model_save_dir ${model}/asr \
         --pretrained_model ${pretrained_model} \
-        --unit ${unit} \
-        --unit_sub1 ${unit_sub1} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."
