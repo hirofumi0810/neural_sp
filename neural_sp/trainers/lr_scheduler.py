@@ -73,11 +73,12 @@ class LRScheduler(object):
     def step(self):
         self._step += 1
         self.optimizer.step()
+        self._warmup()
 
     def zero_grad(self):
         self.optimizer.zero_grad()
 
-    def warmup(self):
+    def _warmup(self):
         """Warm up learning rate per step.
 
         Args:
