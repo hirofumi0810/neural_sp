@@ -448,7 +448,7 @@ class RNNDecoder(DecoderBase):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
             loss (FloatTensor): `[1]`
-            acc (float): accuracy
+            acc (float): accuracy for token prediction
             ppl (float): perplexity
 
         """
@@ -459,6 +459,7 @@ class RNNDecoder(DecoderBase):
         eos = w.new_zeros(1).fill_(self.eos)
         ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
                         self.device_id) for y in ys]
+        ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
@@ -484,12 +485,15 @@ class RNNDecoder(DecoderBase):
         # Compute XE loss for LM objective
         logits = torch.cat(logits, dim=1)
         loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                               ignore_index=self.pad, size_average=False) / bs
+                               ignore_index=self.pad, size_average=True)
         # TODO(hirofumi): adaptive_softmax
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)
         ppl = min(np.exp(loss.item()), np.inf)
+
+        # scale loss for CTC
+        loss *= ylens.float().mean()
 
         return loss, acc, ppl
 
@@ -505,8 +509,8 @@ class RNNDecoder(DecoderBase):
             teacher_probs (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
-            acc (float):
-            ppl (float):
+            acc (float): accuracy for token prediction
+            ppl (float): perplexity
 
         """
         bs, xmax = eouts.size()[:2]
@@ -536,8 +540,7 @@ class RNNDecoder(DecoderBase):
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
-        lmstate = None
-        lmfeat = eouts.new_zeros(bs, 1, self.dec_n_units)
+        lmout, lmstate = None, None
 
         # Pre-computation of embedding
         ys_emb = self.embed(ys_in_pad)
@@ -550,7 +553,6 @@ class RNNDecoder(DecoderBase):
             is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob and self.adaptive_softmax is None
 
             # Update LM states for LM fusion
-            lmout = None
             if self.lm is not None:
                 y_lm = self.output(logits[-1]).detach().argmax(-1) if is_sample else ys_in_pad[:, t:t + 1]
                 lmout, lmstate = self.lm.decode(y_lm, lmstate)
@@ -589,23 +591,21 @@ class RNNDecoder(DecoderBase):
             if teacher_probs is not None:
                 # Knowledge distillation
                 loss = distillation(logits, teacher_probs, ylens,
-                                    temperature=1,
-                                    size_average=False) / bs
+                                    temperature=1)
             else:
                 if self.lsm_prob > 0:
                     # Label smoothing
                     loss = cross_entropy_lsm(logits, ys_out_pad, ylens,
-                                             lsm_prob=self.lsm_prob, size_average=False) / bs
+                                             self.lsm_prob, self.pad)
                 else:
                     loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                           ignore_index=self.pad, size_average=False) / bs
+                                           ignore_index=self.pad, size_average=True)
 
             # Focal loss
             if self.focal_loss_weight > 0:
                 fl = focal_loss(logits, ys_out_pad, ylens,
                                 alpha=self.focal_loss_weight,
-                                gamma=self.focal_loss_gamma,
-                                size_average=False) / bs
+                                gamma=self.focal_loss_gamma)
                 loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
         else:
             loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
@@ -613,11 +613,14 @@ class RNNDecoder(DecoderBase):
 
         # Compute token-level accuracy in teacher-forcing
         if self.adaptive_softmax is None:
-            acc = compute_accuracy(logits, ys_out_pad, pad=self.pad)
+            acc = compute_accuracy(logits, ys_out_pad, self.pad)
         else:
             acc = compute_accuracy(self.adaptive_softmax.log_prob(
-                logits.view((-1, logits.size(2)))), ys_out_pad, pad=self.pad)
+                logits.view((-1, logits.size(2)))), ys_out_pad, self.pad)
         ppl = np.exp(loss.item())
+
+        # scale loss for CTC
+        loss *= ylens.float().mean()
 
         return loss, acc, ppl
 
@@ -625,7 +628,7 @@ class RNNDecoder(DecoderBase):
         """Initialize decoder state.
 
         Args:
-            batch_size (int):
+            batch_size (int): batch size
         Returns:
             dstates (dict):
                 dout (FloatTensor): `[B, 1, dec_n_units]`
@@ -634,8 +637,8 @@ class RNNDecoder(DecoderBase):
                     cxs (list of FloatTensor):
 
         """
-        dstates = {'dout_score': None,  # for attention scoring
-                   'dout_gen': None,  # for token generation
+        dstates = {'dout_score': None,  # for attention scoring (1st layer)
+                   'dout_gen': None,  # for token generation (last layer)
                    'dstate': None}
         w = next(self.parameters())
         dstates['dout_score'] = w.new_zeros((batch_size, 1, self.dec_n_units))

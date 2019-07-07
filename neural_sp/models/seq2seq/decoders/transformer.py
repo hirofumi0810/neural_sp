@@ -284,17 +284,16 @@ class TransformerDecoder(DecoderBase):
             if self.lsm_prob > 0:
                 # Label smoothing
                 loss = cross_entropy_lsm(logits, ys_out_pad, ylens,
-                                         lsm_prob=self.lsm_prob, size_average=False) / bs
+                                         self.lsm_prob, self.pad)
             else:
                 loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                       ignore_index=self.pad, size_average=False) / bs
+                                       ignore_index=self.pad, size_average=True)
 
             # Focal loss
             if self.focal_loss_weight > 0:
                 fl = focal_loss(logits, ys_out_pad, ylens,
                                 alpha=self.focal_loss_weight,
-                                gamma=self.focal_loss_gamma,
-                                size_average=False) / bs
+                                gamma=self.focal_loss_gamma)
                 loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
         else:
             loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
@@ -302,11 +301,14 @@ class TransformerDecoder(DecoderBase):
 
         # Compute token-level accuracy in teacher-forcing
         if self.adaptive_softmax is None:
-            acc = compute_accuracy(logits, ys_out_pad, pad=self.pad)
+            acc = compute_accuracy(logits, ys_out_pad, self.pad)
         else:
             acc = compute_accuracy(self.adaptive_softmax.log_prob(
-                logits.view((-1, logits.size(2)))), ys_out_pad, pad=self.pad)
+                logits.view((-1, logits.size(2)))), ys_out_pad, self.pad)
         ppl = min(np.exp(loss.item()), np.inf)
+
+        # scale loss for CTC
+        loss *= ylens.float().mean()
 
         return loss, acc, ppl
 

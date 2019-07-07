@@ -287,12 +287,12 @@ class RNNTransducer(DecoderBase):
             ppl (float): perplexity
 
         """
-        bs = len(ys)
         w = next(self.parameters())
 
         # Append <sos> and <eos>
         eos = w.new_zeros(1).fill_(self.eos)
         ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
+        ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
 
@@ -302,24 +302,24 @@ class RNNTransducer(DecoderBase):
 
         # Compute XE loss for LM objective
         loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                               ignore_index=self.pad, size_average=False) / bs
+                               ignore_index=self.pad, size_average=True)
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)
         ppl = min(np.exp(loss.item()), np.inf)
 
+        # scale loss for CTC
+        loss *= ylens.float().mean()
+
         return loss, acc, ppl
 
-    def forward_rnnt(self, eouts, elens, ys, ys_hist=[], return_logits=False, teacher_dist=None):
+    def forward_rnnt(self, eouts, elens, ys):
         """Compute XE loss for the attention-based sequence-to-sequence model.
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
             elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            ys_hist (list):
-            return_logits (bool): return logits for knowledge distillation
-            teacher_dist (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
 
@@ -365,17 +365,17 @@ class RNNTransducer(DecoderBase):
 
         return loss
 
-    def joint(self, eout, dout):
+    def joint(self, eouts, douts):
         """
         Args:
-            eout (FloatTensor): `[B, T, dec_n_units]`
-            dout (FloatTensor): `[B, L, dec_n_units]`
+            eouts (FloatTensor): `[B, T, n_units]`
+            douts (FloatTensor): `[B, L, n_units]`
         Returns:
             out (FloatTensor): `[B, T, L, vocab]`
         """
-        eout = eout.unsqueeze(2)  # `[B, T, 1, dec_n_units]`
-        dout = dout.unsqueeze(1)  # `[B, 1, L, dec_n_units]`
-        out = torch.tanh(self.w_enc(eout) + self.w_dec(dout))
+        eouts = eouts.unsqueeze(2)  # `[B, T, 1, n_units]`
+        douts = douts.unsqueeze(1)  # `[B, 1, L, n_units]`
+        out = torch.tanh(self.w_enc(eouts) + self.w_dec(douts))
         return self.output(out)
 
     def recurrency(self, ys_emb, dstate):
@@ -435,7 +435,7 @@ class RNNTransducer(DecoderBase):
         """Initialize hidden states.
 
         Args:
-            batch_size (int):
+            batch_size (int): batch size
         Returns:
             zero_state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
