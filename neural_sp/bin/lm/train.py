@@ -239,7 +239,7 @@ def main():
 
             duration_step = time.time() - start_time_step
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                        (step, train_set.epoch_detail, loss_train, loss_dev,
+                        (step, epoch + train_set.epoch_detail, loss_train, loss_dev,
                          np.exp(loss_train), np.exp(loss_dev),
                          optimizer.lr, ys_train.shape[0], duration_step / 60))
             start_time_step = time.time()

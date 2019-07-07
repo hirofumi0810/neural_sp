@@ -423,7 +423,7 @@ def main():
                 xlen = max(len(x) for x in batch_train['ys'])
                 ylen = max(len(y) for y in batch_train['ys_sub1'])
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
-                        (step, epoch + 1 + train_set.epoch_detail,
+                        (step, epoch + train_set.epoch_detail,
                          loss_train, loss_dev,
                          optimizer.lr, len(batch_train['utt_ids']),
                          xlen, ylen, duration_step / 60))
