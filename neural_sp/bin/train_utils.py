@@ -166,7 +166,7 @@ def load_checkpoint(model, checkpoint_path, resume=False):
 
 
 def save_checkpoint(model, save_path, optimizer, epoch, step, metric_dev_best,
-                    remove_old_checkpoints=False):
+                    remove_old_checkpoints=True):
     """Save checkpoint.
 
     Args:
@@ -189,8 +189,8 @@ def save_checkpoint(model, save_path, optimizer, epoch, step, metric_dev_best,
 
     # Save parameters, optimizer, step index etc.
     checkpoint = {
-        "state_dict": model.state_dict(),
-        "optimizer": optimizer.state_dict(),
+        "state_dict": model.module.state_dict(),
+        "optimizer": optimizer.optimizer.state_dict(),
         "epoch": epoch,
         "step": step,
         "metric_dev_best": metric_dev_best

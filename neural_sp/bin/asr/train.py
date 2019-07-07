@@ -217,18 +217,18 @@ def main():
             logger.info('========== Convert to SGD ==========')
     else:
         # Save the conf file as a yaml file
-        save_config(vars(args), os.path.join(model.save_path, 'conf.yml'))
+        save_config(vars(args), os.path.join(save_path, 'conf.yml'))
         if args.lm_fusion:
-            save_config(args.lm_conf, os.path.join(model.save_path, 'conf_lm.yml'))
+            save_config(args.lm_conf, os.path.join(save_path, 'conf_lm.yml'))
 
         # Save the nlsyms, dictionar, and wp_model
         if args.nlsyms:
-            shutil.copy(args.nlsyms, os.path.join(model.save_path, 'nlsyms.txt'))
+            shutil.copy(args.nlsyms, os.path.join(save_path, 'nlsyms.txt'))
         for sub in ['', '_sub1', '_sub2']:
             if getattr(args, 'dict' + sub):
-                shutil.copy(getattr(args, 'dict' + sub), os.path.join(model.save_path, 'dict' + sub + '.txt'))
+                shutil.copy(getattr(args, 'dict' + sub), os.path.join(save_path, 'dict' + sub + '.txt'))
             if getattr(args, 'unit' + sub) == 'wp':
-                shutil.copy(getattr(args, 'wp_model' + sub), os.path.join(model.save_path, 'wp' + sub + '.model'))
+                shutil.copy(getattr(args, 'wp_model' + sub), os.path.join(save_path, 'wp' + sub + '.model'))
 
         for k, v in sorted(vars(args).items(), key=lambda x: x[0]):
             logger.info('%s: %s' % (k, str(v)))
@@ -333,7 +333,7 @@ def main():
         setproctitle(dir_name)
 
     # Set reporter
-    reporter = Reporter(model.module.save_path, tensorboard=True)
+    reporter = Reporter(save_path, tensorboard=True)
 
     if args.mtl_per_batch:
         # NOTE: from easier to harder tasks
@@ -438,9 +438,9 @@ def main():
 
             if epoch < args.eval_start_epoch:
                 # Save the model
-                save_checkpoint(model.module, model.module.save_path, optimizer,
+                save_checkpoint(model, save_path, optimizer,
                                 epoch, step - 1, metric_dev_best,
-                                remove_old_checkpoints=True)
+                                remove_old_checkpoints=not noam)
                 reporter._epoch += 1
                 # TODO(hirofumi): fix later
             else:
@@ -484,9 +484,9 @@ def main():
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    save_checkpoint(model.module, model.module.save_path, optimizer,
+                    save_checkpoint(model, save_path, optimizer,
                                     epoch, step - 1, metric_dev_best,
-                                    remove_old_checkpoints=True)
+                                    remove_old_checkpoints=not noam)
 
                     # test
                     for s in eval_sets:
@@ -561,7 +561,7 @@ def main():
         reporter.tf_writer.close()
     pbar_epoch.close()
 
-    return model.module.save_path
+    return save_path
 
 
 if __name__ == '__main__':

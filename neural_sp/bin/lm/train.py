@@ -127,14 +127,14 @@ def main():
             logger.info('========== Convert to SGD ==========')
     else:
         # Save the conf file as a yaml file
-        save_config(vars(args), os.path.join(model.save_path, 'conf.yml'))
+        save_config(vars(args), os.path.join(save_path, 'conf.yml'))
 
         # Save the nlsyms, dictionar, and wp_model
         if args.nlsyms:
-            shutil.copy(args.nlsyms, os.path.join(model.save_path, 'nlsyms.txt'))
-        shutil.copy(args.dict, os.path.join(model.save_path, 'dict.txt'))
+            shutil.copy(args.nlsyms, os.path.join(save_path, 'nlsyms.txt'))
+        shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
         if args.unit == 'wp':
-            shutil.copy(args.wp_model, os.path.join(model.save_path, 'wp.model'))
+            shutil.copy(args.wp_model, os.path.join(save_path, 'wp.model'))
 
         for k, v in sorted(vars(args).items(), key=lambda x: x[0]):
             logger.info('%s: %s' % (k, str(v)))
@@ -190,7 +190,7 @@ def main():
         setproctitle(dir_name)
 
     # Set reporter
-    reporter = Reporter(model.module.save_path, tensorboard=True)
+    reporter = Reporter(save_path, tensorboard=True)
 
     hidden = None
     start_time_train = time.time()
@@ -248,9 +248,9 @@ def main():
 
             if epoch < args.eval_start_epoch:
                 # Save the model
-                save_checkpoint(model.module, model.module.save_path, optimizer,
+                save_checkpoint(model, save_path, optimizer,
                                 epoch, step - 1, ppl_dev_best,
-                                remove_old_checkpoints=True)
+                                remove_old_checkpoints=args.lm_type != 'transformer')
             else:
                 start_time_eval = time.time()
                 # dev
@@ -267,9 +267,9 @@ def main():
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    save_checkpoint(model.module, model.module.save_path, optimizer,
+                    save_checkpoint(model, save_path, optimizer,
                                     epoch, step - 1, ppl_dev_best,
-                                    remove_old_checkpoints=True)
+                                    remove_old_checkpoints=args.lm_type != 'transformer')
 
                     # test
                     ppl_test_avg = 0.
@@ -320,7 +320,7 @@ def main():
         reporter.tf_writer.close()
     pbar_epoch.close()
 
-    return model.module.save_path
+    return save_path
 
 
 if __name__ == '__main__':
