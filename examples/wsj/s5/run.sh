@@ -19,23 +19,10 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 #########################
 # ASR configuration
 #########################
-asr_config=conf/models/seq2seq.yaml
+asr_config=conf/asr/rnn_seq2seq.yaml
 pretrained_model=
 teacher=
 teacher_lm=
-
-# TDS
-# enc_type=tds
-# conv_channels="10_10_14_14_14_18_18_18_18_18_18"
-# conv_kernel_sizes="(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)"
-# subsample="1_1_1_1_1"
-# clip_grad_norm=15.0
-# dropout_enc=0.2
-# lsm_prob=0.05
-
-# GatedConv
-# conv_channels="100_100_100_125_125_150_175_200_225_250_250_250_300_300_375"
-# conv_kernel_sizes="(13,1)_(3,1)_(4,1)_(5,1)_(6,1)_(7,1)_(8,1)_(9,1)_(10,1)_(11,1)_(12,1)_(13,1)_(14,1)_(15,1)_(21,1)"
 
 # if [ ${speed_perturb} = true ]; then
 #     n_epochs=20
@@ -54,9 +41,9 @@ teacher_lm=
 #########################
 # LM configuration
 #########################
-lm_config=conf/models/rnnlm.yaml
-# lm_config=conf/models/gated_convlm.yaml
-# lm_config=conf/models/transformerlm.yaml
+lm_config=conf/lm/rnnlm.yaml
+# lm_config=conf/lm/gated_convlm.yaml
+# lm_config=conf/lm/transformerlm.yaml
 lm_pretrained_model=
 
 ### path to save the model
@@ -284,12 +271,12 @@ if [ ${stage} -le 3 ]; then
         --n_gpus 1 \
         --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset_lm/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --unit ${unit} \
         --nlsyms ${nlsyms} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/lm \
         --pretrained_model ${lm_pretrained_model} \
-        --unit ${unit} \
         --resume ${lm_resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
@@ -307,15 +294,15 @@ if [ ${stage} -le 4 ]; then
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${data}/dataset/${test_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --unit ${unit} \
         --nlsyms ${nlsyms} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/asr \
         --pretrained_model ${pretrained_model} \
-        --unit ${unit} \
         --teacher ${teacher} \
         --teacher_lm ${teacher_lm} \
         --resume ${resume} || exit 1;
 
-    echo "Finish model training (stage: 4)."
+    echo "Finish ASR model training (stage: 4)."
 fi

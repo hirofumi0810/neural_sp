@@ -20,20 +20,21 @@ import torch
 from tqdm import tqdm
 
 from neural_sp.bin.args_lm import parse
-from neural_sp.bin.lr_controller import Controller
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import set_save_path
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import save_checkpoint
-from neural_sp.bin.reporter import Reporter
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.select import select_lm
+from neural_sp.trainers.optimizer import set_optimizer
+from neural_sp.trainers.reporter import Reporter
+from neural_sp.trainers.lr_scheduler import LRScheduler
+from neural_sp.trainers.model_name import set_lm_name
 from neural_sp.utils import mkdir_join
-
 
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
@@ -93,7 +94,7 @@ def main():
         save_path = os.path.dirname(args.resume)
         dir_name = os.path.basename(save_path)
     else:
-        dir_name = make_model_name(args)
+        dir_name = set_lm_name(args)
         save_path = mkdir_join(args.model_save_dir, '_'.join(
             os.path.basename(args.train_set).split('.')[:-1]), dir_name)
         save_path = set_save_path(save_path)  # avoid overwriting
@@ -113,7 +114,7 @@ def main():
 
         # Restore the last saved model
         model, checkpoint = load_checkpoint(model, args.resume, resume=True)
-        lr_controller = checkpoint['lr_controller']
+        optimizer = checkpoint['optimizer']
         epoch = checkpoint['epoch']
         step = checkpoint['step']
         ppl_dev_best = checkpoint['metric_dev_best']
@@ -145,28 +146,29 @@ def main():
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
         logger.info(model)
 
-        # Set optimizer
-        model.set_optimizer(optimizer=args.optimizer,
-                            lr=float(args.learning_rate),
-                            weight_decay=float(args.weight_decay),
-                            transformer=args.lm_type == 'transformer')
-
         epoch, step = 1, 1
         ppl_dev_best = 10000
 
-        # Set learning rate controller
-        lr_controller = Controller(lr=float(args.learning_rate),
-                                   decay_type=args.decay_type,
-                                   decay_start_epoch=args.decay_start_epoch,
-                                   decay_rate=args.decay_rate,
-                                   decay_patient_n_epochs=args.decay_patient_n_epochs,
-                                   lower_better=True,
-                                   best_value=ppl_dev_best,
-                                   model_size=args.d_model,
-                                   warmup_start_lr=args.warmup_start_learning_rate,
-                                   warmup_n_steps=args.warmup_n_steps,
-                                   lr_factor=args.learning_rate_factor,
-                                   transformer=args.lm_type == 'transformer')
+        # Set optimizer
+        optimizer = set_optimizer(model,
+                                  optimizer=args.optimizer,
+                                  lr=float(args.learning_rate),
+                                  weight_decay=float(args.weight_decay))
+
+        # Wrap optimizer by learning rate scheduler
+        optimizer = LRScheduler(optimizer,
+                                lr_max=float(args.learning_rate),
+                                decay_type=args.decay_type,
+                                decay_start_epoch=args.decay_start_epoch,
+                                decay_rate=args.decay_rate,
+                                decay_patient_n_epochs=args.decay_patient_n_epochs,
+                                lower_better=True,
+                                best_value=ppl_dev_best,
+                                model_size=args.d_model,
+                                warmup_start_lr=args.warmup_start_learning_rate,
+                                warmup_n_steps=args.warmup_n_steps,
+                                lr_factor=args.learning_rate_factor,
+                                noam=args.lm_type == 'transformer')
 
     train_set.epoch = epoch - 1  # start from index:0
 
@@ -194,13 +196,13 @@ def main():
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    not_improved_epoch = 0
+    not_improved_n_epochs = 0
     pbar_epoch = tqdm(total=len(train_set))
     while True:
         # Compute loss in the training set
         ys_train, is_new_epoch = train_set.next()
 
-        model.module.optimizer.zero_grad()
+        optimizer.zero_grad()
         loss, hidden, reporter = model(ys_train, hidden, reporter)
         if len(model.device_ids) > 1:
             loss.backward(torch.ones(len(model.device_ids)))
@@ -209,16 +211,12 @@ def main():
         loss.detach()  # Trancate the graph
         if args.clip_grad_norm > 0:
             torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
-        model.module.optimizer.step()
+        optimizer.step()
         loss_train = loss.item()
         del loss
         if 'gated_conv' not in args.lm_type and args.lm_type != 'transformer':
             hidden = model.module.repackage_hidden(hidden)
-        reporter.step(is_eval=False)
-
-        # Update learning rate
-        if step < args.warmup_n_steps or args.lm_type == 'transformer':
-            model.module.optimizer = lr_controller.warmup(model.module.optimizer, step=step)
+        reporter.step()
 
         if step % args.print_step == 0:
             # Compute loss in the dev set
@@ -232,7 +230,7 @@ def main():
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
                         (step, train_set.epoch_detail, loss_train, loss_dev,
                          np.exp(loss_train), np.exp(loss_dev),
-                         lr_controller.lr, ys_train.shape[0], duration_step / 60))
+                         optimizer.lr, ys_train.shape[0], duration_step / 60))
             start_time_step = time.time()
         step += args.n_gpus
         pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
@@ -250,7 +248,7 @@ def main():
 
             if epoch < args.eval_start_epoch:
                 # Save the model
-                save_checkpoint(model.module, model.module.save_path, lr_controller,
+                save_checkpoint(model.module, model.module.save_path, optimizer,
                                 epoch, step - 1, ppl_dev_best,
                                 remove_old_checkpoints=True)
             else:
@@ -261,17 +259,15 @@ def main():
                 logger.info('PPL (%s): %.2f' % (dev_set.set, ppl_dev))
 
                 # Update learning rate
-                model.module.optimizer = lr_controller.decay(
-                    model.module.optimizer,
-                    epoch=epoch, value=ppl_dev)
+                optimizer.decay(epoch=epoch, value=ppl_dev)
 
                 if ppl_dev < ppl_dev_best:
                     ppl_dev_best = ppl_dev
-                    not_improved_epoch = 0
+                    not_improved_n_epochs = 0
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    save_checkpoint(model.module, model.module.save_path, lr_controller,
+                    save_checkpoint(model.module, model.module.save_path, optimizer,
                                     epoch, step - 1, ppl_dev_best,
                                     remove_old_checkpoints=True)
 
@@ -285,25 +281,27 @@ def main():
                     if len(eval_sets) > 0:
                         logger.info('PPL (avg.): %.2f' % (ppl_test_avg / len(eval_sets)))
                 else:
-                    not_improved_epoch += 1
+                    not_improved_n_epochs += 1
 
                 duration_eval = time.time() - start_time_eval
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
                 # Early stopping
-                if not_improved_epoch == args.not_improved_patient_n_epochs:
+                if not_improved_n_epochs == args.not_improved_patient_n_epochs:
                     break
 
                 # Convert to fine-tuning stage
                 if epoch == args.convert_to_sgd_epoch:
-                    model.module.set_optimizer('sgd',
-                                               lr=args.learning_rate,
-                                               weight_decay=float(args.weight_decay))
-                    lr_controller = Controller(lr=args.learning_rate,
-                                               decay_type='epoch',
-                                               decay_start_epoch=epoch,
-                                               decay_rate=0.5,
-                                               lower_better=True)
+                    optimizer = set_optimizer(model,
+                                              optimizer='sgd',
+                                              lr=args.learning_rate,
+                                              weight_decay=float(args.weight_decay))
+                    optimizer = LRScheduler(optimizer,
+                                            lr_max=args.learning_rate,
+                                            decay_type='epoch',
+                                            decay_start_epoch=epoch,
+                                            decay_rate=0.5,
+                                            lower_better=True)
                     logger.info('========== Convert to SGD ==========')
 
             pbar_epoch = tqdm(total=len(train_set))
@@ -323,46 +321,6 @@ def main():
     pbar_epoch.close()
 
     return model.module.save_path
-
-
-def make_model_name(args):
-    dir_name = args.lm_type
-    if args.lm_type == 'transformer':
-        dir_name += str(args.d_model) + 'dmodel'
-        dir_name += str(args.d_ff) + 'dff'
-        dir_name += str(args.n_layers) + 'L'
-        dir_name += str(args.attn_n_heads) + 'head'
-    elif 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
-        dir_name += str(args.n_units) + 'H'
-        dir_name += str(args.n_projs) + 'P'
-        dir_name += str(args.n_layers) + 'L'
-    if args.lm_type != 'transformer':
-        dir_name += '_emb' + str(args.emb_dim)
-    dir_name += '_' + args.optimizer
-    dir_name += '_lr' + str(args.learning_rate)
-    dir_name += '_bs' + str(args.batch_size)
-    dir_name += '_bptt' + str(args.bptt)
-    dir_name += '_dropH' + str(args.dropout_hidden) + 'E' + str(args.dropout_emb)
-    if args.tie_embedding:
-        dir_name += '_tie'
-    if 'gated_conv' not in args.lm_type and args.lm_type != 'transformer':
-        if args.residual:
-            dir_name += '_residual'
-        if args.use_glu:
-            dir_name += '_glu'
-        if args.n_units_null_context > 0:
-            dir_name += '_nullcv' + str(args.n_units_null_context)
-    if args.backward:
-        dir_name += '_bwd'
-    if args.serialize:
-        dir_name += '_serialize'
-    if args.min_n_tokens > 0:
-        dir_name += '_' + str(args.min_n_tokens) + 'tokens'
-    if args.adaptive_softmax:
-        dir_name += '_adaptiveSM'
-    if args.warmup_n_steps > 0:
-        dir_name += '_warmpup' + str(args.warmup_n_steps)
-    return dir_name
 
 
 if __name__ == '__main__':

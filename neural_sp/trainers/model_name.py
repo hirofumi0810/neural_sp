@@ -158,3 +158,43 @@ def set_asr_model_name(args, subsample_factor):
         dir_name += '_lm'
 
     return dir_name
+
+
+def set_lm_name(args):
+    dir_name = args.lm_type
+    if args.lm_type == 'transformer':
+        dir_name += str(args.d_model) + 'dmodel'
+        dir_name += str(args.d_ff) + 'dff'
+        dir_name += str(args.n_layers) + 'L'
+        dir_name += str(args.attn_n_heads) + 'head'
+    elif 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
+        dir_name += str(args.n_units) + 'H'
+        dir_name += str(args.n_projs) + 'P'
+        dir_name += str(args.n_layers) + 'L'
+    if args.lm_type != 'transformer':
+        dir_name += '_emb' + str(args.emb_dim)
+    dir_name += '_' + args.optimizer
+    dir_name += '_lr' + str(args.learning_rate)
+    dir_name += '_bs' + str(args.batch_size)
+    dir_name += '_bptt' + str(args.bptt)
+    dir_name += '_dropH' + str(args.dropout_hidden) + 'E' + str(args.dropout_emb)
+    if args.tie_embedding:
+        dir_name += '_tie'
+    if 'gated_conv' not in args.lm_type and args.lm_type != 'transformer':
+        if args.residual:
+            dir_name += '_residual'
+        if args.use_glu:
+            dir_name += '_glu'
+        if args.n_units_null_context > 0:
+            dir_name += '_nullcv' + str(args.n_units_null_context)
+    if args.backward:
+        dir_name += '_bwd'
+    if args.serialize:
+        dir_name += '_serialize'
+    if args.min_n_tokens > 0:
+        dir_name += '_' + str(args.min_n_tokens) + 'tokens'
+    if args.adaptive_softmax:
+        dir_name += '_adaptiveSM'
+    if args.warmup_n_steps > 0:
+        dir_name += '_warmpup' + str(args.warmup_n_steps)
+    return dir_name

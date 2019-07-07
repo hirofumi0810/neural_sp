@@ -44,7 +44,6 @@ from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.trainers.model_name import set_asr_model_name
 from neural_sp.utils import mkdir_join
 
-
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
 
@@ -272,7 +271,7 @@ def main():
                                   lr=float(args.learning_rate),
                                   weight_decay=float(args.weight_decay))
 
-        # wrap optimizer by learning rate scheduler
+        # Wrap optimizer by learning rate scheduler
         noam = 'transformer' in args.enc_type or args.dec_type == 'transformer'
         optimizer = LRScheduler(optimizer,
                                 lr_max=float(args.learning_rate),
@@ -563,8 +562,6 @@ def main():
     pbar_epoch.close()
 
     return model.module.save_path
-
-
 
 
 if __name__ == '__main__':

@@ -1,0 +1,7 @@
+enc_type: tds
+conv_channels: "10_10_14_14_14_18_18_18_18_18_18"
+conv_kernel_sizes: "(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)"
+subsample: "1_1_1_1_1"
+clip_grad_norm: 15.0
+dropout_enc: 0.2
+lsm_prob: 0.05
