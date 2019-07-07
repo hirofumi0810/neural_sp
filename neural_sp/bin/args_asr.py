@@ -386,7 +386,7 @@ def parse():
                         help='carry over LM state')
     parser.add_argument('--recog_wordlm', type=strtobool, default=False,
                         help='')
-    # cache
+    # cache parameters
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
     parser.add_argument('--recog_cache_theta_speech', type=float, default=0.1,
@@ -411,7 +411,7 @@ def parse():
     parser.add_argument('--distillation_type', type=str, default='prob',
                         choices=['teacher_forcing', 'beam_search'],
                         help='')
-    # encoder pretrain
+    # pre-training
     parser.add_argument('--am_pretrain_type', type=str, default='masked_audio_lm',
                         choices=['audio_lm', 'masked_audio_lm',
                                  'dae', 'mass'],

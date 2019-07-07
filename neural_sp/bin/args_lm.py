@@ -78,16 +78,16 @@ def parse():
     parser.add_argument('--bptt', type=int, default=100,
                         help='BPTT length')
     parser.add_argument('--optimizer', type=str, default='adam',
-                        choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov'],
+                        choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov', 'noam'],
                         help='type of optimizer')
     parser.add_argument('--learning_rate', type=float, default=1e-3,
                         help='initial learning rate')
-    parser.add_argument('--learning_rate_factor', type=float, default=1,
+    parser.add_argument('--learning_rate_factor', type=float, default=10,
                         help='factor of learning rate for Transformer')
     parser.add_argument('--eps', type=float, default=1e-6,
                         help='epsilon parameter for Adadelta optimizer')
     parser.add_argument('--n_epochs', type=int, default=50,
-                        help='number of epochs to traing the model')
+                        help='number of epochs to train the model')
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
                         help='epoch to converto to SGD fine-tuning')
     parser.add_argument('--print_step', type=int, default=100,
@@ -111,12 +111,14 @@ def parse():
                         help='initial learning rate for learning rate warm up')
     parser.add_argument('--warmup_n_steps', type=int, default=0,
                         help='number of steps to warm up learing rate')
+    parser.add_argument('--accum_grad_n_tokens', type=int, default=0,
+                        help='total number of tokens to accumulate gradients')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
                         help='')
     parser.add_argument('--rec_weight_orthogonal', type=strtobool, default=False,
                         help='')
-    parser.add_argument('--pretrained_model', default=False, nargs='?',
+    parser.add_argument('--pretrained_model', type=str, default=False, nargs='?',
                         help='')
     # regularization
     parser.add_argument('--clip_grad_norm', type=float, default=5.0,
@@ -137,40 +139,41 @@ def parse():
                         help='')
     parser.add_argument('--adaptive_softmax', type=strtobool, default=False,
                         help='use adaptive softmax')
+    # transformer
+    parser.add_argument('--d_model', type=int, default=256,
+                        help='number of units in self-attention layers in Transformer')
+    parser.add_argument('--d_ff', type=int, default=2048,
+                        help='number of units in feed-forward fully-conncected layers in Transformer')
+    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
+                        choices=['scaled_dot', 'add', 'average'],
+                        help='type of attention for Transformer')
+    parser.add_argument('--transformer_attn_n_heads', type=int, default=4,
+                        help='number of heads in the attention layer for Transformer')
+    parser.add_argument('--pe_type', type=str, default='add',
+                        choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
+                        help='type of positional encoding')
+    parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
+                        help='epsilon value for layer narmalization')
     # contextualization
     parser.add_argument('--serialize', type=strtobool, default=False, nargs='?',
                         help='serialize text according to onset in dialogue')
-    # evaluation
+    # evaluation parameters
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='tsv file paths for the evaluation sets')
-    parser.add_argument('--recog_model', type=str, default=None, nargs='+',
+    parser.add_argument('--recog_model', type=str, default=False, nargs='+',
                         help='model path')
-    parser.add_argument('--recog_dir', type=str, default=None,
+    parser.add_argument('--recog_dir', type=str, default=False,
                         help='directory to save decoding results')
     parser.add_argument('--recog_batch_size', type=int, default=1,
                         help='size of mini-batch in evaluation')
-    # cache
+    # cache parameters
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
     parser.add_argument('--recog_cache_theta', type=float, default=0.2,
                         help='theta paramter for cache')
     parser.add_argument('--recog_cache_lambda', type=float, default=0.2,
                         help='lambda paramter for cache')
-    # transformer
-    parser.add_argument('--d_model', type=int, default=512,
-                        help='')
-    parser.add_argument('--d_ff', type=int, default=2048,
-                        help='')
-    parser.add_argument('--attn_type', type=str, default='scaled_dot',
-                        choices=['scaled_dot', 'add', 'average'],
-                        help='type of attention for transformer')
-    parser.add_argument('--n_heads', type=int, default=8,
-                        help='number of heads in the self-attention layer')
-    parser.add_argument('--pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
-                        help='type of positional encoding')
-    parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
-                        help='')
+
     args = parser.parse_args()
     # args, _ = parser.parse_known_args(parser)
     return args
