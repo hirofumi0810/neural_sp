@@ -110,23 +110,25 @@ class Reporter(object):
             # reset
             self.observation_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
 
-    def epoch(self, wer):
+    def epoch(self, metric, name='wer'):
         self._epoch += 1
+        if metric is None:
+            return
         self.epochs.append(self._epoch)
 
         # register
-        self.observation_eval.append(wer)
+        self.observation_eval.append(metric)
 
         plt.clf()
         plt.plot(self.epochs, self.observation_eval, orange,
                  label='dev', linestyle='-')
         plt.xlabel('epoch', fontsize=12)
-        plt.ylabel('WER', fontsize=12)
+        plt.ylabel(name.upper(), fontsize=12)
         plt.ylim([0, min(100, max(self.observation_eval) + 1)])
         plt.legend(loc="upper right", fontsize=12)
-        if os.path.isfile(os.path.join(self.save_path, 'wer' + ".png")):
-            os.remove(os.path.join(self.save_path, 'wer' + ".png"))
-        plt.savefig(os.path.join(self.save_path, 'wer' + ".png"), dvi=500)
+        if os.path.isfile(os.path.join(self.save_path, name + ".png")):
+            os.remove(os.path.join(self.save_path, name + ".png"))
+        plt.savefig(os.path.join(self.save_path, name + ".png"), dvi=500)
 
     def snapshot(self):
         # linestyles = ['solid', 'dashed', 'dotted', 'dashdotdotted']

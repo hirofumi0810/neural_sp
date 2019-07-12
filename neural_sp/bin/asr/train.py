@@ -423,12 +423,11 @@ def main():
 
             if optimizer._epoch + 1 < args.eval_start_epoch:
                 optimizer.epoch(None)
+                reporter.epoch(None)
 
                 # Save the model
                 save_checkpoint(model, save_path, optimizer, optimizer._epoch,
                                 remove_old_checkpoints=not noam)
-                reporter._epoch += 1
-                # TODO(hirofumi): fix later
             else:
                 start_time_eval = time.time()
                 # dev

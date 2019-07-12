@@ -240,19 +240,18 @@ def main():
 
             if optimizer._epoch + 1 < args.eval_start_epoch:
                 optimizer.epoch(None)
+                reporter.epoch(None)
 
                 # Save the model
                 save_checkpoint(model, save_path, optimizer, optimizer._epoch,
                                 remove_old_checkpoints=args.lm_type != 'transformer')
-                reporter._epoch += 1
-                # TODO(hirofumi): fix later
             else:
                 start_time_eval = time.time()
                 # dev
                 ppl_dev, _ = eval_ppl([model.module], dev_set,
                                       batch_size=1, bptt=args.bptt)
                 logger.info('PPL (%s): %.2f' % (dev_set.set, ppl_dev))
-                reporter.epoch(ppl_dev)
+                reporter.epoch(ppl_dev, name='perplexity')
                 optimizer.epoch(ppl_dev)
 
                 if ppl_dev < optimizer.metric_best:
