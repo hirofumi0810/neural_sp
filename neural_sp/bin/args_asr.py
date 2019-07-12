@@ -26,7 +26,7 @@ def parse():
                         help='model path to resume training')
     parser.add_argument('--job_name', type=str, default=False,
                         help='job name')
-    parser.add_argument('--stdout', type=bool, default=False,
+    parser.add_argument('--stdout', type=strtobool, default=False,
                         help='print to standard output')
 
     # dataset
