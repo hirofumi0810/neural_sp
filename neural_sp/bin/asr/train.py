@@ -231,8 +231,8 @@ def main():
 
         # Count total parameters
         for n in sorted(list(model.num_params_dict.keys())):
-            nparams = model.num_params_dict[n]
-            logger.info("%s %d" % (n, nparams))
+            n_params = model.num_params_dict[n]
+            logger.info("%s %d" % (n, n_params))
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
         logger.info(model)
 
@@ -269,9 +269,9 @@ def main():
                                 decay_start_epoch=args.lr_decay_start_epoch,
                                 decay_rate=args.lr_decay_rate,
                                 decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
-                                model_size=args.d_model,
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
+                                model_size=args.d_model,
                                 factor=args.lr_factor,
                                 noam=noam)
 

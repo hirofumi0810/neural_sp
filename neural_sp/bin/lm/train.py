@@ -139,8 +139,8 @@ def main():
 
         # Count total parameters
         for n in sorted(list(model.num_params_dict.keys())):
-            nparams = model.num_params_dict[n]
-            logger.info("%s %d" % (n, nparams))
+            n_params = model.num_params_dict[n]
+            logger.info("%s %d" % (n, n_params))
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
         logger.info(model)
 
