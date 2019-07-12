@@ -6,20 +6,18 @@ tie_embedding: false
 batch_size: 50
 bptt: 200
 optimizer: nesterov
-learning_rate: 1.0
 n_epochs: 50
 convert_to_sgd_epoch: 50
 print_step: 400
-decay_start_epoch: 10
-decay_rate: 0.5
-decay_patient_n_epochs: 0
-# decay_type: epoch
-decay_type: metric
-not_improved_patient_n_epochs: 20
+lr: 1.0
+lr_decay_start_epoch: 10
+lr_decay_rate: 0.5
+lr_decay_patient_n_epochs: 0
+lr_decay_type: metric
+stop_patient_n_epochs: 20
 eval_start_epoch: 1
 # initialization
 param_init: 0.05
-pretrained_model:
 # regularization
 clip_grad_norm: 0.1
 dropout_in: 0.2

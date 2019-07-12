@@ -3,8 +3,8 @@ lm_type: transformer
 d_model: 512
 d_ff: 2048
 n_layers: 6
-transformer_attn_type: scaled_dot
-transformer_attn_n_heads: 8
+attn_type: scaled_dot
+attn_n_heads: 8
 pe_type: add
 tie_embedding: true
 # optimization
