@@ -108,20 +108,18 @@ def set_save_path(save_path):
     return save_path_new
 
 
-def load_checkpoint(model, checkpoint_path, resume=False):
+def load_checkpoint(model, checkpoint_path, optimizer, resume=False):
     """Load checkpoint.
 
     Args:
         model (torch.nn.Module):
         checkpoint_path (str): path to the saved model (model..epoch-*)
         epoch (int): negative values mean the offset from the last saved model
+        optimizer ():
         resume (bool): if True, restore the save optimizer
     Returns:
         model (torch.nn.Module):
-        checkpoints (dict):
-            epoch (int): currnet epoch
-            step (int): current step
-            metric_dev_best (float): current best performance
+        optimizer ():
 
     """
     if not os.path.isfile(checkpoint_path):
@@ -135,38 +133,27 @@ def load_checkpoint(model, checkpoint_path, resume=False):
         raise ValueError("No checkpoint found at %s" % checkpoint_path)
 
     # Restore parameters
+    logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
     model.load_state_dict(checkpoint['state_dict'])
 
     # Restore optimizer
     if resume:
-        logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
-
-        if hasattr(model, 'optimizer'):
-            model.optimizer.load_state_dict(checkpoint['optimizer'])
-
-            for state in model.optimizer.state.values():
+        if optimizer is not None:
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            for state in optimizer.state.values():
                 for k, v in state.items():
                     if torch.is_tensor(v):
                         state[k] = v.cuda(0)
                         # state[k] = v.cuda(self.device_id)
-                        # TODO (hirofumi): Fix for multi-GPU
+                        # TODO(hirofumi): Fix for multi-GPU
             # NOTE: from https://github.com/pytorch/pytorch/issues/2830
         else:
             raise ValueError('Set optimizer.')
-    else:
-        logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
 
-    return_values = {
-        'optimizer': checkpoint['optimizer'],
-        'epoch': epoch,
-        'step': checkpoint['step'],
-        'metric_dev_best': checkpoint['metric_dev_best']
-    }
-    return model, return_values
+    return model, optimizer
 
 
-def save_checkpoint(model, save_path, optimizer, epoch, step, metric_dev_best,
-                    remove_old_checkpoints=True):
+def save_checkpoint(model, save_path, optimizer, epoch, remove_old_checkpoints=True):
     """Save checkpoint.
 
     Args:
@@ -174,8 +161,6 @@ def save_checkpoint(model, save_path, optimizer, epoch, step, metric_dev_best,
         save_path (str): path to the directory to save a model
         optimizer (LRScheduler): optimizer
         epoch (int): currnet epoch
-        step (int): current step
-        metric_dev_best (float):
         remove_old_checkpoints (bool): if True, all checkpoints
             other than the best one will be deleted
 
@@ -191,9 +176,6 @@ def save_checkpoint(model, save_path, optimizer, epoch, step, metric_dev_best,
     checkpoint = {
         "state_dict": model.module.state_dict(),
         "optimizer": optimizer.optimizer.state_dict(),
-        "epoch": epoch,
-        "step": step,
-        "metric_dev_best": metric_dev_best
     }
     torch.save(checkpoint, model_path)
 

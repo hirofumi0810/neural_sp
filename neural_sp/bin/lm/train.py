@@ -112,11 +112,7 @@ def main():
                                   conf['lr'], conf['weight_decay'])
 
         # Restore the last saved model
-        model, checkpoint = load_checkpoint(model, args.resume, resume=True)
-        optimizer = checkpoint['optimizer']
-        epoch = checkpoint['epoch']
-        step = checkpoint['step']
-        ppl_dev_best = checkpoint['metric_dev_best']
+        model, optimizer, checkpoint = load_checkpoint(model, args.resume, optimizer, resume=True)
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
@@ -147,9 +143,6 @@ def main():
             logger.info("%s %d" % (n, nparams))
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
         logger.info(model)
-
-        epoch, step = 0, 0
-        ppl_dev_best = 10000
 
         # Set optimizer
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
@@ -216,9 +209,8 @@ def main():
         del loss
         hidden = model.module.repackage_state(hidden)
         reporter.step()
-        # step += args.n_gpus
 
-        if step % args.print_step == 0:
+        if optimizer._step % args.print_step == 0:
             # Compute loss in the dev set
             ys_dev = dev_set.next()[0]
             loss, _, reporter = model(ys_dev, None, reporter, is_eval=True)
@@ -228,48 +220,47 @@ def main():
 
             duration_step = time.time() - start_time_step
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                        (step, epoch + train_set.epoch_detail, loss_train, loss_dev,
+                        (optimizer._step, optimizer._epoch + train_set.epoch_detail,
+                         loss_train, loss_dev,
                          np.exp(loss_train), np.exp(loss_dev),
                          optimizer.lr, ys_train.shape[0], duration_step / 60))
             start_time_step = time.time()
-        step += args.n_gpus
         pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
 
         # Save fugures of loss and accuracy
-        if step % (args.print_step * 10) == 0:
+        if optimizer._step % (args.print_step * 10) == 0:
             reporter.snapshot()
             if args.lm_type == 'transformer':
                 model.module.plot_attention()
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
-            epoch += 1
             duration_epoch = time.time() - start_time_epoch
-            logger.info('========== EPOCH:%d (%.2f min) ==========' % (epoch, duration_epoch / 60))
+            logger.info('========== EPOCH:%d (%.2f min) ==========' % (optimizer._epoch + 1, duration_epoch / 60))
 
-            if epoch < args.eval_start_epoch:
+            if optimizer._epoch + 1 < args.eval_start_epoch:
+                optimizer.epoch(None)
+
                 # Save the model
-                save_checkpoint(model, save_path, optimizer,
-                                epoch, step, ppl_dev_best,
+                save_checkpoint(model, save_path, optimizer, optimizer._epoch,
                                 remove_old_checkpoints=args.lm_type != 'transformer')
+                reporter._epoch += 1
+                # TODO(hirofumi): fix later
             else:
                 start_time_eval = time.time()
                 # dev
                 ppl_dev, _ = eval_ppl([model.module], dev_set,
                                       batch_size=1, bptt=args.bptt)
                 logger.info('PPL (%s): %.2f' % (dev_set.set, ppl_dev))
-
-                # Update learning rate
+                reporter.epoch(ppl_dev)
                 optimizer.epoch(ppl_dev)
 
-                if ppl_dev < ppl_dev_best:
-                    ppl_dev_best = ppl_dev
+                if ppl_dev < optimizer.metric_best:
                     not_improved_n_epochs = 0
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    save_checkpoint(model, save_path, optimizer,
-                                    epoch, step, ppl_dev_best,
+                    save_checkpoint(model, save_path, optimizer, optimizer._epoch,
                                     remove_old_checkpoints=args.lm_type != 'transformer')
 
                     # test
@@ -288,11 +279,11 @@ def main():
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
                 # Early stopping
-                if not_improved_n_epochs == args.not_improved_patient_n_epochs:
+                if not_improved_n_epochs == args.stop_patient_n_epochs:
                     break
 
                 # Convert to fine-tuning stage
-                if epoch == args.convert_to_sgd_epoch:
+                if optimizer._epoch == args.convert_to_sgd_epoch:
                     optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
                     optimizer = LRScheduler(optimizer,
                                             base_lr=args.lr,
@@ -303,7 +294,7 @@ def main():
 
             pbar_epoch = tqdm(total=len(train_set))
 
-            if epoch == args.n_epochs:
+            if optimizer._epoch == args.n_epochs:
                 break
 
             start_time_step = time.time()

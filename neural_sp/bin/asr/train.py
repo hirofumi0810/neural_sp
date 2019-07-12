@@ -200,11 +200,7 @@ def main():
                                   conf['lr'], conf['weight_decay'])
 
         # Restore the last saved model
-        model, optimizer, checkpoint = load_checkpoint(model, args.resume, optimizer, resume=True)
-        # optimizer = checkpoint['optimizer']
-        epoch = checkpoint['epoch']
-        step = checkpoint['step']
-        metric_dev_best = checkpoint['metric_dev_best']
+        model, optimizer = load_checkpoint(model, args.resume, optimizer, resume=True)
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
@@ -261,9 +257,6 @@ def main():
                         continue
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
-
-        epoch, step = 0, 0
-        metric_dev_best = 10000
 
         # Set optimizer
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
@@ -384,9 +377,8 @@ def main():
             loss_train = loss.item()
             del loss
         reporter.step()
-        step += args.n_gpus
 
-        if step % args.print_step == 0:
+        if optimizer._step % args.print_step == 0:
             # Compute loss in the dev set
             batch_dev = dev_set.next()[0]
             # Change mini-batch depending on task
@@ -412,7 +404,7 @@ def main():
                 xlen = max(len(x) for x in batch_train['ys'])
                 ylen = max(len(y) for y in batch_train['ys_sub1'])
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
-                        (step, epoch + train_set.epoch_detail,
+                        (optimizer._step, optimizer._epoch + train_set.epoch_detail,
                          loss_train, loss_dev,
                          optimizer.lr, len(batch_train['utt_ids']),
                          xlen, ylen, duration_step / 60))
@@ -420,97 +412,41 @@ def main():
         pbar_epoch.update(len(batch_train['utt_ids']))
 
         # Save fugures of loss and accuracy
-        if step % (args.print_step * 10) == 0:
+        if optimizer._step % (args.print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
-            epoch += 1
             duration_epoch = time.time() - start_time_epoch
-            logger.info('========== EPOCH:%d (%.2f min) ==========' % (epoch, duration_epoch / 60))
+            logger.info('========== EPOCH:%d (%.2f min) ==========' % (optimizer._epoch + 1, duration_epoch / 60))
 
-            if epoch < args.eval_start_epoch:
+            if optimizer._epoch + 1 < args.eval_start_epoch:
+                optimizer.epoch(None)
+
                 # Save the model
-                save_checkpoint(model, save_path, optimizer,
-                                epoch, step, metric_dev_best,
+                save_checkpoint(model, save_path, optimizer, optimizer._epoch,
                                 remove_old_checkpoints=not noam)
                 reporter._epoch += 1
                 # TODO(hirofumi): fix later
             else:
                 start_time_eval = time.time()
                 # dev
-                if args.metric == 'edit_distance':
-                    if args.unit in ['word', 'word_char']:
-                        metric_dev = eval_word([model.module], dev_set, recog_params,
-                                               epoch=epoch)[0]
-                        logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
-                    elif args.unit == 'wp':
-                        metric_dev, cer_dev = eval_wordpiece([model.module], dev_set, recog_params,
-                                                             epoch=epoch)
-                        logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
-                        logger.info('CER (%s): %.2f %%' % (dev_set.set, cer_dev))
-                    elif 'char' in args.unit:
-                        metric_dev, cer_dev = eval_char([model.module], dev_set, recog_params,
-                                                        epoch=epoch)
-                        logger.info('WER (%s): %.2f %%' % (dev_set.set, metric_dev))
-                        logger.info('CER (%s): %.2f %%' % (dev_set.set, cer_dev))
-                    elif 'phone' in args.unit:
-                        metric_dev = eval_phone([model.module], dev_set, recog_params,
-                                                epoch=epoch)
-                        logger.info('PER (%s): %.2f %%' % (dev_set.set, metric_dev))
-                elif args.metric == 'ppl':
-                    metric_dev = eval_ppl([model.module], dev_set, batch_size=args.batch_size)[0]
-                    logger.info('PPL (%s): %.2f' % (dev_set.set, metric_dev))
-                elif args.metric == 'loss':
-                    metric_dev = eval_ppl([model.module], dev_set, batch_size=args.batch_size)[1]
-                    logger.info('Loss (%s): %.2f' % (dev_set.set, metric_dev))
-                else:
-                    raise NotImplementedError(args.metric)
+                metric_dev = eval_epoch([model.module], dev_set, recog_params, args, optimizer._epoch + 1, logger)
                 reporter.epoch(metric_dev)
-
-                # Decay learning rate
                 optimizer.epoch(metric_dev)
 
-                if metric_dev < metric_dev_best:
-                    metric_dev_best = metric_dev
+                if metric_dev < optimizer.metric_best:
                     not_improved_n_epochs = 0
                     logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    save_checkpoint(model, save_path, optimizer,
-                                    epoch, step, metric_dev_best,
+                    save_checkpoint(model, save_path, optimizer, optimizer._epoch,
                                     remove_old_checkpoints=not noam)
 
                     # test
-                    for s in eval_sets:
-                        if args.metric == 'edit_distance':
-                            if args.unit in ['word', 'word_char']:
-                                wer_test = eval_word([model.module], s, recog_params,
-                                                     epoch=epoch)[0]
-                                logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
-                            elif args.unit == 'wp':
-                                wer_test, cer_test = eval_wordpiece([model.module], s, recog_params,
-                                                                    epoch=epoch)
-                                logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
-                                logger.info('CER (%s): %.2f %%' % (s.set, cer_test))
-                            elif 'char' in args.unit:
-                                wer_test, cer_test = eval_char([model.module], s, recog_params,
-                                                               epoch=epoch)
-                                logger.info('WER (%s): %.2f %%' % (s.set, wer_test))
-                                logger.info('CER (%s): %.2f %%' % (s.set, cer_test))
-                            elif 'phone' in args.unit:
-                                per_test = eval_phone([model.module], s, recog_params,
-                                                      epoch=epoch)
-                                logger.info('PER (%s): %.2f %%' % (s.set, per_test))
-                        elif args.metric == 'ppl':
-                            ppl_test = eval_ppl([model.module], s, batch_size=args.batch_size)[0]
-                            logger.info('PPL (%s): %.2f' % (s.set, ppl_test))
-                        elif args.metric == 'loss':
-                            loss_test = eval_ppl([model.module], s, batch_size=args.batch_size)[1]
-                            logger.info('Loss (%s): %.2f' % (s.set, loss_test))
-                        else:
-                            raise NotImplementedError(args.metric)
+                    for eval_set in eval_sets:
+                        eval_epoch(model, eval_set, recog_params, args, optimizer._epoch, logger)
                 else:
                     not_improved_n_epochs += 1
 
@@ -526,7 +462,7 @@ def main():
                     break
 
                 # Convert to fine-tuning stage
-                if epoch == args.convert_to_sgd_epoch:
+                if optimizer._epoch == args.convert_to_sgd_epoch:
                     optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
                     optimizer = LRScheduler(optimizer,
                                             base_lr=args.lr,
@@ -537,7 +473,7 @@ def main():
 
             pbar_epoch = tqdm(total=len(train_set))
 
-            if epoch == args.n_epochs:
+            if optimizer._epoch == args.n_epochs:
                 break
 
             start_time_step = time.time()
@@ -551,6 +487,33 @@ def main():
     pbar_epoch.close()
 
     return save_path
+
+
+def eval_epoch(models, dataset, recog_params, args, epoch, logger):
+    if args.metric == 'edit_distance':
+        if args.unit in ['word', 'word_char']:
+            metric = eval_word(models, dataset, recog_params, epoch=epoch)[0]
+            logger.info('WER (%s): %.2f %%' % (dataset.set, metric))
+        elif args.unit == 'wp':
+            metric, cer = eval_wordpiece(models, dataset, recog_params, epoch=epoch)
+            logger.info('WER (%s): %.2f %%' % (dataset.set, metric))
+            logger.info('CER (%s): %.2f %%' % (dataset.set, cer))
+        elif 'char' in args.unit:
+            metric, cer = eval_char(models, dataset, recog_params, epoch=epoch)
+            logger.info('WER (%s): %.2f %%' % (dataset.set, metric))
+            logger.info('CER (%s): %.2f %%' % (dataset.set, cer))
+        elif 'phone' in args.unit:
+            metric = eval_phone(models, dataset, recog_params, epoch=epoch)
+            logger.info('PER (%s): %.2f %%' % (dataset.set, metric))
+    elif args.metric == 'ppl':
+        metric = eval_ppl(models, dataset, batch_size=args.batch_size)[0]
+        logger.info('PPL (%s): %.2f' % (dataset.set, metric))
+    elif args.metric == 'loss':
+        metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
+        logger.info('Loss (%s): %.2f' % (dataset.set, metric))
+    else:
+        raise NotImplementedError(args.metric)
+    return metric
 
 
 if __name__ == '__main__':

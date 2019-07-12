@@ -106,6 +106,9 @@ class LRScheduler(object):
 
         """
         self._epoch += 1
+        if metric is None:
+            return
+
         if not self.lower_better:
             metric *= -1
 
