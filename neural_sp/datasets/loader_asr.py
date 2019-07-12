@@ -13,13 +13,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
+import kaldiio
 import numpy as np
 import os
 import pandas as pd
-import kaldiio
 
 from neural_sp.datasets.loader_base import Base
-# from neural_sp.datasets.parallel import multiprocess
 from neural_sp.datasets.token_converter.character import Char2idx
 from neural_sp.datasets.token_converter.character import Idx2char
 from neural_sp.datasets.token_converter.phone import Idx2phone
@@ -48,7 +48,7 @@ class Dataset(Base):
                  wp_model_sub2=False,
                  tsv_path_sub2=False, dict_path_sub2=False, unit_sub2=False,
                  ctc_sub2=False, subsample_factor_sub2=1,
-                 contextualize=False, skip_thought=False):
+                 discourse_aware=False, skip_thought=False):
         """A class for loading dataset.
 
         Args:
@@ -73,7 +73,7 @@ class Dataset(Base):
             subsample_factor (int):
             wp_model (): path to the word-piece model for sentencepiece
             corpus (str): name of corpus
-            contextualize (bool):
+            discourse_aware (bool):
             skip_thought (bool):
 
         """
@@ -91,7 +91,7 @@ class Dataset(Base):
         self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
         self.corpus = corpus
-        self.contextualize = contextualize
+        self.discourse_aware = discourse_aware
         self.skip_thought = skip_thought
 
         self.vocab = self.count_vocab_size(dict_path)
@@ -157,11 +157,10 @@ class Dataset(Base):
 
         if corpus == 'swbd':
             self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
-            # self.df['session'] = self.df['speaker'].apply(lambda x: str(x))
         else:
             self.df['session'] = self.df['speaker'].apply(lambda x: str(x))
 
-        if contextualize or skip_thought:
+        if discourse_aware or skip_thought:
             max_n_frames = 10000
             min_n_frames = 100
 
@@ -178,13 +177,16 @@ class Dataset(Base):
             self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
 
             # Extract previous utterances
-            if not skip_thought and not is_test:
-                self.df = self.df.assign(line_no=list(range(len(self.df))))
-                groups = self.df.groupby('session').groups  # dict
-                self.df['prev_utt'] = self.df.apply(
-                    lambda x: [self.df.loc[i, 'line_no']
-                               for i in groups[x['session']] if self.df.loc[i, 'onset'] < x['onset']], axis=1)
-                self.df['n_prev_utt'] = self.df.apply(lambda x: len(x['prev_utt']), axis=1)
+            if not skip_thought:
+                # self.df = self.df.assign(line_no=list(range(len(self.df))))
+                groups = self.df.groupby('session').groups
+                self.df['n_session_utt'] = self.df.apply(
+                    lambda x: len([i for i in groups[x['session']]]), axis=1)
+
+                # self.df['prev_utt'] = self.df.apply(
+                #     lambda x: [self.df.loc[i, 'line_no']
+                #                for i in groups[x['session']] if self.df.loc[i, 'onset'] < x['onset']], axis=1)
+                # self.df['n_prev_utt'] = self.df.apply(lambda x: len(x['prev_utt']), axis=1)
 
         elif is_test and corpus == 'swbd':
             # Sort by onset
@@ -229,10 +231,27 @@ class Dataset(Base):
 
         # Sort tsv records
         if not is_test:
-            if contextualize:
-                self.df = self.df.sort_values(by='n_prev_utt', ascending=short2long)
+            if discourse_aware:
+                self.utt_offset = 0
+                self.n_utt_session_dict = {}
+                self.session_offset_dict = {}
+                for session_id, ids in sorted(self.df.groupby('session').groups.items(), key=lambda x: len(x[1])):
+                    n_utt = len(ids)
+                    # key: n_utt, value: session_id
+                    if n_utt not in self.n_utt_session_dict.keys():
+                        self.n_utt_session_dict[n_utt] = []
+                    self.n_utt_session_dict[n_utt].append(session_id)
+
+                    # key: session_id, value: id for the first utterance in each session
+                    self.session_offset_dict[session_id] = ids[0]
+
+                self.n_utt_session_dict_epoch = copy.deepcopy(self.n_utt_session_dict)
+                # if discourse_aware == 'state_carry_over':
+                #     self.df = self.df.sort_values(by=['n_session_utt', 'utt_id'], ascending=short2long)
+                # else:
+                #     self.df = self.df.sort_values(by=['n_prev_utt'], ascending=short2long)
             elif sort_by_input_length:
-                self.df = self.df.sort_values(by='xlen', ascending=short2long)
+                self.df = self.df.sort_values(by=['xlen'], ascending=short2long)
             elif shuffle:
                 self.df = self.df.reindex(np.random.permutation(self.df.index))
 
@@ -260,7 +279,6 @@ class Dataset(Base):
             xs = []
         else:
             xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in df_indices]
-            # xs = multiprocess(kaldiio.load_mat, self.df['feat_path'][df_indices], core=4)
 
         # outputs
         if self.is_test:
@@ -269,7 +287,7 @@ class Dataset(Base):
             ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in df_indices]
 
         ys_hist = [[] for _ in range(len(df_indices))]
-        if self.contextualize:
+        if self.discourse_aware:
             for j, i in enumerate(df_indices):
                 for idx in self.df['prev_utt'][i]:
                     ys_hist[j].append(list(map(int, str(self.df['token_id'][idx]).split())))
@@ -282,13 +300,13 @@ class Dataset(Base):
                     ys_prev += [list(map(int, str(self.df['token_id'][i - 1]).split()))]
                     text_prev += [self.df['text'][i - 1]]
                 else:
-                    ys_prev += [[self.pad]]
-                    text_prev += ['']
+                    ys_prev += [[]]
+                    text_prev += ['']  # first utterance
                 if i + 1 in self.df.index and self.df['session'][i + 1] == self.df['session'][i]:
                     ys_next += [list(map(int, str(self.df['token_id'][i + 1]).split()))]
                     text_next += [self.df['text'][i + 1]]
                 else:
-                    ys_next += [[self.pad]]
+                    ys_next += [[]]  # last utterance
                     text_next += ['']
 
         ys_sub1 = []

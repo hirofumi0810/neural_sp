@@ -11,9 +11,9 @@ from __future__ import division
 from __future__ import print_function
 
 import codecs
+import copy
 import logging
 import random
-import six
 import time
 from torch.multiprocessing import Process
 from torch.multiprocessing import Queue
@@ -58,8 +58,8 @@ class Base(object):
 
     @property
     def epoch_detail(self):
-        # Floating point version of epoch
-        return self.epoch + (self.offset / len(self))
+        # percentage of the current epoch
+        return self.offset / len(self)
 
     def next(self, batch_size=None):
         """Generate each mini-batch.
@@ -99,7 +99,7 @@ class Base(object):
             if self.queue_size == 0:
                 self.df_indices_list = []
                 self.is_new_epoch_list = []
-                for _ in six.moves.range(self.n_ques):
+                for _ in range(self.n_ques):
                     data_indices, is_new_epoch = self.sample_index(batch_size)
                     self.df_indices_list.append(data_indices)
                     self.is_new_epoch_list.append(is_new_epoch)
@@ -131,7 +131,27 @@ class Base(object):
         """
         is_new_epoch = False
 
-        if self.sort_by_input_length or not self.shuffle:
+        if self.discourse_aware:
+            n_utt = min(self.n_utt_session_dict_epoch.keys())
+            assert self.utt_offset < n_utt
+            data_indices = [self.df[self.session_offset_dict[session_id] + self.utt_offset:self.session_offset_dict[session_id] + self.utt_offset + 1].index[0]
+                            for session_id in self.n_utt_session_dict_epoch[n_utt][:batch_size]]
+
+            self.utt_offset += 1
+            if self.utt_offset == n_utt:
+                if len(self.n_utt_session_dict_epoch[n_utt][batch_size:]) > 0:
+                    self.n_utt_session_dict_epoch[n_utt] = self.n_utt_session_dict_epoch[n_utt][batch_size:]
+                else:
+                    self.n_utt_session_dict_epoch.pop(n_utt)
+                self.utt_offset = 0
+
+                # reset for the new epoch
+                if len(self.n_utt_session_dict_epoch.keys()) == 0:
+                    self.n_utt_session_dict_epoch = copy.deepcopy(self.n_utt_session_dict)
+                    is_new_epoch = True
+                    self._epoch += 1
+
+        elif self.sort_by_input_length or not self.shuffle:
             if self.sort_by_input_length:
                 # Change batch size dynamically
                 min_xlen = self.df[self.offset:self.offset + 1]['xlen'].values[0]
@@ -156,8 +176,6 @@ class Base(object):
                     self.sort_by_input_length = False
                     self.shuffle = True
 
-            # Sort in the descending order for pytorch
-            data_indices = data_indices[::-1]
         else:
             # Randomly sample uttrances
             if len(self.rest) > batch_size:
@@ -214,7 +232,5 @@ class Base(object):
             df_indices_list (np.ndarray):
 
         """
-        # print("Pre-loading started.")
-        for i in six.moves.range(len(df_indices_list)):
+        for i in range(len(df_indices_list)):
             queue.put(self.make_batch(df_indices_list[i]))
-        # print("Pre-loading done.")
