@@ -57,10 +57,8 @@ class LRScheduler(object):
             assert warmup_n_steps > 0
             self.base_lr = factor * (model_size ** -0.5)
         else:
-            if warmup_n_steps > 0:
-                self.base_lr = warmup_start_lr
-            else:
-                self.base_lr = base_lr
+            self.base_lr = base_lr
+        self.warmup_start_lr = warmup_start_lr
         self.warmup_n_steps = warmup_n_steps
         self.lr = self.base_lr
 
@@ -93,7 +91,8 @@ class LRScheduler(object):
                                              self._step * (self.warmup_n_steps ** (-1.5)))
             else:
                 # Increase linearly
-                self.lr = (self.base_lr - self.base_lr) / self.warmup_n_steps * self._step + self.base_lr
+                self.lr = (self.base_lr - self.warmup_start_lr) / \
+                    self.warmup_n_steps * self._step + self.warmup_start_lr
 
             # Update optimizer
             self._update_optimizer()
