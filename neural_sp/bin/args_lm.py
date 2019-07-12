@@ -80,26 +80,26 @@ def parse():
     parser.add_argument('--optimizer', type=str, default='adam',
                         choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov', 'noam'],
                         help='type of optimizer')
-    parser.add_argument('--learning_rate', type=float, default=1e-3,
-                        help='initial learning rate')
-    parser.add_argument('--learning_rate_factor', type=float, default=10,
-                        help='factor of learning rate for Transformer')
-    parser.add_argument('--eps', type=float, default=1e-6,
-                        help='epsilon parameter for Adadelta optimizer')
     parser.add_argument('--n_epochs', type=int, default=50,
                         help='number of epochs to train the model')
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
                         help='epoch to converto to SGD fine-tuning')
     parser.add_argument('--print_step', type=int, default=100,
                         help='print log per this value')
-    parser.add_argument('--decay_type', type=str, default='epoch',
+    parser.add_argument('--lr', type=float, default=1e-3,
+                        help='initial learning rate')
+    parser.add_argument('--lr_factor', type=float, default=10,
+                        help='factor of learning rate for Transformer')
+    parser.add_argument('--eps', type=float, default=1e-6,
+                        help='epsilon parameter for Adadelta optimizer')
+    parser.add_argument('--lr_decay_type', type=str, default='epoch',
                         choices=['epoch', 'metric', 'warmup'],
                         help='type of learning rate decay')
-    parser.add_argument('--decay_start_epoch', type=int, default=10,
+    parser.add_argument('--lr_decay_start_epoch', type=int, default=10,
                         help='epoch to start to decay learning rate')
-    parser.add_argument('--decay_rate', type=float, default=0.9,
+    parser.add_argument('--lr_decay_rate', type=float, default=0.9,
                         help='decay rate of learning rate')
-    parser.add_argument('--decay_patient_n_epochs', type=int, default=0,
+    parser.add_argument('--lr_decay_patient_n_epochs', type=int, default=0,
                         help='number of epochs to tolerate learning rate decay when validation perfomance is not improved')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
                         help='epoch to stop soring utterances by length')
@@ -107,7 +107,7 @@ def parse():
                         help='number of epochs to tolerate stopping training when validation perfomance is not improved')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
                         help='first epoch to start evalaution')
-    parser.add_argument('--warmup_start_learning_rate', type=float, default=0,
+    parser.add_argument('--warmup_start_lr', type=float, default=0,
                         help='initial learning rate for learning rate warm up')
     parser.add_argument('--warmup_n_steps', type=int, default=0,
                         help='number of steps to warm up learing rate')
@@ -146,10 +146,10 @@ def parse():
                         help='number of units in self-attention layers in Transformer')
     parser.add_argument('--d_ff', type=int, default=2048,
                         help='number of units in feed-forward fully-conncected layers in Transformer')
-    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
+    parser.add_argument('--attn_type', type=str, default='scaled_dot',
                         choices=['scaled_dot', 'add', 'average'],
                         help='type of attention for Transformer')
-    parser.add_argument('--transformer_attn_n_heads', type=int, default=4,
+    parser.add_argument('--attn_n_heads', type=int, default=4,
                         help='number of heads in the attention layer for Transformer')
     parser.add_argument('--pe_type', type=str, default='add',
                         choices=['add', 'concat', 'learned_add', 'learned_concat', ''],

@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
+from torch.optim.lr_scheduler import _LRScheduler
 
 
 class LRScheduler(object):
@@ -18,7 +19,7 @@ class LRScheduler(object):
 
     Args:
         optimizer (torch.optim): optimizer
-        lr_max (float): maximum of learning rate
+        base_lr (float): maximum of learning rate
         decay_type (str): epoch/metric
             epoch: decay per epoch regardless of validation metric
             metric: decay if validation metric is not improved
@@ -28,47 +29,47 @@ class LRScheduler(object):
             improved for 'decay_patient_n_epochs'
         lower_better (bool): If True, the lower, the better.
                              If False, the higher, the better.
-        best_value (float): the worst value of evaluation metric
         model_size (int):
         warmup_start_lr (float):
         warmup_n_steps (int):
-        lr_factor (float):
+        factor (float):
         noam (bool): schedule for Transformer
 
     """
 
-    def __init__(self, optimizer, lr_max, decay_type, decay_start_epoch, decay_rate,
-                 decay_patient_n_epochs=0, lower_better=True, best_value=10000,
+    def __init__(self, optimizer, base_lr, decay_type, decay_start_epoch, decay_rate,
+                 decay_patient_n_epochs=0, lower_better=True,
                  model_size=1, warmup_start_lr=0, warmup_n_steps=0,
-                 lr_factor=1, noam=False):
+                 factor=1, noam=False):
 
         self.optimizer = optimizer
-        self.lr_max = lr_max
+        self.base_lr = base_lr
         self.lower_better = lower_better
-        self.best_value = best_value
+        self.metric_best = None
         self.noam = noam
+
+        self._step = 0
+        self._epoch = 0
 
         # for warmup
         if noam:
             self.decay_type = 'warmup'
             assert warmup_n_steps > 0
-            self.lr_init = lr_factor * (model_size ** -0.5)
+            self.base_lr = factor * (model_size ** -0.5)
         else:
             if warmup_n_steps > 0:
-                self.lr_init = warmup_start_lr
+                self.base_lr = warmup_start_lr
             else:
-                self.lr_init = lr_max
+                self.base_lr = base_lr
         self.warmup_n_steps = warmup_n_steps
-        self.lr = self.lr_init
+        self.lr = self.base_lr
 
         # for decay
         self.decay_type = decay_type
         self.decay_start_epoch = decay_start_epoch
         self.decay_rate = decay_rate
         self.decay_patient_n_epochs = decay_patient_n_epochs
-        self._not_improved_n_epochs = 0
-
-        self._step = 0
+        self.not_improved_n_epochs = 0
 
     def step(self):
         self._step += 1
@@ -88,44 +89,47 @@ class LRScheduler(object):
         if self.warmup_n_steps > 0 and self._step < self.warmup_n_steps:
             if self.noam:
                 # Based on the original transformer paper
-                self.lr = self.lr_init * min(self._step ** (-0.5),
+                self.lr = self.base_lr * min(self._step ** (-0.5),
                                              self._step * (self.warmup_n_steps ** (-1.5)))
             else:
                 # Increase linearly
-                self.lr = (self.lr_max - self.lr_init) / self.warmup_n_steps * self._step + self.lr_init
+                self.lr = (self.base_lr - self.base_lr) / self.warmup_n_steps * self._step + self.base_lr
 
             # Update optimizer
             self._update_optimizer()
 
-    def decay(self, epoch, value):
+    def epoch(self, metric):
         """Decay learning rate per epoch.
 
         Args:
-            epoch (int): the current epoch
-            value: (float): A value to evaluate
+            metric: (float): A metric to evaluate
 
         """
+        self._epoch += 1
         if not self.lower_better:
-            value *= -1
+            metric *= -1
 
-        if epoch < self.decay_start_epoch:
+        if self._epoch < self.decay_start_epoch:
             if self.decay_type == 'metric':
-                if value < self.best_value:
-                    # Update the best value
-                    self.best_value = value
+                if self.metric_best is None:
+                    self.metric_best = metric  # first epoch
+                elif metric < self.metric_best:
+                    self.metric_best = metric
                     # NOTE: not update learning rate here
         else:
             if self.decay_type == 'metric':
-                if value < self.best_value:
+                if self.metric_best is None:
+                    self.metric_best = metric  # first epoch
+                elif metric < self.metric_best:
                     # Improved
-                    self.best_value = value
-                    self._not_improved_n_epochs = 0
-                elif self._not_improved_n_epochs < self.decay_patient_n_epochs:
+                    self.metric_best = metric
+                    self.not_improved_n_epochs = 0
+                elif self.not_improved_n_epochs < self.decay_patient_n_epochs:
                     # Not improved, but learning rate will be not decayed
-                    self._not_improved_n_epochs += 1
+                    self.not_improved_n_epochs += 1
                 else:
                     # Not improved, and learning rate will be decayed
-                    self._not_improved_n_epochs = 0
+                    self.not_improved_n_epochs = 0
                     self.lr *= self.decay_rate
                     self._update_optimizer()
 
@@ -140,3 +144,31 @@ class LRScheduler(object):
                 param_group['eps'] = self.lr
             else:
                 param_group['lr'] = self.lr
+
+    def state_dict(self):
+        """Returns the state of the scheduler as a :class:`dict`.
+
+        It contains an entry for every variable in self.__dict__ which
+        is not the optimizer.
+        """
+        return {key: value for key, value in self.__dict__.items() if key != 'optimizer'}
+
+    def load_state_dict(self, state_dict):
+        """Loads the schedulers state.
+
+        Arguments:
+            state_dict (dict): scheduler state. Should be an object returned
+                from a call to :meth:`state_dict`.
+        """
+        self.__dict__.update(state_dict)
+
+# class NoamLR(_LRScheduler):
+#     def __init__(self, optimizer, warmup_n_steps):
+#         self.warmup_n_steps = warmup_n_steps
+#         super().__init__(optimizer)
+#
+#     def get_lr(self):
+#         last_epoch = max(1, self.last_epoch)
+#         scale = self.factor * (self.model_size ** -0.5) * min(last_epoch ** (-0.5),
+#                                                               last_epoch * self.warmup_n_steps ** (-1.5))
+#         return [base_lr * scale for base_lr in self.base_lrs]

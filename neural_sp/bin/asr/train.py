@@ -196,30 +196,24 @@ def main():
     if args.resume:
         # Set optimizer
         epoch = int(args.resume.split('-')[-1])
-        optimizer = set_optimizer(model,
-                                  optimizer='sgd' if epoch > conf['convert_to_sgd_epoch'] else conf['optimizer'],
-                                  lr=float(conf['learning_rate']),  # on-the-fly
-                                  weight_decay=float(conf['weight_decay']))
+        optimizer = set_optimizer(model, 'sgd' if epoch > conf['convert_to_sgd_epoch'] else conf['optimizer'],
+                                  conf['lr'], conf['weight_decay'])
 
         # Restore the last saved model
-        model, checkpoint = load_checkpoint(model, args.resume, resume=True)
-        optimizer = checkpoint['optimizer']
+        model, optimizer, checkpoint = load_checkpoint(model, args.resume, optimizer, resume=True)
+        # optimizer = checkpoint['optimizer']
         epoch = checkpoint['epoch']
         step = checkpoint['step']
         metric_dev_best = checkpoint['metric_dev_best']
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
-            optimizer = set_optimizer(model,
-                                      optimizer='sgd',
-                                      lr=float(args.learning_rate),
-                                      weight_decay=float(conf['weight_decay']))
+            optimizer = set_optimizer(model, 'sgd', args.lr, conf['weight_decay'])
             optimizer = LRScheduler(optimizer,
-                                    lr_max=args.learning_rate,
+                                    base_lr=args.lr,
                                     decay_type='epoch',
                                     decay_start_epoch=0,
-                                    decay_rate=0.5,
-                                    lower_better=True)
+                                    decay_rate=0.5)
             logger.info('========== Convert to SGD ==========')
     else:
         # Save the conf file as a yaml file
@@ -253,7 +247,7 @@ def main():
             for k, v in conf_pt.items():
                 setattr(args_pt, k, v)
             model_pt = Speech2Text(args_pt)
-            model_pt, _ = load_checkpoint(model_pt, args.pretrained_model)
+            model_pt = load_checkpoint(model_pt, args.pretrained_model)[0]
 
             # Overwrite parameters
             only_enc = (args.enc_n_layers != args_pt.enc_n_layers) or (
@@ -272,25 +266,20 @@ def main():
         metric_dev_best = 10000
 
         # Set optimizer
-        optimizer = set_optimizer(model,
-                                  optimizer=args.optimizer,
-                                  lr=float(args.learning_rate),
-                                  weight_decay=float(args.weight_decay))
+        optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
         # Wrap optimizer by learning rate scheduler
         noam = 'transformer' in args.enc_type or args.dec_type == 'transformer'
         optimizer = LRScheduler(optimizer,
-                                lr_max=float(args.learning_rate),
-                                decay_type=args.decay_type,
-                                decay_start_epoch=args.decay_start_epoch,
-                                decay_rate=args.decay_rate,
-                                decay_patient_n_epochs=args.decay_patient_n_epochs,
-                                lower_better=True,
-                                best_value=metric_dev_best,
+                                base_lr=args.lr,
+                                decay_type=args.lr_decay_type,
+                                decay_start_epoch=args.lr_decay_start_epoch,
+                                decay_rate=args.lr_decay_rate,
+                                decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
                                 model_size=args.d_model,
-                                warmup_start_lr=args.warmup_start_learning_rate,
+                                warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
-                                lr_factor=args.learning_rate_factor,
+                                factor=args.lr_factor,
                                 noam=noam)
 
     # Load the teacher ASR model
@@ -304,7 +293,7 @@ def main():
         args_teacher.ss_prob = 0
         args.lsm_prob = 0
         teacher = Speech2Text(args_teacher)
-        teacher, _ = load_checkpoint(teacher, args.teacher)
+        teacher = load_checkpoint(teacher, args.teacher)[0]
 
         # Load the teacher LM
         if args.teacher_lm and os.path.isfile(args.teacher_lm):
@@ -313,7 +302,7 @@ def main():
             for k, v in conf_lm.items():
                 setattr(args_lm, k, v)
             teacher_lm = select_lm(args_lm)
-            teacher_lm, _ = load_checkpoint(teacher_lm, args.teacher_lm)
+            teacher_lm = load_checkpoint(teacher_lm, args.teacher_lm)[0]
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -480,8 +469,8 @@ def main():
                     raise NotImplementedError(args.metric)
                 reporter.epoch(metric_dev)
 
-                # Update learning rate
-                optimizer.decay(epoch=epoch, value=metric_dev)
+                # Decay learning rate
+                optimizer.epoch(metric_dev)
 
                 if metric_dev < metric_dev_best:
                     metric_dev_best = metric_dev
@@ -533,21 +522,17 @@ def main():
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
                 # Early stopping
-                if not_improved_n_epochs == args.not_improved_patient_n_epochs:
+                if not_improved_n_epochs == args.stop_patient_n_epochs:
                     break
 
                 # Convert to fine-tuning stage
                 if epoch == args.convert_to_sgd_epoch:
-                    optimizer = set_optimizer(model,
-                                              optimizer='sgd',
-                                              lr=args.learning_rate,
-                                              weight_decay=float(args.weight_decay))
+                    optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
                     optimizer = LRScheduler(optimizer,
-                                            lr_max=args.learning_rate,
+                                            base_lr=args.lr,
                                             decay_type='epoch',
                                             decay_start_epoch=0,
-                                            decay_rate=0.5,
-                                            lower_better=True)
+                                            decay_rate=0.5)
                     logger.info('========== Convert to SGD ==========')
 
             pbar_epoch = tqdm(total=len(train_set))

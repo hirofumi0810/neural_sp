@@ -181,12 +181,6 @@ def parse():
     parser.add_argument('--optimizer', type=str, default='adam',
                         choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov', 'noam'],
                         help='type of optimizer')
-    parser.add_argument('--learning_rate', type=float, default=1e-3,
-                        help='initial learning rate')
-    parser.add_argument('--learning_rate_factor', type=float, default=10,
-                        help='factor of learning rate for Transformer')
-    parser.add_argument('--eps', type=float, default=1e-6,
-                        help='epsilon parameter for Adadelta optimizer')
     parser.add_argument('--n_epochs', type=int, default=25,
                         help='number of epochs to train the model')
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
@@ -196,22 +190,28 @@ def parse():
     parser.add_argument('--metric', type=str, default='edit_distance',
                         choices=['edit_distance', 'loss', 'acc', 'ppl', 'bleu', 'mse'],
                         help='metric for evaluation during training')
-    parser.add_argument('--decay_type', type=str, default='epoch',
+    parser.add_argument('--lr', type=float, default=1e-3,
+                        help='initial learning rate')
+    parser.add_argument('--lr_factor', type=float, default=10,
+                        help='factor of learning rate for Transformer')
+    parser.add_argument('--eps', type=float, default=1e-6,
+                        help='epsilon parameter for Adadelta optimizer')
+    parser.add_argument('--lr_decay_type', type=str, default='epoch',
                         choices=['epoch', 'metric', 'warmup'],
                         help='type of learning rate decay')
-    parser.add_argument('--decay_start_epoch', type=int, default=10,
+    parser.add_argument('--lr_decay_start_epoch', type=int, default=10,
                         help='epoch to start to decay learning rate')
-    parser.add_argument('--decay_rate', type=float, default=0.9,
+    parser.add_argument('--lr_decay_rate', type=float, default=0.9,
                         help='decay rate of learning rate')
-    parser.add_argument('--decay_patient_n_epochs', type=int, default=0,
+    parser.add_argument('--lr_decay_patient_n_epochs', type=int, default=0,
                         help='number of epochs to tolerate learning rate decay when validation perfomance is not improved')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
                         help='epoch to stop soring utterances by length')
-    parser.add_argument('--not_improved_patient_n_epochs', type=int, default=5,
+    parser.add_argument('--stop_patient_n_epochs', type=int, default=5,
                         help='number of epochs to tolerate stopping training when validation perfomance is not improved')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
                         help='first epoch to start evalaution')
-    parser.add_argument('--warmup_start_learning_rate', type=float, default=0,
+    parser.add_argument('--warmup_start_lr', type=float, default=0,
                         help='initial learning rate for learning rate warm up')
     parser.add_argument('--warmup_n_steps', type=int, default=0,
                         help='number of steps to warm up learing rate')
@@ -320,8 +320,8 @@ def parse():
     parser.add_argument('--pe_type', type=str, default='add',
                         choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
                         help='type of positional encoding')
-    parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
-                        help='epsilon value for layer narmalization')
+    parser.add_argument('--layer_norm_eps', type=float, default=1e-12,
+                        help='epsilon value for layer normalization')
     # contextualization
     parser.add_argument('--discourse_aware', type=str, default=False, nargs='?',
                         choices=['state_carry_over', 'hierarchical', ''],
