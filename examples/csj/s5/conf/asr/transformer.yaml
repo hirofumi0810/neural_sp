@@ -3,7 +3,7 @@ n_stacks: 1
 n_skips: 1
 max_n_frames: 2000
 conv_in_channel: 1
-conv_channels: "64"
+conv_channels: "256"
 conv_kernel_sizes: "(3,3)"
 conv_strides: "(2,2)"
 conv_poolings: "(1,1)"
@@ -22,13 +22,13 @@ ctc_fc_list: "512"
 ### optimization
 batch_size: 32
 optimizer: adam
-learning_rate_factor: 10.0
 n_epochs: 100
 convert_to_sgd_epoch: 100
 print_step: 200
-metric: edit_distance
+metric: ppl
+lr_factor: 10.0
 sort_stop_epoch: 100
-not_improved_patient_n_epochs: 5
+stop_patient_n_epochs: 5
 eval_start_epoch: 10
 warmup_n_steps: 25000
 accum_grad_n_tokens: 0
