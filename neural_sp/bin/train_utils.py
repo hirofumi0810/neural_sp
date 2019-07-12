@@ -12,13 +12,18 @@ from __future__ import print_function
 
 import functools
 from glob import glob
-import logging
+from logging import getLogger
+from logging import StreamHandler
+from logging import Formatter
+from logging import FileHandler
+from logging import DEBUG
+from logging import WARNING
 import os
 import time
 import torch
 import yaml
 
-logger = logging.getLogger('training')
+logger = getLogger('training')
 
 
 def measure_time(func):
@@ -58,28 +63,32 @@ def save_config(conf, save_path):
         f.write(yaml.dump({'param': conf}, default_flow_style=False))
 
 
-def set_logger(save_path, key):
+def set_logger(save_path, key, stdout=False):
     """Set logger.
 
     Args:
         save_path (str):
         key (str):
+        stdout (bool):
     Returns:
         logger ():
 
     """
-    logger = logging.getLogger(key)
-    sh = logging.StreamHandler()
-    fh = logging.FileHandler(save_path)
+    logger = getLogger(key)
+    sh = StreamHandler()
+    fh = FileHandler(save_path)
 
-    logger.setLevel(logging.DEBUG)
-    sh.setLevel(logging.WARNING)
-    fh.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s')
+    logger.setLevel(DEBUG)
+    sh.setLevel(WARNING)
+    fh.setLevel(DEBUG)
+    formatter = Formatter('%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s')
     sh.setFormatter(formatter)
     fh.setFormatter(formatter)
     logger.addHandler(sh)
     logger.addHandler(fh)
+
+    if stdout:
+        logger.info = lambda x: print(x)
 
     return logger
 

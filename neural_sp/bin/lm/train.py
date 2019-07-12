@@ -100,7 +100,7 @@ def main():
         save_path = set_save_path(save_path)  # avoid overwriting
 
     # Set logger
-    logger = set_logger(os.path.join(save_path, 'train.log'), key='training')
+    logger = set_logger(os.path.join(save_path, 'train.log'), key='training', stdout=args.stdout)
 
     # Model setting
     model = select_lm(args, save_path)
