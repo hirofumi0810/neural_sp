@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import torch
 from torch.optim.lr_scheduler import _LRScheduler
 
@@ -44,7 +45,7 @@ class LRScheduler(object):
 
         self.optimizer = optimizer
         self.lower_better = lower_better
-        self.metric_best = None
+        self.metric_best = float(np.finfo(np.float32).max) if lower_better else float(np.finfo(np.float32).min)
         self.noam = noam
 
         self._step = 0
@@ -113,16 +114,12 @@ class LRScheduler(object):
 
         if self._epoch < self.decay_start_epoch:
             if self.decay_type == 'metric':
-                if self.metric_best is None:
-                    self.metric_best = metric  # first epoch
-                elif metric < self.metric_best:
+                if metric < self.metric_best:
                     self.metric_best = metric
                     # NOTE: not update learning rate here
         else:
             if self.decay_type == 'metric':
-                if self.metric_best is None:
-                    self.metric_best = metric  # first epoch
-                elif metric < self.metric_best:
+                if metric < self.metric_best:
                     # Improved
                     self.metric_best = metric
                     self.not_improved_n_epochs = 0
