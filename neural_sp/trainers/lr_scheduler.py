@@ -10,9 +10,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
 import torch
-from torch.optim.lr_scheduler import _LRScheduler
+# from torch.optim.lr_scheduler import _LRScheduler
 
 
 class LRScheduler(object):
@@ -45,7 +44,7 @@ class LRScheduler(object):
 
         self.optimizer = optimizer
         self.lower_better = lower_better
-        self.metric_best = float(np.finfo(np.float32).max) if lower_better else float(np.finfo(np.float32).min)
+        self.metric_best = 1e10 if lower_better else -1e10
         self.noam = noam
 
         self._step = 0
@@ -105,8 +104,6 @@ class LRScheduler(object):
 
         """
         self._epoch += 1
-        if metric is None:
-            return
 
         if not self.lower_better:
             metric *= -1

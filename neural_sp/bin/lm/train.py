@@ -112,13 +112,12 @@ def main():
                                   conf['lr'], conf['weight_decay'])
 
         # Restore the last saved model
-        model, optimizer, checkpoint = load_checkpoint(model, args.resume, optimizer, resume=True)
+        model, optimizer = load_checkpoint(model, args.resume, optimizer, resume=True)
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
             optimizer = set_optimizer(model, 'sgd', args.lr, conf['weight_decay'])
-            optimizer = LRScheduler(optimizer,
-                                    base_lr=args.lr,
+            optimizer = LRScheduler(optimizer, args.lr,
                                     decay_type='epoch',
                                     decay_start_epoch=0,
                                     decay_rate=0.5)
@@ -148,15 +147,14 @@ def main():
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
         # Wrap optimizer by learning rate scheduler
-        optimizer = LRScheduler(optimizer,
-                                base_lr=args.lr,
+        optimizer = LRScheduler(optimizer, args.lr,
                                 decay_type=args.lr_decay_type,
                                 decay_start_epoch=args.lr_decay_start_epoch,
                                 decay_rate=args.lr_decay_rate,
                                 decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
-                                model_size=args.d_model,
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
+                                model_size=args.d_model,
                                 factor=args.lr_factor,
                                 noam=args.lm_type == 'transformer')
 
@@ -236,7 +234,8 @@ def main():
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
-            logger.info('========== EPOCH:%d (%.2f min) ==========' % (optimizer._epoch + 1, duration_epoch / 60))
+            logger.info('========== EPOCH:%d (%.2f min) ==========' %
+                        (optimizer._epoch + 1, duration_epoch / 60))
 
             if optimizer._epoch + 1 < args.eval_start_epoch:
                 optimizer.epoch(None)
@@ -284,8 +283,7 @@ def main():
                 # Convert to fine-tuning stage
                 if optimizer._epoch == args.convert_to_sgd_epoch:
                     optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
-                    optimizer = LRScheduler(optimizer,
-                                            base_lr=args.lr,
+                    optimizer = LRScheduler(optimizer, args.lr,
                                             decay_type='epoch',
                                             decay_start_epoch=0,
                                             decay_rate=0.5)

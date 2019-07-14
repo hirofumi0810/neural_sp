@@ -191,7 +191,7 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'), key='training', stdout=args.stdout)
 
     # Model setting
-    model = SkipThought(args, save_path) if skip_thought else Speech2Text(args, save_path)
+    model = Speech2Text(args, save_path) if not skip_thought else SkipThought(args, save_path)
 
     if args.resume:
         # Set optimizer
@@ -205,8 +205,7 @@ def main():
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
             optimizer = set_optimizer(model, 'sgd', args.lr, conf['weight_decay'])
-            optimizer = LRScheduler(optimizer,
-                                    base_lr=args.lr,
+            optimizer = LRScheduler(optimizer, args.lr,
                                     decay_type='epoch',
                                     decay_start_epoch=0,
                                     decay_rate=0.5)
@@ -263,8 +262,7 @@ def main():
 
         # Wrap optimizer by learning rate scheduler
         noam = 'transformer' in args.enc_type or args.dec_type == 'transformer'
-        optimizer = LRScheduler(optimizer,
-                                base_lr=args.lr,
+        optimizer = LRScheduler(optimizer, args.lr,
                                 decay_type=args.lr_decay_type,
                                 decay_start_epoch=args.lr_decay_start_epoch,
                                 decay_rate=args.lr_decay_rate,
@@ -419,7 +417,8 @@ def main():
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
-            logger.info('========== EPOCH:%d (%.2f min) ==========' % (optimizer._epoch + 1, duration_epoch / 60))
+            logger.info('========== EPOCH:%d (%.2f min) ==========' %
+                        (optimizer._epoch + 1, duration_epoch / 60))
 
             if optimizer._epoch + 1 < args.eval_start_epoch:
                 optimizer.epoch(None)
@@ -431,7 +430,8 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                metric_dev = eval_epoch([model.module], dev_set, recog_params, args, optimizer._epoch + 1, logger)
+                metric_dev = eval_epoch([model.module], dev_set, recog_params, args,
+                                        optimizer._epoch + 1, logger)
                 reporter.epoch(metric_dev)
                 optimizer.epoch(metric_dev)
 
@@ -445,7 +445,8 @@ def main():
 
                     # test
                     for eval_set in eval_sets:
-                        eval_epoch(model, eval_set, recog_params, args, optimizer._epoch, logger)
+                        eval_epoch([model.module], eval_set, recog_params, args,
+                                   optimizer._epoch, logger)
                 else:
                     not_improved_n_epochs += 1
 
@@ -463,8 +464,7 @@ def main():
                 # Convert to fine-tuning stage
                 if optimizer._epoch == args.convert_to_sgd_epoch:
                     optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
-                    optimizer = LRScheduler(optimizer,
-                                            base_lr=args.lr,
+                    optimizer = LRScheduler(optimizer, args.lr,
                                             decay_type='epoch',
                                             decay_start_epoch=0,
                                             decay_rate=0.5)
