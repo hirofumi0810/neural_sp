@@ -195,12 +195,12 @@ def parse():
                         help='metric for evaluation during training')
     parser.add_argument('--lr', type=float, default=1e-3,
                         help='initial learning rate')
-    parser.add_argument('--lr_factor', type=float, default=10,
+    parser.add_argument('--lr_factor', type=float, default=10.0,
                         help='factor of learning rate for Transformer')
     parser.add_argument('--eps', type=float, default=1e-6,
                         help='epsilon parameter for Adadelta optimizer')
-    parser.add_argument('--lr_decay_type', type=str, default='epoch',
-                        choices=['epoch', 'metric', 'warmup'],
+    parser.add_argument('--lr_decay_type', type=str, default='always',
+                        choices=['always', 'metric', 'warmup'],
                         help='type of learning rate decay')
     parser.add_argument('--lr_decay_start_epoch', type=int, default=10,
                         help='epoch to start to decay learning rate')

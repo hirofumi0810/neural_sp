@@ -10,10 +10,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
+from logging import getLogger
 import torch
 
-logger = logging.getLogger('training')
+logger = getLogger('training')
 
 
 def set_optimizer(model, optimizer, lr, weight_decay=0.0):

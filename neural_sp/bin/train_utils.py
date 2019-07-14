@@ -12,11 +12,11 @@ from __future__ import print_function
 
 import functools
 from glob import glob
+from logging import DEBUG
+from logging import FileHandler
+from logging import Formatter
 from logging import getLogger
 from logging import StreamHandler
-from logging import Formatter
-from logging import FileHandler
-from logging import DEBUG
 from logging import WARNING
 import os
 import time

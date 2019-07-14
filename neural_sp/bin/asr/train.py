@@ -206,7 +206,7 @@ def main():
         if epoch == conf['convert_to_sgd_epoch']:
             optimizer = set_optimizer(model, 'sgd', args.lr, conf['weight_decay'])
             optimizer = LRScheduler(optimizer, args.lr,
-                                    decay_type='epoch',
+                                    decay_type='always',
                                     decay_start_epoch=0,
                                     decay_rate=0.5)
             logger.info('========== Convert to SGD ==========')
@@ -307,14 +307,10 @@ def main():
         if teacher_lm is not None:
             teacher_lm.cuda()
 
+    # Set process name
     logger.info('PID: %s' % os.getpid())
     logger.info('USERNAME: %s' % os.uname()[1])
-
-    # Set process name
-    if args.job_name:
-        setproctitle(args.job_name)
-    else:
-        setproctitle(dir_name)
+    setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
     reporter = Reporter(save_path, tensorboard=True)
@@ -421,8 +417,8 @@ def main():
                         (optimizer._epoch + 1, duration_epoch / 60))
 
             if optimizer._epoch + 1 < args.eval_start_epoch:
-                optimizer.epoch(None)
-                reporter.epoch(None)
+                optimizer.epoch()
+                reporter.epoch()
 
                 # Save the model
                 save_checkpoint(model, save_path, optimizer, optimizer._epoch,
@@ -432,8 +428,8 @@ def main():
                 # dev
                 metric_dev = eval_epoch([model.module], dev_set, recog_params, args,
                                         optimizer._epoch + 1, logger)
-                reporter.epoch(metric_dev)
                 optimizer.epoch(metric_dev)
+                reporter.epoch(metric_dev)
 
                 if metric_dev < optimizer.metric_best:
                     not_improved_n_epochs = 0
@@ -465,7 +461,7 @@ def main():
                 if optimizer._epoch == args.convert_to_sgd_epoch:
                     optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
                     optimizer = LRScheduler(optimizer, args.lr,
-                                            decay_type='epoch',
+                                            decay_type='always',
                                             decay_start_epoch=0,
                                             decay_rate=0.5)
                     logger.info('========== Convert to SGD ==========')

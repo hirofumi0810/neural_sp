@@ -10,7 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
+from logging import getLogger
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
@@ -25,7 +25,7 @@ blue = '#4682B4'
 orange = '#D2691E'
 green = '#82b74b'
 
-logger = logging.getLogger('training')
+logger = getLogger('training')
 
 
 class Reporter(object):
@@ -110,7 +110,7 @@ class Reporter(object):
             # reset
             self.observation_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
 
-    def epoch(self, metric, name='wer'):
+    def epoch(self, metric=None, name='wer'):
         self._epoch += 1
         if metric is None:
             return

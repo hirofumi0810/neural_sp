@@ -10,8 +10,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from logging import getLogger
 import torch
 # from torch.optim.lr_scheduler import _LRScheduler
+
+logger = getLogger('training')
 
 
 class LRScheduler(object):
@@ -20,8 +23,8 @@ class LRScheduler(object):
     Args:
         optimizer (torch.optim): optimizer
         base_lr (float): maximum of learning rate
-        decay_type (str): epoch/metric
-            epoch: decay per epoch regardless of validation metric
+        decay_type (str): always/metric
+            always: decay per epoch regardless of validation metric
             metric: decay if validation metric is not improved
         decay_start_epoch (int): the epoch to start decay
         decay_rate (float): the rate to decay the current learning rate
@@ -71,12 +74,12 @@ class LRScheduler(object):
     def step(self):
         self._step += 1
         self.optimizer.step()
-        self._warmup()
+        self._warmup_lr()
 
     def zero_grad(self):
         self.optimizer.zero_grad()
 
-    def _warmup(self):
+    def _warmup_lr(self):
         """Warm up learning rate per step.
 
         Args:
@@ -94,9 +97,9 @@ class LRScheduler(object):
                     self.warmup_n_steps * self._step + self.warmup_start_lr
 
             # Update optimizer
-            self._update_optimizer()
+            self._reduce_lr()
 
-    def epoch(self, metric):
+    def epoch(self, metric=None):
         """Decay learning rate per epoch.
 
         Args:
@@ -108,37 +111,37 @@ class LRScheduler(object):
         if not self.lower_better:
             metric *= -1
 
-        if self._epoch < self.decay_start_epoch:
+        is_best = False
+        if metric is not None and metric < self.metric_best:
+            self.metric_best = metric
+            is_best = True
+
+        if self._epoch >= self.decay_start_epoch:
             if self.decay_type == 'metric':
-                if metric < self.metric_best:
-                    self.metric_best = metric
-                    # NOTE: not update learning rate here
-        else:
-            if self.decay_type == 'metric':
-                if metric < self.metric_best:
+                if is_best:
                     # Improved
-                    self.metric_best = metric
                     self.not_improved_n_epochs = 0
                 elif self.not_improved_n_epochs < self.decay_patient_n_epochs:
-                    # Not improved, but learning rate will be not decayed
+                    # Not improved, but learning rate is not decayed
                     self.not_improved_n_epochs += 1
                 else:
-                    # Not improved, and learning rate will be decayed
+                    # Not improved, and learning rate is decayed
                     self.not_improved_n_epochs = 0
                     self.lr *= self.decay_rate
-                    self._update_optimizer()
-
-            elif self.decay_type == 'epoch':
+                    self._reduce_lr()
+            elif self.decay_type == 'always':
                 self.lr *= self.decay_rate
-                self._update_optimizer()
+                self._reduce_lr()
 
-    def _update_optimizer(self):
-        """Update optimizer."""
+    def _reduce_lr(self):
+        """Reduce learning rate."""
         for param_group in self.optimizer.param_groups:
             if isinstance(self.optimizer, torch.optim.Adadelta):
                 param_group['eps'] = self.lr
             else:
                 param_group['lr'] = self.lr
+        logger.info('Epoch {:%5d}: reducing learning rate from %.5f to %.5f'
+                    % (self._epoch, self.lr))
 
     def state_dict(self):
         """Returns the state of the scheduler as a :class:`dict`.
