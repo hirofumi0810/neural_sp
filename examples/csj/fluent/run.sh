@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 gpu=
 speed_perturb=false
+stdout=false
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char
@@ -283,6 +284,7 @@ if [ ${stage} -le 3 ]; then
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/lm \
         --pretrained_model ${lm_pretrained_model} \
+        --stdout ${stdout} \
         --resume ${lm_resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
@@ -305,6 +307,7 @@ if [ ${stage} -le 4 ]; then
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/asr \
         --pretrained_model ${pretrained_model} \
+        --stdout ${stdout} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 gpu=
 speed_perturb=false
+stdout=false
 
 ### vocabulary
 unit=wp           # word/wp/word_char
@@ -304,6 +305,7 @@ if [ ${stage} -le 4 ]; then
         --wp_model_sub1 ${wp_model_sub1}.model \
         --model_save_dir ${model}/asr \
         --pretrained_model ${pretrained_model} \
+        --stdout ${stdout} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

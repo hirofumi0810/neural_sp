@@ -11,15 +11,11 @@ tie_embedding: true
 batch_size: 64
 bptt: 128
 optimizer: adam
-learning_rate_factor: 1
 n_epochs: 100
 convert_to_sgd_epoch: 100
 print_step: 200
-decay_start_epoch: 10
-decay_rate: 0.9
-decay_patient_n_epochs: 0
-decay_type: epoch
-not_improved_patient_n_epochs: 10
+lr_factor: 10.0
+stop_patient_n_epochs: 10
 eval_start_epoch: 1
 warmup_n_steps: 4000
 # regularization

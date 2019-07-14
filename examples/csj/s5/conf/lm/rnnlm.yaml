@@ -19,7 +19,7 @@ lr: 1e-3
 lr_decay_start_epoch: 10
 lr_decay_rate: 0.9
 lr_decay_patient_n_epochs: 0
-lr_decay_type: epoch
+lr_decay_type: always
 stop_patient_n_epochs: 10
 eval_start_epoch: 1
 # initialization

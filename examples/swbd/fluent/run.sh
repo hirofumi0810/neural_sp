@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 gpu=
 speed_perturb=false
+stdout=false
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char/phone
@@ -19,7 +20,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 #########################
 # ASR configuration
 #########################
-asr_config=conf/asr/seq2seq.yaml
+asr_config=conf/asr/rnn_seq2seq.yaml
 pretrained_model=
 
 # if [ ${speed_perturb} = true ]; then
@@ -325,11 +326,12 @@ if [ ${stage} -le 3 ]; then
         --train_set ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset_lm/dev_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${lm_test_set} \
+        --unit ${unit} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/lm \
         --pretrained_model ${lm_pretrained_model} \
-        --unit ${unit} \
+        --stdout ${stdout} \
         --resume ${lm_resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;
@@ -346,12 +348,13 @@ if [ ${stage} -le 4 ]; then
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --unit ${unit} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/asr \
         --pretrained_model ${pretrained_model} \
-        --unit ${unit} \
+        --stdout ${stdout} \
         --resume ${resume} || exit 1;
 
-    echo "Finish model training (stage: 4)."
+    echo "Finish ASR model training (stage: 4)."
 fi

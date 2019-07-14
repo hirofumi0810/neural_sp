@@ -33,7 +33,7 @@ convert_to_sgd_epoch: 20
 print_step: 200
 metric: edit_distance
 lr: 1e-3
-lr_decay_type: epoch
+lr_decay_type: always
 lr_decay_start_epoch: 10
 lr_decay_rate: 0.85
 lr_decay_patient_n_epochs: 0

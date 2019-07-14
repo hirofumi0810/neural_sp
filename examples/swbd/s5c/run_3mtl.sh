@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 gpu=
 speed_perturb=false
+stdout=false
 
 ### vocabulary
 unit=wp           # word/wp/word_char
@@ -399,7 +400,6 @@ if [ ${stage} -le 4 ]; then
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus swbd \
         --config ${asr_config} \
-
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
@@ -407,6 +407,9 @@ if [ ${stage} -le 4 ]; then
         --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --dev_set_sub1 ${data}/dataset/${dev_set}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
         --dev_set_sub2 ${data}/dataset/${dev_set}_${datasize}_${unit_sub2}${wp_type_sub2}${vocab_sub2}.tsv \
+        --unit ${unit} \
+        --unit_sub1 ${unit_sub1} \
+        --unit_sub2 ${unit_sub2} \
         --nlsyms ${nlsyms} \
         --dict ${dict} \
         --dict_sub1 ${dict_sub1} \
@@ -416,9 +419,7 @@ if [ ${stage} -le 4 ]; then
         --wp_model_sub2 ${wp_model_sub2}.model \
         --model_save_dir ${model}/asr \
         --pretrained_model ${pretrained_model} \
-        --unit ${unit} \
-        --unit_sub1 ${unit_sub1} \
-        --unit_sub2 ${unit_sub2} \
+        --stdout ${stdout} \
         --resume ${resume} || exit 1;
 
     echo "Finish model training (stage: 4)."

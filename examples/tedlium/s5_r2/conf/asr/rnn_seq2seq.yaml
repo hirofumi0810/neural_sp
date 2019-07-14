@@ -12,7 +12,6 @@ enc_type: blstm
 enc_n_units: 512
 enc_n_projs: 0
 enc_n_layers: 5
-enc_n_layers_sub1: 4
 enc_nin: false
 subsample_type: drop
 attn_type: location
@@ -26,13 +25,12 @@ dec_bottleneck_dim: 1024
 emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
-ctc_fc_list_sub1: "512"
 ### optimization
-batch_size: 40
+batch_size: 30
 optimizer: adam
 n_epochs: 25
 convert_to_sgd_epoch: 20
-print_step: 200
+print_step: 100
 metric: edit_distance
 lr: 1e-3
 lr_decay_type: always
@@ -43,7 +41,7 @@ sort_stop_epoch: 100
 stop_patient_n_epochs: 5
 eval_start_epoch: 1
 warmup_start_lr: 1e-4
-warmup_n_steps: 0
+warmup_n_steps: 4000
 ### initialization
 param_init: 0.1
 ### regularization
@@ -67,12 +65,10 @@ n_time_masks: 0
 time_width_upper: 1.0
 ### MTL
 ctc_weight: 0.0
-ctc_weight_sub1: 0.2
 ctc_lsm_prob: 0.1
 bwd_weight: 0.0
-sub1_weight: 0.2
 mtl_per_batch: false
-task_specific_layer: true
+task_specific_layer: false
 ### LM integration
 lm_fusion_type: cold
 lm_fusion: ''
