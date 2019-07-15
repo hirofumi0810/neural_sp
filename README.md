@@ -11,6 +11,7 @@ export LD_LIBRARY_PATH=$NCCL_ROOT/lib/:$CUDAROOT/lib64:$LD_LIBRARY_PATH
 export LIBRARY_PATH=$NCCL_ROOT/lib/:$LIBRARY_PATH
 export CUDA_HOME=$CUDAROOT
 export CUDA_PATH=$CUDAROOT
+export CPATH=$CUDA_PATH/include:$CPATH  # for warp-rnnt
 
 # Install miniconda, python libraries, and other tools
 cd tools
