@@ -34,8 +34,8 @@ class LRScheduler(object):
                              If False, the higher, the better.
         warmup_start_lr (float): initial learning rate for warmup
         warmup_n_steps (int): steps for learning rate warmup
-        model_size (int):
-        factor (float):
+        model_size (int): d_model
+        factor (float): factor of learning rate for Transformer
         noam (bool): schedule for Transformer
 
     """
@@ -46,8 +46,6 @@ class LRScheduler(object):
                  model_size=1, factor=1, noam=False):
 
         self.optimizer = optimizer
-        self.lower_better = lower_better
-        self.metric_best = 1e10 if lower_better else -1e10
         self.noam = noam
 
         self._step = 0
@@ -65,11 +63,31 @@ class LRScheduler(object):
         self.lr = self.base_lr
 
         # for decay
+        self.lower_better = lower_better
         self.decay_type = decay_type
         self.decay_start_epoch = decay_start_epoch
         self.decay_rate = decay_rate
         self.decay_patient_n_epochs = decay_patient_n_epochs
+        self.metric_best = 1e10 if lower_better else -1e10
+        self._is_best = False
         self.not_improved_n_epochs = 0
+        self._early_stop = False
+
+    @property
+    def n_steps(self):
+        return self._step
+
+    @property
+    def n_epochs(self):
+        return self._epoch
+
+    @property
+    def is_best(self):
+        return self._is_best
+
+    @property
+    def earch_stop(self):
+        return self._early_stop
 
     def step(self):
         self._step += 1
@@ -107,18 +125,19 @@ class LRScheduler(object):
 
         """
         self._epoch += 1
+        self._is_best = False
 
         if not self.lower_better:
             metric *= -1
 
-        is_best = False
         if metric is not None and metric < self.metric_best:
             self.metric_best = metric
-            is_best = True
+            self._is_best = True
+            logger.info('||||| Best Score |||||')
 
         if self._epoch >= self.decay_start_epoch:
             if self.decay_type == 'metric':
-                if is_best:
+                if self._is_best:
                     # Improved
                     self.not_improved_n_epochs = 0
                 elif self.not_improved_n_epochs < self.decay_patient_n_epochs:
@@ -140,7 +159,7 @@ class LRScheduler(object):
                 param_group['eps'] = self.lr
             else:
                 param_group['lr'] = self.lr
-        logger.info('Epoch {:%5d}: reducing learning rate from %.5f to %.5f'
+        logger.info('Epoch %d: reducing learning rate to %.5f'
                     % (self._epoch, self.lr))
 
     def state_dict(self):

@@ -372,7 +372,7 @@ def main():
             del loss
         reporter.step()
 
-        if optimizer._step % args.print_step == 0:
+        if optimizer.n_steps % args.print_step == 0:
             # Compute loss in the dev set
             batch_dev = dev_set.next()[0]
             # Change mini-batch depending on task
@@ -398,7 +398,7 @@ def main():
                 xlen = max(len(x) for x in batch_train['ys'])
                 ylen = max(len(y) for y in batch_train['ys_sub1'])
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
-                        (optimizer._step, optimizer._epoch + train_set.epoch_detail,
+                        (optimizer.n_steps, optimizer.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
                          optimizer.lr, len(batch_train['utt_ids']),
                          xlen, ylen, duration_step / 60))
@@ -406,7 +406,7 @@ def main():
         pbar_epoch.update(len(batch_train['utt_ids']))
 
         # Save fugures of loss and accuracy
-        if optimizer._step % (args.print_step * 10) == 0:
+        if optimizer.n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
 
@@ -414,35 +414,34 @@ def main():
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
             logger.info('========== EPOCH:%d (%.2f min) ==========' %
-                        (optimizer._epoch + 1, duration_epoch / 60))
+                        (optimizer.n_epochs + 1, duration_epoch / 60))
 
-            if optimizer._epoch + 1 < args.eval_start_epoch:
+            if optimizer.n_epochs + 1 < args.eval_start_epoch:
                 optimizer.epoch()
                 reporter.epoch()
 
                 # Save the model
-                save_checkpoint(model, save_path, optimizer, optimizer._epoch,
+                save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
                                 remove_old_checkpoints=not noam)
             else:
                 start_time_eval = time.time()
                 # dev
                 metric_dev = eval_epoch([model.module], dev_set, recog_params, args,
-                                        optimizer._epoch + 1, logger)
+                                        optimizer.n_epochs + 1, logger)
                 optimizer.epoch(metric_dev)
                 reporter.epoch(metric_dev)
 
-                if metric_dev < optimizer.metric_best:
+                if optimizer.is_best:
                     not_improved_n_epochs = 0
-                    logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    save_checkpoint(model, save_path, optimizer, optimizer._epoch,
+                    save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
                                     remove_old_checkpoints=not noam)
 
                     # test
                     for eval_set in eval_sets:
                         eval_epoch([model.module], eval_set, recog_params, args,
-                                   optimizer._epoch, logger)
+                                   optimizer.n_epochs, logger)
                 else:
                     not_improved_n_epochs += 1
 
@@ -458,7 +457,7 @@ def main():
                     break
 
                 # Convert to fine-tuning stage
-                if optimizer._epoch == args.convert_to_sgd_epoch:
+                if optimizer.n_epochs == args.convert_to_sgd_epoch:
                     optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
                     optimizer = LRScheduler(optimizer, args.lr,
                                             decay_type='always',
@@ -468,7 +467,7 @@ def main():
 
             pbar_epoch = tqdm(total=len(train_set))
 
-            if optimizer._epoch == args.n_epochs:
+            if optimizer.n_epochs == args.n_epochs:
                 break
 
             start_time_step = time.time()

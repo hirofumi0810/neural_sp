@@ -204,7 +204,7 @@ def main():
         hidden = model.module.repackage_state(hidden)
         reporter.step()
 
-        if optimizer._step % args.print_step == 0:
+        if optimizer.n_steps % args.print_step == 0:
             # Compute loss in the dev set
             ys_dev = dev_set.next()[0]
             loss, _, reporter = model(ys_dev, None, reporter, is_eval=True)
@@ -214,7 +214,7 @@ def main():
 
             duration_step = time.time() - start_time_step
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                        (optimizer._step, optimizer._epoch + train_set.epoch_detail,
+                        (optimizer.n_steps, optimizer.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
                          np.exp(loss_train), np.exp(loss_dev),
                          optimizer.lr, ys_train.shape[0], duration_step / 60))
@@ -222,7 +222,7 @@ def main():
         pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
 
         # Save fugures of loss and accuracy
-        if optimizer._step % (args.print_step * 10) == 0:
+        if optimizer.n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             if args.lm_type == 'transformer':
                 model.module.plot_attention()
@@ -231,14 +231,14 @@ def main():
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
             logger.info('========== EPOCH:%d (%.2f min) ==========' %
-                        (optimizer._epoch + 1, duration_epoch / 60))
+                        (optimizer.n_epochs + 1, duration_epoch / 60))
 
-            if optimizer._epoch + 1 < args.eval_start_epoch:
+            if optimizer.n_epochs + 1 < args.eval_start_epoch:
                 optimizer.epoch()
                 reporter.epoch()
 
                 # Save the model
-                save_checkpoint(model, save_path, optimizer, optimizer._epoch,
+                save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
                                 remove_old_checkpoints=args.lm_type != 'transformer')
             else:
                 start_time_eval = time.time()
@@ -249,12 +249,11 @@ def main():
                 optimizer.epoch(ppl_dev)
                 reporter.epoch(ppl_dev, name='perplexity')
 
-                if ppl_dev < optimizer.metric_best:
+                if optimizer.is_best:
                     not_improved_n_epochs = 0
-                    logger.info('||||| Best Score |||||')
 
                     # Save the model
-                    save_checkpoint(model, save_path, optimizer, optimizer._epoch,
+                    save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
                                     remove_old_checkpoints=args.lm_type != 'transformer')
 
                     # test
@@ -277,7 +276,7 @@ def main():
                     break
 
                 # Convert to fine-tuning stage
-                if optimizer._epoch == args.convert_to_sgd_epoch:
+                if optimizer.n_epochs == args.convert_to_sgd_epoch:
                     optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
                     optimizer = LRScheduler(optimizer, args.lr,
                                             decay_type='always',
@@ -287,7 +286,7 @@ def main():
 
             pbar_epoch = tqdm(total=len(train_set))
 
-            if optimizer._epoch == args.n_epochs:
+            if optimizer.n_epochs == args.n_epochs:
                 break
 
             start_time_step = time.time()
