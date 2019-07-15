@@ -23,7 +23,8 @@ from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import distillation
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
+from neural_sp.models.modules.monotonic_attention import MonotonicAttentionMechanism
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.modules.singlehead_attention import AttentionMechanism
 from neural_sp.models.modules.zoneout import zoneout_wrapper
@@ -47,18 +48,18 @@ class RNNDecoder(DecoderBase):
         unk (int): index for <unk>
         pad (int): index for <pad>
         blank (int): index for <blank>
-        enc_n_units (int):
-        attn_type (str):
+        enc_n_units (int): number of units of the encoder outputs
+        attn_type (str): type of attention mechanism
         rnn_type (str): lstm/gru
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of RNN layers
         loop_type (str): normal/lmdecoder
-        residual (bool):
+        residual (bool): add residual connections between each layer
         bottleneck_dim (int): dimension of the bottleneck layer before the softmax layer for label generation
         emb_dim (int): dimension of the embedding in target spaces.
         vocab (int): number of nodes in softmax layer
-        tie_embedding (bool):
+        tie_embedding (bool): tie parameters of the embedding and output layers
         attn_dim (int):
         attn_sharpening_factor (float):
         attn_sigmoid_smoothing (bool):
@@ -213,37 +214,45 @@ class RNNDecoder(DecoderBase):
 
         if ctc_weight < global_weight:
             # Attention layer
-            if attn_n_heads > 1:
-                self.score = MultiheadAttentionMechanism(
+            if attn_type == 'monotonic':
+                assert attn_n_heads == 1
+                self.score = MonotonicAttentionMechanism(
                     key_dim=self.enc_n_units,
                     query_dim=n_units if n_projs == 0 else n_projs,
-                    attn_type=attn_type,
                     attn_dim=attn_dim,
-                    n_heads=attn_n_heads,
-                    dropout=dropout_att)
+                    init_r=-4)
             else:
-                self.score = AttentionMechanism(
-                    key_dim=self.enc_n_units,
-                    query_dim=n_units if n_projs == 0 else n_projs,
-                    attn_type=attn_type,
-                    attn_dim=attn_dim,
-                    sharpening_factor=attn_sharpening_factor,
-                    sigmoid_smoothing=attn_sigmoid_smoothing,
-                    conv_out_channels=attn_conv_out_channels,
-                    conv_kernel_size=attn_conv_kernel_size,
-                    dropout=dropout_att)
+                if attn_n_heads > 1:
+                    self.score = MultiheadAttentionMechanism(
+                        key_dim=self.enc_n_units,
+                        query_dim=n_units if n_projs == 0 else n_projs,
+                        attn_type=attn_type,
+                        attn_dim=attn_dim,
+                        n_heads=attn_n_heads,
+                        dropout=dropout_att)
+                else:
+                    self.score = AttentionMechanism(
+                        key_dim=self.enc_n_units,
+                        query_dim=n_units if n_projs == 0 else n_projs,
+                        attn_type=attn_type,
+                        attn_dim=attn_dim,
+                        sharpening_factor=attn_sharpening_factor,
+                        sigmoid_smoothing=attn_sigmoid_smoothing,
+                        conv_out_channels=attn_conv_out_channels,
+                        conv_kernel_size=attn_conv_kernel_size,
+                        dropout=dropout_att)
 
             # for MTL with LM objective
             if lmobj_weight > 0 and loop_type == 'lmdecoder':
                 if share_lm_softmax:
                     self.output_lmobj = self.output  # share paramters
                 else:
-                    self.output_lmobj = LinearND(n_units, vocab)
+                    self.output_lmobj = Linear(n_units, vocab)
 
             # Decoder
             self.rnn = nn.ModuleList()
             if self.n_projs > 0:
-                self.proj = nn.ModuleList([LinearND(n_units, n_projs) for _ in range(n_layers)])
+                self.proj = nn.ModuleList([nn.Linear(n_units, n_projs) for _ in range(n_layers)])
             self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             # 1st layer
@@ -260,7 +269,7 @@ class RNNDecoder(DecoderBase):
             if n_layers >= 2:
                 if loop_type == 'lmdecoder':
                     dec_idim += enc_n_units
-                self.rnn += [zoneout_wrapper(cell(dec_idim, n_units))]
+                self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
                 if self.n_projs > 0:
                     dec_idim = n_projs
             # 3rd~ layers
@@ -272,16 +281,16 @@ class RNNDecoder(DecoderBase):
 
             # LM fusion
             if lm_fusion is not None:
-                self.linear_dec_feat = LinearND(dec_idim + enc_n_units, n_units)
+                self.linear_dec_feat = Linear(dec_idim + enc_n_units, n_units)
                 if lm_fusion_type in ['cold', 'deep']:
-                    self.linear_lm_feat = LinearND(lm_fusion.n_units, n_units)
-                    self.linear_lm_gate = LinearND(n_units * 2, n_units)
+                    self.linear_lm_feat = Linear(lm_fusion.n_units, n_units)
+                    self.linear_lm_gate = Linear(n_units * 2, n_units)
                 elif lm_fusion_type == 'cold_prob':
-                    self.linear_lm_feat = LinearND(lm_fusion.vocab, n_units)
-                    self.linear_lm_gate = LinearND(n_units * 2, n_units)
+                    self.linear_lm_feat = Linear(lm_fusion.vocab, n_units)
+                    self.linear_lm_gate = Linear(n_units * 2, n_units)
                 else:
                     raise ValueError(lm_fusion_type)
-                self.output_bn = LinearND(n_units * 2, bottleneck_dim)
+                self.output_bn = Linear(n_units * 2, bottleneck_dim)
 
                 # fix LM parameters
                 for p in lm_fusion.parameters():
@@ -289,7 +298,7 @@ class RNNDecoder(DecoderBase):
             elif discourse_aware == 'hierarchical':
                 raise NotImplementedError
             else:
-                self.output_bn = LinearND(dec_idim + enc_n_units, bottleneck_dim)
+                self.output_bn = Linear(dec_idim + enc_n_units, bottleneck_dim)
 
             self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
@@ -305,7 +314,7 @@ class RNNDecoder(DecoderBase):
                 self.output = None
             else:
                 self.adaptive_softmax = None
-                self.output = LinearND(bottleneck_dim, vocab)
+                self.output = Linear(bottleneck_dim, vocab)
                 # NOTE: include bias even when tying weights
 
                 # Optionally tie weights as in:
@@ -363,6 +372,10 @@ class RNNDecoder(DecoderBase):
         logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
+
+            if 'score.v.weight_g' in n or 'score.r' in n:
+                continue
+
             if p.dim() == 1:
                 if 'linear_lm_gate.fc.bias' in n:
                     # Initialize bias in gating with -1 for cold fusion

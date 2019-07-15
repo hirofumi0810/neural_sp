@@ -20,7 +20,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
@@ -73,11 +73,11 @@ class CTC(DecoderBase):
             fc_layers = OrderedDict()
             for i in range(len(fc_list)):
                 input_dim = enc_n_units if i == 0 else fc_list[i - 1]
-                fc_layers['fc' + str(i)] = LinearND(input_dim, fc_list[i], dropout=dropout)
-            fc_layers['fc' + str(len(fc_list))] = LinearND(fc_list[-1], vocab, dropout=0)
+                fc_layers['fc' + str(i)] = Linear(input_dim, fc_list[i], dropout=dropout)
+            fc_layers['fc' + str(len(fc_list))] = Linear(fc_list[-1], vocab)
             self.output = nn.Sequential(fc_layers)
         else:
-            self.output = LinearND(enc_n_units, vocab)
+            self.output = Linear(enc_n_units, vocab)
 
         import warpctc_pytorch
         self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)

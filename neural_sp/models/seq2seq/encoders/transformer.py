@@ -16,7 +16,7 @@ import os
 import shutil
 import torch.nn as nn
 
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
@@ -41,8 +41,8 @@ class TransformerEncoder(EncoderBase):
             MultiheadAttentionMechanism, also the input size of
             the first-layer of the PositionwiseFeedForward
         d_ff (int): dimension of the second layer of the PositionwiseFeedForward
-        pe_type (str): concat or add or learn or False
-        layer_norm_eps (float):
+        pe_type (str): type of positional encoding
+        layer_norm_eps (float): epsilon value for layer normalization
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
@@ -69,7 +69,7 @@ class TransformerEncoder(EncoderBase):
                  d_model,
                  d_ff,
                  pe_type='add',
-                 layer_norm_eps=1e-6,
+                 layer_norm_eps=1e-12,
                  dropout_in=0,
                  dropout=0,
                  dropout_att=0,
@@ -128,8 +128,7 @@ class TransformerEncoder(EncoderBase):
             self._output_dim = input_dim * n_splices * n_stacks
             self.conv = None
 
-            self.embed = LinearND(self._output_dim, d_model,
-                                  dropout=0)  # NOTE: do not apply dropout here
+            self.embed = Linear(self._output_dim, d_model)  # NOTE: do not apply dropout here
 
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
         self.layers = nn.ModuleList(
@@ -138,7 +137,7 @@ class TransformerEncoder(EncoderBase):
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if last_proj_dim != self.output_dim:
-            self.bridge = LinearND(self._output_dim, last_proj_dim, dropout=dropout)
+            self.bridge = Linear(self._output_dim, last_proj_dim)
             self._output_dim = last_proj_dim
         else:
             self.bridge = None

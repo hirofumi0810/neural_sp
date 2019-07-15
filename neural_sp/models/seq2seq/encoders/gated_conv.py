@@ -15,7 +15,7 @@ import logging
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.glu import GLUBlock
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
@@ -65,13 +65,12 @@ class GatedConvEncoder(EncoderBase):
             input_dim = channels[l]
 
         # weight normalization + GLU for the last fully-connected layer
-        self.fc_glu = nn.utils.weight_norm(nn.Linear(input_dim, input_dim * 2),
-                                           name='weight', dim=0)
+        self.fc_glu = Linear(input_dim, input_dim * 2, weight_norm=True)
 
         self._output_dim = int(input_dim)
 
         if bottleneck_dim > 0:
-            self.bridge = LinearND(self._output_dim, bottleneck_dim)
+            self.bridge = Linear(self._output_dim, bottleneck_dim)
             self._output_dim = bottleneck_dim
 
         self.layers = nn.Sequential(layers)

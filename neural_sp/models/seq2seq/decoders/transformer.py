@@ -22,7 +22,7 @@ import torch.nn.functional as F
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import focal_loss
 from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.seq2seq.decoders.ctc import CTC
@@ -49,16 +49,16 @@ class TransformerDecoder(DecoderBase):
         unk (int): index for <unk>
         pad (int): index for <pad>
         blank (int): index for <blank>
-        enc_n_units (int):
-        attn_type (str):
+        enc_n_units (int): number of units of the encoder outputs
+        attn_type (str): type of attention mechanism
         attn_n_heads (int): number of attention heads
-        n_layers (int): number of decoder layers.
+        n_layers (int): number of decoder layers
         d_model (int): size of the model
         d_ff (int): size of the inner FF layer
         vocab (int): number of nodes in softmax layer
-        tie_embedding (bool):
-        pe_type (str): concat or add or learn or False
-        layer_norm_eps (float):
+        tie_embedding (bool): tie parameters of the embedding and output layers
+        pe_type (str): type of positional encoding
+        layer_norm_eps (float): epsilon value for layer normalization
         dropout (float): dropout probability for linear layers
         dropout_emb (float): dropout probability for the embedding layer
         dropout_att (float): dropout probability for attention distributions
@@ -89,7 +89,7 @@ class TransformerDecoder(DecoderBase):
                  vocab,
                  tie_embedding=False,
                  pe_type='add',
-                 layer_norm_eps=1e-6,
+                 layer_norm_eps=1e-12,
                  dropout=0.0,
                  dropout_emb=0.0,
                  dropout_att=0.0,
@@ -154,7 +154,7 @@ class TransformerDecoder(DecoderBase):
                 self.output = None
             else:
                 self.adaptive_softmax = None
-                self.output = LinearND(d_model, vocab)
+                self.output = Linear(d_model, vocab)
 
                 # Optionally tie weights as in:
                 # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -193,7 +193,7 @@ class TransformerDecoder(DecoderBase):
             eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            task (str): all or ys or ys_sub*
+            task (str): all/ys/ys_sub*
             ys_hist (list): dummy (not used)
         Returns:
             loss (FloatTensor): `[1]`
@@ -344,9 +344,22 @@ class TransformerDecoder(DecoderBase):
         xy_aws_tmp = [None] * bs
         eos_flags = [False] * bs
         for t in range(int(np.floor(xmax * max_len_ratio)) + 1):
+            # Create the self-attention mask
+            yy_mask = make_pad_mask(ylens + 1, self.device_id).unsqueeze(1).expand(bs, t + 1, t + 1)
+            yy_mask = yy_mask.unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, t + 1)
+            subsequent_mask = torch.tril(yy_mask.new_ones((t + 1, t + 1)).byte(), diagonal=0)
+            subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, t + 1)
+            yy_mask = yy_mask & subsequent_mask
+
+            # Create the source-target mask
+            xmax = eouts.size(1)
+            x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).expand(bs, t + 1, xmax)
+            y_mask = make_pad_mask(ylens + 1, self.device_id).unsqueeze(2).expand(bs, t + 1, xmax)
+            xy_mask = (x_mask * y_mask).unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, xmax)
+
             out = self.pos_enc(self.embed(ys_all))
             for l in range(self.n_layers):
-                out, yy_aws, xy_aws = self.layers[l](out, None, eouts, None)
+                out, yy_aws, xy_aws = self.layers[l](out, yy_mask, eouts, xy_mask)
             out = self.norm_out(out)
 
             # Pick up 1-best

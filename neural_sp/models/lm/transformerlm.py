@@ -19,7 +19,7 @@ import torch.nn as nn
 
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.torch_utils import make_pad_mask
@@ -47,7 +47,7 @@ class TransformerLM(LMBase):
         self.d_ff = args.d_ff
         self.pe_type = args.pe_type
         self.n_layers = args.n_layers
-        self.n_heads = args.attn_n_heads
+        self.attn_n_heads = args.attn_n_heads
         self.lsm_prob = args.lsm_prob
 
         self.vocab = args.vocab
@@ -87,7 +87,8 @@ class TransformerLM(LMBase):
             self.output = None
         else:
             self.adaptive_softmax = None
-            self.output = LinearND(self.d_model, self.vocab)
+            self.output = Linear(self.d_model, self.vocab,
+                                 dropout=args.dropout_out)
 
             # Optionally tie weights as in:
             # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -142,9 +143,9 @@ class TransformerLM(LMBase):
         bs, ymax = ys_emb.size()[:2]
         ylens = torch.IntTensor([ymax] * bs)
         yy_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).expand(bs, ymax, ymax)
-        yy_mask = yy_mask.unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
+        yy_mask = yy_mask.unsqueeze(1).expand(bs, self.attn_n_heads, ymax, ymax)
         subsequent_mask = torch.tril(yy_mask.new_ones((ymax, ymax)).byte(), diagonal=0)
-        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.n_heads, ymax, ymax)
+        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.attn_n_heads, ymax, ymax)
         yy_mask = yy_mask & subsequent_mask
 
         ys_emb = self.pos_enc(ys_emb)
@@ -178,9 +179,9 @@ class TransformerLM(LMBase):
             yy_aws = getattr(self, 'yy_aws_layer%d' % l)
 
             plt.clf()
-            fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
-            for h in range(self.n_heads):
-                if self.n_heads > n_cols:
+            fig, axes = plt.subplots(self.attn_n_heads // n_cols, n_cols, figsize=(20, 8))
+            for h in range(self.attn_n_heads):
+                if self.attn_n_heads > n_cols:
                     ax = axes[h // n_cols, h % n_cols]
                 else:
                     ax = axes[h]

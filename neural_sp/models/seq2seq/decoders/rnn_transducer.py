@@ -20,7 +20,7 @@ import torch.nn.functional as F
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
@@ -148,7 +148,7 @@ class RNNTransducer(DecoderBase):
                 if share_lm_softmax:
                     self.output_lmobj = self.output  # share paramters
                 else:
-                    self.output_lmobj = LinearND(n_units, vocab)
+                    self.output_lmobj = Linear(n_units, vocab)
 
             # Prediction network
             self.fast_impl = False
@@ -167,7 +167,7 @@ class RNNTransducer(DecoderBase):
                 self.rnn = nn.ModuleList()
                 self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
                 if n_projs > 0:
-                    self.proj = nn.ModuleList([LinearND(dec_idim, n_projs) for _ in range(n_layers)])
+                    self.proj = nn.ModuleList([Linear(dec_idim, n_projs) for _ in range(n_layers)])
                 dec_idim = emb_dim
                 for l in range(n_layers):
                     self.rnn += [rnn(dec_idim, n_units, 1,
@@ -181,9 +181,9 @@ class RNNTransducer(DecoderBase):
                                    dropout=dropout_emb,
                                    ignore_index=pad)
 
-            self.w_enc = LinearND(enc_n_units, bottleneck_dim, bias=True)
-            self.w_dec = LinearND(dec_idim, bottleneck_dim, bias=False)
-            self.output = LinearND(bottleneck_dim, vocab)
+            self.w_enc = Linear(enc_n_units, bottleneck_dim, bias=True)
+            self.w_dec = Linear(dec_idim, bottleneck_dim, bias=False)
+            self.output = Linear(bottleneck_dim, vocab)
 
         # Initialize parameters
         self.reset_parameters(param_init)

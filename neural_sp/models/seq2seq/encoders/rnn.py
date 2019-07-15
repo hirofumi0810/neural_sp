@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.utils.rnn import pad_packed_sequence
 
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
 from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
@@ -38,10 +38,10 @@ class RNNEncoder(EncoderBase):
         dropout (float): dropout probability for hidden-hidden connection
         subsample (list): subsample in the corresponding RNN layers
             ex.) [False, True, True, False] means that subsample is conducted in the 2nd and 3rd layers.
-        subsample_type (str): drop or concat or max_pool
+        subsample_type (str): drop/concat/max_pool
         last_proj_dim (int): dimension of the last projection layer
         n_stacks (int): number of frames to stack
-        n_splices (int): frames to splice. Default is 1 frame.
+        n_splices (int): number of frames to splice
         conv_in_channel (int): number of channels of input features
         conv_channels (int): number of channles in the CNN blocks
         conv_kernel_sizes (list): size of kernels in the CNN blocks
@@ -222,8 +222,8 @@ class RNNEncoder(EncoderBase):
                     self.concat_bn = nn.ModuleList()
                     for l in range(n_layers):
                         if self.subsample[l] > 1:
-                            self.concat_proj += [LinearND(n_units * self.n_dirs
-                                                          * self.subsample[l], n_units * self.n_dirs)]
+                            self.concat_proj += [Linear(n_units * self.n_dirs
+                                                        * self.subsample[l], n_units * self.n_dirs)]
                             self.concat_bn += [nn.BatchNorm1d(n_units * self.n_dirs)]
                         else:
                             self.concat_proj += [None]
@@ -248,7 +248,7 @@ class RNNEncoder(EncoderBase):
 
                     # Projection layer
                     if n_projs > 0 and l != n_layers - 1:
-                        self.proj += [LinearND(n_units * self.n_dirs, n_projs)]
+                        self.proj += [Linear(n_units * self.n_dirs, n_projs)]
                         self._output_dim = n_projs
 
                     # Task specific layer
@@ -258,14 +258,14 @@ class RNNEncoder(EncoderBase):
                                               bidirectional=self.bidirectional)
                         self.dropout_sub1 = nn.Dropout(p=dropout)
                         if last_proj_dim != self.output_dim:
-                            self.bridge_sub1 = LinearND(n_units, last_proj_dim, dropout=dropout)
+                            self.bridge_sub1 = Linear(n_units, last_proj_dim)
                     if l == n_layers_sub2 - 1 and task_specific_layer:
                         self.rnn_sub2 = rnn_i(self._output_dim, n_units, 1,
                                               bias=True, batch_first=True, dropout=0,
                                               bidirectional=self.bidirectional)
                         self.dropout_sub2 = nn.Dropout(p=dropout)
                         if last_proj_dim != self.output_dim:
-                            self.bridge_sub2 = LinearND(n_units, last_proj_dim, dropout=dropout)
+                            self.bridge_sub2 = Linear(n_units, last_proj_dim)
 
                     # Network in network (1*1 conv + batch normalization + ReLU)
                     # NOTE: exclude the last layer
@@ -280,7 +280,7 @@ class RNNEncoder(EncoderBase):
                             assert task_specific_layer
 
             if last_proj_dim != self.output_dim:
-                self.bridge = LinearND(self._output_dim, last_proj_dim, dropout=dropout)
+                self.bridge = Linear(self._output_dim, last_proj_dim)
                 self._output_dim = last_proj_dim
 
         # Initialize parameters

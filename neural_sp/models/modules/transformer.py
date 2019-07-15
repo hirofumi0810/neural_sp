@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 
 
@@ -75,8 +76,8 @@ class PositionwiseFeedForward(nn.Module):
     def __init__(self, d_model, d_ff, dropout):
         super(PositionwiseFeedForward, self).__init__()
 
-        self.w_1 = nn.Linear(d_model, d_ff)
-        self.w_2 = nn.Linear(d_ff, d_model)
+        self.w_1 = Linear(d_model, d_ff)
+        self.w_2 = Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs):
@@ -243,7 +244,7 @@ class TransformerDecoderBlock(nn.Module):
         if self.src_attention:
             self.src_attn.reset()
             _ys = self.norm2(ys)
-            _ys, xy_aw = self.src_attn(key=xs, value=xs, query=_ys, mask=xy_mask)
+            _ys, xy_aw = self.src_attn(xs, xs, _ys, mask=xy_mask)  # k/v/q
             ys = self.dropout2(_ys) + ys
 
         # position-wise feed-forward

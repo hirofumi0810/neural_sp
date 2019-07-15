@@ -16,7 +16,7 @@ import torch.nn as nn
 
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.glu import GLUBlock
 
 
@@ -162,8 +162,8 @@ class GatedConvLM(LMBase):
             self.output = None
         else:
             self.adaptive_softmax = None
-            self.output = LinearND(last_dim, self.vocab,
-                                   dropout=args.dropout_out)
+            self.output = Linear(last_dim, self.vocab,
+                                 dropout=args.dropout_out)
             # NOTE: include bias even when tying weights
 
             # Optionally tie weights as in:

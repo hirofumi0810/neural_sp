@@ -14,25 +14,27 @@ import numpy as np
 import torch.nn as nn
 
 
-class LinearND(nn.Module):
+class Linear(nn.Module):
 
-    def __init__(self, in_size, out_size, bias=True, dropout=0):
-        """Linear layer for the N-dimentional tensor
+    def __init__(self, in_size, out_size, bias=True, dropout=0,
+                 weight_norm=False):
+        """Linear layer with regularization.
 
-        A torch.nn.Linear layer modified to accept ND arrays.
-            The function treats the last dimension of the input
-            as the hidden dimension.
         Args:
             in_size (int):
             out_size (int):
             bias (bool): if False, remove a bias term
             dropout (float):
+            weight_norm (bool):
 
         """
-        super(LinearND, self).__init__()
+        super(Linear, self).__init__()
 
         self.fc = nn.Linear(in_size, out_size, bias=bias)
         self.dropout = nn.Dropout(p=dropout)
+
+        if weight_norm:
+            self.fc = nn.utils.weight_norm(self.fc, name='weight', dim=0)
 
     def forward(self, xs):
         """Forward pass.
@@ -43,8 +45,9 @@ class LinearND(nn.Module):
             xs (FloatTensor):
 
         """
-        size = list(xs.size())
-        xs = xs.contiguous().view((int(np.prod(size[:-1])), int(size[-1])))
-        xs = self.dropout(self.fc(xs))
-        size[-1] = xs.size()[-1]
-        return xs.view(size)
+        # size = list(xs.size())
+        # xs = xs.contiguous().view((int(np.prod(size[:-1])), int(size[-1])))
+        # xs = self.dropout(self.fc(xs))
+        # size[-1] = xs.size()[-1]
+        # return xs.view(size)
+        return self.dropout(self.fc(xs))

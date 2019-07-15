@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 
 NEG_INF = float(np.finfo(np.float32).min)
 
@@ -64,18 +64,18 @@ class MultiheadAttentionMechanism(nn.Module):
         self.attn_dropout = nn.Dropout(p=dropout)
 
         if attn_type == 'scaled_dot':
-            self.w_key = LinearND(key_dim, attn_dim, bias=False)
-            self.w_value = LinearND(key_dim, attn_dim, bias=False)
-            self.w_query = LinearND(query_dim, attn_dim, bias=False)
+            self.w_key = Linear(key_dim, attn_dim, bias=False)
+            self.w_value = Linear(key_dim, attn_dim, bias=False)
+            self.w_query = Linear(query_dim, attn_dim, bias=False)
         elif attn_type == 'add':
-            self.w_key = LinearND(key_dim, attn_dim, bias=True)
-            self.w_value = LinearND(key_dim, attn_dim, bias=False)
-            self.w_query = LinearND(query_dim, attn_dim, bias=False)
-            self.v = LinearND(attn_dim, n_heads, bias=False)
+            self.w_key = Linear(key_dim, attn_dim, bias=True)
+            self.w_value = Linear(key_dim, attn_dim, bias=False)
+            self.w_query = Linear(query_dim, attn_dim, bias=False)
+            self.v = Linear(attn_dim, n_heads, bias=False)
         else:
             raise NotImplementedError(attn_type)
 
-        self.w_out = LinearND(attn_dim, key_dim)
+        self.w_out = Linear(attn_dim, key_dim)
 
     def reset(self):
         self.key = None
@@ -120,6 +120,7 @@ class MultiheadAttentionMechanism(nn.Module):
         # Compute attention weights
         if self.mask is not None:
             e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
+            # e = e.transpose(3, 2).masked_fill_(self.mask.transpose(3, 2) == 0, NEG_INF).transpose(3, 2)
         aw = F.softmax(e, dim=-1)
         aw = self.attn_dropout(aw)
         cv = torch.matmul(aw, self.value)  # `[B, n_heads, qlen, d_k]`

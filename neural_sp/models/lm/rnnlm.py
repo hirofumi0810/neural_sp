@@ -17,7 +17,7 @@ import torch.nn.functional as F
 
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 
 
 class RNNLM(LMBase):
@@ -77,7 +77,7 @@ class RNNLM(LMBase):
             self.dropout = nn.ModuleList([nn.Dropout(p=args.dropout_hidden)
                                           for _ in range(args.n_layers)])
             if args.n_projs > 0:
-                self.proj = nn.ModuleList([LinearND(args.n_units, args.n_projs)
+                self.proj = nn.ModuleList([Linear(args.n_units, args.n_projs)
                                            for _ in range(args.n_layers)])
             rnn_idim = args.emb_dim + args.n_units_null_context
             for l in range(args.n_layers):
@@ -91,8 +91,8 @@ class RNNLM(LMBase):
                     rnn_idim = args.n_projs
 
         if self.use_glu:
-            self.fc_glu = LinearND(rnn_idim, rnn_idim * 2,
-                                   dropout=args.dropout_hidden)
+            self.fc_glu = Linear(rnn_idim, rnn_idim * 2,
+                                 dropout=args.dropout_hidden)
 
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -103,8 +103,8 @@ class RNNLM(LMBase):
             self.output = None
         else:
             self.adaptive_softmax = None
-            self.output = LinearND(rnn_idim, self.vocab,
-                                   dropout=args.dropout_out)
+            self.output = Linear(rnn_idim, self.vocab,
+                                 dropout=args.dropout_out)
             # NOTE: include bias even when tying weights
 
             # Optionally tie weights as in:

@@ -14,7 +14,7 @@ import logging
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.linear import LinearND
+from neural_sp.models.modules.linear import Linear
 
 
 class SequenceSummaryNetwork(nn.Module):
@@ -43,11 +43,11 @@ class SequenceSummaryNetwork(nn.Module):
         self.n_layers = n_layers
 
         self.ssn = nn.ModuleList()
-        self.ssn += [LinearND(input_dim, n_units, bias=False, dropout=dropout)]
+        self.ssn += [Linear(input_dim, n_units, bias=False, dropout=dropout)]
         for l in range(1, n_layers - 1, 1):
-            self.ssn += [LinearND(n_units, bottleneck_dim if l == n_layers - 2 else n_units,
-                                  bias=False, dropout=dropout)]
-        self.ssn += [LinearND(bottleneck_dim, input_dim, bias=False, dropout=dropout)]
+            self.ssn += [Linear(n_units, bottleneck_dim if l == n_layers - 2 else n_units,
+                                bias=False, dropout=dropout)]
+        self.ssn += [Linear(bottleneck_dim, input_dim, bias=False, dropout=dropout)]
 
         # Initialize parameters
         self.reset_parameters(param_init)
