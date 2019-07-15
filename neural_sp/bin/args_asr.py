@@ -208,10 +208,10 @@ def parse():
                         help='decay rate of learning rate')
     parser.add_argument('--lr_decay_patient_n_epochs', type=int, default=0,
                         help='number of epochs to tolerate learning rate decay when validation perfomance is not improved')
+    parser.add_argument('--early_stop_patient_n_epochs', type=int, default=5,
+                        help='number of epochs to tolerate stopping training when validation perfomance is not improved')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
                         help='epoch to stop soring utterances by length')
-    parser.add_argument('--stop_patient_n_epochs', type=int, default=5,
-                        help='number of epochs to tolerate stopping training when validation perfomance is not improved')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
                         help='first epoch to start evalaution')
     parser.add_argument('--warmup_start_lr', type=float, default=0,

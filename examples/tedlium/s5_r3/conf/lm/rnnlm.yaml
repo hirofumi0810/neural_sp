@@ -19,17 +19,17 @@ lr: 1e-3
 lr_decay_start_epoch: 10
 lr_decay_rate: 0.9
 lr_decay_patient_n_epochs: 0
-lr_decay_type: epoch
-not_improved_patient_n_epochs: 10
+lr_decay_type: always
+early_stop_patient_n_epochs: 5
 eval_start_epoch: 1
 # initialization
 param_init: 0.05
-pretrained_model:
 # regularization
 clip_grad_norm: 1.0
+dropout_in: 0.2
 dropout_hidden: 0.2
 dropout_out: 0.0
-dropout_emb: 0.2
 weight_decay: 1e-6
+lsm_prob: 0.0
 backward: false
 adaptive_softmax: false

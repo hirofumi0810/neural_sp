@@ -30,6 +30,8 @@ class LRScheduler(object):
         decay_rate (float): the rate to decay the current learning rate
         decay_patient_n_epochs (int): decay learning rate if results have not been
             improved for 'decay_patient_n_epochs'
+        early_stop_patient_n_epochs (int): number of epochs to tolerate stopping training
+            when validation perfomance is not improved
         lower_better (bool): If True, the lower, the better.
                              If False, the higher, the better.
         warmup_start_lr (float): initial learning rate for warmup
@@ -41,7 +43,7 @@ class LRScheduler(object):
     """
 
     def __init__(self, optimizer, base_lr, decay_type, decay_start_epoch, decay_rate,
-                 decay_patient_n_epochs=0, lower_better=True,
+                 decay_patient_n_epochs=0, early_stop_patient_n_epochs=-1, lower_better=True,
                  warmup_start_lr=0, warmup_n_steps=0,
                  model_size=1, factor=1, noam=False):
 
@@ -71,7 +73,8 @@ class LRScheduler(object):
         self.metric_best = 1e10 if lower_better else -1e10
         self._is_best = False
         self.not_improved_n_epochs = 0
-        self._early_stop = False
+        self.early_stop_patient_n_epochs = early_stop_patient_n_epochs
+        self._is_early_stop = False
 
     @property
     def n_steps(self):
@@ -86,8 +89,8 @@ class LRScheduler(object):
         return self._is_best
 
     @property
-    def earch_stop(self):
-        return self._early_stop
+    def is_early_stop(self):
+        return self._is_early_stop
 
     def step(self):
         self._step += 1

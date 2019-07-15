@@ -14,7 +14,7 @@ lr_decay_start_epoch: 10
 lr_decay_rate: 0.5
 lr_decay_patient_n_epochs: 0
 lr_decay_type: metric
-stop_patient_n_epochs: 20
+early_stop_patient_n_epochs: 5
 eval_start_epoch: 1
 # initialization
 param_init: 0.05

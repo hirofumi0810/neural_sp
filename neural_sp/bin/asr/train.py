@@ -267,6 +267,7 @@ def main():
                                 decay_start_epoch=args.lr_decay_start_epoch,
                                 decay_rate=args.lr_decay_rate,
                                 decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
+                                early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
                                 model_size=args.d_model,
@@ -338,7 +339,6 @@ def main():
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    not_improved_n_epochs = 0
     pbar_epoch = tqdm(total=len(train_set))
     accum_n_tokens = 0
     while True:
@@ -432,8 +432,6 @@ def main():
                 reporter.epoch(metric_dev)
 
                 if optimizer.is_best:
-                    not_improved_n_epochs = 0
-
                     # Save the model
                     save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
                                     remove_old_checkpoints=not noam)
@@ -442,8 +440,6 @@ def main():
                     for eval_set in eval_sets:
                         eval_epoch([model.module], eval_set, recog_params, args,
                                    optimizer.n_epochs, logger)
-                else:
-                    not_improved_n_epochs += 1
 
                     # start scheduled sampling
                     if args.ss_prob > 0:
@@ -453,7 +449,7 @@ def main():
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
                 # Early stopping
-                if not_improved_n_epochs == args.stop_patient_n_epochs:
+                if optimizer.is_early_stop:
                     break
 
                 # Convert to fine-tuning stage
