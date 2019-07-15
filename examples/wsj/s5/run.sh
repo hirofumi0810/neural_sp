@@ -20,7 +20,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 #########################
 # ASR configuration
 #########################
-asr_config=conf/asr/rnn_seq2seq.yaml
+asr_conf=conf/asr/rnn_seq2seq.yaml
 pretrained_model=
 teacher=
 teacher_lm=
@@ -42,9 +42,9 @@ teacher_lm=
 #########################
 # LM configuration
 #########################
-lm_config=conf/lm/rnnlm.yaml
-# lm_config=conf/lm/gated_convlm.yaml
-# lm_config=conf/lm/transformerlm.yaml
+lm_conf=conf/lm/rnnlm.yaml
+# lm_conf=conf/lm/gated_convlm.yaml
+# lm_conf=conf/lm/transformerlm.yaml
 lm_pretrained_model=
 
 ### path to save the model
@@ -268,7 +268,7 @@ if [ ${stage} -le 3 ]; then
     # NOTE: support only a single GPU for LM training
     CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus wsj \
-        --config ${lm_config} \
+        --config ${lm_conf} \
         --n_gpus 1 \
         --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset_lm/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
@@ -291,7 +291,7 @@ if [ ${stage} -le 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus wsj \
-        --config ${asr_config} \
+        --config ${asr_conf} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \

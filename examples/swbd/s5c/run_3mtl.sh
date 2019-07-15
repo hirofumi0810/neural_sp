@@ -26,7 +26,7 @@ vocab_sub2=300
 #########################
 # ASR configuration
 #########################
-asr_config=conf/asr/rnn_seq2seq_3mtl.yaml
+asr_conf=conf/asr/rnn_seq2seq_3mtl.yaml
 pretrained_model=
 
 # if [ ${speed_perturb} = true ]; then
@@ -399,7 +399,7 @@ if [ ${stage} -le 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus swbd \
-        --config ${asr_config} \
+        --config ${asr_conf} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \

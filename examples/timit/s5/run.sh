@@ -14,9 +14,9 @@ stdout=false
 #########################
 # ASR configuration
 #########################
-asr_config=conf/ctc.yaml
-# asr_config=conf/attention.yaml
-# asr_config=conf/rnn_transducer.yaml
+asr_conf=conf/ctc.yaml
+# asr_conf=conf/attention.yaml
+# asr_conf=conf/rnn_transducer.yaml
 pretrained_model=
 
 
@@ -124,7 +124,7 @@ if [ ${stage} -le 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus timit \
-        --config ${asr_config} \
+        --config ${asr_conf} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}.tsv \
         --dev_set ${data}/dataset/${dev_set}.tsv \
