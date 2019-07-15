@@ -240,6 +240,8 @@ class CTC(DecoderBase):
                     if lm_weight > 0 and lm is not None and lm_usage == 'shallow_fusion':
                         _, lmstate, lm_log_probs = lm.predict(
                             eouts.new_zeros(1, 1).fill_(hyp_id[-1]), beam[i_beam]['lmstate'])
+                    else:
+                        lmstate = None
 
                     # case 2. hyp is extended
                     new_p_b = LOG_0
