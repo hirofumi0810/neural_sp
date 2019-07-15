@@ -64,8 +64,8 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            model, checkpoint = load_checkpoint(model, args.recog_model[0])
-            epoch = checkpoint['epoch']
+            model = load_checkpoint(model, args.recog_model[0])[0]
+            epoch = int(args.recog_model[0].split('-')[-1])
 
             # ensemble (different models)
             ensemble_models = [model]
@@ -78,7 +78,7 @@ def main():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
-                    model_e, _ = load_checkpoint(model_e, recog_model_e)
+                    model_e = load_checkpoint(model_e, recog_model_e)[0]
                     model_e.cuda()
                     ensemble_models += [model_e]
 
@@ -90,7 +90,7 @@ def main():
                     for k, v in conf_lm.items():
                         setattr(args_lm, k, v)
                     lm = select_lm(args_lm)
-                    lm, _ = load_checkpoint(lm, args.recog_lm)
+                    lm = load_checkpoint(lm, args.recog_lm)[0]
                     if args_lm.backward:
                         model.lm_bwd = lm
                     else:
@@ -103,7 +103,7 @@ def main():
                     for k, v in conf_lm.items():
                         setattr(args_lm_bwd, k, v)
                     lm_bwd = select_lm(args_lm_bwd)
-                    lm_bwd, _ = load_checkpoint(lm_bwd, args.recog_lm_bwd)
+                    lm_bwd = load_checkpoint(lm_bwd, args.recog_lm_bwd)[0]
                     model.lm_bwd = lm_bwd
 
             if not args.recog_unit:

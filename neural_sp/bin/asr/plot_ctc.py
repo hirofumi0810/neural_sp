@@ -69,8 +69,8 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            model, checkpoint = load_checkpoint(model, args.recog_model[0])
-            epoch = checkpoint['epoch']
+            model = load_checkpoint(model, args.recog_model[0])[0]
+            epoch = int(args.recog_model[0].split('-')[-1])
 
             if not args.recog_unit:
                 args.recog_unit = args.unit

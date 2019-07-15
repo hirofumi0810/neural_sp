@@ -80,8 +80,8 @@ def main():
                 model = SkipThought(args, dir_name)
             else:
                 model = Speech2Text(args, dir_name)
-            model, checkpoint = load_checkpoint(model, args.recog_model[0])
-            epoch = checkpoint['epoch']
+            model = load_checkpoint(model, args.recog_model[0])[0]
+            epoch = int(args.recog_model[0].split('-')[-1])
 
             # ensemble (different models)
             ensemble_models = [model]
@@ -93,7 +93,7 @@ def main():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
-                    model_e, _ = load_checkpoint(model_e, recog_model_e)
+                    model_e = load_checkpoint(model_e, recog_model_e)[0]
                     model_e.cuda()
                     ensemble_models += [model_e]
 
@@ -104,8 +104,10 @@ def main():
                     args_lm = argparse.Namespace()
                     for k, v in conf_lm.items():
                         setattr(args_lm, k, v)
-                    lm = select_lm(args_lm)
-                    lm, _ = load_checkpoint(lm, args.recog_lm)
+                    lm = select_lm(args_lm, wordlm=args.recog_wordlm,
+                                   lm_dict_path=os.path.join(os.path.dirname(args.recog_lm), 'dict.txt'),
+                                   asr_dict_path=os.path.join(dir_name, 'dict.txt'))
+                    lm = load_checkpoint(lm, args.recog_lm)[0]
                     if args_lm.backward:
                         model.lm_bwd = lm
                     else:
@@ -118,7 +120,7 @@ def main():
                     for k, v in conf_lm.items():
                         setattr(args_lm_bwd, k, v)
                     lm_bwd = select_lm(args_lm_bwd)
-                    lm_bwd, _ = load_checkpoint(lm_bwd, args.recog_lm_bwd)
+                    lm_bwd = load_checkpoint(lm_bwd, args.recog_lm_bwd)[0]
                     model.lm_bwd = lm_bwd
 
             if not args.recog_unit:
@@ -148,7 +150,6 @@ def main():
             logger.info('LM state carry over: %s' % (args.recog_lm_state_carry_over))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache type: %s' % (args.recog_cache_type))
-            logger.info('cache word frequency threshold: %s' % (args.recog_cache_word_freq))
             logger.info('cache theta (speech): %.3f' % (args.recog_cache_theta_speech))
             logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
             logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
