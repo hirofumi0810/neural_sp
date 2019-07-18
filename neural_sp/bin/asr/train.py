@@ -204,11 +204,15 @@ def main():
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
+            n_epochs = optimizer.n_epochs
+            n_steps = optimizer.n_steps
             optimizer = set_optimizer(model, 'sgd', args.lr, conf['weight_decay'])
             optimizer = LRScheduler(optimizer, args.lr,
                                     decay_type='always',
                                     decay_start_epoch=0,
                                     decay_rate=0.5)
+            optimizer._epoch = n_epochs
+            optimizer._step = n_steps
             logger.info('========== Convert to SGD ==========')
     else:
         # Save the conf file as a yaml file
@@ -454,11 +458,15 @@ def main():
 
                 # Convert to fine-tuning stage
                 if optimizer.n_epochs == args.convert_to_sgd_epoch:
+                    n_epochs = optimizer.n_epochs
+                    n_steps = optimizer.n_steps
                     optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
                     optimizer = LRScheduler(optimizer, args.lr,
                                             decay_type='always',
                                             decay_start_epoch=0,
                                             decay_rate=0.5)
+                    optimizer._epoch = n_epochs
+                    optimizer._step = n_steps
                     logger.info('========== Convert to SGD ==========')
 
             pbar_epoch = tqdm(total=len(train_set))

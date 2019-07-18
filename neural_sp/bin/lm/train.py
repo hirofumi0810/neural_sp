@@ -121,6 +121,7 @@ def main():
                                     decay_type='always',
                                     decay_start_epoch=0,
                                     decay_rate=0.5)
+            optimizer._epoch = epoch
             logger.info('========== Convert to SGD ==========')
     else:
         # Save the conf file as a yaml file
@@ -278,6 +279,7 @@ def main():
                                             decay_type='always',
                                             decay_start_epoch=0,
                                             decay_rate=0.5)
+                    optimizer._epoch = epoch
                     logger.info('========== Convert to SGD ==========')
 
             pbar_epoch = tqdm(total=len(train_set))
