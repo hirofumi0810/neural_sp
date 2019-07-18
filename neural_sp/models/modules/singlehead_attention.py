@@ -107,7 +107,7 @@ class AttentionMechanism(nn.Module):
         self.key = None
         self.mask = None
 
-    def forward(self, key, value, query, mask=None, aw=None):
+    def forward(self, key, value, query, mask=None, aw_prev=None, mode=''):
         """Forward computation.
 
         Args:
@@ -115,8 +115,9 @@ class AttentionMechanism(nn.Module):
             klens (IntTensor): `[B]`
             value (FloatTensor): `[B, kmax, value_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
-            mask (): `[B, qmax, kmax]`
-            aw (FloatTensor): `[B, kmax, 1 (n_heads)]`
+            mask (ByteTensor): `[B, qmax, kmax]`
+            aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
+            mode: dummy
         Returns:
             cv (FloatTensor): `[B, 1, value_dim]`
             aw (FloatTensor): `[B, kmax, 1 (n_heads)]`
@@ -124,8 +125,8 @@ class AttentionMechanism(nn.Module):
         """
         bs, kmax = key.size()[:2]
 
-        if aw is None:
-            aw = key.new_zeros(bs, kmax, 1)
+        if aw_prev is None:
+            aw_prev = key.new_zeros(bs, kmax, 1)
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None:
@@ -135,42 +136,44 @@ class AttentionMechanism(nn.Module):
                 self.key = key
             self.mask = mask
 
-        if self.attn_type == 'add':
-            query = query.expand_as(torch.zeros((bs, kmax, query.size(2))))
-            e = self.v(torch.tanh(self.key + self.w_query(query))).squeeze(2)
-
-        elif self.attn_type == 'location':
-            query = query.expand_as(torch.zeros((bs, kmax, query.size(2))))
-            conv_feat = self.conv(aw.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, conv_out_channels, kmax]`
-            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, kmax, conv_out_channels]`
-            e = self.v(torch.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat))).squeeze(2)
-
-        elif self.attn_type == 'dot':
-            e = torch.bmm(self.key, self.w_query(query).transpose(-2, -1)).squeeze(2)
-
-        elif self.attn_type == 'luong_dot':
-            e = torch.bmm(self.key, query.transpose(-2, -1)).squeeze(2)
-
-        elif self.attn_type == 'luong_general':
-            e = torch.bmm(self.key, query.transpose(-2, -1)).squeeze(2)
-
-        elif self.attn_type == 'luong_concat':
-            query = query.expand_as(torch.zeros((bs, kmax, query.size(2))))
-            e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1)))).squeeze(2)
-
         if self.attn_type == 'no':
             raise NotImplementedError
             # last_state = [key[b, klens[b] - 1] for b in range(bs)]
             # cv = torch.stack(last_state, dim=0).unsqueeze(1)
+            # return cv, None
+
+        elif self.attn_type == 'add':
+            query = query.expand_as(torch.zeros((bs, kmax, query.size(2))))
+            e = self.v(torch.tanh(self.key + self.w_query(query)))
+
+        elif self.attn_type == 'location':
+            query = query.expand_as(torch.zeros((bs, kmax, query.size(2))))
+            conv_feat = self.conv(aw_prev.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, conv_out_channels, kmax]`
+            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, kmax, conv_out_channels]`
+            e = self.v(torch.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat)))
+
+        elif self.attn_type == 'dot':
+            e = torch.bmm(self.key, self.w_query(query).transpose(-2, -1))
+
+        elif self.attn_type == 'luong_dot':
+            e = torch.bmm(self.key, query.transpose(-2, -1))
+
+        elif self.attn_type == 'luong_general':
+            e = torch.bmm(self.key, query.transpose(-2, -1))
+
+        elif self.attn_type == 'luong_concat':
+            query = query.expand_as(torch.zeros((bs, kmax, query.size(2))))
+            e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1))))
+
+        # Compute attention weights, context vector
+        e = e.squeeze(2)  # `[B, kmax]`
+        if self.mask is not None:
+            e = e.masked_fill_(self.mask == 0, NEG_INF)
+        if self.sigmoid_smoothing:
+            aw = torch.sigmoid(e) / torch.sigmoid(e).sum(1).unsqueeze(1)
         else:
-            # Compute attention weights, context vector
-            if self.mask is not None:
-                e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, kmax]`
-            if self.sigmoid_smoothing:
-                aw = F.sigmoid(e) / F.sigmoid(e).sum(-1).unsqueeze(-1)
-            else:
-                aw = F.softmax(e * self.sharpening_factor, dim=-1)
-            aw = self.attn_dropout(aw)
-            cv = torch.bmm(aw.unsqueeze(1), value)
+            aw = F.softmax(e * self.sharpening_factor, dim=-1)
+        aw = self.attn_dropout(aw)
+        cv = torch.bmm(aw.unsqueeze(1), value)
 
         return cv, aw.unsqueeze(2)

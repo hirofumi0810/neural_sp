@@ -82,7 +82,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value = None
         self.mask = None
 
-    def forward(self, key, value, query, mask, aw=None):
+    def forward(self, key, value, query, mask, aw_prev=None, mode=''):
         """Forward computation.
 
         Args:
@@ -90,8 +90,9 @@ class MultiheadAttentionMechanism(nn.Module):
             klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, qlen, query_dim]`
-            mask (): `[B, n_heads, key, query]`
-            aw: dummy
+            mask (ByteTensor): `[B, n_heads, key, query]`
+            aw_prev: dummy
+            mode: dummy
         Returns:
             cv (FloatTensor): `[B, qlen, value_dim]`
             aw (FloatTensor): `[B, n_heads, qlen, klen]`
