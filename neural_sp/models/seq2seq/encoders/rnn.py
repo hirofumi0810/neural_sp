@@ -324,8 +324,7 @@ class RNNEncoder(EncoderBase):
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
         # Sort by lenghts in the descending order for pack_padded_sequence
-        xlens = torch.IntTensor(xlens)
-        xlens, perm_ids = xlens.sort(0, descending=True)
+        xlens, perm_ids = torch.IntTensor(xlens).sort(0, descending=True)
         xs = xs[perm_ids]
         _, perm_ids_unsort = perm_ids.sort()
 
@@ -395,6 +394,7 @@ class RNNEncoder(EncoderBase):
                         if self.subsample_type == 'drop':
                             xs = xs[:, ::self.subsample[l], :]
                             xlens = [max(1, (i + self.subsample[l] - 1) // self.subsample[l]) for i in xlens]
+                            xlens = torch.IntTensor(xlens)
                         elif self.subsample_type == 'concat':
                             # Concatenate the successive frames
                             xs = xs.transpose(1, 0).contiguous()
