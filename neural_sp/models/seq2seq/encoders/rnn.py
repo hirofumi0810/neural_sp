@@ -20,9 +20,9 @@ from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
+from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
 from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
-from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 
 class RNNEncoder(EncoderBase):
@@ -218,16 +218,16 @@ class RNNEncoder(EncoderBase):
                         else:
                             self.max_pool += [None]
                 if subsample_type == 'concat' and np.prod(self.subsample) > 1:
-                    self.concat_proj = nn.ModuleList()
-                    self.concat_bn = nn.ModuleList()
+                    self.cat_proj = nn.ModuleList()
+                    self.cat_bn = nn.ModuleList()
                     for l in range(n_layers):
                         if self.subsample[l] > 1:
-                            self.concat_proj += [Linear(n_units * self.n_dirs
-                                                        * self.subsample[l], n_units * self.n_dirs)]
-                            self.concat_bn += [nn.BatchNorm1d(n_units * self.n_dirs)]
+                            self.cat_proj += [Linear(n_units * self.n_dirs
+                                                     * self.subsample[l], n_units * self.n_dirs)]
+                            self.cat_bn += [nn.BatchNorm1d(n_units * self.n_dirs)]
                         else:
-                            self.concat_proj += [None]
-                            self.concat_bn += [None]
+                            self.cat_proj += [None]
+                            self.cat_bn += [None]
                 if nin:
                     self.nin_conv = nn.ModuleList()
                     self.nin_bn = nn.ModuleList()
@@ -342,20 +342,20 @@ class RNNEncoder(EncoderBase):
 
         if self.fast_impl:
             self.rnn.flatten_parameters()  # for multi-GPUs
-            xs = pass_rnn_with_padding(xs, xlens, self.rnn)
+            xs = rnn_with_padding(xs, xlens, self.rnn)
             xs = self.dropout_top(xs)
         else:
             residual = None
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
-                xs = pass_rnn_with_padding(xs, xlens, self.rnn[l])
+                xs = rnn_with_padding(xs, xlens, self.rnn[l])
                 xs = self.dropout[l](xs)
 
                 # Pick up outputs in the sub task before the projection layer
                 if l == self.n_layers_sub1 - 1:
                     if self.task_specific_layer:
                         self.rnn_sub1.flatten_parameters()  # for multi-GPUs
-                        xs_sub1 = pass_rnn_with_padding(xs, xlens, self.rnn_sub1)
+                        xs_sub1 = rnn_with_padding(xs, xlens, self.rnn_sub1)
                         xs_sub1 = self.dropout_sub1(xs_sub1)
                     else:
                         xs_sub1 = xs.clone()[perm_ids_unsort]
@@ -371,7 +371,7 @@ class RNNEncoder(EncoderBase):
                 if l == self.n_layers_sub2 - 1:
                     if self.task_specific_layer:
                         self.rnn_sub2.flatten_parameters()  # for multi-GPUs
-                        xs_sub2 = pass_rnn_with_padding(xs, xlens, self.rnn_sub2)
+                        xs_sub2 = rnn_with_padding(xs, xlens, self.rnn_sub2)
                         xs_sub2 = self.dropout_sub2(xs_sub2)
                     else:
                         xs_sub2 = xs.clone()[perm_ids_unsort]
@@ -393,34 +393,32 @@ class RNNEncoder(EncoderBase):
                     # Subsampling
                     if self.subsample[l] > 1:
                         if self.subsample_type == 'drop':
-                            xs = xs[:, 1::self.subsample[l], :]
-                            # NOTE: Pick up features at even time step
+                            xs = xs[:, ::self.subsample[l], :]
+                            xlens = [max(1, (i + self.subsample[l] - 1) // self.subsample[l]) for i in xlens]
                         elif self.subsample_type == 'concat':
                             # Concatenate the successive frames
                             xs = xs.transpose(1, 0).contiguous()
                             xs = [torch.cat([xs[t - r:t - r + 1] for r in range(self.subsample[l] - 1, -1, -1)], dim=-1)
                                   for t in range(xs.size(0)) if (t + 1) % self.subsample[l] == 0]
-                            # NOTE: Exclude the last frame if the length of xs is odd
+                            xlens /= self.subsample[l]
+                            # NOTE: Exclude the last frames if the length is not divisible
                             xs = torch.cat(xs, dim=0).transpose(1, 0)
-                            # xs = torch.tanh(self.concat[l](xs))
+                            # xs = torch.tanh(self.cat[l](xs))
 
                             # Projection + batch normalization, ReLU
-                            xs = self.concat_proj[l](xs)
+                            xs = self.cat_proj[l](xs)
                             bs, time = xs.size()[:2]
-                            xs = xs.view(bs * time, -1)
-                            xs = self.concat_bn[l](xs)
-                            xs = xs.view(bs, time, -1)
+                            xs = self.cat_bn[l](xs.view(bs * time, -1)).view(bs, time, -1)
+                            # xs = self.cat_bn[l](xs)
                             xs = F.relu(xs)
 
                         elif self.subsample_type == 'max_pool':
                             xs = xs.transpose(1, 0).contiguous()
                             xs = [torch.max(xs[t - self.subsample[l] + 1:t + 1], dim=0)[0].unsqueeze(0)
                                   for t in range(xs.size(0)) if (t + 1) % self.subsample[l] == 0]
-                            # NOTE: Exclude the last frame if the length of xs is odd
+                            xlens /= self.subsample[l]
+                            # NOTE: Exclude the last frames if the length is not divisible
                             xs = torch.cat(xs, dim=0).transpose(1, 0)
-
-                        # Update xlens
-                        xlens //= self.subsample[l]
 
                     # NiN (1*1 conv + batch normalization + ReLU)
                     if self.nin:
@@ -456,7 +454,7 @@ class RNNEncoder(EncoderBase):
         return eouts
 
 
-def pass_rnn_with_padding(xs, xlens, rnn):
+def rnn_with_padding(xs, xlens, rnn):
     xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
     xs, _ = rnn(xs, hx=None)
     xs = pad_packed_sequence(xs, batch_first=True)[0]
