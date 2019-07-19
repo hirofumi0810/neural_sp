@@ -366,12 +366,14 @@ class RNNTransducer(DecoderBase):
         return loss
 
     def joint(self, eouts, douts):
-        """
+        """Combine encoder outputs and prediction network outputs.
+
         Args:
             eouts (FloatTensor): `[B, T, n_units]`
             douts (FloatTensor): `[B, L, n_units]`
         Returns:
             out (FloatTensor): `[B, T, L, vocab]`
+
         """
         eouts = eouts.unsqueeze(2)  # `[B, T, 1, n_units]`
         douts = douts.unsqueeze(1)  # `[B, 1, L, n_units]`
@@ -380,6 +382,7 @@ class RNNTransducer(DecoderBase):
 
     def recurrency(self, ys_emb, dstate):
         """Update prediction network.
+
         Args:
             ys_emb (FloatTensor): `[B, L, emb_dim]`
             dstate (dict):
@@ -643,7 +646,7 @@ class RNNTransducer(DecoderBase):
                                          'lattice': lattice,
                                          'score': score,
                                          'score_lm': score_lm,
-                                         'score_ctc': 0,  # TODO
+                                         'score_ctc': 0,  # TODO(hirofumi):
                                          'dout': dout,
                                          'dstate': dstate if idx == self.blank else new_dstate,
                                          'lmstate': lmstate,
@@ -678,7 +681,7 @@ class RNNTransducer(DecoderBase):
                     ys = [np2tensor(np.fromiter(hyp['hyp'], dtype=np.int64), self.device_id)]
                     ys_pad = pad_list(ys, lm.pad)
                     _, _, lm_log_probs = lm.predict(ys_pad, None)
-                    score_ctc = 0  # TODO:
+                    score_ctc = 0  # TODO(hirofumi):
                     score_lm = lm_log_probs.sum() * lm_weight
                     new_hyps.append({'hyp': hyp['hyp'],
                                      'score': hyp['score'] + score_lm,
