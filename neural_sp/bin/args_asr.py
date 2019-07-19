@@ -133,7 +133,8 @@ def parse():
     # topology (decoder)
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['no', 'location', 'add', 'dot',
-                                 'luong_dot', 'luong_general', 'luong_concat'],
+                                 'luong_dot', 'luong_general', 'luong_concat',
+                                 'monotonic', 'mocha'],
                         help='type of attention for RNN sequence-to-sequence models')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='dimension of the attention layer')

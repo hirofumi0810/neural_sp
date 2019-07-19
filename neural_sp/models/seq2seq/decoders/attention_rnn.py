@@ -24,7 +24,7 @@ from neural_sp.models.criterion import distillation
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import Linear
-from neural_sp.models.modules.monotonic_attention import MonotonicAttentionMechanism
+from neural_sp.models.modules.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.modules.singlehead_attention import AttentionMechanism
 from neural_sp.models.modules.zoneout import zoneout_wrapper
@@ -151,6 +151,7 @@ class RNNDecoder(DecoderBase):
         self.pad = pad
         self.blank = blank
         self.vocab = vocab
+        self.attn_type = attn_type
         self.rnn_type = rnn_type
         assert rnn_type in ['lstm', 'gru']
         self.enc_n_units = enc_n_units
@@ -214,13 +215,13 @@ class RNNDecoder(DecoderBase):
 
         if ctc_weight < global_weight:
             # Attention layer
-            if attn_type == 'monotonic':
+            if attn_type in ['mocha', 'monotonic']:
                 assert attn_n_heads == 1
-                self.score = MonotonicAttentionMechanism(
-                    key_dim=self.enc_n_units,
-                    query_dim=n_units if n_projs == 0 else n_projs,
-                    attn_dim=attn_dim,
-                    init_r=-4)
+                self.score = MoChA(key_dim=self.enc_n_units,
+                                   query_dim=n_units if n_projs == 0 else n_projs,
+                                   attn_dim=attn_dim,
+                                   window=1 if attn_type == 'monotonic' else 2,
+                                   init_r=-4)
             else:
                 if attn_n_heads > 1:
                     self.score = MultiheadAttentionMechanism(
@@ -373,7 +374,9 @@ class RNNDecoder(DecoderBase):
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
 
-            if 'score.v.weight_g' in n or 'score.r' in n:
+            if 'score.v_mono.weight_g' in n or 'score.r_mono' in n:
+                continue
+            if 'score.v_chunk.weight_g' in n or 'score.r_chunk' in n:
                 continue
 
             if p.dim() == 1:
@@ -825,7 +828,7 @@ class RNNDecoder(DecoderBase):
             # Recurrency -> Score -> Generate
             dec_in = attn_v if self.input_feeding else cv
             dstates = self.recurrency(self.embed(y), dec_in, dstates['dstate'])
-            cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw)
+            cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw, mode='hard')
             attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
 
             # Pick up 1-best
@@ -1037,7 +1040,8 @@ class RNNDecoder(DecoderBase):
                                         eouts[b:b + 1, :elens[b]],
                                         dstates['dout_score'],
                                         None,  # mask
-                                        beam['aws'][-1])
+                                        beam['aws'][-1],
+                                        mode='hard')
                     # Score for the ensemble
                     ensmbl_cv, ensmbl_aws = [], []
                     if n_models > 1:
