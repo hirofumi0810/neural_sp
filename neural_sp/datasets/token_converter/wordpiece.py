@@ -44,9 +44,13 @@ class Wp2idx(object):
             token_ids (list): word-piece indices
 
         """
+        # Remove space before the first special symbol
+        wps = self.sp.EncodeAsPieces(text)
+        if wps[0] == '▁' and wps[1][0] == '<':
+            wps = wps[1:]
+
         token_ids = []
-        wordpieces = self.sp.EncodeAsPieces(text)
-        for wp in wordpieces:
+        for wp in wps:
             if wp in self.token2idx.keys():
                 token_ids.append(self.token2idx[wp])
             else:

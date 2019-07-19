@@ -17,13 +17,13 @@ class Phone2idx(object):
     """Class for converting phone sequence to indices.
 
     Args:
-        dict_path (str): path to a vocabulary file
+        dict_path (str): path to a dictionary file
         remove_list (list): phones to ingore
 
     """
 
     def __init__(self, dict_path, remove_list=[]):
-        # Load a vocabulary file
+        # Load a dictionary file
         self.token2idx = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
@@ -51,13 +51,13 @@ class Idx2phone(object):
     """Class for converting indices to phone sequence.
 
     Args:
-        dict_path (str): path to a vocabulary file
+        dict_path (str): path to a dictionary file
         remove_list (list): phones to ingore
 
     """
 
     def __init__(self, dict_path, remove_list=[]):
-        # Load a vocabulary file
+        # Load a dictionary file
         self.idx2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:

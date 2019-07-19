@@ -25,7 +25,7 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
 
     Args:
         models (list): models to evaluate
-        dataset: An instance of a `Dataset' class
+        dataset (Dataset): evaluation dataset
         recog_params (recog_dict):
         epoch (int):
         recog_dir (str):
@@ -71,6 +71,8 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
+                if ref[0] == '<':
+                    ref = ref.split('>')[1]
                 hyp = dataset.idx2token[0](best_hyps_id[b])
 
                 # Write to trn

@@ -26,9 +26,9 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
     """Evaluate a Seq2seq or (RNN/GatedConv)LM by perprexity and loss.
 
     Args:
-        models (list): the models to evaluate
-        dataset: An instance of a `Dataset' class
-        batch_size (int): size of mini-batch
+        models (list): models to evaluate
+        dataset (Dataset): evaluation dataset
+        batch_size (int): batch size
         bptt (int): BPTT length
         n_caches (int):
         progressbar (bool): if True, visualize the progressbar
@@ -40,16 +40,12 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
     # Reset data counter
     dataset.reset()
 
-    model = models[0]
     is_lm = False
     skip_thought = False
-    if isinstance(model, RNNLM) or isinstance(model, GatedConvLM) or isinstance(model, TransformerLM):
+    if isinstance(models[0], RNNLM) or isinstance(models[0], GatedConvLM) or isinstance(models[0], TransformerLM):
         is_lm = True
-    elif 'skip' in model.enc_type:
+    elif 'skip' in models[0].enc_type:
         skip_thought = True
-
-    # Change to the evaluation mode
-    model.eval()
 
     total_loss = 0
     n_tokens = 0
@@ -61,17 +57,17 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
             ys, is_new_epoch = dataset.next(batch_size, bptt)
             bs, time = ys.shape[:2]
             if n_caches > 0:
-                assert isinstance(model, RNNLM)
+                assert isinstance(models[0], RNNLM)
                 # NOTE: cache is not supported for GatedConvLM/TransformerLM now
                 for t in range(time - 1):
-                    loss, hidden = model(ys[:, t:t + 2], hidden, is_eval=True, n_caches=n_caches)[:2]
+                    loss, hidden = models[0](ys[:, t:t + 2], hidden, is_eval=True, n_caches=n_caches)[:2]
                     total_loss += loss.item() * bs
                     n_tokens += bs
 
                     if progressbar:
                         pbar.update(bs)
             else:
-                loss, hidden = model(ys, hidden, is_eval=True)[:2]
+                loss, hidden = models[0](ys, hidden, is_eval=True)[:2]
                 total_loss += loss.item() * bs * (time - 1)
                 n_tokens += bs * (time - 1)
 
@@ -81,15 +77,15 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
             batch, is_new_epoch = dataset.next(batch_size)
             bs = len(batch['ys'])
             if skip_thought:
-                loss, _ = model(batch['ys'],
-                                ys_prev=batch['ys_prev'],
-                                ys_next=batch['ys_next'],
-                                is_eval=True)
+                loss, _ = models[0](batch['ys'],
+                                    ys_prev=batch['ys_prev'],
+                                    ys_next=batch['ys_next'],
+                                    is_eval=True)
             else:
-                loss, _ = model(batch, task='all', is_eval=True)
+                loss, _ = models[0](batch, task='all', is_eval=True)
             total_loss += loss.item() * bs
-            del loss
-            n_tokens += sum([len(y) for y in batch['ys']])
+            n_tokens += bs
+            # NOTE: loss is divided by batch size in the ASR model
 
             if progressbar:
                 pbar.update(bs)

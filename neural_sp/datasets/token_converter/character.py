@@ -18,7 +18,7 @@ class Char2idx(object):
     """Class for converting character sequence into indices.
 
     Args:
-        dict_path (str): path to a vocabulary file
+        dict_path (str): path to a dictionary file
         remove_list (list): characters to ignore
 
     """
@@ -27,7 +27,7 @@ class Char2idx(object):
         self.remove_space = remove_space
         self.remove_list = remove_list
 
-        # Load a vocabulary file
+        # Load a dictionary file
         self.token2idx = {}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
@@ -76,7 +76,7 @@ class Idx2char(object):
     """Class for converting indices into character sequence.
 
     Args:
-        dict_path (str): path to a vocabulary file
+        dict_path (str): path to a dictionary file
         remove_list (list): characters to ignore
 
     """
@@ -84,7 +84,7 @@ class Idx2char(object):
     def __init__(self, dict_path,  remove_list=[]):
         self.remove_list = remove_list
 
-        # Load a vocabulary file
+        # Load a dictionary file
         self.idx2token = {0: '<blank>'}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:

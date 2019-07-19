@@ -25,7 +25,7 @@ def eval_phone(models, dataset, recog_params, epoch,
 
     Args:
         models (list): models to evaluate
-        dataset: An instance of a `Dataset' class
+        dataset (Dataset): evaluation dataset
         recog_params (dict):
         epoch (int):
         recog_dir (str):
