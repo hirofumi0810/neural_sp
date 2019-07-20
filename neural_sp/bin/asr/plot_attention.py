@@ -23,7 +23,7 @@ from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_asr import Dataset
-from neural_sp.models.lm.select import select_lm
+from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
 
@@ -89,7 +89,7 @@ def main():
                     args_lm = argparse.Namespace()
                     for k, v in conf_lm.items():
                         setattr(args_lm, k, v)
-                    lm = select_lm(args_lm)
+                    lm = build_lm(args_lm)
                     lm = load_checkpoint(lm, args.recog_lm)[0]
                     if args_lm.backward:
                         model.lm_bwd = lm
@@ -102,7 +102,7 @@ def main():
                     args_lm_bwd = argparse.Namespace()
                     for k, v in conf_lm.items():
                         setattr(args_lm_bwd, k, v)
-                    lm_bwd = select_lm(args_lm_bwd)
+                    lm_bwd = build_lm(args_lm_bwd)
                     lm_bwd = load_checkpoint(lm_bwd, args.recog_lm_bwd)[0]
                     model.lm_bwd = lm_bwd
 

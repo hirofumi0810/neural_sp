@@ -14,7 +14,7 @@ from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
 from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
 
 
-def select_encoder(args):
+def build_encoder(args):
 
     if 'transformer' in args.enc_type:
         encoder = TransformerEncoder(

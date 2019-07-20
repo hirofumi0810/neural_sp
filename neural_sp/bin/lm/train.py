@@ -29,7 +29,7 @@ from neural_sp.bin.train_utils import save_checkpoint
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
-from neural_sp.models.lm.select import select_lm
+from neural_sp.models.lm.build import build_lm
 from neural_sp.trainers.optimizer import set_optimizer
 from neural_sp.trainers.reporter import Reporter
 from neural_sp.trainers.lr_scheduler import LRScheduler
@@ -103,7 +103,7 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'), key='training', stdout=args.stdout)
 
     # Model setting
-    model = select_lm(args, save_path)
+    model = build_lm(args, save_path)
 
     if args.resume:
         # Set optimizer

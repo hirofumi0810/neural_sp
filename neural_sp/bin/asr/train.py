@@ -35,7 +35,7 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
-from neural_sp.models.lm.select import select_lm
+from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.models.seq2seq.skip_thought import SkipThought
 from neural_sp.trainers.optimizer import set_optimizer
@@ -311,7 +311,7 @@ def main():
             args_lm = argparse.Namespace()
             for k, v in conf_lm.items():
                 setattr(args_lm, k, v)
-            teacher_lm = select_lm(args_lm)
+            teacher_lm = build_lm(args_lm)
             teacher_lm = load_checkpoint(teacher_lm, args.teacher_lm)[0]
 
     # GPU setting

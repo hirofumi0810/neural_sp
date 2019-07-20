@@ -16,18 +16,19 @@ import torch
 
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
-from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
+from neural_sp.models.modules.embedding import Embedding
+from neural_sp.models.seq2seq.encoders.build import build_encoder
 from neural_sp.models.seq2seq.decoders.attention_rnn import RNNDecoder
+from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
-from neural_sp.models.seq2seq.encoders.select import select_encoder
+from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.frontends.gaussian_noise import add_gaussian_noise
 from neural_sp.models.seq2seq.frontends.sequence_summary import SequenceSummaryNetwork
-from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
-from neural_sp.models.seq2seq.frontends.splicing import splice
 from neural_sp.models.seq2seq.frontends.spec_augment import SpecAugment
+from neural_sp.models.seq2seq.frontends.splicing import splice
+
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
@@ -114,7 +115,7 @@ class Speech2Text(ModelBase):
                                               param_init=args.param_init)
 
         # Encoder
-        self.enc = select_encoder(args)
+        self.enc = build_encoder(args)
         if args.freeze_encoder:
             for p in self.enc.parameters():
                 p.requires_grad = False
@@ -129,7 +130,7 @@ class Speech2Text(ModelBase):
             # Load the LM for LM fusion
             if args.lm_fusion and dir == 'fwd':
                 lm_fusion = RNNLM(args.lm_conf)
-                lm_fusion, _ = load_checkpoint(lm_fusion, args.lm_fusion)
+                lm_fusion = load_checkpoint(lm_fusion, args.lm_fusion)[0]
             else:
                 lm_fusion = None
                 # TODO(hirofumi): for backward RNNLM
@@ -137,7 +138,7 @@ class Speech2Text(ModelBase):
             # Load the LM for LM initialization
             if args.lm_init and dir == 'fwd':
                 lm_init = RNNLM(args.lm_conf)
-                lm_init, _ = load_checkpoint(lm_init, args.lm_init)
+                lm_init = load_checkpoint(lm_init, args.lm_init)[0]
             else:
                 lm_init = None
                 # TODO(hirofumi): for backward RNNLM
@@ -357,15 +358,15 @@ class Speech2Text(ModelBase):
                 ys_sub2 (list): reference labels in the 2nd auxiliary task of size `[L_sub2]`
                 utt_ids (list): name of utterances
                 speakers (list): name of speakers
-            reporter ():
+            reporter (Reporter):
             task (str): all or ys* or ys_sub*
-            is_eval (bool): the history will not be saved.
+            is_eval (bool): evaluation mode
                 This should be used in inference model for memory efficiency.
             teacher (Speech2Text): used for knowledge distillation
             teacher_lm (RNNLM): used for knowledge distillation
         Returns:
             loss (FloatTensor): `[1]`
-            reporter ():
+            reporter (Reporter):
 
         """
         if is_eval:
@@ -426,9 +427,9 @@ class Speech2Text(ModelBase):
                 if teacher_lm is not None:
                     teacher_lm.eval()
                 teacher_probs = teacher.generate_probs(batch, lm=teacher_lm, lm_weight=0.1)
-                # TODO: label smoothing?
-                # TODO: scheduled sampling?
-                # TODO: dropout?
+                # TODO(hirofumi): label smoothing?
+                # TODO(hirofumi): scheduled sampling?
+                # TODO(hirofumi): dropout?
             else:
                 teacher_probs = None
             loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'],

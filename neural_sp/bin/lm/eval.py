@@ -20,7 +20,7 @@ from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
-from neural_sp.models.lm.select import select_lm
+from neural_sp.models.lm.build import build_lm
 
 
 def main():
@@ -57,7 +57,7 @@ def main():
 
         if i == 0:
             # Load the LM
-            model = select_lm(args)
+            model = build_lm(args)
             model = load_checkpoint(model, args.recog_model[0])[0]
             epoch = int(args.recog_model[0].split('-')[-1])
 
