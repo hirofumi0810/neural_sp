@@ -565,7 +565,7 @@ class Speech2Text(ModelBase):
     def plot_attention(self):
         if 'transformer' in self.enc_type:
             self.enc._plot_attention(self.save_path)
-        if 'transformer' in self.dec_type:
+        if 'transformer' in self.dec_type or 'transducer' not in self.dec_type:
             self.dec_fwd._plot_attention(self.save_path)
 
     def decode(self, xs, params, idx2token, nbest=1, exclude_eos=False,

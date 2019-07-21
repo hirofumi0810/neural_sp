@@ -13,7 +13,9 @@ from __future__ import print_function
 import logging
 import math
 import numpy as np
+import os
 import random
+import shutil
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -36,6 +38,10 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
+from neural_sp.utils import mkdir_join
+
+import matplotlib
+matplotlib.use('Agg')
 
 random.seed(1)
 
@@ -557,7 +563,7 @@ class RNNDecoder(DecoderBase):
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
-        aw = None
+        aw, aws = None, []
         lmout, lmstate = None, None
 
         # Pre-computation of embedding
@@ -568,19 +574,21 @@ class RNNDecoder(DecoderBase):
 
         logits = []
         for t in range(ys_in_pad.size(1)):
-            is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob and self.adaptive_softmax is None
+            sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob and self.adaptive_softmax is None
 
             # Update LM states for LM fusion
             if self.lm is not None:
-                y_lm = self.output(logits[-1]).detach().argmax(-1) if is_sample else ys_in_pad[:, t:t + 1]
+                y_lm = self.output(logits[-1]).detach().argmax(-1) if sample else ys_in_pad[:, t:t + 1]
                 lmout, lmstate = self.lm.decode(y_lm, lmstate)
 
             # Recurrency -> Score -> Generate
             dec_in = attn_v if self.input_feeding else cv
-            y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
+            y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if sample else ys_emb[:, t:t + 1]
             dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
             cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw)
             attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
+            if not self.training:
+                aws.append(aw.transpose(2, 1).unsqueeze(2))  # `[B, n_heads, 1, T]`
             logits.append(attn_v)
 
             if self.discourse_aware == 'state_carry_over':
@@ -601,8 +609,14 @@ class RNNDecoder(DecoderBase):
         logits = torch.cat(logits, dim=1)
         if self.adaptive_softmax is None:
             logits = self.output(logits)
+
+        # for knowledge distillation
         if return_logits:
             return logits
+
+        # for attention plot
+        if not self.training:
+            self.aws = tensor2np(torch.cat(aws, dim=2))  # `[B, n_heads, L, T]`
 
         # Compute XE sequence loss
         if self.adaptive_softmax is None:
@@ -775,6 +789,35 @@ class RNNDecoder(DecoderBase):
             out = self.output_bn(torch.cat([dout, cv], dim=-1))
         attn_v = torch.tanh(out)
         return attn_v, gated_lmfeat
+
+    def _plot_attention(self, save_path, n_cols=1):
+        """Plot attention for each head."""
+        from matplotlib import pyplot as plt
+        from matplotlib.ticker import MaxNLocator
+
+        _save_path = mkdir_join(save_path, 'dec_att_weights')
+
+        # Clean directory
+        if _save_path is not None and os.path.isdir(_save_path):
+            shutil.rmtree(_save_path)
+            os.mkdir(_save_path)
+
+        if hasattr(self, 'aws'):
+            plt.clf()
+            fig, axes = plt.subplots(max(1, self.score.n_heads // n_cols), n_cols,
+                                     figsize=(20, 8), squeeze=False)
+            for h in range(self.score.n_heads):
+                ax = axes[h // n_cols, h % n_cols]
+                ax.imshow(self.aws[-1,  h, :, :], aspect="auto")
+                ax.grid(False)
+                ax.set_xlabel("Input (head%d)" % h)
+                ax.set_ylabel("Output (head%d)" % h)
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+            fig.tight_layout()
+            fig.savefig(os.path.join(_save_path, 'attention.png'), dvi=500)
+            plt.close()
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
                exclude_eos=False, refs_id=None,

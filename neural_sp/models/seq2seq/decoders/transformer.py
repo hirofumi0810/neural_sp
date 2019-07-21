@@ -240,8 +240,8 @@ class TransformerDecoder(DecoderBase):
             return_logits (bool): return logits for knowledge distillation
         Returns:
             loss (FloatTensor): `[1]`
-            acc (float):
-            ppl (float):
+            acc (float): accuracy for token prediction
+            ppl (float): perplexity
 
         """
         bs = eouts.size(0)
@@ -276,6 +276,8 @@ class TransformerDecoder(DecoderBase):
         logits = self.norm_out(ys_emb)
         if self.adaptive_softmax is None:
             logits = self.output(logits)
+
+        # for knowledge distillation
         if return_logits:
             return logits
 
@@ -311,6 +313,39 @@ class TransformerDecoder(DecoderBase):
         loss *= ylens.float().mean()
 
         return loss, acc, ppl
+
+    def _plot_attention(self, save_path, n_cols=2):
+        """Plot attention for each head in all layers."""
+        from matplotlib import pyplot as plt
+        from matplotlib.ticker import MaxNLocator
+
+        for attn in ['yy', 'xy']:
+            _save_path = mkdir_join(save_path, 'dec_%s_att_weights' % attn)
+
+            # Clean directory
+            if _save_path is not None and os.path.isdir(_save_path):
+                shutil.rmtree(_save_path)
+                os.mkdir(_save_path)
+
+            for l in range(self.n_layers):
+                if hasattr(self, '%s_aws_layer%d' % (attn, l)):
+                    aws = getattr(self, '%s_aws_layer%d' % (attn, l))
+
+                    plt.clf()
+                    fig, axes = plt.subplots(max(1, self.attn_n_heads // n_cols), n_cols,
+                                             figsize=(20, 8), squeeze=False)
+                    for h in range(self.attn_n_heads):
+                        ax = axes[h // n_cols, h % n_cols]
+                        ax.imshow(aws[-1, h, :, :], aspect="auto")
+                        ax.grid(False)
+                        ax.set_xlabel("Input (head%d)" % h)
+                        ax.set_ylabel("Output (head%d)" % h)
+                        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+                    fig.tight_layout()
+                    fig.savefig(os.path.join(_save_path, 'layer%d.png' % (l)), dvi=500)
+                    plt.close()
 
     def greedy(self, eouts, elens, max_len_ratio,
                exclude_eos=False, idx2token=None, refs_id=None,
@@ -371,7 +406,7 @@ class TransformerDecoder(DecoderBase):
                 if not eos_flags[b]:
                     if y[b].item() == self.eos:
                         eos_flags[b] = True
-                        yy_aws_tmp[b] = yy_aws[b:b + 1]  # TODO: fix this
+                        yy_aws_tmp[b] = yy_aws[b:b + 1]  # TODO(hirofumi): fix this
                         xy_aws_tmp[b] = xy_aws[b:b + 1]
                     ylens[b] += 1
                     # NOTE: include <eos>
@@ -412,40 +447,3 @@ class TransformerDecoder(DecoderBase):
 
         # return best_hyps, aws
         return best_hyps, None
-
-    def _plot_attention(self, save_path, n_cols=2):
-        """Plot attention for each head in all layers."""
-        from matplotlib import pyplot as plt
-        from matplotlib.ticker import MaxNLocator
-
-        for attn in ['yy', 'xy']:
-            _save_path = mkdir_join(save_path, 'dec_%s_att_weights' % attn)
-
-            # Clean directory
-            if _save_path is not None and os.path.isdir(_save_path):
-                shutil.rmtree(_save_path)
-                os.mkdir(_save_path)
-
-            for l in range(self.n_layers):
-                if not hasattr(self, '%s_aws_layer%d' % (attn, l)):
-                    continue
-
-                aws = getattr(self, '%s_aws_layer%d' % (attn, l))
-
-                plt.clf()
-                fig, axes = plt.subplots(self.attn_n_heads // n_cols, n_cols, figsize=(20, 8))
-                for h in range(self.attn_n_heads):
-                    if self.attn_n_heads > n_cols:
-                        ax = axes[h // n_cols, h % n_cols]
-                    else:
-                        ax = axes[h]
-                    ax.imshow(aws[-1, h, :, :], aspect="auto")
-                    ax.grid(False)
-                    ax.set_xlabel("Input (head%d)" % h)
-                    ax.set_ylabel("Output (head%d)" % h)
-                    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-                    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-
-                fig.tight_layout()
-                fig.savefig(os.path.join(_save_path, 'layer%d.png' % (l)), dvi=500)
-                plt.close()
