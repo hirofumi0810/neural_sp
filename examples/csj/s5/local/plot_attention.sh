@@ -152,5 +152,5 @@ for set in eval1 eval2 eval3; do
         --recog_cache_lambda_lm ${cache_lambda_lm} \
         --recog_cache_type ${cache_type} \
         --recog_oracle ${oracle} \
-        --stdout ${stdout} || exit 1;
+        --recog_stdout ${stdout} || exit 1;
 done

@@ -58,7 +58,7 @@ for set in dev test; do
         --recog_coverage_threshold ${coverage_threshold} \
         --recog_gnmt_decoding ${gnmt_decoding} \
         --recog_ctc_weight ${ctc_weight} \
-        --stdout ${stdout} || exit 1;
+        --recog_stdout ${stdout} || exit 1;
 
     echo ${set}
     local/score_sclite.sh ${recog_dir} > ${recog_dir}/RESULTS

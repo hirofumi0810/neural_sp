@@ -41,7 +41,7 @@ def main():
     if os.path.isfile(os.path.join(args.recog_dir, 'plot.log')):
         os.remove(os.path.join(args.recog_dir, 'plot.log'))
     logger = set_logger(os.path.join(args.recog_dir, 'plot.log'),
-                        key='decoding', stdout=args.stdout)
+                        key='decoding', stdout=args.recog_stdout)
 
     for i, s in enumerate(args.recog_sets):
         # Load dataset

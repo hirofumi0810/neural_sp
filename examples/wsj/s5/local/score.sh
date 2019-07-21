@@ -155,7 +155,7 @@ for set in test_dev93 test_eval92; do
         --recog_cache_lambda_lm ${cache_lambda_lm} \
         --recog_cache_type ${cache_type} \
         --recog_oracle ${oracle} \
-        --stdout ${stdout} || exit 1;
+        --recog_stdout ${stdout} || exit 1;
 
     # remove <unk>, <noise>
     cat ${recog_dir}/ref.trn | sed 's:<unk>::g' | sed 's:<noise>::g' > ${recog_dir}/ref.trn.filt

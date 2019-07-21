@@ -40,7 +40,7 @@ def main():
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):
         os.remove(os.path.join(args.recog_dir, 'decode.log'))
     logger = set_logger(os.path.join(args.recog_dir, 'decode.log'),
-                        key='decoding', stdout=args.stdout)
+                        key='decoding', stdout=args.recog_stdout)
 
     ppl_avg = 0
     for i, s in enumerate(args.recog_sets):

@@ -154,7 +154,7 @@ for set in eval2000; do
         --recog_cache_lambda_lm ${cache_lambda_lm} \
         --recog_cache_type ${cache_type} \
         --recog_oracle ${oracle} \
-        --stdout ${stdout} || exit 1;
+        --recog_stdout ${stdout} || exit 1;
 
     if [ ${metric} = 'edit_distance' ]; then
         echo ${set}

@@ -151,7 +151,7 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_cache_lambda_lm ${cache_lambda_lm} \
         --recog_cache_type ${cache_type} \
         --recog_oracle ${oracle} \
-        --stdout ${stdout} || exit 1;
+        --recog_stdout ${stdout} || exit 1;
 
     # remove <unk>
     cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt

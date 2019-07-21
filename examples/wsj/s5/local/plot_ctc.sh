@@ -63,5 +63,5 @@ for set in test_dev93 test_eval92; do
         --recog_unit ${unit} \
         --recog_model ${model} ${model1} ${model2} ${model3} \
         --recog_batch_size ${batch_size} \
-        --stdout ${stdout} || exit 1;
+        --recog_stdout ${stdout} || exit 1;
 done

@@ -36,5 +36,5 @@ for set in dev test; do
         --recog_dir ${recog_dir} \
         --recog_model ${model} \
         --recog_batch_size ${batch_size} \
-        --stdout ${stdout} || exit 1;
+        --recog_stdout ${stdout} || exit 1;
 done
