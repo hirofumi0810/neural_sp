@@ -79,9 +79,9 @@ class Base(object):
                 raise StopIteration
             # NOTE: max_epoch == None means infinite loop
 
-            data_indices, is_new_epoch = self.sample_index(batch_size)
-            batch = self.make_batch(data_indices)
-            self.iteration += len(data_indices)
+            csv_indices, is_new_epoch = self.sample_index(batch_size)
+            batch = self.make_batch(csv_indices)
+            self.iteration += len(csv_indices)
         else:
             # Clean up multiprocessing
             if self.preloading_process is not None and self.queue_size == 0:
@@ -100,8 +100,8 @@ class Base(object):
                 self.df_indices_list = []
                 self.is_new_epoch_list = []
                 for _ in range(self.n_ques):
-                    data_indices, is_new_epoch = self.sample_index(batch_size)
-                    self.df_indices_list.append(data_indices)
+                    csv_indices, is_new_epoch = self.sample_index(batch_size)
+                    self.df_indices_list.append(csv_indices)
                     self.is_new_epoch_list.append(is_new_epoch)
                 self.preloading_process = Process(self.preloading_loop,
                                                   args=(self.queue, self.df_indices_list))
@@ -125,7 +125,7 @@ class Base(object):
         Args:
             batch_size (int): the size of mini-batch
         Returns:
-            data_indices (np.ndarray):
+            csv_indices (np.ndarray):
             is_new_epoch (bool):
 
         """
@@ -134,8 +134,8 @@ class Base(object):
         if self.discourse_aware:
             n_utt = min(self.n_utt_session_dict_epoch.keys())
             assert self.utt_offset < n_utt
-            data_indices = [self.df[self.session_offset_dict[session_id] + self.utt_offset:self.session_offset_dict[session_id] + self.utt_offset + 1].index[0]
-                            for session_id in self.n_utt_session_dict_epoch[n_utt][:batch_size]]
+            csv_indices = [self.df[self.session_offset_dict[session_id] + self.utt_offset:self.session_offset_dict[session_id] + self.utt_offset + 1].index[0]
+                           for session_id in self.n_utt_session_dict_epoch[n_utt][:batch_size]]
 
             self.utt_offset += 1
             if self.utt_offset == n_utt:
@@ -156,19 +156,21 @@ class Base(object):
                 # Change batch size dynamically
                 min_xlen = self.df[self.offset:self.offset + 1]['xlen'].values[0]
                 min_ylen = self.df[self.offset:self.offset + 1]['ylen'].values[0]
-                batch_size_tmp = self.select_batch_size(batch_size, min_xlen, min_ylen)
+                batch_size_tmp = self.set_batch_size(batch_size, min_xlen, min_ylen)
             else:
                 batch_size_tmp = batch_size
 
             if len(self.rest) > batch_size_tmp:
-                data_indices = list(self.df[self.offset:self.offset + batch_size_tmp].index)
-                self.rest -= set(data_indices)
+                csv_indices = list(self.df[self.offset:self.offset + batch_size_tmp].index)
+                # Shuffle uttrances in mini-batch
+                csv_indices = random.sample(csv_indices, len(csv_indices))
+                self.rest -= set(csv_indices)
                 # NOTE: rest is in uttrance length order when sort_by_input_length == True
                 # NOTE: otherwise in name length order when shuffle == False
-                self.offset += len(data_indices)
+                self.offset += len(csv_indices)
             else:
                 # Last mini-batch
-                data_indices = list(self.df[self.offset: self.offset + len(self.rest)].index)
+                csv_indices = list(self.df[self.offset: self.offset + len(self.rest)].index)
                 self._reset()
                 is_new_epoch = True
                 self._epoch += 1
@@ -177,28 +179,28 @@ class Base(object):
                     self.shuffle = True
 
         else:
-            # Randomly sample uttrances
+            # Sample uttrances randomly
             if len(self.rest) > batch_size:
-                data_indices = random.sample(list(self.rest), batch_size)
-                self.rest -= set(data_indices)
+                csv_indices = random.sample(list(self.rest), len(self.rest))
+                self.rest -= set(csv_indices)
             else:
                 # Last mini-batch
-                data_indices = list(self.rest)
+                csv_indices = list(self.rest)
                 self._reset()
                 is_new_epoch = True
                 self._epoch += 1
 
-            self.offset += len(data_indices)
+            self.offset += len(csv_indices)
 
-        return data_indices, is_new_epoch
+        return csv_indices, is_new_epoch
 
-    def select_batch_size(self, batch_size, min_xlen, min_ylen):
+    def set_batch_size(self, batch_size, min_xlen, min_ylen):
         if not self.dynamic_batching:
             return batch_size
 
         if min_xlen <= 800:
             pass
-        elif min_xlen <= 1600 or 70 < min_ylen <= 100:
+        elif min_xlen <= 1600 or 80 < min_ylen <= 100:
             batch_size = int(batch_size / 2)
         else:
             batch_size = int(batch_size / 4)
