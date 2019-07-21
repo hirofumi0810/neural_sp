@@ -40,12 +40,12 @@ def cross_entropy_lsm(logits, ys, lsm_prob, ignore_index):
     return loss_mean
 
 
-def distillation(logits_student, probs_teacher, ylens, temperature=1):
+def distillation(logits_student, logits_teacher, ylens, temperature=5.0):
     """Compute cross entropy loss for knowledge distillation of sequence-to-sequence models.
 
     Args:
         logits_student (FloatTensor): `[B, T, vocab]`
-        probs_teacher (FloatTensor): `[B, T, vocab]`
+        logits_teacher (FloatTensor): `[B, T, vocab]`
         ylens (IntTensor): `[B]`
         temperature (float):
     Returns:
@@ -54,7 +54,8 @@ def distillation(logits_student, probs_teacher, ylens, temperature=1):
     """
     bs, _, vocab = logits_student.size()
 
-    log_probs_student = F.log_softmax(logits_student / temperature, dim=-1)
+    log_probs_student = F.log_softmax(logits_student, dim=-1)
+    probs_teacher = F.softmax(logits_teacher / temperature, dim=-1).data
     loss = -torch.mul(probs_teacher, log_probs_student)
     loss_mean = np.sum([loss[b, :ylens[b], :].sum() for b in range(bs)]) / ylens.sum()
     return loss_mean

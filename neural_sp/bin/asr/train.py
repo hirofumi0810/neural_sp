@@ -294,7 +294,6 @@ def main():
 
     # Load the teacher ASR model
     teacher = None
-    teacher_lm = None
     if args.teacher and os.path.isfile(args.teacher):
         conf_teacher = load_config(os.path.join(os.path.dirname(args.teacher), 'conf.yml'))
         for k, v in conf_teacher.items():
@@ -305,14 +304,15 @@ def main():
         teacher = Speech2Text(args_teacher)
         teacher = load_checkpoint(teacher, args.teacher)[0]
 
-        # Load the teacher LM
-        if args.teacher_lm and os.path.isfile(args.teacher_lm):
-            conf_lm = load_config(os.path.join(os.path.dirname(args.teacher_lm), 'conf.yml'))
-            args_lm = argparse.Namespace()
-            for k, v in conf_lm.items():
-                setattr(args_lm, k, v)
-            teacher_lm = build_lm(args_lm)
-            teacher_lm = load_checkpoint(teacher_lm, args.teacher_lm)[0]
+    # Load the teacher LM
+    teacher_lm = None
+    if args.teacher_lm and os.path.isfile(args.teacher_lm):
+        conf_lm = load_config(os.path.join(os.path.dirname(args.teacher_lm), 'conf.yml'))
+        args_lm = argparse.Namespace()
+        for k, v in conf_lm.items():
+            setattr(args_lm, k, v)
+        teacher_lm = build_lm(args_lm)
+        teacher_lm = load_checkpoint(teacher_lm, args.teacher_lm)[0]
 
     # GPU setting
     if args.n_gpus >= 1:

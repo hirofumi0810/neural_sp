@@ -141,7 +141,8 @@ class RNNDecoder(DecoderBase):
                  mtl_per_batch=False,
                  adaptive_softmax=False,
                  param_init=0.1,
-                 replace_sos=False):
+                 replace_sos=False,
+                 soft_label_weight=0.0):
 
         super(RNNDecoder, self).__init__()
         logger = logging.getLogger('training')
@@ -185,6 +186,7 @@ class RNNDecoder(DecoderBase):
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
         self.replace_sos = replace_sos
+        self.soft_label_weight = soft_label_weight
 
         # for contextualization
         self.discourse_aware = discourse_aware
@@ -396,7 +398,7 @@ class RNNDecoder(DecoderBase):
     def start_scheduled_sampling(self):
         self._ss_prob = self.ss_prob
 
-    def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_probs=None):
+    def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_logits=None):
         """Forward computation.
 
         Args:
@@ -405,7 +407,7 @@ class RNNDecoder(DecoderBase):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             task (str): all/ys/ys_sub*
             ys_hist (list):
-            teacher_probs (FloatTensor): `[B, L, vocab]`
+            teacher_logits (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
             observation (dict):
@@ -445,7 +447,7 @@ class RNNDecoder(DecoderBase):
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task and 'lmobj' not in task)):
             loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys, ys_hist,
-                                                          teacher_probs=teacher_probs)
+                                                          teacher_logits=teacher_logits)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
@@ -513,7 +515,7 @@ class RNNDecoder(DecoderBase):
 
         return loss, acc, ppl
 
-    def forward_att(self, eouts, elens, ys, ys_hist=[], return_logits=False, teacher_probs=None):
+    def forward_att(self, eouts, elens, ys, ys_hist=[], return_logits=False, teacher_logits=None):
         """Compute XE loss for the attention-based sequence-to-sequence model.
 
         Args:
@@ -522,7 +524,7 @@ class RNNDecoder(DecoderBase):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             ys_hist (list):
             return_logits (bool): return logits for knowledge distillation
-            teacher_probs (FloatTensor): `[B, L, vocab]`
+            teacher_logits (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
             acc (float): accuracy for token prediction
@@ -604,18 +606,13 @@ class RNNDecoder(DecoderBase):
 
         # Compute XE sequence loss
         if self.adaptive_softmax is None:
-            if teacher_probs is not None:
-                # Knowledge distillation
-                loss = distillation(logits, teacher_probs, ylens,
-                                    temperature=1)
+            if self.lsm_prob > 0 and self.training:
+                # Label smoothing
+                loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                                         self.lsm_prob, self.pad)
             else:
-                if self.lsm_prob > 0 and self.training:
-                    # Label smoothing
-                    loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                             self.lsm_prob, self.pad)
-                else:
-                    loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                           ignore_index=self.pad, size_average=True)
+                loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                                       ignore_index=self.pad, size_average=True)
 
             # Focal loss
             if self.focal_loss_weight > 0:
@@ -623,6 +620,11 @@ class RNNDecoder(DecoderBase):
                                 alpha=self.focal_loss_weight,
                                 gamma=self.focal_loss_gamma)
                 loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
+
+            # Knowledge distillation
+            if teacher_logits is not None:
+                kl_loss = distillation(logits, teacher_logits, ylens, temperature=5.0)
+                loss = loss * (1 - self.soft_label_weight) + kl_loss * self.soft_label_weight
         else:
             loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
                                          ys_out_pad.view(-1)).loss
@@ -1203,7 +1205,7 @@ class RNNDecoder(DecoderBase):
                         if gnmt_decoding:
                             aw_mat = torch.log(aw_mat.sum(-1))
                             cp = torch.where(aw_mat < 0, aw_mat, aw_mat.new_zeros(aw_mat.size())).sum()
-                            # TODO (hirofumi): mask by elens[b]
+                            # TODO(hirofumi): mask by elens[b]
                             total_scores_topk += cp * cp_weight
                         else:
                             # Recompute converage penalty in each step

@@ -221,7 +221,7 @@ class RNNTransducer(DecoderBase):
     def start_scheduled_sampling(self):
         self._ss_prob = 0
 
-    def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_dist=None):
+    def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_probs=None):
         """Forward computation.
 
         Args:
@@ -230,7 +230,7 @@ class RNNTransducer(DecoderBase):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             task (str): all or ys or ys_sub*
             ys_hist (list):
-            teacher_dist (FloatTensor): `[B, L, vocab]`
+            teacher_probs (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
             observation (dict):

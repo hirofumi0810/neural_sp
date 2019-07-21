@@ -250,7 +250,8 @@ class Speech2Text(ModelBase):
                     mtl_per_batch=args.mtl_per_batch,
                     adaptive_softmax=args.adaptive_softmax,
                     param_init=args.param_init,
-                    replace_sos=args.replace_sos)
+                    replace_sos=args.replace_sos,
+                    soft_label_weight=args.soft_label_weight)
             setattr(self, 'dec_' + dir, dec)
 
         # sub task
@@ -362,8 +363,8 @@ class Speech2Text(ModelBase):
             task (str): all or ys* or ys_sub*
             is_eval (bool): evaluation mode
                 This should be used in inference model for memory efficiency.
-            teacher (Speech2Text): used for knowledge distillation
-            teacher_lm (RNNLM): used for knowledge distillation
+            teacher (Speech2Text): used for knowledge distillation from ASR
+            teacher_lm (RNNLM): used for knowledge distillation from LM
         Returns:
             loss (FloatTensor): `[1]`
             reporter (Reporter):
@@ -379,7 +380,7 @@ class Speech2Text(ModelBase):
 
         return loss, reporter
 
-    def generate_probs(self, batch, lm=None, lm_weight=0, temperature=1):
+    def generate_logits(self, batch, temperature=1.0):
         # Encode input features
         if self.input_type == 'speech':
             enc_outs = self.encode(batch['xs'], task='ys')
@@ -390,20 +391,17 @@ class Speech2Text(ModelBase):
         logits = self.dec_fwd.forward_att(
             enc_outs['ys']['xs'], enc_outs['ys']['xlens'], batch['ys'],
             return_logits=True)
-        teacher_probs = torch.softmax(logits / temperature, dim=-1).data
+        return logits
 
-        if lm is not None and lm_weight > 0:
-            # Append <sos> and <eos>
-            eos = logits.new_zeros(1).fill_(self.eos).long()
-            _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id)
-                   for y in batch['ys']]
-            ys_in = [torch.cat([eos, y], dim=0) for y in _ys]
-            ys_in_pad = pad_list(ys_in, self.pad)
-            lmout, _ = lm.decode(lm.encode(ys_in_pad), None)
-            lm_probs = torch.softmax(lm.generate(lmout), dim=-1).data
-            teacher_probs = (1 - lm_weight) * teacher_probs + lm_weight * lm_probs
-
-        return teacher_probs
+    def generate_lm_logits(self, ys, lm, temperature=5.0):
+        # Append <sos> and <eos>
+        eos = next(lm.parameters()).new_zeros(1).fill_(self.eos).long()
+        ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id)for y in ys]
+        ys_in = [torch.cat([eos, y], dim=0) for y in ys]
+        ys_in_pad = pad_list(ys_in, self.pad)
+        lmout, _ = lm.decode(ys_in_pad, None)
+        logits = lm.output(lmout)
+        return logits
 
     def _forward(self, batch, task, reporter, teacher=None, teacher_lm=None):
         # Encode input features
@@ -422,18 +420,17 @@ class Speech2Text(ModelBase):
 
         # for the forward decoder in the main task
         if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
+            teacher_logits = None
             if teacher is not None:
                 teacher.eval()
-                if teacher_lm is not None:
-                    teacher_lm.eval()
-                teacher_probs = teacher.generate_probs(batch, lm=teacher_lm, lm_weight=0.1)
-                # TODO(hirofumi): label smoothing?
-                # TODO(hirofumi): scheduled sampling?
-                # TODO(hirofumi): dropout?
-            else:
-                teacher_probs = None
+                teacher_logits = teacher.generate_logits(batch)
+                # TODO(hirofumi): label smoothing, scheduled sampling, dropout?
+            elif teacher_lm is not None:
+                teacher_lm.eval()
+                teacher_logits = self.generate_lm_logits(batch['ys'], lm=teacher_lm)
+
             loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'],
-                                             batch['ys'], task, batch['ys_hist'], teacher_probs)
+                                             batch['ys'], task, batch['ys_hist'], teacher_logits)
             loss += loss_fwd
             if isinstance(self.dec_fwd, RNNTransducer):
                 observation['loss.transducer'] = obs_fwd['loss_transducer']

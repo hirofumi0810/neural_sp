@@ -228,13 +228,6 @@ def parse():
                         help='')
     parser.add_argument('--pretrained_model', type=str, default=False, nargs='?',
                         help='pretrained seq2seq model path')
-    # knowledge distillation
-    parser.add_argument('--teacher', default=False, nargs='?',
-                        help='')
-    parser.add_argument('--teacher_lm', default=False, nargs='?',
-                        help='')
-    parser.add_argument('--distillation_temperature', type=float, default=1.0,
-                        help='')
     # regularization
     parser.add_argument('--clip_grad_norm', type=float, default=5.0,
                         help='')
@@ -410,11 +403,12 @@ def parse():
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')
-    parser.add_argument('--recog_softmax_temperature', type=float, default=1,
-                        help='Temperature parameter for the final softmax layer')
-    parser.add_argument('--distillation_type', type=str, default='prob',
-                        choices=['teacher_forcing', 'beam_search'],
-                        help='')
+    parser.add_argument('--teacher', default=False, nargs='?',
+                        help='Teacher ASR model for knowledge distillation')
+    parser.add_argument('--teacher_lm', default=False, nargs='?',
+                        help='Teacher LM for knowledge distillation')
+    parser.add_argument('--soft_label_weight', type=float, default=0.1,
+                        help='KL-div loss weight for soft labels')
     # pre-training
     parser.add_argument('--am_pretrain_type', type=str, default='masked_audio_lm',
                         choices=['audio_lm', 'masked_audio_lm',

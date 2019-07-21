@@ -153,9 +153,9 @@ def set_asr_model_name(args, subsample_factor):
 
     # knowledge distillation
     if args.teacher:
-        dir_name += '_distillation'
+        dir_name += '_KD' + str(args.soft_label_weight)
     if args.teacher_lm:
-        dir_name += '_lm'
+        dir_name += '_lmKD' + str(args.soft_label_weight)
 
     return dir_name
 
