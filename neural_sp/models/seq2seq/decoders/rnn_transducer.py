@@ -462,28 +462,30 @@ class RNNTransducer(DecoderBase):
                 zero_state['cxs'] = torch.cat(cxs, dim=0)  # `[n_layers, B, dec_n_units]`
         return zero_state
 
-    def greedy(self, eouts, elens, max_len_ratio,
-               exclude_eos=False, idx2token=None, refs_id=None,
-               speakers=None, oracle=False):
+    def greedy(self, eouts, elens, max_len_ratio, idx2token,
+               exclude_eos=False, oracle=False,
+               refs_id=None, utt_ids=None, speakers=None):
         """Greedy decoding in the inference stage.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
             elens (IntTensor): `[B]`
             max_len_ratio (int): maximum sequence length of tokens
-            exclude_eos (bool):
-            idx2token ():
-            refs_id (list):
-            speakers (list):
-            oracle (bool):
+            idx2token (): converter from index to token
+            exclude_eos (bool): exclude <eos> from hypothesis
+            oracle (bool): teacher-forcing mode
+            refs_id (list): reference list
+            utt_ids (list): utterance id list
+            speakers (list): speaker list
         Returns:
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
+            hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw: dummy
 
         """
+        logger = logging.getLogger("decoding")
         bs = eouts.size(0)
 
-        best_hyps = []
+        hyps = []
         for b in range(bs):
             best_hyp_b = []
             # Initialization
@@ -509,9 +511,19 @@ class RNNTransducer(DecoderBase):
                         y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(best_hyp_b) - 1])
                     dout, dstate = self.recurrency(self.embed(y), dstate)
 
-            best_hyps += [best_hyp_b]
+            hyps += [best_hyp_b]
 
-        return best_hyps, None
+        for b in range(bs):
+            if utt_ids is not None:
+                logger.info('Utt-id: %s' % utt_ids[b])
+            if refs_id is not None and self.vocab == idx2token.vocab:
+                logger.info('Ref: %s' % idx2token(refs_id[b]))
+            if self.bwd:
+                logger.info('Hyp: %s' % idx2token(hyps[1:][::-1]))
+            else:
+                logger.info('Hyp: %s' % idx2token(hyps[1:]))
+
+        return hyps, None
 
     def beam_search(self, eouts, elens, params, idx2token,
                     lm=None, lm_rev=None, ctc_log_probs=None,

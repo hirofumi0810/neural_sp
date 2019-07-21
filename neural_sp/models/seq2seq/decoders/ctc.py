@@ -134,11 +134,11 @@ class CTC(DecoderBase):
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (np.ndarray): `[B]`
         Returns:
-            best_hyps (np.ndarray): Best path hypothesis. `[B, labels_max_seq_len]`
+            hyps (np.ndarray): Best path hypothesis. `[B, labels_max_seq_len]`
 
         """
         bs = eouts.size(0)
-        best_hyps = []
+        hyps = []
 
         log_probs = F.log_softmax(self.output(eouts), dim=-1)
 
@@ -155,9 +155,9 @@ class CTC(DecoderBase):
 
             # Step 2. Remove all blank labels
             best_hyp = [x for x in filter(lambda x: x != self.blank, collapsed_indices)]
-            best_hyps.append(np.array(best_hyp))
+            hyps.append(np.array(best_hyp))
 
-        return np.array(best_hyps)
+        return np.array(hyps)
 
     def beam_search(self, eouts, elens, params, idx2token, lm=None,
                     nbest=1, refs_id=None, utt_ids=None, speakers=None):
@@ -174,15 +174,14 @@ class CTC(DecoderBase):
             idx2token (): converter from index to token
             lm (RNNLM or GatedConvLM or TransformerLM):
             nbest (int):
-            refs_id (list):
-            utt_ids (list):
-            speakers (list):
+            refs_id (list): reference list
+            utt_ids (list): utterance id list
+            speakers (list): speaker list
         Returns:
             best_hyps (list): Best path hypothesis. `[B, L]`
 
         """
         logger = logging.getLogger("decoding")
-
         bs = eouts.size(0)
 
         beam_width = params['recog_beam_width']

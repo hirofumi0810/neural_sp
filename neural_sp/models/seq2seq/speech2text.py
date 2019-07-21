@@ -18,17 +18,16 @@ from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.seq2seq.encoders.build import build_encoder
 from neural_sp.models.seq2seq.decoders.attention_rnn import RNNDecoder
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
+from neural_sp.models.seq2seq.encoders.build import build_encoder
 from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.frontends.gaussian_noise import add_gaussian_noise
 from neural_sp.models.seq2seq.frontends.sequence_summary import SequenceSummaryNetwork
 from neural_sp.models.seq2seq.frontends.spec_augment import SpecAugment
 from neural_sp.models.seq2seq.frontends.splicing import splice
-
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
@@ -638,8 +637,9 @@ class Speech2Text(ModelBase):
                 if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
                     best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                        params['recog_max_len_ratio'], idx2token, exclude_eos, refs_id,
-                        speakers, params['recog_oracle'])
+                        params['recog_max_len_ratio'], idx2token,
+                        exclude_eos,  params['recog_oracle'],
+                        refs_id, utt_ids, speakers)
                 else:
                     assert params['recog_batch_size'] == 1
 

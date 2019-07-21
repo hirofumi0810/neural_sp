@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
+import math
 import numpy as np
 import os
 import random
@@ -29,9 +30,9 @@ from neural_sp.models.seq2seq.decoders.ctc import CTC
 # from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
+from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -111,6 +112,7 @@ class TransformerDecoder(DecoderBase):
         self.unk = unk
         self.pad = pad
         self.blank = blank
+        self.vocab = vocab
         self.enc_n_units = enc_n_units
         self.d_model = d_model
         self.n_layers = n_layers
@@ -347,50 +349,56 @@ class TransformerDecoder(DecoderBase):
                     fig.savefig(os.path.join(_save_path, 'layer%d.png' % (l)), dvi=500)
                     plt.close()
 
-    def greedy(self, eouts, elens, max_len_ratio,
-               exclude_eos=False, idx2token=None, refs_id=None,
-               speakers=None, oracle=False):
+    def greedy(self, eouts, elens, max_len_ratio, idx2token,
+               exclude_eos=False, oracle=False,
+               refs_id=None, utt_ids=None, speakers=None):
         """Greedy decoding in the inference stage (used only for evaluation during training).
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
             elens (IntTensor): `[B]`
             max_len_ratio (int): maximum sequence length of tokens
-            exclude_eos (bool):
-            idx2token ():
-            refs_id (list):
-            speakers (list):
-            oracle (bool):
+            idx2token (): converter from index to token
+            exclude_eos (bool): exclude <eos> from hypothesis
+            oracle (bool): teacher-forcing mode
+            refs_id (list): reference list
+            utt_ids (list): utterance id list
+            speakers (list): speaker list
         Returns:
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
+            hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
 
         """
+        logger = logging.getLogger("decoding")
         bs, xmax = eouts.size()[:2]
 
         # Start from <sos> (<eos> in case of the backward decoder)
         ys_all = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
-        # TODO(hirofumi): Create the source-target mask for batch decoding
-
         best_hyps_batch = []
         ylens = torch.zeros(bs).int()
-        yy_aws_tmp = [None] * bs
-        xy_aws_tmp = [None] * bs
+        xy_aws_batch, yy_aws_batch = [None] * bs, [None] * bs
         eos_flags = [False] * bs
-        for t in range(int(np.floor(xmax * max_len_ratio)) + 1):
+        if oracle:
+            assert refs_id is not None
+            ymax = max([len(refs_id[b]) for b in range(bs)]) + 1
+        else:
+            ymax = int(math.floor(xmax * max_len_ratio)) + 1
+        for t in range(ymax):
             # Create the self-attention mask
-            yy_mask = make_pad_mask(ylens + 1, self.device_id).unsqueeze(1).expand(bs, t + 1, t + 1)
-            yy_mask = yy_mask.unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, t + 1)
-            subsequent_mask = torch.tril(yy_mask.new_ones((t + 1, t + 1)).byte(), diagonal=0)
-            subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, t + 1)
-            yy_mask = yy_mask & subsequent_mask
+            # yy_mask = make_pad_mask(ylens + 1, self.device_id).unsqueeze(1).expand(bs, t + 1, t + 1)
+            # yy_mask = yy_mask.unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, t + 1)
+            # subsequent_mask = torch.tril(yy_mask.new_ones((t + 1, t + 1)).byte(), diagonal=0)
+            # subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, t + 1)
+            # yy_mask = yy_mask & subsequent_mask
+            yy_mask = None
 
             # Create the source-target mask
-            xmax = eouts.size(1)
-            x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).expand(bs, t + 1, xmax)
-            y_mask = make_pad_mask(ylens + 1, self.device_id).unsqueeze(2).expand(bs, t + 1, xmax)
-            xy_mask = (x_mask * y_mask).unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, xmax)
+            # xmax = eouts.size(1)
+            # x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).expand(bs, t + 1, xmax)
+            # y_mask = make_pad_mask(ylens + 1, self.device_id).unsqueeze(2).expand(bs, t + 1, xmax)
+            # xy_mask = (x_mask * y_mask).unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, xmax)
+            xy_mask = None
 
             out = self.pos_enc(self.embed(ys_all))
             for l in range(self.n_layers):
@@ -403,47 +411,57 @@ class TransformerDecoder(DecoderBase):
 
             # Count lengths of hypotheses
             for b in range(bs):
+                print(y[b].item() == self.eos)
+
                 if not eos_flags[b]:
                     if y[b].item() == self.eos:
                         eos_flags[b] = True
-                        yy_aws_tmp[b] = yy_aws[b:b + 1]  # TODO(hirofumi): fix this
-                        xy_aws_tmp[b] = xy_aws[b:b + 1]
-                    ylens[b] += 1
-                    # NOTE: include <eos>
+                        xy_aws_batch[b] = xy_aws
+                        yy_aws_batch[b] = yy_aws
+                    ylens[b] += 1  # include <eos>
 
-            # Break if <eos> is outputed in all mini-bs
+            # Break if <eos> is outputed in all mini-batch
             if sum(eos_flags) == bs:
                 break
+            if t == ymax - 1:
+                break
 
-            ys_all = torch.cat([ys_all, y], dim=-1)
+            if oracle:
+                ys_all = torch.cat([ys_all, eouts.new_zeros(bs, 1).long()], dim=-1)
+                for b in range(bs):
+                    ys_all[b, -1] = refs_id[b][t]
+            else:
+                ys_all = torch.cat([ys_all, y], dim=-1)
 
         # Concatenate in L dimension
-        best_hyps_batch = torch.cat(best_hyps_batch, dim=1)
-        # xy_aws_tmp = torch.stack(xy_aws_tmp, dim=0)
-
-        # Convert to numpy
-        best_hyps_batch = tensor2np(best_hyps_batch)
-        # xy_aws_tmp = tensor2np(xy_aws_tmp)
-
-        # if self.score.attn_n_heads > 1:
-        #     xy_aws_tmp = xy_aws_tmp[:, :, :, 0]
-        #     # TODO(hirofumi): fix for MHA
+        best_hyps_batch = tensor2np(torch.cat(best_hyps_batch, dim=1))
+        # xy_aws_batch = tensor2np(torch.cat(xy_aws_batch, dim=0))
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.bwd:
             # Reverse the order
-            best_hyps = [best_hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
-            # aws = [xy_aws_tmp[b, :ylens[b]][::-1] for b in range(bs)]
+            hyps = [best_hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
+            # aws = [xy_aws_batch[b, :, :ylens[b]][::-1] for b in range(bs)]
         else:
-            best_hyps = [best_hyps_batch[b, :ylens[b]] for b in range(bs)]
-            # aws = [xy_aws_tmp[b, :ylens[b]] for b in range(bs)]
+            hyps = [best_hyps_batch[b, :ylens[b]] for b in range(bs)]
+            # aws = [xy_aws_batch[b, :, :ylens[b]] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
             if self.bwd:
-                best_hyps = [best_hyps[b][1:] if eos_flags[b] else best_hyps[b] for b in range(bs)]
+                hyps = [hyps[b][1:] if eos_flags[b] else hyps[b] for b in range(bs)]
             else:
-                best_hyps = [best_hyps[b][:-1] if eos_flags[b] else best_hyps[b] for b in range(bs)]
+                hyps = [hyps[b][:-1] if eos_flags[b] else hyps[b] for b in range(bs)]
 
-        # return best_hyps, aws
-        return best_hyps, None
+        for b in range(bs):
+            if utt_ids is not None:
+                logger.info('Utt-id: %s' % utt_ids[b])
+            if refs_id is not None and self.vocab == idx2token.vocab:
+                logger.info('Ref: %s' % idx2token(refs_id[b]))
+            if self.bwd:
+                logger.info('Hyp: %s' % idx2token(hyps[0][1:][::-1]))
+            else:
+                logger.info('Hyp: %s' % idx2token(hyps[0][1:]))
+
+        # return hyps, aws
+        return hyps, None

@@ -820,24 +820,26 @@ class RNNDecoder(DecoderBase):
             plt.close()
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
-               exclude_eos=False, refs_id=None,
-               speakers=None, oracle=False):
+               exclude_eos=False, oracle=False,
+               refs_id=None, utt_ids=None, speakers=None):
         """Greedy decoding.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
             elens (IntTensor): `[B]`
             max_len_ratio (int): maximum sequence length of tokens
-            refs_id (list):
-            exclude_eos (bool):
-            idx2token ():
-            speakers (list):
-            oracle (bool):
+            idx2token (): converter from index to token
+            exclude_eos (bool): exclude <eos> from hypothesis
+            oracle (bool): teacher-forcing mode
+            refs_id (list): reference list
+            utt_ids (list): utterance id list
+            speakers (list): speaker list
         Returns:
             hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
 
         """
+        logger = logging.getLogger("decoding")
         bs, xmax, _ = eouts.size()
 
         # Initialization
@@ -861,11 +863,6 @@ class RNNDecoder(DecoderBase):
         else:
             ymax = int(math.floor(xmax * max_len_ratio)) + 1
         for t in range(ymax):
-            if oracle and t > 0:
-                y = eouts.new_zeros(bs, 1)
-                for b in range(bs):
-                    y[b] = refs_id[b, t - 1]
-
             # Update LM states for LM fusion
             if self.lm is not None:
                 lmout, lmstate = self.lm.decode(self.lm(y), lmstate)
@@ -889,12 +886,18 @@ class RNNDecoder(DecoderBase):
                 if not eos_flags[b]:
                     if y[b].item() == self.eos:
                         eos_flags[b] = True
-                    ylens[b] += 1
-                    # NOTE: include <eos>
+                    ylens[b] += 1  # include <eos>
 
-            # Break if <eos> is outputed in all mini-bs
+            # Break if <eos> is outputed in all mini-batch
             if sum(eos_flags) == bs:
                 break
+            if t == ymax - 1:
+                break
+
+            if oracle:
+                y = eouts.new_zeros(bs, 1)
+                for b in range(bs):
+                    y[b] = refs_id[b][t]
 
         # LM state carry over
         self.lmstate_final = lmstate
@@ -918,6 +921,16 @@ class RNNDecoder(DecoderBase):
                 hyps = [hyps[b][1:] if eos_flags[b] else hyps[b] for b in range(bs)]
             else:
                 hyps = [hyps[b][:-1] if eos_flags[b] else hyps[b] for b in range(bs)]
+
+        for b in range(bs):
+            if utt_ids is not None:
+                logger.info('Utt-id: %s' % utt_ids[b])
+            if refs_id is not None and self.vocab == idx2token.vocab:
+                logger.info('Ref: %s' % idx2token(refs_id[b]))
+            if self.bwd:
+                logger.info('Hyp: %s' % idx2token(hyps[1:][::-1]))
+            else:
+                logger.info('Hyp: %s' % idx2token(hyps[1:]))
 
         return hyps, aws
 
@@ -945,10 +958,10 @@ class RNNDecoder(DecoderBase):
             lm_rev (RNNLM/GatedConvLM/TransformerLM):
             ctc_log_probs (FloatTensor):
             nbest (int):
-            exclude_eos (bool):
-            refs_id (list):
-            utt_ids (list):
-            speakers (list):
+            exclude_eos (bool): exclude <eos> from hypothesis
+            refs_id (list): reference list
+            utt_ids (list): utterance id list
+            speakers (list): speaker list
             ensmbl_eouts (list): list of FloatTensor
             ensmbl_elens (list) list of list
             ensmbl_decs (list): list of torch.nn.Module
