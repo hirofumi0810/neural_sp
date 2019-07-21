@@ -151,22 +151,18 @@ class Base(object):
                     is_new_epoch = True
                     self._epoch += 1
 
-        elif self.sort_by_input_length or not self.shuffle:
-            if self.sort_by_input_length:
+        elif self.sort_by is not None or not self.shuffle:
+            if self.sort_by is not None:
                 # Change batch size dynamically
                 min_xlen = self.df[self.offset:self.offset + 1]['xlen'].values[0]
                 min_ylen = self.df[self.offset:self.offset + 1]['ylen'].values[0]
-                batch_size_tmp = self.set_batch_size(batch_size, min_xlen, min_ylen)
-            else:
-                batch_size_tmp = batch_size
+                batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
 
-            if len(self.rest) > batch_size_tmp:
-                csv_indices = list(self.df[self.offset:self.offset + batch_size_tmp].index)
+            if len(self.rest) > batch_size:
+                csv_indices = list(self.df[self.offset:self.offset + batch_size].index)
                 # Shuffle uttrances in mini-batch
                 csv_indices = random.sample(csv_indices, len(csv_indices))
                 self.rest -= set(csv_indices)
-                # NOTE: rest is in uttrance length order when sort_by_input_length == True
-                # NOTE: otherwise in name length order when shuffle == False
                 self.offset += len(csv_indices)
             else:
                 # Last mini-batch
@@ -175,7 +171,7 @@ class Base(object):
                 is_new_epoch = True
                 self._epoch += 1
                 if self._epoch == self.sort_stop_epoch:
-                    self.sort_by_input_length = False
+                    self.sort_by = None
                     self.shuffle = True
 
         else:

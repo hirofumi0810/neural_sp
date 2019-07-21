@@ -109,7 +109,7 @@ def main():
                         n_epochs=args.n_epochs,
                         min_n_frames=args.min_n_frames,
                         max_n_frames=args.max_n_frames,
-                        sort_by_input_length=True,
+                        sort_by='input',
                         short2long=True,
                         sort_stop_epoch=args.sort_stop_epoch,
                         dynamic_batching=args.dynamic_batching,

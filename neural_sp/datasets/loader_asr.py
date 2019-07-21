@@ -37,7 +37,7 @@ class Dataset(Base):
     def __init__(self, tsv_path, dict_path,
                  unit, batch_size, nlsyms=False, n_epochs=None,
                  is_test=False, min_n_frames=40, max_n_frames=2000,
-                 shuffle=False, sort_by_input_length=False,
+                 shuffle=False, sort_by=None,
                  short2long=False, sort_stop_epoch=None,
                  n_ques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1,
@@ -62,8 +62,10 @@ class Dataset(Base):
             min_n_frames (int): exclude utterances shorter than this value
             max_n_frames (int): exclude utterances longer than this value
             shuffle (bool): shuffle utterances.
-                This is disabled when sort_by_input_length is True.
-            sort_by_input_length (bool): sort all utterances in the ascending order
+                This is disabled when sort_by is not None.
+            sort_by (str): sort all utterances in the ascending order
+                input: sort by input length
+                output: sort by output length
             short2long (bool): sort utterances in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
@@ -87,7 +89,8 @@ class Dataset(Base):
         self.max_epoch = n_epochs
         self.shuffle = shuffle
         self.sort_stop_epoch = sort_stop_epoch
-        self.sort_by_input_length = sort_by_input_length
+        self.sort_by = sort_by
+        assert sort_by in [None, 'input', 'output']
         self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
         self.corpus = corpus
@@ -250,8 +253,10 @@ class Dataset(Base):
                 #     self.df = self.df.sort_values(by=['n_session_utt', 'utt_id'], ascending=short2long)
                 # else:
                 #     self.df = self.df.sort_values(by=['n_prev_utt'], ascending=short2long)
-            elif sort_by_input_length:
+            elif sort_by == 'input':
                 self.df = self.df.sort_values(by=['xlen'], ascending=short2long)
+            elif sort_by == 'output':
+                self.df = self.df.sort_values(by=['ylen'], ascending=short2long)
             elif shuffle:
                 self.df = self.df.reindex(np.random.permutation(self.df.index))
 
