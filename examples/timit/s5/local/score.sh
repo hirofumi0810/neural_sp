@@ -5,6 +5,7 @@
 
 model=
 gpu=
+stdout=false
 
 ### path to save preproecssed data
 data=/n/sd3/inaguma/corpus/timit
@@ -39,7 +40,7 @@ for set in dev test; do
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
     fi
-    if ${gnmt_decoding}; then
+    if [ ${gnmt_decoding} = true ]; then
         recog_dir=${recog_dir}_gnmt
     fi
     mkdir -p ${recog_dir}
@@ -57,7 +58,7 @@ for set in dev test; do
         --recog_coverage_threshold ${coverage_threshold} \
         --recog_gnmt_decoding ${gnmt_decoding} \
         --recog_ctc_weight ${ctc_weight} \
-        || exit 1;
+        --stdout ${stdout} || exit 1;
 
     echo ${set}
     local/score_sclite.sh ${recog_dir} > ${recog_dir}/RESULTS

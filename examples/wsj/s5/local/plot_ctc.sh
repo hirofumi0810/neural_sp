@@ -4,12 +4,16 @@
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 model=
+model1=
+model2=
+model3=
 gpu=
+stdout=false
 
 ### path to save preproecssed data
 data=/n/sd3/inaguma/corpus/wsj
 
-recog_unit=
+unit=
 batch_size=1
 
 . ./cmd.sh
@@ -29,8 +33,15 @@ gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in test_dev93 test_eval92; do
     recog_dir=$(dirname ${model})/plot_${set}
-    if [ ! -z ${recog_unit} ]; then
-        recog_dir=${recog_dir}_${recog_unit}
+    if [ ! -z ${unit} ]; then
+        recog_dir=${recog_dir}_${unit}
+    fi
+    if [ ! -z ${model3} ]; then
+        recog_dir=${recog_dir}_ensemble4
+    elif [ ! -z ${model2} ]; then
+        recog_dir=${recog_dir}_ensemble3
+    elif [ ! -z ${model1} ]; then
+        recog_dir=${recog_dir}_ensemble2
     fi
     mkdir -p ${recog_dir}
 
@@ -49,8 +60,8 @@ for set in test_dev93 test_eval92; do
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_ctc.py \
         --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
-        --recog_unit ${recog_unit} \
-        --recog_model ${model} \
+        --recog_unit ${unit} \
+        --recog_model ${model} ${model1} ${model2} ${model3} \
         --recog_batch_size ${batch_size} \
-        || exit 1;
+        --stdout ${stdout} || exit 1;
 done

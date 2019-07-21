@@ -5,6 +5,7 @@
 
 model=
 gpu=
+stdout=false
 
 ### path to save preproecssed data
 data=/n/sd3/inaguma/corpus/timit
@@ -57,6 +58,6 @@ for set in dev test; do
         --recog_coverage_threshold ${coverage_threshold} \
         --recog_gnmt_decoding ${gnmt_decoding} \
         --recog_ctc_weight ${ctc_weight} \
-        || exit 1;
+        --stdout ${stdout} || exit 1;
 
 done

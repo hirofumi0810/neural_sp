@@ -5,6 +5,7 @@
 
 model=
 gpu=
+stdout=false
 
 ### path to save preproecssed data
 data=/n/sd3/inaguma/corpus/timit
@@ -35,5 +36,5 @@ for set in dev test; do
         --recog_dir ${recog_dir} \
         --recog_model ${model} \
         --recog_batch_size ${batch_size} \
-        || exit 1;
+        --stdout ${stdout} || exit 1;
 done

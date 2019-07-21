@@ -188,7 +188,8 @@ def main():
         save_path = set_save_path(save_path)  # avoid overwriting
 
     # Set logger
-    logger = set_logger(os.path.join(save_path, 'train.log'), key='training', stdout=args.stdout)
+    logger = set_logger(os.path.join(save_path, 'train.log'),
+                        key='training', stdout=args.stdout)
 
     # Model setting
     model = Speech2Text(args, save_path) if not skip_thought else SkipThought(args, save_path)

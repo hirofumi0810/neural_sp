@@ -41,7 +41,8 @@ def main():
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'plot.log')):
         os.remove(os.path.join(args.recog_dir, 'plot.log'))
-    logger = set_logger(os.path.join(args.recog_dir, 'plot.log'), key='decoding')
+    logger = set_logger(os.path.join(args.recog_dir, 'plot.log'),
+                        key='decoding', stdout=args.stdout)
 
     for i, s in enumerate(args.recog_sets):
         subsample_factor = 1

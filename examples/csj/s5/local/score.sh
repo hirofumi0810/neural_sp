@@ -7,12 +7,9 @@ model=
 model1=
 model2=
 model3=
-model4=
-model5=
-model6=
-model7=
 model_bwd=
 gpu=
+stdout=false
 
 ### path to save preproecssed data
 data=/n/sd3/inaguma/corpus/csj
@@ -107,15 +104,7 @@ for set in eval1 eval2 eval3; do
     if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
     fi
-    if [ ! -z ${model7} ]; then
-        recog_dir=${recog_dir}_ensemble8
-    elif [ ! -z ${model6} ]; then
-        recog_dir=${recog_dir}_ensemble7
-    elif [ ! -z ${model5} ]; then
-        recog_dir=${recog_dir}_ensemble6
-    elif [ ! -z ${model4} ]; then
-        recog_dir=${recog_dir}_ensemble5
-    elif [ ! -z ${model3} ]; then
+    if [ ! -z ${model3} ]; then
         recog_dir=${recog_dir}_ensemble4
     elif [ ! -z ${model2} ]; then
         recog_dir=${recog_dir}_ensemble3
@@ -147,7 +136,7 @@ for set in eval1 eval2 eval3; do
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
-        --recog_model ${model} ${model1} ${model2} ${model3} ${model4} ${model5} ${model6} ${model7} \
+        --recog_model ${model} ${model1} ${model2} ${model3} \
         --recog_model_bwd ${model_bwd} \
         --recog_batch_size ${batch_size} \
         --recog_beam_width ${beam_width} \
@@ -177,7 +166,7 @@ for set in eval1 eval2 eval3; do
         --recog_cache_lambda_lm ${cache_lambda_lm} \
         --recog_cache_type ${cache_type} \
         --recog_oracle ${oracle} \
-        || exit 1;
+        --stdout ${stdout} || exit 1;
 
     # remove <unk>
     cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
