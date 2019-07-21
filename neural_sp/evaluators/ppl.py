@@ -84,7 +84,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
             else:
                 loss, _ = models[0](batch, task='all', is_eval=True)
             total_loss += loss.item() * bs
-            n_tokens += bs
+            n_tokens += sum([len(y) for y in batch['ys']])
             # NOTE: loss is divided by batch size in the ASR model
 
             if progressbar:

@@ -17,9 +17,9 @@ import os
 import time
 
 from neural_sp.bin.args_asr import parse
+from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
-from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.datasets.loader_asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
@@ -27,8 +27,8 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.lm.build import build_lm
-from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.models.seq2seq.skip_thought import SkipThought
+from neural_sp.models.seq2seq.speech2text import Speech2Text
 
 
 def main():
@@ -197,7 +197,6 @@ def main():
             raise NotImplementedError
         elif args.recog_metric in ['ppl', 'loss']:
             ppl, loss = eval_ppl(ensemble_models, dataset,
-                                 recog_params=recog_params,
                                  progressbar=True)
             ppl_avg += ppl
             loss_avg += loss
