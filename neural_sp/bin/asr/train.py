@@ -22,13 +22,13 @@ import torch
 from tqdm import tqdm
 
 from neural_sp.bin.args_asr import parse
+from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
+from neural_sp.bin.train_utils import save_checkpoint
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import set_save_path
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import save_checkpoint
-from neural_sp.datasets.loader_asr import Dataset
+from neural_sp.datasets.asr import Dataset
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
@@ -36,12 +36,12 @@ from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.build import build_lm
-from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.models.seq2seq.skip_thought import SkipThought
-from neural_sp.trainers.optimizer import set_optimizer
-from neural_sp.trainers.reporter import Reporter
+from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.trainers.model_name import set_asr_model_name
+from neural_sp.trainers.optimizer import set_optimizer
+from neural_sp.trainers.reporter import Reporter
 from neural_sp.utils import mkdir_join
 
 torch.manual_seed(1)
@@ -110,6 +110,8 @@ def main():
                         min_n_frames=args.min_n_frames,
                         max_n_frames=args.max_n_frames,
                         sort_by='input',
+                        shuffle_bucket=True,
+                        # sort_by='shuffle',
                         short2long=True,
                         sort_stop_epoch=args.sort_stop_epoch,
                         dynamic_batching=args.dynamic_batching,
@@ -121,6 +123,14 @@ def main():
                         subsample_factor_sub2=subsample_factor_sub2,
                         discourse_aware=args.discourse_aware,
                         skip_thought=skip_thought)
+    i = 0
+    while True:
+        # Compute loss in the training set
+        batch_train, is_new_epoch = train_set.next()
+        i += 1
+        if i == 10000:
+            break
+    raise ValueError
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
                       tsv_path_sub1=args.dev_set_sub1,
@@ -138,7 +148,6 @@ def main():
                       batch_size=args.batch_size * args.n_gpus,
                       min_n_frames=args.min_n_frames,
                       max_n_frames=args.max_n_frames,
-                      shuffle=True if args.discourse_aware else False,
                       ctc=args.ctc_weight > 0,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
                       ctc_sub2=args.ctc_weight_sub2 > 0,

@@ -16,10 +16,10 @@ import shutil
 
 from neural_sp.bin.args_asr import parse
 from neural_sp.bin.plot_utils import plot_ctc_probs
+from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.datasets.loader_asr import Dataset
+from neural_sp.datasets.asr import Dataset
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
 

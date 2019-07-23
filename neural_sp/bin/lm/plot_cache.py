@@ -16,10 +16,10 @@ import shutil
 
 from neural_sp.bin.args_lm import parse
 from neural_sp.bin.plot_utils import plot_cache_weights
+from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.datasets.loader_lm import Dataset
+from neural_sp.datasets.lm import Dataset
 from neural_sp.models.lm.build import build_lm
 from neural_sp.utils import mkdir_join
 
