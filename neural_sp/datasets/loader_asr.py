@@ -37,7 +37,7 @@ class Dataset(Base):
     def __init__(self, tsv_path, dict_path,
                  unit, batch_size, nlsyms=False, n_epochs=None,
                  is_test=False, min_n_frames=40, max_n_frames=2000,
-                 shuffle=False, sort_by=None,
+                 shuffle_bucket=False, sort_by='utt_id',
                  short2long=False, sort_stop_epoch=None,
                  n_ques=None, dynamic_batching=False,
                  ctc=False, subsample_factor=1,
@@ -61,11 +61,11 @@ class Dataset(Base):
             is_test (bool):
             min_n_frames (int): exclude utterances shorter than this value
             max_n_frames (int): exclude utterances longer than this value
-            shuffle (bool): shuffle utterances.
-                This is disabled when sort_by is not None.
+            shuffle_bucket (bool): gather the similar length of utterances and shuffle them
             sort_by (str): sort all utterances in the ascending order
                 input: sort by input length
                 output: sort by output length
+                shuffle: shuffle all utterances
             short2long (bool): sort utterances in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
@@ -87,10 +87,12 @@ class Dataset(Base):
         self.unit_sub1 = unit_sub1
         self.batch_size = batch_size
         self.max_epoch = n_epochs
-        self.shuffle = shuffle
+        self.shuffle_bucket = shuffle_bucket
+        if shuffle_bucket:
+            assert sort_by in ['input', 'output']
         self.sort_stop_epoch = sort_stop_epoch
         self.sort_by = sort_by
-        assert sort_by in [None, 'input', 'output']
+        assert sort_by in ['input', 'output', 'shuffle', 'utt_id']
         self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
         self.corpus = corpus
@@ -145,8 +147,8 @@ class Dataset(Base):
                 setattr(self, 'vocab_sub' + str(i), -1)
 
         # Load dataset tsv file
-        self.df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
-        self.df = self.df.loc[:, ['utt_id', 'speaker', 'feat_path',
+        df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
+        df = df.loc[:, ['utt_id', 'speaker', 'feat_path',
                                   'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         for i in range(1, 3):
             if locals()['tsv_path_sub' + str(i)]:
@@ -156,64 +158,64 @@ class Dataset(Base):
                 setattr(self, 'df_sub' + str(i), df_sub)
             else:
                 setattr(self, 'df_sub' + str(i), None)
-        self.input_dim = kaldiio.load_mat(self.df['feat_path'][0]).shape[-1]
+        self.input_dim = kaldiio.load_mat(df['feat_path'][0]).shape[-1]
 
         if corpus == 'swbd':
-            self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
+            df['session'] = df['speaker'].apply(lambda x: str(x).split('-')[0])
         else:
-            self.df['session'] = self.df['speaker'].apply(lambda x: str(x))
+            df['session'] = df['speaker'].apply(lambda x: str(x))
 
         if discourse_aware or skip_thought:
             max_n_frames = 10000
             min_n_frames = 100
 
             # Sort by onset
-            self.df = self.df.assign(prev_utt='')
+            df = df.assign(prev_utt='')
             if corpus == 'swbd':
-                self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
+                df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
             elif corpus == 'csj':
-                self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[1]))
+                df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[1]))
             elif corpus == 'wsj':
-                self.df['onset'] = self.df['utt_id'].apply(lambda x: x)
+                df['onset'] = df['utt_id'].apply(lambda x: x)
             else:
                 raise NotImplementedError
-            self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
+            df = df.sort_values(by=['session', 'onset'], ascending=True)
 
             # Extract previous utterances
             if not skip_thought:
-                # self.df = self.df.assign(line_no=list(range(len(self.df))))
-                groups = self.df.groupby('session').groups
-                self.df['n_session_utt'] = self.df.apply(
+                # df = df.assign(line_no=list(range(len(df))))
+                groups = df.groupby('session').groups
+                df['n_session_utt'] = df.apply(
                     lambda x: len([i for i in groups[x['session']]]), axis=1)
 
-                # self.df['prev_utt'] = self.df.apply(
-                #     lambda x: [self.df.loc[i, 'line_no']
-                #                for i in groups[x['session']] if self.df.loc[i, 'onset'] < x['onset']], axis=1)
-                # self.df['n_prev_utt'] = self.df.apply(lambda x: len(x['prev_utt']), axis=1)
+                # df['prev_utt'] = df.apply(
+                #     lambda x: [df.loc[i, 'line_no']
+                #                for i in groups[x['session']] if df.loc[i, 'onset'] < x['onset']], axis=1)
+                # df['n_prev_utt'] = df.apply(lambda x: len(x['prev_utt']), axis=1)
 
         elif is_test and corpus == 'swbd':
             # Sort by onset
-            self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
-            self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
+            df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
+            df = df.sort_values(by=['session', 'onset'], ascending=True)
 
         # Remove inappropriate utterances
         if is_test:
-            print('Original utterance num: %d' % len(self.df))
-            n_utts = len(self.df)
-            self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
-            print('Removed %d empty utterances' % (n_utts - len(self.df)))
+            print('Original utterance num: %d' % len(df))
+            n_utts = len(df)
+            df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
+            print('Removed %d empty utterances' % (n_utts - len(df)))
         else:
-            print('Original utterance num: %d' % len(self.df))
-            n_utts = len(self.df)
-            self.df = self.df[self.df.apply(lambda x: min_n_frames <= x[
-                                            'xlen'] <= max_n_frames, axis=1)]
-            self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
-            print('Removed %d utterances (threshold)' % (n_utts - len(self.df)))
+            print('Original utterance num: %d' % len(df))
+            n_utts = len(df)
+            df = df[df.apply(lambda x: min_n_frames <= x[
+                'xlen'] <= max_n_frames, axis=1)]
+            df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
+            print('Removed %d utterances (threshold)' % (n_utts - len(df)))
 
             if ctc and subsample_factor > 1:
-                n_utts = len(self.df)
-                self.df = self.df[self.df.apply(lambda x: x['ylen'] <= (x['xlen'] // subsample_factor), axis=1)]
-                print('Removed %d utterances (for CTC)' % (n_utts - len(self.df)))
+                n_utts = len(df)
+                df = df[df.apply(lambda x: x['ylen'] <= (x['xlen'] // subsample_factor), axis=1)]
+                print('Removed %d utterances (for CTC)' % (n_utts - len(df)))
 
             for i in range(1, 3):
                 df_sub = getattr(self, 'df_sub' + str(i))
@@ -224,13 +226,18 @@ class Dataset(Base):
                         df_sub = df_sub[df_sub.apply(
                             lambda x: x['ylen'] <= (x['xlen'] // subsample_factor_sub), axis=1)]
 
-                    if len(self.df) != len(df_sub):
-                        n_utts = len(self.df)
-                        self.df = self.df.drop(self.df.index.difference(df_sub.index))
-                        print('Removed %d utterances (for CTC, sub%d)' % (n_utts - len(self.df), i))
+                    if len(df) != len(df_sub):
+                        n_utts = len(df)
+                        df = df.drop(df.index.difference(df_sub.index))
+                        print('Removed %d utterances (for CTC, sub%d)' % (n_utts - len(df), i))
                         for j in range(1, i + 1):
                             setattr(self, 'df_sub' + str(j),
-                                    getattr(self, 'df_sub' + str(j)).drop(getattr(self, 'df_sub' + str(j)).index.difference(self.df.index)))
+                                    getattr(self, 'df_sub' + str(j)).drop(getattr(self, 'df_sub' + str(j)).index.difference(df.index)))
+
+            # Re-indexing
+            for i in range(1, 3):
+                if getattr(self, 'df_sub' + str(i)) is not None:
+                    setattr(self, 'df_sub' + str(i), getattr(self, 'df_sub' + str(i)).reset_index())
 
         # Sort tsv records
         if not is_test:
@@ -238,7 +245,7 @@ class Dataset(Base):
                 self.utt_offset = 0
                 self.n_utt_session_dict = {}
                 self.session_offset_dict = {}
-                for session_id, ids in sorted(self.df.groupby('session').groups.items(), key=lambda x: len(x[1])):
+                for session_id, ids in sorted(df.groupby('session').groups.items(), key=lambda x: len(x[1])):
                     n_utt = len(ids)
                     # key: n_utt, value: session_id
                     if n_utt not in self.n_utt_session_dict.keys():
@@ -250,17 +257,24 @@ class Dataset(Base):
 
                 self.n_utt_session_dict_epoch = copy.deepcopy(self.n_utt_session_dict)
                 # if discourse_aware == 'state_carry_over':
-                #     self.df = self.df.sort_values(by=['n_session_utt', 'utt_id'], ascending=short2long)
+                #     df = df.sort_values(by=['n_session_utt', 'utt_id'], ascending=short2long)
                 # else:
-                #     self.df = self.df.sort_values(by=['n_prev_utt'], ascending=short2long)
+                #     df = df.sort_values(by=['n_prev_utt'], ascending=short2long)
             elif sort_by == 'input':
-                self.df = self.df.sort_values(by=['xlen'], ascending=short2long)
+                df = df.sort_values(by=['xlen'], ascending=short2long)
             elif sort_by == 'output':
-                self.df = self.df.sort_values(by=['ylen'], ascending=short2long)
-            elif shuffle:
-                self.df = self.df.reindex(np.random.permutation(self.df.index))
+                df = df.sort_values(by=['ylen'], ascending=short2long)
+            elif sort_by == 'shuffle':
+                df = df.reindex(np.random.permutation(self.df.index))
 
-        self.rest = set(list(self.df.index))
+        for i in range(1, 3):
+            if getattr(self, 'df_sub' + str(i)) is not None:
+                setattr(self, 'df_sub' + str(i),
+                        getattr(self, 'df_sub' + str(i)).reindex(np.random.permutation(df.index)))
+
+        # Re-indexing
+        self.df = df.reset_index()
+        self.df_indices = list(self.df.index)
 
     def make_batch(self, df_indices):
         """Create mini-batch per step.

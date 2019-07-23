@@ -59,7 +59,7 @@ class Base(object):
     @property
     def epoch_detail(self):
         # percentage of the current epoch
-        return self.offset / len(self)
+        return 1 - (len(self.df_indices) / len(self))
 
     def next(self, batch_size=None):
         """Generate each mini-batch.
@@ -79,9 +79,9 @@ class Base(object):
                 raise StopIteration
             # NOTE: max_epoch == None means infinite loop
 
-            csv_indices, is_new_epoch = self.sample_index(batch_size)
-            batch = self.make_batch(csv_indices)
-            self.iteration += len(csv_indices)
+            df_indices, is_new_epoch = self.sample_index(batch_size)
+            batch = self.make_batch(df_indices)
+            self.iteration += len(df_indices)
         else:
             # Clean up multiprocessing
             if self.preloading_process is not None and self.queue_size == 0:
@@ -100,8 +100,8 @@ class Base(object):
                 self.df_indices_list = []
                 self.is_new_epoch_list = []
                 for _ in range(self.n_ques):
-                    csv_indices, is_new_epoch = self.sample_index(batch_size)
-                    self.df_indices_list.append(csv_indices)
+                    df_indices, is_new_epoch = self.sample_index(batch_size)
+                    self.df_indices_list.append(df_indices)
                     self.is_new_epoch_list.append(is_new_epoch)
                 self.preloading_process = Process(self.preloading_loop,
                                                   args=(self.queue, self.df_indices_list))
@@ -123,9 +123,9 @@ class Base(object):
         """Sample data indices of mini-batch.
 
         Args:
-            batch_size (int): the size of mini-batch
+            batch_size (int): size of mini-batch
         Returns:
-            csv_indices (np.ndarray):
+            df_indices (np.ndarray):
             is_new_epoch (bool):
 
         """
@@ -134,8 +134,8 @@ class Base(object):
         if self.discourse_aware:
             n_utt = min(self.n_utt_session_dict_epoch.keys())
             assert self.utt_offset < n_utt
-            csv_indices = [self.df[self.session_offset_dict[session_id] + self.utt_offset:self.session_offset_dict[session_id] + self.utt_offset + 1].index[0]
-                           for session_id in self.n_utt_session_dict_epoch[n_utt][:batch_size]]
+            df_indices = [self.df[self.session_offset_dict[session_id] + self.utt_offset:self.session_offset_dict[session_id] + self.utt_offset + 1].index[0]
+                          for session_id in self.n_utt_session_dict_epoch[n_utt][:batch_size]]
 
             self.utt_offset += 1
             if self.utt_offset == n_utt:
@@ -151,44 +151,45 @@ class Base(object):
                     is_new_epoch = True
                     self._epoch += 1
 
-        elif self.sort_by is not None or not self.shuffle:
-            if self.sort_by is not None:
-                # Change batch size dynamically
-                min_xlen = self.df[self.offset:self.offset + 1]['xlen'].values[0]
-                min_ylen = self.df[self.offset:self.offset + 1]['ylen'].values[0]
-                batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
+        else:
+            if len(self.df_indices) > batch_size:
+                if self.shuffle_bucket:
+                    # Sample offset randomly
+                    offset = random.sample(self.df_indices, 1)[0]
+                    df_indices_offset = self.df_indices.index(offset)
+                else:
+                    offset = self.offset
 
-            if len(self.rest) > batch_size:
-                csv_indices = list(self.df[self.offset:self.offset + batch_size].index)
+                # Change batch size dynamically
+                if self.sort_by is not None:
+                    # assert offset in list(self.df.index)
+                    min_xlen = self.df[offset:offset + 1]['xlen'].values[0]
+                    min_ylen = self.df[offset:offset + 1]['ylen'].values[0]
+                    batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
+
+                if self.shuffle_bucket:
+                    if len(self.df_indices[df_indices_offset:]) < batch_size:
+                        df_indices = self.df_indices[df_indices_offset:][:]
+                    else:
+                        df_indices = self.df_indices[df_indices_offset:df_indices_offset + batch_size][:]
+                else:
+                    df_indices = list(self.df[offset:offset + batch_size].index)
+                    self.offset += len(df_indices)
+
                 # Shuffle uttrances in mini-batch
-                csv_indices = random.sample(csv_indices, len(csv_indices))
-                self.rest -= set(csv_indices)
-                self.offset += len(csv_indices)
+                df_indices = random.sample(df_indices, len(df_indices))
+                for i in df_indices:
+                    self.df_indices.remove(i)
             else:
                 # Last mini-batch
-                csv_indices = list(self.df[self.offset: self.offset + len(self.rest)].index)
+                df_indices = self.df_indices[:]
                 self._reset()
                 is_new_epoch = True
                 self._epoch += 1
                 if self._epoch == self.sort_stop_epoch:
                     self.sort_by = None
-                    self.shuffle = True
 
-        else:
-            # Sample uttrances randomly
-            if len(self.rest) > batch_size:
-                csv_indices = random.sample(list(self.rest), len(self.rest))
-                self.rest -= set(csv_indices)
-            else:
-                # Last mini-batch
-                csv_indices = list(self.rest)
-                self._reset()
-                is_new_epoch = True
-                self._epoch += 1
-
-            self.offset += len(csv_indices)
-
-        return csv_indices, is_new_epoch
+        return df_indices, is_new_epoch
 
     def set_batch_size(self, batch_size, min_xlen, min_ylen):
         if not self.dynamic_batching:
@@ -219,11 +220,11 @@ class Base(object):
 
     def _reset(self):
         """Reset data counter and offset."""
-        self.rest = set(list(self.df.index))
+        self.df_indices = list(self.df.index)
         self.offset = 0
 
     def preloading_loop(self, queue, df_indices_list):
-        """.
+        """
 
         Args:
             queue ():
