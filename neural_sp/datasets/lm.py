@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Base class for loading dataset for the RNNLM.
+"""Base class for loading dataset for language model.
    In this class, all data will be loaded at each step.
    You can use the multi-GPU version.
 """
@@ -65,14 +65,6 @@ class Dataset(object):
         self.epoch = 0
         self.iteration = 0
         self.offset = 0
-
-        # for multiprocessing
-        self._epoch = 0
-
-        # Setting for multiprocessing
-        self.preloading_process = None
-        self.queue = Queue()
-        self.queue_size = 0
 
         self.set = os.path.basename(tsv_path).split('.')[0]
         self.is_test = is_test
@@ -155,8 +147,8 @@ class Dataset(object):
 
     @property
     def epoch_detail(self):
-        # Floating point version of epoch
-        return self.epoch + (float(self.offset * self.batch_size) / len(self))
+        """Percentage of the current epoch."""
+        return float(self.offset * self.batch_size) / len(self)
 
     def next(self, batch_size=None, bptt=None):
         """Generate each mini-batch.
@@ -167,9 +159,8 @@ class Dataset(object):
         Returns:
             batch (dict):
                 ys (list): target labels in the main task of size `[B, L]`
-                ylens (list):
                 utt_ids (list): file names of input data of size `[B]`
-            is_new_epoch (bool): If true, 1 epoch is finished
+            is_new_epoch (bool): flag for the end of the current epoch
 
         """
         is_new_epoch = False
@@ -185,7 +176,7 @@ class Dataset(object):
 
         if self.max_epoch is not None and self.epoch >= self.max_epoch:
             raise StopIteration
-        # NOTE: max_epoch == None means infinite loop
+            # NOTE: max_epoch == None means infinite loop
 
         ys = self.concat_ids[:, self.offset:self.offset + bptt]
         self.offset += bptt - 1

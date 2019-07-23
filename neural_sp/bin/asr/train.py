@@ -111,7 +111,6 @@ def main():
                         max_n_frames=args.max_n_frames,
                         sort_by='input',
                         shuffle_bucket=True,
-                        # sort_by='shuffle',
                         short2long=True,
                         sort_stop_epoch=args.sort_stop_epoch,
                         dynamic_batching=args.dynamic_batching,
@@ -123,14 +122,6 @@ def main():
                         subsample_factor_sub2=subsample_factor_sub2,
                         discourse_aware=args.discourse_aware,
                         skip_thought=skip_thought)
-    i = 0
-    while True:
-        # Compute loss in the training set
-        batch_train, is_new_epoch = train_set.next()
-        i += 1
-        if i == 10000:
-            break
-    raise ValueError
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
                       tsv_path_sub1=args.dev_set_sub1,

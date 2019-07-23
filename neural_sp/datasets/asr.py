@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Base class for loading dataset for the CTC and attention-based model.
+"""Base class for loading dataset for ASR.
    In this class, all data will be loaded at each step.
    You can use the multi-GPU version.
 """
@@ -19,6 +19,7 @@ import kaldiio
 import numpy as np
 import os
 import pandas as pd
+import random
 
 from neural_sp.datasets.token_converter.character import Char2idx
 from neural_sp.datasets.token_converter.character import Idx2char
@@ -29,9 +30,8 @@ from neural_sp.datasets.token_converter.word import Word2idx
 from neural_sp.datasets.token_converter.wordpiece import Idx2wp
 from neural_sp.datasets.token_converter.wordpiece import Wp2idx
 
+random.seed(1)
 np.random.seed(1)
-
-logger = logging.getLogger('training')
 
 
 def count_vocab_size(dict_path):
@@ -49,16 +49,12 @@ class Dataset(object):
                  unit, batch_size, nlsyms=False, n_epochs=None,
                  is_test=False, min_n_frames=40, max_n_frames=2000,
                  shuffle_bucket=False, sort_by='utt_id',
-                 short2long=False, sort_stop_epoch=None,
-                 n_ques=None, dynamic_batching=False,
-                 ctc=False, subsample_factor=1,
-                 wp_model=False, corpus='',
+                 short2long=False, sort_stop_epoch=None, dynamic_batching=False,
+                 ctc=False, subsample_factor=1, wp_model=False, corpus='',
                  tsv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
-                 wp_model_sub1=False,
-                 ctc_sub1=False, subsample_factor_sub1=1,
-                 wp_model_sub2=False,
+                 wp_model_sub1=False, ctc_sub1=False, subsample_factor_sub1=1,
                  tsv_path_sub2=False, dict_path_sub2=False, unit_sub2=False,
-                 ctc_sub2=False, subsample_factor_sub2=1,
+                 wp_model_sub2=False, ctc_sub2=False, subsample_factor_sub2=1,
                  discourse_aware=False, skip_thought=False):
         """A class for loading dataset.
 
@@ -80,7 +76,6 @@ class Dataset(object):
             short2long (bool): sort utterances in the descending order
             sort_stop_epoch (int): After sort_stop_epoch, training will revert
                 back to a random order
-            n_ques (int): number of elements to enqueue
             dynamic_batching (bool): change batch size dynamically in training
             ctc (bool):
             subsample_factor (int):
@@ -96,14 +91,6 @@ class Dataset(object):
         self.iteration = 0
         self.offset = 0
 
-        # for multiprocessing
-        self._epoch = 0
-
-        # Setting for multiprocessing
-        self.preloading_process = None
-        self.queue = Queue()
-        self.queue_size = 0
-
         self.set = os.path.basename(tsv_path).split('.')[0]
         self.is_test = is_test
         self.unit = unit
@@ -116,7 +103,6 @@ class Dataset(object):
         self.sort_stop_epoch = sort_stop_epoch
         self.sort_by = sort_by
         assert sort_by in ['input', 'output', 'shuffle', 'utt_id']
-        self.n_ques = n_ques
         self.dynamic_batching = dynamic_batching
         self.corpus = corpus
         self.discourse_aware = discourse_aware
@@ -293,7 +279,7 @@ class Dataset(object):
         for i in range(1, 3):
             if getattr(self, 'df_sub' + str(i)) is not None:
                 setattr(self, 'df_sub' + str(i),
-                        getattr(self, 'df_sub' + str(i)).reindex(np.random.permutation(df.index)))
+                        getattr(self, 'df_sub' + str(i)).reindex(df.index).reset_index())
 
         # Re-indexing
         self.df = df.reset_index()
@@ -304,8 +290,13 @@ class Dataset(object):
 
     @property
     def epoch_detail(self):
-        # percentage of the current epoch
+        """Percentage of the current epoch."""
         return 1 - (len(self.df_indices) / len(self))
+
+    def reset(self):
+        """Reset data counter and offset."""
+        self.df_indices = list(self.df.index)
+        self.offset = 0
 
     def next(self, batch_size=None):
         """Generate each mini-batch.
@@ -313,67 +304,114 @@ class Dataset(object):
         Args:
             batch_size (int): size of mini-batch
         Returns:
-            batch (tuple):
-            is_new_epoch (bool): If true, 1 epoch is finished
+            batch (dict):
+            is_new_epoch (bool): flag for the end of the current epoch
 
         """
         if batch_size is None:
             batch_size = self.batch_size
 
-        if self.n_ques is None:
-            if self.max_epoch is not None and self.epoch >= self.max_epoch:
-                raise StopIteration
+        if self.max_epoch is not None and self.epoch >= self.max_epoch:
+            raise StopIteration
             # NOTE: max_epoch == None means infinite loop
 
-            df_indices, is_new_epoch = self.sample_index(batch_size)
-            batch = self.make_batch(df_indices)
-            self.iteration += len(df_indices)
-        else:
-            # Clean up multiprocessing
-            if self.preloading_process is not None and self.queue_size == 0:
-                self.preloading_process.terminate()
-                self.preloading_process.join()
-
-            if self.max_epoch is not None and self.epoch >= self.max_epoch:
-                # Clean up multiprocessing
-                self.preloading_process.terminate()
-                self.preloading_process.join()
-                raise StopIteration
-            # NOTE: max_epoch == None means infinite loop
-
-            # Enqueue mini-batches
-            if self.queue_size == 0:
-                self.df_indices_list = []
-                self.is_new_epoch_list = []
-                for _ in range(self.n_ques):
-                    df_indices, is_new_epoch = self.sample_index(batch_size)
-                    self.df_indices_list.append(df_indices)
-                    self.is_new_epoch_list.append(is_new_epoch)
-                self.preloading_process = Process(self.preloading_loop,
-                                                  args=(self.queue, self.df_indices_list))
-                self.preloading_process.start()
-                self.queue_size += self.n_ques
-                time.sleep(3)
-
-            self.iteration += len(self.df_indices_list[self.n_ques - self.queue_size])
-            self.queue_size -= 1
-            batch = self.queue.get()
-            is_new_epoch = self.is_new_epoch_list.pop(0)
+        df_indices, is_new_epoch = self.sample_index(batch_size)
+        batch = self.make_batch(df_indices)
 
         if is_new_epoch:
+            # shuffle the whole data
+            if self.epoch == self.sort_stop_epoch:
+                self.sort_by = 'shuffle'
+                self.df = self.df.reindex(np.random.permutation(self.df.index))
+                for i in range(1, 3):
+                    if getattr(self, 'df_sub' + str(i)) is not None:
+                        setattr(self, 'df_sub' + str(i),
+                                getattr(self, 'df_sub' + str(i)).reindex(self.df.index).reset_index())
+
+                # Re-indexing
+                self.df = self.df.reset_index()
+
+            self.reset()
             self.epoch += 1
 
         return batch, is_new_epoch
+
+    def sample_index(self, batch_size):
+        """Sample data indices of mini-batch.
+
+        Args:
+            batch_size (int): size of mini-batch
+        Returns:
+            df_indices (np.ndarray): indices for dataframe
+            is_new_epoch (bool): flag for the end of the current epoch
+
+        """
+        is_new_epoch = False
+
+        if self.discourse_aware:
+            n_utt = min(self.n_utt_session_dict_epoch.keys())
+            assert self.utt_offset < n_utt
+            df_indices = [self.df[self.session_offset_dict[session_id] + self.utt_offset:self.session_offset_dict[session_id] + self.utt_offset + 1].index[0]
+                          for session_id in self.n_utt_session_dict_epoch[n_utt][:batch_size]]
+
+            self.utt_offset += 1
+            if self.utt_offset == n_utt:
+                if len(self.n_utt_session_dict_epoch[n_utt][batch_size:]) > 0:
+                    self.n_utt_session_dict_epoch[n_utt] = self.n_utt_session_dict_epoch[n_utt][batch_size:]
+                else:
+                    self.n_utt_session_dict_epoch.pop(n_utt)
+                self.utt_offset = 0
+
+                # reset for the new epoch
+                if len(self.n_utt_session_dict_epoch.keys()) == 0:
+                    self.n_utt_session_dict_epoch = copy.deepcopy(self.n_utt_session_dict)
+                    is_new_epoch = True
+
+        else:
+            if len(self.df_indices) > batch_size:
+                if self.shuffle_bucket:
+                    # Sample offset randomly
+                    offset = random.sample(self.df_indices, 1)[0]
+                    df_indices_offset = self.df_indices.index(offset)
+                else:
+                    offset = self.offset
+
+                # Change batch size dynamically
+                if self.sort_by is not None:
+                    # assert offset in list(self.df.index)
+                    min_xlen = self.df[offset:offset + 1]['xlen'].values[0]
+                    min_ylen = self.df[offset:offset + 1]['ylen'].values[0]
+                    batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
+
+                if self.shuffle_bucket:
+                    if len(self.df_indices[df_indices_offset:]) < batch_size:
+                        df_indices = self.df_indices[df_indices_offset:][:]
+                    else:
+                        df_indices = self.df_indices[df_indices_offset:df_indices_offset + batch_size][:]
+                else:
+                    df_indices = list(self.df[offset:offset + batch_size].index)
+                    self.offset += len(df_indices)
+
+                # Shuffle uttrances in mini-batch
+                df_indices = random.sample(df_indices, len(df_indices))
+                for i in df_indices:
+                    self.df_indices.remove(i)
+            else:
+                # Last mini-batch
+                df_indices = self.df_indices[:]
+                is_new_epoch = True
+
+        return df_indices, is_new_epoch
 
     def make_batch(self, df_indices):
         """Create mini-batch per step.
 
         Args:
-            df_indices (np.ndarray):
+            df_indices (np.ndarray): indices for dataframe
         Returns:
             batch (dict):
                 xs (list): input data of size `[T, input_dim]`
-                xlens (list): lengths of each element in xs
+                xlens (list): lengths of xs
                 ys (list): reference labels in the main task of size `[L]`
                 ys_sub1 (list): reference labels in the 1st auxiliary task of size `[L_sub1]`
                 ys_sub2 (list): reference labels in the 2nd auxiliary task of size `[L_sub2]`
@@ -446,80 +484,7 @@ class Dataset(object):
             'ys_next': ys_next,
             'text_next': text_next,
         }
-
         return batch_dict
-
-    def sample_index(self, batch_size):
-        """Sample data indices of mini-batch.
-
-        Args:
-            batch_size (int): size of mini-batch
-        Returns:
-            df_indices (np.ndarray):
-            is_new_epoch (bool):
-
-        """
-        is_new_epoch = False
-
-        if self.discourse_aware:
-            n_utt = min(self.n_utt_session_dict_epoch.keys())
-            assert self.utt_offset < n_utt
-            df_indices = [self.df[self.session_offset_dict[session_id] + self.utt_offset:self.session_offset_dict[session_id] + self.utt_offset + 1].index[0]
-                          for session_id in self.n_utt_session_dict_epoch[n_utt][:batch_size]]
-
-            self.utt_offset += 1
-            if self.utt_offset == n_utt:
-                if len(self.n_utt_session_dict_epoch[n_utt][batch_size:]) > 0:
-                    self.n_utt_session_dict_epoch[n_utt] = self.n_utt_session_dict_epoch[n_utt][batch_size:]
-                else:
-                    self.n_utt_session_dict_epoch.pop(n_utt)
-                self.utt_offset = 0
-
-                # reset for the new epoch
-                if len(self.n_utt_session_dict_epoch.keys()) == 0:
-                    self.n_utt_session_dict_epoch = copy.deepcopy(self.n_utt_session_dict)
-                    is_new_epoch = True
-                    self._epoch += 1
-
-        else:
-            if len(self.df_indices) > batch_size:
-                if self.shuffle_bucket:
-                    # Sample offset randomly
-                    offset = random.sample(self.df_indices, 1)[0]
-                    df_indices_offset = self.df_indices.index(offset)
-                else:
-                    offset = self.offset
-
-                # Change batch size dynamically
-                if self.sort_by is not None:
-                    # assert offset in list(self.df.index)
-                    min_xlen = self.df[offset:offset + 1]['xlen'].values[0]
-                    min_ylen = self.df[offset:offset + 1]['ylen'].values[0]
-                    batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
-
-                if self.shuffle_bucket:
-                    if len(self.df_indices[df_indices_offset:]) < batch_size:
-                        df_indices = self.df_indices[df_indices_offset:][:]
-                    else:
-                        df_indices = self.df_indices[df_indices_offset:df_indices_offset + batch_size][:]
-                else:
-                    df_indices = list(self.df[offset:offset + batch_size].index)
-                    self.offset += len(df_indices)
-
-                # Shuffle uttrances in mini-batch
-                df_indices = random.sample(df_indices, len(df_indices))
-                for i in df_indices:
-                    self.df_indices.remove(i)
-            else:
-                # Last mini-batch
-                df_indices = self.df_indices[:]
-                self._reset()
-                is_new_epoch = True
-                self._epoch += 1
-                if self._epoch == self.sort_stop_epoch:
-                    self.sort_by = None
-
-        return df_indices, is_new_epoch
 
     def set_batch_size(self, batch_size, min_xlen, min_ylen):
         if not self.dynamic_batching:
@@ -536,30 +501,3 @@ class Dataset(object):
             batch_size = 1
 
         return batch_size
-
-    def reset(self):
-        self._reset()
-
-        self.queue = Queue()
-        self.queue_size = 0
-
-        # Clean up multiprocessing
-        if self.preloading_process is not None:
-            self.preloading_process.terminate()
-            self.preloading_process.join()
-
-    def _reset(self):
-        """Reset data counter and offset."""
-        self.df_indices = list(self.df.index)
-        self.offset = 0
-
-    def preloading_loop(self, queue, df_indices_list):
-        """
-
-        Args:
-            queue ():
-            df_indices_list (np.ndarray):
-
-        """
-        for i in range(len(df_indices_list)):
-            queue.put(self.make_batch(df_indices_list[i]))
