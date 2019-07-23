@@ -14,11 +14,11 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import os
 import pandas as pd
 import random
-import os
 
-from neural_sp.datasets.loader_base import Base
+from neural_sp.datasets.loader_asr import count_vocab_size
 from neural_sp.datasets.token_converter.character import Char2idx
 from neural_sp.datasets.token_converter.character import Idx2char
 from neural_sp.datasets.token_converter.phone import Idx2phone
@@ -32,7 +32,7 @@ random.seed(1)
 np.random.seed(1)
 
 
-class Dataset(Base):
+class Dataset(object):
 
     def __init__(self, tsv_path, dict_path,
                  unit, batch_size, nlsyms=False, n_epochs=None,
@@ -62,6 +62,18 @@ class Dataset(Base):
         """
         super(Dataset, self).__init__()
 
+        self.epoch = 0
+        self.iteration = 0
+        self.offset = 0
+
+        # for multiprocessing
+        self._epoch = 0
+
+        # Setting for multiprocessing
+        self.preloading_process = None
+        self.queue = Queue()
+        self.queue_size = 0
+
         self.set = os.path.basename(tsv_path).split('.')[0]
         self.is_test = is_test
         self.unit = unit
@@ -71,7 +83,7 @@ class Dataset(Base):
         self.eos = 2
         self.max_epoch = n_epochs
         self.shuffle = shuffle
-        self.vocab = self.count_vocab_size(dict_path)
+        self.vocab = count_vocab_size(dict_path)
         assert bptt >= 2
 
         self.idx2token = []
@@ -94,41 +106,41 @@ class Dataset(Base):
             raise ValueError(unit)
 
         # Load dataset tsv file
-        self.df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
-        self.df = self.df.loc[:, ['utt_id', 'speaker', 'feat_path',
-                                  'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+        df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
+        df = df.loc[:, ['utt_id', 'speaker', 'feat_path',
+                        'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
 
         # Remove inappropriate utterances
         if is_test:
-            print('Original utterance num: %d' % len(self.df))
-            n_utts = len(self.df)
-            self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
-            print('Removed %d empty utterances' % (n_utts - len(self.df)))
+            print('Original utterance num: %d' % len(df))
+            n_utts = len(df)
+            df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
+            print('Removed %d empty utterances' % (n_utts - len(df)))
         else:
-            print('Original utterance num: %d' % len(self.df))
-            n_utts = len(self.df)
-            self.df = self.df[self.df.apply(lambda x: x['ylen'] >= min_n_tokens, axis=1)]
-            print('Removed %d utterances (threshold)' % (n_utts - len(self.df)))
+            print('Original utterance num: %d' % len(df))
+            n_utts = len(df)
+            df = df[df.apply(lambda x: x['ylen'] >= min_n_tokens, axis=1)]
+            print('Removed %d utterances (threshold)' % (n_utts - len(df)))
 
         # Sort tsv records
         if shuffle:
-            self.df = self.df.reindex(np.random.permutation(self.df.index))
+            df = df.reindex(np.random.permutation(df.index))
         elif serialize:
             assert corpus == 'swbd'
-            self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
-            self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
-            self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
+            df['session'] = df['speaker'].apply(lambda x: str(x).split('-')[0])
+            df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
+            df = df.sort_values(by=['session', 'onset'], ascending=True)
         else:
-            self.df = self.df.sort_values(by='utt_id', ascending=True)
+            df = df.sort_values(by='utt_id', ascending=True)
 
         # Concatenate into a single sentence
         concat_ids = []
-        indices = list(self.df.index)
+        indices = list(df.index)
         if backward:
             indices = indices[::-1]
         for i in indices:
-            assert self.df['token_id'][i] != ''
-            concat_ids += [self.eos] + list(map(int, self.df['token_id'][i].split()))
+            assert df['token_id'][i] != ''
+            concat_ids += [self.eos] + list(map(int, df['token_id'][i].split()))
         concat_ids += [self.eos]
         # NOTE: <sos> and <eos> have the same index
 
@@ -184,21 +196,5 @@ class Dataset(Base):
             self.offset = 0
             is_new_epoch = True
             self.epoch += 1
-
-            if self.shuffle:
-                # Sort tsv records
-                self.df = self.df.reindex(np.random.permutation(self.df.index))
-
-                # Concatenate into a single sentence
-                concat_ids = []
-                for i in list(self.df.index):
-                    assert self.df['token_id'][i] != ''
-                    concat_ids += [self.eos] + list(map(int, self.df['token_id'][i].split()))
-                concat_ids += [self.eos]
-                # NOTE: <sos> and <eos> have the same index
-
-                # Reshape
-                concat_ids = concat_ids[:len(concat_ids) // self.batch_size * self.batch_size]
-                self.concat_ids = np.array(concat_ids).reshape((self.batch_size, -1))
 
         return ys, is_new_epoch
