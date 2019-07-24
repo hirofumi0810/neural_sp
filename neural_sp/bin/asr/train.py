@@ -110,7 +110,6 @@ def main():
                         min_n_frames=args.min_n_frames,
                         max_n_frames=args.max_n_frames,
                         sort_by='input',
-                        shuffle_bucket=True,
                         short2long=True,
                         sort_stop_epoch=args.sort_stop_epoch,
                         dynamic_batching=args.dynamic_batching,
