@@ -177,13 +177,13 @@ def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
     plt.close()
 
 
-def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_id=None, hyp='',
+def plot_ctc_probs(ctc_probs, indices_topk, n_frames, subsample_factor, space_id=None, hyp='',
                    spectrogram=None, save_path=None, figsize=(20, 8), topk=None):
     """Plot CTC posteriors.
 
     Args:
         ctc_probs (np.ndarray): A tensor of size `[T, vocab]`
-        nframes (int):
+        n_frames (int):
         subsample_factor (int): the number of frames to stack
         space_id (int):
         hyp (str):
@@ -194,11 +194,11 @@ def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_id=
     """
     plt.clf()
     plt.figure(figsize=figsize)
-    times_probs = np.arange(nframes) * subsample_factor / 100
+    times_probs = np.arange(n_frames) * subsample_factor / 100
     if len(hyp) > 0:
         plt.title(hyp)
 
-    plt.xlim([0, nframes * subsample_factor / 100])
+    plt.xlim([0, n_frames * subsample_factor / 100])
     plt.ylim([0.05, 1.05])
     plt.legend(loc="upper right", fontsize=12)
 
@@ -215,7 +215,7 @@ def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_id=
                 plt.plot(times_probs, ctc_probs[:, i])
         plt.xlabel(u'Time [sec]', fontsize=12)
         plt.ylabel('Posteriors', fontsize=12)
-        plt.xticks(list(range(0, int(nframes * subsample_factor / 100) + 1, 1)))
+        plt.xticks(list(range(0, int(n_frames * subsample_factor / 100) + 1, 1)))
         plt.yticks(list(range(0, 2, 1)))
     else:
         plt.subplot(211)
@@ -248,7 +248,7 @@ def plot_ctc_probs(ctc_probs, indices_topk, nframes, subsample_factor, space_id=
     plt.close()
 
 
-def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, nframes, subsample_factor,
+def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, n_frames, subsample_factor,
                                 space_id=None, hyp='', hyp_sub='',
                                 spectrogram=None, save_path=None, figsize=(20, 8)):
     """Plot CTC posteriors for the hierarchical model.
@@ -256,18 +256,18 @@ def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, nframes, subsample_fac
     Args:
         ctc_probs (np.ndarray): A tensor of size `[T, vocab]`
         ctc_probs_sub (np.ndarray): A tensor of size `[T, num_classes_sub]`
-        nframes (int):
+        n_frames (int):
         subsample_factor (int):
         save_path (str): path to save a figure
         figsize (tuple):
         space_id (int):
 
     """
-    # TODO: add spectrogram
+    # TODO(hirofumi): add spectrogram
 
     plt.clf()
     plt.figure(figsize=figsize)
-    times_probs = np.arange(nframes) * subsample_factor / 100
+    times_probs = np.arange(n_frames) * subsample_factor / 100
     if len(hyp) > 0:
         plt.title(hyp)
         # plt.title(hyp_sub)
@@ -284,9 +284,9 @@ def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, nframes, subsample_fac
         plt.plot(times_probs, ctc_probs[:, i])
 
     plt.ylabel('Posteriors (Word)', fontsize=12)
-    plt.xlim([0, nframes * subsample_factor / 100])
+    plt.xlim([0, n_frames * subsample_factor / 100])
     plt.ylim([0.05, 1.05])
-    plt.xticks(list(range(0, int(nframes * subsample_factor / 100) + 1, 1)))
+    plt.xticks(list(range(0, int(n_frames * subsample_factor / 100) + 1, 1)))
     plt.yticks(list(range(0, 2, 1)))
     plt.legend(loc="upper right", fontsize=12)
 
@@ -299,9 +299,9 @@ def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, nframes, subsample_fac
             plt.plot(times_probs, ctc_probs_sub[:, i])
     plt.xlabel(u'Time [sec]', fontsize=12)
     plt.ylabel('Posteriors (Char)', fontsize=12)
-    plt.xlim([0, nframes * subsample_factor / 100])
+    plt.xlim([0, n_frames * subsample_factor / 100])
     plt.ylim([0.05, 1.05])
-    plt.xticks(list(range(0, int(nframes * subsample_factor / 100) + 1, 1)))
+    plt.xticks(list(range(0, int(n_frames * subsample_factor / 100) + 1, 1)))
     plt.yticks(list(range(0, 2, 1)))
     plt.legend(loc="upper right", fontsize=12)
 

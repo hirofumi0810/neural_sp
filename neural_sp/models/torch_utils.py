@@ -32,7 +32,7 @@ def np2tensor(array, device_id=-1):
         array (np.ndarray): A tensor of any sizes
         device_id (int): ht index of the device
     Returns:
-        var (Tensor):
+        tensor (FloatTensor/IntTensor/LongTensor):
 
     """
     tensor = torch.from_numpy(array)
@@ -67,6 +67,7 @@ def pad_list(xs, pad_value=0.0, pad_left=False):
 
 def make_pad_mask(seq_lens, device_id=-1):
     """Make mask for padding.
+
     Args:
         seq_lens (IntTensor): `[B]`
         device_id (int):
@@ -84,17 +85,20 @@ def make_pad_mask(seq_lens, device_id=-1):
 
     if device_id >= 0:
         mask = mask.cuda(device_id)
+
     return mask
 
 
 def compute_accuracy(logits, ys_ref, pad):
     """Compute accuracy.
+
     Args:
         logits (FloatTensor): `[B, T, vocab]`
         ys_ref (LongTensor): `[B, T]`
         pad (int): index for padding
     Returns:
         acc (float): teacher-forcing accuracy
+
     """
     pad_pred = logits.view(ys_ref.size(0), ys_ref.size(1), logits.size(-1)).argmax(2)
     mask = ys_ref != pad

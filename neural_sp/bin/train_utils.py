@@ -117,7 +117,7 @@ def set_save_path(save_path):
     return save_path_new
 
 
-def load_checkpoint(model, checkpoint_path, optimizer, resume=False):
+def load_checkpoint(model, checkpoint_path, optimizer=None, resume=False):
     """Load checkpoint.
 
     Args:
