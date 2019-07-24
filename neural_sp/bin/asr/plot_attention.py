@@ -72,7 +72,6 @@ def main():
             ensemble_models = [model]
             if len(args.recog_model) > 1:
                 for recog_model_e in args.recog_model[1:]:
-                    # Load the ASR model
                     conf_e = load_config(os.path.join(os.path.dirname(recog_model_e), 'conf.yml'))
                     args_e = copy.deepcopy(args)
                     for k, v in conf_e.items():
@@ -97,9 +96,9 @@ def main():
                     else:
                         model.lm_fwd = lm
 
-                if args.recog_lm_bwd is not None and args.recog_lm_weight > 0 and \
-                        (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
-                    conf_lm = load_config(os.path.join(args.recog_lm_bwd, 'conf.yml'))
+                if args.recog_lm_bwd is not None and args.recog_lm_weight > 0 \
+                        and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
+                    conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm_bwd), 'conf.yml'))
                     args_lm_bwd = argparse.Namespace()
                     for k, v in conf_lm.items():
                         setattr(args_lm_bwd, k, v)
@@ -111,7 +110,6 @@ def main():
                 args.recog_unit = args.unit
 
             logger.info('recog unit: %s' % args.recog_unit)
-            logger.info('recog metric: %s' % args.recog_metric)
             logger.info('recog oracle: %s' % args.recog_oracle)
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)
@@ -134,7 +132,6 @@ def main():
             logger.info('LM state carry over: %s' % (args.recog_lm_state_carry_over))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache type: %s' % (args.recog_cache_type))
-            logger.info('cache word frequency threshold: %s' % (args.recog_cache_word_freq))
             logger.info('cache theta (speech): %.3f' % (args.recog_cache_theta_speech))
             logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
             logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
@@ -142,7 +139,6 @@ def main():
 
             # GPU setting
             model.cuda()
-            # TODO(hirofumi): move this
 
         save_path = mkdir_join(args.recog_dir, 'att_weights')
         if args.recog_n_caches > 0:

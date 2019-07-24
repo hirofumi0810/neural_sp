@@ -82,9 +82,8 @@ def main():
 
             # GPU setting
             model.cuda()
-            # TODO(hirofumi): move this
 
-        save_path = mkdir_join(args.plot_dir, 'ctc_probs')
+        save_path = mkdir_join(args.recog_dir, 'ctc_probs')
 
         # Clean directory
         if save_path is not None and os.path.isdir(save_path):
@@ -103,21 +102,20 @@ def main():
 
             for b in range(len(batch['xs'])):
                 tokens = dataset.idx2token[0](best_hyps_id[b], return_list=True)
-                spk = '_'.join(batch['utt_ids'][b].replace('-', '_').split('_')[:-2])
+                spk = batch['speakers'][b]
 
                 plot_ctc_probs(
                     ctc_probs[b, :xlens[b]],
                     indices_topk[b],
-                    nframes=xlens[b],
+                    n_frames=xlens[b],
                     subsample_factor=subsample_factor,
                     spectrogram=batch['xs'][b][:, :dataset.input_dim],
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8))
 
-                ref = batch['text'][b]
                 hyp = ' '.join(tokens)
                 logger.info('utt-id: %s' % batch['utt_ids'][b])
-                logger.info('Ref: %s' % ref.lower())
+                logger.info('Ref: %s' % batch['text'][b].lower())
                 logger.info('Hyp: %s' % hyp)
                 logger.info('-' * 50)
 

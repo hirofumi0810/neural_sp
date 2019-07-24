@@ -21,8 +21,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.criterion import cross_entropy_lsm
-from neural_sp.models.criterion import focal_loss
 from neural_sp.models.criterion import distillation
+from neural_sp.models.criterion import focal_loss
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import Linear
@@ -34,9 +34,9 @@ from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
+from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -261,7 +261,7 @@ class RNNDecoder(DecoderBase):
             # Decoder
             self.rnn = nn.ModuleList()
             if self.n_projs > 0:
-                self.proj = nn.ModuleList([nn.Linear(n_units, n_projs) for _ in range(n_layers)])
+                self.proj = nn.ModuleList([Linear(n_units, n_projs) for _ in range(n_layers)])
             self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             # 1st layer
@@ -574,19 +574,18 @@ class RNNDecoder(DecoderBase):
 
         logits = []
         for t in range(ys_in_pad.size(1)):
-            sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob and self.adaptive_softmax is None
+            is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob and self.adaptive_softmax is None
 
             # Update LM states for LM fusion
             if self.lm is not None:
-                y_lm = self.output(logits[-1]).detach().argmax(-1) if sample else ys_in_pad[:, t:t + 1]
+                y_lm = self.output(logits[-1]).detach().argmax(-1) if is_sample else ys_in_pad[:, t:t + 1]
                 lmout, lmstate = self.lm.decode(y_lm, lmstate)
 
             # Recurrency -> Score -> Generate
             dec_in = attn_v if self.input_feeding else cv
-            y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if sample else ys_emb[:, t:t + 1]
-            dstates = self.recurrency(y_emb, dec_in, dstates['dstate'])
-            cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw)
-            attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
+            y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
+            dstates, cv, aw, attn_v, lmfeat = self.decode_step(
+                eouts, dstates, dec_in, y_emb, mask, aw, lmout)
             if not self.training:
                 aws.append(aw.transpose(2, 1).unsqueeze(2))  # `[B, n_heads, 1, T]`
             logits.append(attn_v)
@@ -655,6 +654,12 @@ class RNNDecoder(DecoderBase):
         loss *= ylens.float().mean()
 
         return loss, acc, ppl
+
+    def decode_step(self, eouts, dstates, cv, y_emb, mask, aw, lmout, mode='hard'):
+        dstates = self.recurrency(y_emb, cv, dstates['dstate'])
+        cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw, mode)
+        attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
+        return dstates, cv, aw, attn_v, lmfeat
 
     def zero_state(self, batch_size):
         """Initialize decoder state.
@@ -836,7 +841,7 @@ class RNNDecoder(DecoderBase):
             speakers (list): speaker list
         Returns:
             hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
-            aws (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
+            aws (list): A list of length `[B]`, which contains arrays of size `[n_heads, L, T]`
 
         """
         logger = logging.getLogger("decoding")
@@ -869,9 +874,10 @@ class RNNDecoder(DecoderBase):
 
             # Recurrency -> Score -> Generate
             dec_in = attn_v if self.input_feeding else cv
-            dstates = self.recurrency(self.embed(y), dec_in, dstates['dstate'])
-            cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw, mode='hard')
-            attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
+            y_emb = self.embed(y)
+            dstates, cv, aw, attn_v, lmfeat = self.decode_step(
+                eouts, dstates, dec_in, y_emb, mask, aw, lmout)
+            aws_batch += [aw.transpose(2, 1).unsqueeze(2)]  # `[B, n_heads, 1, T]`
 
             # Pick up 1-best
             if self.adaptive_softmax is None:
@@ -879,7 +885,6 @@ class RNNDecoder(DecoderBase):
             else:
                 y = self.adaptive_softmax.predict(attn_v.view(-1, attn_v.size(2))).unsqueeze(1)
             hyps_batch += [y]
-            aws_batch += [aw]
 
             # Count lengths of hypotheses
             for b in range(bs):
@@ -904,16 +909,16 @@ class RNNDecoder(DecoderBase):
 
         # Concatenate in L dimension
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
-        aws_batch = tensor2np(torch.stack(aws_batch, dim=1))
+        aws_batch = tensor2np(torch.cat(aws_batch, dim=2))  # `[B, n_heads, L, T]`
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.bwd:
             # Reverse the order
             hyps = [hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
-            aws = [aws_batch[b, :ylens[b]][::-1] for b in range(bs)]
+            aws = [aws_batch[b, :, :ylens[b]][::-1] for b in range(bs)]
         else:
             hyps = [hyps_batch[b, :ylens[b]] for b in range(bs)]
-            aws = [aws_batch[b, :ylens[b]] for b in range(bs)]
+            aws = [aws_batch[b, :, :ylens[b]] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
@@ -1083,41 +1088,37 @@ class RNNDecoder(DecoderBase):
                     else:
                         lmout, lmstate, lm_log_probs = None, None, None
 
-                    # Recurrency for the main model
-                    dstates = self.recurrency(self.embed(eouts.new_zeros(1, 1).fill_(prev_idx)),
-                                              beam['cv'],
-                                              beam['dstates']['dstate'])
-                    # Recurrency for the ensemble
-                    ensmbl_dstate = [dec.recurrency(dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx)),
-                                                    beam['ensmbl_cv'][i_e],
-                                                    beam['ensmbl_dstate'][i_e]['dstate'])
-                                     for i_e, dec in enumerate(ensmbl_decs)]
-
-                    # Score for the main model
-                    cv, aw = self.score(eouts[b:b + 1, :elens[b]],
-                                        eouts[b:b + 1, :elens[b]],
-                                        dstates['dout_score'],
-                                        None,  # mask
-                                        beam['aws'][-1],
-                                        mode='hard')
-                    # Score for the ensemble
-                    ensmbl_cv, ensmbl_aws = [], []
-                    if n_models > 1:
-                        for i_e, dec in enumerate(ensmbl_decs):
-                            cv_e, aw_e = dec.score(ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
-                                                   ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
-                                                   ensmbl_dstate[i_e]['dout_score'],
-                                                   None,  # mask
-                                                   beam['ensmbl_aws'][i_e][-1])
-                            ensmbl_cv += [cv_e]
-                            ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi): unsqueeze?
-
-                    # Generate for the main model
-                    attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
+                    # for the main model
+                    y_emb = self.embed(eouts.new_zeros(1, 1).fill_(prev_idx))
+                    dstates, cv, aw, attn_v, lmfeat = self.decode_step(
+                        eouts[b:b + 1, :elens[b]],
+                        beam['dstates'], beam['cv'], y_emb,
+                        None,  # mask
+                        beam['aws'][-1], lmout)
                     if self.adaptive_softmax is None:
                         probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
                     else:
                         probs = self.adaptive_softmax.log_prob(attn_v.view(-1, attn_v.size(2)))
+
+                    # for the ensemble
+                    ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
+                    ensmbl_log_probs = 0.
+                    if n_models > 1:
+                        for i_e, dec in enumerate(ensmbl_decs):
+                            y_emb = dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx))
+                            ensmbl_dstate, cv_e, aw_e, attn_v_e, _ = dec.decode_step(
+                                ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
+                                beam['ensmbl_dstate'][i_e], beam['ensmbl_cv'], y_emb,
+                                None,  # mask
+                                beam['ensmbl_aws'][-1], lmout)
+
+                            ensmbl_dstate += [ensmbl_dstate]
+                            ensmbl_cv += [cv_e]
+                            ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi): unsqueeze?
+                            if dec.adaptive_softmax is None:
+                                ensmbl_log_probs += F.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
+                            else:
+                                ensmbl_log_probs += dec.adaptive_softmax.log_prob(attn_v_e.view(-1, attn_v_e.size(2)))
 
                     # Cache decoding
                     cache_ids = None
@@ -1215,17 +1216,10 @@ class RNNDecoder(DecoderBase):
                         local_scores_attn = torch.log(probs)
                     else:
                         local_scores_attn = probs  # NOTE: already log-scaled
-                    # Generate for the ensemble
+
+                    # Ensemble in log-scale
                     if n_models > 1:
-                        for i_e, dec in enumerate(ensmbl_decs):
-                            attn_v_e, _ = dec.generate(ensmbl_cv[i_e],
-                                                       ensmbl_dstate[i_e]['dout_gen'],
-                                                       lmout)
-                            if dec.adaptive_softmax is None:
-                                local_scores_attn += F.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
-                            else:
-                                local_scores_attn += dec.adaptive_softmax.log_prob(
-                                    attn_v_e.view(-1, attn_v_e.size(2))).unsqueeze(1)
+                        local_scores_attn += ensmbl_log_probs
                         local_scores_attn /= n_models
 
                     # Attention scores
@@ -1256,7 +1250,7 @@ class RNNDecoder(DecoderBase):
                     cp = 0.0
                     aw_mat = None
                     if cp_weight > 0:
-                        aw_mat = torch.stack(beam['aws'][1:] + [aw], dim=-1)  # `[B, T, len(hyp), n_heads]`
+                        aw_mat = torch.stack(beam['aws'][1:] + [aw], dim=-1)  # `[B, T, L, n_heads]`
                         aw_mat = aw_mat[:, :, :, 0]
                         if gnmt_decoding:
                             aw_mat = torch.log(aw_mat.sum(-1))
