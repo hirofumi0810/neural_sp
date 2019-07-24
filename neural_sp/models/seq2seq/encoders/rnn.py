@@ -100,7 +100,6 @@ class RNNEncoder(EncoderBase):
         self.bidirectional = True if rnn_type in ['blstm', 'bgru', 'conv_blstm', 'conv_bgru'] else False
         self.n_units = n_units
         self.n_dirs = 2 if self.bidirectional else 1
-        self.n_projs = n_projs
         self.n_layers = n_layers
 
         # Setting for hierarchical encoder
@@ -180,7 +179,7 @@ class RNNEncoder(EncoderBase):
         if rnn_type not in ['conv', 'tds', 'gated_conv']:
             # Fast implementation without processes between each layer
             self.fast_impl = False
-            if np.prod(subsample) == 1 and self.n_projs == 0 and not residual and n_layers_sub1 == 0 and not nin:
+            if np.prod(subsample) == 1 and n_projs == 0 and not residual and n_layers_sub1 == 0 and not nin:
                 self.fast_impl = True
                 if 'lstm' in rnn_type:
                     rnn = nn.LSTM
@@ -199,7 +198,7 @@ class RNNEncoder(EncoderBase):
                 self.rnn = nn.ModuleList()
                 self.dropout = nn.ModuleList()
                 self.proj = None
-                if self.n_projs > 0:
+                if n_projs > 0:
                     self.proj = nn.ModuleList()
 
                 # subsample
@@ -234,7 +233,7 @@ class RNNEncoder(EncoderBase):
                     self._output_dim = n_units * self.n_dirs
 
                     # Projection layer
-                    if n_projs > 0:
+                    if self.proj is not None:
                         if l != n_layers - 1:
                             self.proj += [Projection(n_units * self.n_dirs, n_projs)]
                             self._output_dim = n_projs
@@ -258,11 +257,11 @@ class RNNEncoder(EncoderBase):
                             self.bridge_sub2 = Linear(n_units, last_proj_dim)
 
                     # Network in network
-                    if nin is not None:
+                    if self.nin is not None:
                         if l != n_layers - 1:
-                            nin += [NiN(self._output_dim)]
+                            self.nin += [NiN(self._output_dim)]
                         else:
-                            nin += [lambda x: x]
+                            self.nin += [lambda x: x]
                         # if n_layers_sub1 > 0 or n_layers_sub2 > 0:
                         #     assert task_specific_layer
 
@@ -442,8 +441,8 @@ class MaxpoolSubsampler(nn.Module):
 
     def __init__(self, factor):
         super(MaxpoolSubsampler, self).__init__()
-        self.factor = factor
 
+        self.factor = factor
         if factor > 1:
             self.max_pool = nn.MaxPool2d((1, 1), stride=(factor, 1), ceil_mode=True)
 
@@ -466,6 +465,7 @@ class DropSubsampler(nn.Module):
 
     def __init__(self, factor):
         super(DropSubsampler, self).__init__()
+
         self.factor = factor
 
     def forward(self, xs, xlens):
@@ -483,8 +483,8 @@ class ConcatSubsampler(nn.Module):
 
     def __init__(self, factor, n_units, n_dirs):
         super(ConcatSubsampler, self).__init__()
-        self.factor = factor
 
+        self.factor = factor
         if factor > 1:
             self.proj = Linear(n_units * n_dirs * factor, n_units * n_dirs)
             self.batch_norm = nn.BatchNorm1d(n_units * n_dirs)
