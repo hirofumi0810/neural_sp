@@ -90,7 +90,7 @@ class MultiheadAttentionMechanism(nn.Module):
             klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, qlen, query_dim]`
-            mask (ByteTensor): `[B, n_heads, key, query]`
+            mask (ByteTensor): `[B, n_heads, klen, qlen]`
             aw_prev: dummy
             mode: dummy
         Returns:

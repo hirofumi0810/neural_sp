@@ -68,6 +68,8 @@ def set_asr_model_name(args, subsample_factor):
             dir_name += '_' + args.attn_type
             if args.attn_sigmoid:
                 dir_name += '_sig'
+            if args.attn_type == 'mocha':
+                dir_name += '_chunk' + str(args.mocha_chunk_size)
         if args.attn_n_heads > 1:
             dir_name += '_head' + str(args.attn_n_heads)
         if args.tie_embedding:

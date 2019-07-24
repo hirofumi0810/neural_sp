@@ -249,6 +249,7 @@ class Speech2Text(ModelBase):
                     mtl_per_batch=args.mtl_per_batch,
                     adaptive_softmax=args.adaptive_softmax,
                     param_init=args.param_init,
+                    mocha_chunk_size=args.mocha_chunk_size,
                     replace_sos=args.replace_sos,
                     soft_label_weight=args.soft_label_weight)
             setattr(self, 'dec_' + dir, dec)

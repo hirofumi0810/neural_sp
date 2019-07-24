@@ -143,11 +143,11 @@ class AttentionMechanism(nn.Module):
             # return cv, None
 
         elif self.attn_type == 'add':
-            query = query.expand_as(torch.zeros((bs, kmax, query.size(2))))
+            query = query.repeat([1, kmax, 1])
             e = self.v(torch.tanh(self.key + self.w_query(query)))
 
         elif self.attn_type == 'location':
-            query = query.expand_as(torch.zeros((bs, kmax, query.size(2))))
+            query = query.repeat([1, kmax, 1])
             conv_feat = self.conv(aw_prev.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, conv_out_channels, kmax]`
             conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, kmax, conv_out_channels]`
             e = self.v(torch.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat)))
@@ -162,7 +162,7 @@ class AttentionMechanism(nn.Module):
             e = torch.bmm(self.key, query.transpose(-2, -1))
 
         elif self.attn_type == 'luong_concat':
-            query = query.expand_as(torch.zeros((bs, kmax, query.size(2))))
+            query = query.repeat([1, kmax, 1])
             e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1))))
 
         # Compute attention weights, context vector

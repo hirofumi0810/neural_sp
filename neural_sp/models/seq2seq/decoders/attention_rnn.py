@@ -96,6 +96,7 @@ class RNNDecoder(DecoderBase):
         mtl_per_batch (bool):
         adaptive_softmax (bool):
         param_init (float):
+        mocha_chunk_size (int): chunk size for MoChA
         replace_sos (bool):
 
     """
@@ -147,6 +148,7 @@ class RNNDecoder(DecoderBase):
                  mtl_per_batch=False,
                  adaptive_softmax=False,
                  param_init=0.1,
+                 mocha_chunk_size=1,
                  replace_sos=False,
                  soft_label_weight=0.0):
 
@@ -223,12 +225,12 @@ class RNNDecoder(DecoderBase):
 
         if ctc_weight < global_weight:
             # Attention layer
-            if attn_type in ['mocha', 'monotonic']:
+            if attn_type == 'mocha':
                 assert attn_n_heads == 1
                 self.score = MoChA(key_dim=self.enc_n_units,
                                    query_dim=n_units if n_projs == 0 else n_projs,
                                    attn_dim=attn_dim,
-                                   window=1 if attn_type == 'monotonic' else 2,
+                                   window=mocha_chunk_size,
                                    init_r=-4)
             else:
                 if attn_n_heads > 1:
@@ -585,7 +587,7 @@ class RNNDecoder(DecoderBase):
             dec_in = attn_v if self.input_feeding else cv
             y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
             dstates, cv, aw, attn_v, lmfeat = self.decode_step(
-                eouts, dstates, dec_in, y_emb, mask, aw, lmout)
+                eouts, dstates, dec_in, y_emb, mask, aw, lmout, mode='parallel')
             if not self.training:
                 aws.append(aw.transpose(2, 1).unsqueeze(2))  # `[B, n_heads, 1, T]`
             logits.append(attn_v)

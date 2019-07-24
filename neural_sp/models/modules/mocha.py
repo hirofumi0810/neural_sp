@@ -18,7 +18,7 @@ NEG_INF = float(np.finfo(np.float32).min)
 
 
 class MoChA(nn.Module):
-    def __init__(self, key_dim, query_dim, attn_dim, window=1, init_r=-4):
+    def __init__(self, key_dim, query_dim, attn_dim, window, init_r=-4):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -39,6 +39,7 @@ class MoChA(nn.Module):
         super(MoChA, self).__init__()
 
         self.window = window
+        self.n_heads = 1
 
         # Monotonic energy
         self.w_key_mono = Linear(key_dim, attn_dim, bias=True)
@@ -60,6 +61,7 @@ class MoChA(nn.Module):
 
     def reset(self):
         self.key = None
+        self.key_chunk = None
         self.mask = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None, mode='parallel'):
@@ -72,10 +74,10 @@ class MoChA(nn.Module):
             query (FloatTensor): `[B, 1, query_dim]`
             mask (ByteTensor): `[B, qmax, kmax]`
             aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
-            mode (str): parallel/hard
+            mode (str): recursive/parallel/hard
         Return:
             cv (FloatTensor): `[B, 1, value_dim]`
-            aw_prev (FloatTensor): `[bs, kmax, 1 (n_heads)]`
+            aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
 
         """
         bs, kmax = key.size()[:2]
@@ -90,7 +92,7 @@ class MoChA(nn.Module):
             self.key = self.w_key_mono(key)
             self.mask = mask
             if self.window > 1:
-                raise NotImplementedError
+                self.key_chunk = self.w_key_chunk(key)
 
         # Compute monotonic energy
         query = query.repeat([1, kmax, 1])
@@ -101,21 +103,7 @@ class MoChA(nn.Module):
             e_mono = e_mono.masked_fill_(self.mask == 0, NEG_INF)
 
         if mode == 'recursive':  # training time
-            p_choose = torch.sigmoid(add_gaussian_noise(e_mono))  # `[B, kmax]`
             raise NotImplementedError
-
-            # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
-            # shifted_1_minus_p_choose = torch.cat([key.new_ones(bs, 1), 1 - p_choose[:, :-1]], dim=1)
-            # # Compute attention distribution recursively as
-            # # q[i] = (1 - p_choose[i])*q[i - 1] + aw_prev[i]
-            # # aw[i] = p_choose[i]*q[i]
-            # aw = p_choose * tf.transpose(tf.scan(
-            #     # Need to use reshape to remind TF of the shape between loop iterations
-            #     lambda x, yz: tf.reshape(yz[0] * x + yz[1], (bs,)),
-            #     # Loop variables yz[0] and yz[1]
-            #     [shifted_1_minus_p_choose.transpose(1, 0), aw_prev.squeeze(2).transpose(1, 0)],
-            #     # Initial value of x is just zeros
-            #     key.new_zeros(bs,)))
 
         elif mode == 'parallel':  # training time
             p_choose = torch.sigmoid(add_gaussian_noise(e_mono))  # `[B, kmax]`
@@ -124,6 +112,15 @@ class MoChA(nn.Module):
             # Compute recurrence relation solution
             aw = p_choose * cumprod_1_minus_p_choose * torch.cumsum(
                 aw_prev.squeeze(2) / torch.clamp(cumprod_1_minus_p_choose, min=1e-10, max=1.0), dim=1)
+
+            # Compute chunk energy
+            if self.window > 1:
+                e_chunk = self.v_chunk(torch.tanh(self.key_chunk + self.w_query_chunk(query)))
+                e_chunk = e_chunk + self.r_chunk  # `[B, kmax, 1 (n_heads)]`
+                e_chunk = e_chunk.squeeze(2)  # `[B, kmax]`
+                if self.mask is not None:
+                    e_chunk = e_chunk.masked_fill_(self.mask == 0, NEG_INF)
+                beta = efficient_chunkwise_attention(aw, e_chunk, self.window)
 
         elif mode == 'hard':  # test time
             # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
@@ -144,15 +141,15 @@ class MoChA(nn.Module):
             for i_b in range(bs):
                 if attended[i_b] == 0:
                     aw[i_b, -1] = 1
+            # Original paperによるとzero vector
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
 
-        # Compute chunk energy
-        if self.window > 1:
-            raise NotImplementedError
-
         # Compute context vector
-        cv = torch.bmm(aw.unsqueeze(1), value)
+        if self.window > 1:
+            cv = torch.bmm(beta.unsqueeze(1), value)
+        else:
+            cv = torch.bmm(aw.unsqueeze(1), value)
 
         return cv, aw.unsqueeze(2)
 
@@ -175,7 +172,7 @@ def exclusive_cumsum(xs):
 
 
 def exclusive_cumprod(xs):
-    """Exclusive cumulative product [a, b, c] => [1, a, a * b]
+    """Exclusive cumulative product [a, b, c] => [1, a, a * b].
 
     * TensorFlow: https://www.tensorflow.org/api_docs/python/tf/cumprod
     * PyTorch: https://discuss.pytorch.org/t/cumprod-exclusive-true-equivalences/2614
@@ -183,3 +180,47 @@ def exclusive_cumprod(xs):
     """
     assert len(xs.size()) == 2
     return torch.cumprod(torch.cat([xs.new_ones(xs.size(0), 1), xs], dim=1)[:, :-1], dim=1)
+
+
+def moving_sum(x, back, forward):
+    """Compute the moving sum of x over a window with the provided bounds.
+
+    Args:
+        x (FloatTensor): `[B, T]`
+        back (int):
+        forward (int):
+
+    Returns:
+        x_sum (FloatTensor): `[B, T]`
+    """
+    # Moving sum is computed as a carefully-padded 1D convolution with ones
+    x_padded = F.pad(x, pad=[back, forward])
+    # Add a "channel" dimension
+    x_padded = x_padded.unsqueeze(1)  # `[B, 1, back + T + forward]`
+    # Construct filters
+    filters = x.new_ones(1, 1, back + forward + 1)
+    x_sum = F.conv1d(x_padded, filters)
+    # Remove channel dimension
+    return x_sum.squeeze(1)
+
+
+def efficient_chunkwise_attention(alpha, u, chunk_size):
+    """Compute chunkwise attention distribution efficiently by clipping logits (training).
+
+    Args:
+        alpha (FloatTensor): emission probability in monotonic attention, `[B, T]`
+        u (FloatTensor): chunk energy, `[B, T]`
+        chunk_size (int): window size of chunk
+    Return
+        beta (FloatTensor): MoChA weights, `[B, T]`
+
+    """
+    # Shift logits to avoid overflow
+    u -= torch.max(u, dim=1, keepdim=True)[0]
+    # Limit the range for numerical stability
+    softmax_exp = torch.clamp(torch.exp(u), min=1e-5)
+    # Compute chunkwise softmax denominators
+    softmax_denominators = moving_sum(softmax_exp, back=chunk_size - 1, forward=0)
+    # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
+    beta = softmax_exp * moving_sum(alpha / softmax_denominators, back=0, forward=chunk_size - 1)
+    return beta
