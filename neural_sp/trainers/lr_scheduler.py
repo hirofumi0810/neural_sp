@@ -151,9 +151,13 @@ class LRScheduler(object):
                     self.not_improved_n_epochs = 0
                     self.lr *= self.decay_rate
                     self._reduce_lr()
+                    logger.info('Epoch %d: reducing learning rate to %.7f'
+                                % (self._epoch, self.lr))
             elif self.decay_type == 'always':
                 self.lr *= self.decay_rate
                 self._reduce_lr()
+                logger.info('Epoch %d: reducing learning rate to %.7f'
+                            % (self._epoch, self.lr))
 
     def _reduce_lr(self):
         """Reduce learning rate."""
@@ -162,8 +166,6 @@ class LRScheduler(object):
                 param_group['eps'] = self.lr
             else:
                 param_group['lr'] = self.lr
-        logger.info('Epoch %d: reducing learning rate to %.5f'
-                    % (self._epoch, self.lr))
 
     def state_dict(self):
         """Returns the state of the scheduler as a :class:`dict`.
