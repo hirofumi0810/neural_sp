@@ -176,6 +176,8 @@ class RNNEncoder(EncoderBase):
             self._output_dim = input_dim * n_splices * n_stacks
             self.conv = None
 
+        self.padding = Padding()
+
         if rnn_type not in ['conv', 'tds', 'gated_conv']:
             # Fast implementation without processes between each layer
             self.fast_impl = False
@@ -235,10 +237,8 @@ class RNNEncoder(EncoderBase):
                     # Projection layer
                     if self.proj is not None:
                         if l != n_layers - 1:
-                            self.proj += [Projection(n_units * self.n_dirs, n_projs)]
+                            self.proj += [Linear(n_units * self.n_dirs, n_projs)]
                             self._output_dim = n_projs
-                        else:
-                            self.proj += [lambda x: x]
 
                     # Task specific layer
                     if l == n_layers_sub1 - 1 and task_specific_layer:
@@ -260,8 +260,6 @@ class RNNEncoder(EncoderBase):
                     if self.nin is not None:
                         if l != n_layers - 1:
                             self.nin += [NiN(self._output_dim)]
-                        else:
-                            self.nin += [lambda x: x]
                         # if n_layers_sub1 > 0 or n_layers_sub2 > 0:
                         #     assert task_specific_layer
 
@@ -327,14 +325,12 @@ class RNNEncoder(EncoderBase):
 
         if self.fast_impl:
             self.rnn.flatten_parameters()  # for multi-GPUs
-            self.padding = Padding()
             xs = self.padding(xs, xlens, self.rnn)
             xs = self.dropout_top(xs)
         else:
             residual = None
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
-                self.padding = Padding()
                 xs = self.padding(xs, xlens, self.rnn[l])
                 xs = self.dropout[l](xs)
 
@@ -375,7 +371,7 @@ class RNNEncoder(EncoderBase):
                 if l != self.n_layers - 1:
                     # Projection layer
                     if self.proj is not None:
-                        xs = self.proj[l](xs)
+                        xs = torch.tanh(self.proj[l](xs))
 
                     # Subsampling
                     if self.subsample is not None:
@@ -421,19 +417,6 @@ class Padding(nn.Module):
         xs, _ = rnn(xs, hx=None)
         xs = pad_packed_sequence(xs, batch_first=True)[0]
         return xs
-
-
-class Projection(nn.Module):
-    """Projection variable length of sequences."""
-
-    def __init__(self, input_dim, output_dim, non_linear=torch.tanh):
-        super(Projection, self).__init__()
-
-        self.proj = Linear(input_dim, output_dim)
-        self.non_linear = non_linear
-
-    def forward(self, xs, xlens, rnn):
-        return self.non_linear(self.proj(xs))
 
 
 class MaxpoolSubsampler(nn.Module):
