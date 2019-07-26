@@ -179,10 +179,8 @@ def main():
 
     # GPU setting
     if args.n_gpus >= 1:
-        model = CustomDataParallel(model,
-                                   device_ids=list(range(0, args.n_gpus, 1)),
-                                   deterministic=False,
-                                   benchmark=True)
+        torch.backends.cudnn.benchmark = True
+        model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
         model.cuda()
 
     # Set process name
@@ -205,11 +203,7 @@ def main():
         accum_n_tokens += sum([len(y) for y in ys_train])
         optimizer.zero_grad()
         loss, hidden, reporter = model(ys_train, hidden, reporter)
-        # loss /= args.accum_grad_n_steps
-        if len(model.device_ids) > 1:
-            loss.backward(torch.ones(len(model.device_ids)))
-        else:
-            loss.backward()
+        loss.backward()
         loss.detach()  # Trancate the graph
         if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
             if args.clip_grad_norm > 0:

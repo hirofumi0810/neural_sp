@@ -159,6 +159,8 @@ def set_asr_model_name(args, subsample_factor):
     if args.teacher_lm:
         dir_name += '_lmKD' + str(args.soft_label_weight)
 
+    if args.n_gpus > 1:
+        dir_name += '_' + str(args.n_gpus) + 'GPU'
     return dir_name
 
 

@@ -13,7 +13,7 @@ from __future__ import print_function
 import argparse
 import copy
 import cProfile
-import editdistance
+# import editdistance
 import numpy as np
 import os
 from setproctitle import setproctitle
@@ -62,11 +62,6 @@ def main():
             if k != 'resume':
                 setattr(args, k, v)
     recog_params = vars(args)
-
-    # Automatically reduce batch size in multi-GPU setting
-    if args.n_gpus > 1:
-        args.batch_size -= 10
-        args.print_step //= args.n_gpus
 
     # Compute subsampling factor
     subsample_factor = 1
@@ -317,10 +312,8 @@ def main():
 
     # GPU setting
     if args.n_gpus >= 1:
-        model = CustomDataParallel(model,
-                                   device_ids=list(range(0, args.n_gpus, 1)),
-                                   deterministic=False,
-                                   benchmark=True)
+        torch.backends.cudnn.benchmark = True
+        model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
         model.cuda()
         if teacher is not None:
             teacher.cuda()
@@ -375,11 +368,7 @@ def main():
             else:
                 loss, reporter = model(batch_train, reporter, task,
                                        teacher=teacher, teacher_lm=teacher_lm)
-            # loss /= args.accum_grad_n_steps
-            if len(model.device_ids) > 1:
-                loss.backward(torch.ones(len(model.device_ids)))
-            else:
-                loss.backward()
+            loss.backward()
             loss.detach()  # Trancate the graph
             if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
                 if args.clip_grad_norm > 0:
@@ -416,21 +405,22 @@ def main():
                     loss, reporter = model(batch_dev, reporter, task, is_eval=True)
                 loss_dev = loss.item()
                 del loss
+            # NOTE: this makes training slow
             # Compute WER/CER regardless of the output unit (greedy decoding)
-            best_hyps_id, _, _ = model.module.decode(
-                batch_dev['xs'], recog_params, dev_set.idx2token[0], exclude_eos=True)
-            cer = 0.
-            ref_n_words, ref_n_chars = 0, 0
-            for b in range(len(batch_dev['xs'])):
-                ref = batch_dev['text'][b]
-                hyp = dev_set.idx2token[0](best_hyps_id[b])
-                cer += editdistance.eval(hyp, ref)
-                ref_n_words += len(ref.split())
-                ref_n_chars += len(ref)
-            wer = cer / ref_n_words
-            cer /= ref_n_chars
-            reporter.add_tensorboard_scalar('dev/WER', wer)
-            reporter.add_tensorboard_scalar('dev/CER', cer)
+            # best_hyps_id, _, _ = model.module.decode(
+            #     batch_dev['xs'], recog_params, dev_set.idx2token[0], exclude_eos=True)
+            # cer = 0.
+            # ref_n_words, ref_n_chars = 0, 0
+            # for b in range(len(batch_dev['xs'])):
+            #     ref = batch_dev['text'][b]
+            #     hyp = dev_set.idx2token[0](best_hyps_id[b])
+            #     cer += editdistance.eval(hyp, ref)
+            #     ref_n_words += len(ref.split())
+            #     ref_n_chars += len(ref)
+            # wer = cer / ref_n_words
+            # cer /= ref_n_chars
+            # reporter.add_tensorboard_scalar('dev/WER', wer)
+            # reporter.add_tensorboard_scalar('dev/CER', cer)
             # logger.info('WER (dev)', wer)
             # logger.info('CER (dev)', cer)
             reporter.step(is_eval=True)
