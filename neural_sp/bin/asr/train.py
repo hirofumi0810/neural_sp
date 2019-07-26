@@ -13,6 +13,7 @@ from __future__ import print_function
 import argparse
 import copy
 import cProfile
+import editdistance
 import numpy as np
 import os
 from setproctitle import setproctitle
@@ -332,7 +333,7 @@ def main():
     setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
-    reporter = Reporter(save_path, tensorboard=True)
+    reporter = Reporter(save_path)
 
     if args.mtl_per_batch:
         # NOTE: from easier to harder tasks
@@ -372,7 +373,7 @@ def main():
                                        ys_next=batch_train['ys_next'],
                                        reporter=reporter)
             else:
-                loss, reporter = model(batch_train, reporter=reporter, task=task,
+                loss, reporter = model(batch_train, reporter, task,
                                        teacher=teacher, teacher_lm=teacher_lm)
             # loss /= args.accum_grad_n_steps
             if len(model.device_ids) > 1:
@@ -382,12 +383,22 @@ def main():
             loss.detach()  # Trancate the graph
             if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
                 if args.clip_grad_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
+                    total_norm = torch.nn.utils.clip_grad_norm_(
+                        model.module.parameters(), args.clip_grad_norm)
+                    reporter.add_tensorboard_scalar('total_norm', total_norm)
                 optimizer.step()
+                # NOTE: this makes training very slow
+                # for n, p in model.module.named_parameters():
+                #     if p.grad is not None:
+                #         n = n.replace('.', '/')
+                #         reporter.add_tensorboard_histogram(n, p.data.cpu().numpy())
+                #         reporter.add_tensorboard_histogram(n + '/grad', p.grad.data.cpu().numpy())
                 optimizer.zero_grad()
                 accum_n_tokens = 0
             loss_train = loss.item()
             del loss
+        reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
+        # NOTE: loss/acc/ppl are already added in the model
         reporter.step()
 
         if optimizer.n_steps % args.print_step == 0:
@@ -402,10 +413,26 @@ def main():
                                            reporter=reporter,
                                            is_eval=True)
                 else:
-                    loss, reporter = model(batch_dev, reporter=reporter, task=task,
-                                           is_eval=True)
+                    loss, reporter = model(batch_dev, reporter, task, is_eval=True)
                 loss_dev = loss.item()
                 del loss
+            # Compute WER/CER regardless of the output unit (greedy decoding)
+            best_hyps_id, _, _ = model.module.decode(
+                batch_dev['xs'], recog_params, dev_set.idx2token[0], exclude_eos=True)
+            cer = 0.
+            ref_n_words, ref_n_chars = 0, 0
+            for b in range(len(batch_dev['xs'])):
+                ref = batch_dev['text'][b]
+                hyp = dev_set.idx2token[0](best_hyps_id[b])
+                cer += editdistance.eval(hyp, ref)
+                ref_n_words += len(ref.split())
+                ref_n_chars += len(ref)
+            wer = cer / ref_n_words
+            cer /= ref_n_chars
+            reporter.add_tensorboard_scalar('dev/WER', wer)
+            reporter.add_tensorboard_scalar('dev/CER', cer)
+            # logger.info('WER (dev)', wer)
+            # logger.info('CER (dev)', cer)
             reporter.step(is_eval=True)
 
             duration_step = time.time() - start_time_step
@@ -494,8 +521,7 @@ def main():
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.2f hour' % (duration_train / 3600))
 
-    if reporter.tensorboard:
-        reporter.tf_writer.close()
+    reporter.tf_writer.close()
     pbar_epoch.close()
 
     return save_path

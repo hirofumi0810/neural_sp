@@ -346,7 +346,7 @@ class Speech2Text(ModelBase):
                 for dir_sub in directions:
                     getattr(self, 'dec_' + dir_sub + '_' + sub).start_scheduled_sampling()
 
-    def forward(self, batch, reporter=None, task='all', is_eval=False,
+    def forward(self, batch, reporter, task='all', is_eval=False,
                 teacher=None, teacher_lm=None):
         """Forward computation.
 
@@ -474,9 +474,7 @@ class Speech2Text(ModelBase):
                 observation['acc.lmobj-' + sub] = obs_fwd_sub['acc_lmobj']
                 observation['ppl.lmobj-' + sub] = obs_fwd_sub['ppl_lmobj']
 
-        if reporter is not None:
-            is_eval = not self.training
-            reporter.add(observation, is_eval)
+        reporter.add(observation, is_eval=not self.training)
 
         return loss, reporter
 

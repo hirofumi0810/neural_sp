@@ -33,16 +33,14 @@ class Reporter(object):
 
     Args:
         save_path (str):
-        tensorboard (bool): use tensorboard logging
 
     """
 
-    def __init__(self, save_path, tensorboard=True):
+    def __init__(self, save_path):
         self.save_path = save_path
-        self.tensorboard = tensorboard
 
-        if tensorboard:
-            self.tf_writer = SummaryWriter(save_path)
+        # tensorboard
+        self.tf_writer = SummaryWriter(save_path)
 
         # report per step
         self._step = 0
@@ -90,17 +88,18 @@ class Reporter(object):
                 self.observation_dev[metric][name].append(v)
                 logger.info('%s (dev): %.3f' % (k, v))
 
-                # Logging by tensorboard
-                if self.tensorboard:
-                    if not is_eval:
-                        self.tf_writer.add_scalar('train/' + metric + '/' + name, v, self._step)
-                    else:
-                        self.tf_writer.add_scalar('dev/' + metric + '/' + name, v, self._step)
-                # for n, p in model.module.named_parameters():
-                #     n = n.replace('.', '/')
-                #     if p.grad is not None:
-                #         tf_writer.add_histogram(n, p.data.cpu().numpy(), self._step + 1)
-                #         tf_writer.add_histogram(n + '/grad', p.grad.data.cpu().numpy(), self._step + 1)
+            if is_eval:
+                self.add_tensorboard_scalar('train' + '/' + metric + '/' + name, v)
+            else:
+                self.add_tensorboard_scalar('dev' + '/' + metric + '/' + name, v)
+
+    def add_tensorboard_scalar(self, key, value):
+        """Add scalar value to tensorboard."""
+        self.tf_writer.add_scalar(key, value, self._step)
+
+    def add_tensorboard_histogram(self, key, value):
+        """Add histogram value to tensorboard."""
+        self.tf_writer.add_histogram(key, value, self._step)
 
     def step(self, is_eval=False):
         self._step += 1

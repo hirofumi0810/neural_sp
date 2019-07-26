@@ -191,7 +191,7 @@ def main():
     setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
-    reporter = Reporter(save_path, tensorboard=True)
+    reporter = Reporter(save_path)
 
     hidden = None
     start_time_train = time.time()
@@ -213,13 +213,17 @@ def main():
         loss.detach()  # Trancate the graph
         if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
             if args.clip_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(model.module.parameters(), args.clip_grad_norm)
+                total_norm = torch.nn.utils.clip_grad_norm_(
+                    model.module.parameters(), args.clip_grad_norm)
+                reporter.add_tensorboard_scalar('total_norm', total_norm)
             optimizer.step()
             optimizer.zero_grad()
             accum_n_tokens = 0
         loss_train = loss.item()
         del loss
         hidden = model.module.repackage_state(hidden)
+        reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
+        # NOTE: loss/acc/ppl are already added in the model
         reporter.step()
 
         if optimizer.n_steps % args.print_step == 0:
@@ -313,8 +317,7 @@ def main():
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.2f hour' % (duration_train / 3600))
 
-    if reporter.tensorboard:
-        reporter.tf_writer.close()
+    reporter.tf_writer.close()
     pbar_epoch.close()
 
     return save_path
