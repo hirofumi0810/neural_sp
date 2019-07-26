@@ -935,9 +935,9 @@ class RNNDecoder(DecoderBase):
             if refs_id is not None and self.vocab == idx2token.vocab:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
             if self.bwd:
-                logger.info('Hyp: %s' % idx2token(hyps[1:][::-1]))
+                logger.info('Hyp: %s' % idx2token(hyps[b][1:][::-1]))
             else:
-                logger.info('Hyp: %s' % idx2token(hyps[1:]))
+                logger.info('Hyp: %s' % idx2token(hyps[b][1:]))
 
         return hyps, aws
 
