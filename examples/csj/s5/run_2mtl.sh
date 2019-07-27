@@ -30,14 +30,14 @@ pretrained_model=
 #     n_epochs=20
 #     convert_to_sgd_epoch=15
 #     print_step=600
-#     decay_start_epoch=5
-#     decay_rate=0.8
+#     lr_decay_start_epoch=5
+#     lr_decay_rate=0.8
 # elif [ ${n_freq_masks} != 0 ] || [ ${n_time_masks} != 0 ]; then
 #     n_epochs=50
 #     convert_to_sgd_epoch=50
 #     print_step=400
-#     decay_start_epoch=15
-#     decay_rate=0.9
+#     lr_decay_start_epoch=15
+#     lr_decay_rate=0.9
 # fi
 
 ### path to save the model
@@ -84,11 +84,11 @@ if [ -z ${gpu} ]; then
 fi
 n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 
-train_set=train_${datasize}
+train_set=train_nodev_${datasize}
 dev_set=dev_${datasize}
 test_set="eval1 eval2 eval3"
 if [ ${speed_perturb} = true ]; then
-    train_set=train_sp_${datasize}
+    train_set=train_sp_nodev_${datasize}
     dev_set=dev_sp_${datasize}
     test_set="eval1_sp eval2_sp eval3_sp"
 fi
@@ -121,7 +121,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${datasize} ]; then
     done
 
     # Remove <sp> and POS tag, and lowercase
-    for x in ${train_set} ${test_set}; do
+    for x in train_${datasize} ${test_set}; do
         local/remove_pos.py ${data}/${x}/text | nkf -Z > ${data}/${x}/text.tmp
         mv ${data}/${x}/text.tmp ${data}/${x}/text
     done
@@ -140,9 +140,9 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     done
 
     # Use the first 4k sentences from training data as dev set. (39 speakers.)
-    utils/subset_data_dir.sh --first ${data}/${train_set} 4000 ${data}/${dev_set} || exit 1;  # 6hr 31min
-    n=$[$(cat ${data}/${train_set}/segments | wc -l) - 4000]
-    utils/subset_data_dir.sh --last ${data}/${train_set} ${n} ${data}/${train_set}.tmp || exit 1;
+    utils/subset_data_dir.sh --first ${data}/train_${datasize} 4000 ${data}/${dev_set} || exit 1;  # 6hr 31min
+    n=$[$(cat ${data}/train_${datasize}/segments | wc -l) - 4000]
+    utils/subset_data_dir.sh --last ${data}/train_${datasize} ${n} ${data}/${train_set}.tmp || exit 1;
 
     # Finally, the full training set:
     utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/${train_set} || exit 1;  # 233hr 36min
@@ -150,7 +150,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
 
     if [ ${speed_perturb} = true ]; then
         # speed-perturbed
-        speed_perturb_3way.sh ${data} train_${datasize} ${train_set}
+        speed_perturb_3way.sh ${data} train_nodev_${datasize} ${train_set}
 
         cp -rf ${data}/dev ${data}/${dev_set}
         cp -rf ${data}/eval1 ${data}/eval1_sp
@@ -162,7 +162,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 1200 \
+    dump_feat.sh --cmd "$train_cmd" --nj 80 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
     dump_feat.sh --cmd "$train_cmd" --nj 32 \
         ${data}/${dev_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${dev_set} ${data}/dump/${dev_set} || exit 1;
@@ -308,5 +308,5 @@ if [ ${stage} -le 4 ]; then
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 
-    echo "Finish model training (stage: 4)."
+    echo "Finish ASR model training (stage: 4)."
 fi
