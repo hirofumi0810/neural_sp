@@ -82,11 +82,11 @@ fi
 n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 lm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
-train_set=train_${datasize}
+train_set=train_nodev_${datasize}
 dev_set=dev
 test_set="eval2000"
 if [ ${speed_perturb} = true ]; then
-    train_set=train_sp_${datasize}
+    train_set=train_nodev_sp_${datasize}
     dev_set=dev_sp
     test_set="eval2000_sp"
 fi
@@ -96,6 +96,10 @@ if [ ${unit} = char ] || [ ${unit} = phone ]; then
 fi
 if [ ${unit} != wp ]; then
     wp_type=
+fi
+
+if [ ${datasize} = fisher_swbd ]; then
+    asr_conf=conf/asr/rnn_seq2seq_fisher_swbd.yaml
 fi
 
 if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
@@ -127,10 +131,9 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     [ ! -z ${RT03_PATH} ] && local/rt03_data_prep.sh ${RT03_PATH}
 
     # upsample audio from 8k to 16k
-    # for x in train eval2000 rt03; do
-    for x in train_swbd train_fisher eval2000; do
-        sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" ${data}/${x}/wav.scp
-    done
+    # for x in train_swbd train_fisher eval2000 rt03; do
+    #     sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" ${data}/${x}/wav.scp
+    # done
 
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
@@ -140,29 +143,30 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in train_${datasize} ${test_set}; do
+    for x in train_swbd eval2000; do
         steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
             ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+        utils/fix_data_dir.sh ${data}/${x}
     done
 
     # Use the first 4k sentences as dev set.
-    utils/subset_data_dir.sh --first ${data}/${train_set} 4000 ${data}/${dev_set} || exit 1;  # 5hr 6min
-    n=$[$(cat ${data}/${train_set}/segments | wc -l) - 4000]
-    utils/subset_data_dir.sh --last ${data}/${train_set} ${n} ${data}/${train_set}.tmp || exit 1;
+    utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/${dev_set} || exit 1;  # 5hr 6min
+    n=$[$(cat ${data}/train_swbd/segments | wc -l) - 4000]
+    utils/subset_data_dir.sh --last ${data}/train_swbd ${n} ${data}/${train_set}.tmp || exit 1;
 
     # Finally, the full training set:
-    utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/${train_set} || exit 1;  # 286hr
+    utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/train_nodev_swbd || exit 1;  # 286hr
     rm -rf ${data}/*.tmp
 
     if [ ${datasize} = fisher_swbd ]; then
         steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
             ${data}/train_fisher ${data}/log/make_fbank/train_fisher ${data}/fbank || exit 1;
-        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_swbd ${data}/train_fisher || exit 1;
+        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_nodev_swbd ${data}/train_fisher || exit 1;
     fi
 
     if [ ${speed_perturb} = true ]; then
         # speed-perturbed
-        speed_perturb_3way.sh ${data} train_${datasize} ${train_set}
+        speed_perturb_3way.sh ${data} train_dev_${datasize} ${train_set}
 
         cp -rf ${data}/dev ${data}/${dev_set}
         cp -rf ${data}/eval2000 ${data}/${test_set}
@@ -172,7 +176,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 1200 \
+    dump_feat.sh --cmd "$train_cmd" --nj 80 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
     for x in ${dev_set} ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
