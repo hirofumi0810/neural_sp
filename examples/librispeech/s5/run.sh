@@ -42,14 +42,14 @@ pretrained_model=
 #     n_epochs=20
 #     convert_to_sgd_epoch=15
 #     print_step=1500
-#     decay_start_epoch=5
-#     decay_rate=0.8
+#     lr_decay_start_epoch=5
+#     lr_decay_rate=0.8
 # elif [ ${n_freq_masks} != 0 ] || [ ${n_time_masks} != 0 ]; then
 #     n_epochs=50
 #     convert_to_sgd_epoch=50
 #     print_step=1000
-#     decay_start_epoch=20
-#     decay_rate=0.9
+#     lr_decay_start_epoch=20
+#     lr_decay_rate=0.9
 # fi
 
 #########################
@@ -187,7 +187,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
     # Apply global CMVN & dump features
-    dump_feat.sh --cmd "$train_cmd" --nj 2400 \
+    dump_feat.sh --cmd "$train_cmd" --nj 80 \
         ${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${train_set} ${data}/dump/${train_set} || exit 1;
     for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
@@ -271,7 +271,7 @@ if [ ${stage} -le 3 ]; then
 
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
-        for x in train_${lm_datasize} dev_${lm_datasize}; do
+        for x in train_${lm_datasize} dev_clean_${lm_datasize}; do
             if [ ${lm_datasize} = ${datasize} ]; then
                 cp ${data}/dataset/${x}_${unit}${wp_type}${vocab}.tsv \
                     ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
@@ -329,7 +329,7 @@ if [ ${stage} -le 4 ]; then
         --config ${asr_conf} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --unit ${unit} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
