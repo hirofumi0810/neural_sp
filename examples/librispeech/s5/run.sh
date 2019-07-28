@@ -271,13 +271,13 @@ if [ ${stage} -le 3 ]; then
 
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
-        for x in train_${lm_datasize} dev_clean_${lm_datasize}; do
+        for x in train dev_clean dev_other test_clean test_other; do
             if [ ${lm_datasize} = ${datasize} ]; then
-                cp ${data}/dataset/${x}_${unit}${wp_type}${vocab}.tsv \
-                    ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                cp ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv \
+                    ${data}/dataset_lm/${x}_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
             else
                 make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-                    ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                    ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
             fi
         done
 
@@ -307,7 +307,7 @@ if [ ${stage} -le 3 ]; then
         --config ${lm_conf} \
         --n_gpus 1 \
         --train_set ${lm_train_set} \
-        --dev_set ${data}/dataset_lm/dev_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/dev_clean_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
         --unit ${unit} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
