@@ -11,7 +11,7 @@ subsample: "1_2_2_2_1"
 enc_type: blstm
 enc_n_units: 512
 enc_n_projs: 0
-enc_n_layers: 5
+enc_n_layers: 6
 enc_nin: false
 subsample_type: drop
 attn_type: location
@@ -26,11 +26,11 @@ emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 30
+batch_size: 50
 optimizer: adam
 n_epochs: 25
 convert_to_sgd_epoch: 20
-print_step: 100
+print_step: 1000
 metric: edit_distance
 lr: 1e-3
 lr_decay_type: always
@@ -47,9 +47,9 @@ param_init: 0.1
 ### regularization
 clip_grad_norm: 5.0
 dropout_in: 0.0
-dropout_enc: 0.4
-dropout_dec: 0.4
-dropout_emb: 0.4
+dropout_enc: 0.2
+dropout_dec: 0.2
+dropout_emb: 0.2
 dropout_att: 0.0
 weight_decay: 1e-6
 ss_prob: 0.2
@@ -69,3 +69,5 @@ lm_fusion: ''
 lm_init: ''
 lmobj_weight: 0.0
 share_lm_softmax: false
+# contextualization
+discourse_aware: ''

@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 gpu=
 speed_perturb=false
+spec_augment=false
 stdout=false
 
 ### vocabulary
@@ -24,21 +25,9 @@ vocab_sub1=
 # ASR configuration
 #########################
 asr_conf=conf/asr/rnn_seq2seq_2mtl.yaml
+asr_conf2=
 pretrained_model=
 
-# if [ ${speed_perturb} = true ]; then
-#     n_epochs=20
-#     convert_to_sgd_epoch=15
-#     print_step=600
-#     lr_decay_start_epoch=5
-#     lr_decay_rate=0.8
-# elif [ ${n_freq_masks} != 0 ] || [ ${n_time_masks} != 0 ]; then
-#     n_epochs=50
-#     convert_to_sgd_epoch=50
-#     print_step=400
-#     lr_decay_start_epoch=15
-#     lr_decay_rate=0.9
-# fi
 
 ### path to save the model
 model=/n/sd3/inaguma/result/csj
@@ -76,6 +65,12 @@ datasize=all
 set -e
 set -u
 set -o pipefail
+
+if [ ${speed_perturb} = true ]; then
+    asr_conf2=conf/asr/speed_perturb.yaml
+elif [ ${spec_augment} = true ]; then
+    asr_conf2=conf/asr/spec_augment.yaml
+fi
 
 if [ -z ${gpu} ]; then
     echo "Error: set GPU number." 1>&2

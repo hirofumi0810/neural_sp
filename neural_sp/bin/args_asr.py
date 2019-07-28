@@ -15,6 +15,7 @@ def parse():
         config_file_parser_class=configargparse.YAMLConfigFileParser,
         formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
     parser.add('--config', is_config_file=True, help='config file path')
+    parser.add('--config2', is_config_file=True, help='another config file path to overwrite --config')
     # general
     parser.add_argument('--corpus', type=str,
                         help='corpus name')

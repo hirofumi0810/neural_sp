@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 gpu=
 speed_perturb=false
+spec_augment=false
 stdout=false
 
 ### vocabulary
@@ -21,6 +22,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 # ASR configuration
 #########################
 asr_conf=conf/asr/rnn_seq2seq.yaml
+asr_conf2=
 pretrained_model=
 
 # TDS
@@ -37,20 +39,6 @@ pretrained_model=
 # conv_channels="200_220_242_266_292_321_353_388_426_468_514_565_621_683_751_826_908"
 # conv_kernel_sizes="(13,1)_(14,1)_(15,1)_(16,1)_(17,1)_(18,1)_(19,1)_(20,1)_(21,1)_(22,1)_(23,1)_(24,1)_(25,1)_(26,1)_(27,1)_(28,1)_(29,1)"
 # subsample="1_1_1_1_1"
-
-# if [ ${speed_perturb} = true ]; then
-#     n_epochs=20
-#     convert_to_sgd_epoch=15
-#     print_step=1500
-#     lr_decay_start_epoch=5
-#     lr_decay_rate=0.8
-# elif [ ${n_freq_masks} != 0 ] || [ ${n_time_masks} != 0 ]; then
-#     n_epochs=50
-#     convert_to_sgd_epoch=50
-#     print_step=1000
-#     lr_decay_start_epoch=20
-#     lr_decay_rate=0.9
-# fi
 
 #########################
 # LM configuration
@@ -85,6 +73,12 @@ use_external_text=true
 set -e
 set -u
 set -o pipefail
+
+if [ ${speed_perturb} = true ]; then
+    asr_conf2=conf/asr/speed_perturb.yaml
+elif [ ${spec_augment} = true ]; then
+    asr_conf2=conf/asr/spec_augment.yaml
+fi
 
 if [ -z ${gpu} ]; then
     echo "Error: set GPU number." 1>&2
@@ -301,6 +295,10 @@ if [ ${stage} -le 3 ]; then
         lm_train_set="${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv"
     fi
 
+    lm_test_set="${data}/dataset_lm/dev_other_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/test_clean_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/test_other_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv"
+
     # NOTE: support only a single GPU for LM training
     CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus librispeech \
@@ -308,6 +306,7 @@ if [ ${stage} -le 3 ]; then
         --n_gpus 1 \
         --train_set ${lm_train_set} \
         --dev_set ${data}/dataset_lm/dev_clean_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --eval_sets ${lm_test_set} \
         --unit ${unit} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
@@ -327,6 +326,7 @@ if [ ${stage} -le 4 ]; then
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus librispeech \
         --config ${asr_conf} \
+        --config2 ${asr_conf2} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
@@ -338,5 +338,5 @@ if [ ${stage} -le 4 ]; then
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 
-    echo "Finish model training (stage: 4)."
+    echo "Finish ASR model training (stage: 4)."
 fi

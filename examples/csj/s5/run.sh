@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 gpu=
 speed_perturb=false
+spec_augment=false
 stdout=false
 
 ### vocabulary
@@ -21,21 +22,8 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 # ASR configuration
 #########################
 asr_conf=conf/asr/rnn_seq2seq.yaml
+asr_conf2=
 pretrained_model=
-
-# if [ ${speed_perturb} = true ]; then
-#     n_epochs=20
-#     convert_to_sgd_epoch=15
-#     print_step=600
-#     lr_decay_start_epoch=5
-#     lr_decay_rate=0.8
-# elif [ ${n_freq_masks} != 0 ] || [ ${n_time_masks} != 0 ]; then
-#     n_epochs=50
-#     convert_to_sgd_epoch=50
-#     print_step=400
-#     lr_decay_start_epoch=15
-#     lr_decay_rate=0.9
-# fi
 
 #########################
 # LM configuration
@@ -84,6 +72,12 @@ set -e
 set -u
 set -o pipefail
 
+if [ ${speed_perturb} = true ]; then
+    asr_conf2=conf/asr/speed_perturb.yaml
+elif [ ${spec_augment} = true ]; then
+    asr_conf2=conf/asr/spec_augment.yaml
+fi
+
 if [ -z ${gpu} ]; then
     echo "Error: set GPU number." 1>&2
     echo "Usage: ./run.sh --gpu 0" 1>&2
@@ -96,7 +90,7 @@ train_set=train_nodev_${datasize}
 dev_set=dev_${datasize}
 test_set="eval1 eval2 eval3"
 if [ ${speed_perturb} = true ]; then
-    train_set=train_sp_nodev_${datasize}
+    train_set=train_nodev_sp_${datasize}
     dev_set=dev_sp_${datasize}
     test_set="eval1_sp eval2_sp eval3_sp"
 fi
@@ -134,7 +128,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in train_${datasize} ${test_set}; do
+    for x in train_${datasize} eval1 eval2 eval3; do
         steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
             ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
     done
@@ -152,7 +146,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
         # speed-perturbed
         speed_perturb_3way.sh ${data} train_nodev_${datasize} ${train_set}
 
-        cp -rf ${data}/dev ${data}/${dev_set}
+        cp -rf ${data}/dev_${datasize} ${data}/${dev_set}
         cp -rf ${data}/eval1 ${data}/eval1_sp
         cp -rf ${data}/eval2 ${data}/eval2_sp
         cp -rf ${data}/eval3 ${data}/eval3_sp
@@ -240,7 +234,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
 fi
 
 mkdir -p ${model}
-if [ ${stage} -le 3 ]; then
+if [ ${stage} -le 3 ] && [ ${speed_perturb} = false ]; then
     echo ============================================================================
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
@@ -296,6 +290,7 @@ if [ ${stage} -le 4 ]; then
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus csj \
         --config ${asr_conf} \
+        --config2 ${asr_conf2} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \

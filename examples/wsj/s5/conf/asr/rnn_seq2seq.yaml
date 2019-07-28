@@ -56,17 +56,11 @@ ss_prob: 0.2
 ss_type: constant
 lsm_prob: 0.1
 focal_loss_weight: 0.0
-# SpecAugment
-freq_width: 27
-n_freq_masks: 0
-time_width: 70
-n_time_masks: 0
-time_width_upper: 1.0
 ### MTL
 ctc_weight: 0.2
 ctc_lsm_prob: 0.1
 bwd_weight: 0.0
-mtl_per_batch: false
+mtl_per_batch: true
 task_specific_layer: false
 ### LM integration
 lm_fusion_type: cold
