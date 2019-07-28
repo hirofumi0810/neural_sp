@@ -378,7 +378,6 @@ class Dataset(object):
 
                 # Change batch size dynamically
                 if self.sort_by is not None:
-                    # assert offset in list(self.df.index)
                     min_xlen = self.df[offset:offset + 1]['xlen'].values[0]
                     min_ylen = self.df[offset:offset + 1]['ylen'].values[0]
                     batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
@@ -391,15 +390,24 @@ class Dataset(object):
                 else:
                     df_indices = list(self.df[offset:offset + batch_size].index)
                     self.offset += len(df_indices)
-
-                # Shuffle uttrances in mini-batch
-                df_indices = random.sample(df_indices, len(df_indices))
-                for i in df_indices:
-                    self.df_indices.remove(i)
             else:
                 # Last mini-batch
                 df_indices = self.df_indices[:]
                 is_new_epoch = True
+
+                # Change batch size dynamically
+                if self.sort_by is not None:
+                    min_xlen = self.df[df_indices[0]:df_indices[0] + 1]['xlen'].values[0]
+                    min_ylen = self.df[df_indices[0]:df_indices[0] + 1]['ylen'].values[0]
+                    batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
+                    # Remove the rest
+                    df_indices = df_indices[:batch_size]
+
+            # Shuffle uttrances in mini-batch
+            df_indices = random.sample(df_indices, len(df_indices))
+
+            for i in df_indices:
+                self.df_indices.remove(i)
 
         return df_indices, is_new_epoch
 

@@ -18,7 +18,7 @@ import os
 import pandas as pd
 import random
 
-from neural_sp.datasets.loader_asr import count_vocab_size
+from neural_sp.datasets.asr import count_vocab_size
 from neural_sp.datasets.token_converter.character import Char2idx
 from neural_sp.datasets.token_converter.character import Idx2char
 from neural_sp.datasets.token_converter.phone import Idx2phone
@@ -98,41 +98,41 @@ class Dataset(object):
             raise ValueError(unit)
 
         # Load dataset tsv file
-        df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
-        df = df.loc[:, ['utt_id', 'speaker', 'feat_path',
-                        'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+        self.df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
+        self.df = self.df.loc[:, ['utt_id', 'speaker', 'feat_path',
+                                  'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
 
         # Remove inappropriate utterances
         if is_test:
-            print('Original utterance num: %d' % len(df))
-            n_utts = len(df)
-            df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
-            print('Removed %d empty utterances' % (n_utts - len(df)))
+            print('Original utterance num: %d' % len(self.df))
+            n_utts = len(self.df)
+            self.df = self.df[self.df.apply(lambda x: x['ylen'] > 0, axis=1)]
+            print('Removed %d empty utterances' % (n_utts - len(self.df)))
         else:
-            print('Original utterance num: %d' % len(df))
-            n_utts = len(df)
-            df = df[df.apply(lambda x: x['ylen'] >= min_n_tokens, axis=1)]
-            print('Removed %d utterances (threshold)' % (n_utts - len(df)))
+            print('Original utterance num: %d' % len(self.df))
+            n_utts = len(self.df)
+            self.df = self.df[self.df.apply(lambda x: x['ylen'] >= min_n_tokens, axis=1)]
+            print('Removed %d utterances (threshold)' % (n_utts - len(self.df)))
 
         # Sort tsv records
         if shuffle:
-            df = df.reindex(np.random.permutation(df.index))
+            self.df = self.df.reindex(np.random.permutation(self.df.index))
         elif serialize:
             assert corpus == 'swbd'
-            df['session'] = df['speaker'].apply(lambda x: str(x).split('-')[0])
-            df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
-            df = df.sort_values(by=['session', 'onset'], ascending=True)
+            self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
+            self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
+            self.df = self.df.sort_values(by=['session', 'onset'], ascending=True)
         else:
-            df = df.sort_values(by='utt_id', ascending=True)
+            self.df = self.df.sort_values(by='utt_id', ascending=True)
 
         # Concatenate into a single sentence
         concat_ids = []
-        indices = list(df.index)
+        indices = list(self.df.index)
         if backward:
             indices = indices[::-1]
         for i in indices:
-            assert df['token_id'][i] != ''
-            concat_ids += [self.eos] + list(map(int, df['token_id'][i].split()))
+            assert self.df['token_id'][i] != ''
+            concat_ids += [self.eos] + list(map(int, self.df['token_id'][i].split()))
         concat_ids += [self.eos]
         # NOTE: <sos> and <eos> have the same index
 
@@ -149,6 +149,11 @@ class Dataset(object):
     def epoch_detail(self):
         """Percentage of the current epoch."""
         return float(self.offset * self.batch_size) / len(self)
+
+    def reset(self):
+        """Reset data counter and offset."""
+        self.df_indices = list(self.df.index)
+        self.offset = 0
 
     def next(self, batch_size=None, bptt=None):
         """Generate each mini-batch.
