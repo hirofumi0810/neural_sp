@@ -24,6 +24,7 @@ from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import distillation
 from neural_sp.models.criterion import focal_loss
 from neural_sp.models.lm.rnnlm import RNNLM
+from neural_sp.models.modules.cif import CIF
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.mocha import MoChA
@@ -232,6 +233,11 @@ class RNNDecoder(DecoderBase):
                                    attn_dim=attn_dim,
                                    window=mocha_chunk_size,
                                    init_r=-4)
+            elif attn_type == 'cif':
+                assert attn_n_heads == 1
+                self.score = CIF(enc_dim=self.enc_n_units,
+                                 conv_kernel_size=2,
+                                 conv_out_channels=self.enc_n_units)
             else:
                 if attn_n_heads > 1:
                     self.score = MultiheadAttentionMechanism(
@@ -384,9 +390,9 @@ class RNNDecoder(DecoderBase):
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
 
-            if 'score.v_mono.weight_g' in n or 'score.r_mono' in n:
+            if 'score.monotonic_energy.v.weight_g' in n or 'score.monotonic_energy.r' in n:
                 continue
-            if 'score.v_chunk.weight_g' in n or 'score.r_chunk' in n:
+            if 'score.chunk_energy.v.weight_g' in n or 'score.chunk_energy.r' in n:
                 continue
 
             if p.dim() == 1:
@@ -397,7 +403,7 @@ class RNNDecoder(DecoderBase):
                 else:
                     nn.init.constant_(p, val=0)  # bias
                     logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
-            elif p.dim() in [2, 4]:
+            elif p.dim() in [2, 3, 4]:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
@@ -574,6 +580,10 @@ class RNNDecoder(DecoderBase):
         # Create the attention mask
         mask = make_pad_mask(elens, self.device_id).expand(bs, xmax)
 
+        # CIF
+        if self.attn_type == 'cif':
+            cvs, alpha = self.score(eouts, elens, ylens)
+
         logits = []
         for t in range(ys_in_pad.size(1)):
             is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob and self.adaptive_softmax is None
@@ -586,9 +596,13 @@ class RNNDecoder(DecoderBase):
             # Recurrency -> Score -> Generate
             dec_in = attn_v if self.input_feeding else cv
             y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
-            dstates, cv, aw, attn_v, lmfeat = self.decode_step(
-                eouts, dstates, dec_in, y_emb, mask, aw, lmout, mode='parallel')
-            if not self.training:
+            if self.attn_type == 'cif':
+                dstates, cv, aw, attn_v, lmfeat = self.decode_step(
+                    cvs[:, t:t + 1], dstates, dec_in, y_emb, mask, aw, lmout, mode='parallel')
+            else:
+                dstates, cv, aw, attn_v, lmfeat = self.decode_step(
+                    eouts, dstates, dec_in, y_emb, mask, aw, lmout, mode='parallel')
+            if self.attn_type != 'cif' and not self.training:
                 aws.append(aw.transpose(2, 1).unsqueeze(2))  # `[B, n_heads, 1, T]`
             logits.append(attn_v)
 
@@ -616,7 +630,7 @@ class RNNDecoder(DecoderBase):
             return logits
 
         # for attention plot
-        if not self.training:
+        if self.attn_type != 'cif' and not self.training:
             self.aws = tensor2np(torch.cat(aws, dim=2))  # `[B, n_heads, L, T]`
 
         # Compute XE sequence loss
@@ -644,6 +658,10 @@ class RNNDecoder(DecoderBase):
             loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
                                          ys_out_pad.view(-1)).loss
 
+        # Quantity loss for CIF
+        if self.attn_type == 'cif':
+            loss += F.mse_loss(alpha.sum(1), ylens.float().cuda(self.device_id))
+
         # Compute token-level accuracy in teacher-forcing
         if self.adaptive_softmax is None:
             acc = compute_accuracy(logits, ys_out_pad, self.pad)
@@ -659,7 +677,10 @@ class RNNDecoder(DecoderBase):
 
     def decode_step(self, eouts, dstates, cv, y_emb, mask, aw, lmout, mode='hard'):
         dstates = self.recurrency(y_emb, cv, dstates['dstate'])
-        cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw, mode)
+        if self.attn_type == 'cif':
+            cv = eouts
+        else:
+            cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw, mode)
         attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
         return dstates, cv, aw, attn_v, lmfeat
 
@@ -799,6 +820,9 @@ class RNNDecoder(DecoderBase):
 
     def _plot_attention(self, save_path, n_cols=1):
         """Plot attention for each head."""
+        if self.attn_type == 'cif':
+            return 0
+
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
@@ -1241,12 +1265,10 @@ class RNNDecoder(DecoderBase):
                     lp = 1.0
                     if lp_weight > 0:
                         if gnmt_decoding:
-                            lp = (math.pow(5 + (len(beam['hyp']) - 1 + 1),
-                                           lp_weight)) / math.pow(6, lp_weight)
+                            lp = math.pow(6 + len(beam['hyp'][1:]), lp_weight) / math.pow(6, lp_weight)
                             total_scores_topk /= lp
                         else:
-                            total_scores_topk += (len(beam['hyp']) - 1 + 1) * lp_weight
-                            # NOTE: -1 means removing <sos>
+                            total_scores_topk += (len(beam['hyp'][1:]) + 1) * lp_weight
 
                     # Add coverage penalty
                     cp = 0.0
@@ -1361,8 +1383,8 @@ class RNNDecoder(DecoderBase):
                         logger.info('Append <eos>.')
 
                     if lp_weight > 0 and gnmt_decoding:
-                        lp = (math.pow(5 + (len(end_hyps[i]['hyp']) - 1 + 1), lp_weight)) / math.pow(6, lp_weight)
-                    for t in range(len(end_hyps[i]['hyp'][::-1]) - 1):
+                        lp = math.pow(6 + (len(end_hyps[i]['hyp'][1:])), lp_weight) / math.pow(6, lp_weight)
+                    for t in range(len(end_hyps[i]['hyp'][1:])):
                         lmout_rev, lmstate_rev = lm_rev.decode(
                             eouts.new_zeros(1, 1).fill_(end_hyps[i]['hyp'][::-1][t]), lmstate_rev)
                         lm_log_probs = F.log_softmax(lm_rev.generate(lmout_rev).squeeze(1), dim=-1)

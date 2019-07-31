@@ -15,7 +15,8 @@ def parse():
         config_file_parser_class=configargparse.YAMLConfigFileParser,
         formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
     parser.add('--config', is_config_file=True, help='config file path')
-    parser.add('--config2', is_config_file=True, help='another config file path to overwrite --config')
+    parser.add('--config2', is_config_file=True, default=False, nargs='?',
+               help='another config file path to overwrite --config')
     # general
     parser.add_argument('--corpus', type=str,
                         help='corpus name')
@@ -137,7 +138,7 @@ def parse():
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['no', 'location', 'add', 'dot',
                                  'luong_dot', 'luong_general', 'luong_concat',
-                                 'mocha'],
+                                 'mocha', 'cif'],
                         help='type of attention for RNN sequence-to-sequence models')
     parser.add_argument('--mocha_chunk_size', type=int, default=1,
                         help='chunk size for MoChA')
@@ -157,7 +158,7 @@ def parse():
                         help='')
     parser.add_argument('--dec_type', type=str, default='lstm',
                         choices=['lstm', 'gru', 'transformer',
-                                 'lstm_transducer', 'gru_transducer', 'self_attn_transducer'],
+                                 'lstm_transducer', 'gru_transducer', 'transformer_transducer'],
                         help='')
     parser.add_argument('--dec_n_units', type=int, default=512,
                         help='number of units in each decoder RNN layer')
