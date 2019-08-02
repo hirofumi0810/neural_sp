@@ -17,6 +17,72 @@ from neural_sp.models.modules.linear import Linear
 NEG_INF = float(np.finfo(np.float32).min)
 
 
+class Energy(nn.Module):
+    def __init__(self, enc_dim, dec_dim, attn_type, attn_dim, init_r,
+                 conv_out_channels=10, conv_kernel_size=100):
+        """Energy function."""
+        super().__init__()
+
+        self.attn_type = attn_type
+        self.key = None
+        self.mask = None
+
+        self.w_key = Linear(enc_dim, attn_dim, bias=False)
+        self.w_query = Linear(dec_dim, attn_dim, bias=False)
+        if attn_type == 'location':
+            self.w_conv = Linear(conv_out_channels, attn_dim, bias=False)
+            self.conv = nn.Conv2d(in_channels=1,
+                                  out_channels=conv_out_channels,
+                                  kernel_size=(1, conv_kernel_size * 2 + 1),
+                                  stride=1,
+                                  padding=(0, conv_kernel_size),
+                                  bias=False)
+        else:
+            assert attn_type == 'add'
+        self.b = nn.Parameter(torch.Tensor(attn_dim).normal_())
+
+        self.v = nn.utils.weight_norm(nn.Linear(attn_dim, 1))
+        self.v.weight_g.data = torch.Tensor([1 / attn_dim]).sqrt()
+
+        self.r = nn.Parameter(torch.Tensor([init_r]))
+
+    def reset(self):
+        self.key = None
+        self.mask = None
+
+    def forward(self, key, query, mask, aw_prev=None):
+        """Compute energy.
+
+        Args:
+            key (FloatTensor): `[B, kmax, key_dim]`
+            query (FloatTensor): `[B, 1, query_dim]`
+            mask (ByteTensor): `[B, qmax, kmax]`
+            aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
+        Return:
+            energy (FloatTensor): `[B, 1, value_dim]`
+
+        """
+        bs, kmax, key_dim = key.size()
+
+        # Pre-computation of encoder-side features for computing scores
+        if self.key is None:
+            self.key = self.w_key(key)
+            self.mask = mask
+
+        key = key.view(-1, key_dim)
+        if self.attn_type == 'localtion':
+            conv_feat = self.conv(aw_prev.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, ch, kmax]`
+            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, kmax, ch]`
+            energy = torch.tanh(self.key + self.w_query(query).repeat(1, kmax, 1)
+                                + self.w_conv(conv_feat) + self.b)
+        else:
+            energy = torch.tanh(self.key + self.w_query(query).repeat(1, kmax, 1) + self.b)
+        energy = self.v(energy).squeeze(-1) + self.r  # `[B, kmax]`
+        if self.mask is not None:
+            energy = energy.masked_fill_(self.mask == 0, NEG_INF)
+        return energy
+
+
 class MoChA(nn.Module):
     def __init__(self, key_dim, query_dim, attn_dim, window, init_r=-4):
         """Monotonic chunk-wise attention.
@@ -42,34 +108,22 @@ class MoChA(nn.Module):
         self.n_heads = 1
 
         # Monotonic energy
-        self.w_key_mono = Linear(key_dim, attn_dim, bias=True)
-        self.w_query_mono = Linear(query_dim, attn_dim, bias=False)
-        self.v_mono = Linear(attn_dim, 1, bias=False, weight_norm=True)
-        self.r_mono = nn.Parameter(torch.Tensor([init_r]))
+        self.monotonic_energy = Energy(key_dim, query_dim, 'add', attn_dim, init_r)
 
         # Chunk energy
         if window > 1:
-            self.w_key_chunk = Linear(key_dim, attn_dim, bias=True)
-            self.w_query_chunk = Linear(query_dim, attn_dim, bias=False)
-            self.v_chunk = Linear(attn_dim, 1, bias=False, weight_norm=True)
-            self.r_chunk = nn.Parameter(torch.Tensor([init_r]))
-
-        # initialization
-        self.v_mono.fc.weight_g.data = torch.Tensor([1 / attn_dim]).sqrt()
-        if window > 1:
-            self.v_mono.fc.weight_g.data = torch.Tensor([1 / attn_dim]).sqrt()
+            self.chunk_energy = Energy(key_dim, query_dim, 'add', attn_dim, init_r)
 
     def reset(self):
-        self.key = None
-        self.key_chunk = None
-        self.mask = None
+        self.monotonic_energy.reset()
+        if self.window > 1:
+            self.chunk_energy.reset()
 
     def forward(self, key, value, query, mask=None, aw_prev=None, mode='parallel'):
         """Soft monotonic attention during training.
 
         Args:
             key (FloatTensor): `[B, kmax, key_dim]`
-            klens (IntTensor): `[B]`
             value (FloatTensor): `[B, kmax, value_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
             mask (ByteTensor): `[B, qmax, kmax]`
@@ -87,44 +141,34 @@ class MoChA(nn.Module):
             aw_prev = key.new_zeros(bs, kmax, 1)
             aw_prev[:, 0:1] = key.new_ones(bs, 1, 1)
 
-        # Pre-computation of encoder-side features for computing scores
-        if self.key is None:
-            self.key = self.w_key_mono(key)
-            self.mask = mask
-            if self.window > 1:
-                self.key_chunk = self.w_key_chunk(key)
-
         # Compute monotonic energy
-        query = query.repeat([1, kmax, 1])
-        e_mono = self.v_mono(torch.tanh(self.key + self.w_query_mono(query)))
-        e_mono = e_mono + self.r_mono  # `[B, kmax, 1 (n_heads)]`
-        e_mono = e_mono.squeeze(2)  # `[B, kmax]`
-        if self.mask is not None:
-            e_mono = e_mono.masked_fill_(self.mask == 0, NEG_INF)
+        e_mono = self.monotonic_energy(key, query, mask)
 
         if mode == 'recursive':  # training time
-            raise NotImplementedError
+            p_choose = torch.sigmoid(add_gaussian_noise(e_mono))  # `[B, kmax]`
+            # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
+            shifted_1_minus_p_choose = torch.cat([key.new_ones(bs, 1),
+                                                  1 - p_choose[:, :-1]], dim=1)
+            # Compute attention distribution recursively as
+            # q[j] = (1 - p_choose[j])*q[j - 1] + aw_prev[j]
+            # alpha[j] = p_choose[j]*q[j]
+            q = key.new_zeros(bs, kmax + 1)
+            for j in range(kmax):
+                q[:, j + 1] = shifted_1_minus_p_choose[:, j].clone() * q[:, j].clone() + aw_prev[:, j, 0].clone()
+            alpha = p_choose * q[:, 1:]
 
         elif mode == 'parallel':  # training time
             p_choose = torch.sigmoid(add_gaussian_noise(e_mono))  # `[B, kmax]`
             # safe_cumprod computes cumprod in logspace with numeric checks
             cumprod_1_minus_p_choose = safe_cumprod(1 - p_choose, eps=1e-10)
             # Compute recurrence relation solution
-            aw = p_choose * cumprod_1_minus_p_choose * torch.cumsum(
+            alpha = p_choose * cumprod_1_minus_p_choose * torch.cumsum(
                 aw_prev.squeeze(2) / torch.clamp(cumprod_1_minus_p_choose, min=1e-10, max=1.0), dim=1)
-
-            # Compute chunk energy
-            if self.window > 1:
-                e_chunk = self.v_chunk(torch.tanh(self.key_chunk + self.w_query_chunk(query)))
-                e_chunk = e_chunk + self.r_chunk  # `[B, kmax, 1 (n_heads)]`
-                e_chunk = e_chunk.squeeze(2)  # `[B, kmax]`
-                if self.mask is not None:
-                    e_chunk = e_chunk.masked_fill_(self.mask == 0, NEG_INF)
-                beta = efficient_chunkwise_attention(aw, e_chunk, self.window)
 
         elif mode == 'hard':  # test time
             # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
             p_choose = (e_mono > 0).float()
+
             # Remove any probabilities before the index chosen last time step
             p_choose *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, kmax]`
 
@@ -133,25 +177,33 @@ class MoChA(nn.Module):
             # p_choose                        = [0, 0, 0, 1, 1, 0, 1, 1]
             # 1 - p_choose                    = [1, 1, 1, 0, 0, 1, 0, 0]
             # exclusive_cumprod(1 - p_choose) = [1, 1, 1, 1, 0, 0, 0, 0]
-            # aw: product of above            = [0, 0, 0, 1, 0, 0, 0, 0]
-            aw = p_choose * exclusive_cumprod(1 - p_choose)
+            # alpha: product of above         = [0, 0, 0, 1, 0, 0, 0, 0]
+            alpha = p_choose * exclusive_cumprod(1 - p_choose)
+
             # Not attended => attend at last encoder output
             # NOTE: Assume that encoder outputs are not padded
-            attended = aw.sum(dim=1)
+            attended = alpha.sum(dim=1)
             for i_b in range(bs):
                 if attended[i_b] == 0:
-                    aw[i_b, -1] = 1
+                    alpha[i_b, -1] = 1
             # Original paperによるとzero vector
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
+
+        # Compute chunk energy
+        if self.window > 1:
+            e_chunk = self.chunk_energy(key, query, mask)
+            beta = efficient_chunkwise_attention(alpha, e_chunk, self.window)
+            # alpha_norm = alpha / torch.sum(alpha, dim=1, keepdim=True)
+            # beta = efficient_chunkwise_attention(alpha_norm, e_chunk, self.window)
 
         # Compute context vector
         if self.window > 1:
             cv = torch.bmm(beta.unsqueeze(1), value)
         else:
-            cv = torch.bmm(aw.unsqueeze(1), value)
+            cv = torch.bmm(alpha.unsqueeze(1), value)
 
-        return cv, aw.unsqueeze(2)
+        return cv, alpha.unsqueeze(2)
 
 
 def add_gaussian_noise(xs, std=1.0):
@@ -166,9 +218,9 @@ def safe_cumprod(xs, eps=1e-10):
 
 
 def exclusive_cumsum(xs):
-    """Exclusive cumulative summation [a, b, c] => [1, a, a + b]"""
-    assert len(xs.size()) == 2
-    return torch.cumsum(torch.cat([xs.new_ones(xs.size(0), 1), xs], dim=1)[:, :-1], dim=1)
+    """Exclusive cumulative summation [a, b, c] => [0, a, a + b]"""
+    # assert len(xs.size()) == 2
+    return torch.cumsum(torch.cat([xs.new_zeros(xs.size(0), 1), xs], dim=1)[:, :-1], dim=1)
 
 
 def exclusive_cumprod(xs):
@@ -178,7 +230,7 @@ def exclusive_cumprod(xs):
     * PyTorch: https://discuss.pytorch.org/t/cumprod-exclusive-true-equivalences/2614
 
     """
-    assert len(xs.size()) == 2
+    # assert len(xs.size()) == 2
     return torch.cumprod(torch.cat([xs.new_ones(xs.size(0), 1), xs], dim=1)[:, :-1], dim=1)
 
 
