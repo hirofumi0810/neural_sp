@@ -62,8 +62,6 @@ def set_asr_model_name(args, subsample_factor):
             dir_name += str(args.dec_n_layers) + 'L'
             if args.dec_residual:
                 dir_name += 'res'
-            if args.input_feeding:
-                dir_name += '_inputfeed'
             dir_name += '_' + args.attn_type
             if args.attn_sigmoid:
                 dir_name += '_sig'

@@ -168,8 +168,6 @@ def parse():
                         help='number of decoder RNN layers')
     parser.add_argument('--dec_residual', type=strtobool, default=False, nargs='?',
                         help='residual connection between each decoder layer')
-    parser.add_argument('--input_feeding', type=strtobool, default=False, nargs='?',
-                        help='')
     parser.add_argument('--dec_bottleneck_dim', type=int, default=1024,
                         help='number of dimensions of the bottleneck layer before the softmax layer')
     parser.add_argument('--emb_dim', type=int, default=512,

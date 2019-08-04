@@ -83,7 +83,6 @@ class RNNDecoder(DecoderBase):
         ctc_weight (float):
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
-        input_feeding (bool):
         backward (bool): decode in the backward order
         lm_fusion (RNNLM):
         lm_fusion_type (str): type of LM fusion
@@ -132,7 +131,6 @@ class RNNDecoder(DecoderBase):
                  ctc_weight=0.0,
                  ctc_lsm_prob=0.0,
                  ctc_fc_list=[],
-                 input_feeding=False,
                  backward=False,
                  lm_fusion=None,
                  lm_fusion_type='cold',
@@ -172,7 +170,6 @@ class RNNDecoder(DecoderBase):
         self.focal_loss_weight = focal_loss_weight
         self.focal_loss_gamma = focal_loss_gamma
         self.ctc_weight = ctc_weight
-        self.input_feeding = input_feeding
         self.bwd = backward
         self.lm_fusion_type = lm_fusion_type
         self.global_weight = global_weight
@@ -244,8 +241,7 @@ class RNNDecoder(DecoderBase):
             self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             # 1st layer
-            dec_idim = n_units if input_feeding else enc_n_units
-            dec_idim += emb_dim
+            dec_idim = enc_n_units + emb_dim
             self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
             dec_idim = n_units
             if self.n_projs > 0:
@@ -476,7 +472,6 @@ class RNNDecoder(DecoderBase):
             dstates['dstate']['hxs'], dstates['dstate']['cxs'] = self.dstate_prev
             self.dstate_prev = None
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
-        attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw, aws = None, []
         lmout, lmstate = None, None
@@ -497,10 +492,9 @@ class RNNDecoder(DecoderBase):
                 lmout, lmstate = self.lm.decode(y_lm, lmstate)
 
             # Recurrency -> Score -> Generate
-            dec_in = attn_v if self.input_feeding else cv
             y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
             dstates, cv, aw, attn_v, lmfeat = self.decode_step(
-                eouts, dstates, dec_in, y_emb, mask, aw, lmout, mode='parallel')
+                eouts, dstates, cv, y_emb, mask, aw, lmout, mode='parallel')
             if not self.training:
                 aws.append(aw.transpose(2, 1).unsqueeze(2))  # `[B, n_heads, 1, T]`
             logits.append(attn_v)
@@ -743,7 +737,6 @@ class RNNDecoder(DecoderBase):
         # Initialization
         dstates = self.zero_state(bs)
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
-        attn_v = eouts.new_zeros(bs, 1, self.dec_n_units)
         self.score.reset()
         aw = None
         lmout, lmstate = None, None
@@ -766,10 +759,9 @@ class RNNDecoder(DecoderBase):
                 lmout, lmstate = self.lm.decode(self.lm(y), lmstate)
 
             # Recurrency -> Score -> Generate
-            dec_in = attn_v if self.input_feeding else cv
             y_emb = self.embed(y)
             dstates, cv, aw, attn_v, lmfeat = self.decode_step(
-                eouts, dstates, dec_in, y_emb, mask, aw, lmout)
+                eouts, dstates, cv, y_emb, mask, aw, lmout)
             aws_batch += [aw.transpose(2, 1).unsqueeze(2)]  # `[B, n_heads, 1, T]`
 
             # Pick up 1-best
@@ -912,7 +904,7 @@ class RNNDecoder(DecoderBase):
         for b in range(bs):
             # Initialization per utterance
             dstates = self.zero_state(1)
-            cv = eouts.new_zeros(1, 1, self.dec_n_units if self.input_feeding else self.enc_n_units)
+            cv = eouts.new_zeros(1, 1, self.enc_n_units)
             self.score.reset()
             lmstate = None
 
@@ -921,7 +913,7 @@ class RNNDecoder(DecoderBase):
             if n_models > 1:
                 for dec in ensmbl_decs:
                     ensmbl_dstate += [dec.zero_state(1)]
-                    ensmbl_cv += [eouts.new_zeros(1, 1, dec.dec_n_units if dec.input_feeding else dec.enc_n_units)]
+                    ensmbl_cv += [eouts.new_zeros(1, 1, dec.enc_n_units)]
                     dec.score.reset()
 
             if speakers is not None and speakers[b] != self.prev_spk:
@@ -1193,7 +1185,7 @@ class RNNDecoder(DecoderBase):
                              'score_ctc': total_scores_ctc[k].item(),
                              'score_lm': total_scores_lm[k].item(),
                              'dstates': dstates,
-                             'cv': attn_v if self.input_feeding else cv,
+                             'cv': cv,
                              'aws': beam['aws'] + [aw],
                              'lmstate': lmstate,
                              'ensmbl_dstate': ensmbl_dstate,
