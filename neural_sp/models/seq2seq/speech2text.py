@@ -264,7 +264,6 @@ class Speech2Text(ModelBase):
                         lm_init=lm_init,
                         global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                         mtl_per_batch=args.mtl_per_batch,
-                        adaptive_softmax=args.adaptive_softmax,
                         param_init=args.param_init,
                         replace_sos=args.replace_sos,
                         soft_label_weight=args.soft_label_weight)
@@ -309,7 +308,6 @@ class Speech2Text(ModelBase):
                         lm_init=lm_init,
                         global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                         mtl_per_batch=args.mtl_per_batch,
-                        adaptive_softmax=args.adaptive_softmax,
                         param_init=args.param_init,
                         mocha_chunk_size=args.mocha_chunk_size,
                         replace_sos=args.replace_sos,

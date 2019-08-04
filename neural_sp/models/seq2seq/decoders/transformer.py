@@ -72,7 +72,6 @@ class TransformerDecoder(DecoderBase):
         backward (bool): decode in the backward order
         global_weight (float):
         mtl_per_batch (bool):
-        adaptive_softmax (bool):
 
     """
 
@@ -102,8 +101,7 @@ class TransformerDecoder(DecoderBase):
                  ctc_fc_list=[],
                  backward=False,
                  global_weight=1.0,
-                 mtl_per_batch=False,
-                 adaptive_softmax=False):
+                 mtl_per_batch=False):
 
         super(TransformerDecoder, self).__init__()
         logger = logging.getLogger('training')
@@ -147,25 +145,16 @@ class TransformerDecoder(DecoderBase):
                  for _ in range(n_layers)])
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
-            if adaptive_softmax:
-                self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
-                    d_model, vocab,
-                    cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
-                    # cutoffs=[self.vocab // 25, 3 * self.vocab // 5],
-                    div_value=4.0)
-                self.output = None
-            else:
-                self.adaptive_softmax = None
-                self.output = Linear(d_model, vocab)
+            self.output = Linear(d_model, vocab)
 
-                # Optionally tie weights as in:
-                # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-                # https://arxiv.org/abs/1608.05859
-                # and
-                # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-                # https://arxiv.org/abs/1611.01462
-                if tie_embedding:
-                    self.output.fc.weight = self.embed.embed.weight
+            # Optionally tie weights as in:
+            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
+            # https://arxiv.org/abs/1608.05859
+            # and
+            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
+            # https://arxiv.org/abs/1611.01462
+            if tie_embedding:
+                self.output.fc.weight = self.embed.embed.weight
 
         # Initialize parameters
         self.reset_parameters()
@@ -272,40 +261,31 @@ class TransformerDecoder(DecoderBase):
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
                 setattr(self, 'xy_aws_layer%d' % l, tensor2np(xy_aws))
-        logits = self.norm_out(ys_emb)
-        if self.adaptive_softmax is None:
-            logits = self.output(logits)
+        ys_emb = self.norm_out(ys_emb)
+        logits = self.output(ys_emb)
 
         # for knowledge distillation
         if return_logits:
             return logits
 
         # Compute XE sequence loss
-        if self.adaptive_softmax is None:
-            if self.lsm_prob > 0 and self.training:
-                # Label smoothing
-                loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                         self.lsm_prob, self.pad)
-            else:
-                loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                       ignore_index=self.pad, size_average=True)
-
-            # Focal loss
-            if self.focal_loss_weight > 0:
-                fl = focal_loss(logits, ys_out_pad, ylens,
-                                alpha=self.focal_loss_weight,
-                                gamma=self.focal_loss_gamma)
-                loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
+        if self.lsm_prob > 0 and self.training:
+            # Label smoothing
+            loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                                     self.lsm_prob, self.pad)
         else:
-            loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
-                                         ys_out_pad.view(-1)).loss
+            loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                                   ignore_index=self.pad, size_average=True)
+
+        # Focal loss
+        if self.focal_loss_weight > 0:
+            fl = focal_loss(logits, ys_out_pad, ylens,
+                            alpha=self.focal_loss_weight,
+                            gamma=self.focal_loss_gamma)
+            loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
 
         # Compute token-level accuracy in teacher-forcing
-        if self.adaptive_softmax is None:
-            acc = compute_accuracy(logits, ys_out_pad, self.pad)
-        else:
-            acc = compute_accuracy(self.adaptive_softmax.log_prob(
-                logits.view((-1, logits.size(2)))), ys_out_pad, self.pad)
+        acc = compute_accuracy(logits, ys_out_pad, self.pad)
         ppl = min(np.exp(loss.item()), np.inf)
 
         # scale loss for CTC

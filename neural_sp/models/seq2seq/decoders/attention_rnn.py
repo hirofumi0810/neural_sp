@@ -87,7 +87,6 @@ class RNNDecoder(DecoderBase):
         lm_init (RNNLM):
         global_weight (float):
         mtl_per_batch (bool):
-        adaptive_softmax (bool):
         param_init (float):
         mocha_chunk_size (int): chunk size for MoChA
         replace_sos (bool):
@@ -133,7 +132,6 @@ class RNNDecoder(DecoderBase):
                  lm_init=None,
                  global_weight=1.0,
                  mtl_per_batch=False,
-                 adaptive_softmax=False,
                  param_init=0.1,
                  mocha_chunk_size=1,
                  replace_sos=False,
@@ -266,29 +264,19 @@ class RNNDecoder(DecoderBase):
                                    dropout=dropout_emb,
                                    ignore_index=pad)
 
-            if adaptive_softmax:
-                assert self.vocab >= 25000
-                self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
-                    bottleneck_dim, vocab,
-                    cutoffs=[self.vocab // 10, 3 * self.vocab // 10],
-                    # cutoffs=[self.vocab // 25, 3 * self.vocab // 5],
-                    div_value=4.0)
-                self.output = None
-            else:
-                self.adaptive_softmax = None
-                self.output = Linear(bottleneck_dim, vocab)
-                # NOTE: include bias even when tying weights
+            self.output = Linear(bottleneck_dim, vocab)
+            # NOTE: include bias even when tying weights
 
-                # Optionally tie weights as in:
-                # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-                # https://arxiv.org/abs/1608.05859
-                # and
-                # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-                # https://arxiv.org/abs/1611.01462
-                if tie_embedding:
-                    if emb_dim != bottleneck_dim:
-                        raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
-                    self.output.fc.weight = self.embed.embed.weight
+            # Optionally tie weights as in:
+            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
+            # https://arxiv.org/abs/1608.05859
+            # and
+            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
+            # https://arxiv.org/abs/1611.01462
+            if tie_embedding:
+                if emb_dim != bottleneck_dim:
+                    raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
+                self.output.fc.weight = self.embed.embed.weight
 
         # Initialize parameters
         self.reset_parameters(param_init)
@@ -467,7 +455,7 @@ class RNNDecoder(DecoderBase):
 
         logits = []
         for t in range(ys_in_pad.size(1)):
-            is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob and self.adaptive_softmax is None
+            is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob
 
             # Update LM states for LM fusion
             if self.lm is not None:
@@ -497,9 +485,7 @@ class RNNDecoder(DecoderBase):
             if self.dec_type == 'lstm':
                 self.dstate_prev[1] = torch.cat(self.dstate_prev[1], dim=1)
 
-        logits = torch.cat(logits, dim=1)
-        if self.adaptive_softmax is None:
-            logits = self.output(logits)
+        logits = self.output(torch.cat(logits, dim=1))
 
         # for knowledge distillation
         if return_logits:
@@ -510,36 +496,28 @@ class RNNDecoder(DecoderBase):
             self.aws = tensor2np(torch.cat(aws, dim=2))  # `[B, n_heads, L, T]`
 
         # Compute XE sequence loss
-        if self.adaptive_softmax is None:
-            if self.lsm_prob > 0 and self.training:
-                # Label smoothing
-                loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                         self.lsm_prob, self.pad)
-            else:
-                loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                       ignore_index=self.pad, size_average=True)
-
-            # Focal loss
-            if self.focal_loss_weight > 0:
-                fl = focal_loss(logits, ys_out_pad, ylens,
-                                alpha=self.focal_loss_weight,
-                                gamma=self.focal_loss_gamma)
-                loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
-
-            # Knowledge distillation
-            if teacher_logits is not None:
-                kl_loss = distillation(logits, teacher_logits, ylens, temperature=5.0)
-                loss = loss * (1 - self.soft_label_weight) + kl_loss * self.soft_label_weight
+        if self.lsm_prob > 0 and self.training:
+            # Label smoothing
+            loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                                     self.lsm_prob, self.pad)
         else:
-            loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
-                                         ys_out_pad.view(-1)).loss
+            loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                                   ignore_index=self.pad, size_average=True)
+
+        # Focal loss
+        if self.focal_loss_weight > 0:
+            fl = focal_loss(logits, ys_out_pad, ylens,
+                            alpha=self.focal_loss_weight,
+                            gamma=self.focal_loss_gamma)
+            loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
+
+        # Knowledge distillation
+        if teacher_logits is not None:
+            kl_loss = distillation(logits, teacher_logits, ylens, temperature=5.0)
+            loss = loss * (1 - self.soft_label_weight) + kl_loss * self.soft_label_weight
 
         # Compute token-level accuracy in teacher-forcing
-        if self.adaptive_softmax is None:
-            acc = compute_accuracy(logits, ys_out_pad, self.pad)
-        else:
-            acc = compute_accuracy(self.adaptive_softmax.log_prob(
-                logits.view((-1, logits.size(2)))), ys_out_pad, self.pad)
+        acc = compute_accuracy(logits, ys_out_pad, self.pad)
         ppl = np.exp(loss.item())
 
         # scale loss for CTC
@@ -729,10 +707,7 @@ class RNNDecoder(DecoderBase):
             aws_batch += [aw.transpose(2, 1).unsqueeze(2)]  # `[B, n_heads, 1, T]`
 
             # Pick up 1-best
-            if self.adaptive_softmax is None:
-                y = self.output(attn_v).argmax(-1)
-            else:
-                y = self.adaptive_softmax.predict(attn_v.view(-1, attn_v.size(2))).unsqueeze(1)
+            y = self.output(attn_v).argmax(-1)
             hyps_batch += [y]
 
             # Count lengths of hypotheses
@@ -944,10 +919,7 @@ class RNNDecoder(DecoderBase):
                         beam['dstates'], beam['cv'], y_emb,
                         None,  # mask
                         beam['aws'][-1], lmout)
-                    if self.adaptive_softmax is None:
-                        probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
-                    else:
-                        probs = self.adaptive_softmax.log_prob(attn_v.view(-1, attn_v.size(2)))
+                    probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
 
                     # for the ensemble
                     ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
@@ -964,10 +936,7 @@ class RNNDecoder(DecoderBase):
                             ensmbl_dstate += [ensmbl_dstate]
                             ensmbl_cv += [cv_e]
                             ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi): unsqueeze?
-                            if dec.adaptive_softmax is None:
-                                ensmbl_log_probs += F.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
-                            else:
-                                ensmbl_log_probs += dec.adaptive_softmax.log_prob(attn_v_e.view(-1, attn_v_e.size(2)))
+                            ensmbl_log_probs += F.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
 
                     # Cache decoding
                     cache_ids = None
@@ -976,8 +945,6 @@ class RNNDecoder(DecoderBase):
                     cache_sp_probs = probs.new_zeros(probs.size())
                     cache_lm_probs = probs.new_zeros(probs.size())
                     if n_caches > 0:
-                        assert self.adaptive_softmax is None
-
                         # Compute inner-product over caches
                         if 'speech_fifo' in cache_type:
                             is_cache = True
@@ -1061,10 +1028,7 @@ class RNNDecoder(DecoderBase):
                                 cache_lm_probs[0, c] += cache_lm_attn[0, offset, 0]
                             probs = (1 - cache_lambda_lm) * probs + cache_lambda_lm * cache_lm_probs
 
-                    if self.adaptive_softmax is None:
-                        local_scores_attn = torch.log(probs)
-                    else:
-                        local_scores_attn = probs  # NOTE: already log-scaled
+                    local_scores_attn = torch.log(probs)
 
                     # Ensemble in log-scale
                     if n_models > 1:

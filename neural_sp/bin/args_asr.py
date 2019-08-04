@@ -251,8 +251,6 @@ def parse():
                         help='')
     parser.add_argument('--focal_loss_gamma', type=float, default=2.0,
                         help='')
-    parser.add_argument('--adaptive_softmax', type=strtobool, default=False,
-                        help='use adaptive softmax')
     # SpecAugment
     parser.add_argument('--freq_width', type=int, default=27,
                         help='')
