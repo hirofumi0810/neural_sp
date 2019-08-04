@@ -29,7 +29,6 @@ from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.modules.singlehead_attention import AttentionMechanism
-from neural_sp.models.modules.zoneout import zoneout_wrapper
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
@@ -74,7 +73,6 @@ class RNNDecoder(DecoderBase):
         dropout (float): dropout probability for the RNN layer
         dropout_emb (float): dropout probability for the embedding layer
         dropout_att (float): dropout probability for attention distributions
-        zoneout (float): zoneout probability for the RNN layer
         lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
         ss_type (str): constant/saturation
@@ -122,7 +120,6 @@ class RNNDecoder(DecoderBase):
                  dropout=0.0,
                  dropout_emb=0.0,
                  dropout_att=0.0,
-                 zoneout=0,
                  lsm_prob=0.0,
                  ss_prob=0.0,
                  ss_type='constant',
@@ -242,19 +239,19 @@ class RNNDecoder(DecoderBase):
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             # 1st layer
             dec_idim = enc_n_units + emb_dim
-            self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
+            self.rnn += [cell(dec_idim, n_units)]
             dec_idim = n_units
             if self.n_projs > 0:
                 dec_idim = n_projs
             # 2nd layer
             if n_layers >= 2:
-                self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
+                self.rnn += [cell(dec_idim, n_units)]
                 if self.n_projs > 0:
                     dec_idim = n_projs
             # 3rd~ layers
             if n_layers >= 3:
                 for l in range(n_layers - 2):
-                    self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
+                    self.rnn += [cell(dec_idim, n_units)]
                     if self.n_projs > 0:
                         dec_idim = n_projs
 

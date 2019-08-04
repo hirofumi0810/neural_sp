@@ -81,8 +81,6 @@ def set_asr_model_name(args, subsample_factor):
     if args.ctc_weight < 1:
         dir_name += '_ss' + str(args.ss_prob)
     dir_name += '_ls' + str(args.lsm_prob)
-    if args.zoneout > 0:
-        dir_name += '_zoneout' + str(args.zoneout)
     if args.focal_loss_weight > 0:
         dir_name += '_fl' + str(args.focal_loss_weight)
     if args.warmup_n_steps > 0:

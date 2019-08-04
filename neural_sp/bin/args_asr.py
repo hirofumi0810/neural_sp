@@ -242,8 +242,6 @@ def parse():
                         help='dropout probability for the embedding')
     parser.add_argument('--dropout_att', type=float, default=0.0,
                         help='dropout probability for the attention weights')
-    parser.add_argument('--zoneout', type=float, default=0.0,
-                        help='zoneout probability for the RNNCell in the decoder')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='weight decay parameter')
     parser.add_argument('--ss_prob', type=float, default=0.0,
