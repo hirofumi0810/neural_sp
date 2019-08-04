@@ -237,27 +237,16 @@ class RNNDecoder(DecoderBase):
                 self.proj = nn.ModuleList([Linear(n_units, n_projs) for _ in range(n_layers)])
             self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
-            # 1st layer
-            dec_idim = enc_n_units + emb_dim
-            self.rnn += [cell(dec_idim, n_units)]
-            dec_idim = n_units
-            if self.n_projs > 0:
-                dec_idim = n_projs
-            # 2nd layer
-            if n_layers >= 2:
-                self.rnn += [cell(dec_idim, n_units)]
+            dec_odim = enc_n_units + emb_dim
+            for l in range(n_layers):
+                self.rnn += [cell(dec_odim, n_units)]
+                dec_odim = n_units
                 if self.n_projs > 0:
-                    dec_idim = n_projs
-            # 3rd~ layers
-            if n_layers >= 3:
-                for l in range(n_layers - 2):
-                    self.rnn += [cell(dec_idim, n_units)]
-                    if self.n_projs > 0:
-                        dec_idim = n_projs
+                    dec_odim = n_projs
 
             # LM fusion
             if lm_fusion is not None:
-                self.linear_dec_feat = Linear(dec_idim + enc_n_units, n_units)
+                self.linear_dec_feat = Linear(dec_odim + enc_n_units, n_units)
                 if lm_fusion_type in ['cold', 'deep']:
                     self.linear_lm_feat = Linear(lm_fusion.n_units, n_units)
                     self.linear_lm_gate = Linear(n_units * 2, n_units)
@@ -274,7 +263,7 @@ class RNNDecoder(DecoderBase):
             elif discourse_aware == 'hierarchical':
                 raise NotImplementedError
             else:
-                self.output_bn = Linear(dec_idim + enc_n_units, bottleneck_dim)
+                self.output_bn = Linear(dec_odim + enc_n_units, bottleneck_dim)
 
             self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
