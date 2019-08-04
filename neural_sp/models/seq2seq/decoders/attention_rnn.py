@@ -24,7 +24,6 @@ from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import distillation
 from neural_sp.models.criterion import focal_loss
 from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.modules.cif import CIF
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.mocha import MoChA
@@ -233,11 +232,6 @@ class RNNDecoder(DecoderBase):
                                    attn_dim=attn_dim,
                                    window=mocha_chunk_size,
                                    init_r=-4)
-            elif attn_type == 'cif':
-                assert attn_n_heads == 1
-                self.score = CIF(enc_dim=self.enc_n_units,
-                                 conv_kernel_size=2,
-                                 conv_out_channels=self.enc_n_units)
             else:
                 if attn_n_heads > 1:
                     self.score = MultiheadAttentionMechanism(
@@ -473,6 +467,30 @@ class RNNDecoder(DecoderBase):
         observation['loss'] = loss.item()
         return loss, observation
 
+    def append_sos_eos(self, ys, bwd=False, replace_sos=False):
+        """Append <sos> and <eos> and return padded sequences.
+        Args:
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+        Returns:
+            ys_in_pad (LongTensor): `[B, L]`
+            ys_out_pad (LongTensor): `[B, L]`
+            ylens (IntTensor): `[B]`
+
+        """
+        w = next(self.parameters())
+        eos = w.new_zeros(1).fill_(self.eos).long()
+        ys = [np2tensor(np.fromiter(y[::-1] if bwd else y, dtype=np.int64),
+                        self.device_id) for y in ys]
+        if replace_sos:
+            ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
+            ys_in_pad = pad_list([y for y in ys], self.pad)
+            ys_out_pad = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
+        else:
+            ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
+            ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
+            ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
+        return ys_in_pad, ys_out_pad, ylens
+
     def forward_lmobj(self, ys):
         """Compute XE loss for LM objective.
 
@@ -488,12 +506,7 @@ class RNNDecoder(DecoderBase):
         w = next(self.parameters())
 
         # Append <sos> and <eos>
-        eos = w.new_zeros(1).fill_(self.eos)
-        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
-                        self.device_id) for y in ys]
-        ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-        ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
-        ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
+        ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
 
         # Initialization
         dstates = self.zero_state(bs)
@@ -548,17 +561,7 @@ class RNNDecoder(DecoderBase):
         bs, xmax = eouts.size()[:2]
 
         # Append <sos> and <eos>
-        eos = eouts.new_zeros(1).fill_(self.eos).long()
-        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64),
-                        self.device_id) for y in ys]
-        if self.replace_sos:
-            ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in_pad = pad_list([y for y in ys], self.pad)
-            ys_out_pad = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
-        else:
-            ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
-            ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
+        ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
 
         # Initialization
         if self.discourse_aware == 'hierarchical':
@@ -580,10 +583,6 @@ class RNNDecoder(DecoderBase):
         # Create the attention mask
         mask = make_pad_mask(elens, self.device_id).expand(bs, xmax)
 
-        # CIF
-        if self.attn_type == 'cif':
-            cvs, alpha = self.score(eouts, elens, ylens)
-
         logits = []
         for t in range(ys_in_pad.size(1)):
             is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob and self.adaptive_softmax is None
@@ -596,13 +595,9 @@ class RNNDecoder(DecoderBase):
             # Recurrency -> Score -> Generate
             dec_in = attn_v if self.input_feeding else cv
             y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
-            if self.attn_type == 'cif':
-                dstates, cv, aw, attn_v, lmfeat = self.decode_step(
-                    cvs[:, t:t + 1], dstates, dec_in, y_emb, mask, aw, lmout, mode='parallel')
-            else:
-                dstates, cv, aw, attn_v, lmfeat = self.decode_step(
-                    eouts, dstates, dec_in, y_emb, mask, aw, lmout, mode='parallel')
-            if self.attn_type != 'cif' and not self.training:
+            dstates, cv, aw, attn_v, lmfeat = self.decode_step(
+                eouts, dstates, dec_in, y_emb, mask, aw, lmout, mode='parallel')
+            if not self.training:
                 aws.append(aw.transpose(2, 1).unsqueeze(2))  # `[B, n_heads, 1, T]`
             logits.append(attn_v)
 
@@ -630,7 +625,7 @@ class RNNDecoder(DecoderBase):
             return logits
 
         # for attention plot
-        if self.attn_type != 'cif' and not self.training:
+        if not self.training:
             self.aws = tensor2np(torch.cat(aws, dim=2))  # `[B, n_heads, L, T]`
 
         # Compute XE sequence loss
@@ -658,10 +653,6 @@ class RNNDecoder(DecoderBase):
             loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
                                          ys_out_pad.view(-1)).loss
 
-        # Quantity loss for CIF
-        if self.attn_type == 'cif':
-            loss += F.mse_loss(alpha.sum(1), ylens.float().cuda(self.device_id))
-
         # Compute token-level accuracy in teacher-forcing
         if self.adaptive_softmax is None:
             acc = compute_accuracy(logits, ys_out_pad, self.pad)
@@ -677,10 +668,7 @@ class RNNDecoder(DecoderBase):
 
     def decode_step(self, eouts, dstates, cv, y_emb, mask, aw, lmout, mode='hard'):
         dstates = self.recurrency(y_emb, cv, dstates['dstate'])
-        if self.attn_type == 'cif':
-            cv = eouts
-        else:
-            cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw, mode)
+        cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw, mode)
         attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
         return dstates, cv, aw, attn_v, lmfeat
 
@@ -820,9 +808,6 @@ class RNNDecoder(DecoderBase):
 
     def _plot_attention(self, save_path, n_cols=1):
         """Plot attention for each head."""
-        if self.attn_type == 'cif':
-            return 0
-
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
