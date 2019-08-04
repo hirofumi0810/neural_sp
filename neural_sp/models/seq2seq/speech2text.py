@@ -252,7 +252,6 @@ class Speech2Text(ModelBase):
                     dropout=args.dropout_dec,
                     dropout_emb=args.dropout_emb,
                     dropout_att=args.dropout_att,
-                    zoneout=args.zoneout,
                     ss_prob=args.ss_prob,
                     ss_type=args.ss_type,
                     lsm_prob=args.lsm_prob,
@@ -262,7 +261,6 @@ class Speech2Text(ModelBase):
                     ctc_lsm_prob=args.ctc_lsm_prob,
                     ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
-                    input_feeding=args.input_feeding,
                     backward=(dir == 'bwd'),
                     lm_fusion=lm_fusion,
                     lm_fusion_type=args.lm_fusion_type,
@@ -317,7 +315,6 @@ class Speech2Text(ModelBase):
                         ctc_lsm_prob=args.ctc_lsm_prob,
                         ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
                                      ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
-                        input_feeding=args.input_feeding,
                         global_weight=getattr(self, sub + '_weight'),
                         mtl_per_batch=args.mtl_per_batch,
                         param_init=args.param_init)
