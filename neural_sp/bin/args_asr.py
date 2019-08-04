@@ -166,9 +166,6 @@ def parse():
                         help='number of units in the projection layer after each decoder RNN layer')
     parser.add_argument('--dec_n_layers', type=int, default=1,
                         help='number of decoder RNN layers')
-    parser.add_argument('--dec_loop_type', type=str, default='normal', nargs='?',
-                        choices=['normal', 'lmdecoder'],
-                        help='')
     parser.add_argument('--dec_residual', type=strtobool, default=False, nargs='?',
                         help='residual connection between each decoder layer')
     parser.add_argument('--input_feeding', type=strtobool, default=False, nargs='?',
@@ -306,10 +303,6 @@ def parse():
     # LM initialization, objective
     parser.add_argument('--lm_init', type=str, default=False, nargs='?',
                         help='LM path for initialization of the decoder network')
-    parser.add_argument('--lmobj_weight', type=float, default=0.0, nargs='?',
-                        help='LM objective weight for the main task')
-    parser.add_argument('--share_lm_softmax', type=strtobool, default=False, nargs='?',
-                        help='share the softmax layer between ASR and LM')
     # transformer
     parser.add_argument('--d_model', type=int, default=256,
                         help='number of units in self-attention layers in Transformer')

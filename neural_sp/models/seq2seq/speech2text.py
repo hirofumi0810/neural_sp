@@ -22,6 +22,7 @@ from neural_sp.models.seq2seq.decoders.attention_rnn import RNNDecoder
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
+from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
 from neural_sp.models.seq2seq.encoders.build import build_encoder
 from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.frontends.gaussian_noise import add_gaussian_noise
@@ -152,9 +153,9 @@ class Speech2Text(ModelBase):
                     enc_n_units=self.enc.output_dim,
                     attn_type=args.transformer_attn_type,
                     attn_n_heads=args.transformer_attn_n_heads,
-                    n_layers=args.dec_n_layers,
                     d_model=args.d_model,
                     d_ff=args.d_ff,
+                    n_layers=args.dec_n_layers,
                     vocab=self.vocab,
                     tie_embedding=args.tie_embedding,
                     pe_type=args.pe_type,
@@ -172,7 +173,34 @@ class Speech2Text(ModelBase):
                     backward=(dir == 'bwd'),
                     global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                     mtl_per_batch=args.mtl_per_batch)
-            elif 'transducer' in args.dec_type:
+            elif args.dec_type == 'transformer_transducer':
+                dec = TrasformerTransducer(
+                    eos=self.eos,
+                    unk=self.unk,
+                    pad=self.pad,
+                    blank=self.blank,
+                    enc_n_units=self.enc.output_dim,
+                    attn_type=args.transformer_attn_type,
+                    attn_n_heads=args.transformer_attn_n_heads,
+                    d_model=args.d_model,
+                    d_ff=args.d_ff,
+                    n_layers=args.dec_n_layers,
+                    vocab=self.vocab,
+                    tie_embedding=args.tie_embedding,
+                    pe_type=args.pe_type,
+                    layer_norm_eps=args.layer_norm_eps,
+                    dropout=args.dropout_dec,
+                    dropout_emb=args.dropout_emb,
+                    dropout_att=args.dropout_att,
+                    lsm_prob=args.lsm_prob,
+                    ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
+                    ctc_lsm_prob=args.ctc_lsm_prob,
+                    ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
+                        '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
+                    lm_init=lm_init,
+                    global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
+                    mtl_per_batch=args.mtl_per_batch)
+            elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
                 dec = RNNTransducer(
                     eos=self.eos,
                     unk=self.unk,
@@ -195,8 +223,6 @@ class Speech2Text(ModelBase):
                     ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
                         '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
                     lm_init=lm_init,
-                    lmobj_weight=args.lmobj_weight,
-                    share_lm_softmax=args.share_lm_softmax,
                     global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                     mtl_per_batch=args.mtl_per_batch,
                     param_init=args.param_init)
@@ -218,7 +244,6 @@ class Speech2Text(ModelBase):
                     n_units=args.dec_n_units,
                     n_projs=args.dec_n_projs,
                     n_layers=args.dec_n_layers,
-                    loop_type=args.dec_loop_type,
                     residual=args.dec_residual,
                     bottleneck_dim=args.dec_bottleneck_dim,
                     emb_dim=args.emb_dim,
@@ -243,8 +268,6 @@ class Speech2Text(ModelBase):
                     lm_fusion_type=args.lm_fusion_type,
                     discourse_aware=args.discourse_aware,
                     lm_init=lm_init,
-                    lmobj_weight=args.lmobj_weight,
-                    share_lm_softmax=args.share_lm_softmax,
                     global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                     mtl_per_batch=args.mtl_per_batch,
                     adaptive_softmax=args.adaptive_softmax,
@@ -257,7 +280,7 @@ class Speech2Text(ModelBase):
         # sub task
         for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0:
-                if args.dec_type == 'transformer':
+                if args.dec_type not in ['lstm', 'gru']:
                     raise NotImplementedError
                 else:
                     dec_sub = RNNDecoder(
@@ -277,7 +300,6 @@ class Speech2Text(ModelBase):
                         n_units=args.dec_n_units,
                         n_projs=args.dec_n_projs,
                         n_layers=args.dec_n_layers,
-                        loop_type=args.dec_loop_type,
                         residual=args.dec_residual,
                         bottleneck_dim=args.dec_bottleneck_dim,
                         emb_dim=args.emb_dim,
@@ -346,7 +368,7 @@ class Speech2Text(ModelBase):
                 for dir_sub in directions:
                     getattr(self, 'dec_' + dir_sub + '_' + sub).start_scheduled_sampling()
 
-    def forward(self, batch, reporter, task='all', is_eval=False,
+    def forward(self, batch, reporter=None, task='all', is_eval=False,
                 teacher=None, teacher_lm=None):
         """Forward computation.
 
@@ -419,7 +441,7 @@ class Speech2Text(ModelBase):
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
 
         # for the forward decoder in the main task
-        if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.lmobj']:
+        if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc']:
             teacher_logits = None
             if teacher is not None:
                 teacher.eval()
@@ -432,16 +454,13 @@ class Speech2Text(ModelBase):
             loss_fwd, obs_fwd = self.dec_fwd(enc_outs['ys']['xs'], enc_outs['ys']['xlens'],
                                              batch['ys'], task, batch['ys_hist'], teacher_logits)
             loss += loss_fwd
-            if isinstance(self.dec_fwd, RNNTransducer):
+            if isinstance(self.dec_fwd, RNNTransducer) or isinstance(self.dec_fwd, TrasformerTransducer):
                 observation['loss.transducer'] = obs_fwd['loss_transducer']
             else:
                 observation['loss.att'] = obs_fwd['loss_att']
                 observation['acc.att'] = obs_fwd['acc_att']
                 observation['ppl.att'] = obs_fwd['ppl_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
-            observation['loss.lmobj'] = obs_fwd['loss_lmobj']
-            observation['acc.lmobj'] = obs_fwd['acc_lmobj']
-            observation['ppl.lmobj'] = obs_fwd['ppl_lmobj']
 
         # for the backward decoder in the main task
         if self.bwd_weight > 0 and task in ['all', 'ys.bwd']:
@@ -451,14 +470,11 @@ class Speech2Text(ModelBase):
             observation['acc.att-bwd'] = obs_bwd['acc_att']
             observation['ppl.att-bwd'] = obs_bwd['ppl_att']
             observation['loss.ctc-bwd'] = obs_bwd['loss_ctc']
-            observation['loss.lmobj-bwd'] = obs_bwd['loss_lmobj']
-            observation['acc.lmobj-bwd'] = obs_bwd['acc_lmobj']
-            observation['ppl.lmobj-bwd'] = obs_bwd['ppl_lmobj']
 
         # only fwd for sub tasks
         for sub in ['sub1', 'sub2']:
             # for the forward decoder in the sub tasks
-            if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc', 'ys_' + sub + '.lmobj']:
+            if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc']:
                 loss_sub, obs_fwd_sub = getattr(self, 'dec_fwd_' + sub)(
                     enc_outs['ys_' + sub]['xs'], enc_outs['ys_' + sub]['xlens'],
                     batch['ys_' + sub], task)
@@ -470,11 +486,9 @@ class Speech2Text(ModelBase):
                     observation['acc.att-' + sub] = obs_fwd_sub['acc_att']
                     observation['ppl.att-' + sub] = obs_fwd_sub['ppl_att']
                 observation['loss.ctc-' + sub] = obs_fwd_sub['loss_ctc']
-                observation['loss.lmobj-' + sub] = obs_fwd_sub['loss_lmobj']
-                observation['acc.lmobj-' + sub] = obs_fwd_sub['acc_lmobj']
-                observation['ppl.lmobj-' + sub] = obs_fwd_sub['ppl_lmobj']
 
-        reporter.add(observation, is_eval=not self.training)
+        if reporter is not None:
+            reporter.add(observation, is_eval=not self.training)
 
         return loss, reporter
 
@@ -489,56 +503,50 @@ class Speech2Text(ModelBase):
             enc_outs (dict):
 
         """
-        if 'lmobj' in task:
-            eouts = {'ys': {'xs': None, 'xlens': None},
-                     'ys_sub1': {'xs': None, 'xlens': None},
-                     'ys_sub2': {'xs': None, 'xlens': None}}
-            return eouts
-        else:
-            if self.input_type == 'speech':
-                # Frame stacking
-                if self.n_stacks > 1:
-                    xs = [stack_frame(x, self.n_stacks, self.n_skips)for x in xs]
+        if self.input_type == 'speech':
+            # Frame stacking
+            if self.n_stacks > 1:
+                xs = [stack_frame(x, self.n_stacks, self.n_skips)for x in xs]
 
-                # Splicing
-                if self.n_splices > 1:
-                    xs = [splice(x, self.n_splices, self.n_stacks) for x in xs]
-                xlens = torch.IntTensor([len(x) for x in xs])
+            # Splicing
+            if self.n_splices > 1:
+                xs = [splice(x, self.n_splices, self.n_stacks) for x in xs]
+            xlens = torch.IntTensor([len(x) for x in xs])
 
-                # Flip acoustic features in the reverse order
-                if flip:
-                    xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
-                else:
-                    xs = [np2tensor(x, self.device_id).float() for x in xs]
-                xs = pad_list(xs, 0.0)
+            # Flip acoustic features in the reverse order
+            if flip:
+                xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
+            else:
+                xs = [np2tensor(x, self.device_id).float() for x in xs]
+            xs = pad_list(xs, 0.0)
 
-                # SpecAugment
-                if self.is_specaug and self.training:
-                    xs = self.specaug(xs)
+            # SpecAugment
+            if self.is_specaug and self.training:
+                xs = self.specaug(xs)
 
-                # Gaussian noise injection
-                if self.gaussian_noise:
-                    xs = add_gaussian_noise(xs)
+            # Gaussian noise injection
+            if self.gaussian_noise:
+                xs = add_gaussian_noise(xs)
 
-                # Sequence summary network
-                if self.ssn is not None:
-                    xs += self.ssn(xs, xlens)
+            # Sequence summary network
+            if self.ssn is not None:
+                xs += self.ssn(xs, xlens)
 
-            elif self.input_type == 'text':
-                xlens = torch.IntTensor([len(x) for x in xs])
-                xs = [np2tensor(np.fromiter(x, dtype=np.int64), self.device_id) for x in xs]
-                xs = pad_list(xs, self.pad)
-                xs = self.embed(xs)
+        elif self.input_type == 'text':
+            xlens = torch.IntTensor([len(x) for x in xs])
+            xs = [np2tensor(np.fromiter(x, dtype=np.int64), self.device_id) for x in xs]
+            xs = pad_list(xs, self.pad)
+            xs = self.embed(xs)
 
-            # encoder
-            enc_outs = self.enc(xs, xlens, task.split('.')[0])
+        # encoder
+        enc_outs = self.enc(xs, xlens, task.split('.')[0])
 
-            if self.main_weight < 1 and self.enc_type in ['conv', 'tds', 'gated_conv', 'transformer', 'conv_transformer']:
-                for sub in ['sub1', 'sub2']:
-                    enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
-                    enc_outs['ys_' + sub]['xlens'] = enc_outs['ys']['xlens'][:]
+        if self.main_weight < 1 and self.enc_type in ['conv', 'tds', 'gated_conv', 'transformer', 'conv_transformer']:
+            for sub in ['sub1', 'sub2']:
+                enc_outs['ys_' + sub]['xs'] = enc_outs['ys']['xs'].clone()
+                enc_outs['ys_' + sub]['xlens'] = enc_outs['ys']['xlens'][:]
 
-            return enc_outs
+        return enc_outs
 
     def get_ctc_probs(self, xs, task='ys', temperature=1, topk=None):
         self.eval()

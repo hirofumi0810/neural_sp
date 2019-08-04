@@ -50,7 +50,7 @@ def set_asr_model_name(args, subsample_factor):
     # decoder
     if args.ctc_weight < 1:
         dir_name += '_' + args.dec_type
-        if args.dec_type == 'transformer':
+        if args.dec_type in ['transformer', 'transformer_transducer']:
             dir_name += str(args.d_model) + 'dmodel'
             dir_name += str(args.d_ff) + 'dff'
             dir_name += str(args.dec_n_layers) + 'L'
@@ -60,7 +60,6 @@ def set_asr_model_name(args, subsample_factor):
             if args.dec_n_projs > 0:
                 dir_name += str(args.dec_n_projs) + 'P'
             dir_name += str(args.dec_n_layers) + 'L'
-            dir_name += '_' + args.dec_loop_type
             if args.dec_residual:
                 dir_name += 'res'
             if args.input_feeding:
@@ -103,8 +102,6 @@ def set_asr_model_name(args, subsample_factor):
             dir_name += '_' + args.unit + 'ctc'
         if args.bwd_weight > 0:
             dir_name += '_' + args.unit + 'bwd'
-        if args.lmobj_weight > 0:
-            dir_name += '_' + args.unit + 'lmobj'
         for sub in ['sub1', 'sub2']:
             if getattr(args, 'train_set_' + sub):
                 dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
@@ -117,8 +114,6 @@ def set_asr_model_name(args, subsample_factor):
             dir_name += '_ctc' + str(args.ctc_weight)
         if args.bwd_weight > 0:
             dir_name += '_bwd' + str(args.bwd_weight)
-        if args.lmobj_weight > 0:
-            dir_name += '_lmobj' + str(args.lmobj_weight)
         for sub in ['sub1', 'sub2']:
             if getattr(args, sub + '_weight') > 0:
                 dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))

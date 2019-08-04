@@ -60,7 +60,6 @@ class RNNDecoder(DecoderBase):
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of RNN layers
-        loop_type (str): normal/lmdecoder
         residual (bool): add residual connections between each layer
         bottleneck_dim (int): dimension of the bottleneck layer before the softmax layer for label generation
         emb_dim (int): dimension of the embedding in target spaces.
@@ -90,8 +89,6 @@ class RNNDecoder(DecoderBase):
         lm_fusion_type (str): type of LM fusion
         discourse_aware (str): state_carry_over/hierarchical
         lm_init (RNNLM):
-        lmobj_weight (float):
-        share_lm_softmax (bool):
         global_weight (float):
         mtl_per_batch (bool):
         adaptive_softmax (bool):
@@ -113,7 +110,6 @@ class RNNDecoder(DecoderBase):
                  n_projs,
                  n_layers,
                  residual,
-                 loop_type,
                  bottleneck_dim,
                  emb_dim,
                  vocab,
@@ -142,8 +138,6 @@ class RNNDecoder(DecoderBase):
                  lm_fusion_type='cold',
                  discourse_aware='',
                  lm_init=None,
-                 lmobj_weight=0.0,
-                 share_lm_softmax=False,
                  global_weight=1.0,
                  mtl_per_batch=False,
                  adaptive_softmax=False,
@@ -167,9 +161,6 @@ class RNNDecoder(DecoderBase):
         self.dec_n_units = n_units
         self.n_projs = n_projs
         self.n_layers = n_layers
-        self.loop_type = loop_type
-        if loop_type == 'lmdecoder':
-            assert n_layers >= 2
         self.residual = residual
         self.ss_prob = ss_prob
         self.ss_type = ss_type
@@ -182,15 +173,8 @@ class RNNDecoder(DecoderBase):
         self.focal_loss_gamma = focal_loss_gamma
         self.ctc_weight = ctc_weight
         self.input_feeding = input_feeding
-        if input_feeding:
-            assert loop_type == 'normal'
         self.bwd = backward
         self.lm_fusion_type = lm_fusion_type
-        self.lmobj_weight = lmobj_weight
-        if lmobj_weight > 0:
-            assert loop_type == 'lmdecoder'
-            assert not input_feeding
-        self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
         self.replace_sos = replace_sos
@@ -253,13 +237,6 @@ class RNNDecoder(DecoderBase):
                         conv_kernel_size=attn_conv_kernel_size,
                         dropout=dropout_att)
 
-            # for MTL with LM objective
-            if lmobj_weight > 0 and loop_type == 'lmdecoder':
-                if share_lm_softmax:
-                    self.output_lmobj = self.output  # share paramters
-                else:
-                    self.output_lmobj = Linear(n_units, vocab)
-
             # Decoder
             self.rnn = nn.ModuleList()
             if self.n_projs > 0:
@@ -267,19 +244,14 @@ class RNNDecoder(DecoderBase):
             self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             # 1st layer
-            if loop_type == 'normal':
-                dec_idim = n_units if input_feeding else enc_n_units
-                dec_idim += emb_dim
-            elif loop_type == 'lmdecoder':
-                dec_idim = emb_dim
+            dec_idim = n_units if input_feeding else enc_n_units
+            dec_idim += emb_dim
             self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
             dec_idim = n_units
             if self.n_projs > 0:
                 dec_idim = n_projs
             # 2nd layer
             if n_layers >= 2:
-                if loop_type == 'lmdecoder':
-                    dec_idim += enc_n_units
                 self.rnn += [zoneout_wrapper(cell(dec_idim, n_units), zoneout, zoneout)]
                 if self.n_projs > 0:
                     dec_idim = n_projs
@@ -352,11 +324,7 @@ class RNNDecoder(DecoderBase):
             assert lm_init.emb_dim == emb_dim
             logger.info('===== Initialize the decoder with pre-trained RNNLM')
             assert lm_init.n_projs == 0  # TODO(hirofumi): fix later
-
-            if loop_type == 'lmdecoder':
-                assert n_layers < lm_init.n_layers
-                assert lm_init.n_layers == 1
-                assert lm_init.n_units_null_context == 0
+            assert lm_init.n_units_null_context == enc_n_units
 
             # RNN
             if lm_init.fast_impl:
@@ -421,11 +389,8 @@ class RNNDecoder(DecoderBase):
             observation (dict):
 
         """
-        observation = {'loss': None,
-                       'loss_att': None, 'loss_ctc': None,
-                       'loss_lmobj': None,
-                       'acc_att': None, 'acc_lmobj': None,
-                       'ppl_att': None, 'ppl_lmobj': None}
+        observation = {'loss': None, 'loss_att': None, 'loss_ctc': None,
+                       'acc_att': None, 'ppl_att': None}
         w = next(self.parameters())
         loss = w.new_zeros((1,))
 
@@ -441,19 +406,8 @@ class RNNDecoder(DecoderBase):
             else:
                 loss += loss_ctc * self.ctc_weight
 
-        # LM objective for the decoder
-        if self.lmobj_weight > 0 and (task == 'all' or 'lmobj' in task):
-            loss_lmobj, acc_lmobj, ppl_lmobj = self.forward_lmobj(ys)
-            observation['loss_lmobj'] = loss_lmobj.item()
-            observation['acc_lmobj'] = acc_lmobj
-            observation['ppl_lmobj'] = ppl_lmobj
-            if self.mtl_per_batch:
-                loss += loss_lmobj
-            else:
-                loss += loss_lmobj * self.lmobj_weight
-
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task and 'lmobj' not in task)):
+        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task)):
             loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys, ys_hist,
                                                           teacher_logits=teacher_logits)
             observation['loss_att'] = loss_att.item()
@@ -491,58 +445,8 @@ class RNNDecoder(DecoderBase):
             ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
         return ys_in_pad, ys_out_pad, ylens
 
-    def forward_lmobj(self, ys):
-        """Compute XE loss for LM objective.
-
-        Args:
-            ys (list): A list of length `[B]`, which contains a list of size `[L]`
-        Returns:
-            loss (FloatTensor): `[1]`
-            acc (float): accuracy for token prediction
-            ppl (float): perplexity
-
-        """
-        bs = len(ys)
-        w = next(self.parameters())
-
-        # Append <sos> and <eos>
-        ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
-
-        # Initialization
-        dstates = self.zero_state(bs)
-        cv = w.new_zeros((bs, 1, self.enc_n_units))
-        attn_v = w.new_zeros((bs, 1, self.dec_n_units))
-
-        # Pre-computation of embedding
-        ys_emb = self.embed(ys_in_pad)
-
-        logits = []
-        for t in range(ys_in_pad.size(1)):
-            # Recurrency -> Generate
-            dstates = self.recurrency(ys_emb[:, t:t + 1], cv, dstates['dstate'])
-            if self.loop_type == 'lmdecoder':
-                logits_t = self.output_lmobj(dstates['dout_lmdec'])
-            elif self.loop_type == 'normal':
-                attn_v, _ = self.generate(cv, dstates['dout_gen'])
-                logits_t = self.output(attn_v)
-            logits.append(logits_t)
-
-        # Compute XE loss for LM objective
-        logits = torch.cat(logits, dim=1)
-        loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                               ignore_index=self.pad, size_average=True)
-        # TODO(hirofumi): adaptive_softmax
-
-        # Compute token-level accuracy in teacher-forcing
-        acc = compute_accuracy(logits, ys_out_pad, self.pad)
-        ppl = min(np.exp(loss.item()), np.inf)
-
-        # scale loss for CTC
-        loss *= ylens.float().mean()
-
-        return loss, acc, ppl
-
-    def forward_att(self, eouts, elens, ys, ys_hist=[], return_logits=False, teacher_logits=None):
+    def forward_att(self, eouts, elens, ys, ys_hist=[],
+                    return_logits=False, teacher_logits=None):
         """Compute XE loss for the attention-based sequence-to-sequence model.
 
         Args:
@@ -719,57 +623,35 @@ class RNNDecoder(DecoderBase):
 
         dstates_new = {'dout_score': None,  # for attention scoring
                        'dout_gen': None,  # for token generation
-                       'dout_lmdec': None,
                        'dstate': None}
 
         # 1st layer
-        if self.loop_type == 'lmdecoder':
-            if self.rnn_type == 'lstm':
-                hxs[0], cxs[0] = self.rnn[0](y_emb, (hxs[0], cxs[0]))
-            elif self.rnn_type == 'gru':
-                hxs[0] = self.rnn[0](y_emb, hxs[0])
-        elif self.loop_type == 'normal':
-            if self.rnn_type == 'lstm':
-                hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, cv], dim=-1), (hxs[0], cxs[0]))
-            elif self.rnn_type == 'gru':
-                hxs[0] = self.rnn[0](torch.cat([y_emb, cv], dim=-1), hxs[0])
+        if self.rnn_type == 'lstm':
+            hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, cv], dim=-1), (hxs[0], cxs[0]))
+        elif self.rnn_type == 'gru':
+            hxs[0] = self.rnn[0](torch.cat([y_emb, cv], dim=-1), hxs[0])
         dout = self.dropout[0](hxs[0])
         if self.n_projs > 0:
             dout = torch.tanh(self.proj[0](dout))
 
-        if self.loop_type == 'lmdecoder' and self.lmobj_weight > 0:
-            dstates_new['dout_lmdec'] = dout.unsqueeze(1)
-
-        if self.loop_type == 'normal':
-            # the bottom layer
-            dstates_new['dout_score'] = dout.unsqueeze(1)
+        # use output in the first layer for attention scoring
+        dstates_new['dout_score'] = dout.unsqueeze(1)
 
         # after 2nd layers
         for l in range(1, self.n_layers):
-            if self.loop_type == 'lmdecoder' and l == 1:
-                if self.rnn_type == 'lstm':
-                    hxs[l], cxs[l] = self.rnn[l](torch.cat([dout, cv], dim=-1), (hxs[l], cxs[l]))
-                elif self.rnn_type == 'gru':
-                    hxs[l] = self.rnn[l](torch.cat([dout, cv], dim=-1), hxs[l])
-            else:
-                if self.rnn_type == 'lstm':
-                    hxs[l], cxs[l] = self.rnn[l](dout, (hxs[l], cxs[l]))
-                elif self.rnn_type == 'gru':
-                    hxs[l] = self.rnn[l](dout, hxs[l])
+            if self.rnn_type == 'lstm':
+                hxs[l], cxs[l] = self.rnn[l](dout, (hxs[l], cxs[l]))
+            elif self.rnn_type == 'gru':
+                hxs[l] = self.rnn[l](dout, hxs[l])
             dout_tmp = self.dropout[l](hxs[l])
             if self.n_projs > 0:
                 dout_tmp = torch.tanh(self.proj[l](dout_tmp))
-
-            if self.loop_type == 'lmdecoder' and l == 1:
-                # the bottom layer
-                dstates_new['dout_score'] = dout_tmp.unsqueeze(1)
-
             if self.residual:
                 dout = dout_tmp + dout
             else:
                 dout = dout_tmp
 
-        # the top layer
+        # use oupput in the the last layer for label generation
         dstates_new['dout_gen'] = dout.unsqueeze(1)
         dstates_new['dstate'] = (hxs[:], cxs[:])
         return dstates_new

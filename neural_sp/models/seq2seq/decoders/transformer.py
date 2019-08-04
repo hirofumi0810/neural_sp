@@ -53,9 +53,9 @@ class TransformerDecoder(DecoderBase):
         enc_n_units (int): number of units of the encoder outputs
         attn_type (str): type of attention mechanism
         attn_n_heads (int): number of attention heads
-        n_layers (int): number of decoder layers
         d_model (int): size of the model
         d_ff (int): size of the inner FF layer
+        n_layers (int): number of decoder layers
         vocab (int): number of nodes in softmax layer
         tie_embedding (bool): tie parameters of the embedding and output layers
         pe_type (str): type of positional encoding
@@ -84,9 +84,9 @@ class TransformerDecoder(DecoderBase):
                  enc_n_units,
                  attn_type,
                  attn_n_heads,
-                 n_layers,
                  d_model,
                  d_ff,
+                 n_layers,
                  vocab,
                  tie_embedding=False,
                  pe_type='add',
@@ -202,11 +202,8 @@ class TransformerDecoder(DecoderBase):
             observation (dict):
 
         """
-        observation = {'loss': None,
-                       'loss_att': None, 'loss_ctc': None, 'loss_lmobj': None,
-                       'acc_att': None, 'acc_lmobj': None,
-                       'ppl_att': None, 'ppl_lmobj': None}
-        # NOTE: lmobj is not supported now
+        observation = {'loss': None, 'loss_att': None, 'loss_ctc': None,
+                       'acc_att': None, 'ppl_att': None}
         loss = eouts.new_zeros((1,))
 
         # CTC loss
@@ -219,7 +216,7 @@ class TransformerDecoder(DecoderBase):
                 loss += loss_ctc * self.ctc_weight
 
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and 'ctc' not in task and 'lmobj' not in task:
+        if self.global_weight - self.ctc_weight > 0 and 'ctc' not in task:
             loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
@@ -257,17 +254,17 @@ class TransformerDecoder(DecoderBase):
 
         # Create the self-attention mask
         bs, ymax = ys_in_pad.size()[:2]
-        yy_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).expand(bs, ymax, ymax)
-        yy_mask = yy_mask.unsqueeze(1).expand(bs, self.attn_n_heads, ymax, ymax)
+        yy_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ymax, 1])
+        yy_mask = yy_mask.unsqueeze(1).repeat([1, self.attn_n_heads, 1, 1])
         subsequent_mask = torch.tril(yy_mask.new_ones((ymax, ymax)).byte(), diagonal=0)
-        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.attn_n_heads, ymax, ymax)
+        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).repeat([bs, self.attn_n_heads, 1, 1])
         yy_mask = yy_mask & subsequent_mask
 
         # Create the source-target mask
         xmax = eouts.size(1)
-        x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).expand(bs, ymax, xmax)
-        y_mask = make_pad_mask(ylens, self.device_id).unsqueeze(2).expand(bs, ymax, xmax)
-        xy_mask = (x_mask * y_mask).unsqueeze(1).expand(bs, self.attn_n_heads, ymax, xmax)
+        x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ymax, 1])
+        y_mask = make_pad_mask(ylens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
+        xy_mask = (x_mask * y_mask).unsqueeze(1).repeat([1, self.attn_n_heads, 1, 1])
 
         ys_emb = self.pos_enc(self.embed(ys_in_pad))
         for l in range(self.n_layers):
@@ -373,7 +370,7 @@ class TransformerDecoder(DecoderBase):
         bs, xmax = eouts.size()[:2]
 
         # Start from <sos> (<eos> in case of the backward decoder)
-        ys_all = eouts.new_zeros(bs, 1).fill_(self.eos).long()
+        y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
         best_hyps_batch = []
         ylens = torch.zeros(bs).int()
@@ -385,34 +382,17 @@ class TransformerDecoder(DecoderBase):
         else:
             ymax = int(math.floor(xmax * max_len_ratio)) + 1
         for t in range(ymax):
-            # Create the self-attention mask
-            # yy_mask = make_pad_mask(ylens + 1, self.device_id).unsqueeze(1).expand(bs, t + 1, t + 1)
-            # yy_mask = yy_mask.unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, t + 1)
-            # subsequent_mask = torch.tril(yy_mask.new_ones((t + 1, t + 1)).byte(), diagonal=0)
-            # subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, t + 1)
-            # yy_mask = yy_mask & subsequent_mask
-            yy_mask = None
-
-            # Create the source-target mask
-            # xmax = eouts.size(1)
-            # x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).expand(bs, t + 1, xmax)
-            # y_mask = make_pad_mask(ylens + 1, self.device_id).unsqueeze(2).expand(bs, t + 1, xmax)
-            # xy_mask = (x_mask * y_mask).unsqueeze(1).expand(bs, self.attn_n_heads, t + 1, xmax)
-            xy_mask = None
-
-            out = self.pos_enc(self.embed(ys_all))
+            dout = self.pos_enc(self.embed(y_seq))
             for l in range(self.n_layers):
-                out, yy_aws, xy_aws = self.layers[l](out, yy_mask, eouts, xy_mask)
-            out = self.norm_out(out)
+                dout, yy_aws, xy_aws = self.layers[l](dout, None, eouts, None)
+            dout = self.norm_out(dout)
 
             # Pick up 1-best
-            y = self.output(out).argmax(-1)[:, -1:]
+            y = self.output(dout).argmax(-1)[:, -1:]
             best_hyps_batch += [y]
 
             # Count lengths of hypotheses
             for b in range(bs):
-                print(y[b].item() == self.eos)
-
                 if not eos_flags[b]:
                     if y[b].item() == self.eos:
                         eos_flags[b] = True
@@ -427,11 +407,11 @@ class TransformerDecoder(DecoderBase):
                 break
 
             if oracle:
-                ys_all = torch.cat([ys_all, eouts.new_zeros(bs, 1).long()], dim=-1)
+                y_seq = torch.cat([y_seq, eouts.new_zeros(bs, 1).long()], dim=-1)
                 for b in range(bs):
-                    ys_all[b, -1] = refs_id[b][t]
+                    y_seq[b, -1] = refs_id[b][t]
             else:
-                ys_all = torch.cat([ys_all, y], dim=-1)
+                y_seq = torch.cat([y_seq, y.long()], dim=-1)
 
         # Concatenate in L dimension
         best_hyps_batch = tensor2np(torch.cat(best_hyps_batch, dim=1))

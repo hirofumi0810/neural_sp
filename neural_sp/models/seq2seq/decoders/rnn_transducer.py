@@ -23,7 +23,6 @@ from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
-from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
@@ -58,12 +57,10 @@ class RNNTransducer(DecoderBase):
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
         lm_init (RNNLM):
-        lmobj_weight (float):
         share_lm_softmax (bool):
         global_weight (float):
         mtl_per_batch (bool):
         param_init (float):
-        start_pointing (bool):
         end_pointing (bool):
 
     """
@@ -90,12 +87,9 @@ class RNNTransducer(DecoderBase):
                  ctc_lsm_prob=0.0,
                  ctc_fc_list=[],
                  lm_init=None,
-                 lmobj_weight=0.0,
-                 share_lm_softmax=False,
                  global_weight=1.0,
                  mtl_per_batch=False,
                  param_init=0.1,
-                 start_pointing=False,
                  end_pointing=True):
 
         super(RNNTransducer, self).__init__()
@@ -115,13 +109,10 @@ class RNNTransducer(DecoderBase):
         self.residual = residual
         self.lsm_prob = lsm_prob
         self.ctc_weight = ctc_weight
-        self.lmobj_weight = lmobj_weight
-        self.share_lm_softmax = share_lm_softmax
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
 
         # VAD
-        self.start_pointing = start_pointing
         self.end_pointing = end_pointing
 
         # for cache
@@ -142,13 +133,6 @@ class RNNTransducer(DecoderBase):
         if ctc_weight < global_weight:
             import warprnnt_pytorch
             self.warprnnt_loss = warprnnt_pytorch.RNNTLoss()
-
-            # for MTL with LM objective
-            if lmobj_weight > 0:
-                if share_lm_softmax:
-                    self.output_lmobj = self.output  # share paramters
-                else:
-                    self.output_lmobj = Linear(n_units, vocab)
 
             # Prediction network
             self.fast_impl = False
@@ -236,11 +220,7 @@ class RNNTransducer(DecoderBase):
             observation (dict):
 
         """
-        observation = {'loss': None,
-                       'loss_transducer': None, 'loss_ctc': None,
-                       'loss_lmobj': None,
-                       'acc_lmobj': None,
-                       'ppl_lmobj': None}
+        observation = {'loss': None, 'loss_transducer': None, 'loss_ctc': None}
         w = next(self.parameters())
         loss = w.new_zeros((1,))
 
@@ -253,19 +233,8 @@ class RNNTransducer(DecoderBase):
             else:
                 loss += loss_ctc * self.ctc_weight
 
-        # LM objective for the decoder
-        if self.lmobj_weight > 0 and (task == 'all' or 'lmobj' in task):
-            loss_lmobj, acc_lmobj, ppl_lmobj = self.forward_lmobj(ys)
-            observation['loss_lmobj'] = loss_lmobj.item()
-            observation['acc_lmobj'] = acc_lmobj
-            observation['ppl_lmobj'] = ppl_lmobj
-            if self.mtl_per_batch:
-                loss += loss_lmobj
-            else:
-                loss += loss_lmobj * self.lmobj_weight
-
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task and 'lmobj' not in task)):
+        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task)):
             loss_transducer = self.forward_rnnt(eouts, elens, ys)
             observation['loss_transducer'] = loss_transducer.item()
             if self.mtl_per_batch:
@@ -275,43 +244,6 @@ class RNNTransducer(DecoderBase):
 
         observation['loss'] = loss.item()
         return loss, observation
-
-    def forward_lmobj(self, ys):
-        """Compute XE loss for LM objective.
-
-        Args:
-            ys (list): A list of length `[B]`, which contains a list of size `[L]`
-        Returns:
-            loss (FloatTensor): `[1]`
-            acc (float): accuracy
-            ppl (float): perplexity
-
-        """
-        w = next(self.parameters())
-
-        # Append <sos> and <eos>
-        eos = w.new_zeros(1).fill_(self.eos)
-        ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
-        ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-        ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
-        ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
-
-        # Update prediction network
-        dout, _ = self.recurrency(self.embed(ys_in_pad), None)
-        logits = self.output_lmobj(dout)
-
-        # Compute XE loss for LM objective
-        loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                               ignore_index=self.pad, size_average=True)
-
-        # Compute token-level accuracy in teacher-forcing
-        acc = compute_accuracy(logits, ys_out_pad, self.pad)
-        ppl = min(np.exp(loss.item()), np.inf)
-
-        # scale loss for CTC
-        loss *= ylens.float().mean()
-
-        return loss, acc, ppl
 
     def forward_rnnt(self, eouts, elens, ys):
         """Compute XE loss for the attention-based sequence-to-sequence model.
@@ -324,13 +256,10 @@ class RNNTransducer(DecoderBase):
             loss (FloatTensor): `[1]`
 
         """
-        # Append <null> and <eos>
+        # Append <sos> and <eos>
         eos = eouts.new_zeros(1).fill_(self.eos).long()
         if self.end_pointing:
-            if self.start_pointing:
-                _ys = [np2tensor(np.fromiter([self.eos] + y + [self.eos], dtype=np.int64), self.device_id) for y in ys]
-            else:
-                _ys = [np2tensor(np.fromiter(y + [self.eos], dtype=np.int64), self.device_id) for y in ys]
+            _ys = [np2tensor(np.fromiter(y + [self.eos], dtype=np.int64), self.device_id) for y in ys]
         else:
             _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
@@ -350,7 +279,8 @@ class RNNTransducer(DecoderBase):
             elens = elens.cuda(self.device_id)
             ylens = ylens.cuda(self.device_id)
 
-        loss = self.warprnnt_loss(log_probs, ys_out_pad, elens, ylens)
+        assert log_probs.size(2) == ys_out_pad.size(1) + 1
+        loss = self.warprnnt_loss(log_probs, ys_out_pad.int(), elens, ylens)
         # NOTE: Transducer loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warprnnt_pytorch
         # if self.device_id >= 0:
@@ -365,7 +295,7 @@ class RNNTransducer(DecoderBase):
 
         return loss
 
-    def joint(self, eouts, douts):
+    def joint(self, eouts, douts, non_linear=torch.tanh):
         """Combine encoder outputs and prediction network outputs.
 
         Args:
@@ -375,10 +305,12 @@ class RNNTransducer(DecoderBase):
             out (FloatTensor): `[B, T, L, vocab]`
 
         """
+        # broadcast
         eouts = eouts.unsqueeze(2)  # `[B, T, 1, n_units]`
         douts = douts.unsqueeze(1)  # `[B, 1, L, n_units]`
-        out = torch.tanh(self.w_enc(eouts) + self.w_dec(douts))
-        return self.output(out)
+        out = non_linear(self.w_enc(eouts) + self.w_dec(douts))
+        out = self.output(out)
+        return out
 
     def recurrency(self, ys_emb, dstate):
         """Update prediction network.
@@ -389,7 +321,7 @@ class RNNTransducer(DecoderBase):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
         Returns:
-            dout (FloatTensor):
+            dout (FloatTensor): `[B, L, emb_dim]`
             new_dstate (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
@@ -495,7 +427,7 @@ class RNNTransducer(DecoderBase):
             for t in range(elens[b]):
                 # Pick up 1-best per frame
                 out = self.joint(eouts[b:b + 1, t:t + 1], dout.squeeze(1))
-                y = F.log_softmax(out.squeeze(2), dim=-1).argmax(-1)
+                y = out.squeeze(2).argmax(-1)
                 idx = y[0].item()
 
                 # Update prediction network only when predicting non-blank labels
@@ -518,10 +450,7 @@ class RNNTransducer(DecoderBase):
                 logger.info('Utt-id: %s' % utt_ids[b])
             if refs_id is not None and self.vocab == idx2token.vocab:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
-            if self.bwd:
-                logger.info('Hyp: %s' % idx2token(hyps[1:][::-1]))
-            else:
-                logger.info('Hyp: %s' % idx2token(hyps[1:]))
+            logger.info('Hyp: %s' % idx2token(hyps[1:]))
 
         return hyps, None
 
