@@ -47,9 +47,7 @@ class RNNEncoder(EncoderBase):
         conv_strides (list): number of strides in the CNN blocks
         conv_poolings (list): size of poolings in the CNN blocks
         conv_batch_norm (bool): apply batch normalization only in the CNN blocks
-        conv_residual (bool): add residual connection between each CNN block
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and RNN layers
-        residual (bool): add residual connections between the consecutive layers
         n_layers_sub1 (int): number of layers in the 1st auxiliary task
         n_layers_sub2 (int): number of layers in the 2nd auxiliary task
         nin (bool): insert 1*1 conv + batch normalization + ReLU
@@ -77,9 +75,7 @@ class RNNEncoder(EncoderBase):
                  conv_strides=[],
                  conv_poolings=[],
                  conv_batch_norm=False,
-                 conv_residual=False,
                  conv_bottleneck_dim=0,
-                 residual=False,
                  n_layers_sub1=0,
                  n_layers_sub2=0,
                  nin=False,
@@ -111,11 +107,6 @@ class RNNEncoder(EncoderBase):
         self.bridge = None
         self.bridge_sub1 = None
         self.bridge_sub2 = None
-
-        # Setting for residual connections
-        self.residual = residual
-        if residual:
-            assert np.prod(subsample) == 1
 
         # Dropout for input-hidden connection
         self.dropout_in = nn.Dropout(p=dropout_in)
@@ -168,7 +159,6 @@ class RNNEncoder(EncoderBase):
                                         poolings=poolings,
                                         dropout=0,
                                         batch_norm=conv_batch_norm,
-                                        residual=conv_residual,
                                         bottleneck_dim=conv_bottleneck_dim,
                                         param_init=param_init)
             self._output_dim = self.conv.output_dim
@@ -181,7 +171,7 @@ class RNNEncoder(EncoderBase):
         if rnn_type not in ['conv', 'tds', 'gated_conv']:
             # Fast implementation without processes between each layer
             self.fast_impl = False
-            if np.prod(subsample) == 1 and n_projs == 0 and not residual and n_layers_sub1 == 0 and not nin:
+            if np.prod(subsample) == 1 and n_projs == 0 and n_layers_sub1 == 0 and not nin:
                 self.fast_impl = True
                 if 'lstm' in rnn_type:
                     rnn = nn.LSTM
@@ -328,7 +318,6 @@ class RNNEncoder(EncoderBase):
             xs = self.padding(xs, xlens, self.rnn)
             xs = self.dropout_top(xs)
         else:
-            residual = None
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
                 xs = self.padding(xs, xlens, self.rnn[l])
@@ -380,11 +369,6 @@ class RNNEncoder(EncoderBase):
                     # NiN
                     if self.nin is not None:
                         xs = self.nin[l](xs)
-
-                    # Residual connection
-                    if self.residual and residual is not None:
-                        xs = xs + residual
-                    residual = xs
 
         # Bridge layer
         if self.bridge is not None:

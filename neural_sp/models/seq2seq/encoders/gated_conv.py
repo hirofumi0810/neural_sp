@@ -15,8 +15,8 @@ import logging
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.glu import GLUBlock
+from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 

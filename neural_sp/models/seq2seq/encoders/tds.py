@@ -13,8 +13,8 @@ from __future__ import print_function
 from collections import OrderedDict
 import logging
 import math
+import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
@@ -186,7 +186,7 @@ class TDSBlock(nn.Module):
         # first block
         residual = xs
         xs = self.conv2d(xs)
-        xs = F.relu(xs)
+        xs = torch.relu(xs)
         self.dropout1(xs)
 
         xs = xs + residual  # `[B, out_ch, T, feat_dim]`
@@ -200,7 +200,7 @@ class TDSBlock(nn.Module):
         # second block
         residual = xs
         xs = self.conv1d_1(xs)
-        xs = F.relu(xs)
+        xs = torch.relu(xs)
         self.dropout2_1(xs)
         xs = self.conv1d_2(xs)
         self.dropout2_2(xs)
@@ -238,7 +238,7 @@ class SubsampelBlock(nn.Module):
         bs, _, time, _ = xs.size()
 
         xs = self.conv1d(xs)
-        xs = F.relu(xs)
+        xs = torch.relu(xs)
         xs = self.dropout(xs)
 
         # layer normalization

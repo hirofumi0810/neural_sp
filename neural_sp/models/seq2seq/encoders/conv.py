@@ -15,7 +15,6 @@ import math
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
@@ -186,7 +185,7 @@ class Conv1LBlock(EncoderBase):
         """
         xs = self.conv(xs)
         xs = self.batch_norm(xs)
-        xs = F.relu(xs)
+        xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens(xlens, self.conv, dim=0)
 
@@ -263,7 +262,7 @@ class Conv2LBlock(EncoderBase):
 
         xs = self.conv1(xs)
         xs = self.batch_norm1(xs)
-        xs = F.relu(xs)
+        xs = torch.relu(xs)
         xs = self.dropout1(xs)
         xlens = update_lens(xlens, self.conv1, dim=0)
 
@@ -271,7 +270,7 @@ class Conv2LBlock(EncoderBase):
         xs = self.batch_norm2(xs)
         if self.residual and xs.size() == residual.size():
             xs += residual
-        xs = F.relu(xs)
+        xs = torch.relu(xs)
         xs = self.dropout2(xs)
         xlens = update_lens(xlens, self.conv2, dim=0)
 

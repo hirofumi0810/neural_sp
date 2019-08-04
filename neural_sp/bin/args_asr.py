@@ -104,8 +104,6 @@ def parse():
                         help='delimited list of poolings in each CNN block')
     parser.add_argument('--conv_batch_norm', type=strtobool, default=False, nargs='?',
                         help='apply batch normalization in each CNN block')
-    parser.add_argument('--conv_residual', type=strtobool, default=False, nargs='?',
-                        help='add residual connection between each CNN block')
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
@@ -123,8 +121,6 @@ def parse():
                         help='number of encoder RNN layers in the 1st auxiliary task')
     parser.add_argument('--enc_n_layers_sub2', type=int, default=0,
                         help='number of encoder RNN layers in the 2nd auxiliary task')
-    parser.add_argument('--enc_residual', type=strtobool, default=False, nargs='?',
-                        help='residual connection between each encoder layer')
     parser.add_argument('--enc_nin', type=strtobool, default=False, nargs='?',
                         help='NiN (network in network) between each encoder layer')
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",

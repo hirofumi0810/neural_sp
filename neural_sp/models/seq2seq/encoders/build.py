@@ -38,7 +38,6 @@ def build_encoder(args):
             conv_strides=args.conv_strides,
             conv_poolings=args.conv_poolings,
             conv_batch_norm=args.conv_batch_norm,
-            conv_residual=args.conv_residual,
             conv_bottleneck_dim=args.conv_bottleneck_dim,
             param_init=args.param_init)
     else:
@@ -66,9 +65,7 @@ def build_encoder(args):
             conv_strides=args.conv_strides,
             conv_poolings=args.conv_poolings,
             conv_batch_norm=args.conv_batch_norm,
-            conv_residual=args.conv_residual,
             conv_bottleneck_dim=args.conv_bottleneck_dim,
-            residual=args.enc_residual,
             nin=args.enc_nin,
             task_specific_layer=args.task_specific_layer,
             param_init=args.param_init)
