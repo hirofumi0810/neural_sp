@@ -19,6 +19,7 @@ from neural_sp.models.base import ModelBase
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.seq2seq.decoders.attention_rnn import RNNDecoder
+from neural_sp.models.seq2seq.decoders.attention_rnn_cif import CIFRNNDecoder
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
@@ -145,34 +146,37 @@ class Speech2Text(ModelBase):
 
             # Decoder
             if args.dec_type == 'transformer':
-                dec = TransformerDecoder(
-                    eos=self.eos,
-                    unk=self.unk,
-                    pad=self.pad,
-                    blank=self.blank,
-                    enc_n_units=self.enc.output_dim,
-                    attn_type=args.transformer_attn_type,
-                    attn_n_heads=args.transformer_attn_n_heads,
-                    d_model=args.d_model,
-                    d_ff=args.d_ff,
-                    n_layers=args.dec_n_layers,
-                    vocab=self.vocab,
-                    tie_embedding=args.tie_embedding,
-                    pe_type=args.pe_type,
-                    layer_norm_eps=args.layer_norm_eps,
-                    dropout=args.dropout_dec,
-                    dropout_emb=args.dropout_emb,
-                    dropout_att=args.dropout_att,
-                    lsm_prob=args.lsm_prob,
-                    focal_loss_weight=args.focal_loss_weight,
-                    focal_loss_gamma=args.focal_loss_gamma,
-                    ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
-                    ctc_lsm_prob=args.ctc_lsm_prob,
-                    ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
-                        '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
-                    backward=(dir == 'bwd'),
-                    global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
-                    mtl_per_batch=args.mtl_per_batch)
+                if args.attn_type == 'cif':
+                    raise NotImplementedError
+                else:
+                    dec = TransformerDecoder(
+                        eos=self.eos,
+                        unk=self.unk,
+                        pad=self.pad,
+                        blank=self.blank,
+                        enc_n_units=self.enc.output_dim,
+                        attn_type=args.transformer_attn_type,
+                        attn_n_heads=args.transformer_attn_n_heads,
+                        d_model=args.d_model,
+                        d_ff=args.d_ff,
+                        n_layers=args.dec_n_layers,
+                        vocab=self.vocab,
+                        tie_embedding=args.tie_embedding,
+                        pe_type=args.pe_type,
+                        layer_norm_eps=args.layer_norm_eps,
+                        dropout=args.dropout_dec,
+                        dropout_emb=args.dropout_emb,
+                        dropout_att=args.dropout_att,
+                        lsm_prob=args.lsm_prob,
+                        focal_loss_weight=args.focal_loss_weight,
+                        focal_loss_gamma=args.focal_loss_gamma,
+                        ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
+                        ctc_lsm_prob=args.ctc_lsm_prob,
+                        ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
+                            '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
+                        backward=(dir == 'bwd'),
+                        global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
+                        mtl_per_batch=args.mtl_per_batch)
             elif args.dec_type == 'transformer_transducer':
                 dec = TrasformerTransducer(
                     eos=self.eos,
@@ -211,7 +215,6 @@ class Speech2Text(ModelBase):
                     n_units=args.dec_n_units,
                     n_projs=args.dec_n_projs,
                     n_layers=args.dec_n_layers,
-                    residual=args.dec_residual,
                     bottleneck_dim=args.dec_bottleneck_dim,
                     emb_dim=args.emb_dim,
                     vocab=self.vocab,
@@ -227,52 +230,90 @@ class Speech2Text(ModelBase):
                     mtl_per_batch=args.mtl_per_batch,
                     param_init=args.param_init)
             else:
-                dec = RNNDecoder(
-                    eos=self.eos,
-                    unk=self.unk,
-                    pad=self.pad,
-                    blank=self.blank,
-                    enc_n_units=self.enc.output_dim,
-                    attn_type=args.attn_type,
-                    attn_dim=args.attn_dim,
-                    attn_sharpening_factor=args.attn_sharpening,
-                    attn_sigmoid_smoothing=args.attn_sigmoid,
-                    attn_conv_out_channels=args.attn_conv_n_channels,
-                    attn_conv_kernel_size=args.attn_conv_width,
-                    attn_n_heads=args.attn_n_heads,
-                    rnn_type=args.dec_type,
-                    n_units=args.dec_n_units,
-                    n_projs=args.dec_n_projs,
-                    n_layers=args.dec_n_layers,
-                    residual=args.dec_residual,
-                    bottleneck_dim=args.dec_bottleneck_dim,
-                    emb_dim=args.emb_dim,
-                    vocab=self.vocab,
-                    tie_embedding=args.tie_embedding,
-                    dropout=args.dropout_dec,
-                    dropout_emb=args.dropout_emb,
-                    dropout_att=args.dropout_att,
-                    ss_prob=args.ss_prob,
-                    ss_type=args.ss_type,
-                    lsm_prob=args.lsm_prob,
-                    focal_loss_weight=args.focal_loss_weight,
-                    focal_loss_gamma=args.focal_loss_gamma,
-                    ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
-                    ctc_lsm_prob=args.ctc_lsm_prob,
-                    ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
-                        '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
-                    backward=(dir == 'bwd'),
-                    lm_fusion=lm_fusion,
-                    lm_fusion_type=args.lm_fusion_type,
-                    discourse_aware=args.discourse_aware,
-                    lm_init=lm_init,
-                    global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
-                    mtl_per_batch=args.mtl_per_batch,
-                    adaptive_softmax=args.adaptive_softmax,
-                    param_init=args.param_init,
-                    mocha_chunk_size=args.mocha_chunk_size,
-                    replace_sos=args.replace_sos,
-                    soft_label_weight=args.soft_label_weight)
+                if args.attn_type == 'cif':
+                    dec = CIFRNNDecoder(
+                        eos=self.eos,
+                        unk=self.unk,
+                        pad=self.pad,
+                        blank=self.blank,
+                        enc_n_units=self.enc.output_dim,
+                        attn_conv_kernel_size=args.attn_conv_width,
+                        rnn_type=args.dec_type,
+                        n_units=args.dec_n_units,
+                        n_projs=args.dec_n_projs,
+                        n_layers=args.dec_n_layers,
+                        bottleneck_dim=args.dec_bottleneck_dim,
+                        emb_dim=args.emb_dim,
+                        vocab=self.vocab,
+                        tie_embedding=args.tie_embedding,
+                        dropout=args.dropout_dec,
+                        dropout_emb=args.dropout_emb,
+                        ss_prob=args.ss_prob,
+                        ss_type=args.ss_type,
+                        lsm_prob=args.lsm_prob,
+                        focal_loss_weight=args.focal_loss_weight,
+                        focal_loss_gamma=args.focal_loss_gamma,
+                        ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
+                        ctc_lsm_prob=args.ctc_lsm_prob,
+                        ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
+                            '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
+                        backward=(dir == 'bwd'),
+                        lm_fusion=lm_fusion,
+                        lm_fusion_type=args.lm_fusion_type,
+                        discourse_aware=args.discourse_aware,
+                        lm_init=lm_init,
+                        global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
+                        mtl_per_batch=args.mtl_per_batch,
+                        adaptive_softmax=args.adaptive_softmax,
+                        param_init=args.param_init,
+                        replace_sos=args.replace_sos,
+                        soft_label_weight=args.soft_label_weight)
+                else:
+                    dec = RNNDecoder(
+                        eos=self.eos,
+                        unk=self.unk,
+                        pad=self.pad,
+                        blank=self.blank,
+                        enc_n_units=self.enc.output_dim,
+                        attn_type=args.attn_type,
+                        attn_dim=args.attn_dim,
+                        attn_sharpening_factor=args.attn_sharpening,
+                        attn_sigmoid_smoothing=args.attn_sigmoid,
+                        attn_conv_out_channels=args.attn_conv_n_channels,
+                        attn_conv_kernel_size=args.attn_conv_width,
+                        attn_n_heads=args.attn_n_heads,
+                        rnn_type=args.dec_type,
+                        n_units=args.dec_n_units,
+                        n_projs=args.dec_n_projs,
+                        n_layers=args.dec_n_layers,
+                        bottleneck_dim=args.dec_bottleneck_dim,
+                        emb_dim=args.emb_dim,
+                        vocab=self.vocab,
+                        tie_embedding=args.tie_embedding,
+                        dropout=args.dropout_dec,
+                        dropout_emb=args.dropout_emb,
+                        dropout_att=args.dropout_att,
+                        ss_prob=args.ss_prob,
+                        ss_type=args.ss_type,
+                        lsm_prob=args.lsm_prob,
+                        focal_loss_weight=args.focal_loss_weight,
+                        focal_loss_gamma=args.focal_loss_gamma,
+                        ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
+                        ctc_lsm_prob=args.ctc_lsm_prob,
+                        ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
+                            '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
+                        backward=(dir == 'bwd'),
+                        lm_fusion=lm_fusion,
+                        lm_fusion_type=args.lm_fusion_type,
+                        discourse_aware=args.discourse_aware,
+                        lm_init=lm_init,
+                        global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
+                        mtl_per_batch=args.mtl_per_batch,
+                        adaptive_softmax=args.adaptive_softmax,
+                        param_init=args.param_init,
+                        mocha_chunk_size=args.mocha_chunk_size,
+                        replace_sos=args.replace_sos,
+                        soft_label_weight=args.soft_label_weight)
             setattr(self, 'dec_' + dir, dec)
 
         # sub task
@@ -298,7 +339,6 @@ class Speech2Text(ModelBase):
                         n_units=args.dec_n_units,
                         n_projs=args.dec_n_projs,
                         n_layers=args.dec_n_layers,
-                        residual=args.dec_residual,
                         bottleneck_dim=args.dec_bottleneck_dim,
                         emb_dim=args.emb_dim,
                         tie_embedding=args.tie_embedding,
@@ -379,7 +419,7 @@ class Speech2Text(ModelBase):
                 utt_ids (list): name of utterances
                 speakers (list): name of speakers
             reporter (Reporter):
-            task (str): all or ys* or ys_sub*
+            task (str): all/ys*/ys_sub*
             is_eval (bool): evaluation mode
                 This should be used in inference model for memory efficiency.
             teacher (Speech2Text): used for knowledge distillation from ASR
@@ -494,7 +534,7 @@ class Speech2Text(ModelBase):
 
         Args:
             xs (list): A list of length `[B]`, which contains Tensor of size `[T, input_dim]`
-            task (str): all or ys* or ys_sub1* or ys_sub2*
+            task (str): all/ys*/ys_sub1*/ys_sub2*
             flip (bool): if True, flip acoustic features in the time-dimension
         Returns:
             enc_outs (dict):

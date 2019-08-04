@@ -59,7 +59,6 @@ class RNNDecoder(DecoderBase):
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of RNN layers
-        residual (bool): add residual connections between each layer
         bottleneck_dim (int): dimension of the bottleneck layer before the softmax layer for label generation
         emb_dim (int): dimension of the embedding in target spaces.
         vocab (int): number of nodes in softmax layer
@@ -106,7 +105,6 @@ class RNNDecoder(DecoderBase):
                  n_units,
                  n_projs,
                  n_layers,
-                 residual,
                  bottleneck_dim,
                  emb_dim,
                  vocab,
@@ -156,7 +154,6 @@ class RNNDecoder(DecoderBase):
         self.dec_n_units = n_units
         self.n_projs = n_projs
         self.n_layers = n_layers
-        self.residual = residual
         self.ss_prob = ss_prob
         self.ss_type = ss_type
         if ss_type == 'constant':
@@ -551,7 +548,7 @@ class RNNDecoder(DecoderBase):
         return loss, acc, ppl
 
     def decode_step(self, eouts, dstates, cv, y_emb, mask, aw, lmout, mode='hard'):
-        dstates = self.recurrency(y_emb, cv, dstates['dstate'])
+        dstates = self.recurrency(torch.cat([y_emb, cv], dim=-1), dstates['dstate'])
         cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw, mode)
         attn_v = self.generate(cv, dstates['dout_gen'], lmout)
         return dstates, cv, aw, attn_v
@@ -569,67 +566,49 @@ class RNNDecoder(DecoderBase):
                     cxs (list of FloatTensor):
 
         """
-        dstates = {'dout_score': None,  # for attention scoring (1st layer)
-                   'dout_gen': None,  # for token generation (last layer)
-                   'dstate': None}
+        dstates = {'dstate': None}
         w = next(self.parameters())
-        dstates['dout_score'] = w.new_zeros((batch_size, 1, self.dec_n_units))
-        dstates['dout_gen'] = w.new_zeros((batch_size, 1, self.dec_n_units))
         state = w.new_zeros((batch_size, self.dec_n_units))
         hxs = [state for _ in range(self.n_layers)]
         cxs = [state for _ in range(self.n_layers)] if self.rnn_type == 'lstm' else []
         dstates['dstate'] = (hxs, cxs)
         return dstates
 
-    def recurrency(self, y_emb, cv, dstate):
+    def recurrency(self, inputs, dstate):
         """Recurrency function.
 
         Args:
-            y_emb (FloatTensor): `[B, 1, emb_dim]`
-            cv (FloatTensor): `[B, 1, enc_n_units]`
+            inputs (FloatTensor): `[B, 1, emb_dim + enc_n_units]`
             dstate (tuple): A tuple of (hxs, cxs)
         Returns:
             dstates_new (dict):
-                dout_score (FloatTensor): `[B, 1, n_units]`
-                dout_gen (FloatTensor): `[B, 1, n_units]`
+                dout_score (FloatTensor): `[B, 1, dec_n_units]`
+                dout_gen (FloatTensor): `[B, 1, dec_n_units]`
                 dstate (tuple): A tuple of (hxs, cxs)
                     hxs (list of FloatTensor):
                     cxs (list of FloatTensor):
 
         """
         hxs, cxs = dstate
-        y_emb = y_emb.squeeze(1)
-        cv = cv.squeeze(1)
 
         dstates_new = {'dout_score': None,  # for attention scoring
                        'dout_gen': None,  # for token generation
                        'dstate': None}
 
-        # 1st layer
-        if self.rnn_type == 'lstm':
-            hxs[0], cxs[0] = self.rnn[0](torch.cat([y_emb, cv], dim=-1), (hxs[0], cxs[0]))
-        elif self.rnn_type == 'gru':
-            hxs[0] = self.rnn[0](torch.cat([y_emb, cv], dim=-1), hxs[0])
-        dout = self.dropout[0](hxs[0])
-        if self.n_projs > 0:
-            dout = torch.tanh(self.proj[0](dout))
+        dout = inputs.squeeze(1)
 
-        # use output in the first layer for attention scoring
-        dstates_new['dout_score'] = dout.unsqueeze(1)
-
-        # after 2nd layers
-        for l in range(1, self.n_layers):
+        for l in range(self.n_layers):
             if self.rnn_type == 'lstm':
                 hxs[l], cxs[l] = self.rnn[l](dout, (hxs[l], cxs[l]))
             elif self.rnn_type == 'gru':
                 hxs[l] = self.rnn[l](dout, hxs[l])
-            dout_tmp = self.dropout[l](hxs[l])
+            dout = self.dropout[l](hxs[l])
             if self.n_projs > 0:
-                dout_tmp = torch.tanh(self.proj[l](dout_tmp))
-            if self.residual:
-                dout = dout_tmp + dout
-            else:
-                dout = dout_tmp
+                dout = torch.tanh(self.proj[l](dout))
+
+            if l == 0:
+                # use output in the first layer for attention scoring
+                dstates_new['dout_score'] = dout.unsqueeze(1)
 
         # use oupput in the the last layer for label generation
         dstates_new['dout_gen'] = dout.unsqueeze(1)

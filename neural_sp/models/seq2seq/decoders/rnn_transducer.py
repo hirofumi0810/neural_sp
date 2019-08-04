@@ -45,7 +45,6 @@ class RNNTransducer(DecoderBase):
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of RNN layers
-        residual (bool):
         bottleneck_dim (int): dimension of the bottleneck layer before the softmax layer for label generation
         emb_dim (int): dimension of the embedding in target spaces.
         vocab (int): number of nodes in softmax layer
@@ -75,7 +74,6 @@ class RNNTransducer(DecoderBase):
                  n_units,
                  n_projs,
                  n_layers,
-                 residual,
                  bottleneck_dim,
                  emb_dim,
                  vocab,
@@ -106,7 +104,6 @@ class RNNTransducer(DecoderBase):
         self.dec_n_units = n_units
         self.n_projs = n_projs
         self.n_layers = n_layers
-        self.residual = residual
         self.lsm_prob = lsm_prob
         self.ctc_weight = ctc_weight
         self.global_weight = global_weight
@@ -137,7 +134,7 @@ class RNNTransducer(DecoderBase):
             # Prediction network
             self.fast_impl = False
             rnn = nn.LSTM if rnn_type == 'lstm_transducer' else nn.GRU
-            if n_projs == 0 and not residual:
+            if n_projs == 0:
                 self.fast_impl = True
                 self.rnn = rnn(emb_dim, n_units, n_layers,
                                bias=True,
@@ -178,7 +175,6 @@ class RNNTransducer(DecoderBase):
             assert lm_init.n_units == n_units
             assert lm_init.n_projs == n_projs
             assert lm_init.n_layers == n_layers
-            assert lm_init.residual == residual
 
             param_dict = dict(lm_init.named_parameters())
             for n, p in self.named_parameters():
@@ -331,7 +327,6 @@ class RNNTransducer(DecoderBase):
             dstate = self.zero_state(ys_emb.size(0))
         new_dstate = {'hxs': None, 'cxs': None}
 
-        residual = None
         if self.fast_impl:
             if self.rnn_type == 'lstm_transducer':
                 ys_emb, (new_dstate['hxs'], new_dstate['cxs']) = self.rnn(
@@ -352,12 +347,6 @@ class RNNTransducer(DecoderBase):
                 ys_emb = self.dropout[l](ys_emb)
                 if self.n_projs > 0:
                     ys_emb = torch.tanh(self.proj[l](ys_emb))
-
-                # Residual connection
-                if self.residual and l > 0:
-                    ys_emb = ys_emb + residual
-                residual = ys_emb
-                # NOTE: Exclude residual connection from the raw inputs
 
             # Repackage
             new_dstate['hxs'] = torch.cat(new_hxs, dim=0)

@@ -60,8 +60,6 @@ def set_asr_model_name(args, subsample_factor):
             if args.dec_n_projs > 0:
                 dir_name += str(args.dec_n_projs) + 'P'
             dir_name += str(args.dec_n_layers) + 'L'
-            if args.dec_residual:
-                dir_name += 'res'
             dir_name += '_' + args.attn_type
             if args.attn_sigmoid:
                 dir_name += '_sig'
