@@ -490,7 +490,7 @@ class RNNDecoder(DecoderBase):
 
             # Recurrency -> Score -> Generate
             y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
-            dstates, cv, aw, attn_v, lmfeat = self.decode_step(
+            dstates, cv, aw, attn_v = self.decode_step(
                 eouts, dstates, cv, y_emb, mask, aw, lmout, mode='parallel')
             if not self.training:
                 aws.append(aw.transpose(2, 1).unsqueeze(2))  # `[B, n_heads, 1, T]`
@@ -564,8 +564,8 @@ class RNNDecoder(DecoderBase):
     def decode_step(self, eouts, dstates, cv, y_emb, mask, aw, lmout, mode='hard'):
         dstates = self.recurrency(y_emb, cv, dstates['dstate'])
         cv, aw = self.score(eouts, eouts, dstates['dout_score'], mask, aw, mode)
-        attn_v, lmfeat = self.generate(cv, dstates['dout_gen'], lmout)
-        return dstates, cv, aw, attn_v, lmfeat
+        attn_v = self.generate(cv, dstates['dout_gen'], lmout)
+        return dstates, cv, aw, attn_v
 
     def zero_state(self, batch_size):
         """Initialize decoder state.
@@ -656,7 +656,6 @@ class RNNDecoder(DecoderBase):
             lmout (FloatTensor): `[B, 1, lm_n_units]`
         Returns:
             attn_v (FloatTensor): `[B, 1, vocab]`
-            gated_lmfeat (FloatTensor): `[B, 1 , dec_n_units]`
 
         """
         gated_lmfeat = None
@@ -677,7 +676,7 @@ class RNNDecoder(DecoderBase):
         else:
             out = self.output_bn(torch.cat([dout, cv], dim=-1))
         attn_v = torch.tanh(out)
-        return attn_v, gated_lmfeat
+        return attn_v
 
     def _plot_attention(self, save_path, n_cols=1):
         """Plot attention for each head."""
@@ -757,7 +756,7 @@ class RNNDecoder(DecoderBase):
 
             # Recurrency -> Score -> Generate
             y_emb = self.embed(y)
-            dstates, cv, aw, attn_v, lmfeat = self.decode_step(
+            dstates, cv, aw, attn_v = self.decode_step(
                 eouts, dstates, cv, y_emb, mask, aw, lmout)
             aws_batch += [aw.transpose(2, 1).unsqueeze(2)]  # `[B, n_heads, 1, T]`
 
@@ -972,7 +971,7 @@ class RNNDecoder(DecoderBase):
 
                     # for the main model
                     y_emb = self.embed(eouts.new_zeros(1, 1).fill_(prev_idx))
-                    dstates, cv, aw, attn_v, lmfeat = self.decode_step(
+                    dstates, cv, aw, attn_v = self.decode_step(
                         eouts[b:b + 1, :elens[b]],
                         beam['dstates'], beam['cv'], y_emb,
                         None,  # mask
@@ -988,7 +987,7 @@ class RNNDecoder(DecoderBase):
                     if n_models > 1:
                         for i_e, dec in enumerate(ensmbl_decs):
                             y_emb = dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx))
-                            ensmbl_dstate, cv_e, aw_e, attn_v_e, _ = dec.decode_step(
+                            ensmbl_dstate, cv_e, aw_e, attn_v_e = dec.decode_step(
                                 ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
                                 beam['ensmbl_dstate'][i_e], beam['ensmbl_cv'], y_emb,
                                 None,  # mask
