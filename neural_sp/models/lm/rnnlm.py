@@ -59,36 +59,23 @@ class RNNLM(LMBase):
                                dropout=args.dropout_in,
                                ignore_index=self.pad)
 
-        self.fast_impl = False
         rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
-        if args.n_projs == 0 and not args.residual:
-            self.fast_impl = True
-            self.rnn = rnn(args.emb_dim + args.n_units_null_context,
-                           args.n_units, args.n_layers,
-                           bias=True,
-                           batch_first=True,
-                           dropout=args.dropout_hidden,
-                           bidirectional=False)
-            # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
+        self.rnn = nn.ModuleList()
+        self.dropout = nn.ModuleList([nn.Dropout(p=args.dropout_hidden)
+                                      for _ in range(args.n_layers)])
+        if args.n_projs > 0:
+            self.proj = nn.ModuleList([Linear(args.n_units, args.n_projs)
+                                       for _ in range(args.n_layers)])
+        rnn_idim = args.emb_dim + args.n_units_null_context
+        for l in range(args.n_layers):
+            self.rnn += [rnn(rnn_idim, args.n_units, 1,
+                             bias=True,
+                             batch_first=True,
+                             dropout=0,
+                             bidirectional=False)]
             rnn_idim = args.n_units
-            self.dropout_top = nn.Dropout(p=args.dropout_hidden)
-        else:
-            self.rnn = nn.ModuleList()
-            self.dropout = nn.ModuleList([nn.Dropout(p=args.dropout_hidden)
-                                          for _ in range(args.n_layers)])
             if args.n_projs > 0:
-                self.proj = nn.ModuleList([Linear(args.n_units, args.n_projs)
-                                           for _ in range(args.n_layers)])
-            rnn_idim = args.emb_dim + args.n_units_null_context
-            for l in range(args.n_layers):
-                self.rnn += [rnn(rnn_idim, args.n_units, 1,
-                                 bias=True,
-                                 batch_first=True,
-                                 dropout=0,
-                                 bidirectional=False)]
-                rnn_idim = args.n_units
-                if args.n_projs > 0:
-                    rnn_idim = args.n_projs
+                rnn_idim = args.n_projs
 
         if self.use_glu:
             self.fc_glu = Linear(rnn_idim, rnn_idim * 2,
@@ -170,39 +157,30 @@ class RNNLM(LMBase):
             ys_emb = torch.cat([ys_emb, cv], dim=-1)
 
         residual = None
-        if self.fast_impl:
+        new_hxs, new_cxs = [], []
+        for l in range(self.n_layers):
             # Path through RNN
             if self.rnn_type == 'lstm':
-                ys_emb, (new_state['hxs'], new_state['cxs']) = self.rnn(
-                    ys_emb, hx=(state['hxs'], state['cxs']))
+                ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(state['hxs'][l:l + 1],
+                                                             state['cxs'][l:l + 1]))
+                new_cxs.append(c_l)
             elif self.rnn_type == 'gru':
-                ys_emb, new_state['hxs'] = self.rnn(ys_emb, hx=state['hxs'])
-            ys_emb = self.dropout_top(ys_emb)
-        else:
-            new_hxs, new_cxs = [], []
-            for l in range(self.n_layers):
-                # Path through RNN
-                if self.rnn_type == 'lstm':
-                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(state['hxs'][l:l + 1],
-                                                                 state['cxs'][l:l + 1]))
-                    new_cxs.append(c_l)
-                elif self.rnn_type == 'gru':
-                    ys_emb, h_l = self.rnn[l](ys_emb, hx=state['hxs'][l:l + 1])
-                new_hxs.append(h_l)
-                ys_emb = self.dropout[l](ys_emb)
-                if self.n_projs > 0:
-                    ys_emb = torch.tanh(self.proj[l](ys_emb))
+                ys_emb, h_l = self.rnn[l](ys_emb, hx=state['hxs'][l:l + 1])
+            new_hxs.append(h_l)
+            ys_emb = self.dropout[l](ys_emb)
+            if self.n_projs > 0:
+                ys_emb = torch.tanh(self.proj[l](ys_emb))
 
-                # Residual connection
-                if self.residual and l > 0:
-                    ys_emb = ys_emb + residual
-                residual = ys_emb
-                # NOTE: Exclude residual connection from the raw inputs
+            # Residual connection
+            if self.residual and l > 0:
+                ys_emb = ys_emb + residual
+            residual = ys_emb
+            # NOTE: Exclude residual connection from the raw inputs
 
-            # Repackage
-            new_state['hxs'] = torch.cat(new_hxs, dim=0)
-            if self.rnn_type == 'lstm':
-                new_state['cxs'] = torch.cat(new_cxs, dim=0)
+        # Repackage
+        new_state['hxs'] = torch.cat(new_hxs, dim=0)
+        if self.rnn_type == 'lstm':
+            new_state['cxs'] = torch.cat(new_cxs, dim=0)
 
         if self.use_glu:
             if self.residual:
@@ -214,10 +192,10 @@ class RNNLM(LMBase):
         return ys_emb, new_state
 
     def zero_state(self, batch_size):
-        """Initialize hidden states.
+        """Initialize hidden state.
 
         Args:
-            batch_size (int):
+            batch_size (int): batch size
         Returns:
             state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`

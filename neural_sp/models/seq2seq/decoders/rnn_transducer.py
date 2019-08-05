@@ -132,31 +132,19 @@ class RNNTransducer(DecoderBase):
             self.warprnnt_loss = warprnnt_pytorch.RNNTLoss()
 
             # Prediction network
-            self.fast_impl = False
             rnn = nn.LSTM if rnn_type == 'lstm_transducer' else nn.GRU
-            if n_projs == 0:
-                self.fast_impl = True
-                self.rnn = rnn(emb_dim, n_units, n_layers,
-                               bias=True,
-                               batch_first=True,
-                               dropout=dropout,
-                               bidirectional=False)
-                # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
-                dec_idim = n_units
-                self.dropout_top = nn.Dropout(p=dropout)
-            else:
-                self.rnn = nn.ModuleList()
-                self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
-                if n_projs > 0:
-                    self.proj = nn.ModuleList([Linear(dec_idim, n_projs) for _ in range(n_layers)])
-                dec_idim = emb_dim
-                for l in range(n_layers):
-                    self.rnn += [rnn(dec_idim, n_units, 1,
-                                     bias=True,
-                                     batch_first=True,
-                                     dropout=0,
-                                     bidirectional=False)]
-                    dec_idim = n_projs if n_projs > 0 else n_units
+            self.rnn = nn.ModuleList()
+            self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
+            if n_projs > 0:
+                self.proj = nn.ModuleList([Linear(n_units, n_projs) for _ in range(n_layers)])
+            dec_idim = emb_dim
+            for l in range(n_layers):
+                self.rnn += [rnn(dec_idim, n_units, 1,
+                                 bias=True,
+                                 batch_first=True,
+                                 dropout=0,
+                                 bidirectional=False)]
+                dec_idim = n_projs if n_projs > 0 else n_units
 
             self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
@@ -327,31 +315,23 @@ class RNNTransducer(DecoderBase):
             dstate = self.zero_state(ys_emb.size(0))
         new_dstate = {'hxs': None, 'cxs': None}
 
-        if self.fast_impl:
+        new_hxs, new_cxs = [], []
+        for l in range(self.n_layers):
             if self.rnn_type == 'lstm_transducer':
-                ys_emb, (new_dstate['hxs'], new_dstate['cxs']) = self.rnn(
-                    ys_emb, hx=(dstate['hxs'], dstate['cxs']))
+                ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(dstate['hxs'][l:l + 1],
+                                                             dstate['cxs'][l:l + 1]))
+                new_cxs.append(c_l)
             elif self.rnn_type == 'gru_transducer':
-                ys_emb, new_dstate['hxs'] = self.rnn(ys_emb, hx=dstate['hxs'])
-            ys_emb = self.dropout_top(ys_emb)
-        else:
-            new_hxs, new_cxs = [], []
-            for l in range(self.n_layers):
-                if self.rnn_type == 'lstm_transducer':
-                    ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(dstate['hxs'][l:l + 1],
-                                                                 dstate['cxs'][l:l + 1]))
-                    new_cxs.append(c_l)
-                elif self.rnn_type == 'gru_transducer':
-                    ys_emb, h_l = self.rnn[l](ys_emb, hx=dstate['hxs'][l:l + 1])
-                new_hxs.append(h_l)
-                ys_emb = self.dropout[l](ys_emb)
-                if self.n_projs > 0:
-                    ys_emb = torch.tanh(self.proj[l](ys_emb))
+                ys_emb, h_l = self.rnn[l](ys_emb, hx=dstate['hxs'][l:l + 1])
+            new_hxs.append(h_l)
+            ys_emb = self.dropout[l](ys_emb)
+            if self.n_projs > 0:
+                ys_emb = torch.tanh(self.proj[l](ys_emb))
 
-            # Repackage
-            new_dstate['hxs'] = torch.cat(new_hxs, dim=0)
-            if self.rnn_type == 'lstm_transducer':
-                new_dstate['cxs'] = torch.cat(new_cxs, dim=0)
+        # Repackage
+        new_dstate['hxs'] = torch.cat(new_hxs, dim=0)
+        if self.rnn_type == 'lstm_transducer':
+            new_dstate['cxs'] = torch.cat(new_cxs, dim=0)
 
         return ys_emb, new_dstate
 
@@ -368,19 +348,14 @@ class RNNTransducer(DecoderBase):
         """
         w = next(self.parameters())
         zero_state = {'hxs': None, 'cxs': None}
-        if self.fast_impl:
-            zero_state['hxs'] = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
+        hxs, cxs = [], []
+        for l in range(self.n_layers):
             if self.rnn_type == 'lstm_transducer':
-                zero_state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
-        else:
-            hxs, cxs = [], []
-            for l in range(self.n_layers):
-                if self.rnn_type == 'lstm_transducer':
-                    cxs.append(w.new_zeros(1, batch_size, self.dec_n_units))
-                hxs.append(w.new_zeros(1, batch_size, self.dec_n_units))
-            zero_state['hxs'] = torch.cat(hxs, dim=0)  # `[n_layers, B, dec_n_units]`
-            if self.rnn_type == 'lstm_transducer':
-                zero_state['cxs'] = torch.cat(cxs, dim=0)  # `[n_layers, B, dec_n_units]`
+                cxs.append(w.new_zeros(1, batch_size, self.dec_n_units))
+            hxs.append(w.new_zeros(1, batch_size, self.dec_n_units))
+        zero_state['hxs'] = torch.cat(hxs, dim=0)  # `[n_layers, B, dec_n_units]`
+        if self.rnn_type == 'lstm_transducer':
+            zero_state['cxs'] = torch.cat(cxs, dim=0)  # `[n_layers, B, dec_n_units]`
         return zero_state
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,

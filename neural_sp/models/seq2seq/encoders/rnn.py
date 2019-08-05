@@ -169,89 +169,71 @@ class RNNEncoder(EncoderBase):
         self.padding = Padding()
 
         if rnn_type not in ['conv', 'tds', 'gated_conv']:
-            # Fast implementation without processes between each layer
-            self.fast_impl = False
-            if np.prod(subsample) == 1 and n_projs == 0 and n_layers_sub1 == 0 and not nin:
-                self.fast_impl = True
+            self.rnn = nn.ModuleList()
+            self.dropout = nn.ModuleList()
+            self.proj = None
+            if n_projs > 0:
+                self.proj = nn.ModuleList()
+
+            # subsample
+            self.subsample = None
+            if subsample_type == 'max_pool' and np.prod(subsample) > 1:
+                self.subsample = nn.ModuleList([MaxpoolSubsampler(subsample[l])
+                                                for l in range(n_layers)])
+            elif subsample_type == 'concat' and np.prod(subsample) > 1:
+                self.subsample = nn.ModuleList([ConcatSubsampler(subsample[l], n_units, self.n_dirs)
+                                                for l in range(n_layers)])
+            elif subsample_type == 'drop' and np.prod(subsample) > 1:
+                self.subsample = nn.ModuleList([DropSubsampler(subsample[l])
+                                                for l in range(n_layers)])
+
+            # NiN
+            self.nin = None
+            if nin:
+                self.nin = nn.ModuleList()
+
+            for l in range(n_layers):
                 if 'lstm' in rnn_type:
-                    rnn = nn.LSTM
+                    rnn_i = nn.LSTM
                 elif 'gru' in rnn_type:
-                    rnn = nn.GRU
+                    rnn_i = nn.GRU
                 else:
                     raise ValueError('rnn_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
 
-                self.rnn = rnn(self._output_dim, n_units, n_layers,
-                               bias=True, batch_first=True, dropout=dropout,
-                               bidirectional=self.bidirectional)
-                # NOTE: pytorch introduces a dropout layer on the outputs of each layer EXCEPT the last layer
+                self.rnn += [rnn_i(self._output_dim, n_units, 1,
+                                   bias=True, batch_first=True, dropout=0,
+                                   bidirectional=self.bidirectional)]
+                self.dropout += [nn.Dropout(p=dropout)]
                 self._output_dim = n_units * self.n_dirs
-                self.dropout_top = nn.Dropout(p=dropout)
-            else:
-                self.rnn = nn.ModuleList()
-                self.dropout = nn.ModuleList()
-                self.proj = None
-                if n_projs > 0:
-                    self.proj = nn.ModuleList()
 
-                # subsample
-                self.subsample = None
-                if subsample_type == 'max_pool' and np.prod(subsample) > 1:
-                    self.subsample = nn.ModuleList([MaxpoolSubsampler(subsample[l])
-                                                    for l in range(n_layers)])
-                elif subsample_type == 'concat' and np.prod(subsample) > 1:
-                    self.subsample = nn.ModuleList([ConcatSubsampler(subsample[l], n_units, self.n_dirs)
-                                                    for l in range(n_layers)])
-                elif subsample_type == 'drop' and np.prod(subsample) > 1:
-                    self.subsample = nn.ModuleList([DropSubsampler(subsample[l])
-                                                    for l in range(n_layers)])
+                # Projection layer
+                if self.proj is not None:
+                    if l != n_layers - 1:
+                        self.proj += [Linear(n_units * self.n_dirs, n_projs)]
+                        self._output_dim = n_projs
 
-                # NiN
-                self.nin = None
-                if nin:
-                    self.nin = nn.ModuleList()
+                # Task specific layer
+                if l == n_layers_sub1 - 1 and task_specific_layer:
+                    self.rnn_sub1 = rnn_i(self._output_dim, n_units, 1,
+                                          bias=True, batch_first=True, dropout=0,
+                                          bidirectional=self.bidirectional)
+                    self.dropout_sub1 = nn.Dropout(p=dropout)
+                    if last_proj_dim != self.output_dim:
+                        self.bridge_sub1 = Linear(n_units, last_proj_dim)
+                if l == n_layers_sub2 - 1 and task_specific_layer:
+                    self.rnn_sub2 = rnn_i(self._output_dim, n_units, 1,
+                                          bias=True, batch_first=True, dropout=0,
+                                          bidirectional=self.bidirectional)
+                    self.dropout_sub2 = nn.Dropout(p=dropout)
+                    if last_proj_dim != self.output_dim:
+                        self.bridge_sub2 = Linear(n_units, last_proj_dim)
 
-                for l in range(n_layers):
-                    if 'lstm' in rnn_type:
-                        rnn_i = nn.LSTM
-                    elif 'gru' in rnn_type:
-                        rnn_i = nn.GRU
-                    else:
-                        raise ValueError('rnn_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
-
-                    self.rnn += [rnn_i(self._output_dim, n_units, 1,
-                                       bias=True, batch_first=True, dropout=0,
-                                       bidirectional=self.bidirectional)]
-                    self.dropout += [nn.Dropout(p=dropout)]
-                    self._output_dim = n_units * self.n_dirs
-
-                    # Projection layer
-                    if self.proj is not None:
-                        if l != n_layers - 1:
-                            self.proj += [Linear(n_units * self.n_dirs, n_projs)]
-                            self._output_dim = n_projs
-
-                    # Task specific layer
-                    if l == n_layers_sub1 - 1 and task_specific_layer:
-                        self.rnn_sub1 = rnn_i(self._output_dim, n_units, 1,
-                                              bias=True, batch_first=True, dropout=0,
-                                              bidirectional=self.bidirectional)
-                        self.dropout_sub1 = nn.Dropout(p=dropout)
-                        if last_proj_dim != self.output_dim:
-                            self.bridge_sub1 = Linear(n_units, last_proj_dim)
-                    if l == n_layers_sub2 - 1 and task_specific_layer:
-                        self.rnn_sub2 = rnn_i(self._output_dim, n_units, 1,
-                                              bias=True, batch_first=True, dropout=0,
-                                              bidirectional=self.bidirectional)
-                        self.dropout_sub2 = nn.Dropout(p=dropout)
-                        if last_proj_dim != self.output_dim:
-                            self.bridge_sub2 = Linear(n_units, last_proj_dim)
-
-                    # Network in network
-                    if self.nin is not None:
-                        if l != n_layers - 1:
-                            self.nin += [NiN(self._output_dim)]
-                        # if n_layers_sub1 > 0 or n_layers_sub2 > 0:
-                        #     assert task_specific_layer
+                # Network in network
+                if self.nin is not None:
+                    if l != n_layers - 1:
+                        self.nin += [NiN(self._output_dim)]
+                    # if n_layers_sub1 > 0 or n_layers_sub2 > 0:
+                    #     assert task_specific_layer
 
             if last_proj_dim != self.output_dim:
                 self.bridge = Linear(self._output_dim, last_proj_dim)
@@ -313,62 +295,57 @@ class RNNEncoder(EncoderBase):
                 eouts['ys']['xlens'] = xlens
                 return eouts
 
-        if self.fast_impl:
-            self.rnn.flatten_parameters()  # for multi-GPUs
-            xs = self.padding(xs, xlens, self.rnn)
-            xs = self.dropout_top(xs)
-        else:
-            for l in range(self.n_layers):
-                self.rnn[l].flatten_parameters()  # for multi-GPUs
-                xs = self.padding(xs, xlens, self.rnn[l])
-                xs = self.dropout[l](xs)
+        for l in range(self.n_layers):
+            self.rnn[l].flatten_parameters()  # for multi-GPUs
+            xs = self.padding(xs, xlens, self.rnn[l])
+            xs = self.dropout[l](xs)
 
-                # Pick up outputs in the sub task before the projection layer
-                if l == self.n_layers_sub1 - 1:
-                    if self.task_specific_layer:
-                        self.rnn_sub1.flatten_parameters()  # for multi-GPUs
-                        xs_sub1 = self.padding(xs, xlens, self.rnn_sub1)
-                        xs_sub1 = self.dropout_sub1(xs_sub1)
-                    else:
-                        xs_sub1 = xs.clone()[perm_ids_unsort]
-                    if self.bridge_sub1 is not None:
-                        xs_sub1 = self.bridge_sub1(xs_sub1)
-                    xlens_sub1 = xlens[perm_ids_unsort]
+            # Pick up outputs in the sub task before the projection layer
+            if l == self.n_layers_sub1 - 1:
+                if self.task_specific_layer:
+                    self.rnn_sub1.flatten_parameters()  # for multi-GPUs
+                    xs_sub1 = self.padding(xs, xlens, self.rnn_sub1)
+                    xs_sub1 = self.dropout_sub1(xs_sub1)
+                else:
+                    xs_sub1 = xs.clone()[perm_ids_unsort]
+                if self.bridge_sub1 is not None:
+                    xs_sub1 = self.bridge_sub1(xs_sub1)
+                xlens_sub1 = xlens[perm_ids_unsort]
 
-                    if task == 'ys_sub1':
-                        eouts[task]['xs'] = xs_sub1
-                        eouts[task]['xlens'] = xlens_sub1
-                        return eouts
+                if task == 'ys_sub1':
+                    eouts[task]['xs'] = xs_sub1
+                    eouts[task]['xlens'] = xlens_sub1
+                    return eouts
 
-                if l == self.n_layers_sub2 - 1:
-                    if self.task_specific_layer:
-                        self.rnn_sub2.flatten_parameters()  # for multi-GPUs
-                        xs_sub2 = self.padding(xs, xlens, self.rnn_sub2)
-                        xs_sub2 = self.dropout_sub2(xs_sub2)
-                    else:
-                        xs_sub2 = xs.clone()[perm_ids_unsort]
-                    if self.bridge_sub2 is not None:
-                        xs_sub2 = self.bridge_sub2(xs_sub2)
-                    xlens_sub2 = xlens[perm_ids_unsort]
+            if l == self.n_layers_sub2 - 1:
+                if self.task_specific_layer:
+                    self.rnn_sub2.flatten_parameters()  # for multi-GPUs
+                    xs_sub2 = self.padding(xs, xlens, self.rnn_sub2)
+                    xs_sub2 = self.dropout_sub2(xs_sub2)
+                else:
+                    xs_sub2 = xs.clone()[perm_ids_unsort]
+                if self.bridge_sub2 is not None:
+                    xs_sub2 = self.bridge_sub2(xs_sub2)
+                xlens_sub2 = xlens[perm_ids_unsort]
 
-                    if task == 'ys_sub2':
-                        eouts[task]['xs'] = xs_sub2
-                        eouts[task]['xlens'] = xlens_sub2
-                        return eouts
+                if task == 'ys_sub2':
+                    eouts[task]['xs'] = xs_sub2
+                    eouts[task]['xlens'] = xlens_sub2
+                    return eouts
 
-                # NOTE: Exclude the last layer
-                if l != self.n_layers - 1:
-                    # Projection layer
-                    if self.proj is not None:
-                        xs = torch.tanh(self.proj[l](xs))
+            # NOTE: Exclude the last layer
+            if l != self.n_layers - 1:
+                # Projection layer
+                if self.proj is not None:
+                    xs = torch.tanh(self.proj[l](xs))
 
-                    # Subsampling
-                    if self.subsample is not None:
-                        xs, xlens = self.subsample[l](xs, xlens)
+                # Subsampling
+                if self.subsample is not None:
+                    xs, xlens = self.subsample[l](xs, xlens)
 
-                    # NiN
-                    if self.nin is not None:
-                        xs = self.nin[l](xs)
+                # NiN
+                if self.nin is not None:
+                    xs = self.nin[l](xs)
 
         # Bridge layer
         if self.bridge is not None:

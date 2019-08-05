@@ -287,19 +287,11 @@ class RNNDecoder(DecoderBase):
             assert lm_init.n_units_null_context == enc_n_units
 
             # RNN
-            if lm_init.fast_impl:
-                for n, p in lm_init.rnn.named_parameters():
-                    l = int(n.split('_')[2].replace('l', ''))
-                    n = '_'.join(n.split('_')[:2])
+            for l in range(lm_init.n_layers):
+                for n, p in lm_init.rnn[l].named_parameters():
                     assert getattr(self.rnn[l], n).size() == p.size()
                     getattr(self.rnn[l], n).data = p.data
                     logger.info('Overwrite %s' % n)
-            else:
-                for l in range(lm_init.n_layers):
-                    for n, p in lm_init.rnn[l].named_parameters():
-                        assert getattr(self.rnn[l], n).size() == p.size()
-                        getattr(self.rnn[l], n).data = p.data
-                        logger.info('Overwrite %s' % n)
 
             # embedding
             assert self.embed.embed.weight.size() == lm_init.embed.embed.weight.size()
