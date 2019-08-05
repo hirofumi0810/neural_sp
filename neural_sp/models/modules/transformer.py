@@ -23,7 +23,7 @@ class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer.
 
     Args:
-        d_model (int):
+        d_model (int): dimension of MultiheadAttentionMechanism
         dropout (float):
         pe_type (str):
         max_len (int):
@@ -67,8 +67,8 @@ class PositionwiseFeedForward(nn.Module):
     """Positionwise fully-connected feed-forward neural network.
 
     Args:
-        d_model (int):
-        d_ff (int):
+        d_model (int): dimension of MultiheadAttentionMechanism
+        d_ff (int): dimention of PositionwiseFeedForward
         dropout (float):
 
     """
@@ -88,10 +88,8 @@ class TransformerEncoderBlock(nn.Module):
     """A single layer of the transformer encoder.
 
     Args:
-        d_model (int): dimension of keys/values/queries in
-                   MultiheadAttentionMechanism, also the input size of
-                   the first-layer of the PositionwiseFeedForward
-        d_ff (int): second-layer of the PositionwiseFeedForward
+        d_model (int): dimension of MultiheadAttentionMechanism
+        d_ff (int): dimention of PositionwiseFeedForward
         attn_type (str):
         n_heads (int): number of heads for multi-head attention
         dropout (float): dropout probabilities for linear layers
@@ -132,7 +130,7 @@ class TransformerEncoderBlock(nn.Module):
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
-            xx_mask ():
+            xx_mask (ByteTensor): `[B, n_heads, T, T]`
             cache (bool):
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
@@ -158,10 +156,8 @@ class TransformerDecoderBlock(nn.Module):
     """A single layer of the transformer decoder.
 
         Args:
-            d_model (int): dimension of keys/values/queries in
-                           MultiheadAttentionMechanism, also the input size of
-                           the first-layer of the PositionwiseFeedForward
-            d_ff (int): second-layer of the PositionwiseFeedForward
+            d_model (int): dimension of MultiheadAttentionMechanism
+            d_ff (int): dimention of PositionwiseFeedForward
             attn_type (str):
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
@@ -221,9 +217,9 @@ class TransformerDecoderBlock(nn.Module):
 
         Args:
             ys (FloatTensor): `[B, L, d_model]`
-            yy_mask ():
+            yy_mask (ByteTensor): `[B, n_heads, L, L]`
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
-            xy_mask ():
+            xy_mask (ByteTensor): `[B, n_heads, T, L]`
         Returns:
             ys (FloatTensor): `[B, L, d_model]`
             yy_aw (FloatTensor)`[B, L, L]`

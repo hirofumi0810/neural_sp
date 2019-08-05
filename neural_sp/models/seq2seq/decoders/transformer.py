@@ -211,6 +211,31 @@ class TransformerDecoder(DecoderBase):
         observation['loss'] = loss.item()
         return loss, observation
 
+    def append_sos_eos(self, ys, bwd=False, replace_sos=False):
+        """Append <sos> and <eos> and return padded sequences.
+
+        Args:
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+        Returns:
+            ys_in_pad (LongTensor): `[B, L]`
+            ys_out_pad (LongTensor): `[B, L]`
+            ylens (IntTensor): `[B]`
+
+        """
+        w = next(self.parameters())
+        eos = w.new_zeros(1).fill_(self.eos).long()
+        ys = [np2tensor(np.fromiter(y[::-1] if bwd else y, dtype=np.int64),
+                        self.device_id) for y in ys]
+        if replace_sos:
+            ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
+            ys_in_pad = pad_list([y for y in ys], self.pad)
+            ys_out_pad = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
+        else:
+            ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
+            ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
+            ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
+        return ys_in_pad, ys_out_pad, ylens
+
     def forward_att(self, eouts, elens, ys, return_logits=False):
         """Compute XE loss for the sequence-to-sequence model.
 
@@ -228,11 +253,7 @@ class TransformerDecoder(DecoderBase):
         bs = eouts.size(0)
 
         # Append <sos> and <eos>
-        eos = eouts.new_zeros(1).fill_(self.eos).long()
-        ys = [np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int64), self.device_id) for y in ys]
-        ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-        ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
-        ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
+        ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
 
         # Create the self-attention mask
         bs, ymax = ys_in_pad.size()[:2]
@@ -338,9 +359,11 @@ class TransformerDecoder(DecoderBase):
         # Start from <sos> (<eos> in case of the backward decoder)
         y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
+        # Append <sos> and <eos>
+        ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(refs_id, self.bwd)
+
         best_hyps_batch = []
         ylens = torch.zeros(bs).int()
-        xy_aws_batch, yy_aws_batch = [None] * bs, [None] * bs
         eos_flags = [False] * bs
         if oracle:
             assert refs_id is not None
@@ -348,9 +371,12 @@ class TransformerDecoder(DecoderBase):
         else:
             ymax = int(math.floor(xmax * max_len_ratio)) + 1
         for t in range(ymax):
+            subsequent_mask = torch.tril(eouts.new_ones((t + 1, t + 1)).byte(), diagonal=0)
+            subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).repeat([bs, self.attn_n_heads, 1, 1])
+
             dout = self.pos_enc(self.embed(y_seq))
             for l in range(self.n_layers):
-                dout, yy_aws, xy_aws = self.layers[l](dout, None, eouts, None)
+                dout, _, xy_aws = self.layers[l](dout, subsequent_mask, eouts, None)
             dout = self.norm_out(dout)
 
             # Pick up 1-best
@@ -362,8 +388,6 @@ class TransformerDecoder(DecoderBase):
                 if not eos_flags[b]:
                     if y[b].item() == self.eos:
                         eos_flags[b] = True
-                        xy_aws_batch[b] = xy_aws
-                        yy_aws_batch[b] = yy_aws
                     ylens[b] += 1  # include <eos>
 
             # Break if <eos> is outputed in all mini-batch
@@ -381,16 +405,16 @@ class TransformerDecoder(DecoderBase):
 
         # Concatenate in L dimension
         best_hyps_batch = tensor2np(torch.cat(best_hyps_batch, dim=1))
-        # xy_aws_batch = tensor2np(torch.cat(xy_aws_batch, dim=0))
+        xy_aws = tensor2np(xy_aws.transpose(1, 2).transpose(2, 3))
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.bwd:
             # Reverse the order
             hyps = [best_hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
-            # aws = [xy_aws_batch[b, :, :ylens[b]][::-1] for b in range(bs)]
+            aws = [xy_aws[b, :, :ylens[b]][::-1] for b in range(bs)]
         else:
             hyps = [best_hyps_batch[b, :ylens[b]] for b in range(bs)]
-            # aws = [xy_aws_batch[b, :, :ylens[b]] for b in range(bs)]
+            aws = [xy_aws[b, :, :ylens[b]] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
@@ -409,5 +433,4 @@ class TransformerDecoder(DecoderBase):
             else:
                 logger.info('Hyp: %s' % idx2token(hyps[0][1:]))
 
-        # return hyps, aws
-        return hyps, None
+        return hyps, aws
