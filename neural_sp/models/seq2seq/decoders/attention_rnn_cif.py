@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright 2018 Kyoto University (Hirofumi Inaguma)
+# Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 """RNN decoder (including CTC loss calculation)."""
@@ -359,7 +359,7 @@ class CIFRNNDecoder(DecoderBase):
         lmouts, lmstate = None, None
 
         # CIF
-        cvs, alpha = self.score(eouts, elens, ylens)
+        cvs, alpha, aws = self.score(eouts, elens, ylens)
 
         # Update LM states for LM fusion
         if self.lm is not None:
@@ -369,6 +369,10 @@ class CIFRNNDecoder(DecoderBase):
         ys_emb = self.embed(ys_in_pad)
         dstate, logits = self.decode_step(cvs, dstate, ys_emb, lmouts)
         logits = self.output(logits)
+
+        # for attention plot
+        if not self.training:
+            self.aws = tensor2np(aws)  # `[B, n_heads, L, T]`
 
         # Compute XE sequence loss
         if self.lsm_prob > 0 and self.training:
@@ -487,8 +491,6 @@ class CIFRNNDecoder(DecoderBase):
 
     def _plot_attention(self, save_path, n_cols=1):
         """Plot attention."""
-        return 0
-
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
@@ -499,21 +501,22 @@ class CIFRNNDecoder(DecoderBase):
             shutil.rmtree(_save_path)
             os.mkdir(_save_path)
 
-        # if hasattr(self, 'aws'):
-        #     plt.clf()
-        #     fig, axes = plt.subplots(max(1, self.score.n_heads // n_cols), n_cols,
-        #                              figsize=(20, 8), squeeze=False)
-        #     ax = axes[h // n_cols, h % n_cols]
-        #     ax.imshow(self.aws[-1,  h, :, :], aspect="auto")
-        #     ax.grid(False)
-        #     ax.set_xlabel("Input")
-        #     ax.set_ylabel("Output")
-        #     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        #     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        #
-        #     fig.tight_layout()
-        #     fig.savefig(os.path.join(_save_path, 'attention.png'), dvi=500)
-        #     plt.close()
+        if hasattr(self, 'aws'):
+            plt.clf()
+            fig, axes = plt.subplots(max(1, self.score.n_heads // n_cols), n_cols,
+                                     figsize=(20, 8), squeeze=False)
+            for h in range(self.score.n_heads):
+                ax = axes[h // n_cols, h % n_cols]
+                ax.imshow(self.aws[-1,  h, :, :], aspect="auto")
+                ax.grid(False)
+                ax.set_xlabel("Input (head%d)" % h)
+                ax.set_ylabel("Output (head%d)" % h)
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+            fig.tight_layout()
+            fig.savefig(os.path.join(_save_path, 'attention.png'), dvi=500)
+            plt.close()
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
                exclude_eos=False, oracle=False,
@@ -540,12 +543,11 @@ class CIFRNNDecoder(DecoderBase):
 
         # Initialization
         dstate = self.zero_state(bs)
-        cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         lmout, lmstate = None, None
         y = eouts.new_zeros(bs, 1).fill_(refs_id[0][0] if self.replace_sos else self.eos)
 
         # CIF
-        cvs, alpha = self.score(eouts, elens)
+        cvs, alpha, aws = self.score(eouts, elens)
 
         hyps_batch = []
         ylens = torch.zeros(bs).int()
@@ -562,7 +564,7 @@ class CIFRNNDecoder(DecoderBase):
 
             # Recurrency -> Score -> Generate
             y_emb = self.embed(y)
-            dstate, attn_v = self.decode_step(cv[:, t:t + 1], dstate, y_emb, lmout)
+            dstate, attn_v = self.decode_step(cvs[:, t:t + 1], dstate, y_emb, lmout)
 
             # Pick up 1-best
             y = self.output(attn_v).argmax(-1)
@@ -687,7 +689,8 @@ class CIFRNNDecoder(DecoderBase):
                 ctc_prefix_score = CTCPrefixScore(tensor2np(ctc_log_probs)[0], self.blank, self.eos)
 
         # CIF
-        cvs, alpha = self.score(eouts, elens)
+        cvs, alpha, aws = self.score(eouts, elens, max_len=200)
+        # TODO: fix later
 
         nbest_hyps_idx, aws, scores = [], [], []
         eos_flags = []

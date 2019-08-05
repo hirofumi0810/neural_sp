@@ -20,6 +20,7 @@ class CIF(nn.Module):
 
         self.threshold = threshold
         self.channel = conv_out_channels
+        self.n_heads = 1
 
         self.conv = nn.Conv1d(in_channels=enc_dim,
                               out_channels=conv_out_channels,
@@ -28,16 +29,18 @@ class CIF(nn.Module):
                               padding=conv_kernel_size)
         self.proj = Linear(conv_out_channels, 1)
 
-    def forward(self, eouts, elens, ylens=None):
+    def forward(self, eouts, elens, ylens=None, max_len=200):
         """
 
         Args:
             eouts (FloatTensor): `[B, T, enc_dim]`
             elens (IntTensor): `[B]`
-            ylens ():
+            ylens (IntTensor): `[B]`
+            max_len (int): the maximum length of target sequence
         Returns:
             eouts_fired (FloatTensor):
             alpha (FloatTensor): `[B, T]`
+            aws (FloatTensor): `[B, 1 (head), L. T]`
 
         """
         bs, time, enc_dim = eouts.size()
@@ -48,6 +51,10 @@ class CIF(nn.Module):
         alpha = torch.sigmoid(self.proj(conv_feat)).squeeze(2)  # `[B, kmax]`
 
         eouts_fired = []
+        if ylens is not None:
+            aws = eouts.new_zeros(bs, 1, ylens.max(), time)
+        else:
+            aws = eouts.new_zeros(bs, 1, max_len, time)
         for b in range(bs):
             # normalization
             if ylens is not None:
@@ -67,11 +74,15 @@ class CIF(nn.Module):
                     state_accum = state_residual + (1 - alpha_residual) * eouts[b, t]
                     state_accum_b_list.append(state_accum.unsqueeze(0))
                     state_residual = alpha_residual * eouts[b, t]
+                    aws[b, 0, len(state_accum_b_list) - 1, t] += alpha_norm[t] - alpha_residual
+                    if aws.size(2) > len(state_accum_b_list):
+                        aws[b, 0, len(state_accum_b_list), t] += alpha_residual
                 else:
                     # Carry over to the next frame
                     alpha_residual = alpha_accum
                     state_accum = state_residual + alpha_norm[t] * eouts[b, t]
                     state_residual = state_accum
+                    aws[b, 0, len(state_accum_b_list) - 1, t] += alpha_norm[t]
 
                 # tail of target sequence
                 if ylens is None:
@@ -85,4 +96,4 @@ class CIF(nn.Module):
             eouts_fired.append(torch.cat(state_accum_b_list, dim=0))
 
         eouts_fired = pad_list(eouts_fired, 0.0)
-        return eouts_fired, alpha
+        return eouts_fired, alpha, aws
