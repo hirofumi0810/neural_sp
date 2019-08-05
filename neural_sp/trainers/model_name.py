@@ -75,8 +75,6 @@ def set_asr_model_name(args, subsample_factor):
     if args.ctc_weight < 1:
         dir_name += '_ss' + str(args.ss_prob)
     dir_name += '_ls' + str(args.lsm_prob)
-    if args.focal_loss_weight > 0:
-        dir_name += '_fl' + str(args.focal_loss_weight)
     if args.warmup_n_steps > 0:
         dir_name += '_warmpup' + str(args.warmup_n_steps)
     if args.accum_grad_n_tokens > 0:
@@ -134,9 +132,6 @@ def set_asr_model_name(args, subsample_factor):
         dir_name += '_encfreeze'
     if args.lm_init:
         dir_name += '_lminit'
-
-    if args.adaptive_softmax:
-        dir_name += '_adaptiveSM'
 
     # knowledge distillation
     if args.teacher:

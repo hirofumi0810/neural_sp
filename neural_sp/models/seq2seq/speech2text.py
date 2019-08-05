@@ -168,8 +168,6 @@ class Speech2Text(ModelBase):
                         dropout_emb=args.dropout_emb,
                         dropout_att=args.dropout_att,
                         lsm_prob=args.lsm_prob,
-                        focal_loss_weight=args.focal_loss_weight,
-                        focal_loss_gamma=args.focal_loss_gamma,
                         ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
                         ctc_lsm_prob=args.ctc_lsm_prob,
                         ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
@@ -251,8 +249,6 @@ class Speech2Text(ModelBase):
                         ss_prob=args.ss_prob,
                         ss_type=args.ss_type,
                         lsm_prob=args.lsm_prob,
-                        focal_loss_weight=args.focal_loss_weight,
-                        focal_loss_gamma=args.focal_loss_gamma,
                         ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
                         ctc_lsm_prob=args.ctc_lsm_prob,
                         ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
@@ -295,8 +291,6 @@ class Speech2Text(ModelBase):
                         ss_prob=args.ss_prob,
                         ss_type=args.ss_type,
                         lsm_prob=args.lsm_prob,
-                        focal_loss_weight=args.focal_loss_weight,
-                        focal_loss_gamma=args.focal_loss_gamma,
                         ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
                         ctc_lsm_prob=args.ctc_lsm_prob,
                         ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
@@ -347,8 +341,6 @@ class Speech2Text(ModelBase):
                         ss_prob=args.ss_prob,
                         ss_type=args.ss_type,
                         lsm_prob=args.lsm_prob,
-                        focal_loss_weight=args.focal_loss_weight,
-                        focal_loss_gamma=args.focal_loss_gamma,
                         ctc_weight=getattr(self, 'ctc_weight_' + sub),
                         ctc_lsm_prob=args.ctc_lsm_prob,
                         ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')

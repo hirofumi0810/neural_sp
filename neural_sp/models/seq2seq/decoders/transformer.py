@@ -21,7 +21,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.criterion import cross_entropy_lsm
-from neural_sp.models.criterion import focal_loss
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.transformer import PositionalEncoding
@@ -64,8 +63,6 @@ class TransformerDecoder(DecoderBase):
         dropout_emb (float): dropout probability for the embedding layer
         dropout_att (float): dropout probability for attention distributions
         lsm_prob (float): label smoothing probability
-        focal_loss_weight (float):
-        focal_loss_gamma (float):
         ctc_weight (float):
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
@@ -94,8 +91,6 @@ class TransformerDecoder(DecoderBase):
                  dropout_emb=0.0,
                  dropout_att=0.0,
                  lsm_prob=0.0,
-                 focal_loss_weight=0.0,
-                 focal_loss_gamma=2.0,
                  ctc_weight=0.0,
                  ctc_lsm_prob=0.0,
                  ctc_fc_list=[],
@@ -117,8 +112,6 @@ class TransformerDecoder(DecoderBase):
         self.attn_n_heads = attn_n_heads
         self.pe_type = pe_type
         self.lsm_prob = lsm_prob
-        self.focal_loss_weight = focal_loss_weight
-        self.focal_loss_gamma = focal_loss_gamma
         self.ctc_weight = ctc_weight
         self.bwd = backward
         self.global_weight = global_weight
@@ -276,13 +269,6 @@ class TransformerDecoder(DecoderBase):
         else:
             loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
                                    ignore_index=self.pad, size_average=True)
-
-        # Focal loss
-        if self.focal_loss_weight > 0:
-            fl = focal_loss(logits, ys_out_pad, ylens,
-                            alpha=self.focal_loss_weight,
-                            gamma=self.focal_loss_gamma)
-            loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)

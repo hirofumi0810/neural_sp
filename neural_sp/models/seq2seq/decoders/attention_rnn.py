@@ -22,7 +22,6 @@ import torch.nn.functional as F
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import distillation
-from neural_sp.models.criterion import focal_loss
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.modules.linear import Linear
@@ -75,8 +74,6 @@ class RNNDecoder(DecoderBase):
         lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
         ss_type (str): constant/saturation
-        focal_loss_weight (float):
-        focal_loss_gamma (float):
         ctc_weight (float):
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
@@ -120,8 +117,6 @@ class RNNDecoder(DecoderBase):
                  lsm_prob=0.0,
                  ss_prob=0.0,
                  ss_type='constant',
-                 focal_loss_weight=0.0,
-                 focal_loss_gamma=2.0,
                  ctc_weight=0.0,
                  ctc_lsm_prob=0.0,
                  ctc_fc_list=[],
@@ -159,8 +154,6 @@ class RNNDecoder(DecoderBase):
         elif ss_type == 'saturation':
             self._ss_prob = 0  # start from 0
         self.lsm_prob = lsm_prob
-        self.focal_loss_weight = focal_loss_weight
-        self.focal_loss_gamma = focal_loss_gamma
         self.ctc_weight = ctc_weight
         self.bwd = backward
         self.lm_fusion_type = lm_fusion_type
@@ -503,13 +496,6 @@ class RNNDecoder(DecoderBase):
         else:
             loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
                                    ignore_index=self.pad, size_average=True)
-
-        # Focal loss
-        if self.focal_loss_weight > 0:
-            fl = focal_loss(logits, ys_out_pad, ylens,
-                            alpha=self.focal_loss_weight,
-                            gamma=self.focal_loss_gamma)
-            loss = loss * (1 - self.focal_loss_weight) + fl * self.focal_loss_weight
 
         # Knowledge distillation
         if teacher_logits is not None:

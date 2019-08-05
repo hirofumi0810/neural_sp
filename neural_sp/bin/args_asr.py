@@ -247,10 +247,6 @@ def parse():
                         help='probability of label smoothing')
     parser.add_argument('--ctc_lsm_prob', type=float, default=0.0,
                         help='probability of label smoothing for CTC')
-    parser.add_argument('--focal_loss_weight', type=float, default=0.0,
-                        help='')
-    parser.add_argument('--focal_loss_gamma', type=float, default=2.0,
-                        help='')
     # SpecAugment
     parser.add_argument('--freq_width', type=int, default=27,
                         help='')
