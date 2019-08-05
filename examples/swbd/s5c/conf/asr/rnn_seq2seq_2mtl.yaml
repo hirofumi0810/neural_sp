@@ -57,8 +57,6 @@ weight_decay: 1e-6
 ss_prob: 0.2
 ss_type: constant
 lsm_prob: 0.1
-focal_loss_weight: 0.0
-adaptive_softmax: false
 ### MTL
 ctc_weight: 0.0
 ctc_weight_sub1: 0.2
@@ -71,5 +69,3 @@ task_specific_layer: true
 lm_fusion_type: cold
 lm_fusion: ''
 lm_init: ''
-lmobj_weight: 0.0
-share_lm_softmax: false
