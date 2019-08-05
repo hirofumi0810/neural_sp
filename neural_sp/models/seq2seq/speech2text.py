@@ -246,8 +246,6 @@ class Speech2Text(ModelBase):
                         tie_embedding=args.tie_embedding,
                         dropout=args.dropout_dec,
                         dropout_emb=args.dropout_emb,
-                        ss_prob=args.ss_prob,
-                        ss_type=args.ss_type,
                         lsm_prob=args.lsm_prob,
                         ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
                         ctc_lsm_prob=args.ctc_lsm_prob,
