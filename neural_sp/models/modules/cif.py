@@ -4,10 +4,8 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.modules.linear import Linear
 from neural_sp.models.torch_utils import pad_list
@@ -16,22 +14,19 @@ from neural_sp.models.torch_utils import pad_list
 class CIF(nn.Module):
     """docstring for CIF."""
 
-    def __init__(self, enc_dim, conv_out_channels, conv_kernel_size, threshold=0.9):
+    def __init__(self, enc_dim, conv_out_channels, conv_kernel_size,
+                 threshold=0.9):
         super(CIF, self).__init__()
 
         self.threshold = threshold
         self.channel = conv_out_channels
 
-        self.proj = Linear(conv_out_channels, 1)
         self.conv = nn.Conv1d(in_channels=enc_dim,
                               out_channels=conv_out_channels,
                               kernel_size=conv_kernel_size * 2 + 1,
                               stride=1,
-                              padding=conv_kernel_size,
-                              bias=False)
-
-    def reset(self):
-        pass
+                              padding=conv_kernel_size)
+        self.proj = Linear(conv_out_channels, 1)
 
     def forward(self, eouts, elens, ylens=None):
         """
@@ -67,7 +62,7 @@ class CIF(nn.Module):
                 alpha_accum = alpha_norm[t] + alpha_residual
                 if alpha_accum >= self.threshold:
                     # fire
-                    alpha_accum = 1
+                    alpha_accum = 1  # this is import for the next frame
                     alpha_residual = alpha_norm[t] - (1 - alpha_residual)
                     state_accum = state_residual + (1 - alpha_residual) * eouts[b, t]
                     state_accum_b_list.append(state_accum.unsqueeze(0))
@@ -78,11 +73,8 @@ class CIF(nn.Module):
                     state_accum = state_residual + alpha_norm[t] * eouts[b, t]
                     state_residual = state_accum
 
-                # tail
-                if ylens is not None:
-                    if ylens[b].item() > len(state_accum_b_list) and alpha_accum >= 0.5:
-                        state_accum_b_list.append(state_accum.unsqueeze(0))
-                else:
+                # tail of target sequence
+                if ylens is None:
                     if alpha_accum >= 0.5:
                         state_accum_b_list.append(state_accum.unsqueeze(0))
 
@@ -93,5 +85,4 @@ class CIF(nn.Module):
             eouts_fired.append(torch.cat(state_accum_b_list, dim=0))
 
         eouts_fired = pad_list(eouts_fired, 0.0)
-
         return eouts_fired, alpha
