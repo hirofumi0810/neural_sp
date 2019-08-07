@@ -125,9 +125,9 @@ def set_asr_model_name(args, subsample_factor):
         dir_name += '_' + str(args.discourse_aware)
 
     # Pre-training
-    if args.pretrained_model and os.path.isfile(args.pretrained_model):
-        conf_pt = load_config(os.path.join(os.path.dirname(args.pretrained_model), 'conf.yml'))
-        dir_name += '_' + conf_pt['unit'] + 'pt'
+    if args.asr_init and os.path.isfile(args.asr_init):
+        conf_init = load_config(os.path.join(os.path.dirname(args.asr_init), 'conf.yml'))
+        dir_name += '_' + conf_init['unit'] + 'pt'
     if args.freeze_encoder:
         dir_name += '_encfreeze'
     if args.lm_init:

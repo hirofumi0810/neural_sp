@@ -221,8 +221,8 @@ def parse():
                         help='')
     parser.add_argument('--rec_weight_orthogonal', type=strtobool, default=False,
                         help='')
-    parser.add_argument('--pretrained_model', type=str, default=False, nargs='?',
-                        help='pretrained seq2seq model path')
+    parser.add_argument('--asr_init', type=str, default=False, nargs='?',
+                        help='pre-trained seq2seq model path')
     # regularization
     parser.add_argument('--clip_grad_norm', type=float, default=5.0,
                         help='')

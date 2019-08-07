@@ -27,10 +27,9 @@ vocab_sub2=300
 #########################
 # ASR configuration
 #########################
-asr_conf=conf/asr/rnn_seq2seq_3mtl.yaml
-asr_conf2=
-pretrained_model=
-
+conf=conf/asr/rnn_seq2seq_3mtl.yaml
+conf2=
+asr_init=
 
 ### path to save the model
 model=/n/sd3/inaguma/result/swbd
@@ -60,9 +59,9 @@ set -u
 set -o pipefail
 
 if [ ${speed_perturb} = true ]; then
-    asr_conf2=conf/asr/speed_perturb.yaml
+    conf2=conf/asr/speed_perturb.yaml
 elif [ ${spec_augment} = true ]; then
-    asr_conf2=conf/asr/spec_augment.yaml
+    conf2=conf/asr/spec_augment.yaml
 fi
 
 if [ -z ${gpu} ]; then
@@ -395,8 +394,8 @@ if [ ${stage} -le 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus swbd \
-        --config ${asr_conf} \
-        --config2 ${asr_conf2} \
+        --config ${conf} \
+        --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
@@ -415,7 +414,7 @@ if [ ${stage} -le 4 ]; then
         --wp_model_sub1 ${wp_model_sub1}.model \
         --wp_model_sub2 ${wp_model_sub2}.model \
         --model_save_dir ${model}/asr \
-        --pretrained_model ${pretrained_model} \
+        --asr_init ${asr_init} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 

@@ -52,7 +52,7 @@ torch.cuda.manual_seed_all(1)
 def main():
 
     args = parse()
-    args_pt = copy.deepcopy(args)
+    args_init = copy.deepcopy(args)
     args_teacher = copy.deepcopy(args)
 
     # Load a conf file
@@ -250,18 +250,18 @@ def main():
         logger.info(model)
 
         # Initialize with pre-trained model's parameters
-        if args.pretrained_model and os.path.isfile(args.pretrained_model):
+        if args.asr_init and os.path.isfile(args.asr_init):
             # Load the ASR model
-            conf_pt = load_config(os.path.join(os.path.dirname(args.pretrained_model), 'conf.yml'))
-            for k, v in conf_pt.items():
-                setattr(args_pt, k, v)
-            model_pt = Speech2Text(args_pt)
-            model_pt = load_checkpoint(model_pt, args.pretrained_model)[0]
+            conf_init = load_config(os.path.join(os.path.dirname(args.asr_init), 'conf.yml'))
+            for k, v in conf_init.items():
+                setattr(args_init, k, v)
+            model_init = Speech2Text(args_init)
+            model_init = load_checkpoint(model_init, args.asr_init)[0]
 
             # Overwrite parameters
-            only_enc = (args.enc_n_layers != args_pt.enc_n_layers) or (
-                args.unit != args_pt.unit) or args_pt.ctc_weight == 1
-            param_dict = dict(model_pt.named_parameters())
+            only_enc = (args.enc_n_layers != args_init.enc_n_layers) or (
+                args.unit != args_init.unit) or args_init.ctc_weight == 1
+            param_dict = dict(model_init.named_parameters())
             for n, p in model.named_parameters():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
                     if only_enc and 'enc' not in n:
