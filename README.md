@@ -45,11 +45,11 @@ make KALDI=/path/to/kaldi
 
 ### Encoder
 - CNN encoder
-- (Bidirectional/unidirectional) LSTM encoder
-- CNN+(bidirectional/unidirectional) LSTM encoder
-- Self-attention (Transformer) encoder [[link](https://arxiv.org/abs/1706.03762)]
+- LSTM encoder
+- CNN+LSTM encoder
+- Transformer encoder [[link](https://arxiv.org/abs/1706.03762)]
 - Time-Depth Seprarabel (TDS) convolutional encoder [[link](https://arxiv.org/abs/1904.02619)]
-- Gated CNN encoder (GLU) [link]
+- Gated CNN encoder (GLU) [[link](https://openreview.net/forum?id=Hyig0zb0Z)]
 
 ### Connectionist Temporal Classification (CTC) decoder
 - Shallow fusion
@@ -61,7 +61,6 @@ make KALDI=/path/to/kaldi
   - Deep fusion [[link](https://arxiv.org/abs/1503.03535)]
   - Forward-backward attention decoding [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
   - Ensemble decoding
-  - Adaptive softmax [[link](https://arxiv.org/abs/1609.04309)]
 - Transformer decoder
 - RNN transducer [[link](https://arxiv.org/abs/1211.3711)]
 
@@ -69,6 +68,7 @@ make KALDI=/path/to/kaldi
 - RNNLM (recurrent neural network language model)
 - Gated convolutional LM [[link](https://arxiv.org/abs/1612.08083)]
 - Transformer LM
+- Adaptive softmax [[link](https://arxiv.org/abs/1609.04309)]
 
 ### Output units
 - Phoneme
@@ -141,6 +141,11 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 - https://github.com/kaldi-asr/kaldi
 - https://github.com/espnet/espnet
 - https://github.com/awni/speech
+- https://github.com/HawkAaron/E2E-ASR
+
+## Dependency
+- https://github.com/SeanNaren/warp-ctc
+- https://github.com/HawkAaron/warp-transducer
 
 <!-- ## TODO
 - WFST decoder
