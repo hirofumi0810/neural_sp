@@ -1,0 +1,3 @@
+                                           |                       no LM                         |                       RNNLM                         |
+                                           | dev_clean  | dev_other  | test_clean  | test_other  | dev_clean  | dev_other  | test_clean  | test_other  |
+BPE30k attention                           | 4.4        | 13.2       | 4.5         | 13.7        | 3.4        | 10.7       | 3.4         | 11.3          |

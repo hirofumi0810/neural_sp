@@ -106,7 +106,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### Librispeech (WER)
 | model               | dev-clean | dev-other | test-clean | test-other |
 | ------------------- | --------- | --------- | ---------- | ---------- |
-| BPE30k LAS + RNNLM  | 3.6       | 11.2      | 3.9        | 12.2       |
+| BPE30k LAS + RNNLM  | 3.4       | 10.7      | 3.4        | 11.3       |
 
 ### TEDLIUM2 (WER)
 | model               | dev  | test |
