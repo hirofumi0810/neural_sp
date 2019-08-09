@@ -184,7 +184,7 @@ def save_checkpoint(model, save_path, optimizer, epoch, remove_old_checkpoints=T
     # Save parameters, optimizer, step index etc.
     checkpoint = {
         "state_dict": model.module.state_dict(),
-        "optimizer": optimizer.optimizer.state_dict(),
+        "optimizer": optimizer.state_dict(),  # LR scheduler
     }
     torch.save(checkpoint, model_path)
 
