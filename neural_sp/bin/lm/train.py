@@ -51,6 +51,20 @@ def main():
             if k != 'resume':
                 setattr(args, k, v)
 
+    # Set save path
+    if args.resume:
+        save_path = os.path.dirname(args.resume)
+        dir_name = os.path.basename(save_path)
+    else:
+        dir_name = set_lm_name(args)
+        save_path = mkdir_join(args.model_save_dir, '_'.join(
+            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        save_path = set_save_path(save_path)  # avoid overwriting
+
+    # Set logger
+    logger = set_logger(os.path.join(save_path, 'train.log'),
+                        key='training', stdout=args.stdout)
+
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
@@ -88,20 +102,6 @@ def main():
                               serialize=args.serialize)]
 
     args.vocab = train_set.vocab
-
-    # Set save path
-    if args.resume:
-        save_path = os.path.dirname(args.resume)
-        dir_name = os.path.basename(save_path)
-    else:
-        dir_name = set_lm_name(args)
-        save_path = mkdir_join(args.model_save_dir, '_'.join(
-            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
-        save_path = set_save_path(save_path)  # avoid overwriting
-
-    # Set logger
-    logger = set_logger(os.path.join(save_path, 'train.log'),
-                        key='training', stdout=args.stdout)
 
     # Model setting
     model = build_lm(args, save_path)
@@ -250,8 +250,8 @@ def main():
                         (optimizer.n_epochs + 1, duration_epoch / 60))
 
             if optimizer.n_epochs + 1 < args.eval_start_epoch:
-                optimizer.epoch()
-                reporter.epoch()
+                optimizer.epoch()  # lr decay
+                reporter.epoch()  # plot
 
                 # Save the model
                 save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
@@ -261,9 +261,10 @@ def main():
                 # dev
                 ppl_dev, _ = eval_ppl([model.module], dev_set,
                                       batch_size=1, bptt=args.bptt)
-                logger.info('PPL (%s): %.2f' % (dev_set.set, ppl_dev))
-                optimizer.epoch(ppl_dev)
-                reporter.epoch(ppl_dev, name='perplexity')
+                logger.info('PPL (%s, epoch:%d): %.2f' %
+                            (dev_set.set, optimizer.n_epochs, ppl_dev))
+                optimizer.epoch(ppl_dev)  # lr decay
+                reporter.epoch(ppl_dev, name='perplexity')  # plot
 
                 if optimizer.is_best:
                     # Save the model
@@ -275,10 +276,12 @@ def main():
                     for eval_set in eval_sets:
                         ppl_test, _ = eval_ppl([model.module], eval_set,
                                                batch_size=1, bptt=args.bptt)
-                        logger.info('PPL (%s): %.2f' % (eval_set.set, ppl_test))
+                        logger.info('PPL (%s, epoch:%d): %.2f' %
+                                    (eval_set.set, optimizer.n_epochs, ppl_test))
                         ppl_test_avg += ppl_test
                     if len(eval_sets) > 0:
-                        logger.info('PPL (avg.): %.2f' % (ppl_test_avg / len(eval_sets)))
+                        logger.info('PPL (avg., epoch:%d): %.2f' %
+                                    (optimizer.n_epochs, ppl_test_avg / len(eval_sets)))
 
                 duration_eval = time.time() - start_time_eval
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))

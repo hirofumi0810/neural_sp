@@ -84,6 +84,26 @@ def main():
         else:
             subsample_factor_sub2 = subsample_factor
 
+    # Set save path
+    if args.resume:
+        save_path = os.path.dirname(args.resume)
+        dir_name = os.path.basename(save_path)
+    else:
+        dir_name = set_asr_model_name(args, subsample_factor)
+        save_path = mkdir_join(args.model_save_dir, '_'.join(
+            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        save_path = set_save_path(save_path)  # avoid overwriting
+
+    # Set logger
+    logger = set_logger(os.path.join(save_path, 'train.log'),
+                        key='training', stdout=args.stdout)
+
+    # for multi-GPUs
+    if args.n_gpus > 1:
+        logger.info("Batch size is automatically reduced from %d to %d" %
+                    (args.batch_size, args.batch_size - 10))
+        args.batch_size = args.batch_size - 10
+
     skip_thought = 'skip' in args.enc_type
 
     # Load dataset
@@ -171,20 +191,6 @@ def main():
             setattr(args.lm_conf, k, v)
         assert args.unit == args.lm_conf.unit
         assert args.vocab == args.lm_conf.vocab
-
-    # Set save path
-    if args.resume:
-        save_path = os.path.dirname(args.resume)
-        dir_name = os.path.basename(save_path)
-    else:
-        dir_name = set_asr_model_name(args, subsample_factor)
-        save_path = mkdir_join(args.model_save_dir, '_'.join(
-            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
-        save_path = set_save_path(save_path)  # avoid overwriting
-
-    # Set logger
-    logger = set_logger(os.path.join(save_path, 'train.log'),
-                        key='training', stdout=args.stdout)
 
     # Model setting
     model = Speech2Text(args, save_path) if not skip_thought else SkipThought(args, save_path)
@@ -374,12 +380,6 @@ def main():
                         model.module.parameters(), args.clip_grad_norm)
                     reporter.add_tensorboard_scalar('total_norm', total_norm)
                 optimizer.step()
-                # NOTE: this makes training very slow
-                # for n, p in model.module.named_parameters():
-                #     if p.grad is not None:
-                #         n = n.replace('.', '/')
-                #         reporter.add_tensorboard_histogram(n, p.data.cpu().numpy())
-                #         reporter.add_tensorboard_histogram(n + '/grad', p.grad.data.cpu().numpy())
                 optimizer.zero_grad()
                 accum_n_tokens = 0
             loss_train = loss.item()
@@ -430,7 +430,7 @@ def main():
             elif args.input_type == 'text':
                 xlen = max(len(x) for x in batch_train['ys'])
                 ylen = max(len(y) for y in batch_train['ys_sub1'])
-            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
+            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.7f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
                         (optimizer.n_steps, optimizer.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
                          optimizer.lr, len(batch_train['utt_ids']),
@@ -450,8 +450,8 @@ def main():
                         (optimizer.n_epochs + 1, duration_epoch / 60))
 
             if optimizer.n_epochs + 1 < args.eval_start_epoch:
-                optimizer.epoch()
-                reporter.epoch()
+                optimizer.epoch()  # lr decay
+                reporter.epoch()  # plot
 
                 # Save the model
                 save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
@@ -461,8 +461,8 @@ def main():
                 # dev
                 metric_dev = eval_epoch([model.module], dev_set, recog_params, args,
                                         optimizer.n_epochs + 1, logger)
-                optimizer.epoch(metric_dev)
-                reporter.epoch(metric_dev)
+                optimizer.epoch(metric_dev)  # lr decay
+                reporter.epoch(metric_dev)  # plot
 
                 if optimizer.is_best:
                     # Save the model
@@ -519,24 +519,24 @@ def eval_epoch(models, dataset, recog_params, args, epoch, logger):
     if args.metric == 'edit_distance':
         if args.unit in ['word', 'word_char']:
             metric = eval_word(models, dataset, recog_params, epoch=epoch)[0]
-            logger.info('WER (%s): %.2f %%' % (dataset.set, metric))
+            logger.info('WER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, metric))
         elif args.unit == 'wp':
             metric, cer = eval_wordpiece(models, dataset, recog_params, epoch=epoch)
-            logger.info('WER (%s): %.2f %%' % (dataset.set, metric))
-            logger.info('CER (%s): %.2f %%' % (dataset.set, cer))
+            logger.info('WER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, metric))
+            logger.info('CER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, cer))
         elif 'char' in args.unit:
             metric, cer = eval_char(models, dataset, recog_params, epoch=epoch)
-            logger.info('WER (%s): %.2f %%' % (dataset.set, metric))
-            logger.info('CER (%s): %.2f %%' % (dataset.set, cer))
+            logger.info('WER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, metric))
+            logger.info('CER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, cer))
         elif 'phone' in args.unit:
             metric = eval_phone(models, dataset, recog_params, epoch=epoch)
-            logger.info('PER (%s): %.2f %%' % (dataset.set, metric))
+            logger.info('PER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, metric))
     elif args.metric == 'ppl':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[0]
-        logger.info('PPL (%s): %.2f' % (dataset.set, metric))
+        logger.info('PPL (%s, epoch:%d): %.2f' % (dataset.set, epoch, metric))
     elif args.metric == 'loss':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
-        logger.info('Loss (%s): %.2f' % (dataset.set, metric))
+        logger.info('Loss (%s, epoch:%d): %.2f' % (dataset.set, epoch, metric))
     else:
         raise NotImplementedError(args.metric)
     return metric
