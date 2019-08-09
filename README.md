@@ -93,15 +93,22 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | ------------------------ | ---------- | ----------- |
 | BPE1k LAS + CTC + RNNLM  | 8.8        | 6.2         |
 
-### CSJ (WER/CER)
+### CSJ (WER)
 | model                                        | eval1   | eval2   | eval3   |
 | -------------------------------------------- | ------- | ------- | ------- |
-| BPE10k LAS + char CTC init. + add 2L + RNNLM | 7.4/5.8 | 5.7/4.5 | 6.0/4.5 |
+| BPE10k LAS + RNNLM | 7.9 | 5.8 | 6.4 |
+|   + SpecAugment    | 6.5 | 5.1 | 5.6 |
 
-### Switchboard (WER)
+### Switchboard 300h (WER)
 | model               | SWB  | CH   |
 | ------------------- | ---- | ---- |
-| BPE10k LAS + RNNLM  | 11.1 | 22.2 |
+| BPE10k LAS + RNNLM  | 10.9 | 22.6 |
+|   + SpecAugment     | 9.1  | 18.8 |
+
+### Switchboard+Fisher 2000h (WER)
+| model               | SWB  | CH   |
+| ------------------- | ---- | ---- |
+| BPE34k LAS          | 7.8  | 13.8 |
 
 ### Librispeech (WER)
 | model               | dev-clean | dev-other | test-clean | test-other |
