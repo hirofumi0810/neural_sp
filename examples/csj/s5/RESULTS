@@ -1,6 +1,4 @@
-                                                                |               no LM               |                RNNLM              |
-                                                                | eval1     | eval2     | eval3     | eval1     | eval2     | eval3     |
-BPE10k attention                                                | 8.3 (6.6) | 6.2 (5.0) | 6.9 (5.1) | 7.7 (6.1) | 5.8 (4.7) | 6.7 (5.0) |
-BPE10k attention + char CTC init. + add 1L                      | 8.1 (6.2) | 5.8 (4.6) | 6.2 (4.6) | 7.5 (5.9) | 5.5 (4.4) | 6.1 (4.6) |
-BPE10k attention + char CTC init. + add 2L                      | 8.1 (6.2) | 6.0 (4.8) | 6.3 (4.6) | 7.4 (5.8) | 5.7 (4.5) | 6.0 (4.5) |
-BPE10k attention + char CTC init. + add 2L + speed perturbation | 7.7 (---) | 5.7 (---) | 6.2 (---) | 7.3 (---) | 5.4 (---) | 5.9 (---) |
+                                                            |         no LM         |         RNNLM         |
+                                                            | eval1 | eval2 | eval3 | eval1 | eval2 | eval3 |
+BPE10k attention                                            | 8.6   | 6.1   | 6.5   | 7.9   | 5.8   | 6.4   |
+BPE10k attention + char CTC init. + add 1L                  | 6.8   | 5.2   | 5.8   | 6.5   | 5.1   | 5.6   |
