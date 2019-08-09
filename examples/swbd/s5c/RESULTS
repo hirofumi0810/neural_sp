@@ -1,6 +1,11 @@
-                              |          no LM           |           RNNLM          |
-                              | SWBD       | CH          | SWBD       | CH          |
-BPE10k attention              | 12.3       | 23.8        | 11.3       | 23.0        |
-BPE10k attention + conv       | 12.7       | 23.5        | 12.0       | 23.0        |
-BPE10k attention + 5L->6L     | 11.8       | 22.7        | 11.1       | 22.2        |
-BPE10k attention + 512->768   | 11.8       | 23.3        | 10.7       | 22.9        |
+# swbd 300h
+                               |          no LM           |           RNNLM          |
+                               | SWBD       | CH          | SWBD       | CH          |
+BPE10k attention               | 11.8       | 23.1        | 10.9       | 22.6        |
+BPE10k attention + SpecAugment | 9.4        | 19.1        | 9.1        | 18.8        |
+
+
+# swbd+fisher 2000h
+                               |          no LM           |           RNNLM          |
+                               | SWBD       | CH          | SWBD       | CH          |
+BPE34k attention               | 7.8        | 13.8        | N/A        | N/A         |
