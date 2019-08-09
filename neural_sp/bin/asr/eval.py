@@ -15,6 +15,7 @@ import argparse
 import copy
 import os
 import time
+import torch
 
 from neural_sp.bin.args_asr import parse
 from neural_sp.bin.train_utils import load_checkpoint
@@ -84,7 +85,30 @@ def main():
             model = load_checkpoint(model, args.recog_model[0])[0]
             epoch = int(args.recog_model[0].split('-')[-1])
 
-            # ensemble (different models)
+            # Model averaging for Transformer
+            if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
+                n_models = 1
+                state_dict_ave = model.state_dict()
+                best_model_path = args.recog_model[0]
+                for i in range(epoch - 1, 0, -1):
+                    checkpoint_path = best_model_path.replace('-' + str(epoch), '-' + str(i))
+                    if os.path.isfile(checkpoint_path):
+                        logger.info("=> Loading checkpoint (epoch:%d): %s" % (i, checkpoint_path))
+                        params = torch.load(checkpoint_path,
+                                            map_location=lambda storage, loc: storage)['state_dict']
+                        for k, v in params.items():
+                            state_dict_ave[k] += v
+                        n_models += 1
+                        if n_models == args.recog_n_average:
+                            break
+
+                # take average
+                logger.info('Take average for %d models' % n_models)
+                for k, v in state_dict_ave.items():
+                    state_dict_ave[k] /= n_models
+                model.load_state_dict(state_dict_ave)
+
+            # Ensemble (different models)
             ensemble_models = [model]
             if len(args.recog_model) > 1:
                 for recog_model_e in args.recog_model[1:]:
@@ -155,6 +179,7 @@ def main():
             logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
             logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
             logger.info('cache lambda (lm): %.3f' % (args.recog_cache_lambda_lm))
+            logger.info('model average (Transformer): %d' % (args.recog_n_average))
 
             # GPU setting
             model.cuda()

@@ -366,6 +366,8 @@ def parse():
                         help='carry over LM state')
     parser.add_argument('--recog_wordlm', type=strtobool, default=False,
                         help='')
+    parser.add_argument('--recog_n_average', type=int, default=10,
+                        help='number of models for the model averaging of Transformer')
     # cache parameters
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
