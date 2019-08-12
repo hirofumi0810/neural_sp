@@ -130,16 +130,8 @@ def main():
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
-            n_epochs = optimizer.n_epochs
-            n_steps = optimizer.n_steps
-            optimizer = set_optimizer(model, 'sgd', args.lr, conf['weight_decay'])
-            optimizer = LRScheduler(optimizer, args.lr,
-                                    decay_type='always',
-                                    decay_start_epoch=0,
-                                    decay_rate=0.5)
-            optimizer._epoch = n_epochs
-            optimizer._step = n_steps
-            logger.info('========== Convert to SGD ==========')
+            optimizer.convert_to_sgd(model, 'sgd', args.lr, conf['weight_decay'],
+                                     decay_type='always', decay_rate=0.5)
     else:
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
@@ -261,10 +253,10 @@ def main():
                 # dev
                 ppl_dev, _ = eval_ppl([model.module], dev_set,
                                       batch_size=1, bptt=args.bptt)
-                logger.info('PPL (%s, epoch:%d): %.2f' %
-                            (dev_set.set, optimizer.n_epochs, ppl_dev))
                 optimizer.epoch(ppl_dev)  # lr decay
                 reporter.epoch(ppl_dev, name='perplexity')  # plot
+                logger.info('PPL (%s, ep:%d): %.2f' %
+                            (dev_set.set, optimizer.n_epochs, ppl_dev))
 
                 if optimizer.is_best:
                     # Save the model
@@ -276,11 +268,11 @@ def main():
                     for eval_set in eval_sets:
                         ppl_test, _ = eval_ppl([model.module], eval_set,
                                                batch_size=1, bptt=args.bptt)
-                        logger.info('PPL (%s, epoch:%d): %.2f' %
+                        logger.info('PPL (%s, ep:%d): %.2f' %
                                     (eval_set.set, optimizer.n_epochs, ppl_test))
                         ppl_test_avg += ppl_test
                     if len(eval_sets) > 0:
-                        logger.info('PPL (avg., epoch:%d): %.2f' %
+                        logger.info('PPL (avg., ep:%d): %.2f' %
                                     (optimizer.n_epochs, ppl_test_avg / len(eval_sets)))
 
                 duration_eval = time.time() - start_time_eval
@@ -292,16 +284,8 @@ def main():
 
                 # Convert to fine-tuning stage
                 if optimizer.n_epochs == args.convert_to_sgd_epoch:
-                    n_epochs = optimizer.n_epochs
-                    n_steps = optimizer.n_steps
-                    optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
-                    optimizer = LRScheduler(optimizer, args.lr,
-                                            decay_type='always',
-                                            decay_start_epoch=0,
-                                            decay_rate=0.5)
-                    optimizer._epoch = n_epochs
-                    optimizer._step = n_steps
-                    logger.info('========== Convert to SGD ==========')
+                    optimizer.convert_to_sgd(model, 'sgd', args.lr, args.weight_decay,
+                                             decay_type='always', decay_rate=0.5)
 
             pbar_epoch = tqdm(total=len(train_set))
 

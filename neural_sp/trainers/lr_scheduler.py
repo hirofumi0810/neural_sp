@@ -14,6 +14,8 @@ from logging import getLogger
 import torch
 # from torch.optim.lr_scheduler import _LRScheduler
 
+from neural_sp.trainers.optimizer import set_optimizer
+
 logger = getLogger('training')
 
 
@@ -185,6 +187,15 @@ class LRScheduler(object):
 
         """
         self.__dict__.update(state_dict)
+
+    def convert_to_sgd(self, model, lr, weight_decay, decay_type, decay_rate):
+        self.decay_type = decay_type
+        self.decay_rate = decay_rate
+
+        weight_decay = self.optimizer.weight_decay
+        self.optimizer = set_optimizer(model, 'sgd', lr, weight_decay)
+        logger.info('========== Convert to SGD ==========')
+
 
 # class NoamLR(_LRScheduler):
 #     def __init__(self, optimizer, warmup_n_steps):

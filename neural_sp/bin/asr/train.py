@@ -13,7 +13,7 @@ from __future__ import print_function
 import argparse
 import copy
 import cProfile
-# import editdistance
+import editdistance
 import numpy as np
 import os
 from setproctitle import setproctitle
@@ -101,8 +101,8 @@ def main():
     # for multi-GPUs
     if args.n_gpus > 1:
         logger.info("Batch size is automatically reduced from %d to %d" %
-                    (args.batch_size, args.batch_size - 10))
-        args.batch_size = args.batch_size - 10
+                    (args.batch_size, args.batch_size // 2))
+        args.batch_size //= 2
 
     skip_thought = 'skip' in args.enc_type
 
@@ -220,16 +220,8 @@ def main():
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
-            n_epochs = optimizer.n_epochs
-            n_steps = optimizer.n_steps
-            optimizer = set_optimizer(model, 'sgd', args.lr, conf['weight_decay'])
-            optimizer = LRScheduler(optimizer, args.lr,
-                                    decay_type='always',
-                                    decay_start_epoch=0,
-                                    decay_rate=0.5)
-            optimizer._epoch = n_epochs
-            optimizer._step = n_steps
-            logger.info('========== Convert to SGD ==========')
+            optimizer.convert_to_sgd(model, 'sgd', args.lr, conf['weight_decay'],
+                                     decay_type='always', decay_rate=0.5)
     else:
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
@@ -487,16 +479,8 @@ def main():
 
                 # Convert to fine-tuning stage
                 if optimizer.n_epochs == args.convert_to_sgd_epoch:
-                    n_epochs = optimizer.n_epochs
-                    n_steps = optimizer.n_steps
-                    optimizer = set_optimizer(model, 'sgd', args.lr, args.weight_decay)
-                    optimizer = LRScheduler(optimizer, args.lr,
-                                            decay_type='always',
-                                            decay_start_epoch=0,
-                                            decay_rate=0.5)
-                    optimizer._epoch = n_epochs
-                    optimizer._step = n_steps
-                    logger.info('========== Convert to SGD ==========')
+                    optimizer.convert_to_sgd(model, 'sgd', args.lr, args.weight_decay,
+                                             decay_type='always', decay_rate=0.5)
 
             pbar_epoch = tqdm(total=len(train_set))
 
@@ -519,24 +503,24 @@ def eval_epoch(models, dataset, recog_params, args, epoch, logger):
     if args.metric == 'edit_distance':
         if args.unit in ['word', 'word_char']:
             metric = eval_word(models, dataset, recog_params, epoch=epoch)[0]
-            logger.info('WER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, metric))
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
         elif args.unit == 'wp':
             metric, cer = eval_wordpiece(models, dataset, recog_params, epoch=epoch)
-            logger.info('WER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, metric))
-            logger.info('CER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, cer))
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
+            logger.info('CER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, cer))
         elif 'char' in args.unit:
             metric, cer = eval_char(models, dataset, recog_params, epoch=epoch)
-            logger.info('WER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, metric))
-            logger.info('CER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, cer))
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
+            logger.info('CER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, cer))
         elif 'phone' in args.unit:
             metric = eval_phone(models, dataset, recog_params, epoch=epoch)
-            logger.info('PER (%s, epoch:%d): %.2f %%' % (dataset.set, epoch, metric))
+            logger.info('PER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
     elif args.metric == 'ppl':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[0]
-        logger.info('PPL (%s, epoch:%d): %.2f' % (dataset.set, epoch, metric))
+        logger.info('PPL (%s, ep:%d): %.2f' % (dataset.set, epoch, metric))
     elif args.metric == 'loss':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
-        logger.info('Loss (%s, epoch:%d): %.2f' % (dataset.set, epoch, metric))
+        logger.info('Loss (%s, ep:%d): %.2f' % (dataset.set, epoch, metric))
     else:
         raise NotImplementedError(args.metric)
     return metric
