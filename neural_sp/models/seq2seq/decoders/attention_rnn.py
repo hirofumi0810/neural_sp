@@ -196,7 +196,7 @@ class RNNDecoder(DecoderBase):
                 self.score = MoChA(key_dim=self.enc_n_units,
                                    query_dim=n_units if n_projs == 0 else n_projs,
                                    attn_dim=attn_dim,
-                                   window=mocha_chunk_size,
+                                   chunk_size=mocha_chunk_size,
                                    init_r=-4)
             else:
                 if attn_n_heads > 1:
@@ -305,8 +305,10 @@ class RNNDecoder(DecoderBase):
         for n, p in self.named_parameters():
 
             if 'score.monotonic_energy.v.weight_g' in n or 'score.monotonic_energy.r' in n:
+                logger.info('Skip initialization of %s' % n)
                 continue
             if 'score.chunk_energy.v.weight_g' in n or 'score.chunk_energy.r' in n:
+                logger.info('Skip initialization of %s' % n)
                 continue
 
             if p.dim() == 1:
@@ -375,6 +377,7 @@ class RNNDecoder(DecoderBase):
 
     def append_sos_eos(self, ys, bwd=False, replace_sos=False):
         """Append <sos> and <eos> and return padded sequences.
+
         Args:
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
@@ -735,9 +738,9 @@ class RNNDecoder(DecoderBase):
             if refs_id is not None and self.vocab == idx2token.vocab:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
             if self.bwd:
-                logger.info('Hyp: %s' % idx2token(hyps[b][1:][::-1]))
+                logger.info('Hyp: %s' % idx2token(hyps[b][::-1]))
             else:
-                logger.info('Hyp: %s' % idx2token(hyps[b][1:]))
+                logger.info('Hyp: %s' % idx2token(hyps[b]))
 
         return hyps, aws
 
