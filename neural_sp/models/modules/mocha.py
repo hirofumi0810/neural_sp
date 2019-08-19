@@ -83,7 +83,8 @@ class Energy(nn.Module):
 
 
 class MoChA(nn.Module):
-    def __init__(self, key_dim, query_dim, attn_dim, chunk_size, init_r=-4):
+    def __init__(self, key_dim, query_dim, attn_dim, chunk_size, init_r=-4,
+                 adaptive=False):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -99,24 +100,37 @@ class MoChA(nn.Module):
             attn_dim: (int) dimension of the attention layer
             chunk_size (int): size of chunk
             init_r (int): initial value for parameter 'r' used in monotonic/chunk attention
+            adaptive (bool): turn on adaptive MoChA
 
         """
         super(MoChA, self).__init__()
 
         self.chunk_size = chunk_size
+        self.adaptive = adaptive
+        self.constrained = True
+        if chunk_size >= 100:
+            self.constrained = False
         self.n_heads = 1
 
         # Monotonic energy
         self.monotonic_energy = Energy(key_dim, query_dim, 'add', attn_dim, init_r)
 
         # Chunk energy
+        self.chunk_energy = None
         if chunk_size > 1:
             self.chunk_energy = Energy(key_dim, query_dim, 'add', attn_dim, init_r)
+
+        self.chunk_len_energy = None
+        if adaptive:
+            assert chunk_size > 1
+            self.chunk_len_energy = Energy(key_dim, query_dim, 'add', attn_dim, init_r)
 
     def reset(self):
         self.monotonic_energy.reset()
         if self.chunk_size > 1:
             self.chunk_energy.reset()
+            if self.adaptive:
+                self.chunk_len_energy.reset()
 
     def forward(self, key, value, query, mask=None, aw_prev=None, mode='parallel',
                 eps=1e-6):
@@ -168,7 +182,8 @@ class MoChA(nn.Module):
 
         elif mode == 'hard':  # test
             # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
-            p_choose_i = (e_mono > 0).float()
+            emit_probs = torch.sigmoid(e_mono)
+            p_choose_i = (emit_probs > 0.5).float()
             # Remove any probabilities before the index chosen at the last time step
             p_choose_i *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, kmax]`
             # Now, use exclusive cumprod to remove probabilities after the first
@@ -185,7 +200,17 @@ class MoChA(nn.Module):
         # Compute chunk energy
         if self.chunk_size > 1:
             e_chunk = self.chunk_energy(key, query, mask)
-            beta = efficient_chunkwise_attention(alpha, e_chunk, self.chunk_size)
+            if self.adaptive:
+                e_chunk_len = self.chunk_len_energy(key, query, mask)
+                if self.constrained:
+                    chunk_len_dist = self.chunk_size * torch.sigmoid(e_chunk_len)
+                else:
+                    chunk_len_dist = torch.exp(e_chunk_len)
+                # avoid zero length
+                chunk_len_dist = chunk_len_dist.int() + 1
+                beta = efficient_adaptive_chunkwise_attention(alpha, e_chunk, chunk_len_dist)
+            else:
+                beta = efficient_chunkwise_attention(alpha, e_chunk, self.chunk_size)
             # alpha_norm = alpha / torch.sum(alpha, dim=1, keepdim=True)
             # beta = efficient_chunkwise_attention(alpha_norm, e_chunk, self.chunk_size)
 
@@ -247,7 +272,7 @@ def moving_sum(x, back, forward):
 
 
 def efficient_chunkwise_attention(alpha, u, chunk_size):
-    """Compute chunkwise attention distribution efficiently by clipping logits (training).
+    """Compute chunkwise attention distribution efficiently by clipping logits.
 
     Args:
         alpha (FloatTensor): emission probability in monotonic attention, `[B, T]`
@@ -267,4 +292,35 @@ def efficient_chunkwise_attention(alpha, u, chunk_size):
     # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
     beta = softmax_exp * moving_sum(alpha / softmax_denominators,
                                     back=0, forward=chunk_size - 1)
+    return beta
+
+
+def efficient_adaptive_chunkwise_attention(alpha, u, chunk_len_dist):
+    """Compute adaptive chunkwise attention distribution efficiently by clipping logits.
+
+    Args:
+        alpha (FloatTensor): emission probability in monotonic attention, `[B, T]`
+        u (FloatTensor): chunk energy, `[B, T]`
+        chunk_len_dist (IntTensor): `[B, T]`
+    Return
+        beta (FloatTensor): MoChA weights, `[B, T]`
+
+    """
+    # Shift logits to avoid overflow
+    u -= torch.max(u, dim=1, keepdim=True)[0]
+    # Limit the range for numerical stability
+    softmax_exp = torch.clamp(torch.exp(u), min=1e-5)
+    # Compute chunkwise softmax denominators
+    triggered_points = torch.argmax(alpha, dim=1)
+    bs = alpha.size(0)
+    softmax_denominators = [moving_sum(
+        softmax_exp[b:b + 1],
+        back=chunk_len_dist[b, triggered_points[b]] - 1, forward=0)
+        for b in range(bs)]
+    # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
+    beta = [softmax_exp[b:b + 1] * moving_sum(
+        alpha[b:b + 1] / softmax_denominators[b],
+        back=0, forward=chunk_len_dist[b, triggered_points[b]] - 1)
+        for b in range(bs)]
+    beta = torch.cat(beta, dim=0)
     return beta

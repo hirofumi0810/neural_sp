@@ -138,6 +138,8 @@ def parse():
                         help='type of attention for RNN sequence-to-sequence models')
     parser.add_argument('--mocha_chunk_size', type=int, default=1,
                         help='chunk size for MoChA')
+    parser.add_argument('--mocha_adaptive', type=strtobool, default=False,
+                        help='adaptive MoChA')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='dimension of the attention layer')
     parser.add_argument('--attn_conv_n_channels', type=int, default=10,

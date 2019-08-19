@@ -86,6 +86,7 @@ class RNNDecoder(DecoderBase):
         mtl_per_batch (bool):
         param_init (float):
         mocha_chunk_size (int): chunk size for MoChA
+        mocha_adaptive (bool): adaptive MoChA
         replace_sos (bool):
 
     """
@@ -129,6 +130,7 @@ class RNNDecoder(DecoderBase):
                  mtl_per_batch=False,
                  param_init=0.1,
                  mocha_chunk_size=1,
+                 mocha_adaptive=False,
                  replace_sos=False,
                  soft_label_weight=0.0):
 
@@ -197,6 +199,7 @@ class RNNDecoder(DecoderBase):
                                    query_dim=n_units if n_projs == 0 else n_projs,
                                    attn_dim=attn_dim,
                                    chunk_size=mocha_chunk_size,
+                                   adaptive=mocha_adaptive,
                                    init_r=-4)
             else:
                 if attn_n_heads > 1:
