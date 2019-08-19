@@ -114,7 +114,7 @@ class CTC(DecoderBase):
 
         # Compute CTC loss
         logits = self.output(eouts)
-        loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
+        loss = self.warpctc_loss(logits.transpose(1, 0),  # time-major
                                  ys_ctc, elens.cpu(), ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
