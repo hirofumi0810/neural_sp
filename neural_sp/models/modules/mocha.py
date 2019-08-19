@@ -125,7 +125,10 @@ class MoChA(nn.Module):
             assert chunk_size > 1
             self.chunk_len_energy = Energy(key_dim, query_dim, 'add', attn_dim, init_r)
 
+        self.tail_prediction = False
+
     def reset(self):
+        self.tail_prediction = False
         self.monotonic_energy.reset()
         if self.chunk_size > 1:
             self.chunk_energy.reset()
@@ -133,7 +136,7 @@ class MoChA(nn.Module):
                 self.chunk_len_energy.reset()
 
     def forward(self, key, value, query, mask=None, aw_prev=None, mode='parallel',
-                eps=1e-6):
+                eps=1e-8):
         """Soft monotonic attention during training.
 
         Args:
@@ -194,6 +197,13 @@ class MoChA(nn.Module):
             # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
             alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)
 
+            if not self.tail_prediction and alpha.sum() == 0:
+                emit_probs *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, kmax]`
+                triggered_point = torch.argmax(emit_probs, dim=1)
+                alpha = e_mono.new_zeros(e_mono.size())
+                for b in range(bs):
+                    alpha[b, triggered_point[b]] = 1
+                self.tail_prediction = True
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
 
