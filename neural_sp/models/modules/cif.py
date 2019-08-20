@@ -62,10 +62,12 @@ class CIF(nn.Module):
         n_tokens = torch.zeros(bs, dtype=torch.int32)
         state = eouts.new_zeros(bs, self.channel)
         alpha_accum_prev = eouts.new_zeros(bs)
-        for b in range(bs):
-            for t in range(elens[b]):
-                alpha_accum = alpha_norm[b, t] + alpha_accum_prev[b]
-                if alpha_accum >= self.threshold:
+        for t in range(xtime):
+            alpha_accum = alpha_norm[:, t] + alpha_accum_prev
+            for b in range(bs):
+                if t > elens[b] - 1:
+                    continue
+                if alpha_accum[b] >= self.threshold:
                     # fire
                     ak1 = 1 - alpha_accum_prev[b]
                     ak2 = alpha_norm[b, t] - ak1
@@ -80,10 +82,10 @@ class CIF(nn.Module):
                     # Carry over to the next frame
                     state[b] += alpha_norm[b, t] * eouts[b, t]
                     aws[b, 0, n_tokens[b], t] += alpha_norm[b, t]
-                    alpha_accum_prev[b] = alpha_accum
+                    alpha_accum_prev[b] = alpha_accum[b]
 
             # tail of target sequence
-            if ylens is None:
+            if ylens is None and t == elens[b] - 1:
                 if alpha_accum_prev[b] >= 0.5:
                     n_tokens[b] += 1
                     eouts_fired[b, n_tokens[b]] = state[b]
