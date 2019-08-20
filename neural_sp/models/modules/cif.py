@@ -60,33 +60,33 @@ class CIF(nn.Module):
         eouts_fired = eouts.new_zeros(bs, max_len + 1, enc_dim)
         aws = eouts.new_zeros(bs, 1, max_len + 1, xtime)
         n_tokens = torch.zeros(bs, dtype=torch.int32)
+        state = eouts.new_zeros(bs, self.channel)
+        alpha_accum_prev = eouts.new_zeros(bs)
         for b in range(bs):
-            alpha_accum_prev = 0
-            state = eouts.new_zeros(self.channel)
             for t in range(elens[b]):
-                alpha_accum = alpha_norm[b, t] + alpha_accum_prev
+                alpha_accum = alpha_norm[b, t] + alpha_accum_prev[b]
                 if alpha_accum >= self.threshold:
                     # fire
-                    ak1 = 1 - alpha_accum_prev
+                    ak1 = 1 - alpha_accum_prev[b]
                     ak2 = alpha_norm[b, t] - ak1
                     aws[b, 0, n_tokens[b], t] += ak1
-                    eouts_fired[b, n_tokens[b]] = state + ak1 * eouts[b, t]
+                    eouts_fired[b, n_tokens[b]] = state[b] + ak1 * eouts[b, t]
                     n_tokens[b] += 1
                     # Carry over to the next frame
-                    state = ak2 * eouts[b, t]
-                    alpha_accum_prev = ak2
+                    state[b] = ak2 * eouts[b, t]
+                    alpha_accum_prev[b] = ak2
                     aws[b, 0, n_tokens[b], t] += ak2
                 else:
                     # Carry over to the next frame
-                    state += alpha_norm[b, t] * eouts[b, t]
+                    state[b] += alpha_norm[b, t] * eouts[b, t]
                     aws[b, 0, n_tokens[b], t] += alpha_norm[b, t]
-                    alpha_accum_prev = alpha_accum
+                    alpha_accum_prev[b] = alpha_accum
 
-                # tail of target sequence
-                if ylens is None:
-                    if alpha_accum_prev >= 0.5:
-                        n_tokens[b] += 1
-                        eouts_fired[b, n_tokens[b]] = state
+            # tail of target sequence
+            if ylens is None:
+                if alpha_accum_prev[b] >= 0.5:
+                    n_tokens[b] += 1
+                    eouts_fired[b, n_tokens[b]] = state[b]
 
         # truncate
         eouts_fired = eouts_fired[:, :max_len]
