@@ -8,7 +8,6 @@ import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.linear import Linear
-from neural_sp.models.torch_utils import pad_list
 
 
 class CIF(nn.Module):
@@ -38,62 +37,59 @@ class CIF(nn.Module):
             ylens (IntTensor): `[B]`
             max_len (int): the maximum length of target sequence
         Returns:
-            eouts_fired (FloatTensor):
+            eouts_fired (FloatTensor): `[B, T, enc_dim]`
             alpha (FloatTensor): `[B, T]`
             aws (FloatTensor): `[B, 1 (head), L. T]`
 
         """
-        bs, time, enc_dim = eouts.size()
+        bs, xtime, enc_dim = eouts.size()
 
         # 1d conv
         conv_feat = self.conv(eouts.transpose(2, 1))  # `[B, channel, kmax]`
         conv_feat = conv_feat.transpose(2, 1)
         alpha = torch.sigmoid(self.proj(conv_feat)).squeeze(2)  # `[B, kmax]`
 
-        eouts_fired = []
+        # normalization
         if ylens is not None:
-            aws = eouts.new_zeros(bs, 1, ylens.max(), time)
+            alpha_norm = alpha / alpha.sum(1).unsqueeze(1) * ylens.unsqueeze(1)
         else:
-            aws = eouts.new_zeros(bs, 1, max_len, time)
-        for b in range(bs):
-            # normalization
-            if ylens is not None:
-                alpha_norm = alpha[b] / alpha[b].sum() * ylens[b]
-            else:
-                alpha_norm = alpha[b]
+            alpha_norm = alpha
 
-            alpha_residual = 0
-            state_residual = eouts.new_zeros(self.channel)
-            state_accum_b_list = []
+        if ylens is not None:
+            max_len = ylens.max().int()
+        eouts_fired = eouts.new_zeros(bs, max_len + 1, enc_dim)
+        aws = eouts.new_zeros(bs, 1, max_len + 1, xtime)
+        n_tokens = torch.zeros(bs, dtype=torch.int32)
+        for b in range(bs):
+            alpha_accum_prev = 0
+            state = eouts.new_zeros(self.channel)
             for t in range(elens[b]):
-                alpha_accum = alpha_norm[t] + alpha_residual
+                alpha_accum = alpha_norm[b, t] + alpha_accum_prev
                 if alpha_accum >= self.threshold:
                     # fire
-                    alpha_accum = 1  # this is import for the next frame
-                    alpha_residual = alpha_norm[t] - (1 - alpha_residual)
-                    state_accum = state_residual + (1 - alpha_residual) * eouts[b, t]
-                    state_accum_b_list.append(state_accum.unsqueeze(0))
-                    state_residual = alpha_residual * eouts[b, t]
-                    aws[b, 0, len(state_accum_b_list) - 1, t] += alpha_norm[t] - alpha_residual
-                    if aws.size(2) > len(state_accum_b_list):
-                        aws[b, 0, len(state_accum_b_list), t] += alpha_residual
+                    ak1 = 1 - alpha_accum_prev
+                    ak2 = alpha_norm[b, t] - ak1
+                    aws[b, 0, n_tokens[b], t] += ak1
+                    eouts_fired[b, n_tokens[b]] = state + ak1 * eouts[b, t]
+                    n_tokens[b] += 1
+                    # Carry over to the next frame
+                    state = ak2 * eouts[b, t]
+                    alpha_accum_prev = ak2
+                    aws[b, 0, n_tokens[b], t] += ak2
                 else:
                     # Carry over to the next frame
-                    alpha_residual = alpha_accum
-                    state_accum = state_residual + alpha_norm[t] * eouts[b, t]
-                    state_residual = state_accum
-                    aws[b, 0, len(state_accum_b_list) - 1, t] += alpha_norm[t]
+                    state += alpha_norm[b, t] * eouts[b, t]
+                    aws[b, 0, n_tokens[b], t] += alpha_norm[b, t]
+                    alpha_accum_prev = alpha_accum
 
                 # tail of target sequence
                 if ylens is None:
-                    if alpha_accum >= 0.5:
-                        state_accum_b_list.append(state_accum.unsqueeze(0))
+                    if alpha_accum_prev >= 0.5:
+                        n_tokens[b] += 1
+                        eouts_fired[b, n_tokens[b]] = state
 
-            # padding for batch training
-            if ylens is not None:
-                for _ in range(ylens[b].item() - len(state_accum_b_list)):
-                    state_accum_b_list.append(eouts.new_zeros(1, self.channel))
-            eouts_fired.append(torch.cat(state_accum_b_list, dim=0))
+        # truncate
+        eouts_fired = eouts_fired[:, :max_len]
+        aws = aws[:, :max_len]
 
-        eouts_fired = pad_list(eouts_fired, 0.0)
         return eouts_fired, alpha, aws

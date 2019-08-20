@@ -131,7 +131,7 @@ class CIFRNNDecoder(DecoderBase):
         self.replace_sos = replace_sos
         self.soft_label_weight = soft_label_weight
 
-        self.quantity_loss_weight = 1.0
+        self.quantity_loss_weight = 0.1
 
         # for contextualization
         self.discourse_aware = discourse_aware
@@ -244,11 +244,6 @@ class CIFRNNDecoder(DecoderBase):
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
 
-            if 'score.monotonic_energy.v.weight_g' in n or 'score.monotonic_energy.r' in n:
-                continue
-            if 'score.chunk_energy.v.weight_g' in n or 'score.chunk_energy.r' in n:
-                continue
-
             if p.dim() == 1:
                 if 'linear_lm_gate.fc.bias' in n:
                     # Initialize bias in gating with -1 for cold fusion
@@ -314,6 +309,7 @@ class CIFRNNDecoder(DecoderBase):
 
     def append_sos_eos(self, ys, bwd=False, replace_sos=False):
         """Append <sos> and <eos> and return padded sequences.
+
         Args:
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
@@ -349,7 +345,7 @@ class CIFRNNDecoder(DecoderBase):
             ppl (float): perplexity
 
         """
-        bs, xmax = eouts.size()[:2]
+        bs, xtime, enc_dim = eouts.size()
 
         # Append <sos> and <eos>
         ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
@@ -359,7 +355,8 @@ class CIFRNNDecoder(DecoderBase):
         lmouts, lmstate = None, None
 
         # CIF
-        cvs, alpha, aws = self.score(eouts, elens, ylens)
+        cvs, alpha, aws = self.score(eouts, elens, ylens.cuda(self.device_id).float())
+        cvs = torch.cat([eouts.new_zeros(bs, 1, enc_dim), cvs], dim=1)
 
         # Update LM states for LM fusion
         if self.lm is not None:
@@ -367,7 +364,7 @@ class CIFRNNDecoder(DecoderBase):
 
         # Recurrency -> Score -> Generate
         ys_emb = self.embed(ys_in_pad)
-        dstate, logits = self.decode_step(cvs, dstate, ys_emb, lmouts)
+        dstate, logits = self.decode_step(cvs[:, :-1], cvs[:, 1:], dstate, ys_emb, lmouts)
         logits = self.output(logits)
 
         # for attention plot
@@ -395,8 +392,8 @@ class CIFRNNDecoder(DecoderBase):
 
         return loss, acc, ppl
 
-    def decode_step(self, cv, dstate, y_emb, lmout):
-        dout, dstate = self.recurrency(torch.cat([y_emb, cv], dim=-1), dstate)
+    def decode_step(self, cv_prev, cv, dstate, y_emb, lmout):
+        dout, dstate = self.recurrency(torch.cat([y_emb, cv_prev], dim=-1), dstate)
         attn_v = self.generate(cv, dout, lmout)
         return dstate, attn_v
 
@@ -539,7 +536,7 @@ class CIFRNNDecoder(DecoderBase):
 
         """
         logger = logging.getLogger("decoding")
-        bs, xmax, _ = eouts.size()
+        bs, xtime, enc_dim = eouts.size()
 
         # Initialization
         dstate = self.zero_state(bs)
@@ -548,23 +545,25 @@ class CIFRNNDecoder(DecoderBase):
 
         # CIF
         cvs, alpha, aws = self.score(eouts, elens)
+        cvs = torch.cat([eouts.new_zeros(bs, 1, enc_dim), cvs], dim=1)
 
         hyps_batch = []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
         if oracle:
             assert refs_id is not None
-            ymax = max([len(refs_id[b]) for b in range(bs)]) + 1
+            ytime = max([len(refs_id[b]) for b in range(bs)]) + 1
         else:
-            ymax = int(math.floor(xmax * max_len_ratio)) + 1
-        for t in range(ymax):
+            ytime = int(math.floor(xtime * max_len_ratio)) + 1
+        for t in range(ytime):
             # Update LM states for LM fusion
             if self.lm is not None:
                 lmout, lmstate = self.lm.decode(self.lm(y), lmstate)
 
             # Recurrency -> Score -> Generate
             y_emb = self.embed(y)
-            dstate, attn_v = self.decode_step(cvs[:, t:t + 1], dstate, y_emb, lmout)
+            dstate, attn_v = self.decode_step(cvs[:, t:t + 1], cvs[:, t + 1:t + 2],
+                                              dstate, y_emb, lmout)
 
             # Pick up 1-best
             y = self.output(attn_v).argmax(-1)
@@ -580,7 +579,7 @@ class CIFRNNDecoder(DecoderBase):
             # Break if <eos> is outputed in all mini-batch
             if sum(eos_flags) == bs:
                 break
-            if t == ymax - 1:
+            if t == ytime - 1:
                 break
 
             if oracle:
@@ -614,9 +613,9 @@ class CIFRNNDecoder(DecoderBase):
             if refs_id is not None and self.vocab == idx2token.vocab:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
             if self.bwd:
-                logger.info('Hyp: %s' % idx2token(hyps[b][1:][::-1]))
+                logger.info('Hyp: %s' % idx2token(hyps[b][::-1]))
             else:
-                logger.info('Hyp: %s' % idx2token(hyps[b][1:]))
+                logger.info('Hyp: %s' % idx2token(hyps[b]))
 
         return hyps, None
 
@@ -659,7 +658,7 @@ class CIFRNNDecoder(DecoderBase):
         """
         logger = logging.getLogger("decoding")
 
-        bs = eouts.size(0)
+        bs, _, enc_dim = eouts.size()
         n_models = len(ensmbl_decs) + 1
 
         oracle = params['recog_oracle']
@@ -690,6 +689,7 @@ class CIFRNNDecoder(DecoderBase):
 
         # CIF
         cvs, alpha, aws = self.score(eouts, elens, max_len=200)
+        cvs = torch.cat([eouts.new_zeros(bs, 1, enc_dim), cvs], dim=1)
         # TODO: fix later
 
         nbest_hyps_idx, aws, scores = [], [], []
@@ -732,10 +732,10 @@ class CIFRNNDecoder(DecoderBase):
                      }]
             if oracle:
                 assert refs_id is not None
-                ymax = len(refs_id[b]) + 1
+                ytime = len(refs_id[b]) + 1
             else:
-                ymax = int(math.floor(elens[b] * max_len_ratio)) + 1
-            for t in range(ymax):
+                ytime = int(math.floor(elens[b] * max_len_ratio)) + 1
+            for t in range(ytime):
                 new_hyps = []
                 for beam in hyps:
                     if self.replace_sos and t == 0:
@@ -757,7 +757,9 @@ class CIFRNNDecoder(DecoderBase):
                     # for the main model
                     y_emb = self.embed(eouts.new_zeros(1, 1).fill_(prev_idx))
                     dstate, attn_v = self.decode_step(
-                        cvs[b:b + 1, :elens[b]], beam['dstate'], y_emb, lmout)
+                        cvs[b:b + 1, t:t + 1],
+                        cvs[b:b + 1, t + 1:t + 2],
+                        beam['dstate'], y_emb, lmout)
                     probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
 
                     # for the ensemble
@@ -767,7 +769,8 @@ class CIFRNNDecoder(DecoderBase):
                         for i_e, dec in enumerate(ensmbl_decs):
                             y_emb = dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx))
                             ensmbl_dstate, cv_e, aw_e, attn_v_e = dec.decode_step(
-                                ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
+                                ensmbl_eouts[i_e][b:b + 1, t:t + 1],
+                                ensmbl_eouts[i_e][b:b + 1, t + 1:t + 2],
                                 beam['ensmbl_dstate'][i_e], beam['ensmbl_cv'], y_emb,
                                 lmout)
 
