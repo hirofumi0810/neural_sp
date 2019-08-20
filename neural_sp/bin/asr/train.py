@@ -220,7 +220,7 @@ def main():
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
-            optimizer.convert_to_sgd(model, 'sgd', args.lr, conf['weight_decay'],
+            optimizer.convert_to_sgd(model, args.lr, conf['weight_decay'],
                                      decay_type='always', decay_rate=0.5)
     else:
         # Save the conf file as a yaml file
@@ -479,7 +479,7 @@ def main():
 
                 # Convert to fine-tuning stage
                 if optimizer.n_epochs == args.convert_to_sgd_epoch:
-                    optimizer.convert_to_sgd(model, 'sgd', args.lr, args.weight_decay,
+                    optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
                                              decay_type='always', decay_rate=0.5)
 
             pbar_epoch = tqdm(total=len(train_set))
