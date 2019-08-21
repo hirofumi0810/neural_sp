@@ -18,28 +18,16 @@ NEG_INF = float(np.finfo(np.float32).min)
 
 
 class Energy(nn.Module):
-    def __init__(self, enc_dim, dec_dim, attn_type, attn_dim, init_r,
+    def __init__(self, enc_dim, dec_dim, attn_dim, init_r,
                  conv_out_channels=10, conv_kernel_size=100):
         """Energy function."""
         super().__init__()
 
-        self.attn_type = attn_type
         self.key = None
         self.mask = None
 
         self.w_key = Linear(enc_dim, attn_dim)
         self.w_query = Linear(dec_dim, attn_dim, bias=False)
-        if attn_type == 'location':
-            self.w_conv = Linear(conv_out_channels, attn_dim, bias=False)
-            self.conv = nn.Conv1d(in_channels=1,
-                                  out_channels=conv_out_channels,
-                                  kernel_size=conv_kernel_size * 2 + 1,
-                                  stride=1,
-                                  padding=conv_kernel_size,
-                                  bias=False)
-        else:
-            assert attn_type == 'add'
-
         self.v = nn.utils.weight_norm(nn.Linear(attn_dim, 1))
         self.r = nn.Parameter(torch.Tensor([init_r]))
 
@@ -70,12 +58,7 @@ class Energy(nn.Module):
             self.mask = mask
 
         key = key.view(-1, key_dim)
-        tmp = self.key + self.w_query(query)
-        if self.attn_type == 'location':
-            conv_feat = self.conv(aw_prev.transpose(2, 1))  # `[B, ch, kmax]`
-            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, kmax, ch]`
-            tmp = tmp + self.w_conv(conv_feat)
-        energy = torch.tanh(tmp)
+        energy = torch.tanh(self.key + self.w_query(query))
         energy = self.v(energy).squeeze(-1) + self.r  # `[B, kmax]`
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
@@ -83,8 +66,14 @@ class Energy(nn.Module):
 
 
 class MoChA(nn.Module):
-    def __init__(self, key_dim, query_dim, attn_dim, chunk_size, init_r=-4,
-                 adaptive=False):
+    def __init__(self,
+                 key_dim,
+                 query_dim,
+                 attn_type,
+                 attn_dim,
+                 chunk_size,
+                 adaptive=False,
+                 init_r=-1):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -97,33 +86,40 @@ class MoChA(nn.Module):
         Args:
             key_dim (int): dimension of key
             query_dim (int): dimension of query
+            attn_type (str): mocha/mocha_simple
             attn_dim: (int) dimension of the attention layer
             chunk_size (int): size of chunk
-            init_r (int): initial value for parameter 'r' used in monotonic/chunk attention
             adaptive (bool): turn on adaptive MoChA
+            init_r (int): initial value for parameter 'r' used in monotonic/chunk attention
 
         """
         super(MoChA, self).__init__()
 
+        self.attn_type = attn_type
+        assert attn_type in ['mocha', 'mocha_simple']
         self.chunk_size = chunk_size
         self.adaptive = adaptive
-        self.constrained = True
+        self.unconstrained = False
         if chunk_size >= 100:
-            self.constrained = False
+            self.unconstrained = True
         self.n_heads = 1
+        self.pre_sigmoid_noise = 0
 
         # Monotonic energy
-        self.monotonic_energy = Energy(key_dim, query_dim, 'add', attn_dim, init_r)
+        self.monotonic_energy = Energy(
+            key_dim, query_dim, attn_dim, init_r)
 
         # Chunk energy
         self.chunk_energy = None
         if chunk_size > 1:
-            self.chunk_energy = Energy(key_dim, query_dim, 'add', attn_dim, init_r)
+            self.chunk_energy = Energy(
+                key_dim, query_dim, attn_dim, init_r)
 
         self.chunk_len_energy = None
         if adaptive:
             assert chunk_size > 1
-            self.chunk_len_energy = Energy(key_dim, query_dim, 'add', attn_dim, init_r)
+            self.chunk_len_energy = Energy(
+                key_dim, query_dim, attn_dim, init_r)
 
         self.tail_prediction = False
 
@@ -135,8 +131,8 @@ class MoChA(nn.Module):
             if self.adaptive:
                 self.chunk_len_energy.reset()
 
-    def forward(self, key, value, query, mask=None, aw_prev=None, mode='parallel',
-                eps=1e-8):
+    def forward(self, key, value, query, mask=None, aw_prev=None,
+                mode='parallel', eps=1e-10):
         """Soft monotonic attention during training.
 
         Args:
@@ -148,7 +144,8 @@ class MoChA(nn.Module):
             mode (str): recursive/parallel/hard
         Return:
             cv (FloatTensor): `[B, 1, value_dim]`
-            aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
+            alpha (FloatTensor): `[B, kmax, 1 (n_heads)]`
+            beta (FloatTensor): `[B, kmax, 1 (n_heads)]`
 
         """
         bs, kmax = key.size()[:2]
@@ -162,7 +159,7 @@ class MoChA(nn.Module):
         e_mono = self.monotonic_energy(key, query, mask)
 
         if mode == 'recursive':  # training
-            p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono))  # `[B, kmax]`
+            p_choose_i = torch.sigmoid(self.add_gaussian_noise(e_mono))  # `[B, kmax]`
             # Compute [1, 1 - p_choose_i[0], 1 - p_choose_i[1], ..., 1 - p_choose_i[-2]]
             shifted_1mp_choose_i = torch.cat([key.new_ones(bs, 1),
                                               1 - p_choose_i[:, :-1]], dim=1)
@@ -175,13 +172,15 @@ class MoChA(nn.Module):
             alpha = p_choose_i * q[:, 1:]
 
         elif mode == 'parallel':  # training
-            p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono))  # `[B, kmax]`
+            p_choose_i = torch.sigmoid(self.add_gaussian_noise(e_mono))  # `[B, kmax]`
             # safe_cumprod computes cumprod in logspace with numeric checks
-            cumprod_1mp_choose_i = safe_cumprod(1 - p_choose_i, eps=eps)
+            cumprod_1mp_choose_i = safe_cumprod(1 - p_choose_i)
             # Compute recurrence relation solution
-            alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(
-                aw_prev.squeeze(2) / torch.clamp(cumprod_1mp_choose_i, min=eps, max=1.0), dim=1)
-            # alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(aw_prev.squeeze(2), dim=1)
+            if self.attn_type == 'mocha_simple':
+                alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(aw_prev.squeeze(2), dim=1)
+            else:
+                alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(
+                    aw_prev.squeeze(2) / torch.clamp(cumprod_1mp_choose_i, min=eps, max=1.0), dim=1)
 
         elif mode == 'hard':  # test
             # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
@@ -197,65 +196,59 @@ class MoChA(nn.Module):
             # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
             alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)
 
-            if not self.tail_prediction and alpha.sum() == 0:
-                emit_probs *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, kmax]`
-                triggered_point = torch.argmax(emit_probs, dim=1)
-                alpha = e_mono.new_zeros(e_mono.size())
-                for b in range(bs):
-                    alpha[b, triggered_point[b]] = 1
-                self.tail_prediction = True
+            # if not self.tail_prediction and alpha.sum() == 0:
+            #     emit_probs *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, kmax]`
+            #     triggered_point = torch.argmax(emit_probs, dim=1)
+            #     alpha = e_mono.new_zeros(e_mono.size())
+            #     for b in range(bs):
+            #         alpha[b, triggered_point[b]] = 1
+            #     self.tail_prediction = True
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
 
         # Compute chunk energy
+        beta = None
         if self.chunk_size > 1:
             e_chunk = self.chunk_energy(key, query, mask)
             if self.adaptive:
                 e_chunk_len = self.chunk_len_energy(key, query, mask)
-                if self.constrained:
-                    chunk_len_dist = self.chunk_size * torch.sigmoid(e_chunk_len)
-                else:
+                if self.unconstrained:
                     chunk_len_dist = torch.exp(e_chunk_len)
+                else:
+                    chunk_len_dist = self.chunk_size * torch.sigmoid(e_chunk_len)
                 # avoid zero length
                 chunk_len_dist = chunk_len_dist.int() + 1
                 beta = efficient_adaptive_chunkwise_attention(alpha, e_chunk, chunk_len_dist)
             else:
                 beta = efficient_chunkwise_attention(alpha, e_chunk, self.chunk_size)
-            # alpha_norm = alpha / torch.sum(alpha, dim=1, keepdim=True)
-            # beta = efficient_chunkwise_attention(alpha_norm, e_chunk, self.chunk_size)
 
         # Compute context vector
         if self.chunk_size > 1:
             cv = torch.bmm(beta.unsqueeze(1), value)
+            beta = beta.unsqueeze(2)
         else:
             cv = torch.bmm(alpha.unsqueeze(1), value)
 
         return cv, alpha.unsqueeze(2)
 
+    def add_gaussian_noise(self, xs, std=1.0):
+        """Additive gaussian nosie to encourage discreteness."""
+        noise = xs.new_zeros(xs.size()).normal_(std=std)
+        return xs + self.pre_sigmoid_noise * noise
 
-def add_gaussian_noise(xs, std=1.0):
-    """Additive gaussian nosie to encourage discreteness."""
-    noise = xs.new_zeros(xs.size()).normal_(std=std)
-    return xs + noise
 
-
-def safe_cumprod(x, eps=1e-8):
+def safe_cumprod(x):
     """Numerically stable cumulative product by cumulative sum in log-space."""
-    return torch.exp(exclusive_cumsum(torch.log(torch.clamp(x, min=eps, max=1.0))))
+    return torch.exp(exclusive_cumsum(torch.log(torch.clamp(x, min=NEG_INF, max=1.0))))
 
 
 def exclusive_cumsum(x):
-    """Exclusive cumulative summation [a, b, c] => [0, a, a + b]"""
+    """Exclusive cumulative summation [a, b, c] => [0, a, a + b]."""
     return torch.cumsum(torch.cat([x.new_zeros(x.size(0), 1), x[:, :-1]], dim=1), dim=1)
 
 
 def exclusive_cumprod(x):
-    """Exclusive cumulative product [a, b, c] => [1, a, a * b].
-
-    * TensorFlow: https://www.tensorflow.org/api_docs/python/tf/cumprod
-    * PyTorch: https://discuss.pytorch.org/t/cumprod-exclusive-true-equivalences/2614
-
-    """
+    """Exclusive cumulative product [a, b, c] => [1, a, a * b]."""
     return torch.cumprod(torch.cat([x.new_ones(x.size(0), 1), x[:, :-1]], dim=1), dim=1)
 
 

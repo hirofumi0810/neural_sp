@@ -193,10 +193,11 @@ class RNNDecoder(DecoderBase):
 
         if ctc_weight < global_weight:
             # Attention layer
-            if attn_type == 'mocha':
+            if 'mocha' in attn_type:
                 assert attn_n_heads == 1
                 self.score = MoChA(key_dim=self.enc_n_units,
                                    query_dim=n_units if n_projs == 0 else n_projs,
+                                   attn_type=attn_type,
                                    attn_dim=attn_dim,
                                    chunk_size=mocha_chunk_size,
                                    adaptive=mocha_adaptive,
@@ -420,7 +421,7 @@ class RNNDecoder(DecoderBase):
             ppl (float): perplexity
 
         """
-        bs, xmax = eouts.size()[:2]
+        bs, xtime = eouts.size()[:2]
 
         # Append <sos> and <eos>
         ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
@@ -442,7 +443,7 @@ class RNNDecoder(DecoderBase):
         ys_emb = self.embed(ys_in_pad)
 
         # Create the attention mask
-        mask = make_pad_mask(elens, self.device_id).expand(bs, xmax)
+        mask = make_pad_mask(elens, self.device_id)
 
         logits = []
         for t in range(ys_in_pad.size(1)):
@@ -658,7 +659,7 @@ class RNNDecoder(DecoderBase):
 
         """
         logger = logging.getLogger("decoding")
-        bs, xmax, _ = eouts.size()
+        bs, xtime, _ = eouts.size()
 
         # Initialization
         dstates = self.zero_state(bs)
@@ -669,17 +670,17 @@ class RNNDecoder(DecoderBase):
         y = eouts.new_zeros(bs, 1).fill_(refs_id[0][0] if self.replace_sos else self.eos)
 
         # Create the attention mask
-        mask = make_pad_mask(elens, self.device_id).expand(bs, xmax)
+        mask = make_pad_mask(elens, self.device_id)
 
         hyps_batch, aws_batch = [], []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
         if oracle:
             assert refs_id is not None
-            ymax = max([len(refs_id[b]) for b in range(bs)]) + 1
+            ytime = max([len(refs_id[b]) for b in range(bs)]) + 1
         else:
-            ymax = int(math.floor(xmax * max_len_ratio)) + 1
-        for t in range(ymax):
+            ytime = int(math.floor(xtime * max_len_ratio)) + 1
+        for t in range(ytime):
             # Update LM states for LM fusion
             if self.lm is not None:
                 lmout, lmstate = self.lm.decode(self.lm(y), lmstate)
@@ -704,7 +705,7 @@ class RNNDecoder(DecoderBase):
             # Break if <eos> is outputed in all mini-batch
             if sum(eos_flags) == bs:
                 break
-            if t == ymax - 1:
+            if t == ytime - 1:
                 break
 
             if oracle:
@@ -874,10 +875,10 @@ class RNNDecoder(DecoderBase):
                      }]
             if oracle:
                 assert refs_id is not None
-                ymax = len(refs_id[b]) + 1
+                ytime = len(refs_id[b]) + 1
             else:
-                ymax = int(math.floor(elens[b] * max_len_ratio)) + 1
-            for t in range(ymax):
+                ytime = int(math.floor(elens[b] * max_len_ratio)) + 1
+            for t in range(ytime):
                 new_hyps = []
                 for beam in hyps:
                     if self.replace_sos and t == 0:

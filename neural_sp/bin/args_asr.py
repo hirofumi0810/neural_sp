@@ -134,7 +134,7 @@ def parse():
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['no', 'location', 'add', 'dot',
                                  'luong_dot', 'luong_general', 'luong_concat',
-                                 'mocha', 'cif'],
+                                 'mocha', 'mocha_simple', 'cif'],
                         help='type of attention for RNN sequence-to-sequence models')
     parser.add_argument('--mocha_chunk_size', type=int, default=1,
                         help='chunk size for MoChA')
