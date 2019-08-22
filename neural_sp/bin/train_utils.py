@@ -149,7 +149,7 @@ def load_checkpoint(model, checkpoint_path, optimizer=None, resume=False):
     if resume:
         if optimizer is not None:
             optimizer.load_state_dict(checkpoint['optimizer'])
-            for state in optimizer.state.values():
+            for state in optimizer.optimizer.state.values():
                 for k, v in state.items():
                     if torch.is_tensor(v):
                         state[k] = v.cuda(0)
