@@ -61,32 +61,36 @@ class CIF(nn.Module):
         aws = eouts.new_zeros(bs, 1, max_len + 1, xtime)
         n_tokens = torch.zeros(bs, dtype=torch.int32)
         state = eouts.new_zeros(bs, self.channel)
-        alpha_accum_prev = eouts.new_zeros(bs)
+        alpha_accum = eouts.new_zeros(bs)
         for t in range(xtime):
-            alpha_accum = alpha_norm[:, t] + alpha_accum_prev
+            alpha_accum += alpha_norm[:, t]
+
             for b in range(bs):
+                # skip the padding region
                 if t > elens[b] - 1:
+                    continue
+                # skip all-fired utterance
+                if ylens is not None and n_tokens[b] >= ylens[b].item():
                     continue
                 if alpha_accum[b] >= self.threshold:
                     # fire
-                    ak1 = 1 - alpha_accum_prev[b]
+                    ak1 = 1 - alpha_accum[b]
                     ak2 = alpha_norm[b, t] - ak1
                     aws[b, 0, n_tokens[b], t] += ak1
                     eouts_fired[b, n_tokens[b]] = state[b] + ak1 * eouts[b, t]
                     n_tokens[b] += 1
                     # Carry over to the next frame
                     state[b] = ak2 * eouts[b, t]
-                    alpha_accum_prev[b] = ak2
+                    alpha_accum[b] = ak2
                     aws[b, 0, n_tokens[b], t] += ak2
                 else:
                     # Carry over to the next frame
                     state[b] += alpha_norm[b, t] * eouts[b, t]
                     aws[b, 0, n_tokens[b], t] += alpha_norm[b, t]
-                    alpha_accum_prev[b] = alpha_accum[b]
 
             # tail of target sequence
             if ylens is None and t == elens[b] - 1:
-                if alpha_accum_prev[b] >= 0.5:
+                if alpha_accum[b] >= 0.5:
                     n_tokens[b] += 1
                     eouts_fired[b, n_tokens[b]] = state[b]
 
