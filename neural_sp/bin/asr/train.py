@@ -37,7 +37,6 @@ from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.build import build_lm
-from neural_sp.models.seq2seq.skip_thought import SkipThought
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.trainers.model_name import set_asr_model_name
@@ -104,8 +103,6 @@ def main():
                     (args.batch_size, args.batch_size // 2))
         args.batch_size //= 2
 
-    skip_thought = 'skip' in args.enc_type
-
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
@@ -135,8 +132,7 @@ def main():
                         subsample_factor=subsample_factor,
                         subsample_factor_sub1=subsample_factor_sub1,
                         subsample_factor_sub2=subsample_factor_sub2,
-                        discourse_aware=args.discourse_aware,
-                        skip_thought=skip_thought)
+                        discourse_aware=args.discourse_aware)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
                       tsv_path_sub1=args.dev_set_sub1,
@@ -160,8 +156,7 @@ def main():
                       subsample_factor=subsample_factor,
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
-                      discourse_aware=args.discourse_aware,
-                      skip_thought=skip_thought)
+                      discourse_aware=args.discourse_aware)
     eval_sets = []
     for s in args.eval_sets:
         eval_sets += [Dataset(corpus=args.corpus,
@@ -172,7 +167,6 @@ def main():
                               wp_model=args.wp_model,
                               batch_size=1,
                               discourse_aware=args.discourse_aware,
-                              skip_thought=skip_thought,
                               is_test=True)]
 
     args.vocab = train_set.vocab
@@ -193,7 +187,7 @@ def main():
         assert args.vocab == args.lm_conf.vocab
 
     # Model setting
-    model = Speech2Text(args, save_path) if not skip_thought else SkipThought(args, save_path)
+    model = Speech2Text(args, save_path)
 
     if args.resume:
         # Set optimizer
@@ -356,14 +350,8 @@ def main():
 
         # Change mini-batch depending on task
         for task in tasks:
-            if skip_thought:
-                loss, reporter = model(batch_train['ys'],
-                                       ys_prev=batch_train['ys_prev'],
-                                       ys_next=batch_train['ys_next'],
-                                       reporter=reporter)
-            else:
-                loss, reporter = model(batch_train, reporter, task,
-                                       teacher=teacher, teacher_lm=teacher_lm)
+            loss, reporter = model(batch_train, reporter, task,
+                                   teacher=teacher, teacher_lm=teacher_lm)
             loss.backward()
             loss.detach()  # Trancate the graph
             if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
@@ -385,14 +373,7 @@ def main():
             batch_dev = dev_set.next()[0]
             # Change mini-batch depending on task
             for task in tasks:
-                if skip_thought:
-                    loss, reporter = model(batch_dev['ys'],
-                                           ys_prev=batch_dev['ys_prev'],
-                                           ys_next=batch_dev['ys_next'],
-                                           reporter=reporter,
-                                           is_eval=True)
-                else:
-                    loss, reporter = model(batch_dev, reporter, task, is_eval=True)
+                loss, reporter = model(batch_dev, reporter, task, is_eval=True)
                 loss_dev = loss.item()
                 del loss
             # NOTE: this makes training slow

@@ -28,7 +28,6 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.lm.build import build_lm
-from neural_sp.models.seq2seq.skip_thought import SkipThought
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 
 
@@ -52,8 +51,6 @@ def main():
     logger = set_logger(os.path.join(args.recog_dir, 'decode.log'),
                         key='decoding', stdout=args.recog_stdout)
 
-    skip_thought = 'skip' in args.enc_type
-
     wer_avg, cer_avg, per_avg = 0, 0, 0
     ppl_avg, loss_avg = 0, 0
     for i, s in enumerate(args.recog_sets):
@@ -73,15 +70,11 @@ def main():
                           unit_sub1=args.unit_sub1,
                           unit_sub2=args.unit_sub2,
                           batch_size=args.recog_batch_size,
-                          skip_thought=skip_thought,
                           is_test=True)
 
         if i == 0:
             # Load the ASR model
-            if skip_thought:
-                model = SkipThought(args, dir_name)
-            else:
-                model = Speech2Text(args, dir_name)
+            model = Speech2Text(args, dir_name)
             model = load_checkpoint(model, args.recog_model[0])[0]
             epoch = int(args.recog_model[0].split('-')[-1])
 

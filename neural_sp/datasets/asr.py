@@ -55,7 +55,7 @@ class Dataset(object):
                  wp_model_sub1=False, ctc_sub1=False, subsample_factor_sub1=1,
                  tsv_path_sub2=False, dict_path_sub2=False, unit_sub2=False,
                  wp_model_sub2=False, ctc_sub2=False, subsample_factor_sub2=1,
-                 discourse_aware=False, skip_thought=False):
+                 discourse_aware=False):
         """A class for loading dataset.
 
         Args:
@@ -82,7 +82,6 @@ class Dataset(object):
             wp_model (): path to the word-piece model for sentencepiece
             corpus (str): name of corpus
             discourse_aware (bool):
-            skip_thought (bool):
 
         """
         super(Dataset, self).__init__()
@@ -106,7 +105,6 @@ class Dataset(object):
         self.dynamic_batching = dynamic_batching
         self.corpus = corpus
         self.discourse_aware = discourse_aware
-        self.skip_thought = skip_thought
 
         self.vocab = count_vocab_size(dict_path)
         self.eos = 2
@@ -174,7 +172,7 @@ class Dataset(object):
         else:
             df['session'] = df['speaker'].apply(lambda x: str(x))
 
-        if discourse_aware or skip_thought:
+        if discourse_aware:
             max_n_frames = 10000
             min_n_frames = 100
 
@@ -191,16 +189,15 @@ class Dataset(object):
             df = df.sort_values(by=['session', 'onset'], ascending=True)
 
             # Extract previous utterances
-            if not skip_thought:
-                # df = df.assign(line_no=list(range(len(df))))
-                groups = df.groupby('session').groups
-                df['n_session_utt'] = df.apply(
-                    lambda x: len([i for i in groups[x['session']]]), axis=1)
+            # df = df.assign(line_no=list(range(len(df))))
+            groups = df.groupby('session').groups
+            df['n_session_utt'] = df.apply(
+                lambda x: len([i for i in groups[x['session']]]), axis=1)
 
-                # df['prev_utt'] = df.apply(
-                #     lambda x: [df.loc[i, 'line_no']
-                #                for i in groups[x['session']] if df.loc[i, 'onset'] < x['onset']], axis=1)
-                # df['n_prev_utt'] = df.apply(lambda x: len(x['prev_utt']), axis=1)
+            # df['prev_utt'] = df.apply(
+            #     lambda x: [df.loc[i, 'line_no']
+            #                for i in groups[x['session']] if df.loc[i, 'onset'] < x['onset']], axis=1)
+            # df['n_prev_utt'] = df.apply(lambda x: len(x['prev_utt']), axis=1)
 
         elif is_test and corpus == 'swbd':
             # Sort by onset
@@ -429,10 +426,7 @@ class Dataset(object):
 
         """
         # inputs
-        if self.skip_thought:
-            xs = []
-        else:
-            xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in df_indices]
+        xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in df_indices]
 
         # outputs
         if self.is_test:
@@ -445,23 +439,6 @@ class Dataset(object):
             for j, i in enumerate(df_indices):
                 for idx in self.df['prev_utt'][i]:
                     ys_hist[j].append(list(map(int, str(self.df['token_id'][idx]).split())))
-
-        ys_prev, ys_next = [], []
-        text_prev, text_next = [], []
-        if self.skip_thought:
-            for i in df_indices:
-                if i - 1 in self.df.index and self.df['session'][i - 1] == self.df['session'][i]:
-                    ys_prev += [list(map(int, str(self.df['token_id'][i - 1]).split()))]
-                    text_prev += [self.df['text'][i - 1]]
-                else:
-                    ys_prev += [[]]
-                    text_prev += ['']  # first utterance
-                if i + 1 in self.df.index and self.df['session'][i + 1] == self.df['session'][i]:
-                    ys_next += [list(map(int, str(self.df['token_id'][i + 1]).split()))]
-                    text_next += [self.df['text'][i + 1]]
-                else:
-                    ys_next += [[]]  # last utterance
-                    text_next += ['']
 
         ys_sub1 = []
         if self.df_sub1 is not None:
@@ -487,10 +464,6 @@ class Dataset(object):
             'sessions': [self.df['session'][i] for i in df_indices],
             'text': [self.df['text'][i] for i in df_indices],
             'feat_path': [self.df['feat_path'][i] for i in df_indices],  # for plot
-            'ys_prev': ys_prev,
-            'text_prev': text_prev,
-            'ys_next': ys_next,
-            'text_next': text_next,
         }
         return batch_dict
 
