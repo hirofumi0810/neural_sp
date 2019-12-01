@@ -303,6 +303,8 @@ class Speech2Text(ModelBase):
                         param_init=args.param_init,
                         mocha_chunk_size=args.mocha_chunk_size,
                         mocha_adaptive=args.mocha_adaptive,
+                        mocha_1dconv=args.mocha_1dconv,
+                        mocha_quantity_loss_weight=args.mocha_quantity_loss_weight,
                         replace_sos=args.replace_sos,
                         soft_label_weight=args.soft_label_weight)
             setattr(self, 'dec_' + dir, dec)
@@ -394,7 +396,7 @@ class Speech2Text(ModelBase):
                 for dir_sub in directions:
                     getattr(self, 'dec_' + dir_sub + '_' + sub).start_scheduled_sampling()
 
-    def forward(self, batch, reporter=None, task='all', is_eval=False,
+    def forward(self, batch, task='all', is_eval=False,
                 teacher=None, teacher_lm=None):
         """Forward computation.
 
@@ -407,7 +409,6 @@ class Speech2Text(ModelBase):
                 ys_sub2 (list): reference labels in the 2nd auxiliary task of size `[L_sub2]`
                 utt_ids (list): name of utterances
                 speakers (list): name of speakers
-            reporter (Reporter):
             task (str): all/ys*/ys_sub*
             is_eval (bool): evaluation mode
                 This should be used in inference model for memory efficiency.
@@ -415,18 +416,18 @@ class Speech2Text(ModelBase):
             teacher_lm (RNNLM): used for knowledge distillation from LM
         Returns:
             loss (FloatTensor): `[1]`
-            reporter (Reporter):
+            observation (dict):
 
         """
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, reporter = self._forward(batch, task, reporter)
+                loss, observation = self._forward(batch, task)
         else:
             self.train()
-            loss, reporter = self._forward(batch, task, reporter, teacher, teacher_lm)
+            loss, observation = self._forward(batch, task, teacher, teacher_lm)
 
-        return loss, reporter
+        return loss, observation
 
     def generate_logits(self, batch, temperature=1.0):
         # Encode input features
@@ -451,7 +452,7 @@ class Speech2Text(ModelBase):
         logits = lm.output(lmout)
         return logits
 
-    def _forward(self, batch, task, reporter, teacher=None, teacher_lm=None):
+    def _forward(self, batch, task, teacher=None, teacher_lm=None):
         # Encode input features
         if self.input_type == 'speech':
             if self.mtl_per_batch:
@@ -513,10 +514,7 @@ class Speech2Text(ModelBase):
                     observation['ppl.att-' + sub] = obs_fwd_sub['ppl_att']
                 observation['loss.ctc-' + sub] = obs_fwd_sub['loss_ctc']
 
-        if reporter is not None:
-            reporter.add(observation, is_eval=not self.training)
-
-        return loss, reporter
+        return loss, observation
 
     def encode(self, xs, task='all', flip=False):
         """Encode acoustic or text features.

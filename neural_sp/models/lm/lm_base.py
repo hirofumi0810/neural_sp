@@ -34,14 +34,13 @@ class LMBase(ModelBase):
     def reset_parameters(self, param_init):
         raise NotImplementedError
 
-    def forward(self, ys, state=None, reporter=None, is_eval=False, n_caches=0,
+    def forward(self, ys, state=None, is_eval=False, n_caches=0,
                 ylens=[], predict_last=False):
         """Forward computation.
 
         Args:
             ys (list): A list of length `[B]`, which contains arrays of size `[L]`
             state (tuple or list): (h_n, c_n) or (hxs, cxs)
-            reporter ():
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
             n_caches (int):
@@ -50,20 +49,20 @@ class LMBase(ModelBase):
         Returns:
             loss (FloatTensor): `[1]`
             state (tuple or list): (h_n, c_n) or (hxs, cxs)
-            reporter ():
+            observation (dict):
 
         """
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, state, reporter = self._forward(ys, state, reporter, n_caches, predict_last)
+                loss, state, observation = self._forward(ys, state, n_caches, predict_last)
         else:
             self.train()
-            loss, state, reporter = self._forward(ys, state, reporter)
+            loss, state, observation = self._forward(ys, state)
 
-        return loss, state, reporter
+        return loss, state, observation
 
-    def _forward(self, ys, state, reporter, n_caches=0, predict_last=False):
+    def _forward(self, ys, state, n_caches=0, predict_last=False):
         ys = [np2tensor(y, self.device_id) for y in ys]  # <eos> is included
         ylens = np2tensor(np.fromiter([y.size(0) - 1 for y in ys], dtype=np.int32))  # -1 for <eos>
         ys = pad_list(ys, self.pad)
@@ -139,12 +138,7 @@ class LMBase(ModelBase):
                        'acc.lm': acc,
                        'ppl.lm': min(np.exp(loss.item()), np.inf)}
 
-        # Report here
-        if reporter is not None:
-            is_eval = not self.training
-            reporter.add(observation, is_eval)
-
-        return loss, state, reporter
+        return loss, state, observation
 
     def repackage_state(self, state):
         return state

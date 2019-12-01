@@ -13,6 +13,7 @@ from __future__ import print_function
 from logging import getLogger
 import matplotlib
 matplotlib.use('Agg')
+
 from matplotlib import pyplot as plt
 import numpy as np
 import os
@@ -44,17 +45,17 @@ class Reporter(object):
 
         # report per step
         self._step = 0
-        self.observation_train = {'loss': {}, 'acc': {}, 'ppl': {}}
-        self.observation_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
-        self.observation_dev = {'loss': {}, 'acc': {}, 'ppl': {}}
+        self.obsv_train = {'loss': {}, 'acc': {}, 'ppl': {}}
+        self.obsv_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
+        self.obsv_dev = {'loss': {}, 'acc': {}, 'ppl': {}}
         self.steps = []
 
         # report per epoch
         self._epoch = 0
-        self.observation_eval = []
+        self.obsv_eval = []
         self.epochs = []
 
-    def add(self, observation, is_eval):
+    def add(self, observation, is_eval=False):
         """Restore values per step.
 
             Args:
@@ -72,20 +73,20 @@ class Reporter(object):
                 logger.warning("WARNING: received an inf %s for %s." % (metric, k))
 
             if not is_eval:
-                if name not in self.observation_train_local[metric].keys():
-                    self.observation_train_local[metric][name] = []
-                self.observation_train_local[metric][name].append(v)
+                if name not in self.obsv_train_local[metric].keys():
+                    self.obsv_train_local[metric][name] = []
+                self.obsv_train_local[metric][name].append(v)
             else:
                 # avarage for training
-                if name not in self.observation_train[metric].keys():
-                    self.observation_train[metric][name] = []
-                self.observation_train[metric][name].append(
-                    np.mean(self.observation_train_local[metric][name]))
-                logger.info('%s (train, mean): %.3f' % (k, np.mean(self.observation_train_local[metric][name])))
+                if name not in self.obsv_train[metric].keys():
+                    self.obsv_train[metric][name] = []
+                self.obsv_train[metric][name].append(
+                    np.mean(self.obsv_train_local[metric][name]))
+                logger.info('%s (train): %.3f' % (k, np.mean(self.obsv_train_local[metric][name])))
 
-                if name not in self.observation_dev[metric].keys():
-                    self.observation_dev[metric][name] = []
-                self.observation_dev[metric][name].append(v)
+                if name not in self.obsv_dev[metric].keys():
+                    self.obsv_dev[metric][name] = []
+                self.obsv_dev[metric][name].append(v)
                 logger.info('%s (dev): %.3f' % (k, v))
 
             if is_eval:
@@ -107,7 +108,7 @@ class Reporter(object):
             self.steps.append(self._step)
 
             # reset
-            self.observation_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
+            self.obsv_train_local = {'loss': {}, 'acc': {}, 'ppl': {}}
 
     def epoch(self, metric=None, name='wer'):
         self._epoch += 1
@@ -116,14 +117,14 @@ class Reporter(object):
         self.epochs.append(self._epoch)
 
         # register
-        self.observation_eval.append(metric)
+        self.obsv_eval.append(metric)
 
         plt.clf()
-        plt.plot(self.epochs, self.observation_eval, orange,
+        plt.plot(self.epochs, self.obsv_eval, orange,
                  label='dev', linestyle='-')
         plt.xlabel('epoch', fontsize=12)
         plt.ylabel(name.upper(), fontsize=12)
-        plt.ylim([0, min(100, max(self.observation_eval) + 1)])
+        plt.ylim([0, min(100, max(self.obsv_eval) + 1)])
         plt.legend(loc="upper right", fontsize=12)
         if os.path.isfile(os.path.join(self.save_path, name + ".png")):
             os.remove(os.path.join(self.save_path, name + ".png"))
@@ -132,26 +133,26 @@ class Reporter(object):
     def snapshot(self):
         # linestyles = ['solid', 'dashed', 'dotted', 'dashdotdotted']
         linestyles = ['-', '--', '-.', ':', ':', ':', ':', ':', ':', ':', ':', ':']
-        for metric in self.observation_train.keys():
+        for metric in self.obsv_train.keys():
             plt.clf()
             upper = 0
-            for i, (k, v) in enumerate(sorted(self.observation_train[metric].items())):
+            for i, (k, v) in enumerate(sorted(self.obsv_train[metric].items())):
                 # skip non-observed values
-                if np.mean(self.observation_train[metric][k]) == 0:
+                if np.mean(self.obsv_train[metric][k]) == 0:
                     continue
 
-                plt.plot(self.steps, self.observation_train[metric][k], blue,
+                plt.plot(self.steps, self.obsv_train[metric][k], blue,
                          label=k + " (train)", linestyle=linestyles[i])
-                plt.plot(self.steps, self.observation_dev[metric][k], orange,
+                plt.plot(self.steps, self.obsv_dev[metric][k], orange,
                          label=k + " (dev)", linestyle=linestyles[i])
-                upper = max(upper, max(self.observation_train[metric][k]))
-                upper = max(upper, max(self.observation_dev[metric][k]))
+                upper = max(upper, max(self.obsv_train[metric][k]))
+                upper = max(upper, max(self.obsv_dev[metric][k]))
 
                 # Save as csv file
                 if os.path.isfile(os.path.join(self.save_path, metric + '-' + k + ".csv")):
                     os.remove(os.path.join(self.save_path, metric + '-' + k + ".csv"))
                 loss_graph = np.column_stack(
-                    (self.steps, self.observation_train[metric][k], self.observation_dev[metric][k]))
+                    (self.steps, self.obsv_train[metric][k], self.obsv_dev[metric][k]))
                 np.savetxt(os.path.join(self.save_path, metric + '-' + k + ".csv"), loss_graph, delimiter=",")
 
             upper = min(upper + 10, 300)

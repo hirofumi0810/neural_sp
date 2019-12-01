@@ -194,7 +194,8 @@ def main():
         ys_train, is_new_epoch = train_set.next()
         accum_n_tokens += sum([len(y) for y in ys_train])
         optimizer.zero_grad()
-        loss, hidden, reporter = model(ys_train, hidden, reporter)
+        loss, hidden, observation = model(ys_train, hidden)
+        reporter.add(observation)
         loss.backward()
         loss.detach()  # Trancate the graph
         if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
@@ -215,7 +216,8 @@ def main():
         if optimizer.n_steps % args.print_step == 0:
             # Compute loss in the dev set
             ys_dev = dev_set.next()[0]
-            loss, _, reporter = model(ys_dev, None, reporter, is_eval=True)
+            loss, _, observation = model(ys_dev, None, is_eval=True)
+            reporter.add(observation, is_eval=True)
             loss_dev = loss.item()
             del loss
             reporter.step(is_eval=True)

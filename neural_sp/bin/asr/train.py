@@ -350,8 +350,9 @@ def main():
 
         # Change mini-batch depending on task
         for task in tasks:
-            loss, reporter = model(batch_train, reporter, task,
-                                   teacher=teacher, teacher_lm=teacher_lm)
+            loss, observation = model(batch_train, task,
+                                      teacher=teacher, teacher_lm=teacher_lm)
+            reporter.add(observation)
             loss.backward()
             loss.detach()  # Trancate the graph
             if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
@@ -373,7 +374,8 @@ def main():
             batch_dev = dev_set.next()[0]
             # Change mini-batch depending on task
             for task in tasks:
-                loss, reporter = model(batch_dev, reporter, task, is_eval=True)
+                loss, observation = model(batch_dev, task, is_eval=True)
+                reporter.add(observation, is_eval=True)
                 loss_dev = loss.item()
                 del loss
             # NOTE: this makes training slow
