@@ -18,9 +18,9 @@ from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.seq2seq.decoders.attention_rnn import RNNDecoder
 from neural_sp.models.seq2seq.decoders.attention_rnn_cif import CIFRNNDecoder
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
+from neural_sp.models.seq2seq.decoders.las import RNNDecoder
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
@@ -295,6 +295,7 @@ class Speech2Text(ModelBase):
                         mocha_chunk_size=args.mocha_chunk_size,
                         mocha_adaptive=args.mocha_adaptive,
                         mocha_1dconv=args.mocha_1dconv,
+                        mocha_sharpening_factor=args.mocha_sharpening_factor,
                         replace_sos=args.replace_sos,
                         soft_label_weight=args.soft_label_weight)
             setattr(self, 'dec_' + dir, dec)

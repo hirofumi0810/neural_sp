@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""RNN decoder (including CTC loss calculation)."""
+"""RNN decoder for Listen Attend and Spell (LAS) model (including CTC loss calculation)."""
 
 from __future__ import absolute_import
 from __future__ import division
