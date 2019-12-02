@@ -12,10 +12,11 @@ enc_type: blstm
 enc_n_units: 512
 enc_n_projs: 0
 enc_n_layers: 5
-enc_nin: false
 subsample_type: drop
 attn_type: location
 attn_dim: 512
+attn_conv_n_channels: 10
+attn_conv_width: 100
 attn_n_heads: 1
 dec_type: lstm
 dec_n_units: 1024
@@ -55,15 +56,3 @@ weight_decay: 1e-6
 ss_prob: 0.2
 ss_type: constant
 lsm_prob: 0.1
-### MTL
-ctc_weight: 0.0
-ctc_lsm_prob: 0.1
-bwd_weight: 0.0
-mtl_per_batch: false
-task_specific_layer: false
-### LM integration
-lm_fusion_type: cold
-lm_fusion: ''
-lm_init: ''
-# contextualization
-discourse_aware: ''

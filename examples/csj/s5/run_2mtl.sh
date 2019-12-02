@@ -24,18 +24,18 @@ vocab_sub1=
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/rnn_seq2seq_2mtl.yaml
+conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
 
 ### path to save the model
-model=/n/sd3/inaguma/result/csj
+model=/n/work1/inaguma/results/csj
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-export data=/n/sd3/inaguma/corpus/csj
+export data=/n/work1/inaguma/corpus/csj
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -82,7 +82,7 @@ train_set=train_nodev_${datasize}
 dev_set=dev_${datasize}
 test_set="eval1 eval2 eval3"
 if [ ${speed_perturb} = true ]; then
-    train_set=train_sp_nodev_${datasize}
+    train_set=train_nodev_sp_${datasize}
     dev_set=dev_sp_${datasize}
     test_set="eval1_sp eval2_sp eval3_sp"
 fi
@@ -128,7 +128,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in train_${datasize} ${test_set}; do
+    for x in train_${datasize} eval1 eval2 eval3; do
         steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
             ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
     done
@@ -146,7 +146,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
         # speed-perturbed
         speed_perturb_3way.sh ${data} train_nodev_${datasize} ${train_set}
 
-        cp -rf ${data}/dev ${data}/${dev_set}
+        cp -rf ${data}/dev_${datasize} ${data}/${dev_set}
         cp -rf ${data}/eval1 ${data}/eval1_sp
         cp -rf ${data}/eval2 ${data}/eval2_sp
         cp -rf ${data}/eval3 ${data}/eval3_sp
@@ -192,7 +192,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
             cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         fi
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab} \
-            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
+            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=0.9995
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
             sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
     else
@@ -223,7 +223,9 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
     mkdir -p ${data}/dataset
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
         ${data}/${train_set} ${dict} > ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-    for x in ${dev_set} ${test_set}; do
+    make_dataset.sh --feat ${data}/dump/${dev_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+        ${data}/${dev_set} ${dict} > ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+    for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
@@ -255,7 +257,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit_sub1}${
             cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         fi
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_sub1} \
-            --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=1.0
+            --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=0.9995
         spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
             sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict_sub1}
     else
@@ -285,7 +287,7 @@ if [ ${stage} -le 4 ]; then
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus csj \
         --config ${conf} \
-        --config2 ${conf2}
+        --config2 ${conf2} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
