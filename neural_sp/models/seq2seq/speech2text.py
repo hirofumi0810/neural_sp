@@ -18,9 +18,9 @@ from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.seq2seq.decoders.attention_rnn_cif import CIFRNNDecoder
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.las import RNNDecoder
+from neural_sp.models.seq2seq.decoders.rnn_cif import RNNCIFDecoder
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
@@ -226,7 +226,7 @@ class Speech2Text(ModelBase):
                     param_init=args.param_init)
             else:
                 if args.attn_type == 'cif':
-                    dec = CIFRNNDecoder(
+                    dec = RNNCIFDecoder(
                         special_symbols=special_symbols,
                         enc_n_units=self.enc.output_dim,
                         attn_conv_kernel_size=args.attn_conv_width,

@@ -4,7 +4,7 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""RNN decoder (including CTC loss calculation)."""
+"""CIF RNN decoder (including CTC loss calculation)."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -40,7 +40,7 @@ matplotlib.use('Agg')
 random.seed(1)
 
 
-class CIFRNNDecoder(DecoderBase):
+class RNNCIFDecoder(DecoderBase):
     """RNN decoder.
 
     Args:
@@ -106,7 +106,7 @@ class CIFRNNDecoder(DecoderBase):
                  replace_sos=False,
                  soft_label_weight=0.0):
 
-        super(CIFRNNDecoder, self).__init__()
+        super(RNNCIFDecoder, self).__init__()
         logger = logging.getLogger('training')
 
         self.eos = special_symbols['eos']
