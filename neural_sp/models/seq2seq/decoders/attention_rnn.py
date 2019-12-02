@@ -48,10 +48,11 @@ class RNNDecoder(DecoderBase):
     """RNN decoder.
 
     Args:
-        eos (int): index for <eos> (shared with <sos>)
-        unk (int): index for <unk>
-        pad (int): index for <pad>
-        blank (int): index for <blank>
+        special_symbols (dict):
+            eos (int): index for <eos> (shared with <sos>)
+            unk (int): index for <unk>
+            pad (int): index for <pad>
+            blank (int): index for <blank>
         enc_n_units (int): number of units of the encoder outputs
         attn_type (str): type of attention mechanism
         rnn_type (str): lstm/gru
@@ -87,15 +88,13 @@ class RNNDecoder(DecoderBase):
         param_init (float):
         mocha_chunk_size (int): chunk size for MoChA
         mocha_adaptive (bool): adaptive MoChA
+        mocha_1dconv (bool): 1dconv for MoChA
         replace_sos (bool):
 
     """
 
     def __init__(self,
-                 eos,
-                 unk,
-                 pad,
-                 blank,
+                 special_symbols,
                  enc_n_units,
                  attn_type,
                  rnn_type,
@@ -131,16 +130,17 @@ class RNNDecoder(DecoderBase):
                  param_init=0.1,
                  mocha_chunk_size=1,
                  mocha_adaptive=False,
+                 mocha_1dconv=False,
                  replace_sos=False,
                  soft_label_weight=0.0):
 
         super(RNNDecoder, self).__init__()
         logger = logging.getLogger('training')
 
-        self.eos = eos
-        self.unk = unk
-        self.pad = pad
-        self.blank = blank
+        self.eos = special_symbols['eos']
+        self.unk = special_symbols['unk']
+        self.pad = special_symbols['pad']
+        self.blank = special_symbols['blank']
         self.vocab = vocab
         self.attn_type = attn_type
         self.rnn_type = rnn_type
@@ -182,8 +182,8 @@ class RNNDecoder(DecoderBase):
         self.lmstate_final = None
 
         if ctc_weight > 0:
-            self.ctc = CTC(eos=eos,
-                           blank=blank,
+            self.ctc = CTC(eos=self.eos,
+                           blank=self.blank,
                            enc_n_units=enc_n_units,
                            vocab=vocab,
                            dropout=dropout,
@@ -193,7 +193,7 @@ class RNNDecoder(DecoderBase):
 
         if ctc_weight < global_weight:
             # Attention layer
-            if 'mocha' in attn_type:
+            if attn_type == 'mocha':
                 assert attn_n_heads == 1
                 self.score = MoChA(key_dim=self.enc_n_units,
                                    query_dim=n_units if n_projs == 0 else n_projs,
@@ -201,6 +201,7 @@ class RNNDecoder(DecoderBase):
                                    attn_dim=attn_dim,
                                    chunk_size=mocha_chunk_size,
                                    adaptive=mocha_adaptive,
+                                   conv1d=mocha_1dconv,
                                    init_r=-4)
             else:
                 if attn_n_heads > 1:
@@ -259,7 +260,7 @@ class RNNDecoder(DecoderBase):
 
             self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
-                                   ignore_index=pad)
+                                   ignore_index=self.pad)
 
             self.output = Linear(bottleneck_dim, vocab)
             # NOTE: include bias even when tying weights
@@ -458,8 +459,8 @@ class RNNDecoder(DecoderBase):
             y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
             dstates, cv, aw, attn_v = self.decode_step(
                 eouts, dstates, cv, y_emb, mask, aw, lmout, mode='parallel')
-            if not self.training:
-                aws.append(aw.transpose(2, 1).unsqueeze(2))  # `[B, n_heads, 1, T]`
+            # if not self.training:
+            aws.append(aw.transpose(2, 1).unsqueeze(2))  # `[B, n_heads, 1, T]`
             logits.append(attn_v)
 
             if self.discourse_aware == 'state_carry_over':

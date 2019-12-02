@@ -36,10 +36,11 @@ class RNNTransducer(DecoderBase):
     """RNN Transducer.
 
     Args:
-        eos (int): index for <eos> (shared with <sos>)
-        unk (int): index for <unk>
-        pad (int): index for <pad>
-        blank (int): index for <blank>
+        special_symbols (dict):
+            eos (int): index for <eos> (shared with <sos>)
+            unk (int): index for <unk>
+            pad (int): index for <pad>
+            blank (int): index for <blank>
         enc_n_units (int):
         rnn_type (str): lstm_transducer or gru_transducer
         n_units (int): number of units in each RNN layer
@@ -65,10 +66,7 @@ class RNNTransducer(DecoderBase):
     """
 
     def __init__(self,
-                 eos,
-                 unk,
-                 pad,
-                 blank,
+                 special_symbols,
                  enc_n_units,
                  rnn_type,
                  n_units,
@@ -93,10 +91,10 @@ class RNNTransducer(DecoderBase):
         super(RNNTransducer, self).__init__()
         logger = logging.getLogger('training')
 
-        self.eos = eos
-        self.unk = unk
-        self.pad = pad
-        self.blank = blank
+        self.eos = special_symbols['eos']
+        self.unk = special_symbols['unk']
+        self.pad = special_symbols['pad']
+        self.blank = special_symbols['blank']
         self.vocab = vocab
         self.rnn_type = rnn_type
         assert rnn_type in ['lstm_transducer', 'gru_transducer']
@@ -118,8 +116,8 @@ class RNNTransducer(DecoderBase):
         self.state_cache = OrderedDict()
 
         if ctc_weight > 0:
-            self.ctc = CTC(eos=eos,
-                           blank=blank,
+            self.ctc = CTC(eos=self.eos,
+                           blank=self.blank,
                            enc_n_units=enc_n_units,
                            vocab=vocab,
                            dropout=dropout,
@@ -148,8 +146,9 @@ class RNNTransducer(DecoderBase):
 
             self.embed = Embedding(vocab, emb_dim,
                                    dropout=dropout_emb,
-                                   ignore_index=pad)
+                                   ignore_index=self.pad)
 
+            # Joint network
             self.w_enc = Linear(enc_n_units, bottleneck_dim, bias=True)
             self.w_dec = Linear(dec_idim, bottleneck_dim, bias=False)
             self.output = Linear(bottleneck_dim, vocab)
@@ -383,7 +382,7 @@ class RNNTransducer(DecoderBase):
 
         hyps = []
         for b in range(bs):
-            best_hyp_b = []
+            hyp_b = []
             # Initialization
             y = eouts.new_zeros(bs, 1).fill_(self.eos)
             dout, dstate = self.recurrency(self.embed(y), None)
@@ -399,22 +398,22 @@ class RNNTransducer(DecoderBase):
                     # early stop
                     if self.end_pointing and idx == self.eos:
                         if not exclude_eos:
-                            best_hyp_b += [idx]
+                            hyp_b += [idx]
                         break
 
-                    best_hyp_b += [idx]
+                    hyp_b += [idx]
                     if oracle:
-                        y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(best_hyp_b) - 1])
+                        y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(hyp_b) - 1])
                     dout, dstate = self.recurrency(self.embed(y), dstate)
 
-            hyps += [best_hyp_b]
+            hyps += [hyp_b]
 
         for b in range(bs):
             if utt_ids is not None:
                 logger.info('Utt-id: %s' % utt_ids[b])
             if refs_id is not None and self.vocab == idx2token.vocab:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
-            logger.info('Hyp: %s' % idx2token(hyps[1:]))
+            logger.info('Hyp: %s' % idx2token(hyps[b]))
 
         return hyps, None
 

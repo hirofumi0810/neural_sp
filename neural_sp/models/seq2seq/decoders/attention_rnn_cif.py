@@ -44,10 +44,11 @@ class CIFRNNDecoder(DecoderBase):
     """RNN decoder.
 
     Args:
-        eos (int): index for <eos> (shared with <sos>)
-        unk (int): index for <unk>
-        pad (int): index for <pad>
-        blank (int): index for <blank>
+        special_symbols (dict):
+            eos (int): index for <eos> (shared with <sos>)
+            unk (int): index for <unk>
+            pad (int): index for <pad>
+            blank (int): index for <blank>
         enc_n_units (int): number of units of the encoder outputs
         rnn_type (str): lstm/gru
         n_units (int): number of units in each RNN layer
@@ -77,10 +78,7 @@ class CIFRNNDecoder(DecoderBase):
     """
 
     def __init__(self,
-                 eos,
-                 unk,
-                 pad,
-                 blank,
+                 special_symbols,
                  enc_n_units,
                  rnn_type,
                  n_units,
@@ -111,10 +109,10 @@ class CIFRNNDecoder(DecoderBase):
         super(CIFRNNDecoder, self).__init__()
         logger = logging.getLogger('training')
 
-        self.eos = eos
-        self.unk = unk
-        self.pad = pad
-        self.blank = blank
+        self.eos = special_symbols['eos']
+        self.unk = special_symbols['unk']
+        self.pad = special_symbols['pad']
+        self.blank = special_symbols['blank']
         self.vocab = vocab
         self.rnn_type = rnn_type
         assert rnn_type in ['lstm', 'gru']
@@ -131,7 +129,7 @@ class CIFRNNDecoder(DecoderBase):
         self.replace_sos = replace_sos
         self.soft_label_weight = soft_label_weight
 
-        self.quantity_loss_weight = 0.1
+        self.quantity_loss_weight = 1.0
 
         # for contextualization
         self.discourse_aware = discourse_aware
@@ -144,8 +142,8 @@ class CIFRNNDecoder(DecoderBase):
         self.lmstate_final = None
 
         if ctc_weight > 0:
-            self.ctc = CTC(eos=eos,
-                           blank=blank,
+            self.ctc = CTC(eos=self.eos,
+                           blank=self.blank,
                            enc_n_units=enc_n_units,
                            vocab=vocab,
                            dropout=dropout,
@@ -381,7 +379,8 @@ class CIFRNNDecoder(DecoderBase):
                                    ignore_index=self.pad, size_average=True)
 
         # Quantity loss for CIF
-        loss += torch.mean(torch.abs(alpha.sum(1) - ylens.float().cuda(self.device_id))) * self.quantity_loss_weight
+        quantity_loss = torch.mean(torch.abs(alpha.sum(1) - ylens.float().cuda(self.device_id)))
+        loss += quantity_loss * self.quantity_loss_weight
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)

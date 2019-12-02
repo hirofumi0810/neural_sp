@@ -45,9 +45,11 @@ class TransformerDecoder(DecoderBase):
     """Transformer decoder.
 
     Args:
-        eos (int): index for <eos> (shared with <sos>)
-        unk (int): index for <unk>
-        pad (int): index for <pad>
+        special_symbols (dict):
+            eos (int): index for <eos> (shared with <sos>)
+            unk (int): index for <unk>
+            pad (int): index for <pad>
+            blank (int): index for <blank>
         blank (int): index for <blank>
         enc_n_units (int): number of units of the encoder outputs
         attn_type (str): type of attention mechanism
@@ -73,10 +75,7 @@ class TransformerDecoder(DecoderBase):
     """
 
     def __init__(self,
-                 eos,
-                 unk,
-                 pad,
-                 blank,
+                 special_symbols,
                  enc_n_units,
                  attn_type,
                  attn_n_heads,
@@ -101,10 +100,10 @@ class TransformerDecoder(DecoderBase):
         super(TransformerDecoder, self).__init__()
         logger = logging.getLogger('training')
 
-        self.eos = eos
-        self.unk = unk
-        self.pad = pad
-        self.blank = blank
+        self.eos = special_symbols['eos']
+        self.unk = special_symbols['unk']
+        self.pad = special_symbols['pad']
+        self.blank = special_symbols['blank']
         self.vocab = vocab
         self.enc_n_units = enc_n_units
         self.d_model = d_model
@@ -118,8 +117,8 @@ class TransformerDecoder(DecoderBase):
         self.mtl_per_batch = mtl_per_batch
 
         if ctc_weight > 0:
-            self.ctc = CTC(eos=eos,
-                           blank=blank,
+            self.ctc = CTC(eos=self.eos,
+                           blank=self.blank,
                            enc_n_units=enc_n_units,
                            vocab=vocab,
                            dropout=dropout,
@@ -128,24 +127,14 @@ class TransformerDecoder(DecoderBase):
                            param_init=0.1)
 
         if ctc_weight < global_weight:
-            self.embed = Embedding(vocab, d_model,
-                                   dropout=0,  # NOTE: do not apply dropout here
-                                   ignore_index=pad)
+            self.embed = Embedding(vocab, d_model, ignore_index=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
             self.layers = nn.ModuleList(
                 [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_n_heads,
                                          dropout, dropout_att, layer_norm_eps)
                  for _ in range(n_layers)])
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
-
             self.output = Linear(d_model, vocab)
-
-            # Optionally tie weights as in:
-            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-            # https://arxiv.org/abs/1608.05859
-            # and
-            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-            # https://arxiv.org/abs/1611.01462
             if tie_embedding:
                 self.output.fc.weight = self.embed.embed.weight
 
@@ -256,17 +245,17 @@ class TransformerDecoder(DecoderBase):
         ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
 
         # Create the self-attention mask
-        bs, ymax = ys_in_pad.size()[:2]
-        yy_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ymax, 1])
+        bs, ytime = ys_in_pad.size()[:2]
+        yy_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
         yy_mask = yy_mask.unsqueeze(1).repeat([1, self.attn_n_heads, 1, 1])
-        subsequent_mask = torch.tril(yy_mask.new_ones((ymax, ymax)).byte(), diagonal=0)
+        subsequent_mask = torch.tril(yy_mask.new_ones((ytime, ytime)).byte(), diagonal=0)
         subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).repeat([bs, self.attn_n_heads, 1, 1])
         yy_mask = yy_mask & subsequent_mask
 
         # Create the source-target mask
-        xmax = eouts.size(1)
-        x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ymax, 1])
-        y_mask = make_pad_mask(ylens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
+        xtime = eouts.size(1)
+        x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
+        y_mask = make_pad_mask(ylens, self.device_id).unsqueeze(2).repeat([1, 1, xtime])
         xy_mask = (x_mask * y_mask).unsqueeze(1).repeat([1, self.attn_n_heads, 1, 1])
 
         ys_emb = self.pos_enc(self.embed(ys_in_pad))
@@ -354,7 +343,7 @@ class TransformerDecoder(DecoderBase):
 
         """
         logger = logging.getLogger("decoding")
-        bs, xmax = eouts.size()[:2]
+        bs, xtime = eouts.size()[:2]
 
         # Start from <sos> (<eos> in case of the backward decoder)
         y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
@@ -362,15 +351,15 @@ class TransformerDecoder(DecoderBase):
         # Append <sos> and <eos>
         ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(refs_id, self.bwd)
 
-        best_hyps_batch = []
+        hyps_batch = []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
         if oracle:
             assert refs_id is not None
-            ymax = max([len(refs_id[b]) for b in range(bs)]) + 1
+            ytime = max([len(refs_id[b]) for b in range(bs)]) + 1
         else:
-            ymax = int(math.floor(xmax * max_len_ratio)) + 1
-        for t in range(ymax):
+            ytime = int(math.floor(xtime * max_len_ratio)) + 1
+        for t in range(ytime):
             subsequent_mask = torch.tril(eouts.new_ones((t + 1, t + 1)).byte(), diagonal=0)
             subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).repeat([bs, self.attn_n_heads, 1, 1])
 
@@ -381,7 +370,7 @@ class TransformerDecoder(DecoderBase):
 
             # Pick up 1-best
             y = self.output(dout).argmax(-1)[:, -1:]
-            best_hyps_batch += [y]
+            hyps_batch += [y]
 
             # Count lengths of hypotheses
             for b in range(bs):
@@ -393,7 +382,7 @@ class TransformerDecoder(DecoderBase):
             # Break if <eos> is outputed in all mini-batch
             if sum(eos_flags) == bs:
                 break
-            if t == ymax - 1:
+            if t == ytime - 1:
                 break
 
             if oracle:
@@ -404,16 +393,16 @@ class TransformerDecoder(DecoderBase):
                 y_seq = torch.cat([y_seq, y.long()], dim=-1)
 
         # Concatenate in L dimension
-        best_hyps_batch = tensor2np(torch.cat(best_hyps_batch, dim=1))
+        hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
         xy_aws = tensor2np(xy_aws.transpose(1, 2).transpose(2, 3))
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.bwd:
             # Reverse the order
-            hyps = [best_hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
+            hyps = [hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
             aws = [xy_aws[b, :, :ylens[b]][::-1] for b in range(bs)]
         else:
-            hyps = [best_hyps_batch[b, :ylens[b]] for b in range(bs)]
+            hyps = [hyps_batch[b, :ylens[b]] for b in range(bs)]
             aws = [xy_aws[b, :, :ylens[b]] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
@@ -429,8 +418,8 @@ class TransformerDecoder(DecoderBase):
             if refs_id is not None and self.vocab == idx2token.vocab:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
             if self.bwd:
-                logger.info('Hyp: %s' % idx2token(hyps[0][1:][::-1]))
+                logger.info('Hyp: %s' % idx2token(hyps[b][::-1]))
             else:
-                logger.info('Hyp: %s' % idx2token(hyps[0][1:]))
+                logger.info('Hyp: %s' % idx2token(hyps[b]))
 
         return hyps, aws

@@ -145,15 +145,18 @@ class Speech2Text(ModelBase):
                 # TODO(hirofumi): for backward RNNLM
 
             # Decoder
+            special_symbols = {
+                'blank': self.blank,
+                'unk': self.unk,
+                'eos': self.eos,
+                'pad': self.pad,
+            }
             if args.dec_type == 'transformer':
                 if args.attn_type == 'cif':
                     raise NotImplementedError
                 else:
                     dec = TransformerDecoder(
-                        eos=self.eos,
-                        unk=self.unk,
-                        pad=self.pad,
-                        blank=self.blank,
+                        special_symbols=special_symbols,
                         enc_n_units=self.enc.output_dim,
                         attn_type=args.transformer_attn_type,
                         attn_n_heads=args.transformer_attn_n_heads,
@@ -177,10 +180,7 @@ class Speech2Text(ModelBase):
                         mtl_per_batch=args.mtl_per_batch)
             elif args.dec_type == 'transformer_transducer':
                 dec = TrasformerTransducer(
-                    eos=self.eos,
-                    unk=self.unk,
-                    pad=self.pad,
-                    blank=self.blank,
+                    special_symbols=special_symbols,
                     enc_n_units=self.enc.output_dim,
                     attn_type=args.transformer_attn_type,
                     attn_n_heads=args.transformer_attn_n_heads,
@@ -204,10 +204,7 @@ class Speech2Text(ModelBase):
                     mtl_per_batch=args.mtl_per_batch)
             elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
                 dec = RNNTransducer(
-                    eos=self.eos,
-                    unk=self.unk,
-                    pad=self.pad,
-                    blank=self.blank,
+                    special_symbols=special_symbols,
                     enc_n_units=self.enc.output_dim,
                     rnn_type=args.dec_type,
                     n_units=args.dec_n_units,
@@ -230,10 +227,7 @@ class Speech2Text(ModelBase):
             else:
                 if args.attn_type == 'cif':
                     dec = CIFRNNDecoder(
-                        eos=self.eos,
-                        unk=self.unk,
-                        pad=self.pad,
-                        blank=self.blank,
+                        special_symbols=special_symbols,
                         enc_n_units=self.enc.output_dim,
                         attn_conv_kernel_size=args.attn_conv_width,
                         rnn_type=args.dec_type,
@@ -263,10 +257,7 @@ class Speech2Text(ModelBase):
                         soft_label_weight=args.soft_label_weight)
                 else:
                     dec = RNNDecoder(
-                        eos=self.eos,
-                        unk=self.unk,
-                        pad=self.pad,
-                        blank=self.blank,
+                        special_symbols=special_symbols,
                         enc_n_units=self.enc.output_dim,
                         attn_type=args.attn_type,
                         attn_dim=args.attn_dim,
@@ -304,7 +295,6 @@ class Speech2Text(ModelBase):
                         mocha_chunk_size=args.mocha_chunk_size,
                         mocha_adaptive=args.mocha_adaptive,
                         mocha_1dconv=args.mocha_1dconv,
-                        mocha_quantity_loss_weight=args.mocha_quantity_loss_weight,
                         replace_sos=args.replace_sos,
                         soft_label_weight=args.soft_label_weight)
             setattr(self, 'dec_' + dir, dec)
@@ -316,10 +306,7 @@ class Speech2Text(ModelBase):
                     raise NotImplementedError
                 else:
                     dec_sub = RNNDecoder(
-                        eos=self.eos,
-                        unk=self.unk,
-                        pad=self.pad,
-                        blank=self.blank,
+                        special_symbols=special_symbols,
                         enc_n_units=self.enc_n_units,
                         attn_type=args.attn_type,
                         attn_dim=args.attn_dim,
