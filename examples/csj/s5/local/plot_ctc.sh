@@ -11,7 +11,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/sd3/inaguma/corpus/csj
+data=/n/work1/inaguma/corpus/csj
 
 unit=
 batch_size=1

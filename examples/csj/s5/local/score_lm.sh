@@ -7,7 +7,7 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd3/inaguma/corpus/csj
+data=/n/work1/inaguma/corpus/csj
 
 batch_size=1
 n_caches=0
