@@ -18,8 +18,8 @@ NEG_INF = float(np.finfo(np.float32).min)
 
 
 class Energy(nn.Module):
-    def __init__(self, enc_dim, dec_dim, attn_dim, init_r,
-                 conv_out_channels=10, conv_kernel_size=100):
+    def __init__(self, enc_dim, dec_dim, attn_dim, init_r=None,
+                 conv1d=False, conv_kernel_size=2):
         """Energy function."""
         super().__init__()
 
@@ -28,11 +28,25 @@ class Energy(nn.Module):
 
         self.w_key = Linear(enc_dim, attn_dim)
         self.w_query = Linear(dec_dim, attn_dim, bias=False)
-        self.v = nn.utils.weight_norm(nn.Linear(attn_dim, 1))
-        self.r = nn.Parameter(torch.Tensor([init_r]))
+        self.v = nn.Linear(attn_dim, 1, bias=False)
+        if init_r is not None:
+            # for alpha
+            self.r = nn.Parameter(torch.Tensor([init_r]))
+            self.v = nn.utils.weight_norm(self.v, name='weight', dim=0)
+            # initialization
+            self.v.weight_g.data = torch.Tensor([1 / attn_dim]).sqrt()
+        else:
+            # for beta
+            self.r = None
 
-        # initialization
-        self.v.weight_g.data = torch.Tensor([1 / attn_dim]).sqrt()
+        self.conv1d = None
+        if conv1d:
+            self.conv1d = nn.Conv1d(in_channels=enc_dim,
+                                    out_channels=enc_dim,
+                                    kernel_size=conv_kernel_size * 2 + 1,
+                                    stride=1,
+                                    padding=conv_kernel_size)
+            self.norm = nn.LayerNorm(enc_dim, eps=1e-12)
 
     def reset(self):
         self.key = None
@@ -45,7 +59,7 @@ class Energy(nn.Module):
             key (FloatTensor): `[B, kmax, key_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
             mask (ByteTensor): `[B, qmax, kmax]`
-            aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
+            aw_prev (FloatTensor): `[B, kmax, 1]`
         Return:
             energy (FloatTensor): `[B, value_dim]`
 
@@ -54,12 +68,18 @@ class Energy(nn.Module):
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None:
+            # 1d conv
+            if self.conv1d is not None:
+                key = self.conv1d(key.transpose(2, 1)).transpose(2, 1).contiguous()
+                key = self.norm(torch.relu(key))
             self.key = self.w_key(key)
             self.mask = mask
 
         key = key.view(-1, key_dim)
         energy = torch.tanh(self.key + self.w_query(query))
-        energy = self.v(energy).squeeze(-1) + self.r  # `[B, kmax]`
+        energy = self.v(energy).squeeze(-1)  # `[B, kmax]`
+        if self.r is not None:
+            energy = energy + self.r
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
         return energy
@@ -73,7 +93,11 @@ class MoChA(nn.Module):
                  attn_dim,
                  chunk_size,
                  adaptive=False,
-                 init_r=-1):
+                 conv1d=False,
+                 init_r=-4,
+                 noise_std=1.0,
+                 eps=1e-6,
+                 beta_temperature=1.0):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -86,45 +110,43 @@ class MoChA(nn.Module):
         Args:
             key_dim (int): dimension of key
             query_dim (int): dimension of query
-            attn_type (str): mocha/mocha_simple
+            attn_type (str): mocha
             attn_dim: (int) dimension of the attention layer
             chunk_size (int): size of chunk
             adaptive (bool): turn on adaptive MoChA
+            conv1d (bool): apply 1d convolution for energy calculation
             init_r (int): initial value for parameter 'r' used in monotonic/chunk attention
 
         """
         super(MoChA, self).__init__()
 
         self.attn_type = attn_type
-        assert attn_type in ['mocha', 'mocha_simple']
         self.chunk_size = chunk_size
         self.adaptive = adaptive
         self.unconstrained = False
         if chunk_size >= 100:
             self.unconstrained = True
         self.n_heads = 1
-        self.pre_sigmoid_noise = 0
+        # regularization
+        self.noise_std = noise_std
+        self.eps = eps
+        self.beta_temperature = beta_temperature
 
         # Monotonic energy
-        self.monotonic_energy = Energy(
-            key_dim, query_dim, attn_dim, init_r)
+        self.monotonic_energy = Energy(key_dim, query_dim, attn_dim, init_r,
+                                       conv1d=conv1d)
 
         # Chunk energy
         self.chunk_energy = None
         if chunk_size > 1:
-            self.chunk_energy = Energy(
-                key_dim, query_dim, attn_dim, init_r)
+            self.chunk_energy = Energy(key_dim, query_dim, attn_dim)
 
         self.chunk_len_energy = None
         if adaptive:
             assert chunk_size > 1
-            self.chunk_len_energy = Energy(
-                key_dim, query_dim, attn_dim, init_r)
-
-        self.tail_prediction = False
+            self.chunk_len_energy = Energy(key_dim, query_dim, attn_dim)
 
     def reset(self):
-        self.tail_prediction = False
         self.monotonic_energy.reset()
         if self.chunk_size > 1:
             self.chunk_energy.reset()
@@ -132,7 +154,7 @@ class MoChA(nn.Module):
                 self.chunk_len_energy.reset()
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                mode='parallel', eps=1e-10):
+                mode='parallel'):
         """Soft monotonic attention during training.
 
         Args:
@@ -140,12 +162,12 @@ class MoChA(nn.Module):
             value (FloatTensor): `[B, kmax, value_dim]`
             query (FloatTensor): `[B, 1, query_dim]`
             mask (ByteTensor): `[B, qmax, kmax]`
-            aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
+            aw_prev (FloatTensor): `[B, kmax, 1]`
             mode (str): recursive/parallel/hard
         Return:
             cv (FloatTensor): `[B, 1, value_dim]`
-            alpha (FloatTensor): `[B, kmax, 1 (n_heads)]`
-            beta (FloatTensor): `[B, kmax, 1 (n_heads)]`
+            alpha (FloatTensor): `[B, kmax, 1]`
+            beta (FloatTensor): `[B, kmax, 1]`
 
         """
         bs, kmax = key.size()[:2]
@@ -159,7 +181,7 @@ class MoChA(nn.Module):
         e_mono = self.monotonic_energy(key, query, mask)
 
         if mode == 'recursive':  # training
-            p_choose_i = torch.sigmoid(self.add_gaussian_noise(e_mono))  # `[B, kmax]`
+            p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, kmax]`
             # Compute [1, 1 - p_choose_i[0], 1 - p_choose_i[1], ..., 1 - p_choose_i[-2]]
             shifted_1mp_choose_i = torch.cat([key.new_ones(bs, 1),
                                               1 - p_choose_i[:, :-1]], dim=1)
@@ -172,20 +194,20 @@ class MoChA(nn.Module):
             alpha = p_choose_i * q[:, 1:]
 
         elif mode == 'parallel':  # training
-            p_choose_i = torch.sigmoid(self.add_gaussian_noise(e_mono))  # `[B, kmax]`
+            p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, kmax]`
             # safe_cumprod computes cumprod in logspace with numeric checks
-            cumprod_1mp_choose_i = safe_cumprod(1 - p_choose_i)
+            cumprod_1mp_choose_i = safe_cumprod(1 - p_choose_i, eps=self.eps)
             # Compute recurrence relation solution
             if self.attn_type == 'mocha_simple':
                 alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(aw_prev.squeeze(2), dim=1)
             else:
                 alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(
-                    aw_prev.squeeze(2) / torch.clamp(cumprod_1mp_choose_i, min=eps, max=1.0), dim=1)
+                    aw_prev.squeeze(2) / torch.clamp(cumprod_1mp_choose_i, min=self.eps, max=1.0), dim=1)
 
-        elif mode == 'hard':  # test
+        elif mode == 'hard':  # inference
             # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
             emit_probs = torch.sigmoid(e_mono)
-            p_choose_i = (emit_probs > 0.5).float()
+            p_choose_i = (emit_probs >= 0.5).float()
             # Remove any probabilities before the index chosen at the last time step
             p_choose_i *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, kmax]`
             # Now, use exclusive cumprod to remove probabilities after the first
@@ -195,14 +217,6 @@ class MoChA(nn.Module):
             # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
             # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
             alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)
-
-            # if not self.tail_prediction and alpha.sum() == 0:
-            #     emit_probs *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, kmax]`
-            #     triggered_point = torch.argmax(emit_probs, dim=1)
-            #     alpha = e_mono.new_zeros(e_mono.size())
-            #     for b in range(bs):
-            #         alpha[b, triggered_point[b]] = 1
-            #     self.tail_prediction = True
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
 
@@ -218,9 +232,11 @@ class MoChA(nn.Module):
                     chunk_len_dist = self.chunk_size * torch.sigmoid(e_chunk_len)
                 # avoid zero length
                 chunk_len_dist = chunk_len_dist.int() + 1
-                beta = efficient_adaptive_chunkwise_attention(alpha, e_chunk, chunk_len_dist)
+                beta = efficient_adaptive_chunkwise_attention(
+                    alpha, e_chunk, chunk_len_dist, self.beta_temperature)
             else:
-                beta = efficient_chunkwise_attention(alpha, e_chunk, self.chunk_size)
+                beta = efficient_chunkwise_attention(
+                    alpha, e_chunk, self.chunk_size, self.beta_temperature)
 
         # Compute context vector
         if self.chunk_size > 1:
@@ -231,15 +247,16 @@ class MoChA(nn.Module):
 
         return cv, alpha.unsqueeze(2)
 
-    def add_gaussian_noise(self, xs, std=1.0):
-        """Additive gaussian nosie to encourage discreteness."""
-        noise = xs.new_zeros(xs.size()).normal_(std=std)
-        return xs + self.pre_sigmoid_noise * noise
+
+def add_gaussian_noise(xs, std):
+    """Additive gaussian nosie to encourage discreteness."""
+    noise = xs.new_zeros(xs.size()).normal_(std=std)
+    return xs + noise
 
 
-def safe_cumprod(x):
+def safe_cumprod(x, eps):
     """Numerically stable cumulative product by cumulative sum in log-space."""
-    return torch.exp(exclusive_cumsum(torch.log(torch.clamp(x, min=NEG_INF, max=1.0))))
+    return torch.exp(exclusive_cumsum(torch.log(torch.clamp(x, min=eps, max=1.0))))
 
 
 def exclusive_cumsum(x):
@@ -274,7 +291,7 @@ def moving_sum(x, back, forward):
     return x_sum.squeeze(1)
 
 
-def efficient_chunkwise_attention(alpha, u, chunk_size):
+def efficient_chunkwise_attention(alpha, u, chunk_size, temperature=1.0):
     """Compute chunkwise attention distribution efficiently by clipping logits.
 
     Args:
@@ -293,12 +310,12 @@ def efficient_chunkwise_attention(alpha, u, chunk_size):
     softmax_denominators = moving_sum(softmax_exp,
                                       back=chunk_size - 1, forward=0)
     # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
-    beta = softmax_exp * moving_sum(alpha / softmax_denominators,
+    beta = softmax_exp * moving_sum(alpha * temperature / softmax_denominators,
                                     back=0, forward=chunk_size - 1)
     return beta
 
 
-def efficient_adaptive_chunkwise_attention(alpha, u, chunk_len_dist):
+def efficient_adaptive_chunkwise_attention(alpha, u, chunk_len_dist, temperature=1.0):
     """Compute adaptive chunkwise attention distribution efficiently by clipping logits.
 
     Args:
@@ -322,7 +339,7 @@ def efficient_adaptive_chunkwise_attention(alpha, u, chunk_len_dist):
         for b in range(bs)]
     # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
     beta = [softmax_exp[b:b + 1] * moving_sum(
-        alpha[b:b + 1] / softmax_denominators[b],
+        alpha[b:b + 1] * temperature / softmax_denominators[b],
         back=0, forward=chunk_len_dist[b, triggered_points[b]] - 1)
         for b in range(bs)]
     beta = torch.cat(beta, dim=0)
