@@ -111,6 +111,8 @@ def parse():
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
                                  'transformer', 'conv_transformer', 'tds', 'gated_conv'],
                         help='type of the encoder')
+    parser.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
+                        help='sum forward and backward RNN outputs for dimension reduction')
     parser.add_argument('--enc_n_units', type=int, default=512,
                         help='number of units in each encoder RNN layer')
     parser.add_argument('--enc_n_projs', type=int, default=0,

@@ -53,6 +53,7 @@ class RNNEncoder(EncoderBase):
         nin (bool): insert 1*1 conv + batch normalization + ReLU
         task_specific_layer (bool):
         param_init (float):
+        bidirectional_sum_fwd_bwd (bool):
 
     """
 
@@ -80,7 +81,8 @@ class RNNEncoder(EncoderBase):
                  n_layers_sub2=0,
                  nin=False,
                  task_specific_layer=False,
-                 param_init=0.1):
+                 param_init=0.1,
+                 bidirectional_sum_fwd_bwd=True):
 
         super(RNNEncoder, self).__init__()
         logger = logging.getLogger("training")
@@ -207,7 +209,8 @@ class RNNEncoder(EncoderBase):
                                    bias=True, batch_first=True, dropout=0,
                                    bidirectional=self.bidirectional)]
                 self.dropout += [nn.Dropout(p=dropout)]
-                self._output_dim = n_units * self.n_dirs
+                self._output_dim = n_units if bidirectional_sum_fwd_bwd else n_units * self.n_dirs
+                self.bidirectional_sum_fwd_bwd = bidirectional_sum_fwd_bwd
 
                 # Projection layer
                 if self.proj is not None:
@@ -300,7 +303,7 @@ class RNNEncoder(EncoderBase):
 
         for l in range(self.n_layers):
             self.rnn[l].flatten_parameters()  # for multi-GPUs
-            xs = self.padding(xs, xlens, self.rnn[l])
+            xs = self.padding(xs, xlens, self.rnn[l], self.bidirectional_sum_fwd_bwd)
             xs = self.dropout[l](xs)
 
             # Pick up outputs in the sub task before the projection layer
@@ -376,10 +379,13 @@ class Padding(nn.Module):
     def __init__(self):
         super(Padding, self).__init__()
 
-    def forward(self, xs, xlens, rnn):
+    def forward(self, xs, xlens, rnn, bidirectional_sum_fwd_bwd=False):
         xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
         xs, _ = rnn(xs, hx=None)
         xs = pad_packed_sequence(xs, batch_first=True)[0]
+        if bidirectional_sum_fwd_bwd and rnn.bidirectional:
+            half = xs.size(-1) // 2
+            xs = xs[:, :, :half] + xs[:, :, half:]
         return xs
 
 
@@ -410,13 +416,14 @@ class Conv1dSubsampler(nn.Module):
     def __init__(self, factor, n_units, conv_kernel_size=5):
         super(Conv1dSubsampler, self).__init__()
 
+        assert conv_kernel_size % 2 == 1, "Kernel size should be odd for 'same' conv."
         self.factor = factor
         if factor > 1:
             self.conv1d = nn.Conv1d(in_channels=n_units,
                                     out_channels=n_units,
                                     kernel_size=conv_kernel_size,
                                     stride=1,
-                                    padding=conv_kernel_size // 2)
+                                    padding=(conv_kernel_size - 1) // 2)
             self.max_pool = nn.MaxPool1d(1, stride=factor, ceil_mode=True)
 
     def forward(self, xs, xlens):
