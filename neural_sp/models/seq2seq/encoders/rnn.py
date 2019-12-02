@@ -193,9 +193,7 @@ class RNNEncoder(EncoderBase):
                                                 for l in range(n_layers)])
 
             # NiN
-            self.nin = None
-            if nin:
-                self.nin = nn.ModuleList()
+            self.nin = nn.ModuleList() if nin else None
 
             for l in range(n_layers):
                 if 'lstm' in rnn_type:
@@ -206,7 +204,7 @@ class RNNEncoder(EncoderBase):
                     raise ValueError('rnn_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
 
                 self.rnn += [rnn_i(self._output_dim, n_units, 1,
-                                   bias=True, batch_first=True, dropout=0,
+                                   batch_first=True,
                                    bidirectional=self.bidirectional)]
                 self.dropout += [nn.Dropout(p=dropout)]
                 self._output_dim = n_units if bidirectional_sum_fwd_bwd else n_units * self.n_dirs
@@ -221,14 +219,14 @@ class RNNEncoder(EncoderBase):
                 # Task specific layer
                 if l == n_layers_sub1 - 1 and task_specific_layer:
                     self.rnn_sub1 = rnn_i(self._output_dim, n_units, 1,
-                                          bias=True, batch_first=True, dropout=0,
+                                          batch_first=True,
                                           bidirectional=self.bidirectional)
                     self.dropout_sub1 = nn.Dropout(p=dropout)
                     if last_proj_dim != self.output_dim:
                         self.bridge_sub1 = Linear(n_units, last_proj_dim)
                 if l == n_layers_sub2 - 1 and task_specific_layer:
                     self.rnn_sub2 = rnn_i(self._output_dim, n_units, 1,
-                                          bias=True, batch_first=True, dropout=0,
+                                          batch_first=True,
                                           bidirectional=self.bidirectional)
                     self.dropout_sub2 = nn.Dropout(p=dropout)
                     if last_proj_dim != self.output_dim:
