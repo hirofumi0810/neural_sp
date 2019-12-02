@@ -15,7 +15,6 @@ stdout=false
 data=/n/work1/inaguma/inaguma/corpus/librispeech
 
 unit=
-metric=edit_distance
 batch_size=1
 beam_width=5
 min_len_ratio=0.0
@@ -48,18 +47,15 @@ set -o pipefail
 
 if [ -z ${gpu} ]; then
     echo "Error: set GPU number." 1>&2
-    echo "Usage: local/score.sh --gpu 0" 1>&2
+    echo "Usage: local/plot_attention.sh --gpu 0" 1>&2
     exit 1
 fi
 gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in dev_clean dev_other test_clean test_other; do
-    recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
+    recog_dir=$(dirname ${model})/plot_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
-    fi
-    if [ ${metric} != 'edit_distance' ]; then
-        recog_dir=${recog_dir}_${metric}
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
         recog_dir=${recog_dir}_lm${lm_weight}_${lm_usage}
@@ -108,11 +104,10 @@ for set in dev_clean dev_other test_clean test_other; do
         recog_set=${data}/dataset/${set}_100_wpbpe1000.tsv
     fi
 
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_attention.py \
         --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
-        --recog_metric ${metric} \
         --recog_model ${model} ${model1} ${model2} ${model3} \
         --recog_model_bwd ${model_bwd} \
         --recog_batch_size ${batch_size} \
@@ -137,15 +132,4 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_lm_state_carry_over ${lm_state_carry_over} \
         --recog_oracle ${oracle} \
         --recog_stdout ${stdout} || exit 1;
-
-    # remove <unk>
-    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
-    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
-
-    if [ ${metric} = 'edit_distance' ]; then
-        echo ${set}
-        sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
-        grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS
-        cat ${recog_dir}/RESULTS
-    fi
 done

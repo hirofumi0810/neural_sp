@@ -21,7 +21,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/rnn_seq2seq.yaml
+conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
 lm_init=
@@ -47,14 +47,14 @@ lm_init=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/sd3/inaguma/result/librispeech
+model=/n/work1/inaguma/results/librispeech
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/sd3/inaguma/corpus/librispeech
+export data=/n/work1/inaguma/corpus/librispeech
 
 ### path to download data
 data_download_path=/n/rd21/corpora_7/librispeech/
@@ -84,7 +84,6 @@ if [ -z ${gpu} ]; then
     exit 1
 fi
 n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
-lm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 # Base url for downloads.
 data_url=www.openslr.org/resources/12
@@ -252,8 +251,10 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
     touch ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
+exit 1
+
 mkdir -p ${model}
-if [ ${stage} -le 3 ]; then
+if [ ${stage} -le 3 ] && [ ${speed_perturb} = false ]; then
     echo ============================================================================
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
@@ -266,10 +267,10 @@ if [ ${stage} -le 3 ]; then
         for x in train dev_clean dev_other test_clean test_other; do
             if [ ${lm_datasize} = ${datasize} ]; then
                 cp ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv \
-                    ${data}/dataset_lm/${x}_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                    ${data}/dataset_lm/${x}_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
             else
                 make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-                    ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                    ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
             fi
         done
 
@@ -281,29 +282,29 @@ if [ ${stage} -le 3 ]; then
             zcat ${data}/local/lm_train/librispeech-lm-norm.txt.gz | shuf | awk '{print "unpaired-text-"NR, tolower($0)}' > ${data}/dataset_lm/text
             update_dataset.sh --unit ${unit} --wp_model ${wp_model} \
                 ${data}/dataset_lm/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-                > ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}_external.tsv || exit 1;
+                > ${data}/dataset_lm/train_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}_external.tsv || exit 1;
         fi
 
         touch ${data}/.done_stage_3_${datasize}${lm_datasize}_${unit}${wp_type}${vocab}_${use_external_text} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
     if ${use_external_text}; then
-        lm_train_set="${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}_external.tsv"
+        lm_train_set="${data}/dataset_lm/train_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}_external.tsv"
     else
-        lm_train_set="${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv"
+        lm_train_set="${data}/dataset_lm/train_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv"
     fi
 
-    lm_test_set="${data}/dataset_lm/dev_other_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
-                 ${data}/dataset_lm/test_clean_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
-                 ${data}/dataset_lm/test_other_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv"
+    lm_test_set="${data}/dataset_lm/dev_other_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/test_clean_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/test_other_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv"
 
     # NOTE: support only a single GPU for LM training
-    CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus librispeech \
         --config ${lm_conf} \
-        --n_gpus 1 \
+        --n_gpus ${n_gpus} \
         --train_set ${lm_train_set} \
-        --dev_set ${data}/dataset_lm/dev_clean_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/dev_clean_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${lm_test_set} \
         --unit ${unit} \
         --dict ${dict} \
