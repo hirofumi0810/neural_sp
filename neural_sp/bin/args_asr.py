@@ -148,7 +148,7 @@ def parse():
                         help='dimension of the attention layer')
     parser.add_argument('--attn_conv_n_channels', type=int, default=10,
                         help='')
-    parser.add_argument('--attn_conv_width', type=int, default=100,
+    parser.add_argument('--attn_conv_width', type=int, default=201,
                         help='')
     parser.add_argument('--attn_n_heads', type=int, default=1,
                         help='number of heads in the attention layer')

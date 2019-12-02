@@ -24,8 +24,8 @@ class AttentionMechanism(nn.Module):
     """Single-head attention layer.
 
     Args:
-        key_dim (int): dimensions of key
-        query_dim (int): dimensions of query
+        key_dim (int): dimension of key
+        query_dim (int): dimension of query
         attn_type (str): type of attention mechanisms
         attn_dim: (int) dimension of the attention layer
         sharpening_factor (float): sharpening factor in the softmax layer
@@ -48,11 +48,12 @@ class AttentionMechanism(nn.Module):
                  sharpening_factor=1,
                  sigmoid_smoothing=False,
                  conv_out_channels=10,
-                 conv_kernel_size=100,
+                 conv_kernel_size=201,
                  dropout=0):
 
         super(AttentionMechanism, self).__init__()
 
+        assert conv_kernel_size % 2 == 1
         self.attn_type = attn_type
         self.attn_dim = attn_dim
         self.sharpening_factor = sharpening_factor
@@ -79,9 +80,9 @@ class AttentionMechanism(nn.Module):
             self.w_conv = Linear(conv_out_channels, attn_dim, bias=False)
             self.conv = nn.Conv2d(in_channels=1,
                                   out_channels=conv_out_channels,
-                                  kernel_size=(1, conv_kernel_size * 2 + 1),
+                                  kernel_size=(1, conv_kernel_size),
                                   stride=1,
-                                  padding=(0, conv_kernel_size),
+                                  padding=(0, conv_kernel_size // 2),
                                   bias=False)
             self.v = Linear(attn_dim, 1, bias=False)
 
@@ -148,8 +149,8 @@ class AttentionMechanism(nn.Module):
 
         elif self.attn_type == 'location':
             query = query.repeat([1, kmax, 1])
-            conv_feat = self.conv(aw_prev.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, conv_out_channels, kmax]`
-            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, kmax, conv_out_channels]`
+            conv_feat = self.conv(aw_prev.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, ch, kmax]`
+            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, kmax, ch]`
             e = self.v(torch.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat)))
 
         elif self.attn_type == 'dot':

@@ -19,10 +19,11 @@ NEG_INF = float(np.finfo(np.float32).min)
 
 class Energy(nn.Module):
     def __init__(self, enc_dim, dec_dim, attn_dim, init_r=None,
-                 conv1d=False, conv_kernel_size=2):
+                 conv1d=False, conv_kernel_size=5):
         """Energy function."""
         super().__init__()
 
+        assert conv_kernel_size % 2 == 1
         self.key = None
         self.mask = None
 
@@ -43,9 +44,9 @@ class Energy(nn.Module):
         if conv1d:
             self.conv1d = nn.Conv1d(in_channels=enc_dim,
                                     out_channels=enc_dim,
-                                    kernel_size=conv_kernel_size * 2 + 1,
+                                    kernel_size=conv_kernel_size,
                                     stride=1,
-                                    padding=conv_kernel_size)
+                                    padding=conv_kernel_size // 2)
             self.norm = nn.LayerNorm(enc_dim, eps=1e-12)
 
     def reset(self):
