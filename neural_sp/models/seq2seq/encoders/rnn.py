@@ -416,7 +416,7 @@ class Conv1dSubsampler(nn.Module):
                                     out_channels=n_units,
                                     kernel_size=conv_kernel_size,
                                     stride=1,
-                                    padding=conv_kernel_size // 2 - 1)
+                                    padding=conv_kernel_size // 2)
             self.max_pool = nn.MaxPool1d(1, stride=factor, ceil_mode=True)
 
     def forward(self, xs, xlens):
@@ -424,7 +424,7 @@ class Conv1dSubsampler(nn.Module):
             return xs, xlens
 
         # subsample
-        xs = self.conv1d(xs.transpose(2, 1))
+        xs = torch.relu(self.conv1d(xs.transpose(2, 1)))
         xs = self.max_pool(xs).transpose(2, 1).contiguous()
 
         xlens //= self.factor
