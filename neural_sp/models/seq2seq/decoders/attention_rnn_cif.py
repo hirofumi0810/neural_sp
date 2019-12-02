@@ -137,7 +137,6 @@ class CIFRNNDecoder(DecoderBase):
 
         # for cache
         self.prev_spk = ''
-        self.total_step = 0
         self.dstates_final = None
         self.lmstate_final = None
 
@@ -652,7 +651,6 @@ class CIFRNNDecoder(DecoderBase):
             nbest_hyps_idx (list): A list of length `[B]`, which contains list of N hypotheses
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
             scores (list):
-            cache_info (tuple):
 
         """
         logger = logging.getLogger("decoding")
@@ -979,4 +977,4 @@ class CIFRNNDecoder(DecoderBase):
         self.dstates_final = end_hyps[0]['dstate']
         self.lmstate_final = end_hyps[0]['lmstate']
 
-        return nbest_hyps_idx, aws, scores, None
+        return nbest_hyps_idx, aws, scores

@@ -12,13 +12,11 @@ from __future__ import print_function
 
 import argparse
 import copy
-import numpy as np
 import os
 import shutil
 
 from neural_sp.bin.args_asr import parse
 from neural_sp.bin.plot_utils import plot_attention_weights
-from neural_sp.bin.plot_utils import plot_cache_weights
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
@@ -130,31 +128,20 @@ def main():
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))
             logger.info('LM state carry over: %s' % (args.recog_lm_state_carry_over))
-            logger.info('cache size: %d' % (args.recog_n_caches))
-            logger.info('cache type: %s' % (args.recog_cache_type))
-            logger.info('cache theta (speech): %.3f' % (args.recog_cache_theta_speech))
-            logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
-            logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
-            logger.info('cache lambda (lm): %.3f' % (args.recog_cache_lambda_lm))
 
             # GPU setting
             model.cuda()
 
         save_path = mkdir_join(args.recog_dir, 'att_weights')
-        if args.recog_n_caches > 0:
-            save_path_cache = mkdir_join(args.recog_dir, 'cache')
 
         # Clean directory
         if save_path is not None and os.path.isdir(save_path):
             shutil.rmtree(save_path)
             os.mkdir(save_path)
-            if args.recog_n_caches > 0:
-                shutil.rmtree(save_path_cache)
-                os.mkdir(save_path_cache)
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, aws, (cache_attn_hist, cache_id_hist) = model.decode(
+            best_hyps_id, aws = model.decode(
                 batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=False,
                 refs_id=batch['ys'],
@@ -176,22 +163,6 @@ def main():
                     spectrogram=batch['xs'][b][:, :dataset.input_dim] if args.input_type == 'speech' else None,
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8))
-
-                if args.recog_n_caches > 0 and cache_id_hist is not None and cache_attn_hist is not None:
-                    n_keys, n_queries = cache_attn_hist[0].shape
-                    # mask = np.ones((n_keys, n_queries))
-                    # for i in range(n_queries):
-                    #     mask[:n_keys - i, -(i + 1)] = 0
-                    mask = np.zeros((n_keys, n_queries))
-
-                    plot_cache_weights(
-                        cache_attn_hist[0],
-                        keys=dataset.idx2token[0](cache_id_hist[-1], return_list=True),  # fifo
-                        # keys=dataset.idx2token[0](cache_id_hist, return_list=True),  # dict
-                        queries=tokens,
-                        save_path=mkdir_join(save_path_cache, spk, batch['utt_ids'][b] + '.png'),
-                        figsize=(40, 16),
-                        mask=mask)
 
                 if model.bwd_weight > 0.5:
                     hyp = ' '.join(tokens[::-1])

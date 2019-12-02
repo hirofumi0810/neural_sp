@@ -168,14 +168,6 @@ class RNNDecoder(DecoderBase):
         self.discourse_aware = discourse_aware
         self.dstate_prev = None
 
-        # for cache
-        self.fifo_cache_ids = []
-        self.fifo_cache_sp_key = None
-        self.fifo_cache_lm_key = None
-        self.dict_cache_sp = {}
-        self.static_cache = {}
-        self.static_cache_utt_ids = []
-        self.dict_cache_lm = {}
         self.prev_spk = ''
         self.total_step = 0
         self.dstates_final = None
@@ -767,7 +759,6 @@ class RNNDecoder(DecoderBase):
                 recog_coverage_penalty (float): coverage penalty
                 recog_coverage_threshold (float): threshold for coverage penalty
                 recog_lm_weight (float): weight of LM score
-                recog_n_caches (int):
             idx2token (): converter from index to token
             lm (RNNLM/GatedConvLM/TransformerLM):
             lm_rev (RNNLM/GatedConvLM/TransformerLM):
@@ -784,7 +775,6 @@ class RNNDecoder(DecoderBase):
             nbest_hyps_idx (list): A list of length `[B]`, which contains list of N hypotheses
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
             scores (list):
-            cache_info (tuple):
 
         """
         logger = logging.getLogger("decoding")
@@ -805,12 +795,6 @@ class RNNDecoder(DecoderBase):
         eos_threshold = params['recog_eos_threshold']
         asr_state_carry_over = params['recog_asr_state_carry_over']
         lm_state_carry_over = params['recog_lm_state_carry_over']
-        n_caches = params['recog_n_caches']
-        cache_theta_sp = params['recog_cache_theta_speech']
-        cache_lambda_sp = params['recog_cache_lambda_speech']
-        cache_theta_lm = params['recog_cache_theta_lm']
-        cache_lambda_lm = params['recog_cache_lambda_lm']
-        cache_type = params['recog_cache_type']
 
         if lm is not None:
             lm.eval()
@@ -841,9 +825,7 @@ class RNNDecoder(DecoderBase):
                     ensmbl_cv += [eouts.new_zeros(1, 1, dec.enc_n_units)]
                     dec.score.reset()
 
-            if speakers is not None and speakers[b] != self.prev_spk:
-                self.reset_global_cache()
-            else:
+            if speakers is not None and speakers[b] == self.prev_spk:
                 if lm_state_carry_over and isinstance(lm, RNNLM):
                     lmstate = self.lmstate_final
                 if asr_state_carry_over:
@@ -866,13 +848,6 @@ class RNNDecoder(DecoderBase):
                      'ensmbl_aws':[[None]] * (n_models - 1),
                      'ctc_state': ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
                      'ctc_score': 0.0,
-                     'cache_ids': [],
-                     'dict_cache_sp': {},
-                     'cache_sp_key': [],
-                     'cache_lm_key': [],
-                     'cache_idx_hist': [],
-                     'cache_sp_attn_hist': [],
-                     'cache_lm_attn_hist': [],
                      }]
             if oracle:
                 assert refs_id is not None
@@ -923,96 +898,6 @@ class RNNDecoder(DecoderBase):
                             ensmbl_cv += [cv_e]
                             ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi): unsqueeze?
                             ensmbl_log_probs += F.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
-
-                    # Cache decoding
-                    cache_ids = None
-                    cache_sp_attn = None
-                    cache_lm_attn = None
-                    cache_sp_probs = probs.new_zeros(probs.size())
-                    cache_lm_probs = probs.new_zeros(probs.size())
-                    if n_caches > 0:
-                        # Compute inner-product over caches
-                        if 'speech_fifo' in cache_type:
-                            is_cache = True
-                            if 'online' in cache_type and len(self.fifo_cache_ids + beam['cache_ids']) > 0:
-                                cache_ids = (self.fifo_cache_ids + beam['cache_ids'])[-n_caches:]
-                                cache_sp_key = beam['cache_sp_key'][-n_caches:]
-                                if len(cache_sp_key) > 0:
-                                    cache_sp_key = torch.cat(cache_sp_key, dim=1)
-                                    if self.fifo_cache_sp_key is not None:
-                                        cache_sp_key = torch.cat([self.fifo_cache_sp_key, cache_sp_key], dim=1)
-                                else:
-                                    cache_sp_key = self.fifo_cache_sp_key  # for the first token
-                                # Truncate
-                                cache_sp_key = cache_sp_key[:, -n_caches:]  # `[1, L, enc_n_units]`
-                            elif 'online' not in cache_type and len(self.fifo_cache_ids) > 0:
-                                cache_ids = self.fifo_cache_ids
-                                cache_sp_key = self.fifo_cache_sp_key
-                            else:
-                                is_cache = False
-
-                            if is_cache:
-                                cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
-                                    cache_sp_key, torch.cat([cv, dstates['dout_gen']], dim=-1).transpose(2, 1)), dim=1)  # `[1, L, 1]`
-                                # Sum all probabilities
-                                for c in set(beam['cache_ids']):
-                                    for offset in [i for i, key in enumerate(cache_ids) if key == c]:
-                                        cache_sp_probs[0, c] += cache_sp_attn[0, offset, 0]
-                                probs = (1 - cache_lambda_sp) * probs + cache_lambda_sp * cache_sp_probs
-
-                        if 'lm_fifo' in cache_type:
-                            is_cache = True
-                            if 'online' in cache_type and len(self.fifo_cache_ids + beam['cache_ids']) > 0:
-                                assert lm_weight > 0
-                                cache_ids = (self.fifo_cache_ids + beam['cache_ids'])[-n_caches:]
-                                cache_lm_key = beam['cache_lm_key'][-n_caches:]
-                                if len(cache_lm_key) > 0:
-                                    cache_lm_key = torch.cat(cache_lm_key, dim=1)
-                                    if self.fifo_cache_lm_key is not None:
-                                        cache_lm_key = torch.cat([self.fifo_cache_lm_key, cache_lm_key], dim=1)
-                                else:
-                                    cache_lm_key = self.fifo_cache_lm_key   # for the first token
-                                # Truncate
-                                cache_lm_key = cache_lm_key[:, -n_caches:]  # `[1, L, lm_n_units]`
-                            elif 'online' not in cache_type and len(self.fifo_cache_ids) > 0:
-                                cache_ids = self.fifo_cache_ids
-                                cache_lm_key = self.fifo_cache_lm_key
-                            else:
-                                is_cache = False
-
-                            if is_cache:
-                                cache_lm_attn = F.softmax(cache_theta_lm * torch.matmul(
-                                    cache_lm_key, lmout.transpose(2, 1)), dim=1)  # `[1, L, 1]`
-                                # Sum all probabilities
-                                for c in set(beam['cache_ids']):
-                                    for offset in [i for i, key in enumerate(cache_ids) if key == c]:
-                                        cache_lm_probs[0, c] += cache_lm_attn[0, offset, 0]
-                                lm_probs = torch.exp(lm_log_probs)[:, -1]
-                                lm_probs = (1 - cache_lambda_lm) * lm_probs + cache_lambda_lm * cache_lm_probs
-                                lm_log_probs = torch.log(lm_probs).unsqueeze(1)
-
-                        if 'speech_dict' in cache_type and len(self.dict_cache_sp.keys()) > 0:
-                            cache_ids = sorted(list(self.dict_cache_sp.keys()))
-                            cache_ids = [self.unk if idx < 0 else idx for idx in cache_ids]
-                            cache_sp_key = [v['key']for k, v in sorted(self.dict_cache_sp.items(), key=lambda x: x[0])]
-                            cache_sp_key = torch.cat(cache_sp_key, dim=1)
-                            cache_sp_attn = F.softmax(cache_theta_sp * torch.matmul(
-                                cache_sp_key, torch.cat([cv, dstates['dout_gen']], dim=-1).transpose(2, 1)), dim=1)  # `[1, L, 1]`
-                            # Sum all probabilities
-                            for offset, c in enumerate(cache_ids):
-                                cache_sp_probs[0, c] += cache_sp_attn[0, offset, 0]
-                            probs = (1 - cache_lambda_sp) * probs + cache_lambda_sp * cache_sp_probs
-
-                        if 'lm_dict' in cache_type and len(self.dict_cache_lm.keys()) > 0:
-                            cache_ids = sorted(list(self.dict_cache_lm.keys()))
-                            cache_lm_key = [v['key']for k, v in sorted(self.dict_cache_lm.items(), key=lambda x: x[0])]
-                            cache_lm_key = torch.cat(cache_lm_key, dim=1)
-                            cache_lm_attn = F.softmax(cache_theta_lm * torch.matmul(
-                                cache_lm_key, lmout.transpose(2, 1)), dim=1)  # `[1, L, 1]`
-                            # Sum all probabilities
-                            for offset, c in enumerate(cache_ids):
-                                cache_lm_probs[0, c] += cache_lm_attn[0, offset, 0]
-                            probs = (1 - cache_lambda_lm) * probs + cache_lambda_lm * cache_lm_probs
 
                     local_scores_attn = torch.log(probs)
 
@@ -1107,12 +992,6 @@ class RNNDecoder(DecoderBase):
                              'ensmbl_aws': ensmbl_aws,
                              'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
                              'ctc_score': ctc_scores[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
-                             'cache_ids': beam['cache_ids'] + [idx],
-                             'cache_sp_key': beam['cache_sp_key'] + [torch.cat([cv, dstates['dout_gen']], dim=-1)],
-                             'cache_lm_key': beam['cache_lm_key'] + [lmout],
-                             'cache_idx_hist': beam['cache_idx_hist'] + [cache_ids],
-                             'cache_sp_attn_hist': beam['cache_sp_attn_hist'] + [cache_sp_attn] if cache_sp_attn is not None else [],
-                             'cache_lm_attn_hist': beam['cache_lm_attn_hist'] + [cache_lm_attn] if cache_lm_attn is not None else [],
                              })
 
                 # Local pruning
@@ -1203,8 +1082,6 @@ class RNNDecoder(DecoderBase):
                     logger.info('log prob (hyp, lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_rev is not None:
                         logger.info('log prob (hyp, lm reverse): %.7f' % (end_hyps[k]['score_lm_rev'] * lm_weight))
-                if n_caches > 0:
-                    logger.info('Cache: %d' % (len(self.fifo_cache_ids) + len(end_hyps[k]['cache_ids'])))
 
         # Concatenate in L dimension
         for b in range(len(aws)):
@@ -1220,130 +1097,8 @@ class RNNDecoder(DecoderBase):
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][:-1] if eos_flags[b][n]
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
 
-        # Store in cache
-        cache_idx_hist = None
-        cache_sp_attn_hist = None
-        cache_lm_attn_hist = None
-        if n_caches > 0:
-            hyp_len = len(end_hyps[0]['hyp'][1:])
-
-            if 'speech_fifo' in cache_type and len(end_hyps[0]['cache_ids']) > 0:
-                self.fifo_cache_ids = (self.fifo_cache_ids + end_hyps[0]['cache_ids'])[-n_caches:]
-                cache_idx_hist = end_hyps[0]['cache_idx_hist']
-                cache_sp_key = end_hyps[0]['cache_sp_key'][-n_caches:]
-                cache_sp_key = torch.cat(cache_sp_key, dim=1)
-                if self.fifo_cache_sp_key is not None:
-                    cache_sp_key = torch.cat([self.fifo_cache_sp_key, cache_sp_key], dim=1)
-                # Truncate
-                self.fifo_cache_sp_key = cache_sp_key[:, -n_caches:]  # `[1, L, enc_n_units]`
-                if len(end_hyps[0]['cache_sp_attn_hist']) > 0:
-                    cache_sp_attn_hist = torch.zeros(
-                        (1, end_hyps[0]['cache_sp_attn_hist'][-1].size(1), hyp_len), dtype=torch.float32)
-                    for i, p in enumerate(end_hyps[0]['cache_sp_attn_hist']):
-                        if p.size(1) < n_caches:
-                            cache_sp_attn_hist[0, : p.size(1), i] = p[0, :, 0].cpu()
-                        else:
-                            cache_sp_attn_hist[0, : n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
-
-            if ('lm_fifo' in cache_type) and len(end_hyps[0]['cache_ids']) > 0:
-                assert lm_weight > 0
-                self.fifo_cache_ids = (self.fifo_cache_ids + end_hyps[0]['cache_ids'])[-n_caches:]
-                cache_idx_hist = end_hyps[0]['cache_idx_hist']
-                cache_lm_key = end_hyps[0]['cache_lm_key'][-n_caches:]
-                cache_lm_key = torch.cat(cache_lm_key, dim=1)
-                if self.fifo_cache_lm_key is not None:
-                    cache_lm_key = torch.cat([self.fifo_cache_lm_key, cache_lm_key], dim=1)
-                # Truncate
-                self.fifo_cache_lm_key = cache_lm_key[:, -n_caches:]  # `[1, L, lm_n_units]`
-                if len(end_hyps[0]['cache_lm_attn_hist']) > 0:
-                    cache_lm_attn_hist = torch.zeros((1, end_hyps[0]['cache_lm_attn_hist'][-1].size(1), hyp_len),
-                                                     dtype=torch.float32)  # `[B, n_keys, n_values]`
-                    for i, p in enumerate(end_hyps[0]['cache_lm_attn_hist']):
-                        if p.size(1) < n_caches:
-                            cache_lm_attn_hist[0, : p.size(1), i] = p[0, :, 0].cpu()
-                        else:
-                            cache_lm_attn_hist[0, : n_caches - (hyp_len - 1 - i), i] = p[0, (hyp_len - 1 - i):, 0].cpu()
-
-            if 'speech_dict' in cache_type:
-                if len(self.dict_cache_sp.keys()) > 0:
-                    cache_idx_hist = sorted(list(self.dict_cache_sp.keys()))
-                    cache_idx_hist = [self.unk if i < 0 else i for i in cache_idx_hist]
-                    cache_sp_key = [v['key']for k, v in sorted(self.dict_cache_sp.items(), key=lambda x: x[0])]
-                    cache_sp_key = torch.cat(cache_sp_key, dim=1)
-                    cache_sp_attn_hist = torch.cat(end_hyps[0]['cache_sp_attn_hist'], dim=-1).cpu().numpy()
-
-                for t, idx in enumerate(end_hyps[0]['hyp'][1:]):
-                    if idx == self.eos:
-                        continue
-                    if idx != self.unk and idx in self.dict_cache_sp.keys():
-                        if cache_type in ['speech_dict_overwrite', 'joint_dict_overwrite']:
-                            self.dict_cache_sp[idx]['value'] = (
-                                self.dict_cache_sp[idx]['value'] + end_hyps[0]['cache_sp_key'][t]) / 2
-                        else:
-                            self.dict_cache_sp[idx]['value'] = end_hyps[0]['cache_sp_key'][t]
-                        self.dict_cache_sp[idx]['time'] = self.total_step + t + 1
-                        self.dict_cache_sp[idx]['count'] += 1
-                    else:
-                        if idx == self.unk:
-                            self.dict_cache_sp[idx - (self.total_step + t + 1)] = {
-                                'key': end_hyps[0]['cache_sp_key'][t],
-                                'value': end_hyps[0]['cache_sp_key'][t],
-                                'count': 1,
-                                'time': self.total_step + t + 1}
-                        else:
-                            self.dict_cache_sp[idx] = {
-                                'key': end_hyps[0]['cache_sp_key'][t],
-                                'value': end_hyps[0]['cache_sp_key'][t],
-                                'count': 1,
-                                'time': self.total_step + t + 1}
-                        if len(self.dict_cache_sp.keys()) > n_caches:
-                            oldest_id = sorted(self.dict_cache_sp.items(), key=lambda x: x[1]['time'])[0][0]
-                            self.dict_cache_sp.pop(oldest_id)
-                self.total_step += len(end_hyps[0]['hyp'][1:])
-
-            if 'lm_dict' in cache_type:
-                if len(self.dict_cache_lm.keys()) > 0:
-                    cache_idx_hist = sorted(list(self.dict_cache_lm.keys()))
-                    cache_lm_key = [v['key']for k, v in sorted(self.dict_cache_lm.items(), key=lambda x: x[0])]
-                    cache_lm_key = torch.cat(cache_lm_key, dim=1)
-                    cache_lm_attn_hist = torch.cat(end_hyps[0]['cache_lm_attn_hist'], dim=-1).cpu().numpy()
-
-                for t, idx in enumerate(end_hyps[0]['hyp'][1:]):
-                    if idx == self.eos:
-                        continue
-                    if idx in self.dict_cache_lm.keys():
-                        if cache_type in ['lm_dict_overwrite', 'joint_dict_overwrite']:
-                            self.dict_cache_lm[idx]['value'] = (
-                                self.dict_cache_lm[idx]['value'] + end_hyps[0]['cache_lm_key'][t]) / 2
-                        else:
-                            self.dict_cache_lm[idx]['value'] = end_hyps[0]['cache_lm_key'][t]
-                        self.dict_cache_lm[idx]['time'] = self.total_step + t + 1
-                        self.dict_cache_lm[idx]['count'] += 1
-                    else:
-                        self.dict_cache_lm[idx] = {
-                            'key': end_hyps[0]['cache_lm_key'][t],
-                            'value': end_hyps[0]['cache_lm_key'][t],
-                            'count': 1,
-                            'time': self.total_step + t + 1}
-                        if len(self.dict_cache_lm.keys()) > n_caches:
-                            oldest_id = sorted(self.dict_cache_lm.items(), key=lambda x: x[1]['time'])[0][0]
-                            self.dict_cache_lm.pop(oldest_id)
-                self.total_step += len(end_hyps[0]['hyp'][1:])
-
         # Store ASR/LM state
         self.dstates_final = end_hyps[0]['dstates']
         self.lmstate_final = end_hyps[0]['lmstate']
 
-        if 'speech' in cache_type:
-            return nbest_hyps_idx, aws, scores, (cache_sp_attn_hist, cache_idx_hist)
-        else:
-            return nbest_hyps_idx, aws, scores, (cache_lm_attn_hist, cache_idx_hist)
-
-    def reset_global_cache(self):
-        """Reset global cache when the speaker/session is changed."""
-        self.fifo_cache_ids = []
-        self.fifo_cache_sp_key = None
-        self.fifo_cache_lm_key = None
-        self.dict_cache_sp = {}
-        self.dict_cache_lm = {}
-        self.total_step = 0
+        return nbest_hyps_idx, aws, scores

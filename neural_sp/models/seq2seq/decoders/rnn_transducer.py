@@ -435,7 +435,6 @@ class RNNTransducer(DecoderBase):
                 recog_coverage_penalty (float): coverage penalty
                 recog_coverage_threshold (float): threshold for coverage penalty
                 recog_lm_weight (float): weight of LM score
-                recog_n_caches (int):
             idx2token (): converter from index to token
             lm (RNNLM or GatedConvLM or TransformerLM):
             lm_rev (RNNLM or GatedConvLM or TransformerLM):
@@ -452,7 +451,6 @@ class RNNTransducer(DecoderBase):
             nbest_hyps_idx (list): A list of length `[B]`, which contains list of N hypotheses
             aws: dummy
             scores: dummy
-            cache_info: dummy
 
         """
         logger = logging.getLogger("decoding")
@@ -615,4 +613,4 @@ class RNNTransducer(DecoderBase):
             if lm_weight > 0 and lm is not None:
                 logger.info('log prob (hyp, lm): %.7f' % (hyps[0]['score_lm']))
 
-        return np.array(best_hyps), None, None, None
+        return np.array(best_hyps), None, None

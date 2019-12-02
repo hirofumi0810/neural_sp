@@ -650,8 +650,6 @@ class Speech2Text(ModelBase):
             # Attention
             #########################
             else:
-                cache_info = (None, None)
-
                 if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
                     best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
                         enc_outs[task]['xs'], enc_outs[task]['xlens'],
@@ -686,7 +684,7 @@ class Speech2Text(ModelBase):
                                 ensmbl_decs_fwd += [model.dec_fwd]
                                 # NOTE: only support for the main task now
 
-                        nbest_hyps_id_fwd, aws_fwd, scores_fwd, cache_info = self.dec_fwd.beam_search(
+                        nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, lm_fwd, lm_bwd, ctc_log_probs,
                             params['recog_beam_width'], False, refs_id, utt_ids, speakers,
@@ -759,7 +757,7 @@ class Speech2Text(ModelBase):
                                 else:
                                     raise NotImplementedError
 
-                        nbest_hyps_id, aws, scores, cache_info = getattr(self, 'dec_' + dir).beam_search(
+                        nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, lm, lm_rev, ctc_log_probs,
                             nbest, exclude_eos, refs_id, utt_ids, speakers,
@@ -769,7 +767,7 @@ class Speech2Text(ModelBase):
                             best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
                             aws = [aw[0] for aw in aws] if aws is not None else aws
                         else:
-                            return nbest_hyps_id, aws, scores, cache_info
+                            return nbest_hyps_id, aws, scores
                         # NOTE: nbest >= 2 is used for MWER training only
 
-                return best_hyps_id, aws, cache_info
+                return best_hyps_id, aws

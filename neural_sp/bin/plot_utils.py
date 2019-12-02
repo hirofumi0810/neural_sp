@@ -27,42 +27,6 @@ green = '#006400'
 sns.set(font='Noto Sans CJK JP')
 
 
-def plot_cache_weights(cache_probs, keys=[], queries=[],
-                       save_path=None, figsize=(20, 8), mask=None):
-    """Plot weights over cache.
-
-    Args:
-        cache_probs (np.ndarray): A tensor of size `[n_keys, n_queries]`
-        keys (list):
-        queries (list):
-        save_path (str): path to save a figure
-        figsize (tuple):
-
-    """
-    plt.clf()
-    plt.figure(figsize=figsize)
-    assert len(keys) == cache_probs.shape[0], "key: %d, cache: (%d, %d)" % (
-        len(keys), cache_probs.shape[0], cache_probs.shape[1])
-    assert len(queries) == cache_probs.shape[1], "query: %d, cache: (%d, %d)" % (
-        len(queries), cache_probs.shape[0], cache_probs.shape[1])
-    sns.heatmap(cache_probs.transpose(1, 0),
-                # cmap='viridis',
-                xticklabels=keys,
-                yticklabels=queries,
-                linewidths=0.01,
-                mask=mask.transpose(1, 0) if mask is not None else None,
-                vmin=0, vmax=1)
-    # cbar_kws={"orientation": "horizontal"}
-    plt.ylabel(u'Query (←)', fontsize=8)
-    plt.yticks(rotation=0)
-
-    # Save as a png file
-    if save_path is not None:
-        plt.savefig(save_path, dvi=500)
-
-    plt.close()
-
-
 def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
                            save_path=None, figsize=(20, 8)):
     """Plot attention weights.
