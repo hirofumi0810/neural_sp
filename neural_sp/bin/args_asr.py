@@ -134,12 +134,18 @@ def parse():
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['no', 'location', 'add', 'dot',
                                  'luong_dot', 'luong_general', 'luong_concat',
-                                 'mocha', 'mocha_simple', 'cif'],
+                                 'mocha', 'cif'],
                         help='type of attention for RNN sequence-to-sequence models')
-    parser.add_argument('--mocha_chunk_size', type=int, default=1,
+    parser.add_argument('--mocha_chunk_size', type=int, default=4,
                         help='chunk size for MoChA')
     parser.add_argument('--mocha_adaptive', type=strtobool, default=False,
                         help='adaptive MoChA')
+    parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
+                        help='1dconv for MoChA')
+    # parser.add_argument('--mocha_beta_temperature', type=float, default=1.0,
+    #                     help='temperature for MoChA')
+    # parser.add_argument('--mocha_beta_temperature', type=float, default=1.0,
+    #                     help='temperature for MoChA')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='dimension of the attention layer')
     parser.add_argument('--attn_conv_n_channels', type=int, default=10,
@@ -280,9 +286,7 @@ def parse():
                         help='cross etnropy loss weight for the backward decoder in the main task')
     # cold fusion
     parser.add_argument('--lm_fusion_type', type=str, default='cold', nargs='?',
-                        choices=['cold', 'cold_prob', 'cold_recurrency',
-                                 'deep_original', 'deep',
-                                 'cache', 'cache_bi'],
+                        choices=['cold', 'cold_prob', 'deep'],
                         help='type of LM fusion')
     parser.add_argument('--lm_fusion', type=str, default=False, nargs='?',
                         help='LM path for LM fusion during training')
@@ -370,23 +374,6 @@ def parse():
                         help='')
     parser.add_argument('--recog_n_average', type=int, default=10,
                         help='number of models for the model averaging of Transformer')
-    # cache parameters
-    parser.add_argument('--recog_n_caches', type=int, default=0,
-                        help='number of tokens for cache')
-    parser.add_argument('--recog_cache_theta_speech', type=float, default=0.1,
-                        help='theta paramter for acoustic cache')
-    parser.add_argument('--recog_cache_lambda_speech', type=float, default=0.1,
-                        help='lambda paramter for acoustic cache')
-    parser.add_argument('--recog_cache_theta_lm', type=float, default=0.1,
-                        help='theta paramter for LM cache')
-    parser.add_argument('--recog_cache_lambda_lm', type=float, default=0.1,
-                        help='lambda paramter for LM cache')
-    parser.add_argument('--recog_cache_type', type=str, default='speech',
-                        choices=['speech_fifo', 'speech_fifo_online',
-                                 'speech_dict', 'speech_dict_overwrite',
-                                 'lm_fifo', 'lm_fifo_online',
-                                 'lm_dict', 'lm_dict_overwrite', ],
-                        help='cache type')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')
