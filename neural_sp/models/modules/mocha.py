@@ -90,7 +90,6 @@ class MoChA(nn.Module):
     def __init__(self,
                  key_dim,
                  query_dim,
-                 attn_type,
                  attn_dim,
                  chunk_size,
                  adaptive=False,
@@ -111,17 +110,15 @@ class MoChA(nn.Module):
         Args:
             key_dim (int): dimension of key
             query_dim (int): dimension of query
-            attn_type (str): mocha
             attn_dim: (int) dimension of the attention layer
             chunk_size (int): size of chunk
-            adaptive (bool): turn on adaptive MoChA
+            adaptive (bool): adaptive MoChA
             conv1d (bool): apply 1d convolution for energy calculation
             init_r (int): initial value for parameter 'r' used in monotonic/chunk attention
 
         """
         super(MoChA, self).__init__()
 
-        self.attn_type = attn_type
         self.chunk_size = chunk_size
         self.adaptive = adaptive
         self.unconstrained = False
@@ -199,11 +196,8 @@ class MoChA(nn.Module):
             # safe_cumprod computes cumprod in logspace with numeric checks
             cumprod_1mp_choose_i = safe_cumprod(1 - p_choose_i, eps=self.eps)
             # Compute recurrence relation solution
-            if self.attn_type == 'mocha_simple':
-                alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(aw_prev.squeeze(2), dim=1)
-            else:
-                alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(
-                    aw_prev.squeeze(2) / torch.clamp(cumprod_1mp_choose_i, min=self.eps, max=1.0), dim=1)
+            alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(
+                aw_prev.squeeze(2) / torch.clamp(cumprod_1mp_choose_i, min=self.eps, max=1.0), dim=1)
 
         elif mode == 'hard':  # inference
             # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
@@ -292,21 +286,21 @@ def moving_sum(x, back, forward):
     return x_sum.squeeze(1)
 
 
-def efficient_chunkwise_attention(alpha, u, chunk_size, temperature=1.0):
+def efficient_chunkwise_attention(alpha, e_chunk, chunk_size, temperature=1.0):
     """Compute chunkwise attention distribution efficiently by clipping logits.
 
     Args:
-        alpha (FloatTensor): emission probability in monotonic attention, `[B, T]`
-        u (FloatTensor): chunk energy, `[B, T]`
+        alpha (FloatTensor): `[B, T]`
+        e_chunk (FloatTensor): `[B, T]`
         chunk_size (int): size of chunk
     Return
-        beta (FloatTensor): MoChA weights, `[B, T]`
+        beta (FloatTensor): `[B, T]`
 
     """
     # Shift logits to avoid overflow
-    u -= torch.max(u, dim=1, keepdim=True)[0]
+    e_chunk -= torch.max(e_chunk, dim=1, keepdim=True)[0]
     # Limit the range for numerical stability
-    softmax_exp = torch.clamp(torch.exp(u), min=1e-5)
+    softmax_exp = torch.clamp(torch.exp(e_chunk), min=1e-5)
     # Compute chunkwise softmax denominators
     softmax_denominators = moving_sum(softmax_exp,
                                       back=chunk_size - 1, forward=0)
@@ -316,21 +310,21 @@ def efficient_chunkwise_attention(alpha, u, chunk_size, temperature=1.0):
     return beta
 
 
-def efficient_adaptive_chunkwise_attention(alpha, u, chunk_len_dist, temperature=1.0):
+def efficient_adaptive_chunkwise_attention(alpha, e_chunk, chunk_len_dist, temperature=1.0):
     """Compute adaptive chunkwise attention distribution efficiently by clipping logits.
 
     Args:
-        alpha (FloatTensor): emission probability in monotonic attention, `[B, T]`
-        u (FloatTensor): chunk energy, `[B, T]`
+        alpha (FloatTensor): `[B, T]`
+        e_chunk (FloatTensor): `[B, T]`
         chunk_len_dist (IntTensor): `[B, T]`
     Return
-        beta (FloatTensor): MoChA weights, `[B, T]`
+        beta (FloatTensor): `[B, T]`
 
     """
     # Shift logits to avoid overflow
-    u -= torch.max(u, dim=1, keepdim=True)[0]
+    e_chunk -= torch.max(e_chunk, dim=1, keepdim=True)[0]
     # Limit the range for numerical stability
-    softmax_exp = torch.clamp(torch.exp(u), min=1e-5)
+    softmax_exp = torch.clamp(torch.exp(e_chunk), min=1e-5)
     # Compute chunkwise softmax denominators
     triggered_points = torch.argmax(alpha, dim=1)
     bs = alpha.size(0)

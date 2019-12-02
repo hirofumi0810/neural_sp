@@ -89,6 +89,7 @@ class RNNDecoder(DecoderBase):
         mocha_chunk_size (int): chunk size for MoChA
         mocha_adaptive (bool): adaptive MoChA
         mocha_1dconv (bool): 1dconv for MoChA
+        mocha_sharpening_factor (bool): beta temperature for MoChA
         replace_sos (bool):
 
     """
@@ -131,6 +132,7 @@ class RNNDecoder(DecoderBase):
                  mocha_chunk_size=1,
                  mocha_adaptive=False,
                  mocha_1dconv=False,
+                 mocha_sharpening_factor=1.0,
                  replace_sos=False,
                  soft_label_weight=0.0):
 
@@ -189,12 +191,11 @@ class RNNDecoder(DecoderBase):
                 assert attn_n_heads == 1
                 self.score = MoChA(key_dim=self.enc_n_units,
                                    query_dim=n_units if n_projs == 0 else n_projs,
-                                   attn_type=attn_type,
                                    attn_dim=attn_dim,
                                    chunk_size=mocha_chunk_size,
                                    adaptive=mocha_adaptive,
                                    conv1d=mocha_1dconv,
-                                   init_r=-4)
+                                   beta_temperature=mocha_sharpening_factor)
             else:
                 if attn_n_heads > 1:
                     self.score = MultiheadAttentionMechanism(
