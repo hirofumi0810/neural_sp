@@ -166,12 +166,6 @@ def main():
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))
             logger.info('LM state carry over: %s' % (args.recog_lm_state_carry_over))
-            logger.info('cache size: %d' % (args.recog_n_caches))
-            logger.info('cache type: %s' % (args.recog_cache_type))
-            logger.info('cache theta (speech): %.3f' % (args.recog_cache_theta_speech))
-            logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
-            logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
-            logger.info('cache lambda (lm): %.3f' % (args.recog_cache_lambda_lm))
             logger.info('model average (Transformer): %d' % (args.recog_n_average))
 
             # GPU setting
