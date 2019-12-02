@@ -126,7 +126,7 @@ def parse():
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
-                        choices=['drop', 'concat', 'max_pool'],
+                        choices=['drop', 'concat', 'max_pool', '1dconv'],
                         help='type of subsampling in the encoder')
     parser.add_argument('--freeze_encoder', type=strtobool, default=False,
                         help='freeze the encoder parameter')
@@ -142,10 +142,8 @@ def parse():
                         help='adaptive MoChA')
     parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
                         help='1dconv for MoChA')
-    # parser.add_argument('--mocha_beta_temperature', type=float, default=1.0,
-    #                     help='temperature for MoChA')
-    # parser.add_argument('--mocha_beta_temperature', type=float, default=1.0,
-    #                     help='temperature for MoChA')
+    parser.add_argument('--mocha_sharpening_factor', type=float, default=1.0,
+                        help='beta temperature for MoChA')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='dimension of the attention layer')
     parser.add_argument('--attn_conv_n_channels', type=int, default=10,

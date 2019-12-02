@@ -181,10 +181,13 @@ class RNNEncoder(EncoderBase):
                 self.subsample = nn.ModuleList([MaxpoolSubsampler(subsample[l])
                                                 for l in range(n_layers)])
             elif subsample_type == 'concat' and np.prod(subsample) > 1:
-                self.subsample = nn.ModuleList([ConcatSubsampler(subsample[l], n_units, self.n_dirs)
+                self.subsample = nn.ModuleList([ConcatSubsampler(subsample[l], n_units * self.n_dirs)
                                                 for l in range(n_layers)])
             elif subsample_type == 'drop' and np.prod(subsample) > 1:
                 self.subsample = nn.ModuleList([DropSubsampler(subsample[l])
+                                                for l in range(n_layers)])
+            elif subsample_type == '1dconv' and np.prod(subsample) > 1:
+                self.subsample = nn.ModuleList([Conv1dSubsampler(subsample[l], n_units * self.n_dirs)
                                                 for l in range(n_layers)])
 
             # NiN
@@ -388,19 +391,43 @@ class MaxpoolSubsampler(nn.Module):
 
         self.factor = factor
         if factor > 1:
-            self.max_pool = nn.MaxPool2d((1, 1), stride=(factor, 1), ceil_mode=True)
+            self.max_pool = nn.MaxPool1d(1, stride=factor, ceil_mode=True)
 
     def forward(self, xs, xlens):
         if self.factor == 1:
             return xs, xlens
 
-        xs = xs.transpose(1, 0).contiguous()
-        xs = [torch.max(xs[t - self.factor + 1:t + 1], dim=0)[0].unsqueeze(0)
-              for t in range(xs.size(0)) if (t + 1) % self.factor == 0]
-        # NOTE: Exclude the last frames if the length is not divisible
-        xs = torch.cat(xs, dim=0).transpose(1, 0)
+        # subsample
+        xs = self.max_pool(xs.transpose(2, 1)).transpose(2, 1).contiguous()
 
-        xlens /= self.factor
+        xlens //= self.factor
+        return xs, xlens
+
+
+class Conv1dSubsampler(nn.Module):
+    """Subsample by 1d convolution and max-pooling."""
+
+    def __init__(self, factor, n_units, conv_kernel_size=5):
+        super(Conv1dSubsampler, self).__init__()
+
+        self.factor = factor
+        if factor > 1:
+            self.conv1d = nn.Conv1d(in_channels=n_units,
+                                    out_channels=n_units,
+                                    kernel_size=conv_kernel_size,
+                                    stride=1,
+                                    padding=conv_kernel_size // 2 - 1)
+            self.max_pool = nn.MaxPool1d(1, stride=factor, ceil_mode=True)
+
+    def forward(self, xs, xlens):
+        if self.factor == 1:
+            return xs, xlens
+
+        # subsample
+        xs = self.conv1d(xs.transpose(2, 1))
+        xs = self.max_pool(xs).transpose(2, 1).contiguous()
+
+        xlens //= self.factor
         return xs, xlens
 
 
@@ -416,7 +443,9 @@ class DropSubsampler(nn.Module):
         if self.factor == 1:
             return xs, xlens
 
+        # subsample
         xs = xs[:, ::self.factor, :]
+
         xlens = [max(1, (i + self.factor - 1) // self.factor) for i in xlens]
         xlens = torch.IntTensor(xlens)
         return xs, xlens
@@ -425,13 +454,12 @@ class DropSubsampler(nn.Module):
 class ConcatSubsampler(nn.Module):
     """Subsample by concatenating input frames."""
 
-    def __init__(self, factor, n_units, n_dirs):
+    def __init__(self, factor, n_units):
         super(ConcatSubsampler, self).__init__()
 
         self.factor = factor
         if factor > 1:
-            self.proj = Linear(n_units * n_dirs * factor, n_units * n_dirs)
-            self.batch_norm = nn.BatchNorm1d(n_units * n_dirs)
+            self.proj = Linear(n_units * factor, n_units)
 
     def forward(self, xs, xlens):
         if self.factor == 1:
@@ -445,16 +473,9 @@ class ConcatSubsampler(nn.Module):
         # NOTE: Exclude the last frames if the length is not divisible
 
         # Projection
-        xs = self.proj(xs)
-        # xs = torch.tanh(proj(xs))
+        xs = torch.relu(self.proj(xs))
 
-        # Batch normalization, ReLU
-        bs, time = xs.size()[:2]
-        xs = self.batch_norm(xs.view(bs * time, -1)).view(bs, time, -1)
-        # xs = self.batch_norm[l](xs)
-        xs = torch.relu(xs)
-
-        xlens /= self.factor
+        xlens //= self.factor
         return xs, xlens
 
 
