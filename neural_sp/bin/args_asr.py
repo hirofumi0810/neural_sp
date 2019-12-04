@@ -109,7 +109,9 @@ def parse():
     parser.add_argument('--enc_type', type=str, default='blstm',
                         choices=['blstm', 'lstm', 'bgru', 'gru', 'conv',
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
-                                 'transformer', 'conv_transformer', 'tds', 'gated_conv'],
+                                 'transformer', 'conv_transformer',
+                                 'tds', 'gated_conv',
+                                 'lcblstm', 'lcbgru'],
                         help='type of the encoder')
     parser.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
                         help='sum forward and backward RNN outputs for dimension reduction')
@@ -144,8 +146,6 @@ def parse():
                         help='adaptive MoChA')
     parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
                         help='1dconv for MoChA')
-    parser.add_argument('--mocha_sharpening_factor', type=float, default=1.0,
-                        help='beta temperature for MoChA')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='dimension of the attention layer')
     parser.add_argument('--attn_conv_n_channels', type=int, default=10,
@@ -154,8 +154,8 @@ def parse():
                         help='')
     parser.add_argument('--attn_n_heads', type=int, default=1,
                         help='number of heads in the attention layer')
-    parser.add_argument('--attn_sharpening', type=float, default=1.0,
-                        help='')
+    parser.add_argument('--attn_sharpening_factor', type=float, default=1.0,
+                        help='sharpening factor')
     parser.add_argument('--attn_sigmoid', type=strtobool, default=False, nargs='?',
                         help='')
     parser.add_argument('--bridge_layer', type=strtobool, default=False,

@@ -261,7 +261,7 @@ class Speech2Text(ModelBase):
                         enc_n_units=self.enc.output_dim,
                         attn_type=args.attn_type,
                         attn_dim=args.attn_dim,
-                        attn_sharpening_factor=args.attn_sharpening,
+                        attn_sharpening_factor=args.attn_sharpening_factor,
                         attn_sigmoid_smoothing=args.attn_sigmoid,
                         attn_conv_out_channels=args.attn_conv_n_channels,
                         attn_conv_kernel_size=args.attn_conv_width,
@@ -295,7 +295,6 @@ class Speech2Text(ModelBase):
                         mocha_chunk_size=args.mocha_chunk_size,
                         mocha_adaptive=args.mocha_adaptive,
                         mocha_1dconv=args.mocha_1dconv,
-                        mocha_sharpening_factor=args.mocha_sharpening_factor,
                         replace_sos=args.replace_sos,
                         soft_label_weight=args.soft_label_weight)
             setattr(self, 'dec_' + dir, dec)
@@ -311,7 +310,7 @@ class Speech2Text(ModelBase):
                         enc_n_units=self.enc_n_units,
                         attn_type=args.attn_type,
                         attn_dim=args.attn_dim,
-                        attn_sharpening_factor=args.attn_sharpening,
+                        attn_sharpening_factor=args.attn_sharpening_factor,
                         attn_sigmoid_smoothing=args.attn_sigmoid,
                         attn_conv_out_channels=args.attn_conv_n_channels,
                         attn_conv_kernel_size=args.attn_conv_width,
@@ -530,7 +529,7 @@ class Speech2Text(ModelBase):
                 xs = [torch.from_numpy(np.flip(x, axis=0).copy()).float().cuda(self.device_id) for x in xs]
             else:
                 xs = [np2tensor(x, self.device_id).float() for x in xs]
-            xs = pad_list(xs, 0.0)
+            xs = pad_list(xs, 0.)
 
             # SpecAugment
             if self.is_specaug and self.training:

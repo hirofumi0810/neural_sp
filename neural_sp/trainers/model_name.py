@@ -67,8 +67,8 @@ def set_asr_model_name(args, subsample_factor):
                     dir_name += '_adaptive'
                 if args.mocha_1dconv:
                     dir_name += '_1dconv'
-                if args.mocha_sharpening_factor:
-                    dir_name += '_temp' + str(args.mocha_sharpening_factor)
+                if args.attn_sharpening_factor:
+                    dir_name += '_temp' + str(args.attn_sharpening_factor)
         if args.attn_n_heads > 1:
             dir_name += '_head' + str(args.attn_n_heads)
         if args.tie_embedding:
