@@ -258,8 +258,6 @@ def main():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
                     if only_enc and 'enc' not in n:
                         continue
-                    if args.lm_fusion_type == 'cache' and 'output' in n:
-                        continue
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
@@ -343,6 +341,7 @@ def main():
     start_time_step = time.time()
     pbar_epoch = tqdm(total=len(train_set))
     accum_n_tokens = 0
+    n_steps = 0
     while True:
         # Compute loss in the training set
         batch_train, is_new_epoch = train_set.next()
@@ -368,10 +367,12 @@ def main():
         reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
         # NOTE: loss/acc/ppl are already added in the model
         reporter.step()
+        pbar_epoch.update(len(batch_train['utt_ids']))
+        n_steps += 1
 
-        if optimizer.n_steps % args.print_step == 0:
+        if n_steps % args.print_step == 0:
             # Compute loss in the dev set
-            batch_dev = dev_set.next()[0]
+            batch_dev = dev_set.next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
             # Change mini-batch depending on task
             for task in tasks:
                 loss, observation = model(batch_dev, task, is_eval=True)
@@ -406,15 +407,14 @@ def main():
                 xlen = max(len(x) for x in batch_train['ys'])
                 ylen = max(len(y) for y in batch_train['ys_sub1'])
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.7f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
-                        (optimizer.n_steps, optimizer.n_epochs + train_set.epoch_detail,
+                        (n_steps, optimizer.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
                          optimizer.lr, len(batch_train['utt_ids']),
                          xlen, ylen, duration_step / 60))
             start_time_step = time.time()
-        pbar_epoch.update(len(batch_train['utt_ids']))
 
         # Save fugures of loss and accuracy
-        if optimizer.n_steps % (args.print_step * 10) == 0:
+        if n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
 

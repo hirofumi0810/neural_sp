@@ -189,6 +189,7 @@ def main():
     start_time_step = time.time()
     pbar_epoch = tqdm(total=len(train_set))
     accum_n_tokens = 0
+    n_steps = 0
     while True:
         # Compute loss in the training set
         ys_train, is_new_epoch = train_set.next()
@@ -212,8 +213,10 @@ def main():
         reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
         # NOTE: loss/acc/ppl are already added in the model
         reporter.step()
+        pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
+        n_steps += 1
 
-        if optimizer.n_steps % args.print_step == 0:
+        if n_steps % args.print_step == 0:
             # Compute loss in the dev set
             ys_dev = dev_set.next()[0]
             loss, _, observation = model(ys_dev, None, is_eval=True)
@@ -224,15 +227,14 @@ def main():
 
             duration_step = time.time() - start_time_step
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                        (optimizer.n_steps, optimizer.n_epochs + train_set.epoch_detail,
+                        (n_steps, optimizer.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
                          np.exp(loss_train), np.exp(loss_dev),
                          optimizer.lr, ys_train.shape[0], duration_step / 60))
             start_time_step = time.time()
-        pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
 
         # Save fugures of loss and accuracy
-        if optimizer.n_steps % (args.print_step * 10) == 0:
+        if n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             if args.lm_type == 'transformer':
                 model.module.plot_attention()
