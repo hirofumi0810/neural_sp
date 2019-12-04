@@ -850,20 +850,18 @@ class RNNDecoder(DecoderBase):
                         prev_idx = refs_id[0][0]
                     else:
                         prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam['hyp'][-1]
+                    y = eouts.new_zeros(1, 1).fill_(prev_idx).long()
 
+                    lmout, lmstate, lm_log_probs = None, None, None
                     if self.lm is not None:
                         # Update LM states for LM fusion
-                        lmout, lmstate, lm_log_probs = self.lm.predict(
-                            eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
+                        lmout, lmstate, lm_log_probs = self.lm.predict(y, beam['lmstate'])
                     elif lm_weight > 0 and lm is not None:
                         # Update LM states for shallow fusion
-                        lmout, lmstate, lm_log_probs = lm.predict(
-                            eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
-                    else:
-                        lmout, lmstate, lm_log_probs = None, None, None
+                        lmout, lmstate, lm_log_probs = lm.predict(y, beam['lmstate'])
 
                     # for the main model
-                    y_emb = self.dropout_emb(self.embed(eouts.new_zeros(1, 1).fill_(prev_idx).long()))
+                    y_emb = self.dropout_emb(self.embed(y))
                     dstates, cv, aw, attn_v = self.decode_step(
                         eouts[b:b + 1, :elens[b]],
                         beam['dstates'], beam['cv'], y_emb,
@@ -875,7 +873,7 @@ class RNNDecoder(DecoderBase):
                     ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
                     if n_models > 1:
                         for i_e, dec in enumerate(ensmbl_decs):
-                            y_emb = dec.dropout_emb(dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx).long()))
+                            y_emb = dec.dropout_emb(dec.embed(y))
                             ensmbl_dstate, cv_e, aw_e, attn_v_e = dec.decode_step(
                                 ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
                                 beam['ensmbl_dstate'][i_e], beam['ensmbl_cv'], y_emb,
