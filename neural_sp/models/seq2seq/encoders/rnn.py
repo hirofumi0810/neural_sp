@@ -17,7 +17,6 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.utils.rnn import pad_packed_sequence
 
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
@@ -82,7 +81,7 @@ class RNNEncoder(EncoderBase):
                  nin=False,
                  task_specific_layer=False,
                  param_init=0.1,
-                 bidirectional_sum_fwd_bwd=True):
+                 bidirectional_sum_fwd_bwd=False):
 
         super(RNNEncoder, self).__init__()
         logger = logging.getLogger("training")
@@ -95,7 +94,8 @@ class RNNEncoder(EncoderBase):
             raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1.')
 
         self.rnn_type = rnn_type
-        self.bidirectional = True if rnn_type in ['blstm', 'bgru', 'conv_blstm', 'conv_bgru'] else False
+        self.bidirectional = True if ('blstm' in rnn_type or 'bgru' in rnn_type) else False
+        self.latency_controlled if ('lcblstm' in rnn_type or 'lcbrgu' in rnn_type) else False
         self.n_units = n_units
         self.n_dirs = 2 if self.bidirectional else 1
         self.n_layers = n_layers
@@ -114,7 +114,7 @@ class RNNEncoder(EncoderBase):
         self.dropout_in = nn.Dropout(p=dropout_in)
 
         # Setting for CNNs before RNNs
-        if conv_channels and rnn_type not in ['blstm', 'lstm', 'bgru', 'gru']:
+        if conv_channels and (rnn_type in ['tds', 'gated_conv'] or 'conv' in rnn_type):
             channels = [int(c) for c in conv_channels.split('_')] if len(conv_channels) > 0 else []
             kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
                             for c in conv_kernel_sizes.split('_')] if len(conv_kernel_sizes) > 0 else []
@@ -126,7 +126,7 @@ class RNNEncoder(EncoderBase):
                            for c in conv_strides.split('_')] if len(conv_strides) > 0 else []
                 poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
                             for c in conv_poolings.split('_')] if len(conv_poolings) > 0 else []
-            if 'conv_' in rnn_type:
+            if 'conv' in rnn_type:
                 subsample = [1] * self.n_layers
                 logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
         else:
@@ -213,7 +213,7 @@ class RNNEncoder(EncoderBase):
                 # Projection layer
                 if self.proj is not None:
                     if l != n_layers - 1:
-                        self.proj += [Linear(n_units * self.n_dirs, n_projs)]
+                        self.proj += [nn.Linear(n_units * self.n_dirs, n_projs)]
                         self._output_dim = n_projs
 
                 # Task specific layer
@@ -223,14 +223,14 @@ class RNNEncoder(EncoderBase):
                                           bidirectional=self.bidirectional)
                     self.dropout_sub1 = nn.Dropout(p=dropout)
                     if last_proj_dim != self.output_dim:
-                        self.bridge_sub1 = Linear(n_units, last_proj_dim)
+                        self.bridge_sub1 = nn.Linear(n_units, last_proj_dim)
                 if l == n_layers_sub2 - 1 and task_specific_layer:
                     self.rnn_sub2 = rnn_i(self._output_dim, n_units, 1,
                                           batch_first=True,
                                           bidirectional=self.bidirectional)
                     self.dropout_sub2 = nn.Dropout(p=dropout)
                     if last_proj_dim != self.output_dim:
-                        self.bridge_sub2 = Linear(n_units, last_proj_dim)
+                        self.bridge_sub2 = nn.Linear(n_units, last_proj_dim)
 
                 # Network in network
                 if self.nin is not None:
@@ -240,7 +240,7 @@ class RNNEncoder(EncoderBase):
                     #     assert task_specific_layer
 
             if last_proj_dim != self.output_dim:
-                self.bridge = Linear(self._output_dim, last_proj_dim)
+                self.bridge = nn.Linear(self._output_dim, last_proj_dim)
                 self._output_dim = last_proj_dim
 
         # Initialize parameters
@@ -464,7 +464,7 @@ class ConcatSubsampler(nn.Module):
 
         self.factor = factor
         if factor > 1:
-            self.proj = Linear(n_units * factor, n_units)
+            self.proj = nn.Linear(n_units * factor, n_units)
 
     def forward(self, xs, xlens):
         if self.factor == 1:

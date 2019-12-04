@@ -16,7 +16,6 @@ import os
 import shutil
 import torch.nn as nn
 
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
@@ -125,7 +124,7 @@ class TransformerEncoder(EncoderBase):
             self._output_dim = input_dim * n_splices * n_stacks
             self.conv = None
 
-            self.embed = Linear(self._output_dim, d_model)  # NOTE: do not apply dropout here
+            self.embed = nn.Linear(self._output_dim, d_model)
 
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
         self.layers = nn.ModuleList(
@@ -134,7 +133,7 @@ class TransformerEncoder(EncoderBase):
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if last_proj_dim != self.output_dim:
-            self.bridge = Linear(self._output_dim, last_proj_dim)
+            self.bridge = nn.Linear(self._output_dim, last_proj_dim)
             self._output_dim = last_proj_dim
         else:
             self.bridge = None
