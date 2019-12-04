@@ -23,8 +23,6 @@ import torch.nn.functional as F
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.cif import CIF
-from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
@@ -89,11 +87,11 @@ class RNNCIFDecoder(DecoderBase):
                  vocab,
                  tie_embedding=False,
                  attn_conv_kernel_size=0,
-                 dropout=0.0,
-                 dropout_emb=0.0,
-                 lsm_prob=0.0,
-                 ctc_weight=0.0,
-                 ctc_lsm_prob=0.0,
+                 dropout=0.,
+                 dropout_emb=0.,
+                 lsm_prob=0.,
+                 ctc_weight=0.,
+                 ctc_lsm_prob=0.,
                  ctc_fc_list=[],
                  backward=False,
                  lm_fusion=None,
@@ -104,7 +102,7 @@ class RNNCIFDecoder(DecoderBase):
                  mtl_per_batch=False,
                  param_init=0.1,
                  replace_sos=False,
-                 soft_label_weight=0.0):
+                 soft_label_weight=0.):
 
         super(RNNCIFDecoder, self).__init__()
         logger = logging.getLogger('training')
@@ -159,7 +157,7 @@ class RNNCIFDecoder(DecoderBase):
             # Decoder
             self.rnn = nn.ModuleList()
             if self.n_projs > 0:
-                self.proj = nn.ModuleList([Linear(n_units, n_projs) for _ in range(n_layers)])
+                self.proj = nn.ModuleList([nn.Linear(n_units, n_projs) for _ in range(n_layers)])
             self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
             rnn = nn.LSTM if rnn_type == 'lstm' else nn.GRU
             dec_odim = enc_n_units + emb_dim
@@ -171,16 +169,16 @@ class RNNCIFDecoder(DecoderBase):
 
             # LM fusion
             if lm_fusion is not None:
-                self.linear_dec_feat = Linear(dec_odim + enc_n_units, n_units)
+                self.linear_dec_feat = nn.Linear(dec_odim + enc_n_units, n_units)
                 if lm_fusion_type in ['cold', 'deep']:
-                    self.linear_lm_feat = Linear(lm_fusion.n_units, n_units)
-                    self.linear_lm_gate = Linear(n_units * 2, n_units)
+                    self.linear_lm_feat = nn.Linear(lm_fusion.n_units, n_units)
+                    self.linear_lm_gate = nn.Linear(n_units * 2, n_units)
                 elif lm_fusion_type == 'cold_prob':
-                    self.linear_lm_feat = Linear(lm_fusion.vocab, n_units)
-                    self.linear_lm_gate = Linear(n_units * 2, n_units)
+                    self.linear_lm_feat = nn.Linear(lm_fusion.vocab, n_units)
+                    self.linear_lm_gate = nn.Linear(n_units * 2, n_units)
                 else:
                     raise ValueError(lm_fusion_type)
-                self.output_bn = Linear(n_units * 2, bottleneck_dim)
+                self.output_bn = nn.Linear(n_units * 2, bottleneck_dim)
 
                 # fix LM parameters
                 for p in lm_fusion.parameters():
@@ -188,13 +186,12 @@ class RNNCIFDecoder(DecoderBase):
             elif discourse_aware == 'hierarchical':
                 raise NotImplementedError
             else:
-                self.output_bn = Linear(dec_odim + enc_n_units, bottleneck_dim)
+                self.output_bn = nn.Linear(dec_odim + enc_n_units, bottleneck_dim)
 
-            self.embed = Embedding(vocab, emb_dim,
-                                   dropout=dropout_emb,
-                                   ignore_index=pad)
+            self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
+            self.dropout_emb = nn.Dropout(p=dropout_emb)
 
-            self.output = Linear(bottleneck_dim, vocab)
+            self.output = nn.Linear(bottleneck_dim, vocab)
             # NOTE: include bias even when tying weights
 
             # Optionally tie weights as in:
@@ -206,7 +203,7 @@ class RNNCIFDecoder(DecoderBase):
             if tie_embedding:
                 if emb_dim != bottleneck_dim:
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
-                self.output.fc.weight = self.embed.embed.weight
+                self.output.fc.weight = self.embed.weight
 
         # Initialize parameters
         self.reset_parameters(param_init)
@@ -231,9 +228,9 @@ class RNNCIFDecoder(DecoderBase):
                     logger.info('Overwrite %s' % n)
 
             # embedding
-            assert self.embed.embed.weight.size() == lm_init.embed.embed.weight.size()
-            self.embed.embed.weight.data = lm_init.embed.embed.weight.data
-            logger.info('Overwrite %s' % 'embed.embed.weight')
+            assert self.embed.weight.size() == lm_init.embed.weight.size()
+            self.embed.weight.data = lm_init.embed.weight.data
+            logger.info('Overwrite %s' % 'embed.weight')
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
@@ -360,7 +357,7 @@ class RNNCIFDecoder(DecoderBase):
             lmouts, _ = self.lm.decode(ys_in_pad, lmstate)
 
         # Recurrency -> Score -> Generate
-        ys_emb = self.embed(ys_in_pad)
+        ys_emb = self.dropout_emb(self.embed(ys_in_pad))
         dstate, logits = self.decode_step(cvs[:, :-1], cvs[:, 1:], dstate, ys_emb, lmouts)
         logits = self.output(logits)
 
@@ -539,7 +536,7 @@ class RNNCIFDecoder(DecoderBase):
         # Initialization
         dstate = self.zero_state(bs)
         lmout, lmstate = None, None
-        y = eouts.new_zeros(bs, 1).fill_(refs_id[0][0] if self.replace_sos else self.eos)
+        y = eouts.new_zeros(bs, 1).fill_(refs_id[0][0] if self.replace_sos else self.eos).long()
 
         # CIF
         cvs, alpha, aws = self.score(eouts, elens)
@@ -559,7 +556,7 @@ class RNNCIFDecoder(DecoderBase):
                 lmout, lmstate = self.lm.decode(self.lm(y), lmstate)
 
             # Recurrency -> Score -> Generate
-            y_emb = self.embed(y)
+            y_emb = self.dropout_emb(self.embed(y))
             dstate, attn_v = self.decode_step(cvs[:, t:t + 1], cvs[:, t + 1:t + 2],
                                               dstate, y_emb, lmout)
 
@@ -713,11 +710,11 @@ class RNNCIFDecoder(DecoderBase):
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
-                     'score': 0.0,
-                     'hist_score': [0.0],
-                     'score_attn': 0.0,
-                     'score_ctc': 0.0,
-                     'score_lm': 0.0,
+                     'score': 0.,
+                     'hist_score': [0.],
+                     'score_attn': 0.,
+                     'score_ctc': 0.,
+                     'score_lm': 0.,
                      'dstate': dstate,
                      'aws': [None],
                      'lmstate': lmstate,
@@ -725,7 +722,7 @@ class RNNCIFDecoder(DecoderBase):
                      'ensmbl_cv': ensmbl_cv,
                      'ensmbl_aws':[[None]] * (n_models - 1),
                      'ctc_state': ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
-                     'ctc_score': 0.0,
+                     'ctc_score': 0.,
                      }]
             if oracle:
                 assert refs_id is not None
@@ -739,32 +736,30 @@ class RNNCIFDecoder(DecoderBase):
                         prev_idx = refs_id[0][0]
                     else:
                         prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam['hyp'][-1]
+                    y = eouts.new_zeros(1, 1).fill_(prev_idx)
 
+                    lmout, lmstate, lm_log_probs = None, None, None
                     if self.lm is not None:
                         # Update LM states for LM fusion
-                        lmout, lmstate, lm_log_probs = self.lm.predict(
-                            eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
+                        lmout, lmstate, lm_log_probs = self.lm.predict(y, beam['lmstate'])
                     elif lm_weight > 0 and lm is not None:
                         # Update LM states for shallow fusion
-                        lmout, lmstate, lm_log_probs = lm.predict(
-                            eouts.new_zeros(1, 1).fill_(prev_idx), beam['lmstate'])
-                    else:
-                        lmout, lmstate, lm_log_probs = None, None, None
+                        lmout, lmstate, lm_log_probs = lm.predict(y, beam['lmstate'])
 
                     # for the main model
-                    y_emb = self.embed(eouts.new_zeros(1, 1).fill_(prev_idx))
+                    y_emb = self.dropout_emb(self.embed(y))
                     dstate, attn_v = self.decode_step(
                         cvs[b:b + 1, t:t + 1],
                         cvs[b:b + 1, t + 1:t + 2],
                         beam['dstate'], y_emb, lmout)
-                    probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
+                    probs = torch.softmax(self.output(attn_v).squeeze(1), dim=1)
 
                     # for the ensemble
                     ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
                     ensmbl_log_probs = 0.
                     if n_models > 1:
                         for i_e, dec in enumerate(ensmbl_decs):
-                            y_emb = dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx))
+                            y_emb = dec.dropout_emb(dec.embed(y))
                             ensmbl_dstate, cv_e, aw_e, attn_v_e = dec.decode_step(
                                 ensmbl_eouts[i_e][b:b + 1, t:t + 1],
                                 ensmbl_eouts[i_e][b:b + 1, t + 1:t + 2],
@@ -806,7 +801,7 @@ class RNNCIFDecoder(DecoderBase):
                             total_scores_topk += (len(beam['hyp'][1:]) + 1) * lp_weight
 
                     # Add coverage penalty
-                    cp = 0.0
+                    cp = 0.
                     aw_mat = None
                     if cp_weight > 0:
                         aw_mat = torch.stack(beam['aws'][1:] + [aw], dim=-1)  # `[B, T, L, n_heads]`
@@ -902,7 +897,7 @@ class RNNCIFDecoder(DecoderBase):
                 for i in range(len(end_hyps)):
                     # Initialize
                     lmstate_rev = None
-                    score_lm_rev = 0.0
+                    score_lm_rev = 0.
                     lp = 1.0
 
                     # Append <eos>
