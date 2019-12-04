@@ -389,11 +389,10 @@ class TransformerDecoder(DecoderBase):
                 break
 
             if oracle:
-                y_seq = torch.cat([y_seq, eouts.new_zeros(bs, 1).long()], dim=-1)
+                y = eouts.new_zeros(bs, 1).long()
                 for b in range(bs):
-                    y_seq[b, -1] = refs_id[b][t]
-            else:
-                y_seq = torch.cat([y_seq, y.long()], dim=-1)
+                    y[b, 0] = refs_id[b][t]
+            y_seq = torch.cat([y_seq, y], dim=-1)
 
         # Concatenate in L dimension
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
