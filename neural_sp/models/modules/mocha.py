@@ -18,36 +18,36 @@ NEG_INF = float(np.finfo(np.float32).min)
 
 
 class Energy(nn.Module):
-    def __init__(self, enc_dim, dec_dim, attn_dim, init_r=None,
+    def __init__(self, kdim, qdim, adim, init_r=None,
                  conv1d=False, conv_kernel_size=5):
         """Energy function."""
         super().__init__()
 
-        assert conv_kernel_size % 2 == 1
+        assert conv_kernel_size % 2 == 1, "Kernel size should be odd for 'same' conv."
         self.key = None
         self.mask = None
 
-        self.w_key = Linear(enc_dim, attn_dim)
-        self.w_query = Linear(dec_dim, attn_dim, bias=False)
-        self.v = nn.Linear(attn_dim, 1, bias=False)
+        self.w_key = Linear(kdim, adim)
+        self.w_query = Linear(qdim, adim, bias=False)
+        self.v = nn.Linear(adim, 1, bias=False)
         if init_r is not None:
             # for alpha
             self.r = nn.Parameter(torch.Tensor([init_r]))
             self.v = nn.utils.weight_norm(self.v, name='weight', dim=0)
             # initialization
-            self.v.weight_g.data = torch.Tensor([1 / attn_dim]).sqrt()
+            self.v.weight_g.data = torch.Tensor([1 / adim]).sqrt()
         else:
             # for beta
             self.r = None
 
         self.conv1d = None
         if conv1d:
-            self.conv1d = nn.Conv1d(in_channels=enc_dim,
-                                    out_channels=enc_dim,
+            self.conv1d = nn.Conv1d(in_channels=kdim,
+                                    out_channels=kdim,
                                     kernel_size=conv_kernel_size,
                                     stride=1,
-                                    padding=conv_kernel_size // 2)
-            self.norm = nn.LayerNorm(enc_dim, eps=1e-12)
+                                    padding=(conv_kernel_size - 1) // 2)
+            # self.norm = nn.LayerNorm(kdim, eps=1e-12)
 
     def reset(self):
         self.key = None
@@ -57,26 +57,25 @@ class Energy(nn.Module):
         """Compute energy.
 
         Args:
-            key (FloatTensor): `[B, kmax, key_dim]`
-            query (FloatTensor): `[B, 1, query_dim]`
+            key (FloatTensor): `[B, kmax, kdim]`
+            query (FloatTensor): `[B, 1, qdim]`
             mask (ByteTensor): `[B, qmax, kmax]`
             aw_prev (FloatTensor): `[B, kmax, 1]`
         Return:
             energy (FloatTensor): `[B, value_dim]`
 
         """
-        bs, kmax, key_dim = key.size()
+        bs, kmax, kdim = key.size()
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None:
             # 1d conv
             if self.conv1d is not None:
                 key = self.conv1d(key.transpose(2, 1)).transpose(2, 1).contiguous()
-                key = self.norm(torch.relu(key))
-            self.key = self.w_key(key)
+            self.key = self.w_key(torch.relu(key))
             self.mask = mask
 
-        key = key.view(-1, key_dim)
+        key = key.view(-1, kdim)
         energy = torch.tanh(self.key + self.w_query(query))
         energy = self.v(energy).squeeze(-1)  # `[B, kmax]`
         if self.r is not None:
@@ -88,9 +87,9 @@ class Energy(nn.Module):
 
 class MoChA(nn.Module):
     def __init__(self,
-                 key_dim,
-                 query_dim,
-                 attn_dim,
+                 kdim,
+                 qdim,
+                 adim,
                  chunk_size,
                  adaptive=False,
                  conv1d=False,
@@ -108,9 +107,9 @@ class MoChA(nn.Module):
                  http://arxiv.org/abs/1704.00784
 
         Args:
-            key_dim (int): dimension of key
-            query_dim (int): dimension of query
-            attn_dim: (int) dimension of the attention layer
+            kdim (int): dimension of key
+            qdim (int): dimension of query
+            adim: (int) dimension of the attention layer
             chunk_size (int): size of chunk
             adaptive (bool): adaptive MoChA
             conv1d (bool): apply 1d convolution for energy calculation
@@ -131,18 +130,18 @@ class MoChA(nn.Module):
         self.beta_temperature = beta_temperature
 
         # Monotonic energy
-        self.monotonic_energy = Energy(key_dim, query_dim, attn_dim, init_r,
+        self.monotonic_energy = Energy(kdim, qdim, adim, init_r,
                                        conv1d=conv1d)
 
         # Chunk energy
         self.chunk_energy = None
         if chunk_size > 1:
-            self.chunk_energy = Energy(key_dim, query_dim, attn_dim)
+            self.chunk_energy = Energy(kdim, qdim, adim)
 
         self.chunk_len_energy = None
         if adaptive:
             assert chunk_size > 1
-            self.chunk_len_energy = Energy(key_dim, query_dim, attn_dim)
+            self.chunk_len_energy = Energy(kdim, qdim, adim)
 
     def reset(self):
         self.monotonic_energy.reset()
@@ -156,9 +155,9 @@ class MoChA(nn.Module):
         """Soft monotonic attention during training.
 
         Args:
-            key (FloatTensor): `[B, kmax, key_dim]`
+            key (FloatTensor): `[B, kmax, kdim]`
             value (FloatTensor): `[B, kmax, value_dim]`
-            query (FloatTensor): `[B, 1, query_dim]`
+            query (FloatTensor): `[B, 1, qdim]`
             mask (ByteTensor): `[B, qmax, kmax]`
             aw_prev (FloatTensor): `[B, kmax, 1]`
             mode (str): recursive/parallel/hard

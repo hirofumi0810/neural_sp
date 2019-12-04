@@ -13,9 +13,6 @@ from __future__ import print_function
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from neural_sp.models.modules.linear import Linear
 
 NEG_INF = float(np.finfo(np.float32).min)
 
@@ -24,10 +21,10 @@ class AttentionMechanism(nn.Module):
     """Single-head attention layer.
 
     Args:
-        key_dim (int): dimension of key
-        query_dim (int): dimension of query
-        attn_type (str): type of attention mechanisms
-        attn_dim: (int) dimension of the attention layer
+        kdim (int): dimension of key
+        qdim (int): dimension of query
+        atype (str): type of attention mechanisms
+        adim: (int) dimension of the attention layer
         sharpening_factor (float): sharpening factor in the softmax layer
             for attention weights
         sigmoid_smoothing (bool): replace the softmax layer for attention weights
@@ -41,10 +38,10 @@ class AttentionMechanism(nn.Module):
     """
 
     def __init__(self,
-                 key_dim,
-                 query_dim,
-                 attn_type,
-                 attn_dim,
+                 kdim,
+                 qdim,
+                 adim,
+                 atype,
                  sharpening_factor=1,
                  sigmoid_smoothing=False,
                  conv_out_channels=10,
@@ -53,9 +50,9 @@ class AttentionMechanism(nn.Module):
 
         super(AttentionMechanism, self).__init__()
 
-        assert conv_kernel_size % 2 == 1
-        self.attn_type = attn_type
-        self.attn_dim = attn_dim
+        assert conv_kernel_size % 2 == 1, "Kernel size should be odd for 'same' conv."
+        self.atype = atype
+        self.adim = adim
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
         self.n_heads = 1
@@ -65,44 +62,44 @@ class AttentionMechanism(nn.Module):
         # attention dropout applied after the softmax layer
         self.attn_dropout = nn.Dropout(p=dropout)
 
-        if attn_type == 'no':
+        if atype == 'no':
             raise NotImplementedError
             # NOTE: sequence-to-sequence without attetnion (use the last state as a context vector)
 
-        elif attn_type == 'add':
-            self.w_key = Linear(key_dim, attn_dim, bias=True)
-            self.w_query = Linear(query_dim, attn_dim, bias=False)
-            self.v = Linear(attn_dim, 1, bias=False)
+        elif atype == 'add':
+            self.w_key = nn.Linear(kdim, adim, bias=True)
+            self.w_query = nn.Linear(qdim, adim, bias=False)
+            self.v = nn.Linear(adim, 1, bias=False)
 
-        elif attn_type == 'location':
-            self.w_key = Linear(key_dim, attn_dim, bias=True)
-            self.w_query = Linear(query_dim, attn_dim, bias=False)
-            self.w_conv = Linear(conv_out_channels, attn_dim, bias=False)
+        elif atype == 'location':
+            self.w_key = nn.Linear(kdim, adim, bias=True)
+            self.w_query = nn.Linear(qdim, adim, bias=False)
+            self.w_conv = nn.Linear(conv_out_channels, adim, bias=False)
             self.conv = nn.Conv2d(in_channels=1,
                                   out_channels=conv_out_channels,
                                   kernel_size=(1, conv_kernel_size),
                                   stride=1,
-                                  padding=(0, conv_kernel_size // 2),
+                                  padding=(0, (conv_kernel_size - 1) // 2),
                                   bias=False)
-            self.v = Linear(attn_dim, 1, bias=False)
+            self.v = nn.Linear(adim, 1, bias=False)
 
-        elif attn_type == 'dot':
-            self.w_key = Linear(key_dim, attn_dim, bias=False)
-            self.w_query = Linear(query_dim, attn_dim, bias=False)
+        elif atype == 'dot':
+            self.w_key = nn.Linear(kdim, adim, bias=False)
+            self.w_query = nn.Linear(qdim, adim, bias=False)
 
-        elif attn_type == 'luong_dot':
+        elif atype == 'luong_dot':
             pass
             # NOTE: no additional parameters
 
-        elif attn_type == 'luong_general':
-            self.w_key = Linear(key_dim, query_dim, bias=False)
+        elif atype == 'luong_general':
+            self.w_key = nn.Linear(kdim, qdim, bias=False)
 
-        elif attn_type == 'luong_concat':
-            self.w = Linear(key_dim + query_dim, attn_dim, bias=False)
-            self.v = Linear(attn_dim, 1, bias=False)
+        elif atype == 'luong_concat':
+            self.w = nn.Linear(kdim + qdim, adim, bias=False)
+            self.v = nn.Linear(adim, 1, bias=False)
 
         else:
-            raise ValueError(attn_type)
+            raise ValueError(atype)
 
     def reset(self):
         self.key = None
@@ -112,10 +109,10 @@ class AttentionMechanism(nn.Module):
         """Forward computation.
 
         Args:
-            key (FloatTensor): `[B, kmax, key_dim]`
+            key (FloatTensor): `[B, kmax, kdim]`
             klens (IntTensor): `[B]`
             value (FloatTensor): `[B, kmax, value_dim]`
-            query (FloatTensor): `[B, 1, query_dim]`
+            query (FloatTensor): `[B, 1, qdim]`
             mask (ByteTensor): `[B, qmax, kmax]`
             aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
             mode: dummy
@@ -131,38 +128,38 @@ class AttentionMechanism(nn.Module):
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None:
-            if self.attn_type in ['add', 'location', 'dot', 'luong_general']:
+            if self.atype in ['add', 'location', 'dot', 'luong_general']:
                 self.key = self.w_key(key)
             else:
                 self.key = key
             self.mask = mask
 
-        if self.attn_type == 'no':
+        if self.atype == 'no':
             raise NotImplementedError
             # last_state = [key[b, klens[b] - 1] for b in range(bs)]
             # cv = torch.stack(last_state, dim=0).unsqueeze(1)
             # return cv, None
 
-        elif self.attn_type == 'add':
+        elif self.atype == 'add':
             query = query.repeat([1, kmax, 1])
             e = self.v(torch.tanh(self.key + self.w_query(query)))
 
-        elif self.attn_type == 'location':
+        elif self.atype == 'location':
             query = query.repeat([1, kmax, 1])
             conv_feat = self.conv(aw_prev.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, ch, kmax]`
             conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, kmax, ch]`
             e = self.v(torch.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat)))
 
-        elif self.attn_type == 'dot':
+        elif self.atype == 'dot':
             e = torch.bmm(self.key, self.w_query(query).transpose(-2, -1))
 
-        elif self.attn_type == 'luong_dot':
+        elif self.atype == 'luong_dot':
             e = torch.bmm(self.key, query.transpose(-2, -1))
 
-        elif self.attn_type == 'luong_general':
+        elif self.atype == 'luong_general':
             e = torch.bmm(self.key, query.transpose(-2, -1))
 
-        elif self.attn_type == 'luong_concat':
+        elif self.atype == 'luong_concat':
             query = query.repeat([1, kmax, 1])
             e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1))))
 
@@ -173,7 +170,7 @@ class AttentionMechanism(nn.Module):
         if self.sigmoid_smoothing:
             aw = torch.sigmoid(e) / torch.sigmoid(e).sum(1).unsqueeze(1)
         else:
-            aw = F.softmax(e * self.sharpening_factor, dim=-1)
+            aw = torch.softmax(e * self.sharpening_factor, dim=-1)
         aw = self.attn_dropout(aw)
         cv = torch.bmm(aw.unsqueeze(1), value)
 

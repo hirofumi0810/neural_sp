@@ -23,8 +23,6 @@ import torch.nn.functional as F
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import distillation
 from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.modules.singlehead_attention import AttentionMechanism
@@ -89,7 +87,6 @@ class RNNDecoder(DecoderBase):
         mocha_chunk_size (int): chunk size for MoChA
         mocha_adaptive (bool): adaptive MoChA
         mocha_1dconv (bool): 1dconv for MoChA
-        mocha_sharpening_factor (bool): beta temperature for MoChA
         replace_sos (bool):
 
     """
@@ -107,19 +104,19 @@ class RNNDecoder(DecoderBase):
                  vocab,
                  tie_embedding=False,
                  attn_dim=0,
-                 attn_sharpening_factor=0.0,
+                 attn_sharpening_factor=0.,
                  attn_sigmoid_smoothing=False,
                  attn_conv_out_channels=0,
                  attn_conv_kernel_size=0,
                  attn_n_heads=0,
-                 dropout=0.0,
-                 dropout_emb=0.0,
-                 dropout_att=0.0,
-                 lsm_prob=0.0,
-                 ss_prob=0.0,
+                 dropout=0,
+                 dropout_emb=0.,
+                 dropout_att=0.,
+                 lsm_prob=0.,
+                 ss_prob=0.,
                  ss_type='constant',
-                 ctc_weight=0.0,
-                 ctc_lsm_prob=0.0,
+                 ctc_weight=0.,
+                 ctc_lsm_prob=0.,
                  ctc_fc_list=[],
                  backward=False,
                  lm_fusion=None,
@@ -132,9 +129,8 @@ class RNNDecoder(DecoderBase):
                  mocha_chunk_size=1,
                  mocha_adaptive=False,
                  mocha_1dconv=False,
-                 mocha_sharpening_factor=1.0,
                  replace_sos=False,
-                 soft_label_weight=0.0):
+                 soft_label_weight=0.):
 
         super(RNNDecoder, self).__init__()
         logger = logging.getLogger('training')
@@ -187,30 +183,23 @@ class RNNDecoder(DecoderBase):
 
         if ctc_weight < global_weight:
             # Attention layer
+            qdim = n_units if n_projs == 0 else n_projs
             if attn_type == 'mocha':
                 assert attn_n_heads == 1
-                self.score = MoChA(key_dim=self.enc_n_units,
-                                   query_dim=n_units if n_projs == 0 else n_projs,
-                                   attn_dim=attn_dim,
+                self.score = MoChA(self.enc_n_units, qdim, attn_dim,
                                    chunk_size=mocha_chunk_size,
                                    adaptive=mocha_adaptive,
                                    conv1d=mocha_1dconv,
-                                   beta_temperature=mocha_sharpening_factor)
+                                   beta_temperature=attn_sharpening_factor)
             else:
                 if attn_n_heads > 1:
                     self.score = MultiheadAttentionMechanism(
-                        key_dim=self.enc_n_units,
-                        query_dim=n_units if n_projs == 0 else n_projs,
-                        attn_type=attn_type,
-                        attn_dim=attn_dim,
+                        self.enc_n_units, qdim, attn_dim, attn_type,
                         n_heads=attn_n_heads,
                         dropout=dropout_att)
                 else:
                     self.score = AttentionMechanism(
-                        key_dim=self.enc_n_units,
-                        query_dim=n_units if n_projs == 0 else n_projs,
-                        attn_type=attn_type,
-                        attn_dim=attn_dim,
+                        self.enc_n_units, qdim, attn_dim, attn_type,
                         sharpening_factor=attn_sharpening_factor,
                         sigmoid_smoothing=attn_sigmoid_smoothing,
                         conv_out_channels=attn_conv_out_channels,
@@ -220,8 +209,8 @@ class RNNDecoder(DecoderBase):
             # Decoder
             self.rnn = nn.ModuleList()
             if self.n_projs > 0:
-                self.proj = nn.ModuleList([Linear(n_units, n_projs) for _ in range(n_layers)])
-            self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
+                self.proj = nn.ModuleList([nn.Linear(n_units, n_projs) for _ in range(n_layers)])
+            self.dropout_dec = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             dec_odim = enc_n_units + emb_dim
             for l in range(n_layers):
@@ -232,16 +221,16 @@ class RNNDecoder(DecoderBase):
 
             # LM fusion
             if lm_fusion is not None:
-                self.linear_dec_feat = Linear(dec_odim + enc_n_units, n_units)
+                self.linear_dec_feat = nn.Linear(dec_odim + enc_n_units, n_units)
                 if lm_fusion_type in ['cold', 'deep']:
-                    self.linear_lm_feat = Linear(lm_fusion.n_units, n_units)
-                    self.linear_lm_gate = Linear(n_units * 2, n_units)
+                    self.linear_lm_feat = nn.Linear(lm_fusion.n_units, n_units)
+                    self.linear_lm_gate = nn.Linear(n_units * 2, n_units)
                 elif lm_fusion_type == 'cold_prob':
-                    self.linear_lm_feat = Linear(lm_fusion.vocab, n_units)
-                    self.linear_lm_gate = Linear(n_units * 2, n_units)
+                    self.linear_lm_feat = nn.Linear(lm_fusion.vocab, n_units)
+                    self.linear_lm_gate = nn.Linear(n_units * 2, n_units)
                 else:
                     raise ValueError(lm_fusion_type)
-                self.output_bn = Linear(n_units * 2, bottleneck_dim)
+                self.output_bn = nn.Linear(n_units * 2, bottleneck_dim)
 
                 # fix LM parameters
                 for p in lm_fusion.parameters():
@@ -249,13 +238,12 @@ class RNNDecoder(DecoderBase):
             elif discourse_aware == 'hierarchical':
                 raise NotImplementedError
             else:
-                self.output_bn = Linear(dec_odim + enc_n_units, bottleneck_dim)
+                self.output_bn = nn.Linear(dec_odim + enc_n_units, bottleneck_dim)
 
-            self.embed = Embedding(vocab, emb_dim,
-                                   dropout=dropout_emb,
-                                   ignore_index=self.pad)
+            self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
+            self.dropout_emb = nn.Dropout(p=dropout_emb)
 
-            self.output = Linear(bottleneck_dim, vocab)
+            self.output = nn.Linear(bottleneck_dim, vocab)
             # NOTE: include bias even when tying weights
 
             # Optionally tie weights as in:
@@ -267,7 +255,7 @@ class RNNDecoder(DecoderBase):
             if tie_embedding:
                 if emb_dim != bottleneck_dim:
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
-                self.output.fc.weight = self.embed.embed.weight
+                self.output.fc.weight = self.embed.weight
 
         # Initialize parameters
         self.reset_parameters(param_init)
@@ -292,9 +280,9 @@ class RNNDecoder(DecoderBase):
                     logger.info('Overwrite %s' % n)
 
             # embedding
-            assert self.embed.embed.weight.size() == lm_init.embed.embed.weight.size()
-            self.embed.embed.weight.data = lm_init.embed.embed.weight.data
-            logger.info('Overwrite %s' % 'embed.embed.weight')
+            assert self.embed.weight.size() == lm_init.embed.weight.size()
+            self.embed.weight.data = lm_init.embed.weight.data
+            logger.info('Overwrite %s' % 'embed.weight')
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
@@ -313,10 +301,10 @@ class RNNDecoder(DecoderBase):
                 if 'linear_lm_gate.fc.bias' in n:
                     # Initialize bias in gating with -1 for cold fusion
                     nn.init.constant_(p, val=-1)  # bias
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', -1))
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', -1.))
                 else:
                     nn.init.constant_(p, val=0)  # bias
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() in [2, 3, 4]:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
@@ -343,8 +331,7 @@ class RNNDecoder(DecoderBase):
         """
         observation = {'loss': None, 'loss_att': None, 'loss_ctc': None,
                        'acc_att': None, 'ppl_att': None}
-        w = next(self.parameters())
-        loss = w.new_zeros((1,))
+        loss = eouts.new_zeros((1,))
 
         # if self.lm is not None:
         #     self.lm.eval()
@@ -434,7 +421,7 @@ class RNNDecoder(DecoderBase):
         lmout, lmstate = None, None
 
         # Pre-computation of embedding
-        ys_emb = self.embed(ys_in_pad)
+        ys_emb = self.dropout_emb(self.embed(ys_in_pad))
 
         # Create the attention mask
         mask = make_pad_mask(elens, self.device_id)
@@ -449,7 +436,8 @@ class RNNDecoder(DecoderBase):
                 lmout, lmstate = self.lm.decode(y_lm, lmstate)
 
             # Recurrency -> Score -> Generate
-            y_emb = self.embed(self.output(logits[-1]).detach().argmax(-1)) if is_sample else ys_emb[:, t:t + 1]
+            y_emb = self.dropout_emb(self.embed(
+                self.output(logits[-1]).detach().argmax(-1))) if is_sample else ys_emb[:, t:t + 1]
             dstates, cv, aw, attn_v = self.decode_step(
                 eouts, dstates, cv, y_emb, mask, aw, lmout, mode='parallel')
             # if not self.training:
@@ -559,7 +547,7 @@ class RNNDecoder(DecoderBase):
                 hxs[l], cxs[l] = self.rnn[l](dout, (hxs[l], cxs[l]))
             elif self.rnn_type == 'gru':
                 hxs[l] = self.rnn[l](dout, hxs[l])
-            dout = self.dropout[l](hxs[l])
+            dout = self.dropout_dec[l](hxs[l])
             if self.n_projs > 0:
                 dout = torch.tanh(self.proj[l](dout))
 
@@ -661,7 +649,7 @@ class RNNDecoder(DecoderBase):
         self.score.reset()
         aw = None
         lmout, lmstate = None, None
-        y = eouts.new_zeros(bs, 1).fill_(refs_id[0][0] if self.replace_sos else self.eos)
+        y = eouts.new_zeros(bs, 1).fill_(refs_id[0][0] if self.replace_sos else self.eos).long()
 
         # Create the attention mask
         mask = make_pad_mask(elens, self.device_id)
@@ -680,7 +668,7 @@ class RNNDecoder(DecoderBase):
                 lmout, lmstate = self.lm.decode(self.lm(y), lmstate)
 
             # Recurrency -> Score -> Generate
-            y_emb = self.embed(y)
+            y_emb = self.dropout_emb(self.embed(y))
             dstates, cv, aw, attn_v = self.decode_step(
                 eouts, dstates, cv, y_emb, mask, aw, lmout)
             aws_batch += [aw.transpose(2, 1).unsqueeze(2)]  # `[B, n_heads, 1, T]`
@@ -703,7 +691,7 @@ class RNNDecoder(DecoderBase):
                 break
 
             if oracle:
-                y = eouts.new_zeros(bs, 1)
+                y = eouts.new_zeros(bs, 1).long()
                 for b in range(bs):
                     y[b] = refs_id[b][t]
 
@@ -835,11 +823,11 @@ class RNNDecoder(DecoderBase):
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
-                     'score': 0.0,
-                     'hist_score': [0.0],
-                     'score_attn': 0.0,
-                     'score_ctc': 0.0,
-                     'score_lm': 0.0,
+                     'score': 0.,
+                     'hist_score': [0.],
+                     'score_attn': 0.,
+                     'score_ctc': 0.,
+                     'score_lm': 0.,
                      'dstates': dstates,
                      'cv': cv,
                      'aws': [None],
@@ -848,7 +836,7 @@ class RNNDecoder(DecoderBase):
                      'ensmbl_cv': ensmbl_cv,
                      'ensmbl_aws':[[None]] * (n_models - 1),
                      'ctc_state': ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
-                     'ctc_score': 0.0,
+                     'ctc_score': 0.,
                      }]
             if oracle:
                 assert refs_id is not None
@@ -875,20 +863,19 @@ class RNNDecoder(DecoderBase):
                         lmout, lmstate, lm_log_probs = None, None, None
 
                     # for the main model
-                    y_emb = self.embed(eouts.new_zeros(1, 1).fill_(prev_idx))
+                    y_emb = self.dropout_emb(self.embed(eouts.new_zeros(1, 1).fill_(prev_idx).long()))
                     dstates, cv, aw, attn_v = self.decode_step(
                         eouts[b:b + 1, :elens[b]],
                         beam['dstates'], beam['cv'], y_emb,
                         None,  # mask
                         beam['aws'][-1], lmout)
-                    probs = F.softmax(self.output(attn_v).squeeze(1), dim=1)
+                    probs = torch.softmax(self.output(attn_v).squeeze(1), dim=1)
 
                     # for the ensemble
                     ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
-                    ensmbl_log_probs = 0.
                     if n_models > 1:
                         for i_e, dec in enumerate(ensmbl_decs):
-                            y_emb = dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx))
+                            y_emb = dec.dropout_emb(dec.embed(eouts.new_zeros(1, 1).fill_(prev_idx).long()))
                             ensmbl_dstate, cv_e, aw_e, attn_v_e = dec.decode_step(
                                 ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
                                 beam['ensmbl_dstate'][i_e], beam['ensmbl_cv'], y_emb,
@@ -898,14 +885,12 @@ class RNNDecoder(DecoderBase):
                             ensmbl_dstate += [ensmbl_dstate]
                             ensmbl_cv += [cv_e]
                             ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi): unsqueeze?
-                            ensmbl_log_probs += F.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
-
-                    local_scores_attn = torch.log(probs)
+                            probs += torch.softmax(dec.output(attn_v_e).squeeze(1), dim=1)
+                            # NOTE: sum in the probability scale (not log-scale)
 
                     # Ensemble in log-scale
-                    if n_models > 1:
-                        local_scores_attn += ensmbl_log_probs
-                        local_scores_attn /= n_models
+                    local_scores_attn = torch.log(probs)
+                    local_scores_attn /= n_models
 
                     # Attention scores
                     scores_attn = beam['score_attn'] + local_scores_attn
@@ -930,7 +915,7 @@ class RNNDecoder(DecoderBase):
                             total_scores_topk += (len(beam['hyp'][1:]) + 1) * lp_weight
 
                     # Add coverage penalty
-                    cp = 0.0
+                    cp = 0.
                     aw_mat = None
                     if cp_weight > 0:
                         aw_mat = torch.stack(beam['aws'][1:] + [aw], dim=-1)  # `[B, T, L, n_heads]`
@@ -1027,7 +1012,7 @@ class RNNDecoder(DecoderBase):
                 for i in range(len(end_hyps)):
                     # Initialize
                     lmstate_rev = None
-                    score_lm_rev = 0.0
+                    score_lm_rev = 0.
                     lp = 1.0
 
                     # Append <eos>
@@ -1040,7 +1025,7 @@ class RNNDecoder(DecoderBase):
                     for t in range(len(end_hyps[i]['hyp'][1:])):
                         lmout_rev, lmstate_rev = lm_rev.decode(
                             eouts.new_zeros(1, 1).fill_(end_hyps[i]['hyp'][::-1][t]), lmstate_rev)
-                        lm_log_probs = F.log_softmax(lm_rev.generate(lmout_rev).squeeze(1), dim=-1)
+                        lm_log_probs = torch.log_softmax(lm_rev.generate(lmout_rev).squeeze(1), dim=-1)
                         score_lm_rev += lm_log_probs[0, -1, end_hyps[i]['hyp'][::-1][t + 1]]
                     if gnmt_decoding:
                         score_lm_rev /= lp  # normalize
