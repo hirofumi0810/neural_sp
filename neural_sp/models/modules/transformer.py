@@ -13,9 +13,7 @@ from __future__ import print_function
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 
 
@@ -76,12 +74,12 @@ class PositionwiseFeedForward(nn.Module):
     def __init__(self, d_model, d_ff, dropout):
         super(PositionwiseFeedForward, self).__init__()
 
-        self.w_1 = Linear(d_model, d_ff)
-        self.w_2 = Linear(d_ff, d_model)
+        self.w_1 = nn.Linear(d_model, d_ff, bias=True)
+        self.w_2 = nn.Linear(d_ff, d_model, bias=True)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs):
-        return self.w_2(self.dropout(F.relu(self.w_1(xs))))
+        return self.w_2(self.dropout(torch.relu(self.w_1(xs))))
 
 
 class TransformerEncoderBlock(nn.Module):
@@ -90,7 +88,7 @@ class TransformerEncoderBlock(nn.Module):
     Args:
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimention of PositionwiseFeedForward
-        attn_type (str):
+        atype (str):
         n_heads (int): number of heads for multi-head attention
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
@@ -101,7 +99,7 @@ class TransformerEncoderBlock(nn.Module):
     def __init__(self,
                  d_model,
                  d_ff,
-                 attn_type,
+                 atype,
                  n_heads,
                  dropout,
                  dropout_att,
@@ -112,10 +110,10 @@ class TransformerEncoderBlock(nn.Module):
 
         # self-attention
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
-                                                     query_dim=d_model,
-                                                     attn_type=attn_type,
-                                                     attn_dim=d_model,
+        self.self_attn = MultiheadAttentionMechanism(kdim=d_model,
+                                                     qdim=d_model,
+                                                     adim=d_model,
+                                                     atype=atype,
                                                      n_heads=n_heads,
                                                      dropout=dropout_att)
         self.dropout1 = nn.Dropout(dropout)
@@ -158,11 +156,11 @@ class TransformerDecoderBlock(nn.Module):
         Args:
             d_model (int): dimension of MultiheadAttentionMechanism
             d_ff (int): dimention of PositionwiseFeedForward
-            attn_type (str):
+            atype (str):
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
-            attn_type (str): type of self-attention, scaled_dot or average
+            atype (str): type of self-attention, scaled_dot or average
             layer_norm_eps (float):
             src_attention (bool): if False, ignore source-target attention
 
@@ -171,7 +169,7 @@ class TransformerDecoderBlock(nn.Module):
     def __init__(self,
                  d_model,
                  d_ff,
-                 attn_type,
+                 atype,
                  n_heads,
                  dropout,
                  dropout_att,
@@ -179,19 +177,19 @@ class TransformerDecoderBlock(nn.Module):
                  src_attention=True):
         super(TransformerDecoderBlock, self).__init__()
 
-        self.attn_type = attn_type
+        self.atype = atype
         self.n_heads = n_heads
         self.src_attention = src_attention
 
         # self-attention
-        if attn_type == "average":
+        if atype == "average":
             raise NotImplementedError
         else:
             self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-            self.self_attn = MultiheadAttentionMechanism(key_dim=d_model,
-                                                         query_dim=d_model,
-                                                         attn_type=attn_type,
-                                                         attn_dim=d_model,
+            self.self_attn = MultiheadAttentionMechanism(kdim=d_model,
+                                                         qdim=d_model,
+                                                         adim=d_model,
+                                                         atype=atype,
                                                          n_heads=n_heads,
                                                          dropout=dropout_att)
             self.dropout1 = nn.Dropout(dropout)
@@ -199,10 +197,10 @@ class TransformerDecoderBlock(nn.Module):
         # attention for encoder stacks
         if src_attention:
             self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-            self.src_attn = MultiheadAttentionMechanism(key_dim=d_model,
-                                                        query_dim=d_model,
-                                                        attn_type=attn_type,
-                                                        attn_dim=d_model,
+            self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
+                                                        qdim=d_model,
+                                                        adim=d_model,
+                                                        atype=atype,
                                                         n_heads=n_heads,
                                                         dropout=dropout_att)
             self.dropout2 = nn.Dropout(dropout)
@@ -227,7 +225,7 @@ class TransformerDecoderBlock(nn.Module):
 
         """
         # self-attention
-        if self.attn_type == "average":
+        if self.atype == "average":
             raise NotImplementedError
         else:
             self.self_attn.reset()

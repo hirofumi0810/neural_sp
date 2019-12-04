@@ -21,8 +21,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.criterion import cross_entropy_lsm
-from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.seq2seq.decoders.ctc import CTC
@@ -56,7 +54,7 @@ class TransformerDecoder(DecoderBase):
         attn_n_heads (int): number of attention heads
         d_model (int): size of the model
         d_ff (int): size of the inner FF layer
-        n_layers (int): number of decoder layers
+        n_layers (int): number of self-attention layers
         vocab (int): number of nodes in softmax layer
         tie_embedding (bool): tie parameters of the embedding and output layers
         pe_type (str): type of positional encoding
@@ -86,12 +84,12 @@ class TransformerDecoder(DecoderBase):
                  tie_embedding=False,
                  pe_type='add',
                  layer_norm_eps=1e-12,
-                 dropout=0.0,
-                 dropout_emb=0.0,
-                 dropout_att=0.0,
-                 lsm_prob=0.0,
-                 ctc_weight=0.0,
-                 ctc_lsm_prob=0.0,
+                 dropout=0.,
+                 dropout_emb=0.,
+                 dropout_att=0.,
+                 lsm_prob=0.,
+                 ctc_weight=0.,
+                 ctc_lsm_prob=0.,
                  ctc_fc_list=[],
                  backward=False,
                  global_weight=1.0,
@@ -127,16 +125,16 @@ class TransformerDecoder(DecoderBase):
                            param_init=0.1)
 
         if ctc_weight < global_weight:
-            self.embed = Embedding(vocab, d_model, ignore_index=self.pad)
+            self.embed = nn.Embedding(vocab, d_model, padding_idx=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
             self.layers = nn.ModuleList(
                 [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_n_heads,
                                          dropout, dropout_att, layer_norm_eps)
                  for _ in range(n_layers)])
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
-            self.output = Linear(d_model, vocab)
+            self.output = nn.Linear(d_model, vocab)
             if tie_embedding:
-                self.output.fc.weight = self.embed.embed.weight
+                self.output.fc.weight = self.embed.weight
 
         # Initialize parameters
         self.reset_parameters()
@@ -147,11 +145,11 @@ class TransformerDecoder(DecoderBase):
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, val=0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() == 2:
                 if 'embed' in n:
-                    nn.init.normal_(p, mean=0, std=self.d_model**-0.5)
+                    nn.init.normal_(p, mean=0., std=self.d_model**-0.5)
                     logger.info('Initialize %s with %s / %.3f' % (n, 'normal', self.d_model**-0.5))
                 else:
                     nn.init.xavier_uniform_(p, gain=1.0)
@@ -159,7 +157,7 @@ class TransformerDecoder(DecoderBase):
             else:
                 raise ValueError
 
-    def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_dist=None):
+    def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_logits=None):
         """Forward computation.
 
         Args:
@@ -168,6 +166,7 @@ class TransformerDecoder(DecoderBase):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             task (str): all/ys/ys_sub*
             ys_hist (list): dummy (not used)
+            teacher_logits (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
             observation (dict):
@@ -178,7 +177,7 @@ class TransformerDecoder(DecoderBase):
         loss = eouts.new_zeros((1,))
 
         # CTC loss
-        if self.ctc_weight > 0 and (not self.mtl_per_batch or (self.mtl_per_batch and 'ctc' in task)):
+        if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
             loss_ctc = self.ctc(eouts, elens, ys)
             observation['loss_ctc'] = loss_ctc.item()
             if self.mtl_per_batch:
@@ -187,7 +186,7 @@ class TransformerDecoder(DecoderBase):
                 loss += loss_ctc * self.ctc_weight
 
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and 'ctc' not in task:
+        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task)):
             loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
@@ -225,14 +224,17 @@ class TransformerDecoder(DecoderBase):
             ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
         return ys_in_pad, ys_out_pad, ylens
 
-    def forward_att(self, eouts, elens, ys, return_logits=False):
-        """Compute XE loss for the sequence-to-sequence model.
+    def forward_att(self, eouts, elens, ys, ys_hist=[],
+                    return_logits=False, teacher_logits=None):
+        """Compute XE loss for the Transformer model.
 
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            ys_hist (list):
             return_logits (bool): return logits for knowledge distillation
+            teacher_logits (FloatTensor): `[B, L, vocab]`
         Returns:
             loss (FloatTensor): `[1]`
             acc (float): accuracy for token prediction
@@ -282,7 +284,8 @@ class TransformerDecoder(DecoderBase):
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)
-        ppl = min(np.exp(loss.item()), np.inf)
+        # ppl = min(np.exp(loss.item()), np.inf)
+        ppl = np.exp(loss.item())
 
         # scale loss for CTC
         loss *= ylens.float().mean()
