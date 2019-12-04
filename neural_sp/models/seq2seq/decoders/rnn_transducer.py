@@ -16,11 +16,8 @@ import numpy as np
 import random
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
-from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import np2tensor
@@ -76,11 +73,11 @@ class RNNTransducer(DecoderBase):
                  emb_dim,
                  vocab,
                  tie_embedding=False,
-                 dropout=0.0,
-                 dropout_emb=0.0,
-                 lsm_prob=0.0,
-                 ctc_weight=0.0,
-                 ctc_lsm_prob=0.0,
+                 dropout=0.,
+                 dropout_emb=0.,
+                 lsm_prob=0.,
+                 ctc_weight=0.,
+                 ctc_lsm_prob=0.,
                  ctc_fc_list=[],
                  lm_init=None,
                  global_weight=1.0,
@@ -134,7 +131,7 @@ class RNNTransducer(DecoderBase):
             self.rnn = nn.ModuleList()
             self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
             if n_projs > 0:
-                self.proj = nn.ModuleList([Linear(n_units, n_projs) for _ in range(n_layers)])
+                self.proj = nn.ModuleList([nn.Linear(n_units, n_projs) for _ in range(n_layers)])
             dec_idim = emb_dim
             for l in range(n_layers):
                 self.rnn += [rnn(dec_idim, n_units, 1,
@@ -144,14 +141,13 @@ class RNNTransducer(DecoderBase):
                                  bidirectional=False)]
                 dec_idim = n_projs if n_projs > 0 else n_units
 
-            self.embed = Embedding(vocab, emb_dim,
-                                   dropout=dropout_emb,
-                                   ignore_index=self.pad)
+            self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
+            self.dropout_emb = nn.Dropout(p=dropout_emb)
 
             # Joint network
-            self.w_enc = Linear(enc_n_units, bottleneck_dim, bias=True)
-            self.w_dec = Linear(dec_idim, bottleneck_dim, bias=False)
-            self.output = Linear(bottleneck_dim, vocab)
+            self.w_enc = nn.Linear(enc_n_units, bottleneck_dim, bias=True)
+            self.w_dec = nn.Linear(dec_idim, bottleneck_dim, bias=False)
+            self.output = nn.Linear(bottleneck_dim, vocab)
 
         # Initialize parameters
         self.reset_parameters(param_init)
@@ -250,13 +246,14 @@ class RNNTransducer(DecoderBase):
         ys_out_pad = pad_list(_ys, 0).int()  # int for warprnnt_loss
 
         # Update prediction network
-        dout, _ = self.recurrency(self.embed(ys_in_pad), None)
+        ys_emb = self.dropout_emb(self.embed(ys_in_pad))
+        dout, _ = self.recurrency(ys_emb, None)
 
         # Compute output distribution
         logits = self.joint(eouts, dout)
 
         # Compute Transducer loss
-        log_probs = F.log_softmax(logits, dim=-1)
+        log_probs = torch.log_softmax(logits, dim=-1)
         if self.device_id >= 0:
             ys_out_pad = ys_out_pad.cuda(self.device_id)
             elens = elens.cuda(self.device_id)
@@ -384,8 +381,9 @@ class RNNTransducer(DecoderBase):
         for b in range(bs):
             hyp_b = []
             # Initialization
-            y = eouts.new_zeros(bs, 1).fill_(self.eos)
-            dout, dstate = self.recurrency(self.embed(y), None)
+            y = eouts.new_zeros(bs, 1).fill_(self.eos).long()
+            y_emb = self.dropout_emb(self.embed(y))
+            dout, dstate = self.recurrency(y_emb, None)
 
             for t in range(elens[b]):
                 # Pick up 1-best per frame
@@ -403,8 +401,9 @@ class RNNTransducer(DecoderBase):
 
                     hyp_b += [idx]
                     if oracle:
-                        y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(hyp_b) - 1])
-                    dout, dstate = self.recurrency(self.embed(y), dstate)
+                        y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(hyp_b) - 1]).long()
+                    y_emb = self.dropout_emb(self.embed(y))
+                    dout, dstate = self.recurrency(y_emb, dstate)
 
             hyps += [hyp_b]
 
@@ -471,8 +470,9 @@ class RNNTransducer(DecoderBase):
 
         for b in range(bs):
             # Initialization
-            y = eouts.new_zeros(bs, 1).fill_(self.eos)
-            dout, dstate = self.recurrency(self.embed(y), None)
+            y = eouts.new_zeros(bs, 1).fill_(self.eos).long()
+            y_emb = self.dropout_emb(self.embed(y))
+            dout, dstate = self.recurrency(y_emb, None)
             lmstate = None
 
             if lm_state_carry_over:
@@ -483,9 +483,9 @@ class RNNTransducer(DecoderBase):
             hyps = [{'hyp': [self.eos],
                      'lattice': [],
                      'ref_id': [self.eos],
-                     'score': 0.0,
-                     'score_lm': 0.0,
-                     'score_ctc': 0.0,
+                     'score': 0.,
+                     'score_lm': 0.,
+                     'score_ctc': 0.,
                      'dout': dout,
                      'dstate': dstate,
                      'lmstate': lmstate,
@@ -502,7 +502,7 @@ class RNNTransducer(DecoderBase):
 
                     # Pick up the top-k scores
                     out = self.joint(eouts[b:b + 1, t:t + 1], dout.squeeze(1))
-                    log_probs = F.log_softmax(out.squeeze(2), dim=-1)
+                    log_probs = torch.log_softmax(out.squeeze(2), dim=-1)
                     log_probs_topk, topk_ids = torch.topk(
                         log_probs[0, 0], k=min(beam_width, self.vocab), dim=-1, largest=True, sorted=True)
 
@@ -523,10 +523,11 @@ class RNNTransducer(DecoderBase):
                                 new_dstate = self.state_cache[hyp_str]['dstate']
                             else:
                                 if oracle:
-                                    y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(hyp_id) - 1])
+                                    y = eouts.new_zeros(1, 1).fill_(refs_id[b, len(hyp_id) - 1]).long()
                                 else:
-                                    y = eouts.new_zeros(1, 1).fill_(idx)
-                                dout, new_dstate = self.recurrency(self.embed(y), dstate)
+                                    y = eouts.new_zeros(1, 1).fill_(idx).long()
+                                y_emb = self.dropout_emb(self.embed(y))
+                                dout, new_dstate = self.recurrency(y_emb, dstate)
 
                                 # Update LM states for shallow fusion
                                 if lm_weight > 0 and lm is not None:
