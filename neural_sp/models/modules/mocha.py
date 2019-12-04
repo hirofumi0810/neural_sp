@@ -12,8 +12,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.modules.linear import Linear
-
 NEG_INF = float(np.finfo(np.float32).min)
 
 
@@ -27,8 +25,8 @@ class Energy(nn.Module):
         self.key = None
         self.mask = None
 
-        self.w_key = Linear(kdim, adim)
-        self.w_query = Linear(qdim, adim, bias=False)
+        self.w_key = nn.Linear(kdim, adim)
+        self.w_query = nn.Linear(qdim, adim, bias=False)
         self.v = nn.Linear(adim, 1, bias=False)
         if init_r is not None:
             # for alpha
