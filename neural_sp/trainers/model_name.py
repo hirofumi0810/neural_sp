@@ -85,8 +85,8 @@ def set_asr_model_name(args, subsample_factor):
     dir_name += '_ls' + str(args.lsm_prob)
     if args.warmup_n_steps > 0:
         dir_name += '_warmpup' + str(args.warmup_n_steps)
-    if args.accum_grad_n_tokens > 0:
-        dir_name += '_accum' + str(args.accum_grad_n_tokens)
+    if args.accum_grad_n_steps > 0:
+        dir_name += '_accum' + str(args.accum_grad_n_steps)
 
     # LM integration
     if args.lm_fusion:

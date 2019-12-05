@@ -222,8 +222,8 @@ def parse():
                         help='initial learning rate for learning rate warm up')
     parser.add_argument('--warmup_n_steps', type=int, default=0,
                         help='number of steps to warm up learing rate')
-    parser.add_argument('--accum_grad_n_tokens', type=int, default=0,
-                        help='total number of tokens to accumulate gradients')
+    parser.add_argument('--accum_grad_n_steps', type=int, default=1,
+                        help='total number of steps to accumulate gradients')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
                         help='')
@@ -372,7 +372,7 @@ def parse():
                         help='carry over LM state')
     parser.add_argument('--recog_wordlm', type=strtobool, default=False,
                         help='')
-    parser.add_argument('--recog_n_average', type=int, default=10,
+    parser.add_argument('--recog_n_average', type=int, default=5,
                         help='number of models for the model averaging of Transformer')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
