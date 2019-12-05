@@ -154,9 +154,9 @@ def parse():
     parser.add_argument('--attn_n_heads', type=int, default=4,
                         help='number of heads in the attention layer for Transformer')
     parser.add_argument('--pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
+                        choices=['add', 'concat', 'learned_add', 'learned_concat', 'none'],
                         help='type of positional encoding')
-    parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
+    parser.add_argument('--layer_norm_eps', type=float, default=1e-12,
                         help='epsilon value for layer narmalization')
     # contextualization
     parser.add_argument('--serialize', type=strtobool, default=False, nargs='?',

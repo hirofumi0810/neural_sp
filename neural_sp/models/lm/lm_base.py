@@ -69,11 +69,7 @@ class LMBase(ModelBase):
         ys_in = ys[:, :-1]
         ys_out = ys[:, 1:]
 
-        out, state = self.decode(ys_in, state)
-        if self.adaptive_softmax is None:
-            logits = self.output(out)
-        else:
-            logits = out
+        logits, out, state = self.decode(ys_in, state)
 
         if predict_last:
             ys_out = ys_out[:, -1].unsqueeze(1)
@@ -84,7 +80,7 @@ class LMBase(ModelBase):
             assert ys_out.size(1) == 1
             assert ys_out.size(0) == 1
             if self.adaptive_softmax is None:
-                probs = F.softmax(logits, dim=-1)
+                probs = torch.softmax(logits, dim=-1)
             else:
                 probs = self.adaptive_softmax.log_prob(logits).exp()
             cache_probs = probs.new_zeros(probs.size())
@@ -94,7 +90,7 @@ class LMBase(ModelBase):
             self.cache_keys = self.cache_keys[-n_caches:]  # list of `[B, 1, n_units]`
 
             # Compute inner-product over caches
-            cache_attn = F.softmax(self.cache_theta * torch.matmul(
+            cache_attn = torch.softmax(self.cache_theta * torch.matmul(
                 torch.cat(self.cache_keys, dim=1), out.transpose(2, 1)).squeeze(2), dim=1)
 
             # For visualization
@@ -166,8 +162,8 @@ class LMBase(ModelBase):
             log_probs (FloatTensor): `[B, T, vocab]`
 
         """
-        out, new_state = self.decode(ys, state, is_asr=True)
-        log_probs = F.log_softmax(self.output(out), dim=-1)
+        logits, out, new_state = self.decode(ys, state, is_asr=True)
+        log_probs = torch.log_softmax(logits, dim=-1)
         return out, new_state, log_probs
 
     def plot_attention(self):

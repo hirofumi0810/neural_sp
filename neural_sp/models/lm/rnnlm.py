@@ -16,8 +16,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.lm.lm_base import LMBase
-from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import Linear
 
 
 class RNNLM(LMBase):
@@ -54,32 +52,25 @@ class RNNLM(LMBase):
         self.cache_keys = []
         self.cache_attn = []
 
-        self.embed = Embedding(vocab=self.vocab,
-                               emb_dim=args.emb_dim,
-                               dropout=args.dropout_in,
-                               ignore_index=self.pad)
+        self.embed = nn.Embedding(self.vocab, args.emb_dim, padding_idx=self.pad)
+        self.dropout_embed = nn.Dropout(p=args.dropout_in)
 
         rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
         self.rnn = nn.ModuleList()
         self.dropout = nn.ModuleList([nn.Dropout(p=args.dropout_hidden)
                                       for _ in range(args.n_layers)])
         if args.n_projs > 0:
-            self.proj = nn.ModuleList([Linear(args.n_units, args.n_projs)
+            self.proj = nn.ModuleList([nn.Linear(args.n_units, args.n_projs)
                                        for _ in range(args.n_layers)])
         rnn_idim = args.emb_dim + args.n_units_null_context
         for l in range(args.n_layers):
-            self.rnn += [rnn(rnn_idim, args.n_units, 1,
-                             bias=True,
-                             batch_first=True,
-                             dropout=0,
-                             bidirectional=False)]
+            self.rnn += [rnn(rnn_idim, args.n_units, 1, batch_first=True)]
             rnn_idim = args.n_units
             if args.n_projs > 0:
                 rnn_idim = args.n_projs
 
         if self.use_glu:
-            self.fc_glu = Linear(rnn_idim, rnn_idim * 2,
-                                 dropout=args.dropout_hidden)
+            self.fc_glu = nn.Linear(rnn_idim, rnn_idim * 2)
 
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -90,8 +81,7 @@ class RNNLM(LMBase):
             self.output = None
         else:
             self.adaptive_softmax = None
-            self.output = Linear(rnn_idim, self.vocab,
-                                 dropout=args.dropout_out)
+            self.output = nn.Linear(rnn_idim, self.vocab)
             # NOTE: include bias even when tying weights
 
             # Optionally tie weights as in:
@@ -103,7 +93,7 @@ class RNNLM(LMBase):
             if args.tie_embedding:
                 if args.n_units != args.emb_dim:
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
-                self.output.fc.weight = self.embed.embed.weight
+                self.output.weight = self.embed.weight
 
         # Initialize parameters
         self.reset_parameters(args.param_init)
@@ -140,13 +130,14 @@ class RNNLM(LMBase):
                 cxs (FloatTensor): `[n_layers, B, n_units]`
             is_asr (bool):
         Returns:
-            ys_emb (FloatTensor): `[B, L, n_units]`
+            logits (FloatTensor): `[B, L, vocab]`
+            ys_emb (FloatTensor): `[B, L, n_units]` (for cache)
             new_state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
 
         """
-        ys_emb = self.embed(ys.long())
+        ys_emb = self.dropout_embed(self.embed(ys.long()))
 
         if state is None:
             state = self.zero_state(ys_emb.size(0))
@@ -189,7 +180,12 @@ class RNNLM(LMBase):
             if self.residual:
                 ys_emb = ys_emb + residual
 
-        return ys_emb, new_state
+        if self.adaptive_softmax is None:
+            logits = self.output(ys_emb)
+        else:
+            logits = ys_emb
+
+        return logits, ys_emb, new_state
 
     def zero_state(self, batch_size):
         """Initialize hidden state.

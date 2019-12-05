@@ -18,8 +18,6 @@ import torch
 import torch.nn as nn
 
 from neural_sp.models.lm.lm_base import LMBase
-from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.torch_utils import make_pad_mask
@@ -64,17 +62,14 @@ class TransformerLM(LMBase):
         self.cache_keys = []
         self.cache_attn = []
 
-        self.embed = Embedding(vocab=self.vocab,
-                               emb_dim=self.d_model,
-                               dropout=0,  # NOTE: do not apply dropout here
-                               ignore_index=self.pad)
+        self.embed = nn.Embedding(self.vocab, self.d_model, padding_idx=self.pad)
         self.pos_enc = PositionalEncoding(args.d_model, args.dropout_in, args.pe_type)
 
         self.layers = nn.ModuleList(
             [TransformerDecoderBlock(args.d_model, args.d_ff,
                                      args.attn_type, args.attn_n_heads,
                                      args.dropout_hidden, args.dropout_att, args.layer_norm_eps,
-                                     src_attention=False)
+                                     src_tgt_attention=False)
              for _ in range(self.n_layers)])
         self.norm_out = nn.LayerNorm(args.d_model, eps=args.layer_norm_eps)
 
@@ -87,8 +82,7 @@ class TransformerLM(LMBase):
             self.output = None
         else:
             self.adaptive_softmax = None
-            self.output = Linear(self.d_model, self.vocab,
-                                 dropout=args.dropout_out)
+            self.output = nn.Linear(self.d_model, self.vocab)
 
             # Optionally tie weights as in:
             # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -97,7 +91,7 @@ class TransformerLM(LMBase):
             # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
             # https://arxiv.org/abs/1611.01462
             if args.tie_embedding:
-                self.output.fc.weight = self.embed.embed.weight
+                self.output.weight = self.embed.weight
 
         # Initialize parameters
         self.reset_parameters()
@@ -120,45 +114,47 @@ class TransformerLM(LMBase):
             else:
                 raise ValueError
 
-    def decode(self, ys, state=None, is_asr=False):
+    def decode(self, ys, cache=None, is_asr=False):
         """Decode function.
 
         Args:
             ys (FloatTensor): `[B, L]`
-            state: previous tokens
+            cache: previous tokens
             is_asr (bool):
         Returns:
-            ys_emb (FloatTensor): `[B, L, n_units]`
-            state: previous tokens
+            logits (FloatTensor): `[B, L, vocab]`
+            ys_emb (FloatTensor): `[B, L, d_model]` (for cache)
+            cache: previous tokens
 
         """
         # Concatenate previous tokens
-        if is_asr and state is not None:
-            ys = torch.cat([state, ys], dim=1)
+        if is_asr and cache is not None:
+            ys = torch.cat([cache, ys], dim=1)
             # NOTE: this is used for ASR decoding
 
-        ys_emb = self.embed(ys.long())
-
         # Create the self-attention mask
-        bs, ymax = ys_emb.size()[:2]
+        bs, ymax = ys.size()[:2]
         ylens = torch.IntTensor([ymax] * bs)
-        yy_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).expand(bs, ymax, ymax)
-        yy_mask = yy_mask.unsqueeze(1).expand(bs, self.attn_n_heads, ymax, ymax)
-        subsequent_mask = torch.tril(yy_mask.new_ones((ymax, ymax)).byte(), diagonal=0)
-        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).expand(bs, self.attn_n_heads, ymax, ymax)
-        yy_mask = yy_mask & subsequent_mask
+        tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ymax, 1])
+        subsequent_mask = tgt_mask.new_ones(ymax, ymax).byte()
+        subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
+        tgt_mask = tgt_mask & subsequent_mask
 
-        ys_emb = self.pos_enc(ys_emb)
+        ys_emb = self.pos_enc(self.embed(ys.long()))
         for l in range(self.n_layers):
-            ys_emb, yy_aws, _ = self.layers[l](ys_emb, yy_mask)
+            ys_emb, yy_aws, _ = self.layers[l](ys_emb, tgt_mask)
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
         ys_emb = self.norm_out(ys_emb)
+        if self.adaptive_softmax is None:
+            logits = self.output(ys_emb)
+        else:
+            logits = ys_emb
 
         if is_asr:
-            state = ys
+            cache = ys
 
-        return ys_emb, state
+        return logits, ys_emb, cache
 
     def plot_attention(self, n_cols=4):
         """Plot attention for each head in all layers."""

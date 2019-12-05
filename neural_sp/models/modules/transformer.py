@@ -22,8 +22,8 @@ class PositionalEncoding(nn.Module):
 
     Args:
         d_model (int): dimension of MultiheadAttentionMechanism
-        dropout (float):
-        pe_type (str):
+        dropout (float): dropout probability
+        pe_type (str): type of positional encoding
         max_len (int):
 
     """
@@ -34,7 +34,7 @@ class PositionalEncoding(nn.Module):
         self.d_model = d_model
         self.pe_type = pe_type
 
-        if pe_type:
+        if pe_type != 'none':
             # Compute the positional encodings once in log space.
             pe = torch.zeros(max_len, d_model, dtype=torch.float32)
             position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
@@ -49,7 +49,7 @@ class PositionalEncoding(nn.Module):
     def forward(self, xs):
         xs = xs * math.sqrt(self.d_model)
 
-        if not self.pe_type:
+        if self.pe_type == 'none':
             return xs
 
         if self.pe_type == 'add':
