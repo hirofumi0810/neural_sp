@@ -192,7 +192,7 @@ class LRScheduler(object):
         self.decay_type = decay_type
         self.decay_rate = decay_rate
 
-        weight_decay = self.optimizer.weight_decay
+        weight_decay = self.optimizer.defaults['weight_decay']
         self.optimizer = set_optimizer(model, 'sgd', lr, weight_decay)
         logger.info('========== Convert to SGD ==========')
 

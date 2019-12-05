@@ -13,7 +13,6 @@ from __future__ import print_function
 from logging import getLogger
 import matplotlib
 matplotlib.use('Agg')
-
 from matplotlib import pyplot as plt
 import numpy as np
 import os
