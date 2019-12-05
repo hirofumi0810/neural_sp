@@ -162,7 +162,7 @@ class TransformerDecoderBlock(nn.Module):
             dropout_att (float): dropout probabilities for attention probabilities
             atype (str): type of self-attention, scaled_dot or average
             layer_norm_eps (float):
-            src_attention (bool): if False, ignore source-target attention
+            src_tgt_attention (bool): if False, ignore source-target attention
 
     """
 
@@ -174,12 +174,12 @@ class TransformerDecoderBlock(nn.Module):
                  dropout,
                  dropout_att,
                  layer_norm_eps,
-                 src_attention=True):
+                 src_tgt_attention=True):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
         self.n_heads = n_heads
-        self.src_attention = src_attention
+        self.src_tgt_attention = src_tgt_attention
 
         # self-attention
         if atype == "average":
@@ -195,7 +195,7 @@ class TransformerDecoderBlock(nn.Module):
             self.dropout1 = nn.Dropout(dropout)
 
         # attention for encoder stacks
-        if src_attention:
+        if src_tgt_attention:
             self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
                                                         qdim=d_model,
@@ -235,7 +235,7 @@ class TransformerDecoderBlock(nn.Module):
 
         # attention for encoder stacks
         xy_aw = None
-        if self.src_attention:
+        if self.src_tgt_attention:
             self.src_attn.reset()
             _ys = self.norm2(ys)
             _ys, xy_aw = self.src_attn(xs, xs, _ys, mask=xy_mask)  # k/v/q

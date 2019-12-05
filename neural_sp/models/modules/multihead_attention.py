@@ -90,7 +90,7 @@ class MultiheadAttentionMechanism(nn.Module):
             klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, qlen, qdim]`
-            mask (ByteTensor): `[B, n_heads, klen, qlen]`
+            mask (ByteTensor): `[B, klen, qlen]`
             aw_prev: dummy
             mode: dummy
         Returns:
@@ -106,7 +106,7 @@ class MultiheadAttentionMechanism(nn.Module):
             value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
             self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
             self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
-            self.mask = mask
+            self.mask = mask.unsqueeze(1) if mask is not None else None  # `[B, 1, klen, qlen]`
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
