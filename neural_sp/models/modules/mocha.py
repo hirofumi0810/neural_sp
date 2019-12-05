@@ -16,8 +16,7 @@ NEG_INF = float(np.finfo(np.float32).min)
 
 
 class Energy(nn.Module):
-    def __init__(self, kdim, qdim, adim, init_r=None,
-                 conv1d=False, conv_kernel_size=5):
+    def __init__(self, kdim, qdim, adim, init_r=None, conv1d=False, conv_kernel_size=5):
         """Energy function."""
         super().__init__()
 
@@ -73,7 +72,6 @@ class Energy(nn.Module):
             self.key = self.w_key(torch.relu(key))
             self.mask = mask
 
-        key = key.view(-1, kdim)
         energy = torch.tanh(self.key + self.w_query(query))
         energy = self.v(energy).squeeze(-1)  # `[B, kmax]`
         if self.r is not None:
@@ -127,14 +125,8 @@ class MoChA(nn.Module):
         self.eps = eps
         self.beta_temperature = beta_temperature
 
-        # Monotonic energy
-        self.monotonic_energy = Energy(kdim, qdim, adim, init_r,
-                                       conv1d=conv1d)
-
-        # Chunk energy
-        self.chunk_energy = None
-        if chunk_size > 1:
-            self.chunk_energy = Energy(kdim, qdim, adim)
+        self.monotonic_energy = Energy(kdim, qdim, adim, init_r, conv1d=conv1d)
+        self.chunk_energy = Energy(kdim, qdim, adim) if chunk_size > 1 else None
 
         self.chunk_len_energy = None
         if adaptive:
@@ -148,8 +140,7 @@ class MoChA(nn.Module):
             if self.adaptive:
                 self.chunk_len_energy.reset()
 
-    def forward(self, key, value, query, mask=None, aw_prev=None,
-                mode='parallel'):
+    def forward(self, key, value, query, mask=None, aw_prev=None, mode='parallel'):
         """Soft monotonic attention during training.
 
         Args:
