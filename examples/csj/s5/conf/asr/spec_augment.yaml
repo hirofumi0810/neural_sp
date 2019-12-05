@@ -8,6 +8,6 @@ lr_decay_rate: 0.9
 # mask
 freq_width: 27
 n_freq_masks: 2
-time_width: 70
+time_width: 100
 n_time_masks: 2
 time_width_upper: 1.0

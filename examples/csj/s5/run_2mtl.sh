@@ -8,9 +8,10 @@ echo "                                   CSJ                                    
 echo ============================================================================
 
 stage=0
+stop_stage=5
 gpu=
 speed_perturb=false
-spec_augment=false
+specaug=false
 stdout=false
 
 ### vocabulary
@@ -27,6 +28,8 @@ vocab_sub1=
 conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
+lm_init=
+
 
 ### path to save the model
 model=/n/work1/inaguma/results/csj
@@ -67,7 +70,7 @@ set -o pipefail
 
 if [ ${speed_perturb} = true ]; then
     conf2=conf/asr/speed_perturb.yaml
-elif [ ${spec_augment} = true ]; then
+elif [ ${specaug} = true ]; then
     conf2=conf/asr/spec_augment.yaml
 fi
 
@@ -102,7 +105,7 @@ if [ ${unit_sub1} != wp ]; then
     wp_type_sub1=
 fi
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${datasize} ]; then
+if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0_${datasize} ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
@@ -123,7 +126,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0_${datasize} ]; then
     touch ${data}/.done_stage_0_${datasize} && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
@@ -172,7 +175,7 @@ fi
 # main
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab}.txt; mkdir -p ${data}/dict
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} ]; then
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2, main)                  "
     echo ============================================================================
@@ -237,7 +240,7 @@ fi
 # sub1
 dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.txt
 wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_sub1}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}_sp${speed_perturb} ]; then
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2, sub1)                  "
     echo ============================================================================
@@ -279,7 +282,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit_sub1}${
 fi
 
 mkdir -p ${model}
-if [ ${stage} -le 4 ]; then
+if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
@@ -302,6 +305,7 @@ if [ ${stage} -le 4 ]; then
         --wp_model_sub1 ${wp_model_sub1}.model \
         --model_save_dir ${model}/asr \
         --asr_init ${asr_init} \
+        --lm_init ${lm_init} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 
