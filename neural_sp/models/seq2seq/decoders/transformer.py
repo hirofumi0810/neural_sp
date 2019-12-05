@@ -248,21 +248,17 @@ class TransformerDecoder(DecoderBase):
 
         # Create the self-attention mask
         bs, ytime = ys_in_pad.size()[:2]
-        yy_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
-        yy_mask = yy_mask.unsqueeze(1).repeat([1, self.attn_n_heads, 1, 1])
-        subsequent_mask = torch.tril(yy_mask.new_ones((ytime, ytime)).byte(), diagonal=0)
-        subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).repeat([bs, self.attn_n_heads, 1, 1])
-        yy_mask = yy_mask & subsequent_mask
+        tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
+        subsequent_mask = tgt_mask.new_ones(ytime, ytime).byte()
+        subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
+        tgt_mask = tgt_mask & subsequent_mask
 
         # Create the source-target mask
-        xtime = eouts.size(1)
-        x_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
-        y_mask = make_pad_mask(ylens, self.device_id).unsqueeze(2).repeat([1, 1, xtime])
-        xy_mask = (x_mask * y_mask).unsqueeze(1).repeat([1, self.attn_n_heads, 1, 1])
+        src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
 
         ys_emb = self.pos_enc(self.embed(ys_in_pad))
         for l in range(self.n_layers):
-            ys_emb, yy_aws, xy_aws = self.layers[l](ys_emb, yy_mask, eouts, xy_mask)
+            ys_emb, yy_aws, xy_aws = self.layers[l](ys_emb, tgt_mask, eouts, src_mask)
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
                 setattr(self, 'xy_aws_layer%d' % l, tensor2np(xy_aws))
@@ -363,8 +359,8 @@ class TransformerDecoder(DecoderBase):
         else:
             ytime = int(math.floor(xtime * max_len_ratio)) + 1
         for t in range(ytime):
-            subsequent_mask = torch.tril(eouts.new_ones((t + 1, t + 1)).byte(), diagonal=0)
-            subsequent_mask = subsequent_mask.unsqueeze(0).unsqueeze(1).repeat([bs, self.attn_n_heads, 1, 1])
+            subsequent_mask = eouts.new_ones(t + 1, t + 1).byte()
+            subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
 
             dout = self.pos_enc(self.embed(y_seq))
             for l in range(self.n_layers):

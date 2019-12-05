@@ -187,8 +187,7 @@ class TransformerEncoder(EncoderBase):
 
         # Create the self-attention mask
         bs, xmax = xs.size()[: 2]
-        xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).expand(bs, xmax, xmax)
-        xx_mask = xx_mask.unsqueeze(1).expand(bs, self.attn_n_heads, xmax, xmax)
+        xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
 
         xs = self.pos_enc(xs)
         for l in range(self.n_layers):
