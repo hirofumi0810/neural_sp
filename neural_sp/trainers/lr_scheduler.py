@@ -97,30 +97,26 @@ class LRScheduler(object):
     def step(self):
         self._step += 1
         self.optimizer.step()
-        self._warmup_lr()
+        if self.noam:
+            self._noam_lr()
+        else:
+            self._warmup_lr()
 
     def zero_grad(self):
         self.optimizer.zero_grad()
 
+    def _noam_lr(self):
+        """Warm up and decay learning rate per step based on Transformer."""
+        self.lr = self.base_lr * min(self._step ** (-0.5),
+                                     self._step * (self.warmup_n_steps ** (-1.5)))
+        self._update_lr()
+
     def _warmup_lr(self):
-        """Warm up learning rate per step.
-
-        Args:
-            epoch (int): the current epoch
-
-        """
+        """Warm up learning rate per step by incresing linearly."""
         if self.warmup_n_steps > 0 and self._step < self.warmup_n_steps:
-            if self.noam:
-                # Based on the original transformer paper
-                self.lr = self.base_lr * min(self._step ** (-0.5),
-                                             self._step * (self.warmup_n_steps ** (-1.5)))
-            else:
-                # Increase linearly
-                self.lr = (self.base_lr - self.warmup_start_lr) / \
-                    self.warmup_n_steps * self._step + self.warmup_start_lr
-
-            # Update optimizer
-            self._reduce_lr()
+            self.lr = (self.base_lr - self.warmup_start_lr) / \
+                self.warmup_n_steps * self._step + self.warmup_start_lr
+            self._update_lr()
 
     def epoch(self, metric=None):
         """Decay learning rate per epoch.
@@ -152,16 +148,16 @@ class LRScheduler(object):
                     # Not improved, and learning rate is decayed
                     self.not_improved_n_epochs = 0
                     self.lr *= self.decay_rate
-                    self._reduce_lr()
+                    self._update_lr()
                     logger.info('Epoch %d: reducing learning rate to %.7f'
                                 % (self._epoch, self.lr))
             elif self.decay_type == 'always':
                 self.lr *= self.decay_rate
-                self._reduce_lr()
+                self._update_lr()
                 logger.info('Epoch %d: reducing learning rate to %.7f'
                             % (self._epoch, self.lr))
 
-    def _reduce_lr(self):
+    def _update_lr(self):
         """Reduce learning rate."""
         for param_group in self.optimizer.param_groups:
             if isinstance(self.optimizer, torch.optim.Adadelta):
@@ -195,15 +191,3 @@ class LRScheduler(object):
         weight_decay = self.optimizer.defaults['weight_decay']
         self.optimizer = set_optimizer(model, 'sgd', lr, weight_decay)
         logger.info('========== Convert to SGD ==========')
-
-
-# class NoamLR(_LRScheduler):
-#     def __init__(self, optimizer, warmup_n_steps):
-#         self.warmup_n_steps = warmup_n_steps
-#         super().__init__(optimizer)
-#
-#     def get_lr(self):
-#         last_epoch = max(1, self.last_epoch)
-#         scale = self.factor * (self.model_size ** -0.5) * min(last_epoch ** (-0.5),
-#                                                               last_epoch * self.warmup_n_steps ** (-1.5))
-#         return [base_lr * scale for base_lr in self.base_lrs]
