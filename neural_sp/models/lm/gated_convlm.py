@@ -15,8 +15,6 @@ import logging
 import torch.nn as nn
 
 from neural_sp.models.lm.lm_base import LMBase
-from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.modules.glu import GLUBlock
 
 
@@ -48,10 +46,8 @@ class GatedConvLM(LMBase):
         self.cache_keys = []
         self.cache_attn = []
 
-        self.embed = Embedding(vocab=self.vocab,
-                               emb_dim=args.emb_dim,
-                               dropout=args.dropout_in,
-                               ignore_index=self.pad)
+        self.embed = nn.Embedding(self.vocab, args.emb_dim, padding_idx=self.pad)
+        self.dropout_embed = nn.Dropout(p=args.dropout_in)
 
         model_size = args.lm_type.replace('gated_conv_', '')
 
@@ -162,8 +158,7 @@ class GatedConvLM(LMBase):
             self.output = None
         else:
             self.adaptive_softmax = None
-            self.output = Linear(last_dim, self.vocab,
-                                 dropout=args.dropout_out)
+            self.output = nn.Linear(last_dim, self.vocab)
             # NOTE: include bias even when tying weights
 
             # Optionally tie weights as in:
@@ -175,7 +170,7 @@ class GatedConvLM(LMBase):
             if args.tie_embedding:
                 if args.n_units != args.emb_dim:
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
-                self.output.fc.weight = self.embed.embed.weight
+                self.output.weight = self.embed.weight
 
         # Initialize parameters
         self.reset_parameters(args.param_init)
@@ -203,11 +198,12 @@ class GatedConvLM(LMBase):
             state: dummy
             is_asr (bool):
         Returns:
-            ys_emb (FloatTensor): `[B, L, n_units]`
+            logits (FloatTensor): `[B, L, vocab]`
+            ys_emb (FloatTensor): `[B, L, d_model]` (for cache)
             state: dummy
 
         """
-        ys_emb = self.embed(ys.long())
+        ys_emb = self.dropout_embed(self.embed(ys.long()))
         bs, max_ylen = ys_emb.size()[:2]
 
         # NOTE: consider embed_dim as in_ch
@@ -215,5 +211,9 @@ class GatedConvLM(LMBase):
         ys_emb = self.blocks(ys_emb.transpose(2, 1))  # [B, out_ch, T, 1]
         ys_emb = ys_emb.transpose(2, 1).contiguous()  # `[B, T, out_ch, 1]`
         ys_emb = ys_emb.squeeze(3)
+        if self.adaptive_softmax is None:
+            logits = self.output(ys_emb)
+        else:
+            logits = ys_emb
 
-        return ys_emb, state
+        return logits, ys_emb, state
