@@ -46,7 +46,6 @@ class RNNTransducer(DecoderBase):
         bottleneck_dim (int): dimension of the bottleneck layer before the softmax layer for label generation
         emb_dim (int): dimension of the embedding in target spaces.
         vocab (int): number of nodes in softmax layer
-        tie_embedding (bool):
         dropout (float): dropout probability for the RNN layer
         dropout_emb (float): dropout probability for the embedding layer
         lsm_prob (float): label smoothing probability
@@ -72,7 +71,6 @@ class RNNTransducer(DecoderBase):
                  bottleneck_dim,
                  emb_dim,
                  vocab,
-                 tie_embedding=False,
                  dropout=0.,
                  dropout_emb=0.,
                  lsm_prob=0.,

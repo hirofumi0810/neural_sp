@@ -134,7 +134,7 @@ class TransformerDecoder(DecoderBase):
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, vocab)
             if tie_embedding:
-                self.output.fc.weight = self.embed.weight
+                self.output.weight = self.embed.weight
 
         # Initialize parameters
         self.reset_parameters()

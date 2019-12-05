@@ -188,7 +188,6 @@ class Speech2Text(ModelBase):
                     d_ff=args.d_ff,
                     n_layers=args.dec_n_layers,
                     vocab=self.vocab,
-                    tie_embedding=args.tie_embedding,
                     pe_type=args.pe_type,
                     layer_norm_eps=args.layer_norm_eps,
                     dropout=args.dropout_dec,

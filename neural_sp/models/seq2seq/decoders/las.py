@@ -255,7 +255,7 @@ class RNNDecoder(DecoderBase):
             if tie_embedding:
                 if emb_dim != bottleneck_dim:
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
-                self.output.fc.weight = self.embed.weight
+                self.output.weight = self.embed.weight
 
         # Initialize parameters
         self.reset_parameters(param_init)
