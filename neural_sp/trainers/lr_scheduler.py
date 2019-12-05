@@ -136,7 +136,7 @@ class LRScheduler(object):
             self._is_best = True
             logger.info('||||| Best Score |||||')
 
-        if self._epoch >= self.decay_start_epoch:
+        if not self.noam and self._epoch >= self.decay_start_epoch:
             if self.decay_type == 'metric':
                 if self._is_best:
                     # Improved
