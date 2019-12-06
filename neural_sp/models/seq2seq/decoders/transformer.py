@@ -18,7 +18,6 @@ import random
 import shutil
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.modules.transformer import PositionalEncoding
@@ -178,7 +177,7 @@ class TransformerDecoder(DecoderBase):
 
         # CTC loss
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
-            loss_ctc = self.ctc(eouts, elens, ys)
+            loss_ctc, _ = self.ctc(eouts, elens, ys)
             observation['loss_ctc'] = loss_ctc.item()
             if self.mtl_per_batch:
                 loss += loss_ctc
@@ -269,14 +268,9 @@ class TransformerDecoder(DecoderBase):
         if return_logits:
             return logits
 
-        # Compute XE sequence loss
-        if self.lsm_prob > 0 and self.training:
-            # Label smoothing
-            loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                     self.lsm_prob, self.pad)
-        else:
-            loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                   ignore_index=self.pad, size_average=True)
+        # Compute XE sequence loss (+ label smoothing)
+        loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                                 self.lsm_prob, self.pad, self.training)
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)

@@ -18,7 +18,6 @@ import random
 import shutil
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import distillation
@@ -190,7 +189,7 @@ class RNNDecoder(DecoderBase):
                                    chunk_size=mocha_chunk_size,
                                    adaptive=mocha_adaptive,
                                    conv1d=mocha_1dconv,
-                                   beta_temperature=attn_sharpening_factor)
+                                   sharpening_factor=attn_sharpening_factor)
             else:
                 if attn_n_heads > 1:
                     self.score = MultiheadAttentionMechanism(
@@ -235,8 +234,6 @@ class RNNDecoder(DecoderBase):
                 # fix LM parameters
                 for p in lm_fusion.parameters():
                     p.requires_grad = False
-            elif discourse_aware == 'hierarchical':
-                raise NotImplementedError
             else:
                 self.output_bn = nn.Linear(dec_odim + enc_n_units, bottleneck_dim)
 
@@ -408,10 +405,7 @@ class RNNDecoder(DecoderBase):
         ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
 
         # Initialization
-        if self.discourse_aware == 'hierarchical':
-            raise NotImplementedError
-        else:
-            dstates = self.zero_state(bs)
+        dstates = self.zero_state(bs)
         if self.discourse_aware == 'state_carry_over' and self.dstate_prev is not None:
             dstates['dstate']['hxs'], dstates['dstate']['cxs'] = self.dstate_prev
             self.dstate_prev = None
@@ -447,7 +441,6 @@ class RNNDecoder(DecoderBase):
             if self.discourse_aware == 'state_carry_over':
                 if self.dstate_prev is None:
                     self.dstate_prev = ([None] * bs, [None] * bs)
-                print(ylens.tolist())
                 if t in ylens.tolist():
                     for b in ylens.tolist().index(t):
                         self.dstate_prev[0][b] = dstates['dstate']['hxs'][b:b + 1].detach()
@@ -469,14 +462,9 @@ class RNNDecoder(DecoderBase):
         if not self.training:
             self.aws = tensor2np(torch.cat(aws, dim=2))  # `[B, n_heads, L, T]`
 
-        # Compute XE sequence loss
-        if self.lsm_prob > 0 and self.training:
-            # Label smoothing
-            loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                     self.lsm_prob, self.pad)
-        else:
-            loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                   ignore_index=self.pad, size_average=True)
+        # Compute XE sequence loss (+ label smoothing)
+        loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
+                                 self.lsm_prob, self.pad, self.training)
 
         # Knowledge distillation
         if teacher_logits is not None:
@@ -836,8 +824,7 @@ class RNNDecoder(DecoderBase):
                      'ensmbl_cv': ensmbl_cv,
                      'ensmbl_aws':[[None]] * (n_models - 1),
                      'ctc_state': ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
-                     'ctc_score': 0.,
-                     }]
+                     'ctc_score': 0.}]
             if oracle:
                 assert refs_id is not None
                 ytime = len(refs_id[b]) + 1
@@ -975,8 +962,7 @@ class RNNDecoder(DecoderBase):
                              'ensmbl_cv': ensmbl_cv,
                              'ensmbl_aws': ensmbl_aws,
                              'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
-                             'ctc_score': ctc_scores[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
-                             })
+                             'ctc_score': ctc_scores[joint_ids_topk[0, k]] if ctc_log_probs is not None else None})
 
                 # Local pruning
                 new_hyps_tmp = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
