@@ -643,7 +643,7 @@ class Speech2Text(ModelBase):
                 best_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
                     enc_outs[task]['xs'], enc_outs[task]['xlens'], params, idx2token, lm,
                     nbest, refs_id, utt_ids, speakers)
-                return best_hyps_id, None, (None, None)
+                return best_hyps_id, None
 
             #########################
             # Attention
