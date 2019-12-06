@@ -44,7 +44,6 @@ class Energy(nn.Module):
                                     kernel_size=conv_kernel_size,
                                     stride=1,
                                     padding=(conv_kernel_size - 1) // 2)
-            # self.norm = nn.LayerNorm(kdim, eps=1e-12)
 
     def reset(self):
         self.key = None
@@ -72,7 +71,8 @@ class Energy(nn.Module):
             self.key = self.w_key(torch.relu(key))
             self.mask = mask
 
-        energy = torch.tanh(self.key + self.w_query(query))
+        # energy = torch.tanh(self.key + self.w_query(query))
+        energy = torch.relu(self.key + self.w_query(query))
         energy = self.v(energy).squeeze(-1)  # `[B, kmax]`
         if self.r is not None:
             energy = energy + self.r
@@ -92,7 +92,7 @@ class MoChA(nn.Module):
                  init_r=-4,
                  noise_std=1.0,
                  eps=1e-6,
-                 beta_temperature=1.0):
+                 sharpening_factor=1.0):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -123,7 +123,7 @@ class MoChA(nn.Module):
         # regularization
         self.noise_std = noise_std
         self.eps = eps
-        self.beta_temperature = beta_temperature
+        self.sharpening_factor = sharpening_factor
 
         self.monotonic_energy = Energy(kdim, qdim, adim, init_r, conv1d=conv1d)
         self.chunk_energy = Energy(kdim, qdim, adim) if chunk_size > 1 else None
@@ -140,7 +140,7 @@ class MoChA(nn.Module):
             if self.adaptive:
                 self.chunk_len_energy.reset()
 
-    def forward(self, key, value, query, mask=None, aw_prev=None, mode='parallel'):
+    def forward(self, key, value, query, mask=None, aw_prev=None, mode='hard'):
         """Soft monotonic attention during training.
 
         Args:
@@ -216,10 +216,10 @@ class MoChA(nn.Module):
                 # avoid zero length
                 chunk_len_dist = chunk_len_dist.int() + 1
                 beta = efficient_adaptive_chunkwise_attention(
-                    alpha, e_chunk, chunk_len_dist, self.beta_temperature)
+                    alpha, e_chunk, chunk_len_dist, self.sharpening_factor)
             else:
                 beta = efficient_chunkwise_attention(
-                    alpha, e_chunk, self.chunk_size, self.beta_temperature)
+                    alpha, e_chunk, self.chunk_size, self.sharpening_factor)
 
         # Compute context vector
         if self.chunk_size > 1:
@@ -274,7 +274,7 @@ def moving_sum(x, back, forward):
     return x_sum.squeeze(1)
 
 
-def efficient_chunkwise_attention(alpha, e_chunk, chunk_size, temperature=1.0):
+def efficient_chunkwise_attention(alpha, e_chunk, chunk_size, sharpening_factor=1.0):
     """Compute chunkwise attention distribution efficiently by clipping logits.
 
     Args:
@@ -293,12 +293,12 @@ def efficient_chunkwise_attention(alpha, e_chunk, chunk_size, temperature=1.0):
     softmax_denominators = moving_sum(softmax_exp,
                                       back=chunk_size - 1, forward=0)
     # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
-    beta = softmax_exp * moving_sum(alpha * temperature / softmax_denominators,
+    beta = softmax_exp * moving_sum(alpha * sharpening_factor / softmax_denominators,
                                     back=0, forward=chunk_size - 1)
     return beta
 
 
-def efficient_adaptive_chunkwise_attention(alpha, e_chunk, chunk_len_dist, temperature=1.0):
+def efficient_adaptive_chunkwise_attention(alpha, e_chunk, chunk_len_dist, sharpening_factor=1.0):
     """Compute adaptive chunkwise attention distribution efficiently by clipping logits.
 
     Args:
@@ -314,16 +314,16 @@ def efficient_adaptive_chunkwise_attention(alpha, e_chunk, chunk_len_dist, tempe
     # Limit the range for numerical stability
     softmax_exp = torch.clamp(torch.exp(e_chunk), min=1e-5)
     # Compute chunkwise softmax denominators
-    triggered_points = torch.argmax(alpha, dim=1)
+    boundary = torch.argmax(alpha, dim=1)
     bs = alpha.size(0)
     softmax_denominators = [moving_sum(
         softmax_exp[b:b + 1],
-        back=chunk_len_dist[b, triggered_points[b]] - 1, forward=0)
+        back=chunk_len_dist[b, boundary[b]] - 1, forward=0)
         for b in range(bs)]
     # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
     beta = [softmax_exp[b:b + 1] * moving_sum(
-        alpha[b:b + 1] * temperature / softmax_denominators[b],
-        back=0, forward=chunk_len_dist[b, triggered_points[b]] - 1)
+        alpha[b:b + 1] * sharpening_factor / softmax_denominators[b],
+        back=0, forward=chunk_len_dist[b, boundary[b]] - 1)
         for b in range(bs)]
     beta = torch.cat(beta, dim=0)
     return beta
