@@ -53,6 +53,8 @@ class ConvEncoder(EncoderBase):
         super(ConvEncoder, self).__init__()
         logger = logging.getLogger("training")
 
+        channels, kernel_sizes, strides, poolings = parse_config(channels, kernel_sizes, strides, poolings)
+
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
         self.input_freq = input_dim // in_channel
@@ -94,15 +96,15 @@ class ConvEncoder(EncoderBase):
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() == 2:
                 fan_in = p.size(1)
-                nn.init.normal_(p, mean=0, std=1. / math.sqrt(fan_in))  # linear weight
+                nn.init.normal_(p, mean=0., std=1. / math.sqrt(fan_in))  # linear weight
                 logger.info('Initialize %s with %s / %.3f' % (n, 'lecun', param_init))
             elif p.dim() == 4:
                 fan_in = p.size(1) * p[0][0].numel()
-                nn.init.normal_(p, mean=0, std=1. / math.sqrt(fan_in))  # conv weight
+                nn.init.normal_(p, mean=0., std=1. / math.sqrt(fan_in))  # conv weight
                 logger.info('Initialize %s with %s / %.3f' % (n, 'lecun', param_init))
             else:
                 raise ValueError
@@ -269,6 +271,7 @@ class Conv2LBlock(EncoderBase):
         xs = self.batch_norm2(xs)
         if self.residual and xs.size() == residual.size():
             xs += residual
+            # NOTE: this is based on ResNet
         xs = torch.relu(xs)
         xs = self.dropout2(xs)
         xlens = update_lens(xlens, self.conv2, dim=0)
@@ -302,3 +305,19 @@ def update_lens(seq_lens, layer, dim=0, device_id=-1):
     if device_id >= 0:
         seq_lens = seq_lens.cuda(device_id)
     return seq_lens
+
+
+def parse_config(conv_channels, conv_kernel_sizes, conv_strides, conv_poolings):
+    channels, kernel_sizes, strides, poolings = [], [], [], []
+    if len(conv_channels) > 0:
+        channels = [int(c) for c in conv_channels.split('_')]
+    if len(conv_kernel_sizes) > 0:
+        kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                        for c in conv_kernel_sizes.split('_')]
+    if len(conv_strides) > 0:
+        strides = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                   for c in conv_strides.split('_')]
+    if len(conv_poolings) > 0:
+        poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
+                    for c in conv_poolings.split('_')]
+    return channels, kernel_sizes, strides, poolings

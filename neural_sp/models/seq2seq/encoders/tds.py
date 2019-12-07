@@ -16,7 +16,7 @@ import math
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.linear import Linear
+from neural_sp.models.seq2seq.encoders.conv import parse_config
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 
@@ -46,6 +46,8 @@ class TDSEncoder(EncoderBase):
 
         super(TDSEncoder, self).__init__()
         logger = logging.getLogger("training")
+
+        channels, kernel_sizes, _, _ = parse_config(channels, kernel_sizes, '', '')
 
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
@@ -77,7 +79,7 @@ class TDSEncoder(EncoderBase):
         self._output_dim = int(in_ch * in_freq)
 
         if bottleneck_dim > 0:
-            self.bridge = Linear(self._output_dim, bottleneck_dim)
+            self.bridge = nn.Linear(self._output_dim, bottleneck_dim)
             self._output_dim = bottleneck_dim
 
         self.layers = nn.Sequential(layers)
@@ -91,8 +93,8 @@ class TDSEncoder(EncoderBase):
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() == 2:
                 fan_in = p.size(1)
                 nn.init.uniform_(p, a=-math.sqrt(4 / fan_in), b=math.sqrt(4 / fan_in))  # linear weight

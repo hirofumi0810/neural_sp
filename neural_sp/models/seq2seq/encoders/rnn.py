@@ -96,7 +96,7 @@ class RNNEncoder(EncoderBase):
         self.rnn_type = rnn_type
         self.bidirectional = True if ('blstm' in rnn_type or 'bgru' in rnn_type) else False
         self.latency_controlled = True if ('lcblstm' in rnn_type or 'lcbrgu' in rnn_type) else False
-        self.chunk_size = 20
+        self.chunk_size = 20  # for latency-controlled BRNN
         self.n_units = n_units
         self.n_dirs = 2 if self.bidirectional else 1
         self.n_layers = n_layers
@@ -114,41 +114,23 @@ class RNNEncoder(EncoderBase):
         # Dropout for input-hidden connection
         self.dropout_in = nn.Dropout(p=dropout_in)
 
-        # Setting for CNNs before RNNs
-        if conv_channels and (rnn_type in ['tds', 'gated_conv'] or 'conv' in rnn_type):
-            channels = [int(c) for c in conv_channels.split('_')] if len(conv_channels) > 0 else []
-            kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                            for c in conv_kernel_sizes.split('_')] if len(conv_kernel_sizes) > 0 else []
-            if rnn_type in ['tds', 'gated_conv']:
-                strides = []
-                poolings = []
-            else:
-                strides = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                           for c in conv_strides.split('_')] if len(conv_strides) > 0 else []
-                poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                            for c in conv_poolings.split('_')] if len(conv_poolings) > 0 else []
-            if 'conv' in rnn_type:
-                subsample = [1] * self.n_layers
-                logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
-        else:
-            channels = []
-            kernel_sizes = []
-            strides = []
-            poolings = []
+        if 'conv' in rnn_type:
+            subsample = [1] * self.n_layers
+            logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
 
-        if len(channels) > 0:
+        if conv_channels:
             if rnn_type == 'tds':
                 self.conv = TDSEncoder(input_dim=input_dim * n_stacks,
                                        in_channel=conv_in_channel,
-                                       channels=channels,
-                                       kernel_sizes=kernel_sizes,
+                                       channels=conv_channels,
+                                       kernel_sizes=conv_kernel_sizes,
                                        dropout=dropout,
                                        bottleneck_dim=last_proj_dim)
             elif rnn_type == 'gated_conv':
                 self.conv = GatedConvEncoder(input_dim=input_dim * n_stacks,
                                              in_channel=conv_in_channel,
-                                             channels=channels,
-                                             kernel_sizes=kernel_sizes,
+                                             channels=conv_channels,
+                                             kernel_sizes=conv_kernel_sizes,
                                              dropout=dropout,
                                              bottleneck_dim=last_proj_dim,
                                              param_init=param_init)
@@ -156,11 +138,11 @@ class RNNEncoder(EncoderBase):
                 assert n_stacks == 1 and n_splices == 1
                 self.conv = ConvEncoder(input_dim,
                                         in_channel=conv_in_channel,
-                                        channels=channels,
-                                        kernel_sizes=kernel_sizes,
-                                        strides=strides,
-                                        poolings=poolings,
-                                        dropout=0,
+                                        channels=conv_channels,
+                                        kernel_sizes=conv_kernel_sizes,
+                                        strides=conv_strides,
+                                        poolings=conv_poolings,
+                                        dropout=0.,
                                         batch_norm=conv_batch_norm,
                                         bottleneck_dim=conv_bottleneck_dim,
                                         param_init=param_init)
@@ -260,8 +242,8 @@ class RNNEncoder(EncoderBase):
             if 'conv' in n or 'tds' in n or 'gated_conv' in n:
                 continue  # for CNN layers before RNN layers
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() in [2, 4]:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))

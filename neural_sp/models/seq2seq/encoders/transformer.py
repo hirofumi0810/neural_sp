@@ -68,9 +68,9 @@ class TransformerEncoder(EncoderBase):
                  d_ff,
                  pe_type='add',
                  layer_norm_eps=1e-12,
-                 dropout_in=0,
-                 dropout=0,
-                 dropout_att=0,
+                 dropout_in=0.,
+                 dropout=0.,
+                 dropout_att=0.,
                  last_proj_dim=0,
                  n_stacks=1,
                  n_splices=1,
@@ -93,29 +93,14 @@ class TransformerEncoder(EncoderBase):
 
         # Setting for CNNs before RNNs
         if conv_channels:
-            channels = [int(c) for c in conv_channels.split('_')] if len(conv_channels) > 0 else []
-            kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                            for c in conv_kernel_sizes.split('_')] if len(conv_kernel_sizes) > 0 else []
-            strides = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                       for c in conv_strides.split('_')] if len(conv_strides) > 0 else []
-            poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                        for c in conv_poolings.split('_')] if len(conv_poolings) > 0 else []
-        else:
-            channels = []
-            kernel_sizes = []
-            strides = []
-            poolings = []
-            logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
-
-        if len(channels) > 0:
             assert n_stacks == 1 and n_splices == 1
             self.conv = ConvEncoder(input_dim,
                                     in_channel=conv_in_channel,
-                                    channels=channels,
-                                    kernel_sizes=kernel_sizes,
-                                    strides=strides,
-                                    poolings=poolings,
-                                    dropout=0,
+                                    channels=conv_channels,
+                                    kernel_sizes=conv_kernel_sizes,
+                                    strides=conv_strides,
+                                    poolings=conv_poolings,
+                                    dropout=0.,
                                     batch_norm=conv_batch_norm,
                                     bottleneck_dim=d_model,
                                     param_init=param_init)
@@ -150,14 +135,14 @@ class TransformerEncoder(EncoderBase):
             if 'conv' in n:
                 continue  # for CNN layers before Transformer layers
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() == 2:
                 if 'embed' in n:
-                    nn.init.normal_(p, mean=0, std=1 / math.sqrt(self.d_model))
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'normal', 1 / math.sqrt(self.d_model)))
+                    nn.init.normal_(p, mean=0., std=1. / math.sqrt(self.d_model))
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'normal', 1. / math.sqrt(self.d_model)))
                 else:
-                    nn.init.xavier_uniform_(p, gain=1.0)
+                    nn.init.xavier_uniform_(p)
                     logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
             else:
                 raise ValueError
