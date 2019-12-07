@@ -88,13 +88,13 @@ class MultiheadAttentionMechanism(nn.Module):
         Args:
             key (FloatTensor): `[B, klen, kdim]`
             klens (IntTensor): `[B]`
-            value (FloatTensor): `[B, klen, value_dim]`
+            value (FloatTensor): `[B, klen, vdim]`
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, klen, qlen]`
             aw_prev: dummy
             mode: dummy
         Returns:
-            cv (FloatTensor): `[B, qlen, value_dim]`
+            cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, n_heads, qlen, klen]`
 
         """

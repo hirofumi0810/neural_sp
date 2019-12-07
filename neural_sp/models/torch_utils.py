@@ -41,7 +41,7 @@ def np2tensor(array, device_id=-1):
     return tensor
 
 
-def pad_list(xs, pad_value=0.0, pad_left=False):
+def pad_list(xs, pad_value=0., pad_left=False):
     """Convert list of Tensors to a single Tensor with padding.
 
     Args:

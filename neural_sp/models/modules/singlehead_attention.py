@@ -46,7 +46,7 @@ class AttentionMechanism(nn.Module):
                  sigmoid_smoothing=False,
                  conv_out_channels=10,
                  conv_kernel_size=201,
-                 dropout=0):
+                 dropout=0.):
 
         super(AttentionMechanism, self).__init__()
 
@@ -111,13 +111,13 @@ class AttentionMechanism(nn.Module):
         Args:
             key (FloatTensor): `[B, kmax, kdim]`
             klens (IntTensor): `[B]`
-            value (FloatTensor): `[B, kmax, value_dim]`
+            value (FloatTensor): `[B, kmax, vdim]`
             query (FloatTensor): `[B, 1, qdim]`
             mask (ByteTensor): `[B, qmax, kmax]`
             aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
             mode: dummy
         Returns:
-            cv (FloatTensor): `[B, 1, value_dim]`
+            cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, kmax, 1 (n_heads)]`
 
         """
