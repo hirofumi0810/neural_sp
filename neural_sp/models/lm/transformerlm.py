@@ -53,8 +53,6 @@ class TransformerLM(LMBase):
         self.pad = 3
         # NOTE: reserved in advance
 
-        # self.lsm_prob = lsm_prob
-
         # for cache
         self.cache_theta = 0.2  # smoothing parameter
         self.cache_lambda = 0.2  # cache weight
@@ -83,18 +81,11 @@ class TransformerLM(LMBase):
         else:
             self.adaptive_softmax = None
             self.output = nn.Linear(self.d_model, self.vocab)
-
-            # Optionally tie weights as in:
-            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-            # https://arxiv.org/abs/1608.05859
-            # and
-            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-            # https://arxiv.org/abs/1611.01462
             if args.tie_embedding:
                 self.output.weight = self.embed.weight
 
         # Initialize parameters
-        self.reset_parameters()
+        # self.reset_parameters()
 
     def reset_parameters(self):
         """Initialize parameters with xavier_uniform style."""
@@ -102,14 +93,14 @@ class TransformerLM(LMBase):
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() == 2:
                 if 'embed' in n:
-                    nn.init.normal_(p, mean=0, std=self.d_model**-0.5)
+                    nn.init.normal_(p, mean=0., std=self.d_model**-0.5)
                     logger.info('Initialize %s with %s / %.3f' % (n, 'normal', self.d_model**-0.5))
                 else:
-                    nn.init.xavier_uniform_(p, gain=1.0)
+                    nn.init.xavier_uniform_(p, 1.0)
                     logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
             else:
                 raise ValueError

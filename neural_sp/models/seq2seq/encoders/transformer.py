@@ -125,7 +125,7 @@ class TransformerEncoder(EncoderBase):
             self._output_dim = d_model
 
         # Initialize parameters
-        self.reset_parameters()
+        # self.reset_parameters()
 
     def reset_parameters(self):
         """Initialize parameters with xavier_uniform style."""
