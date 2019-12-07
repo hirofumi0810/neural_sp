@@ -95,7 +95,8 @@ class RNNEncoder(EncoderBase):
 
         self.rnn_type = rnn_type
         self.bidirectional = True if ('blstm' in rnn_type or 'bgru' in rnn_type) else False
-        self.latency_controlled if ('lcblstm' in rnn_type or 'lcbrgu' in rnn_type) else False
+        self.latency_controlled = True if ('lcblstm' in rnn_type or 'lcbrgu' in rnn_type) else False
+        self.chunk_size = 20
         self.n_units = n_units
         self.n_dirs = 2 if self.bidirectional else 1
         self.n_layers = n_layers
@@ -172,6 +173,8 @@ class RNNEncoder(EncoderBase):
 
         if rnn_type not in ['conv', 'tds', 'gated_conv']:
             self.rnn = nn.ModuleList()
+            if self.latency_controlled:
+                self.rnn_bwd = nn.ModuleList()
             self.dropout = nn.ModuleList()
             self.proj = None
             if n_projs > 0:
@@ -201,11 +204,14 @@ class RNNEncoder(EncoderBase):
                 elif 'gru' in rnn_type:
                     rnn_i = nn.GRU
                 else:
-                    raise ValueError('rnn_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
+                    raise ValueError('rnn_type must be "(conv_)(b/lcb)lstm" or "(conv_)(b/lcb)gru".')
 
-                self.rnn += [rnn_i(self._output_dim, n_units, 1,
-                                   batch_first=True,
-                                   bidirectional=self.bidirectional)]
+                if self.latency_controlled:
+                    self.rnn += [rnn_i(self._output_dim, n_units, 1, batch_first=True)]
+                    self.rnn_bwd += [rnn_i(self._output_dim, n_units, 1, batch_first=True)]
+                else:
+                    self.rnn += [rnn_i(self._output_dim, n_units, 1, batch_first=True,
+                                       bidirectional=self.bidirectional)]
                 self.dropout += [nn.Dropout(p=dropout)]
                 self._output_dim = n_units if bidirectional_sum_fwd_bwd else n_units * self.n_dirs
                 self.bidirectional_sum_fwd_bwd = bidirectional_sum_fwd_bwd
@@ -301,37 +307,37 @@ class RNNEncoder(EncoderBase):
 
         for l in range(self.n_layers):
             self.rnn[l].flatten_parameters()  # for multi-GPUs
-            xs = self.padding(xs, xlens, self.rnn[l], self.bidirectional_sum_fwd_bwd)
+            if self.latency_controlled:
+                self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
+                xs_chunks = []
+                fwd_state = None
+                for t in range(0, xs.size(1), self.chunk_size):
+                    # bwd
+                    xs_chunk_bwd = torch.flip(xs[:, t:t + self.chunk_size * 2], [1])
+                    xs_chunk_bwd, _ = self.rnn_bwd[l](xs_chunk_bwd, hx=None)
+                    xs_chunk_bwd = torch.flip(xs_chunk_bwd, [1])[:, :self.chunk_size]
+                    # fwd
+                    xs_chunk_fwd = xs[:, t:t + self.chunk_size]
+                    xs_chunk_fwd, fwd_state = self.rnn[l](xs_chunk_fwd, hx=fwd_state)
+                    if self.bidirectional_sum_fwd_bwd:
+                        xs_chunk = xs_chunk_fwd + xs_chunk_bwd
+                    else:
+                        xs_chunk = torch.cat([xs_chunk_fwd, xs_chunk_bwd], dim=-1)
+                    xs_chunks.append(xs_chunk)
+                xs = torch.cat(xs_chunks, dim=1)
+            else:
+                xs = self.padding(xs, xlens, self.rnn[l], self.bidirectional_sum_fwd_bwd)
             xs = self.dropout[l](xs)
 
             # Pick up outputs in the sub task before the projection layer
             if l == self.n_layers_sub1 - 1:
-                if self.task_specific_layer:
-                    self.rnn_sub1.flatten_parameters()  # for multi-GPUs
-                    xs_sub1 = self.padding(xs, xlens, self.rnn_sub1)
-                    xs_sub1 = self.dropout_sub1(xs_sub1)
-                else:
-                    xs_sub1 = xs.clone()[perm_ids_unsort]
-                if self.bridge_sub1 is not None:
-                    xs_sub1 = self.bridge_sub1(xs_sub1)
-                xlens_sub1 = xlens[perm_ids_unsort]
-
+                xs_sub1, xlens_sub1 = self.sub_module(xs, xlens, perm_ids_unsort, 'sub1')
                 if task == 'ys_sub1':
                     eouts[task]['xs'] = xs_sub1
                     eouts[task]['xlens'] = xlens_sub1
                     return eouts
-
             if l == self.n_layers_sub2 - 1:
-                if self.task_specific_layer:
-                    self.rnn_sub2.flatten_parameters()  # for multi-GPUs
-                    xs_sub2 = self.padding(xs, xlens, self.rnn_sub2)
-                    xs_sub2 = self.dropout_sub2(xs_sub2)
-                else:
-                    xs_sub2 = xs.clone()[perm_ids_unsort]
-                if self.bridge_sub2 is not None:
-                    xs_sub2 = self.bridge_sub2(xs_sub2)
-                xlens_sub2 = xlens[perm_ids_unsort]
-
+                xs_sub2, xlens_sub2 = self.sub_module(xs, xlens, perm_ids_unsort, 'sub2')
                 if task == 'ys_sub2':
                     eouts[task]['xs'] = xs_sub2
                     eouts[task]['xlens'] = xlens_sub2
@@ -339,15 +345,11 @@ class RNNEncoder(EncoderBase):
 
             # NOTE: Exclude the last layer
             if l != self.n_layers - 1:
-                # Projection layer
+                # Projection layer -> Subsampling -> NiN
                 if self.proj is not None:
                     xs = torch.tanh(self.proj[l](xs))
-
-                # Subsampling
                 if self.subsample is not None:
                     xs, xlens = self.subsample[l](xs, xlens)
-
-                # NiN
                 if self.nin is not None:
                     xs = self.nin[l](xs)
 
@@ -369,6 +371,18 @@ class RNNEncoder(EncoderBase):
             eouts['ys_sub2']['xs'] = xs_sub2
             eouts['ys_sub2']['xlens'] = xlens_sub2
         return eouts
+
+    def sub_module(self, xs, xlens, perm_ids_unsort, module='sub1'):
+        if self.task_specific_layer:
+            getattr(self, 'rnn_' + module).flatten_parameters()  # for multi-GPUs
+            xs_sub = self.padding(xs, xlens, getattr(self, 'rnn_' + module))
+            xs_sub = getattr(self, 'dropout_' + module)(xs_sub)
+        else:
+            xs_sub = xs.clone()[perm_ids_unsort]
+        if getattr(self, 'bridge_' + module) is not None:
+            xs_sub = getattr(self, 'bridge_' + module)(xs_sub)
+        xlens_sub = xlens[perm_ids_unsort]
+        return xs_sub, xlens_sub
 
 
 class Padding(nn.Module):
