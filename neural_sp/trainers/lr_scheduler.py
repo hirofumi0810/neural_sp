@@ -113,7 +113,7 @@ class LRScheduler(object):
 
     def _warmup_lr(self):
         """Warm up learning rate per step by incresing linearly."""
-        if self.warmup_n_steps > 0 and self._step < self.warmup_n_steps:
+        if self.warmup_n_steps > 0 and self._step <= self.warmup_n_steps:
             self.lr = (self.base_lr - self.warmup_start_lr) / \
                 self.warmup_n_steps * self._step + self.warmup_start_lr
             self._update_lr()
