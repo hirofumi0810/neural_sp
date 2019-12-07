@@ -29,7 +29,7 @@ metric: edit_distance
 lr_factor: 10.0
 early_stop_patient_n_epochs: 5
 sort_stop_epoch: 100
-eval_start_epoch: 20
+eval_start_epoch: 1
 warmup_n_steps: 25000
 accum_grad_n_steps: 2
 ### regularization

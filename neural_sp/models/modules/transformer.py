@@ -65,17 +65,18 @@ class PositionwiseFeedForward(nn.Module):
     """Positionwise fully-connected feed-forward neural network.
 
     Args:
-        d_model (int): dimension of MultiheadAttentionMechanism
+        d_in (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimention of PositionwiseFeedForward
-        dropout (float):
+        d_out (int): dimension of MultiheadAttentionMechanism
+        dropout (float): dropout probability
 
     """
 
-    def __init__(self, d_model, d_ff, dropout):
+    def __init__(self, d_in, d_ff, d_out, dropout):
         super(PositionwiseFeedForward, self).__init__()
 
-        self.w_1 = nn.Linear(d_model, d_ff, bias=True)
-        self.w_2 = nn.Linear(d_ff, d_model, bias=True)
+        self.w_1 = nn.Linear(d_in, d_ff)
+        self.w_2 = nn.Linear(d_ff, d_out)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs):
@@ -120,7 +121,7 @@ class TransformerEncoderBlock(nn.Module):
 
         # feed-forward
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
+        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, d_model, dropout)
         self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, xs, xx_mask=None, cache=False):
@@ -207,7 +208,7 @@ class TransformerDecoderBlock(nn.Module):
 
         # feed-forward
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
+        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, d_model, dropout)
         self.dropout3 = nn.Dropout(dropout)
 
     def forward(self, ys, yy_mask=None, xs=None, xy_mask=None):
