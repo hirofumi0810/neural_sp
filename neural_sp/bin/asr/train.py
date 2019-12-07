@@ -103,6 +103,15 @@ def main():
                     (args.batch_size, args.batch_size // 2))
         args.batch_size //= 2
 
+    if args.resume:
+        transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
+        if transformer and conf['optimizer'] != 'noam':
+            logger.warning('Noam Optimizer is not set for Transformer.')
+    else:
+        transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
+        if transformer and args.optimizer != 'noam':
+            logger.warning('Noam Optimizer is not set for Transformer.')
+
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
@@ -196,7 +205,6 @@ def main():
                                   conf['lr'], conf['weight_decay'])
 
         # Wrap optimizer by learning rate scheduler
-        noam = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
         optimizer = LRScheduler(optimizer, conf['lr'],
                                 decay_type=conf['lr_decay_type'],
                                 decay_start_epoch=conf['lr_decay_start_epoch'],
@@ -205,9 +213,9 @@ def main():
                                 early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
                                 warmup_start_lr=conf['warmup_start_lr'],
                                 warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['d_model'],
+                                model_size=conf['transformer_d_model'],
                                 factor=conf['lr_factor'],
-                                noam=noam)
+                                noam=transformer)
 
         # Restore the last saved model
         model, optimizer = load_checkpoint(model, args.resume, optimizer, resume=True)
@@ -265,7 +273,6 @@ def main():
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
         # Wrap optimizer by learning rate scheduler
-        noam = 'transformer' in args.enc_type or args.dec_type == 'transformer'
         optimizer = LRScheduler(optimizer, args.lr,
                                 decay_type=args.lr_decay_type,
                                 decay_start_epoch=args.lr_decay_start_epoch,
@@ -274,9 +281,9 @@ def main():
                                 early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
-                                model_size=args.d_model,
+                                model_size=args.transformer_d_model,
                                 factor=args.lr_factor,
-                                noam=noam)
+                                noam=transformer)
 
     # Load the teacher ASR model
     teacher = None
@@ -340,12 +347,12 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     pbar_epoch = tqdm(total=len(train_set))
-    accum_n_tokens = 0
+    accum_n_steps = 0
     n_steps = 0
     while True:
         # Compute loss in the training set
         batch_train, is_new_epoch = train_set.next()
-        accum_n_tokens += sum([len(y) for y in batch_train['ys']])
+        accum_n_steps += 1
 
         # Change mini-batch depending on task
         for task in tasks:
@@ -354,14 +361,14 @@ def main():
             reporter.add(observation)
             loss.backward()
             loss.detach()  # Trancate the graph
-            if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
+            if args.accum_grad_n_steps == 1 or accum_n_steps >= args.accum_grad_n_steps:
                 if args.clip_grad_norm > 0:
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         model.module.parameters(), args.clip_grad_norm)
                     reporter.add_tensorboard_scalar('total_norm', total_norm)
                 optimizer.step()
                 optimizer.zero_grad()
-                accum_n_tokens = 0
+                accum_n_steps = 0
             loss_train = loss.item()
             del loss
         reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
@@ -430,7 +437,7 @@ def main():
 
                 # Save the model
                 save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
-                                remove_old_checkpoints=not noam)
+                                remove_old_checkpoints=not transformer)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -442,7 +449,7 @@ def main():
                 if optimizer.is_best:
                     # Save the model
                     save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
-                                    remove_old_checkpoints=not noam)
+                                    remove_old_checkpoints=not transformer)
 
                     # test
                     for eval_set in eval_sets:

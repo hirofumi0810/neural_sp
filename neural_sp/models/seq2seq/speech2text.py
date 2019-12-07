@@ -13,11 +13,11 @@ from __future__ import print_function
 import logging
 import numpy as np
 import torch
+import torch.nn as nn
 
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.models.base import ModelBase
 from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.modules.embedding import Embedding
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.las import RNNDecoder
 from neural_sp.models.seq2seq.decoders.rnn_cif import RNNCIFDecoder
@@ -159,14 +159,14 @@ class Speech2Text(ModelBase):
                         special_symbols=special_symbols,
                         enc_n_units=self.enc.output_dim,
                         attn_type=args.transformer_attn_type,
-                        attn_n_heads=args.transformer_attn_n_heads,
-                        d_model=args.d_model,
-                        d_ff=args.d_ff,
+                        n_heads=args.transformer_n_heads,
+                        d_model=args.transformer_d_model,
+                        d_ff=args.transformer_d_ff,
                         n_layers=args.dec_n_layers,
                         vocab=self.vocab,
                         tie_embedding=args.tie_embedding,
-                        pe_type=args.pe_type,
-                        layer_norm_eps=args.layer_norm_eps,
+                        pe_type=args.transformer_pe_type,
+                        layer_norm_eps=args.transformer_layer_norm_eps,
                         dropout=args.dropout_dec,
                         dropout_emb=args.dropout_emb,
                         dropout_att=args.dropout_att,
@@ -183,13 +183,13 @@ class Speech2Text(ModelBase):
                     special_symbols=special_symbols,
                     enc_n_units=self.enc.output_dim,
                     attn_type=args.transformer_attn_type,
-                    attn_n_heads=args.transformer_attn_n_heads,
-                    d_model=args.d_model,
-                    d_ff=args.d_ff,
+                    n_heads=args.transformer_n_heads,
+                    d_model=args.transformer_d_model,
+                    d_ff=args.transformer_d_ff,
                     n_layers=args.dec_n_layers,
                     vocab=self.vocab,
-                    pe_type=args.pe_type,
-                    layer_norm_eps=args.layer_norm_eps,
+                    pe_type=args.transformer_pe_type,
+                    layer_norm_eps=args.transformer_layer_norm_eps,
                     dropout=args.dropout_dec,
                     dropout_emb=args.dropout_emb,
                     dropout_att=args.dropout_att,
@@ -342,10 +342,9 @@ class Speech2Text(ModelBase):
                 # Share the embedding layer between input and output
                 self.embed = dec.embed
             else:
-                self.embed = Embedding(vocab=args.vocab_sub1,
-                                       emb_dim=args.emb_dim,
-                                       dropout=args.dropout_emb,
-                                       ignore_index=self.pad)
+                self.embed = nn.Embedding(args.vocab_sub1, args.emb_dim,
+                                          padding_idx=self.pad)
+                self.dropout_emb = nn.Dropout(p=args.dropout_emb)
 
         # Recurrent weights are orthogonalized
         if args.rec_weight_orthogonal:
@@ -546,7 +545,8 @@ class Speech2Text(ModelBase):
             xlens = torch.IntTensor([len(x) for x in xs])
             xs = [np2tensor(np.fromiter(x, dtype=np.int64), self.device_id) for x in xs]
             xs = pad_list(xs, self.pad)
-            xs = self.embed(xs)
+            xs = self.dropout_emb(self.embed(xs))
+            # TODO(hirofumi): fix for Transformer
 
         # encoder
         enc_outs = self.enc(xs, xlens, task.split('.')[0])

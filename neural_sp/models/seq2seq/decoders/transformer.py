@@ -50,7 +50,7 @@ class TransformerDecoder(DecoderBase):
         blank (int): index for <blank>
         enc_n_units (int): number of units of the encoder outputs
         attn_type (str): type of attention mechanism
-        attn_n_heads (int): number of attention heads
+        n_heads (int): number of attention heads
         d_model (int): size of the model
         d_ff (int): size of the inner FF layer
         n_layers (int): number of self-attention layers
@@ -75,7 +75,7 @@ class TransformerDecoder(DecoderBase):
                  special_symbols,
                  enc_n_units,
                  attn_type,
-                 attn_n_heads,
+                 n_heads,
                  d_model,
                  d_ff,
                  n_layers,
@@ -105,7 +105,7 @@ class TransformerDecoder(DecoderBase):
         self.enc_n_units = enc_n_units
         self.d_model = d_model
         self.n_layers = n_layers
-        self.attn_n_heads = attn_n_heads
+        self.n_heads = n_heads
         self.pe_type = pe_type
         self.lsm_prob = lsm_prob
         self.ctc_weight = ctc_weight
@@ -127,7 +127,7 @@ class TransformerDecoder(DecoderBase):
             self.embed = nn.Embedding(vocab, d_model, padding_idx=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
             self.layers = nn.ModuleList(
-                [TransformerDecoderBlock(d_model, d_ff, attn_type, attn_n_heads,
+                [TransformerDecoderBlock(d_model, d_ff, attn_type, n_heads,
                                          dropout, dropout_att, layer_norm_eps)
                  for _ in range(n_layers)])
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -300,9 +300,9 @@ class TransformerDecoder(DecoderBase):
                     aws = getattr(self, '%s_aws_layer%d' % (attn, l))
 
                     plt.clf()
-                    fig, axes = plt.subplots(max(1, self.attn_n_heads // n_cols), n_cols,
+                    fig, axes = plt.subplots(max(1, self.n_heads // n_cols), n_cols,
                                              figsize=(20, 8), squeeze=False)
-                    for h in range(self.attn_n_heads):
+                    for h in range(self.n_heads):
                         ax = axes[h // n_cols, h % n_cols]
                         ax.imshow(aws[-1, h, :, :], aspect="auto")
                         ax.grid(False)

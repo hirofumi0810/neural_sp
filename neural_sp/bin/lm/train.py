@@ -65,6 +65,15 @@ def main():
     logger = set_logger(os.path.join(save_path, 'train.log'),
                         key='training', stdout=args.stdout)
 
+    if args.resume:
+        transformer = 'transformer' == conf['lm_type']
+        if transformer and conf['optimizer'] != 'noam':
+            logger.warning('Noam Optimizer is not set for Transformer.')
+    else:
+        transformer = 'transformer' == args.lm_type
+        if transformer and args.optimizer != 'noam':
+            logger.warning('Noam Optimizer is not set for Transformer.')
+
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
@@ -121,9 +130,9 @@ def main():
                                 early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
                                 warmup_start_lr=conf['warmup_start_lr'],
                                 warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['d_model'],
+                                model_size=conf['transformer_d_model'],
                                 factor=conf['lr_factor'],
-                                noam=conf['lm_type'] == 'transformer')
+                                noam=ctransformer)
 
         # Restore the last saved model
         model, optimizer = load_checkpoint(model, args.resume, optimizer, resume=True)
@@ -165,9 +174,9 @@ def main():
                                 early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
-                                model_size=args.d_model,
+                                model_size=args.transformer_d_model,
                                 factor=args.lr_factor,
-                                noam=args.lm_type == 'transformer')
+                                noam=transformer)
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -188,25 +197,25 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     pbar_epoch = tqdm(total=len(train_set))
-    accum_n_tokens = 0
+    accum_n_steps = 0
     n_steps = 0
     while True:
         # Compute loss in the training set
         ys_train, is_new_epoch = train_set.next()
-        accum_n_tokens += sum([len(y) for y in ys_train])
-        optimizer.zero_grad()
+        accum_n_steps += 1
+
         loss, hidden, observation = model(ys_train, hidden)
         reporter.add(observation)
         loss.backward()
         loss.detach()  # Trancate the graph
-        if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
+        if args.accum_grad_n_steps == 1 or accum_n_steps >= args.accum_grad_n_steps:
             if args.clip_grad_norm > 0:
                 total_norm = torch.nn.utils.clip_grad_norm_(
                     model.module.parameters(), args.clip_grad_norm)
                 reporter.add_tensorboard_scalar('total_norm', total_norm)
             optimizer.step()
             optimizer.zero_grad()
-            accum_n_tokens = 0
+            accum_n_steps = 0
         loss_train = loss.item()
         del loss
         hidden = model.module.repackage_state(hidden)

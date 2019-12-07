@@ -25,10 +25,10 @@ def set_asr_model_name(args, subsample_factor):
             dir_name += 'bn'
         dir_name += tmp
     if 'transformer' in args.enc_type:
-        dir_name += str(args.d_model) + 'dmodel'
-        dir_name += str(args.d_ff) + 'dff'
+        dir_name += str(args.transformer_d_model) + 'dmodel'
+        dir_name += str(args.transformer_d_ff) + 'dff'
         dir_name += str(args.enc_n_layers) + 'L'
-        dir_name += str(args.transformer_attn_n_heads) + 'head'
+        dir_name += str(args.transformer_n_heads) + 'head'
     else:
         dir_name += str(args.enc_n_units) + 'H'
         if args.enc_n_projs > 0:
@@ -49,10 +49,10 @@ def set_asr_model_name(args, subsample_factor):
     if args.ctc_weight < 1:
         dir_name += '_' + args.dec_type
         if args.dec_type in ['transformer', 'transformer_transducer']:
-            dir_name += str(args.d_model) + 'dmodel'
-            dir_name += str(args.d_ff) + 'dff'
+            dir_name += str(args.transformer_d_model) + 'dmodel'
+            dir_name += str(args.transformer_d_ff) + 'dff'
             dir_name += str(args.dec_n_layers) + 'L'
-            dir_name += str(args.transformer_attn_n_heads) + 'head'
+            dir_name += str(args.transformer_n_heads) + 'head'
         else:
             dir_name += str(args.dec_n_units) + 'H'
             if args.dec_n_projs > 0:
@@ -85,7 +85,7 @@ def set_asr_model_name(args, subsample_factor):
     dir_name += '_ls' + str(args.lsm_prob)
     if args.warmup_n_steps > 0:
         dir_name += '_warmpup' + str(args.warmup_n_steps)
-    if args.accum_grad_n_steps > 0:
+    if args.accum_grad_n_steps > 1:
         dir_name += '_accum' + str(args.accum_grad_n_steps)
 
     # LM integration
@@ -155,10 +155,10 @@ def set_asr_model_name(args, subsample_factor):
 def set_lm_name(args):
     dir_name = args.lm_type
     if args.lm_type == 'transformer':
-        dir_name += str(args.d_model) + 'dmodel'
-        dir_name += str(args.d_ff) + 'dff'
+        dir_name += str(args.transformer_d_model) + 'dmodel'
+        dir_name += str(args.transformer_d_ff) + 'dff'
         dir_name += str(args.n_layers) + 'L'
-        dir_name += str(args.attn_n_heads) + 'head'
+        dir_name += str(args.transformer_n_heads) + 'head'
     elif 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
         dir_name += str(args.n_units) + 'H'
         dir_name += str(args.n_projs) + 'P'
@@ -185,8 +185,8 @@ def set_lm_name(args):
         dir_name += '_ls' + str(args.lsm_prob)
     if args.warmup_n_steps > 0:
         dir_name += '_warmpup' + str(args.warmup_n_steps)
-    if args.accum_grad_n_tokens > 0:
-        dir_name += '_accum' + str(args.accum_grad_n_tokens)
+    if args.accum_grad_n_steps > 1:
+        dir_name += '_accum' + str(args.accum_grad_n_steps)
 
     if args.backward:
         dir_name += '_bwd'

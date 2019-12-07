@@ -41,11 +41,9 @@ class TransformerLM(LMBase):
 
         self.save_path = save_path
 
-        self.d_model = args.d_model
-        self.d_ff = args.d_ff
-        self.pe_type = args.pe_type
+        self.d_model = args.transformer_d_model
         self.n_layers = args.n_layers
-        self.attn_n_heads = args.attn_n_heads
+        self.n_heads = args.transformer_n_heads
         self.lsm_prob = args.lsm_prob
 
         self.vocab = args.vocab
@@ -61,19 +59,20 @@ class TransformerLM(LMBase):
         self.cache_attn = []
 
         self.embed = nn.Embedding(self.vocab, self.d_model, padding_idx=self.pad)
-        self.pos_enc = PositionalEncoding(args.d_model, args.dropout_in, args.pe_type)
+        self.pos_enc = PositionalEncoding(self.d_model, args.dropout_in, args.transformer_pe_type)
 
         self.layers = nn.ModuleList(
-            [TransformerDecoderBlock(args.d_model, args.d_ff,
-                                     args.attn_type, args.attn_n_heads,
-                                     args.dropout_hidden, args.dropout_att, args.layer_norm_eps,
+            [TransformerDecoderBlock(self.d_model, args.transformer_d_ff,
+                                     args.transformer_attn_type, self.n_heads,
+                                     args.dropout_hidden, args.dropout_att,
+                                     args.transformer_layer_norm_eps,
                                      src_tgt_attention=False)
              for _ in range(self.n_layers)])
-        self.norm_out = nn.LayerNorm(args.d_model, eps=args.layer_norm_eps)
+        self.norm_out = nn.LayerNorm(self.d_model, eps=args.transformer_layer_norm_eps)
 
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
-                args.d_model, self.vocab,
+                self.d_model, self.vocab,
                 cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
                 # cutoffs=[self.vocab // 25, 3 * self.vocab // 5],
                 div_value=4.0)
@@ -166,9 +165,9 @@ class TransformerLM(LMBase):
             yy_aws = getattr(self, 'yy_aws_layer%d' % l)
 
             plt.clf()
-            fig, axes = plt.subplots(self.attn_n_heads // n_cols, n_cols, figsize=(20, 8))
-            for h in range(self.attn_n_heads):
-                if self.attn_n_heads > n_cols:
+            fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
+            for h in range(self.n_heads):
+                if self.n_heads > n_cols:
                     ax = axes[h // n_cols, h % n_cols]
                 else:
                     ax = axes[h]

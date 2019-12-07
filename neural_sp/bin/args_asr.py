@@ -107,11 +107,11 @@ def parse():
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
-                        choices=['blstm', 'lstm', 'bgru', 'gru', 'conv',
+                        choices=['blstm', 'lstm', 'bgru', 'gru', 'lcblstm',
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
+                                 'lcbgru', 'conv', 'conv_lcblstm', 'conv_lcbgru',
                                  'transformer', 'conv_transformer',
-                                 'tds', 'gated_conv',
-                                 'lcblstm', 'lcbgru'],
+                                 'tds', 'gated_conv'],
                         help='type of the encoder')
     parser.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
                         help='sum forward and backward RNN outputs for dimension reduction')
@@ -294,19 +294,19 @@ def parse():
     parser.add_argument('--lm_init', type=str, default=False, nargs='?',
                         help='LM path for initialization of the decoder network')
     # transformer
-    parser.add_argument('--d_model', type=int, default=256,
+    parser.add_argument('--transformer_d_model', type=int, default=256,
                         help='number of units in self-attention layers in Transformer')
-    parser.add_argument('--d_ff', type=int, default=2048,
+    parser.add_argument('--transformer_d_ff', type=int, default=2048,
                         help='number of units in feed-forward fully-conncected layers in Transformer')
     parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
                         choices=['scaled_dot', 'add', 'average'],
                         help='type of attention for Transformer')
-    parser.add_argument('--transformer_attn_n_heads', type=int, default=4,
+    parser.add_argument('--transformer_n_heads', type=int, default=4,
                         help='number of heads in the attention layer for Transformer')
-    parser.add_argument('--pe_type', type=str, default='add',
+    parser.add_argument('--transformer_pe_type', type=str, default='add',
                         choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
                         help='type of positional encoding')
-    parser.add_argument('--layer_norm_eps', type=float, default=1e-12,
+    parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                         help='epsilon value for layer normalization')
     # contextualization
     parser.add_argument('--discourse_aware', type=str, default=False, nargs='?',

@@ -26,7 +26,7 @@ def build_encoder(args):
         #     channels=args.conv_channels,
         #     kernel_sizes=args.conv_kernel_sizes,
         #     dropout=args.dropout_enc,
-        #     bottleneck_dim=args.d_model if 'transformer' in args.dec_type else args.dec_n_units)
+        #     bottleneck_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units)
     elif args.enc_type == 'gated_conv':
         raise ValueError
         # encoder = GatedConvEncoder(
@@ -35,22 +35,22 @@ def build_encoder(args):
         #     channels=args.conv_channels,
         #     kernel_sizes=args.conv_kernel_sizes,
         #     dropout=args.dropout_enc,
-        #     bottleneck_dim=args.d_model if 'transformer' in args.dec_type else args.dec_n_units,
+        #     bottleneck_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units,
         #     param_init=args.param_init)
     elif 'transformer' in args.enc_type:
         encoder = TransformerEncoder(
             input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
             attn_type=args.transformer_attn_type,
-            attn_n_heads=args.transformer_attn_n_heads,
+            n_heads=args.transformer_n_heads,
             n_layers=args.enc_n_layers,
-            d_model=args.d_model,
-            d_ff=args.d_ff,
-            pe_type=args.pe_type,
-            layer_norm_eps=args.layer_norm_eps,
+            d_model=args.transformer_d_model,
+            d_ff=args.transformer_d_ff,
+            pe_type=args.transformer_pe_type,
+            layer_norm_eps=args.transformer_layer_norm_eps,
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
             dropout_att=args.dropout_att,
-            last_proj_dim=args.d_model if 'transformer' in args.dec_type else args.dec_n_units,
+            last_proj_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
             conv_in_channel=args.conv_in_channel,
@@ -77,7 +77,7 @@ def build_encoder(args):
             dropout=args.dropout_enc,
             subsample=subsample,
             subsample_type=args.subsample_type,
-            last_proj_dim=args.d_model if 'transformer' in args.dec_type else args.dec_n_units,
+            last_proj_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
             conv_in_channel=args.conv_in_channel,
