@@ -17,10 +17,8 @@ import numpy as np
 import random
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
@@ -52,8 +50,8 @@ class CTC(DecoderBase):
                  blank,
                  enc_n_units,
                  vocab,
-                 dropout=0.0,
-                 lsm_prob=0.0,
+                 dropout=0.,
+                 lsm_prob=0.,
                  fc_list=[],
                  param_init=0.1):
 
@@ -73,11 +71,12 @@ class CTC(DecoderBase):
             fc_layers = OrderedDict()
             for i in range(len(fc_list)):
                 input_dim = enc_n_units if i == 0 else fc_list[i - 1]
-                fc_layers['fc' + str(i)] = Linear(input_dim, fc_list[i], dropout=dropout)
-            fc_layers['fc' + str(len(fc_list))] = Linear(fc_list[-1], vocab)
+                fc_layers['fc' + str(i)] = nn.Linear(input_dim, fc_list[i])
+                fc_layers['dropout' + str(i)] = nn.Dropout(p=dropout)
+            fc_layers['fc' + str(len(fc_list))] = nn.Linear(fc_list[-1], vocab)
             self.output = nn.Sequential(fc_layers)
         else:
-            self.output = Linear(enc_n_units, vocab)
+            self.output = nn.Linear(enc_n_units, vocab)
 
         import warpctc_pytorch
         self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
@@ -89,7 +88,7 @@ class CTC(DecoderBase):
         for n, p in self.named_parameters():
             if p.dim() == 1:
                 nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() in [2, 4]:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
@@ -140,7 +139,7 @@ class CTC(DecoderBase):
         bs = eouts.size(0)
         hyps = []
 
-        log_probs = F.log_softmax(self.output(eouts), dim=-1)
+        log_probs = torch.log_softmax(self.output(eouts), dim=-1)
 
         # Pickup argmax class
         for b in range(bs):
@@ -190,7 +189,7 @@ class CTC(DecoderBase):
         lm_usage = params['recog_lm_usage']
 
         best_hyps = []
-        log_probs = F.log_softmax(self.output(eouts), dim=-1)
+        log_probs = torch.log_softmax(self.output(eouts), dim=-1)
 
         for b in range(bs):
             # Elements in the beam are (prefix, (p_b, p_no_blank))
@@ -200,8 +199,7 @@ class CTC(DecoderBase):
                      'p_b': LOG_1,
                      'p_nb': LOG_0,
                      'score_lm': LOG_1,
-                     'lmstate': None,
-                     }]
+                     'lmstate': None}]
 
             for t in range(elens[b]):
                 new_beam = []
@@ -232,8 +230,7 @@ class CTC(DecoderBase):
                                      'score_ctc': score_ctc,
                                      'score_lm': score_lm,
                                      'score_lp': score_lp,
-                                     'lmstate': beam[i_beam]['lmstate'],
-                                     })
+                                     'lmstate': beam[i_beam]['lmstate']})
 
                     # Update LM states for shallow fusion
                     if lm_weight > 0 and lm is not None and lm_usage == 'shallow_fusion':
@@ -273,8 +270,7 @@ class CTC(DecoderBase):
                                          'score_ctc': score_ctc,
                                          'score_lm': score_lm,
                                          'score_lp': score_lp,
-                                         'lmstate': lmstate,
-                                         })
+                                         'lmstate': lmstate})
 
                 # Pruning
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
