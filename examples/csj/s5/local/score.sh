@@ -37,6 +37,7 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
+recog_n_average=1  # for Transformer
 oracle=false
 
 . ./cmd.sh
@@ -88,6 +89,9 @@ for set in eval1 eval2 eval3; do
     fi
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
+    fi
+    if [ ${recog_n_average} != 1 ]; then
+        recog_dir=${recog_dir}_average${recog_n_average}
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ] && [ ${lm_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_LMcarryover
@@ -150,6 +154,7 @@ for set in eval1 eval2 eval3; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_n_average ${recog_n_average} \
         --recog_oracle ${oracle} \
         --recog_stdout ${stdout} || exit 1;
 

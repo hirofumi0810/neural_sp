@@ -15,6 +15,7 @@ import os
 import time
 
 from neural_sp.bin.args_lm import parse
+from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
@@ -62,7 +63,12 @@ def main():
             model = load_checkpoint(model, args.recog_model[0])[0]
             epoch = int(args.recog_model[0].split('-')[-1])
 
-            logger.info('epoch: %d' % (epoch - 1))
+            # Model averaging for Transformer
+            if conf['lm_type'] == 'transformer':
+                model = average_checkpoints(model, args.recog_model[0], epoch,
+                                            n_average=args.recog_n_average)
+
+            logger.info('epoch: %d' % epoch)
             logger.info('batch size: %d' % args.recog_batch_size)
             # logger.info('recog unit: %s' % args.recog_unit)
             # logger.info('ensemble: %d' % (len(ensemble_models)))
@@ -70,6 +76,7 @@ def main():
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache theta: %.3f' % (args.recog_cache_theta))
             logger.info('cache lambda: %.3f' % (args.recog_cache_lambda))
+            logger.info('model average (Transformer): %d' % (args.recog_n_average))
             model.cache_theta = args.recog_cache_theta
             model.cache_lambda = args.recog_cache_lambda
 

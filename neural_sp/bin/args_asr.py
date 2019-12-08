@@ -32,7 +32,6 @@ def parse():
                         help='print to standard output during training')
     parser.add_argument('--recog_stdout', type=strtobool, default=False,
                         help='print to standard output during evaluation')
-
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')
@@ -308,6 +307,8 @@ def parse():
                         help='type of positional encoding')
     parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                         help='epsilon value for layer normalization')
+    parser.add_argument('--transformer_chunk_hop_size', type=int, default=0,
+                        help='chunk-hopping mechanism for time-restricted Transformer')
     # contextualization
     parser.add_argument('--discourse_aware', type=str, default=False, nargs='?',
                         choices=['state_carry_over', 'hierarchical', ''],

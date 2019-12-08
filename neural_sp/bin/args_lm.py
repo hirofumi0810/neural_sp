@@ -28,6 +28,8 @@ def parse():
                         help='job name')
     parser.add_argument('--stdout', type=strtobool, default=False,
                         help='print to standard output')
+    parser.add_argument('--recog_stdout', type=strtobool, default=True,
+                        help='print to standard output during evaluation')
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')
@@ -132,7 +134,7 @@ def parse():
     parser.add_argument('--dropout_out', type=float, default=0.0,
                         help='dropout probability for the output layer')
     parser.add_argument('--dropout_att', type=float, default=0.1,
-                        help='dropout probability for the attention weights')
+                        help='dropout probability for the attention weights (for Transformer)')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help='')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
@@ -170,6 +172,8 @@ def parse():
                         help='directory to save decoding results')
     parser.add_argument('--recog_batch_size', type=int, default=1,
                         help='size of mini-batch in evaluation')
+    parser.add_argument('--recog_n_average', type=int, default=5,
+                        help='number of models for the model averaging of Transformer')
     # cache parameters
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
