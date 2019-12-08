@@ -30,7 +30,7 @@ def cross_entropy_lsm(logits, ys, lsm_prob, ignore_index, training):
     """
     if lsm_prob == 0 or not training:
         loss = F.cross_entropy(logits, ys.view(-1),
-                               ignore_index=ignore_index, size_average=True)
+                               ignore_index=ignore_index, reduction='mean')
     else:
         target_dist = logits.new_zeros(logits.size())
         target_dist.fill_(lsm_prob / (logits.size(-1) - 1))
@@ -75,8 +75,7 @@ def kldiv_lsm_ctc(logits, ylens):
         loss_mean (FloatTensor): `[1]`
 
     """
-    bs = logits.size(0)
-    vocab = logits.size(-1)
+    bs, _, vocab = logits.size()
 
     log_uniform = logits.new_zeros(logits.size()).fill_(math.log(1 / (vocab - 1)))
     probs = torch.softmax(logits, dim=-1)
