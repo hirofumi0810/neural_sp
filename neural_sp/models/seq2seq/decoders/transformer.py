@@ -269,16 +269,11 @@ class TransformerDecoder(DecoderBase):
             return logits
 
         # Compute XE sequence loss (+ label smoothing)
-        loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                 self.lsm_prob, self.pad, self.training)
+        loss, ppl = cross_entropy_lsm(logits, ys_out_pad,
+                                      self.lsm_prob, self.pad, self.training)
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)
-        # ppl = min(np.exp(loss.item()), np.inf)
-        ppl = np.exp(loss.item())
-
-        # scale loss for CTC
-        loss *= ylens.float().mean()
 
         return loss, acc, ppl
 

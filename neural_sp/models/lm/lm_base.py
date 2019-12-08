@@ -13,7 +13,6 @@ from __future__ import print_function
 import logging
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from neural_sp.models.base import ModelBase
 from neural_sp.models.criterion import cross_entropy_lsm
@@ -64,7 +63,6 @@ class LMBase(ModelBase):
 
     def _forward(self, ys, state, n_caches=0, predict_last=False):
         ys = [np2tensor(y, self.device_id) for y in ys]  # <eos> is included
-        ylens = np2tensor(np.fromiter([y.size(0) - 1 for y in ys], dtype=np.int32))  # -1 for <eos>
         ys = pad_list(ys, self.pad)
         ys_in = ys[:, :-1]
         ys_out = ys[:, 1:]
@@ -105,12 +103,12 @@ class LMBase(ModelBase):
             loss = -torch.log(probs[:, :, ys_out[:, -1]])
         else:
             if self.adaptive_softmax is None:
-                loss = cross_entropy_lsm(logits.view((-1, logits.size(2))),
-                                         ys_out.contiguous().view(-1),
-                                         self.lsm_prob, self.pad, self.training)
+                loss, ppl = cross_entropy_lsm(logits, ys_out.contiguous(),
+                                              self.lsm_prob, self.pad, self.training)
             else:
                 loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
                                              ys_out.contiguous().view(-1)).loss
+                ppl = np.exp(loss.item())
 
         if n_caches > 0:
             # Register to cache
@@ -126,7 +124,7 @@ class LMBase(ModelBase):
 
         observation = {'loss.lm': loss.item(),
                        'acc.lm': acc,
-                       'ppl.lm': min(np.exp(loss.item()), np.inf)}
+                       'ppl.lm': ppl}
 
         return loss, state, observation
 

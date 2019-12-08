@@ -103,12 +103,12 @@ class RNNDecoder(DecoderBase):
                  vocab,
                  tie_embedding=False,
                  attn_dim=0,
-                 attn_sharpening_factor=0.,
+                 attn_sharpening_factor=1.,
                  attn_sigmoid_smoothing=False,
                  attn_conv_out_channels=0,
                  attn_conv_kernel_size=0,
                  attn_n_heads=0,
-                 dropout=0,
+                 dropout=0.,
                  dropout_emb=0.,
                  dropout_att=0.,
                  lsm_prob=0.,
@@ -122,7 +122,7 @@ class RNNDecoder(DecoderBase):
                  lm_fusion_type='cold',
                  discourse_aware='',
                  lm_init=None,
-                 global_weight=1.0,
+                 global_weight=1.,
                  mtl_per_batch=False,
                  param_init=0.1,
                  mocha_chunk_size=1,
@@ -239,16 +239,7 @@ class RNNDecoder(DecoderBase):
 
             self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
             self.dropout_emb = nn.Dropout(p=dropout_emb)
-
             self.output = nn.Linear(bottleneck_dim, vocab)
-            # NOTE: include bias even when tying weights
-
-            # Optionally tie weights as in:
-            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-            # https://arxiv.org/abs/1608.05859
-            # and
-            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-            # https://arxiv.org/abs/1611.01462
             if tie_embedding:
                 if emb_dim != bottleneck_dim:
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
@@ -286,7 +277,6 @@ class RNNDecoder(DecoderBase):
         logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
-
             if 'score.monotonic_energy.v.weight_g' in n or 'score.monotonic_energy.r' in n:
                 logger.info('Skip initialization of %s' % n)
                 continue
@@ -297,10 +287,10 @@ class RNNDecoder(DecoderBase):
             if p.dim() == 1:
                 if 'linear_lm_gate.fc.bias' in n:
                     # Initialize bias in gating with -1 for cold fusion
-                    nn.init.constant_(p, val=-1)  # bias
+                    nn.init.constant_(p, -1.)  # bias
                     logger.info('Initialize %s with %s / %.3f' % (n, 'constant', -1.))
                 else:
-                    nn.init.constant_(p, val=0)  # bias
+                    nn.init.constant_(p, 0.)  # bias
                     logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() in [2, 3, 4]:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
@@ -463,8 +453,8 @@ class RNNDecoder(DecoderBase):
             self.aws = tensor2np(torch.cat(aws, dim=2))  # `[B, n_heads, L, T]`
 
         # Compute XE sequence loss (+ label smoothing)
-        loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                 self.lsm_prob, self.pad, self.training)
+        loss, ppl = cross_entropy_lsm(logits, ys_out_pad,
+                                      self.lsm_prob, self.pad, self.training)
 
         # Knowledge distillation
         if teacher_logits is not None:
@@ -473,10 +463,6 @@ class RNNDecoder(DecoderBase):
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)
-        ppl = np.exp(loss.item())
-
-        # scale loss for CTC
-        loss *= ylens.float().mean()
 
         return loss, acc, ppl
 

@@ -16,32 +16,47 @@ import torch
 import torch.nn.functional as F
 
 
-def cross_entropy_lsm(logits, ys, lsm_prob, ignore_index, training):
+def cross_entropy_lsm(logits, ys, lsm_prob, ignore_index, training, normalize_length=False):
     """Compute cross entropy loss for label smoothing of sequence-to-sequence models.
 
     Args:
-        logits (FloatTensor): `[B * T, vocab]`
-        ys (LongTensor): Indices of labels. `[B * L]`
+        logits (FloatTensor): `[B, T, vocab]`
+        ys (LongTensor): Indices of labels. `[B, L]`
         lsm_prob (float): label smoothing probability
         ignore_index (int): index for padding
+        normalize_length (bool): normalize XE loss by target sequence length
     Returns:
         loss_mean (FloatTensor): `[1]`
+        ppl (float): perplexity
 
     """
+    bs, _, vocab = logits.size()
+    ys = ys.view(-1)
+    logits = logits.view((-1, logits.size(2)))
+
     if lsm_prob == 0 or not training:
-        loss = F.cross_entropy(logits, ys.view(-1),
+        loss = F.cross_entropy(logits, ys,
                                ignore_index=ignore_index, reduction='mean')
+        ppl = np.exp(loss.item())
+        if not normalize_length:
+            loss *= (ys != ignore_index).sum() / bs
     else:
-        target_dist = logits.new_zeros(logits.size())
-        target_dist.fill_(lsm_prob / (logits.size(-1) - 1))
-        mask = (ys == ignore_index)
-        ys_masked = ys.masked_fill(mask, 0)
-        target_dist.scatter_(1, ys_masked.unsqueeze(1), 1 - lsm_prob)
+        with torch.no_grad():
+            target_dist = logits.new_zeros(logits.size())
+            target_dist.fill_(lsm_prob / (vocab - 1))
+            mask = (ys == ignore_index)
+            ys_masked = ys.masked_fill(mask, 0)
+            target_dist.scatter_(1, ys_masked.unsqueeze(1), 1 - lsm_prob)
 
         log_probs = torch.log_softmax(logits, dim=-1)
         loss_sum = -torch.mul(target_dist, log_probs)
-        loss = loss_sum.masked_fill(mask.unsqueeze(1), 0).sum() / (len(ys) - mask.sum())
-    return loss
+        n_tokens = len(ys) - mask.sum().item()
+        denom = n_tokens if normalize_length else bs
+        loss = loss_sum.masked_fill(mask.unsqueeze(1), 0).sum() / denom
+
+        ppl = np.exp(loss.item()) if normalize_length else np.exp(loss.item() * bs / n_tokens)
+
+    return loss, ppl
 
 
 def distillation(logits_student, logits_teacher, ylens, temperature=5.0):

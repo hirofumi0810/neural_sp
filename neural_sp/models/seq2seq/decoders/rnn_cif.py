@@ -18,7 +18,6 @@ import random
 import shutil
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.lm.rnnlm import RNNLM
@@ -98,7 +97,7 @@ class RNNCIFDecoder(DecoderBase):
                  lm_fusion_type='cold',
                  discourse_aware='',
                  lm_init=None,
-                 global_weight=1.0,
+                 global_weight=1.,
                  mtl_per_batch=False,
                  param_init=0.1,
                  replace_sos=False,
@@ -190,16 +189,7 @@ class RNNCIFDecoder(DecoderBase):
 
             self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
             self.dropout_emb = nn.Dropout(p=dropout_emb)
-
             self.output = nn.Linear(bottleneck_dim, vocab)
-            # NOTE: include bias even when tying weights
-
-            # Optionally tie weights as in:
-            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-            # https://arxiv.org/abs/1608.05859
-            # and
-            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-            # https://arxiv.org/abs/1611.01462
             if tie_embedding:
                 if emb_dim != bottleneck_dim:
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
@@ -241,11 +231,11 @@ class RNNCIFDecoder(DecoderBase):
             if p.dim() == 1:
                 if 'linear_lm_gate.fc.bias' in n:
                     # Initialize bias in gating with -1 for cold fusion
-                    nn.init.constant_(p, val=-1)  # bias
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', -1))
+                    nn.init.constant_(p, -1.)  # bias
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', -1.))
                 else:
-                    nn.init.constant_(p, val=0)  # bias
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                    nn.init.constant_(p, 0.)  # bias
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() in [2, 3, 4]:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
@@ -272,8 +262,7 @@ class RNNCIFDecoder(DecoderBase):
         """
         observation = {'loss': None, 'loss_att': None, 'loss_ctc': None,
                        'acc_att': None, 'ppl_att': None}
-        w = next(self.parameters())
-        loss = w.new_zeros((1,))
+        loss = eouts.new_zeros((1,))
 
         # if self.lm is not None:
         #     self.lm.eval()
@@ -365,14 +354,9 @@ class RNNCIFDecoder(DecoderBase):
         if not self.training:
             self.aws = tensor2np(aws)  # `[B, n_heads, L, T]`
 
-        # Compute XE sequence loss
-        if self.lsm_prob > 0 and self.training:
-            # Label smoothing
-            loss = cross_entropy_lsm(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                     self.lsm_prob, self.pad)
-        else:
-            loss = F.cross_entropy(logits.view((-1, logits.size(2))), ys_out_pad.view(-1),
-                                   ignore_index=self.pad, size_average=True)
+        # Compute XE sequence loss (+ label smoothing)
+        loss, ppl = cross_entropy_lsm(logits, ys_out_pad,
+                                      self.lsm_prob, self.pad, self.training)
 
         # Quantity loss for CIF
         quantity_loss = torch.mean(torch.abs(alpha.sum(1) - ylens.float().cuda(self.device_id)))
@@ -380,10 +364,6 @@ class RNNCIFDecoder(DecoderBase):
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)
-        ppl = np.exp(loss.item())
-
-        # scale loss for CTC
-        loss *= ylens.float().mean()
 
         return loss, acc, ppl
 
@@ -769,7 +749,7 @@ class RNNCIFDecoder(DecoderBase):
                             ensmbl_dstate += [ensmbl_dstate]
                             ensmbl_cv += [cv_e]
                             ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi): unsqueeze?
-                            ensmbl_log_probs += F.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
+                            ensmbl_log_probs += torch.log_softmax(dec.output(attn_v_e).squeeze(1), dim=1)
 
                     local_scores_attn = torch.log(probs)
 
@@ -910,7 +890,7 @@ class RNNCIFDecoder(DecoderBase):
                     for t in range(len(end_hyps[i]['hyp'][1:])):
                         lmout_rev, lmstate_rev = lm_rev.decode(
                             eouts.new_zeros(1, 1).fill_(end_hyps[i]['hyp'][::-1][t]), lmstate_rev)
-                        lm_log_probs = F.log_softmax(lm_rev.generate(lmout_rev).squeeze(1), dim=-1)
+                        lm_log_probs = torch.log_softmax(lm_rev.generate(lmout_rev).squeeze(1), dim=-1)
                         score_lm_rev += lm_log_probs[0, -1, end_hyps[i]['hyp'][::-1][t + 1]]
                     if gnmt_decoding:
                         score_lm_rev /= lp  # normalize

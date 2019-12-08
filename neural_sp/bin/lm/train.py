@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import cProfile
-import numpy as np
 import os
 from setproctitle import setproctitle
 import shutil
@@ -132,7 +131,7 @@ def main():
                                 warmup_n_steps=conf['warmup_n_steps'],
                                 model_size=conf['transformer_d_model'],
                                 factor=conf['lr_factor'],
-                                noam=ctransformer)
+                                noam=transformer)
 
         # Restore the last saved model
         model, optimizer = load_checkpoint(model, args.resume, optimizer, resume=True)
@@ -235,10 +234,9 @@ def main():
             reporter.step(is_eval=True)
 
             duration_step = time.time() - start_time_step
-            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
+            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
                         (n_steps, optimizer.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
-                         np.exp(loss_train), np.exp(loss_dev),
                          optimizer.lr, ys_train.shape[0], duration_step / 60))
             start_time_step = time.time()
 
@@ -260,7 +258,7 @@ def main():
 
                 # Save the model
                 save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
-                                remove_old_checkpoints=args.lm_type != 'transformer')
+                                remove_old_checkpoints=not transformer)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -274,7 +272,7 @@ def main():
                 if optimizer.is_best:
                     # Save the model
                     save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
-                                    remove_old_checkpoints=args.lm_type != 'transformer')
+                                    remove_old_checkpoints=not transformer)
 
                     # test
                     ppl_test_avg = 0.
