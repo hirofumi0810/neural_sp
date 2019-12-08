@@ -76,7 +76,10 @@ def set_asr_model_name(args, subsample_factor):
 
     # optimization
     dir_name += '_' + args.optimizer
-    dir_name += '_lr' + str(args.lr)
+    if args.optimizer == 'noam':
+        dir_name += '_lr' + str(args.lr_factor)
+    else:
+        dir_name += '_lr' + str(args.lr)
     dir_name += '_bs' + str(args.batch_size)
 
     # regularization
@@ -166,7 +169,10 @@ def set_lm_name(args):
     if args.lm_type != 'transformer':
         dir_name += '_emb' + str(args.emb_dim)
     dir_name += '_' + args.optimizer
-    dir_name += '_lr' + str(args.lr)
+    if args.optimizer == 'noam':
+        dir_name += '_lr' + str(args.lr_factor)
+    else:
+        dir_name += '_lr' + str(args.lr)
     dir_name += '_bs' + str(args.batch_size)
     dir_name += '_bptt' + str(args.bptt)
     if args.tie_embedding:
