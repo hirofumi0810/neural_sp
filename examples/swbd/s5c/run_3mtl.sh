@@ -10,7 +10,7 @@ echo ===========================================================================
 stage=0
 gpu=
 speed_perturb=false
-spec_augment=false
+specaug=false
 stdout=false
 
 ### vocabulary
@@ -60,7 +60,7 @@ set -o pipefail
 
 if [ ${speed_perturb} = true ]; then
     conf2=conf/asr/speed_perturb.yaml
-elif [ ${spec_augment} = true ]; then
+elif [ ${specaug} = true ]; then
     conf2=conf/asr/spec_augment.yaml
 fi
 

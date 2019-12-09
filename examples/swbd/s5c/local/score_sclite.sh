@@ -22,6 +22,9 @@ for f in $data/$set/stm $data/$set/glm; do
   [ ! -f $f ] && echo "$0: expecting file $f to exist" && exit 1;
 done
 
+cp $dir/hyp.trn $dir/hyp.trn.tmp
+cat $dir/hyp.trn.tmp | sed -e 's/-original)/)/g' | sed -e 's/-fluent)/)/g' > $dir/hyp.trn
+
 python local/map_acronyms_transcripts.py -i $dir/hyp.trn -o $dir/hyp.trn.mapped -M $data/local/dict_nosp/acronyms.map
 # NOTE: inputs for map_acronyms_transcripts must be lowercase
 

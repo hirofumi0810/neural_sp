@@ -9,14 +9,16 @@ conv_poolings: "(2,2)_(2,2)"
 conv_batch_norm: false
 subsample: "1_2_2_2_1"
 enc_type: blstm
+bidirectional_sum_fwd_bwd: true
 enc_n_units: 512
 enc_n_projs: 0
 enc_n_layers: 6
 enc_n_layers_sub1: 4
-enc_nin: false
 subsample_type: drop
 attn_type: location
 attn_dim: 512
+attn_conv_n_channels: 10
+attn_conv_width: 201
 attn_n_heads: 1
 dec_type: lstm
 dec_n_units: 1024
@@ -65,7 +67,3 @@ bwd_weight: 0.0
 sub1_weight: 0.2
 mtl_per_batch: false
 task_specific_layer: true
-### LM integration
-lm_fusion_type: cold
-lm_fusion: ''
-lm_init: ''

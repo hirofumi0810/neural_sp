@@ -10,7 +10,7 @@ echo ===========================================================================
 stage=0
 gpu=
 speed_perturb=false
-spec_augment=false
+specaug=false
 stdout=false
 
 ### vocabulary
@@ -24,18 +24,18 @@ vocab_sub1=
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/rnn_seq2seq_2mtl.yaml
+conf=conf/asr/blstm_las_2mtl.yaml
 conf2=
 asr_init=
 
 ### path to save the model
-model=/n/sd3/inaguma/result/swbd
+model=/n/work1/inaguma/results/swbd
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-export data=/n/sd3/inaguma/corpus/swbd
+export data=/n/work1/inaguma/corpus/swbd
 
 ### path to original data
 SWBD_AUDIOPATH=/n/rd21/corpora_7/swb
@@ -57,7 +57,7 @@ set -o pipefail
 
 if [ ${speed_perturb} = true ]; then
     conf2=conf/asr/speed_perturb.yaml
-elif [ ${spec_augment} = true ]; then
+elif [ ${specaug} = true ]; then
     conf2=conf/asr/spec_augment.yaml
 fi
 

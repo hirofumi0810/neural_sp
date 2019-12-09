@@ -9,13 +9,15 @@ conv_poolings: "(2,2)_(2,2)"
 conv_batch_norm: false
 subsample: "1_2_2_2_1"
 enc_type: blstm
+bidirectional_sum_fwd_bwd: true
 enc_n_units: 512
 enc_n_projs: 0
 enc_n_layers: 6
-enc_nin: false
 subsample_type: drop
 attn_type: location
 attn_dim: 512
+attn_conv_n_channels: 10
+attn_conv_width: 201
 attn_n_heads: 1
 dec_type: lstm
 dec_n_units: 1024
@@ -34,7 +36,7 @@ print_step: 1000
 metric: edit_distance
 lr: 5e-4
 lr_decay_type: always
-lr_decay_start_epoch: 5
+lr_decay_start_epoch: 10
 lr_decay_rate: 0.85
 lr_decay_patient_n_epochs: 0
 early_stop_patient_n_epochs: 5
@@ -61,9 +63,3 @@ ctc_lsm_prob: 0.1
 bwd_weight: 0.0
 mtl_per_batch: false
 task_specific_layer: false
-### LM integration
-lm_fusion_type: cold
-lm_fusion: ''
-lm_init: ''
-# contextualization
-discourse_aware: ''
