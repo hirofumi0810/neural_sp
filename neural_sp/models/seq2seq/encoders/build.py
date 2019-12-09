@@ -60,7 +60,8 @@ def build_encoder(args):
             conv_poolings=args.conv_poolings,
             conv_batch_norm=args.conv_batch_norm,
             conv_bottleneck_dim=args.conv_bottleneck_dim,
-            param_init=args.param_init)
+            conv_param_init=args.param_init,
+            chunk_hop_size=args.transformer_chunk_hop_size)
     else:
         subsample = [1] * args.enc_n_layers
         for l, s in enumerate(list(map(int, args.subsample.split('_')[:args.enc_n_layers]))):

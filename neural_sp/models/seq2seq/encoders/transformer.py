@@ -14,6 +14,7 @@ import logging
 import math
 import os
 import shutil
+import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.transformer import PositionalEncoding
@@ -21,6 +22,7 @@ from neural_sp.models.modules.transformer import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.torch_utils import make_pad_mask
+from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -55,7 +57,7 @@ class TransformerEncoder(EncoderBase):
         conv_poolings (list): size of poolings in the CNN blocks
         conv_batch_norm (bool): apply batch normalization only in the CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
-        param_init (float): only for CNN layers before Transformer layers
+        conv_param_init (float): only for CNN layers before Transformer layers
 
     """
 
@@ -81,7 +83,8 @@ class TransformerEncoder(EncoderBase):
                  conv_poolings=[],
                  conv_batch_norm=False,
                  conv_bottleneck_dim=0,
-                 param_init=0.1):
+                 conv_param_init=0.1,
+                 chunk_hop_size=0):
 
         super(TransformerEncoder, self).__init__()
         logger = logging.getLogger("training")
@@ -90,6 +93,7 @@ class TransformerEncoder(EncoderBase):
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.pe_type = pe_type
+        self.chunk_hop_size = chunk_hop_size
 
         # Setting for CNNs before RNNs
         if conv_channels:
@@ -103,26 +107,25 @@ class TransformerEncoder(EncoderBase):
                                     dropout=0.,
                                     batch_norm=conv_batch_norm,
                                     bottleneck_dim=d_model,
-                                    param_init=param_init)
-            self._output_dim = self.conv.output_dim
+                                    param_init=conv_param_init)
+            self._odim = self.conv.output_dim
         else:
-            self._output_dim = input_dim * n_splices * n_stacks
+            self._odim = input_dim * n_splices * n_stacks
             self.conv = None
 
-            self.embed = nn.Linear(self._output_dim, d_model)
+            self.embed = nn.Linear(self._odim, d_model)
 
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
-        self.layers = nn.ModuleList(
-            [TransformerEncoderBlock(d_model, d_ff, attn_type, n_heads,
-                                     dropout, dropout_att, layer_norm_eps) for l in range(n_layers)])
+        self.layers = repeat(TransformerEncoderBlock(d_model, d_ff, attn_type, n_heads,
+                                                     dropout, dropout_att, layer_norm_eps), n_layers)
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if last_proj_dim != self.output_dim:
-            self.bridge = nn.Linear(self._output_dim, last_proj_dim)
-            self._output_dim = last_proj_dim
+            self.bridge = nn.Linear(self._odim, last_proj_dim)
+            self._odim = last_proj_dim
         else:
             self.bridge = None
-            self._output_dim = d_model
+            self._odim = d_model
 
         # Initialize parameters
         # self.reset_parameters()
@@ -170,16 +173,35 @@ class TransformerEncoder(EncoderBase):
             # Path through CNN blocks before RNN layers
             xs, xlens = self.conv(xs, xlens)
 
-        # Create the self-attention mask
-        bs, xmax = xs.size()[: 2]
-        xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
-
+        bs, xmax, idim = xs.size()
         xs = self.pos_enc(xs)
-        for l in range(self.n_layers):
-            xs, xx_aws = self.layers[l](xs, xx_mask)
+        if self.chunk_hop_size > 0:
+            # Time-restricted self-attention for streaming models
+            xs_chunks = []
+            xx_aws = [[] for l in range(self.n_layers)]
+            xs_pad = torch.cat([xs.new_zeros(bs, self.chunk_hop_size, idim), xs,
+                                xs.new_zeros(bs, self.chunk_hop_size, idim)], dim=1)
+            for t in range(self.chunk_hop_size, xmax + self.chunk_hop_size, self.chunk_hop_size):
+                xs_chunk = xs_pad[:, t - self.chunk_hop_size:t + self.chunk_hop_size * 2]
+                for l in range(self.n_layers):
+                    xs_chunk, xx_aws_chunk = self.layers[l](xs_chunk, None)  # no mask
+                    xx_aws[l].append(xx_aws_chunk[:, :, self.chunk_hop_size:self.chunk_hop_size * 2,
+                                                  self.chunk_hop_size:self.chunk_hop_size * 2])
+                xs_chunk = self.norm_out(xs_chunk)
+                xs_chunks.append(xs_chunk[:, self.chunk_hop_size:self.chunk_hop_size * 2])
+            xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
             if not self.training:
-                setattr(self, 'xx_aws_layer%d' % l, tensor2np(xx_aws))
-        xs = self.norm_out(xs)
+                for l in range(self.n_layers):
+                    setattr(self, 'xx_aws_layer%d' % l, tensor2np(torch.cat(xx_aws[l], dim=3)[:, :, :xmax, :xmax]))
+        else:
+            # Create the self-attention mask
+            xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
+
+            for l in range(self.n_layers):
+                xs, xx_aws = self.layers[l](xs, xx_mask)
+                if not self.training:
+                    setattr(self, 'xx_aws_layer%d' % l, tensor2np(xx_aws))
+            xs = self.norm_out(xs)
 
         # Bridge layer
         if self.bridge is not None:
