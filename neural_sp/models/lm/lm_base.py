@@ -104,7 +104,8 @@ class LMBase(ModelBase):
         else:
             if self.adaptive_softmax is None:
                 loss, ppl = cross_entropy_lsm(logits, ys_out.contiguous(),
-                                              self.lsm_prob, self.pad, self.training)
+                                              self.lsm_prob, self.pad, self.training,
+                                              normalize_length=True)
             else:
                 loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
                                              ys_out.contiguous().view(-1)).loss
@@ -122,10 +123,7 @@ class LMBase(ModelBase):
             acc = compute_accuracy(self.adaptive_softmax.log_prob(
                 logits.view((-1, logits.size(2)))), ys_out, pad=self.pad)
 
-        observation = {'loss.lm': loss.item(),
-                       'acc.lm': acc,
-                       'ppl.lm': ppl}
-
+        observation = {'loss.lm': loss.item(), 'acc.lm': acc, 'ppl.lm': ppl}
         return loss, state, observation
 
     def repackage_state(self, state):
