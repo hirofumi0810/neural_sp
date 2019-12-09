@@ -31,7 +31,7 @@ class EncoderBase(ModelBase):
 
     @property
     def output_dim(self):
-        return self._output_dim
+        return self._odim
 
     def reset_parameters(self, param_init):
         raise NotImplementedError

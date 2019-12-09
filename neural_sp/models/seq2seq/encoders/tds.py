@@ -76,11 +76,11 @@ class TDSEncoder(EncoderBase):
 
             in_ch = channels[l]
 
-        self._output_dim = int(in_ch * in_freq)
+        self._odim = int(in_ch * in_freq)
 
         if bottleneck_dim > 0:
-            self.bridge = nn.Linear(self._output_dim, bottleneck_dim)
-            self._output_dim = bottleneck_dim
+            self.bridge = nn.Linear(self._odim, bottleneck_dim)
+            self._odim = bottleneck_dim
 
         self.layers = nn.Sequential(layers)
 

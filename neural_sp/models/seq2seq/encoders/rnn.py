@@ -146,9 +146,9 @@ class RNNEncoder(EncoderBase):
                                         batch_norm=conv_batch_norm,
                                         bottleneck_dim=conv_bottleneck_dim,
                                         param_init=param_init)
-            self._output_dim = self.conv.output_dim
+            self._odim = self.conv.output_dim
         else:
-            self._output_dim = input_dim * n_splices * n_stacks
+            self._odim = input_dim * n_splices * n_stacks
             self.conv = None
 
         self.padding = Padding()
@@ -189,31 +189,31 @@ class RNNEncoder(EncoderBase):
                     raise ValueError('rnn_type must be "(conv_)(b/lcb)lstm" or "(conv_)(b/lcb)gru".')
 
                 if self.latency_controlled:
-                    self.rnn += [rnn_i(self._output_dim, n_units, 1, batch_first=True)]
-                    self.rnn_bwd += [rnn_i(self._output_dim, n_units, 1, batch_first=True)]
+                    self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=True)]
+                    self.rnn_bwd += [rnn_i(self._odim, n_units, 1, batch_first=True)]
                 else:
-                    self.rnn += [rnn_i(self._output_dim, n_units, 1, batch_first=True,
+                    self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=True,
                                        bidirectional=self.bidirectional)]
                 self.dropout += [nn.Dropout(p=dropout)]
-                self._output_dim = n_units if bidirectional_sum_fwd_bwd else n_units * self.n_dirs
+                self._odim = n_units if bidirectional_sum_fwd_bwd else n_units * self.n_dirs
                 self.bidirectional_sum_fwd_bwd = bidirectional_sum_fwd_bwd
 
                 # Projection layer
                 if self.proj is not None:
                     if l != n_layers - 1:
                         self.proj += [nn.Linear(n_units * self.n_dirs, n_projs)]
-                        self._output_dim = n_projs
+                        self._odim = n_projs
 
                 # Task specific layer
                 if l == n_layers_sub1 - 1 and task_specific_layer:
-                    self.rnn_sub1 = rnn_i(self._output_dim, n_units, 1,
+                    self.rnn_sub1 = rnn_i(self._odim, n_units, 1,
                                           batch_first=True,
                                           bidirectional=self.bidirectional)
                     self.dropout_sub1 = nn.Dropout(p=dropout)
                     if last_proj_dim != self.output_dim:
                         self.bridge_sub1 = nn.Linear(n_units, last_proj_dim)
                 if l == n_layers_sub2 - 1 and task_specific_layer:
-                    self.rnn_sub2 = rnn_i(self._output_dim, n_units, 1,
+                    self.rnn_sub2 = rnn_i(self._odim, n_units, 1,
                                           batch_first=True,
                                           bidirectional=self.bidirectional)
                     self.dropout_sub2 = nn.Dropout(p=dropout)
@@ -223,13 +223,13 @@ class RNNEncoder(EncoderBase):
                 # Network in network
                 if self.nin is not None:
                     if l != n_layers - 1:
-                        self.nin += [NiN(self._output_dim)]
+                        self.nin += [NiN(self._odim)]
                     # if n_layers_sub1 > 0 or n_layers_sub2 > 0:
                     #     assert task_specific_layer
 
             if last_proj_dim != self.output_dim:
-                self.bridge = nn.Linear(self._output_dim, last_proj_dim)
-                self._output_dim = last_proj_dim
+                self.bridge = nn.Linear(self._odim, last_proj_dim)
+                self._odim = last_proj_dim
 
         # Initialize parameters
         self.reset_parameters(param_init)

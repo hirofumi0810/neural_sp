@@ -81,11 +81,11 @@ class ConvEncoder(EncoderBase):
             in_freq = block.input_dim
             in_ch = channels[l]
 
-        self._output_dim = int(in_ch * in_freq)
+        self._odim = int(in_ch * in_freq)
 
         if bottleneck_dim > 0:
-            self.bridge = nn.Linear(self._output_dim, bottleneck_dim)
-            self._output_dim = bottleneck_dim
+            self.bridge = nn.Linear(self._odim, bottleneck_dim)
+            self._odim = bottleneck_dim
 
         # Initialize parameters
         self.reset_parameters(param_init)

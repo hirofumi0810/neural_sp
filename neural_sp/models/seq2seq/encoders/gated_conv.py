@@ -70,11 +70,11 @@ class GatedConvEncoder(EncoderBase):
         self.fc_glu = nn.utils.weight_norm(nn.Linear(input_dim, input_dim * 2),
                                            name='weight', dim=0)
 
-        self._output_dim = int(input_dim)
+        self._odim = int(input_dim)
 
         if bottleneck_dim > 0:
-            self.bridge = nn.Linear(self._output_dim, bottleneck_dim)
-            self._output_dim = bottleneck_dim
+            self.bridge = nn.Linear(self._odim, bottleneck_dim)
+            self._odim = bottleneck_dim
 
         self.layers = nn.Sequential(layers)
 
