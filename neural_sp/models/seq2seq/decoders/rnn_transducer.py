@@ -22,6 +22,7 @@ from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import repeat
 
 random.seed(1)
 
@@ -78,7 +79,7 @@ class RNNTransducer(DecoderBase):
                  ctc_lsm_prob=0.,
                  ctc_fc_list=[],
                  lm_init=None,
-                 global_weight=1.0,
+                 global_weight=1.,
                  mtl_per_batch=False,
                  param_init=0.1,
                  end_pointing=True):
@@ -125,25 +126,21 @@ class RNNTransducer(DecoderBase):
             self.warprnnt_loss = warprnnt_pytorch.RNNTLoss()
 
             # Prediction network
-            rnn = nn.LSTM if rnn_type == 'lstm_transducer' else nn.GRU
+            rnn_l = nn.LSTM if rnn_type == 'lstm_transducer' else nn.GRU
             self.rnn = nn.ModuleList()
-            self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
+            self.dropout = repeat(nn.Dropout(p=dropout), n_layers)
             if n_projs > 0:
-                self.proj = nn.ModuleList([nn.Linear(n_units, n_projs) for _ in range(n_layers)])
+                self.proj = repeat(nn.Linear(n_units, n_projs), n_layers)
             dec_idim = emb_dim
             for l in range(n_layers):
-                self.rnn += [rnn(dec_idim, n_units, 1,
-                                 bias=True,
-                                 batch_first=True,
-                                 dropout=0,
-                                 bidirectional=False)]
+                self.rnn += [rnn_l(dec_idim, n_units, 1, batch_first=True)]
                 dec_idim = n_projs if n_projs > 0 else n_units
 
             self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
             self.dropout_emb = nn.Dropout(p=dropout_emb)
 
             # Joint network
-            self.w_enc = nn.Linear(enc_n_units, bottleneck_dim, bias=True)
+            self.w_enc = nn.Linear(enc_n_units, bottleneck_dim)
             self.w_dec = nn.Linear(dec_idim, bottleneck_dim, bias=False)
             self.output = nn.Linear(bottleneck_dim, vocab)
 
@@ -171,8 +168,8 @@ class RNNTransducer(DecoderBase):
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() in [2, 4]:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
@@ -180,7 +177,7 @@ class RNNTransducer(DecoderBase):
                 raise ValueError
 
     def start_scheduled_sampling(self):
-        self._ss_prob = 0
+        self._ss_prob = 0.
 
     def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_probs=None):
         """Forward computation.
@@ -198,8 +195,7 @@ class RNNTransducer(DecoderBase):
 
         """
         observation = {'loss': None, 'loss_transducer': None, 'loss_ctc': None}
-        w = next(self.parameters())
-        loss = w.new_zeros((1,))
+        loss = eouts.new_zeros((1,))
 
         # CTC loss
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):

@@ -16,6 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.lm.lm_base import LMBase
+from neural_sp.models.torch_utils import repeat
 
 
 class RNNLM(LMBase):
@@ -57,11 +58,9 @@ class RNNLM(LMBase):
 
         rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
         self.rnn = nn.ModuleList()
-        self.dropout = nn.ModuleList([nn.Dropout(p=args.dropout_hidden)
-                                      for _ in range(args.n_layers)])
+        self.dropout = repeat(nn.Dropout(p=args.dropout_hidden), args.n_layers)
         if args.n_projs > 0:
-            self.proj = nn.ModuleList([nn.Linear(args.n_units, args.n_projs)
-                                       for _ in range(args.n_layers)])
+            self.proj = repeat(nn.Linear(args.n_units, args.n_projs), args.n_layers)
         rnn_idim = args.emb_dim + args.n_units_null_context
         for l in range(args.n_layers):
             self.rnn += [rnn(rnn_idim, args.n_units, 1, batch_first=True)]
@@ -82,14 +81,6 @@ class RNNLM(LMBase):
         else:
             self.adaptive_softmax = None
             self.output = nn.Linear(rnn_idim, self.vocab)
-            # NOTE: include bias even when tying weights
-
-            # Optionally tie weights as in:
-            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-            # https://arxiv.org/abs/1608.05859
-            # and
-            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-            # https://arxiv.org/abs/1611.01462
             if args.tie_embedding:
                 if args.n_units != args.emb_dim:
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
@@ -112,8 +103,8 @@ class RNNLM(LMBase):
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() == 2:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
@@ -137,14 +128,16 @@ class RNNLM(LMBase):
                 cxs (FloatTensor): `[n_layers, B, n_units]`
 
         """
+        bs, ymax = ys.size()
         ys_emb = self.dropout_embed(self.embed(ys.long()))
 
         if state is None:
-            state = self.zero_state(ys_emb.size(0))
+            state = self.zero_state(bs)
         new_state = {'hxs': None, 'cxs': None}
 
+        # for ASR decoder pre-training
         if self.n_units_cv > 0:
-            cv = ys_emb.new_zeros(ys_emb.size(0), ys_emb.size(1), self.n_units_cv)
+            cv = ys.new_zeros(bs, ymax, self.n_units_cv)
             ys_emb = torch.cat([ys_emb, cv], dim=-1)
 
         residual = None
@@ -152,12 +145,12 @@ class RNNLM(LMBase):
         for l in range(self.n_layers):
             # Path through RNN
             if self.rnn_type == 'lstm':
-                ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(state['hxs'][l:l + 1],
-                                                             state['cxs'][l:l + 1]))
-                new_cxs.append(c_l)
+                ys_emb, (h, c) = self.rnn[l](ys_emb, hx=(state['hxs'][l:l + 1],
+                                                         state['cxs'][l:l + 1]))
+                new_cxs.append(c)
             elif self.rnn_type == 'gru':
-                ys_emb, h_l = self.rnn[l](ys_emb, hx=state['hxs'][l:l + 1])
-            new_hxs.append(h_l)
+                ys_emb, h = self.rnn[l](ys_emb, hx=state['hxs'][l:l + 1])
+            new_hxs.append(h)
             ys_emb = self.dropout[l](ys_emb)
             if self.n_projs > 0:
                 ys_emb = torch.tanh(self.proj[l](ys_emb))

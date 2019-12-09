@@ -21,6 +21,7 @@ from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.torch_utils import make_pad_mask
+from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -60,14 +61,12 @@ class TransformerLM(LMBase):
 
         self.embed = nn.Embedding(self.vocab, self.d_model, padding_idx=self.pad)
         self.pos_enc = PositionalEncoding(self.d_model, args.dropout_in, args.transformer_pe_type)
-
-        self.layers = nn.ModuleList(
-            [TransformerDecoderBlock(self.d_model, args.transformer_d_ff,
-                                     args.transformer_attn_type, self.n_heads,
-                                     args.dropout_hidden, args.dropout_att,
-                                     args.transformer_layer_norm_eps,
-                                     src_tgt_attention=False)
-             for _ in range(self.n_layers)])
+        self.layers = repeat(TransformerDecoderBlock(
+            self.d_model, args.transformer_d_ff,
+            args.transformer_attn_type, self.n_heads,
+            args.dropout_hidden, args.dropout_att,
+            args.transformer_layer_norm_eps,
+            src_tgt_attention=False), self.n_layers)
         self.norm_out = nn.LayerNorm(self.d_model, eps=args.transformer_layer_norm_eps)
 
         if args.adaptive_softmax:
@@ -130,21 +129,21 @@ class TransformerLM(LMBase):
         subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
         tgt_mask = tgt_mask & subsequent_mask
 
-        ys_emb = self.pos_enc(self.embed(ys.long()))
+        out = self.pos_enc(self.embed(ys.long()))
         for l in range(self.n_layers):
-            ys_emb, yy_aws, _ = self.layers[l](ys_emb, tgt_mask)
+            out, yy_aws, _ = self.layers[l](out, tgt_mask)
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
-        ys_emb = self.norm_out(ys_emb)
+        out = self.norm_out(out)
         if self.adaptive_softmax is None:
-            logits = self.output(ys_emb)
+            logits = self.output(out)
         else:
-            logits = ys_emb
+            logits = out
 
         if is_asr:
             cache = ys
 
-        return logits, ys_emb, cache
+        return logits, out, cache
 
     def plot_attention(self, n_cols=4):
         """Plot attention for each head in all layers."""

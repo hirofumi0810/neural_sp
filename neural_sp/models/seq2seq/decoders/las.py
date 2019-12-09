@@ -32,6 +32,7 @@ from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -207,10 +208,10 @@ class RNNDecoder(DecoderBase):
 
             # Decoder
             self.rnn = nn.ModuleList()
-            if self.n_projs > 0:
-                self.proj = nn.ModuleList([nn.Linear(n_units, n_projs) for _ in range(n_layers)])
-            self.dropout_dec = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
+            if self.n_projs > 0:
+                self.proj = repeat(nn.Linear(n_units, n_projs), n_layers)
+            self.dropout_dec = repeat(nn.Dropout(p=dropout), n_layers)
             dec_odim = enc_n_units + emb_dim
             for l in range(n_layers):
                 self.rnn += [cell(dec_odim, n_units)]

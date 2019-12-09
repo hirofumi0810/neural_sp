@@ -29,6 +29,7 @@ from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -126,10 +127,8 @@ class TransformerDecoder(DecoderBase):
         if ctc_weight < global_weight:
             self.embed = nn.Embedding(vocab, d_model, padding_idx=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
-            self.layers = nn.ModuleList(
-                [TransformerDecoderBlock(d_model, d_ff, attn_type, n_heads,
-                                         dropout, dropout_att, layer_norm_eps)
-                 for _ in range(n_layers)])
+            self.layers = repeat(TransformerDecoderBlock(d_model, d_ff, attn_type, n_heads,
+                                                         dropout, dropout_att, layer_norm_eps), n_layers)
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, vocab)
             if tie_embedding:
@@ -255,14 +254,13 @@ class TransformerDecoder(DecoderBase):
         # Create the source-target mask
         src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
 
-        ys_emb = self.pos_enc(self.embed(ys_in_pad))
+        out = self.pos_enc(self.embed(ys_in_pad))
         for l in range(self.n_layers):
-            ys_emb, yy_aws, xy_aws = self.layers[l](ys_emb, tgt_mask, eouts, src_mask)
+            out, yy_aws, xy_aws = self.layers[l](out, tgt_mask, eouts, src_mask)
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
                 setattr(self, 'xy_aws_layer%d' % l, tensor2np(xy_aws))
-        ys_emb = self.norm_out(ys_emb)
-        logits = self.output(ys_emb)
+        logits = self.output(self.norm_out(out))
 
         # for knowledge distillation
         if return_logits:

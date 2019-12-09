@@ -13,6 +13,10 @@ from __future__ import print_function
 import torch
 
 
+def repeat(module, n_layers):
+    return torch.nn.ModuleList([module for _ in range(n_layers)])
+
+
 def tensor2np(x):
     """Convert torch.Tensor to np.ndarray.
 
