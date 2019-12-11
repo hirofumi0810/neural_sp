@@ -185,9 +185,10 @@ class LRScheduler(object):
         self.__dict__.update(state_dict)
 
     def convert_to_sgd(self, model, lr, weight_decay, decay_type, decay_rate):
+        self.lr = lr
         self.decay_type = decay_type
         self.decay_rate = decay_rate
 
-        weight_decay = self.optimizer.defaults['weight_decay']
+        # weight_decay = self.optimizer.defaults['weight_decay']
         self.optimizer = set_optimizer(model, 'sgd', lr, weight_decay)
         logger.info('========== Convert to SGD ==========')
