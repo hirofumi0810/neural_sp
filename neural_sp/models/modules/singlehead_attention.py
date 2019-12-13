@@ -24,7 +24,7 @@ class AttentionMechanism(nn.Module):
         kdim (int): dimension of key
         qdim (int): dimension of query
         atype (str): type of attention mechanisms
-        adim: (int) dimension of the attention layer
+        adim: (int) dimension of the attention space
         sharpening_factor (float): sharpening factor in the softmax layer
             for attention weights
         sigmoid_smoothing (bool): replace the softmax layer for attention weights

@@ -17,7 +17,16 @@ NEG_INF = float(np.finfo(np.float32).min)
 
 class Energy(nn.Module):
     def __init__(self, kdim, qdim, adim, init_r=None, conv1d=False, conv_kernel_size=5):
-        """Energy function."""
+        """Energy function.
+
+        Args:
+            kdim (int): dimension of key
+            qdim (int): dimension of quary
+            adim (int): dimension of attention space
+            init_r (int): initial value for offset r
+            conv1d (bool): use 1d convolution for energy calculation
+
+        """
         super().__init__()
 
         assert conv_kernel_size % 2 == 1, "Kernel size should be odd for 'same' conv."
