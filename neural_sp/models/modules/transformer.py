@@ -14,6 +14,7 @@ import math
 import torch
 import torch.nn as nn
 
+from neural_sp.models.modules.gelu import gelu, gelu_accurate
 from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 
@@ -95,15 +96,6 @@ class PositionwiseFeedForward(nn.Module):
         return self.w_2(self.dropout(self.nonlinear(self.w_1(xs))))
 
 
-# [reference] https://github.com/pytorch/fairseq/blob/e75cff5f2c1d62f12dc911e0bf420025eb1a4e33/fairseq/modules/gelu.py
-def gelu_accurate(x):
-    return 0.5 * x * (1 + torch.tanh(gelu_accurate._a * (x + 0.044715 * torch.pow(x, 3))))
-
-
-def gelu(x):
-    return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
-
-
 class TransformerEncoderBlock(nn.Module):
     """A single layer of the transformer encoder.
 
@@ -147,7 +139,6 @@ class TransformerEncoderBlock(nn.Module):
         Args:
             xs (FloatTensor): `[B, T, d_model]`
             xx_mask (ByteTensor): `[B, T, T]`
-            cache (bool):
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
             xx_aws (FloatTensor): `[B, T, T]`
