@@ -14,6 +14,7 @@ import math
 import torch
 import torch.nn as nn
 
+from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 
 
@@ -65,22 +66,42 @@ class PositionwiseFeedForward(nn.Module):
     """Positionwise fully-connected feed-forward neural network.
 
     Args:
-        d_in (int): dimension of MultiheadAttentionMechanism
+        d_in (int): input dimension (equal to d_model)
         d_ff (int): dimention of PositionwiseFeedForward
-        d_out (int): dimension of MultiheadAttentionMechanism
-        dropout (float): dropout probability
+        d_out (int): output dimension of PositionwiseFeedForward
+        dropout (float): dropout probability (equal to d_model)
+        nonlinear: non-linear function
 
     """
 
-    def __init__(self, d_in, d_ff, d_out, dropout):
+    def __init__(self, d_in, d_ff, d_out, dropout, nonlinear='relu'):
         super(PositionwiseFeedForward, self).__init__()
 
         self.w_1 = nn.Linear(d_in, d_ff)
         self.w_2 = nn.Linear(d_ff, d_out)
         self.dropout = nn.Dropout(dropout)
+        if nonlinear == 'relu':
+            self.nonlinear = torch.relu
+        elif nonlinear == 'gelu':
+            self.nonlinear = lambda x: gelu(x)
+        elif nonlinear == 'gelu_accurate':
+            self.nonlinear = lambda x: gelu_accurate(x)
+        elif nonlinear == 'glu':
+            self.nonlinear = LinearGLUBlock(d_ff)
+        else:
+            raise NotImplementedError(nonlinear)
 
     def forward(self, xs):
-        return self.w_2(self.dropout(torch.relu(self.w_1(xs))))
+        return self.w_2(self.dropout(self.nonlinear(self.w_1(xs))))
+
+
+# [reference] https://github.com/pytorch/fairseq/blob/e75cff5f2c1d62f12dc911e0bf420025eb1a4e33/fairseq/modules/gelu.py
+def gelu_accurate(x):
+    return 0.5 * x * (1 + torch.tanh(gelu_accurate._a * (x + 0.044715 * torch.pow(x, 3))))
+
+
+def gelu(x):
+    return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
 
 
 class TransformerEncoderBlock(nn.Module):
@@ -124,29 +145,30 @@ class TransformerEncoderBlock(nn.Module):
         self.feed_forward = PositionwiseFeedForward(d_model, d_ff, d_model, dropout)
         self.dropout2 = nn.Dropout(dropout)
 
-    def forward(self, xs, xx_mask=None, cache=False):
+    def forward(self, xs, xx_mask=None):
         """Transformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
-            xx_mask (ByteTensor): `[B, n_heads, T, T]`
+            xx_mask (ByteTensor): `[B, T, T]`
             cache (bool):
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
             xx_aws (FloatTensor): `[B, T, T]`
 
         """
+        self.self_attn.reset()
+
         # self-attention
-        if not cache:
-            self.self_attn.reset()
-        _xs = self.norm1(xs)
-        _xs, xx_aws = self.self_attn(_xs, _xs, _xs, mask=xx_mask)
-        xs = self.dropout1(_xs) + xs
+        residual = xs
+        xs = self.norm1(xs)
+        xs, xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)
+        xs = self.dropout1(xs) + residual
 
         # position-wise feed-forward
-        _xs = self.norm2(xs)
-        _xs = self.feed_forward(_xs)
-        xs = self.dropout2(_xs) + xs
+        residual = xs
+        xs = self.norm2(xs)
+        xs = self.dropout2(self.feed_forward(xs)) + residual
 
         return xs, xx_aws
 
