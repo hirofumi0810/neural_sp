@@ -58,14 +58,12 @@ class LMBase(ModelBase):
         else:
             self.train()
             loss, state, observation = self._forward(ys, state)
-
         return loss, state, observation
 
     def _forward(self, ys, state, n_caches=0, predict_last=False):
         ys = [np2tensor(y, self.device_id) for y in ys]  # <eos> is included
         ys = pad_list(ys, self.pad)
-        ys_in = ys[:, :-1]
-        ys_out = ys[:, 1:]
+        ys_in, ys_out = ys[:, :-1], ys[:, 1:]
 
         logits, out, state = self.decode(ys_in, state)
 
