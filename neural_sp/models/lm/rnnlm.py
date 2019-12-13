@@ -13,9 +13,9 @@ from __future__ import print_function
 import logging
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.lm.lm_base import LMBase
+from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.torch_utils import repeat
 
 
@@ -37,7 +37,6 @@ class RNNLM(LMBase):
         self.n_projs = args.n_projs
         self.n_layers = args.n_layers
         self.residual = args.residual
-        self.use_glu = args.use_glu
         self.n_units_cv = args.n_units_null_context
         self.lsm_prob = args.lsm_prob
 
@@ -68,8 +67,9 @@ class RNNLM(LMBase):
             if args.n_projs > 0:
                 rnn_idim = args.n_projs
 
-        if self.use_glu:
-            self.fc_glu = nn.Linear(rnn_idim, rnn_idim * 2)
+        self.glu = None
+        if args.use_glu:
+            self.glu = LinearGLUBlock(rnn_idim)
 
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -166,10 +166,10 @@ class RNNLM(LMBase):
         if self.rnn_type == 'lstm':
             new_state['cxs'] = torch.cat(new_cxs, dim=0)
 
-        if self.use_glu:
+        if self.glu is not None:
             if self.residual:
                 residual = ys_emb
-            ys_emb = F.glu(self.fc_glu(ys_emb), dim=-1)
+            ys_emb = self.glu(ys_emb)
             if self.residual:
                 ys_emb = ys_emb + residual
 
