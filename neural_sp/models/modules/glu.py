@@ -15,6 +15,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class LinearGLUBlock(nn.Module):
+    """A linear GLU block.
+
+    Args:
+        size (int): input and output dimension
+
+    """
+
+    def __init__(self, size):
+        super().__init__()
+
+        self.glu = nn.Linear(size, size * 2)
+
+    def forward(self, xs):
+        return F.glu(self.glu(xs), dim=-1)
+
+
 class GLUBlock(nn.Module):
     """GLU block.
 
@@ -27,7 +44,7 @@ class GLUBlock(nn.Module):
 
     """
 
-    def __init__(self, kernel_size, in_ch, out_ch, bottlececk_dim=0, dropout=0.0):
+    def __init__(self, kernel_size, in_ch, out_ch, bottlececk_dim=0, dropout=0.):
         super().__init__()
 
         self.conv_residual = None
