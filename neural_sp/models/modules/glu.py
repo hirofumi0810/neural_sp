@@ -32,8 +32,8 @@ class LinearGLUBlock(nn.Module):
         return F.glu(self.glu(xs), dim=-1)
 
 
-class GLUBlock(nn.Module):
-    """GLU block.
+class ConvGLUBlock(nn.Module):
+    """A convolutional GLU block.
 
     Args:
         kernel_size (int): kernel size
