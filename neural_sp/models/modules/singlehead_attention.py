@@ -108,7 +108,7 @@ class AttentionMechanism(nn.Module):
             query (FloatTensor): `[B, 1, qdim]`
             mask (ByteTensor): `[B, qmax, kmax]`
             aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
-            mode: dummy
+            mode: dummy interface for MoChA
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, kmax, 1 (n_heads)]`

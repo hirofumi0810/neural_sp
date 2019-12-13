@@ -24,18 +24,11 @@ class MultiheadAttentionMechanism(nn.Module):
     Args:
         kdim (int): dimension of key
         qdim (int): dimension of query
-        atype (str): type of attention mechanisms
         adim: (int) dimension of the attention space
-        sharpening_factor (float): sharpening factor in the softmax layer
-            for attention weights
-        sigmoid_smoothing (bool): replace the softmax layer for attention weights
-            with the sigmoid function
-        conv_out_channels (int): number of channles of conv outputs.
-            This is used for location-based attention.
-        conv_kernel_size (int): size of kernel.
-            This must be the odd number.
+        atype (str): type of attention mechanisms
         dropout (float): dropout probability
-        n_heads (int): number of heads in the multi-head attention
+        n_heads (int): number of heads
+        bias (bool): use bias term in linear layers
 
     """
 
@@ -83,8 +76,8 @@ class MultiheadAttentionMechanism(nn.Module):
             value (FloatTensor): `[B, klen, vdim]`
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, klen, qlen]`
-            aw_prev: dummy
-            mode: dummy
+            aw_prev: dummy interface for single-head attention
+            mode: dummy interface for MoChA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, n_heads, qlen, klen]`
