@@ -93,9 +93,9 @@ class Speech2Text(ModelBase):
         self.n_stacks = args.n_stacks
         self.n_skips = args.n_skips
         self.n_splices = args.n_splices
-        self.is_specaug = args.n_freq_masks > 0 or args.n_time_masks > 0
+        self.use_specaug = args.n_freq_masks > 0 or args.n_time_masks > 0
         self.specaug = None
-        if self.is_specaug:
+        if self.use_specaug:
             assert args.n_stacks == 1 and args.n_skips == 1
             assert args.n_splices == 1
             self.specaug = SpecAugment(F=args.freq_width,
@@ -294,6 +294,7 @@ class Speech2Text(ModelBase):
                         mocha_chunk_size=args.mocha_chunk_size,
                         mocha_adaptive=args.mocha_adaptive,
                         mocha_1dconv=args.mocha_1dconv,
+                        mocha_quantity_loss_weight=args.mocha_quantity_loss_weight,
                         replace_sos=args.replace_sos,
                         soft_label_weight=args.soft_label_weight)
             setattr(self, 'dec_' + dir, dec)
@@ -470,6 +471,9 @@ class Speech2Text(ModelBase):
                 observation['loss.transducer'] = obs_fwd['loss_transducer']
             else:
                 observation['loss.att'] = obs_fwd['loss_att']
+                if 'loss_quantity' not in obs_fwd.keys():
+                    obs_fwd['loss_quantity'] = None
+                observation['loss.quantity'] = obs_fwd['loss_quantity']
                 observation['acc.att'] = obs_fwd['acc_att']
                 observation['ppl.att'] = obs_fwd['ppl_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
@@ -530,7 +534,7 @@ class Speech2Text(ModelBase):
             xs = pad_list(xs, 0.)
 
             # SpecAugment
-            if self.is_specaug and self.training:
+            if self.use_specaug and self.training:
                 xs = self.specaug(xs)
 
             # Gaussian noise injection

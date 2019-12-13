@@ -12,7 +12,6 @@ from __future__ import print_function
 
 import logging
 import torch
-import torch.nn.functional as F
 
 from neural_sp.models.base import ModelBase
 from neural_sp.models.torch_utils import tensor2np
@@ -54,7 +53,6 @@ class DecoderBase(ModelBase):
                 recog_beam_width (int): size of beam
                 recog_length_penalty (float): length penalty
                 recog_lm_weight (float): weight of LM score
-                recog_lm_usage (str): rescoring or shallow_fusion
             lm (RNNLM or GatedConvLM or TransformerLM):
         Returns:
             best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
@@ -67,11 +65,11 @@ class DecoderBase(ModelBase):
                                              nbest, refs_id, utt_ids, speakers)
         return best_hyps
 
-    def ctc_log_probs(self, eouts, temperature=1):
-        return F.log_softmax(self.ctc.output(eouts) / temperature, dim=-1)
+    def ctc_log_probs(self, eouts, temperature=1.):
+        return torch.log_softmax(self.ctc.output(eouts) / temperature, dim=-1)
 
     def ctc_probs_topk(self, eouts, temperature, topk):
-        probs = F.softmax(self.ctc.output(eouts) / temperature, dim=-1)
+        probs = torch.softmax(self.ctc.output(eouts) / temperature, dim=-1)
         if topk is None:
             topk = probs.size(-1)
         _, topk_ids = torch.topk(probs.sum(1), k=topk, dim=-1, largest=True, sorted=True)
