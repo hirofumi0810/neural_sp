@@ -16,7 +16,7 @@ import torch
 logger = getLogger('training')
 
 
-def set_optimizer(model, optimizer, lr, weight_decay=0.0):
+def set_optimizer(model, optimizer, lr, weight_decay=0.):
     """Set optimizer.
 
     Args:

@@ -29,6 +29,8 @@ def set_asr_model_name(args, subsample_factor):
         dir_name += str(args.transformer_d_ff) + 'dff'
         dir_name += str(args.enc_n_layers) + 'L'
         dir_name += str(args.transformer_n_heads) + 'head'
+        if args.transformer_chunk_hop_size > 0:
+            dir_name += '_chunkhop' + str(args.transformer_chunk_hop_size)
     else:
         dir_name += str(args.enc_n_units) + 'H'
         if args.enc_n_projs > 0:
@@ -69,6 +71,8 @@ def set_asr_model_name(args, subsample_factor):
                     dir_name += '_1dconv'
                 if args.attn_sharpening_factor:
                     dir_name += '_temp' + str(args.attn_sharpening_factor)
+                if args.mocha_quantity_loss_weight > 0:
+                    dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
         if args.attn_n_heads > 1:
             dir_name += '_head' + str(args.attn_n_heads)
         if args.tie_embedding:
@@ -83,9 +87,10 @@ def set_asr_model_name(args, subsample_factor):
     dir_name += '_bs' + str(args.batch_size)
 
     # regularization
-    if args.ctc_weight < 1:
+    if args.ctc_weight < 1 and args.ss_prob > 0:
         dir_name += '_ss' + str(args.ss_prob)
-    dir_name += '_ls' + str(args.lsm_prob)
+    if args.lsm_prob > 0:
+        dir_name += '_ls' + str(args.lsm_prob)
     if args.warmup_n_steps > 0:
         dir_name += '_warmpup' + str(args.warmup_n_steps)
     if args.accum_grad_n_steps > 1:
