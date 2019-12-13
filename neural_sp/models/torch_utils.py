@@ -10,11 +10,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import torch
 
 
 def repeat(module, n_layers):
-    return torch.nn.ModuleList([module for _ in range(n_layers)])
+    return torch.nn.ModuleList([copy.deepcopy(module) for _ in range(n_layers)])
 
 
 def tensor2np(x):
