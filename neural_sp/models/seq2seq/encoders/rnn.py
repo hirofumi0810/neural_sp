@@ -14,6 +14,7 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
+
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.utils.rnn import pad_packed_sequence
 
@@ -157,7 +158,7 @@ class RNNEncoder(EncoderBase):
             self.rnn = nn.ModuleList()
             if self.latency_controlled:
                 self.rnn_bwd = nn.ModuleList()
-            self.dropout = nn.ModuleList()
+            self.dropout = nn.Dropout(p=dropout)
             self.proj = None
             if n_projs > 0:
                 self.proj = nn.ModuleList()
@@ -194,7 +195,6 @@ class RNNEncoder(EncoderBase):
                 else:
                     self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=True,
                                        bidirectional=self.bidirectional)]
-                self.dropout += [nn.Dropout(p=dropout)]
                 self._odim = n_units if bidirectional_sum_fwd_bwd else n_units * self.n_dirs
                 self.bidirectional_sum_fwd_bwd = bidirectional_sum_fwd_bwd
 
@@ -209,14 +209,12 @@ class RNNEncoder(EncoderBase):
                     self.rnn_sub1 = rnn_i(self._odim, n_units, 1,
                                           batch_first=True,
                                           bidirectional=self.bidirectional)
-                    self.dropout_sub1 = nn.Dropout(p=dropout)
                     if last_proj_dim != self.output_dim:
                         self.bridge_sub1 = nn.Linear(n_units, last_proj_dim)
                 if l == n_layers_sub2 - 1 and task_specific_layer:
                     self.rnn_sub2 = rnn_i(self._odim, n_units, 1,
                                           batch_first=True,
                                           bidirectional=self.bidirectional)
-                    self.dropout_sub2 = nn.Dropout(p=dropout)
                     if last_proj_dim != self.output_dim:
                         self.bridge_sub2 = nn.Linear(n_units, last_proj_dim)
 
@@ -309,7 +307,7 @@ class RNNEncoder(EncoderBase):
                 xs = torch.cat(xs_chunks, dim=1)
             else:
                 xs = self.padding(xs, xlens, self.rnn[l], self.bidirectional_sum_fwd_bwd)
-            xs = self.dropout[l](xs)
+            xs = self.dropout(xs)
 
             # Pick up outputs in the sub task before the projection layer
             if l == self.n_layers_sub1 - 1:
@@ -358,7 +356,7 @@ class RNNEncoder(EncoderBase):
         if self.task_specific_layer:
             getattr(self, 'rnn_' + module).flatten_parameters()  # for multi-GPUs
             xs_sub = self.padding(xs, xlens, getattr(self, 'rnn_' + module))
-            xs_sub = getattr(self, 'dropout_' + module)(xs_sub)
+            xs_sub = self.dropout(xs_sub)
         else:
             xs_sub = xs.clone()[perm_ids_unsort]
         if getattr(self, 'bridge_' + module) is not None:

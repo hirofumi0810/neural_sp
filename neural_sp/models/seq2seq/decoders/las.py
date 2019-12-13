@@ -213,7 +213,7 @@ class RNNDecoder(DecoderBase):
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             if self.n_projs > 0:
                 self.proj = repeat(nn.Linear(n_units, n_projs), n_layers)
-            self.dropout_dec = repeat(nn.Dropout(p=dropout), n_layers)
+            self.dropout = nn.Dropout(p=dropout)
             dec_odim = enc_n_units + emb_dim
             for l in range(n_layers):
                 self.rnn += [cell(dec_odim, n_units)]
@@ -534,7 +534,7 @@ class RNNDecoder(DecoderBase):
                 hxs[l], cxs[l] = self.rnn[l](dout, (hxs[l], cxs[l]))
             elif self.rnn_type == 'gru':
                 hxs[l] = self.rnn[l](dout, hxs[l])
-            dout = self.dropout_dec[l](hxs[l])
+            dout = self.dropout(hxs[l])
             if self.n_projs > 0:
                 dout = torch.tanh(self.proj[l](dout))
 

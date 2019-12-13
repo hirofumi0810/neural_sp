@@ -16,6 +16,7 @@ import numpy as np
 import random
 import torch
 import torch.nn as nn
+import warp_rnnt
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.seq2seq.decoders.ctc import CTC
@@ -122,13 +123,13 @@ class RNNTransducer(DecoderBase):
                            param_init=param_init)
 
         if ctc_weight < global_weight:
-            import warprnnt_pytorch
-            self.warprnnt_loss = warprnnt_pytorch.RNNTLoss()
+            # import warprnnt_pytorch
+            # self.warprnnt_loss = warprnnt_pytorch.RNNTLoss()
 
             # Prediction network
             rnn_l = nn.LSTM if rnn_type == 'lstm_transducer' else nn.GRU
             self.rnn = nn.ModuleList()
-            self.dropout = repeat(nn.Dropout(p=dropout), n_layers)
+            self.dropout = nn.Dropout(p=dropout)
             if n_projs > 0:
                 self.proj = repeat(nn.Linear(n_units, n_projs), n_layers)
             dec_idim = emb_dim
@@ -237,7 +238,7 @@ class RNNTransducer(DecoderBase):
             _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
         ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)
-        ys_out_pad = pad_list(_ys, 0).int()  # int for warprnnt_loss
+        ys_out_pad = pad_list(_ys, self.blank)
 
         # Update prediction network
         ys_emb = self.dropout_emb(self.embed(ys_in_pad))
@@ -254,11 +255,13 @@ class RNNTransducer(DecoderBase):
             ylens = ylens.cuda(self.device_id)
 
         assert log_probs.size(2) == ys_out_pad.size(1) + 1
-        loss = self.warprnnt_loss(log_probs, ys_out_pad.int(), elens, ylens)
+        # loss = self.warprnnt_loss(log_probs, ys_out_pad.int(), elens, ylens)
         # NOTE: Transducer loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warprnnt_pytorch
-        # if self.device_id >= 0:
-        #     loss = loss.cuda(self.device_id)
+        loss = warp_rnnt.rnnt_loss(log_probs, ys_out_pad.int(), elens, ylens,
+                                   average_frames=False,
+                                   reduction='mean',
+                                   gather=False)
 
         # Label smoothing for Transducer
         # if self.lsm_prob > 0:
@@ -314,7 +317,7 @@ class RNNTransducer(DecoderBase):
             elif self.rnn_type == 'gru_transducer':
                 ys_emb, h_l = self.rnn[l](ys_emb, hx=dstate['hxs'][l:l + 1])
             new_hxs.append(h_l)
-            ys_emb = self.dropout[l](ys_emb)
+            ys_emb = self.dropout(ys_emb)
             if self.n_projs > 0:
                 ys_emb = torch.tanh(self.proj[l](ys_emb))
 

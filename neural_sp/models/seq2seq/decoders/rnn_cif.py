@@ -28,6 +28,7 @@ from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -156,8 +157,8 @@ class RNNCIFDecoder(DecoderBase):
             # Decoder
             self.rnn = nn.ModuleList()
             if self.n_projs > 0:
-                self.proj = nn.ModuleList([nn.Linear(n_units, n_projs) for _ in range(n_layers)])
-            self.dropout = nn.ModuleList([nn.Dropout(p=dropout) for _ in range(n_layers)])
+                self.proj = repeat(nn.Linear(n_units, n_projs), n_layers)
+            self.dropout = nn.Dropout(p=dropout)
             rnn = nn.LSTM if rnn_type == 'lstm' else nn.GRU
             dec_odim = enc_n_units + emb_dim
             for l in range(n_layers):
@@ -419,7 +420,7 @@ class RNNCIFDecoder(DecoderBase):
             elif self.rnn_type == 'gru':
                 dout, h_l = self.rnn[l](dout, hx=dstate['hxs'][l:l + 1])
             new_hxs.append(h_l)
-            dout = self.dropout[l](dout)
+            dout = self.dropout(dout)
             if self.n_projs > 0:
                 dout = torch.tanh(self.proj[l](dout))
 
