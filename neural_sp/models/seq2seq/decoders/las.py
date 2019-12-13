@@ -129,6 +129,7 @@ class RNNDecoder(DecoderBase):
                  mocha_chunk_size=1,
                  mocha_adaptive=False,
                  mocha_1dconv=False,
+                 mocha_quantity_loss_weight=0.,
                  replace_sos=False,
                  soft_label_weight=0.):
 
@@ -161,6 +162,7 @@ class RNNDecoder(DecoderBase):
         self.mtl_per_batch = mtl_per_batch
         self.replace_sos = replace_sos
         self.soft_label_weight = soft_label_weight
+        self.quantity_loss_weight = mocha_quantity_loss_weight
 
         # for contextualization
         self.discourse_aware = discourse_aware
@@ -318,7 +320,7 @@ class RNNDecoder(DecoderBase):
 
         """
         observation = {'loss': None, 'loss_att': None, 'loss_ctc': None,
-                       'acc_att': None, 'ppl_att': None}
+                       'acc_att': None, 'ppl_att': None, 'loss_quantity': None}
         loss = eouts.new_zeros((1,))
 
         # if self.lm is not None:
@@ -335,11 +337,14 @@ class RNNDecoder(DecoderBase):
 
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task)):
-            loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys, ys_hist,
-                                                          teacher_logits=teacher_logits)
+            loss_att, acc_att, ppl_att, loss_quantity = self.forward_att(
+                eouts, elens, ys, ys_hist, teacher_logits=teacher_logits)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
+            if self.quantity_loss_weight > 0:
+                loss_att += loss_quantity * self.quantity_loss_weight
+                observation['loss_quantity'] = loss_quantity.item()
             if self.mtl_per_batch:
                 loss += loss_att
             else:
@@ -365,7 +370,7 @@ class RNNDecoder(DecoderBase):
                         self.device_id) for y in ys]
         if replace_sos:
             ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in_pad = pad_list([y for y in ys], self.pad)
+            ys_in_pad = pad_list(ys, self.pad)
             ys_out_pad = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
         else:
             ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
@@ -457,6 +462,13 @@ class RNNDecoder(DecoderBase):
         loss, ppl = cross_entropy_lsm(logits, ys_out_pad,
                                       self.lsm_prob, self.pad, self.training)
 
+        loss_quantity = 0.
+        if self.quantity_loss_weight > 0:
+            assert self.attn_type == 'mocha'
+            n_tokens_pred = torch.cat(aws, dim=2).squeeze(1).sum(2).sum(1)
+            n_tokens_ref = (ys_out_pad != self.pad).sum(1).float()
+            loss_quantity = torch.mean(torch.abs(n_tokens_pred - n_tokens_ref))
+
         # Knowledge distillation
         if teacher_logits is not None:
             kl_loss = distillation(logits, teacher_logits, ylens, temperature=5.0)
@@ -465,7 +477,7 @@ class RNNDecoder(DecoderBase):
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out_pad, self.pad)
 
-        return loss, acc, ppl
+        return loss, acc, ppl, loss_quantity
 
     def decode_step(self, eouts, dstates, cv, y_emb, mask, aw, lmout, mode='hard'):
         dstates = self.recurrency(torch.cat([y_emb, cv], dim=-1), dstates['dstate'])
@@ -754,6 +766,7 @@ class RNNDecoder(DecoderBase):
         lp_weight = params['recog_length_penalty']
         cp_weight = params['recog_coverage_penalty']
         cp_threshold = params['recog_coverage_threshold']
+        length_norm = params['recog_length_norm']
         lm_weight = params['recog_lm_weight']
         gnmt_decoding = params['recog_gnmt_decoding']
         eos_threshold = params['recog_eos_threshold']
@@ -921,7 +934,10 @@ class RNNDecoder(DecoderBase):
 
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
-                        total_score = total_scores_topk[0, k].item()
+                        length_norm_factor = 1.
+                        if length_norm:
+                            length_norm_factor = len(beam['hyp'][1:]) + 1
+                        total_score = total_scores_topk[0, k].item() / length_norm_factor
 
                         # Exclude short hypotheses
                         if idx == self.eos:
