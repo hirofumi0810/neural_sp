@@ -15,7 +15,7 @@ import logging
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.modules.glu import GLUBlock
+from neural_sp.models.modules.glu import ConvGLUBlock
 from neural_sp.models.seq2seq.encoders.conv import parse_config
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
@@ -61,9 +61,9 @@ class GatedConvEncoder(EncoderBase):
 
         layers = OrderedDict()
         for l in range(len(channels)):
-            layers['conv%d' % l] = GLUBlock(kernel_sizes[l][0], input_dim, channels[l],
-                                            weight_norm=True,
-                                            dropout=0.2)
+            layers['conv%d' % l] = ConvGLUBlock(kernel_sizes[l][0], input_dim, channels[l],
+                                                weight_norm=True,
+                                                dropout=0.2)
             input_dim = channels[l]
 
         # weight normalization + GLU for the last fully-connected layer
