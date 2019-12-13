@@ -145,6 +145,8 @@ def parse():
                         help='adaptive MoChA')
     parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
                         help='1dconv for MoChA')
+    parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
+                        help='Quantity loss weight for MoChA')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='dimension of the attention layer')
     parser.add_argument('--attn_conv_n_channels', type=int, default=10,
@@ -307,6 +309,8 @@ def parse():
                         help='type of positional encoding')
     parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                         help='epsilon value for layer normalization')
+    parser.add_argument('--transformer_ffn_nonlinear', type=str, default='relu',
+                        help='nonlinear function for position wise feed-forward layer')
     parser.add_argument('--transformer_chunk_hop_size', type=int, default=0,
                         help='chunk-hopping mechanism for time-restricted Transformer')
     # contextualization
@@ -340,6 +344,8 @@ def parse():
                         help='')
     parser.add_argument('--recog_length_penalty', type=float, default=0.0,
                         help='length penalty')
+    parser.add_argument('--recog_length_norm', type=strtobool, default=False, nargs='?',
+                        help='normalize score by hypothesis length')
     parser.add_argument('--recog_coverage_penalty', type=float, default=0.0,
                         help='coverage penalty')
     parser.add_argument('--recog_coverage_threshold', type=float, default=0.0,
@@ -353,12 +359,9 @@ def parse():
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
                         help='weight of CTC score')
     parser.add_argument('--recog_lm', type=str, default=False, nargs='?',
-                        help='LM path')
+                        help='path to first path LM for shallow fusion')
     parser.add_argument('--recog_lm_bwd', type=str, default=False, nargs='?',
-                        help='LM path in the reverse direction')
-    parser.add_argument('--recog_lm_usage', type=str, default='shallow_fusion', nargs='?',
-                        choices=['shallow_fusion', 'rescoring'],
-                        help='usage of the external LM')
+                        help='path to second path LM in the reverse direction for rescoring')
     parser.add_argument('--recog_resolving_unk', type=strtobool, default=False,
                         help='resolving UNK for the word-based model')
     parser.add_argument('--recog_fwd_bwd_attention', type=strtobool, default=False,
@@ -384,11 +387,6 @@ def parse():
                         help='Teacher LM for knowledge distillation')
     parser.add_argument('--soft_label_weight', type=float, default=0.1,
                         help='KL-div loss weight for soft labels')
-    # pre-training
-    parser.add_argument('--am_pretrain_type', type=str, default='masked_audio_lm',
-                        choices=['audio_lm', 'masked_audio_lm',
-                                 'dae', 'mass'],
-                        help='')
     # special label
     parser.add_argument('--replace_sos', type=strtobool, default=False,
                         help='')

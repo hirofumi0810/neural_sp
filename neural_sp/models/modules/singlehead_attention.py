@@ -37,16 +37,9 @@ class AttentionMechanism(nn.Module):
 
     """
 
-    def __init__(self,
-                 kdim,
-                 qdim,
-                 adim,
-                 atype,
-                 sharpening_factor=1,
-                 sigmoid_smoothing=False,
-                 conv_out_channels=10,
-                 conv_kernel_size=201,
-                 dropout=0.):
+    def __init__(self, kdim, qdim, adim, atype,
+                 sharpening_factor=1, sigmoid_smoothing=False,
+                 conv_out_channels=10, conv_kernel_size=201, dropout=0.):
 
         super(AttentionMechanism, self).__init__()
 

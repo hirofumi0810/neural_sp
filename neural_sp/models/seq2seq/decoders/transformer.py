@@ -52,13 +52,14 @@ class TransformerDecoder(DecoderBase):
         enc_n_units (int): number of units of the encoder outputs
         attn_type (str): type of attention mechanism
         n_heads (int): number of attention heads
-        d_model (int): size of the model
-        d_ff (int): size of the inner FF layer
+        d_model (int): dimension of MultiheadAttentionMechanism
+        d_ff (int): dimension of PositionwiseFeedForward
         n_layers (int): number of self-attention layers
         vocab (int): number of nodes in softmax layer
         tie_embedding (bool): tie parameters of the embedding and output layers
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
+        ffn_nonlinear (str): nonolinear function for PositionwiseFeedForward
         dropout (float): dropout probability for linear layers
         dropout_emb (float): dropout probability for the embedding layer
         dropout_att (float): dropout probability for attention distributions
@@ -84,6 +85,7 @@ class TransformerDecoder(DecoderBase):
                  tie_embedding=False,
                  pe_type='add',
                  layer_norm_eps=1e-12,
+                 ffn_nonlinear='relu',
                  dropout=0.,
                  dropout_emb=0.,
                  dropout_att=0.,
@@ -127,8 +129,10 @@ class TransformerDecoder(DecoderBase):
         if ctc_weight < global_weight:
             self.embed = nn.Embedding(vocab, d_model, padding_idx=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
-            self.layers = repeat(TransformerDecoderBlock(d_model, d_ff, attn_type, n_heads,
-                                                         dropout, dropout_att, layer_norm_eps), n_layers)
+            self.layers = repeat(TransformerDecoderBlock(
+                d_model, d_ff, attn_type, n_heads,
+                dropout, dropout_att,
+                layer_norm_eps, ffn_nonlinear), n_layers)
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, vocab)
             if tie_embedding:

@@ -38,12 +38,11 @@ class TransformerEncoder(EncoderBase):
         attn_type (str): type of attention
         n_heads (int): number of heads for multi-head attention
         n_layers (int): number of blocks
-        d_model (int): dimension of keys/values/queries in
-            MultiheadAttentionMechanism, also the input size of
-            the first-layer of the PositionwiseFeedForward
-        d_ff (int): dimension of the second layer of the PositionwiseFeedForward
+        d_model (int): dimension of MultiheadAttentionMechanism
+        d_ff (int): dimension of PositionwiseFeedForward
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
+        ffn_nonlinear (str): nonolinear function for PositionwiseFeedForward
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
@@ -70,6 +69,7 @@ class TransformerEncoder(EncoderBase):
                  d_ff,
                  pe_type='add',
                  layer_norm_eps=1e-12,
+                 ffn_nonlinear='relu',
                  dropout_in=0.,
                  dropout=0.,
                  dropout_att=0.,
@@ -116,8 +116,10 @@ class TransformerEncoder(EncoderBase):
             self.embed = nn.Linear(self._odim, d_model)
 
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
-        self.layers = repeat(TransformerEncoderBlock(d_model, d_ff, attn_type, n_heads,
-                                                     dropout, dropout_att, layer_norm_eps), n_layers)
+        self.layers = repeat(TransformerEncoderBlock(
+            d_model, d_ff, attn_type, n_heads,
+            dropout, dropout_att,
+            layer_norm_eps, ffn_nonlinear), n_layers)
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if last_proj_dim != self.output_dim:

@@ -39,15 +39,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
     """
 
-    def __init__(self,
-                 kdim,
-                 qdim,
-                 adim,
-                 atype,
-                 dropout=0.,
-                 n_heads=4,
-                 bias=True):
-
+    def __init__(self, kdim, qdim, adim, atype, dropout=0., n_heads=4, bias=True):
         super(MultiheadAttentionMechanism, self).__init__()
 
         self.atype = atype

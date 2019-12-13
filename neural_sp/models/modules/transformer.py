@@ -115,17 +115,12 @@ class TransformerEncoderBlock(nn.Module):
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
         layer_norm_eps (float): epsilon parameter for layer normalization
+        ffn_nonlinear (str): nonolinear function for PositionwiseFeedForward
 
     """
 
-    def __init__(self,
-                 d_model,
-                 d_ff,
-                 atype,
-                 n_heads,
-                 dropout,
-                 dropout_att,
-                 layer_norm_eps):
+    def __init__(self, d_model, d_ff, atype, n_heads,
+                 dropout, dropout_att, layer_norm_eps, ffn_nonlinear):
         super(TransformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
@@ -142,7 +137,8 @@ class TransformerEncoderBlock(nn.Module):
 
         # feed-forward
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, d_model, dropout)
+        self.feed_forward = PositionwiseFeedForward(
+            d_model, d_ff, d_model, dropout, ffn_nonlinear)
         self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, xs, xx_mask=None):
@@ -186,17 +182,12 @@ class TransformerDecoderBlock(nn.Module):
             atype (str): type of self-attention, scaled_dot or average
             layer_norm_eps (float):
             src_tgt_attention (bool): if False, ignore source-target attention
+            ffn_nonlinear (str): nonolinear function for PositionwiseFeedForward
 
     """
 
-    def __init__(self,
-                 d_model,
-                 d_ff,
-                 atype,
-                 n_heads,
-                 dropout,
-                 dropout_att,
-                 layer_norm_eps,
+    def __init__(self, d_model, d_ff, atype, n_heads,
+                 dropout, dropout_att, layer_norm_eps, ffn_nonlinear,
                  src_tgt_attention=True):
         super(TransformerDecoderBlock, self).__init__()
 
@@ -230,7 +221,8 @@ class TransformerDecoderBlock(nn.Module):
 
         # feed-forward
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, d_model, dropout)
+        self.feed_forward = PositionwiseFeedForward(
+            d_model, d_ff, d_model, dropout, ffn_nonlinear)
         self.dropout3 = nn.Dropout(dropout)
 
     def forward(self, ys, yy_mask=None, xs=None, xy_mask=None):
@@ -238,9 +230,9 @@ class TransformerDecoderBlock(nn.Module):
 
         Args:
             ys (FloatTensor): `[B, L, d_model]`
-            yy_mask (ByteTensor): `[B, n_heads, L, L]`
+            yy_mask (ByteTensor): `[B, L, L]`
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
-            xy_mask (ByteTensor): `[B, n_heads, T, L]`
+            xy_mask (ByteTensor): `[B, T, L]`
         Returns:
             ys (FloatTensor): `[B, L, d_model]`
             yy_aw (FloatTensor)`[B, L, L]`
