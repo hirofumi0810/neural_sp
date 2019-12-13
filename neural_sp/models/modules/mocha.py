@@ -91,17 +91,8 @@ class Energy(nn.Module):
 
 
 class MoChA(nn.Module):
-    def __init__(self,
-                 kdim,
-                 qdim,
-                 adim,
-                 chunk_size,
-                 adaptive=False,
-                 conv1d=False,
-                 init_r=-4,
-                 noise_std=1.0,
-                 eps=1e-6,
-                 sharpening_factor=1.0):
+    def __init__(self, kdim, qdim, adim, chunk_size, adaptive=False, conv1d=False,
+                 init_r=-4, noise_std=1.0, eps=1e-6, sharpening_factor=1.0):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
