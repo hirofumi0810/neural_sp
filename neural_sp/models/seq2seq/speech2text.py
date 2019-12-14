@@ -641,7 +641,7 @@ class Speech2Text(ModelBase):
             #########################
             if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
                 lm = None
-                if params['recog_lm_weight'] > 0 and hasattr(self, 'lm_fwd') and self.lm_fwd is not None:
+                if params['recog_lm_weight'] > 0 and getattr(self, 'lm_' + dir, None) is not None:
                     lm = getattr(self, 'lm_' + dir)
 
                 best_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
@@ -670,9 +670,9 @@ class Speech2Text(ModelBase):
                     if params['recog_fwd_bwd_attention']:
                         # forward decoder
                         lm_fwd, lm_bwd = None, None
-                        if params['recog_lm_weight'] > 0 and hasattr(self, 'lm_fwd') and self.lm_fwd is not None:
+                        if params['recog_lm_weight'] > 0 and getattr(self, 'lm_fwd', None) is not None:
                             lm_fwd = self.lm_fwd
-                            if params['recog_reverse_lm_rescoring'] and hasattr(self, 'lm_bwd') and self.lm_bwd is not None:
+                            if params['recog_reverse_lm_rescoring'] and getattr(self, 'lm_bwd', None) is not None:
                                 lm_bwd = self.lm_bwd
 
                         # ensemble (forward)
@@ -695,9 +695,9 @@ class Speech2Text(ModelBase):
 
                         # backward decoder
                         lm_bwd, lm_fwd = None, None
-                        if params['recog_lm_weight'] > 0 and hasattr(self, 'lm_bwd') and self.lm_bwd is not None:
+                        if params['recog_lm_weight'] > 0 and getattr(self, 'lm_bwd', None) is not None:
                             lm_bwd = self.lm_bwd
-                            if params['recog_reverse_lm_rescoring'] and hasattr(self, 'lm_fwd') and self.lm_fwd is not None:
+                            if params['recog_reverse_lm_rescoring'] and getattr(self, 'lm_fwd', None) is not None:
                                 lm_fwd = self.lm_fwd
 
                         # ensemble (backward)
@@ -751,8 +751,8 @@ class Speech2Text(ModelBase):
                                 ensmbl_decs += [getattr(model, 'dec_' + dir)]
                                 # NOTE: only support for the main task now
 
-                        lm, lm_rev = None, None
-                        if params['recog_lm_weight'] > 0 and hasattr(self, 'lm_' + dir) and getattr(self, 'lm_' + dir) is not None:
+                        lm, lm_second, lm_rev = None, None, None
+                        if params['recog_lm_weight'] > 0 and getattr(self, 'lm_' + dir, None) is not None:
                             lm = getattr(self, 'lm_' + dir)
                             if params['recog_reverse_lm_rescoring']:
                                 if dir == 'fwd':
