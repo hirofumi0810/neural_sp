@@ -74,26 +74,26 @@ class PositionwiseFeedForward(nn.Module):
         d_ff (int): dimention of PositionwiseFeedForward
         d_out (int): output dimension of PositionwiseFeedForward
         dropout (float): dropout probability (equal to d_model)
-        nonlinear: non-linear function
+        activation: non-linear function
 
     """
 
-    def __init__(self, d_in, d_ff, d_out, dropout, nonlinear='relu'):
+    def __init__(self, d_in, d_ff, d_out, dropout, activation='relu'):
         super(PositionwiseFeedForward, self).__init__()
 
         self.w_1 = nn.Linear(d_in, d_ff)
         self.w_2 = nn.Linear(d_ff, d_out)
         self.dropout = nn.Dropout(dropout)
-        if nonlinear == 'relu':
-            self.nonlinear = torch.relu
-        elif nonlinear == 'gelu':
-            self.nonlinear = lambda x: gelu(x)
-        elif nonlinear == 'gelu_accurate':
-            self.nonlinear = lambda x: gelu_accurate(x)
-        elif nonlinear == 'glu':
-            self.nonlinear = LinearGLUBlock(d_ff)
+        if activation == 'relu':
+            self.activation = torch.relu
+        elif activation == 'gelu':
+            self.activation = lambda x: gelu(x)
+        elif activation == 'gelu_accurate':
+            self.activation = lambda x: gelu_accurate(x)
+        elif activation == 'glu':
+            self.activation = LinearGLUBlock(d_ff)
         else:
-            raise NotImplementedError(nonlinear)
+            raise NotImplementedError(activation)
 
         self.reset_parameters()
 
@@ -112,7 +112,7 @@ class PositionwiseFeedForward(nn.Module):
                 raise ValueError(n)
 
     def forward(self, xs):
-        return self.w_2(self.dropout(self.nonlinear(self.w_1(xs))))
+        return self.w_2(self.dropout(self.activation(self.w_1(xs))))
 
 
 class TransformerEncoderBlock(nn.Module):
