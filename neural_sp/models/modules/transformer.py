@@ -83,7 +83,7 @@ class PositionwiseFeedForward(nn.Module):
 
         self.w_1 = nn.Linear(d_in, d_ff)
         self.w_2 = nn.Linear(d_ff, d_out)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(p=dropout)
         if activation == 'relu':
             self.activation = torch.relu
         elif activation == 'gelu':
@@ -144,13 +144,13 @@ class TransformerEncoderBlock(nn.Module):
                                                      atype=atype,
                                                      n_heads=n_heads,
                                                      dropout=dropout_att)
-        self.dropout1 = nn.Dropout(dropout)
 
         # feed-forward
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.feed_forward = PositionwiseFeedForward(
             d_model, d_ff, d_model, dropout, ffn_nonlinear)
-        self.dropout2 = nn.Dropout(dropout)
+
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, xs, xx_mask=None):
         """Transformer encoder layer definition.
@@ -169,12 +169,12 @@ class TransformerEncoderBlock(nn.Module):
         residual = xs
         xs = self.norm1(xs)
         xs, xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)
-        xs = self.dropout1(xs) + residual
+        xs = self.dropout(xs) + residual
 
         # position-wise feed-forward
         residual = xs
         xs = self.norm2(xs)
-        xs = self.dropout2(self.feed_forward(xs)) + residual
+        xs = self.dropout(self.feed_forward(xs)) + residual
 
         return xs, xx_aws
 
@@ -216,7 +216,6 @@ class TransformerDecoderBlock(nn.Module):
                                                          atype=atype,
                                                          n_heads=n_heads,
                                                          dropout=dropout_att)
-            self.dropout1 = nn.Dropout(dropout)
 
         # attention for encoder stacks
         if src_tgt_attention:
@@ -227,13 +226,13 @@ class TransformerDecoderBlock(nn.Module):
                                                         atype=atype,
                                                         n_heads=n_heads,
                                                         dropout=dropout_att)
-            self.dropout2 = nn.Dropout(dropout)
 
         # feed-forward
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.feed_forward = PositionwiseFeedForward(
             d_model, d_ff, d_model, dropout, ffn_nonlinear)
-        self.dropout3 = nn.Dropout(dropout)
+
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, ys, yy_mask=None, xs=None, xy_mask=None):
         """Transformer decoder layer definition.
@@ -257,7 +256,7 @@ class TransformerDecoderBlock(nn.Module):
             residual = ys
             ys = self.norm1(ys)
             ys, yy_aw = self.self_attn(ys, ys, ys, mask=yy_mask)
-            ys = self.dropout1(ys) + residual
+            ys = self.dropout(ys) + residual
 
         # attention for encoder stacks
         xy_aw = None
@@ -266,12 +265,12 @@ class TransformerDecoderBlock(nn.Module):
             residual = ys
             ys = self.norm2(ys)
             ys, xy_aw = self.src_attn(xs, xs, ys, mask=xy_mask)  # k/v/q
-            ys = self.dropout2(ys) + residual
+            ys = self.dropout(ys) + residual
 
         # position-wise feed-forward
         residual = ys
         ys = self.norm3(ys)
         ys = self.feed_forward(ys)
-        ys = self.dropout3(ys) + residual
+        ys = self.dropout(ys) + residual
 
         return ys, yy_aw, xy_aw
