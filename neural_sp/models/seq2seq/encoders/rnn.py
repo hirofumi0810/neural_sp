@@ -116,42 +116,43 @@ class RNNEncoder(EncoderBase):
         # Dropout for input-hidden connection
         self.dropout_in = nn.Dropout(p=dropout_in)
 
-        if 'conv' in rnn_type:
+        if rnn_type == 'tds':
+            self.conv = TDSEncoder(input_dim=input_dim * n_stacks,
+                                   in_channel=conv_in_channel,
+                                   channels=conv_channels,
+                                   kernel_sizes=conv_kernel_sizes,
+                                   dropout=dropout,
+                                   bottleneck_dim=last_proj_dim)
+        elif rnn_type == 'gated_conv':
+            self.conv = GatedConvEncoder(input_dim=input_dim * n_stacks,
+                                         in_channel=conv_in_channel,
+                                         channels=conv_channels,
+                                         kernel_sizes=conv_kernel_sizes,
+                                         dropout=dropout,
+                                         bottleneck_dim=last_proj_dim,
+                                         param_init=param_init)
+
+        elif 'conv' in rnn_type:
+            assert n_stacks == 1 and n_splices == 1
+            self.conv = ConvEncoder(input_dim,
+                                    in_channel=conv_in_channel,
+                                    channels=conv_channels,
+                                    kernel_sizes=conv_kernel_sizes,
+                                    strides=conv_strides,
+                                    poolings=conv_poolings,
+                                    dropout=0.,
+                                    batch_norm=conv_batch_norm,
+                                    bottleneck_dim=conv_bottleneck_dim,
+                                    param_init=param_init)
+        else:
+            self.conv = None
+
+        if self.conv is None:
+            self._odim = input_dim * n_splices * n_stacks
+        else:
+            self._odim = self.conv.output_dim
             subsample = [1] * self.n_layers
             logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
-
-        if conv_channels:
-            if rnn_type == 'tds':
-                self.conv = TDSEncoder(input_dim=input_dim * n_stacks,
-                                       in_channel=conv_in_channel,
-                                       channels=conv_channels,
-                                       kernel_sizes=conv_kernel_sizes,
-                                       dropout=dropout,
-                                       bottleneck_dim=last_proj_dim)
-            elif rnn_type == 'gated_conv':
-                self.conv = GatedConvEncoder(input_dim=input_dim * n_stacks,
-                                             in_channel=conv_in_channel,
-                                             channels=conv_channels,
-                                             kernel_sizes=conv_kernel_sizes,
-                                             dropout=dropout,
-                                             bottleneck_dim=last_proj_dim,
-                                             param_init=param_init)
-            else:
-                assert n_stacks == 1 and n_splices == 1
-                self.conv = ConvEncoder(input_dim,
-                                        in_channel=conv_in_channel,
-                                        channels=conv_channels,
-                                        kernel_sizes=conv_kernel_sizes,
-                                        strides=conv_strides,
-                                        poolings=conv_poolings,
-                                        dropout=0.,
-                                        batch_norm=conv_batch_norm,
-                                        bottleneck_dim=conv_bottleneck_dim,
-                                        param_init=param_init)
-            self._odim = self.conv.output_dim
-        else:
-            self._odim = input_dim * n_splices * n_stacks
-            self.conv = None
 
         self.padding = Padding()
 
