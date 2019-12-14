@@ -37,8 +37,7 @@ class TransformerLM(LMBase):
     def __init__(self, args, save_path=None):
 
         super(LMBase, self).__init__()
-        logger = logging.getLogger('training')
-        logger.info(self.__class__.__name__)
+        logging.info(self.__class__.__name__)
 
         self.save_path = save_path
 
@@ -82,26 +81,18 @@ class TransformerLM(LMBase):
             if args.tie_embedding:
                 self.output.weight = self.embed.weight
 
-        # Initialize parameters
-        # self.reset_parameters()
+        self.reset_parameters()
 
     def reset_parameters(self):
-        """Initialize parameters with xavier_uniform style."""
-        logger = logging.getLogger('training')
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
-        for n, p in self.named_parameters():
-            if p.dim() == 1:
-                nn.init.constant_(p, 0.)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
-            elif p.dim() == 2:
-                if 'embed' in n:
-                    nn.init.normal_(p, mean=0., std=self.d_model**-0.5)
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'normal', self.d_model**-0.5))
-                else:
-                    nn.init.xavier_uniform_(p, 1.0)
-                    logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
-            else:
-                raise ValueError
+        """Initialize parameters."""
+        logging.info('===== Initialize %s =====' % self.__class__.__name__)
+        # see https://github.com/pytorch/fairseq/blob/master/fairseq/models/transformer.py
+        # embedding
+        nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
+        nn.init.constant_(self.embed.weight[self.pad], 0)
+        # output layer
+        nn.init.xavier_uniform_(self.output.weight)
+        nn.init.constant_(self.output.bias, 0.)
 
     def decode(self, ys, cache=None, is_asr=False):
         """Decode function.

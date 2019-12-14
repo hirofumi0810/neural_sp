@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import math
 import torch
 import torch.nn as nn
@@ -17,6 +18,8 @@ import torch.nn as nn
 from neural_sp.models.modules.gelu import gelu, gelu_accurate
 from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
+
+logger = logging.getLogger(__name__)
 
 
 class PositionalEncoding(nn.Module):
@@ -91,6 +94,22 @@ class PositionwiseFeedForward(nn.Module):
             self.nonlinear = LinearGLUBlock(d_ff)
         else:
             raise NotImplementedError(nonlinear)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """Initialize parameters."""
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/transformer_layer.py
+        for n, p in self.named_parameters():
+            if p.dim() == 1:
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
+            elif p.dim() == 2:
+                nn.init.xavier_uniform_(p)
+                logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
+            else:
+                raise ValueError(n)
 
     def forward(self, xs):
         return self.w_2(self.dropout(self.nonlinear(self.w_1(xs))))
@@ -235,21 +254,24 @@ class TransformerDecoderBlock(nn.Module):
             raise NotImplementedError
         else:
             self.self_attn.reset()
-            _ys = self.norm1(ys)
-            _ys, yy_aw = self.self_attn(_ys, _ys, _ys, mask=yy_mask)
-            ys = self.dropout1(_ys) + ys
+            residual = ys
+            ys = self.norm1(ys)
+            ys, yy_aw = self.self_attn(ys, ys, ys, mask=yy_mask)
+            ys = self.dropout1(ys) + residual
 
         # attention for encoder stacks
         xy_aw = None
         if self.src_tgt_attention:
             self.src_attn.reset()
-            _ys = self.norm2(ys)
-            _ys, xy_aw = self.src_attn(xs, xs, _ys, mask=xy_mask)  # k/v/q
-            ys = self.dropout2(_ys) + ys
+            residual = ys
+            ys = self.norm2(ys)
+            ys, xy_aw = self.src_attn(xs, xs, ys, mask=xy_mask)  # k/v/q
+            ys = self.dropout2(ys) + residual
 
         # position-wise feed-forward
-        _ys = self.norm3(ys)
-        _ys = self.feed_forward(_ys)
-        ys = self.dropout3(_ys) + ys
+        residual = ys
+        ys = self.norm3(ys)
+        ys = self.feed_forward(ys)
+        ys = self.dropout3(ys) + residual
 
         return ys, yy_aw, xy_aw

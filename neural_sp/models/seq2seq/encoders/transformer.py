@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import math
 import os
 import shutil
 import torch
@@ -28,6 +27,8 @@ from neural_sp.utils import mkdir_join
 
 import matplotlib
 matplotlib.use('Agg')
+
+logger = logging.getLogger(__name__)
 
 
 class TransformerEncoder(EncoderBase):
@@ -87,7 +88,6 @@ class TransformerEncoder(EncoderBase):
                  chunk_hop_size=0):
 
         super(TransformerEncoder, self).__init__()
-        logger = logging.getLogger("training")
 
         self.d_model = d_model
         self.n_layers = n_layers
@@ -110,9 +110,8 @@ class TransformerEncoder(EncoderBase):
                                     param_init=conv_param_init)
             self._odim = self.conv.output_dim
         else:
-            self._odim = input_dim * n_splices * n_stacks
             self.conv = None
-
+            self._odim = input_dim * n_splices * n_stacks
             self.embed = nn.Linear(self._odim, d_model)
 
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
@@ -129,28 +128,17 @@ class TransformerEncoder(EncoderBase):
             self.bridge = None
             self._odim = d_model
 
-        # Initialize parameters
-        # self.reset_parameters()
+        self.reset_parameters()
 
     def reset_parameters(self):
-        """Initialize parameters with xavier_uniform style."""
-        logger = logging.getLogger('training')
+        """Initialize parameters."""
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
-        for n, p in self.named_parameters():
-            if 'conv' in n:
-                continue  # for CNN layers before Transformer layers
-            if p.dim() == 1:
-                nn.init.constant_(p, 0.)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
-            elif p.dim() == 2:
-                if 'embed' in n:
-                    nn.init.normal_(p, mean=0., std=1. / math.sqrt(self.d_model))
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'normal', 1. / math.sqrt(self.d_model)))
-                else:
-                    nn.init.xavier_uniform_(p)
-                    logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
-            else:
-                raise ValueError
+        if self.conv is None:
+            nn.init.xavier_uniform_(self.embed.weight)
+            nn.init.constant_(self.embed.bias, 0.)
+        if self.bridge is not None:
+            nn.init.xavier_uniform_(self.bridge.weight)
+            nn.init.constant_(self.bridge.bias, 0.)
 
     def forward(self, xs, xlens, task):
         """Forward computation.

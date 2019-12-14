@@ -10,12 +10,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import math
 import numpy as np
 import torch
 import torch.nn as nn
 
 NEG_INF = float(np.finfo(np.float32).min)
+
+logger = logging.getLogger(__name__)
 
 
 class MultiheadAttentionMechanism(nn.Module):
@@ -61,6 +64,25 @@ class MultiheadAttentionMechanism(nn.Module):
             raise NotImplementedError(atype)
 
         self.w_out = nn.Linear(adim, kdim, bias=bias)
+
+        self.reset_parameters(bias)
+
+    def reset_parameters(self, bias):
+        """Initialize parameters."""
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/multihead_attention.py
+        nn.init.xavier_uniform_(self.w_key.weight, gain=1 / math.sqrt(2))
+        nn.init.xavier_uniform_(self.w_value.weight, gain=1 / math.sqrt(2))
+        nn.init.xavier_uniform_(self.w_query.weight, gain=1 / math.sqrt(2))
+        if bias:
+            # newly introduced
+            nn.init.constant_(self.w_key.bias, 0.)
+            nn.init.constant_(self.w_value.bias, 0.)
+            nn.init.constant_(self.w_query.bias, 0.)
+
+        nn.init.xavier_uniform_(self.w_out.weight)
+        if bias:
+            nn.init.constant_(self.w_out.bias, 0.)
 
     def reset(self):
         self.key = None

@@ -38,6 +38,8 @@ matplotlib.use('Agg')
 
 random.seed(1)
 
+logger = logging.getLogger(__name__)
+
 
 class TransformerDecoder(DecoderBase):
     """Transformer decoder.
@@ -98,7 +100,6 @@ class TransformerDecoder(DecoderBase):
                  mtl_per_batch=False):
 
         super(TransformerDecoder, self).__init__()
-        logger = logging.getLogger('training')
 
         self.eos = special_symbols['eos']
         self.unk = special_symbols['unk']
@@ -138,26 +139,18 @@ class TransformerDecoder(DecoderBase):
             if tie_embedding:
                 self.output.weight = self.embed.weight
 
-        # Initialize parameters
-        # self.reset_parameters()
+        self.reset_parameters()
 
     def reset_parameters(self):
-        """Initialize parameters with xavier_uniform style."""
-        logger = logging.getLogger('training')
+        """Initialize parameters."""
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
-        for n, p in self.named_parameters():
-            if p.dim() == 1:
-                nn.init.constant_(p, 0.)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
-            elif p.dim() == 2:
-                if 'embed' in n:
-                    nn.init.normal_(p, mean=0., std=self.d_model**-0.5)
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'normal', self.d_model**-0.5))
-                else:
-                    nn.init.xavier_uniform_(p)
-                    logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
-            else:
-                raise ValueError
+        # see https://github.com/pytorch/fairseq/blob/master/fairseq/models/transformer.py
+        # embedding
+        nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
+        nn.init.constant_(self.embed.weight[self.pad], 0)
+        # output layer
+        nn.init.xavier_uniform_(self.output.weight)
+        nn.init.constant_(self.output.bias, 0.)
 
     def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_logits=None):
         """Forward computation.
@@ -332,7 +325,6 @@ class TransformerDecoder(DecoderBase):
             aw (list): A list of length `[B]`, which contains arrays of size `[L, T]`
 
         """
-        logger = logging.getLogger("decoding")
         bs, xtime = eouts.size()[:2]
 
         # Start from <sos> (<eos> in case of the backward decoder)
