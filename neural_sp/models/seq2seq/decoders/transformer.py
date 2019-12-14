@@ -280,7 +280,7 @@ class TransformerDecoder(DecoderBase):
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
                exclude_eos=False, oracle=False,
                refs_id=None, utt_ids=None, speakers=None):
-        """Greedy decoding in the inference stage (used only for evaluation during training).
+        """Greedy decoding.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
@@ -299,11 +299,7 @@ class TransformerDecoder(DecoderBase):
         """
         bs, xtime = eouts.size()[:2]
 
-        # Start from <sos> (<eos> in case of the backward decoder)
         y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
-
-        # Append <sos> and <eos>
-        ys_in, ys_out, ylens = self.append_sos_eos(refs_id, self.bwd)
 
         hyps_batch = []
         ylens = torch.zeros(bs).int()
