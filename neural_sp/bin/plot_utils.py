@@ -28,7 +28,8 @@ sns.set(font='Noto Sans CJK JP')
 
 
 def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
-                           save_path=None, figsize=(20, 8)):
+                           save_path=None, figsize=(20, 8),
+                           ctc_probs=None, ctc_indices_topk=None):
     """Plot attention weights.
 
     Args:
@@ -44,29 +45,47 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
     plt.figure(figsize=figsize)
 
     n_heads = aw.shape[2]
+    n_col = n_heads
+    if spectrogram is not None:
+        n_col += 1
+    if ctc_probs is not None:
+        n_col += 1
 
     if spectrogram is None:
         sns.heatmap(aw[:, :, 0], cmap='viridis',
                     xticklabels=False,
                     yticklabels=tokens if len(tokens) > 0 else False)
-        # cbar_kws={"orientation": "horizontal"}
         plt.ylabel(u'Output labels (←)', fontsize=8)
         plt.yticks(rotation=0)
     else:
         for head in range(1, n_heads + 1, 1):
-            plt.subplot(n_heads + 1, 1, head)
+            plt.subplot(n_col, 1, head)
             sns.heatmap(aw[:, :, head - 1], cmap='viridis',
                         xticklabels=False,
-                        yticklabels=tokens if len(tokens) > 0 else False)
+                        yticklabels=tokens if len(tokens) > 0 else False,
+                        cbar_kws={"orientation": "horizontal"})
             plt.ylabel(u'Output labels (←)', fontsize=12)
             plt.yticks(rotation=0)
 
+        if ctc_probs is not None:
+            plt.subplot(n_col, 1, n_col - 1)
+            times_probs = np.arange(ctc_probs.shape[0])
+            for i in ctc_indices_topk:
+                if i == 0:
+                    plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
+                else:
+                    plt.plot(times_probs, ctc_probs[:, i])
+            plt.ylabel('CTC posteriors', fontsize=12)
+            plt.tick_params(labelbottom=False)
+            plt.yticks(list(range(0, 2, 1)))
+            plt.xlim(0, ctc_probs.shape[0])
+
         # Plot spectrogram
-        plt.subplot(n_heads + 1, 1, n_heads + 1)
+        plt.subplot(n_col, 1, n_col)
         plt.imshow(spectrogram.T, cmap='viridis', aspect='auto', origin='lower')
         plt.xlabel(u'Time [msec]', fontsize=12)
         plt.ylabel(u'Frequency bin', fontsize=12)
-        plt.colorbar()
+        # plt.colorbar()
         plt.grid('off')
 
     # Save as a png file
@@ -141,13 +160,13 @@ def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
     plt.close()
 
 
-def plot_ctc_probs(ctc_probs, indices_topk, n_frames, subsample_factor, space_id=None, hyp='',
+def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space_id=None, hyp='',
                    spectrogram=None, save_path=None, figsize=(20, 8), topk=None):
     """Plot CTC posteriors.
 
     Args:
         ctc_probs (np.ndarray): A tensor of size `[T, vocab]`
-        n_frames (int):
+        indices_topk ():
         subsample_factor (int): the number of frames to stack
         space_id (int):
         hyp (str):
@@ -158,6 +177,7 @@ def plot_ctc_probs(ctc_probs, indices_topk, n_frames, subsample_factor, space_id
     """
     plt.clf()
     plt.figure(figsize=figsize)
+    n_frames = ctc_probs.shape[0]
     times_probs = np.arange(n_frames) * subsample_factor / 100
     if len(hyp) > 0:
         plt.title(hyp)
