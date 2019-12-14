@@ -7,12 +7,13 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd3/inaguma/corpus/wsj
+data=/n/work1/inaguma/corpus/wsj
 
 batch_size=1
 n_caches=0
 cache_theta=0.1
 cache_lambda=0.1
+n_average=1  # for Transformer
 
 . ./cmd.sh
 . ./path.sh
@@ -29,11 +30,13 @@ if [ -z ${gpu} ]; then
 fi
 gpu=$(echo ${gpu} | cut -d "," -f 1)
 
-# for set in test_dev93 test_eval92; do
-for set in test_dev93; do
+for set in test_dev93 test_eval92; do
     recog_dir=$(dirname ${model})/decode_${set}
     if [ ${n_caches} != 0 ]; then
         recog_dir=${recog_dir}_cache${n_caches}_theta${cache_theta}_lambda${cache_lambda}
+    fi
+    if [ ${n_average} != 1 ]; then
+        recog_dir=${recog_dir}_average${n_average}
     fi
     mkdir -p ${recog_dir}
 
@@ -44,5 +47,6 @@ for set in test_dev93; do
         --recog_n_caches ${n_caches} \
         --recog_cache_theta ${cache_theta} \
         --recog_cache_lambda ${cache_lambda} \
+        --recog_n_average ${n_average} \
         --recog_dir ${recog_dir} || exit 1;
 done
