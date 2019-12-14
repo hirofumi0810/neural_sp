@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import argparse
 import copy
+import logging
 import os
 import shutil
 
@@ -24,6 +25,8 @@ from neural_sp.datasets.asr import Dataset
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -43,8 +46,7 @@ def main():
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'plot.log')):
         os.remove(os.path.join(args.recog_dir, 'plot.log'))
-    logger = set_logger(os.path.join(args.recog_dir, 'plot.log'),
-                        key='decoding', stdout=args.recog_stdout)
+    set_logger(os.path.join(args.recog_dir, 'plot.log'), stdout=args.recog_stdout)
 
     for i, s in enumerate(args.recog_sets):
         # Load dataset
@@ -109,12 +111,13 @@ def main():
 
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('recog oracle: %s' % args.recog_oracle)
-            logger.info('epoch: %d' % (epoch - 1))
+            logger.info('epoch: %d' % epoch)
             logger.info('batch size: %d' % args.recog_batch_size)
             logger.info('beam width: %d' % args.recog_beam_width)
             logger.info('min length ratio: %.3f' % args.recog_min_len_ratio)
             logger.info('max length ratio: %.3f' % args.recog_max_len_ratio)
             logger.info('length penalty: %.3f' % args.recog_length_penalty)
+            logger.info('length norm: %s' % args.recog_length_norm)
             logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
             logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
             logger.info('CTC weight: %.3f' % args.recog_ctc_weight)
@@ -148,6 +151,13 @@ def main():
                 ensemble_models=ensemble_models[1:] if len(ensemble_models) > 1 else [],
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
 
+            # Get CTC probs
+            ctc_probs, indices_topk = None, None
+            if args.ctc_weight > 0:
+                ctc_probs, indices_topk, xlens = model.get_ctc_probs(
+                    batch['xs'], temperature=1, topk=min(100, model.vocab))
+                # NOTE: ctc_probs: '[B, T, topk]'
+
             if model.bwd_weight > 0.5:
                 # Reverse the order
                 best_hyps_id = [hyp[::-1] for hyp in best_hyps_id]
@@ -162,7 +172,9 @@ def main():
                     tokens,
                     spectrogram=batch['xs'][b][:, :dataset.input_dim] if args.input_type == 'speech' else None,
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
-                    figsize=(20, 8))
+                    figsize=(20, 8),
+                    ctc_probs=ctc_probs[b, :xlens[b]] if ctc_probs is not None else None,
+                    ctc_indices_topk=indices_topk[b] if indices_topk is not None else None)
 
                 if model.bwd_weight > 0.5:
                     hyp = ' '.join(tokens[::-1])

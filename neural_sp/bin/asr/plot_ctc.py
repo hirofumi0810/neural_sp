@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import numpy as np
 import os
 import shutil
@@ -22,6 +23,8 @@ from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.asr import Dataset
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -41,8 +44,7 @@ def main():
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'plot.log')):
         os.remove(os.path.join(args.recog_dir, 'plot.log'))
-    logger = set_logger(os.path.join(args.recog_dir, 'plot.log'),
-                        key='decoding', stdout=args.recog_stdout)
+    set_logger(os.path.join(args.recog_dir, 'plot.log'), stdout=args.recog_stdout)
 
     for i, s in enumerate(args.recog_sets):
         subsample_factor = 1
@@ -77,7 +79,7 @@ def main():
                 args.recog_unit = args.unit
 
             logger.info('recog unit: %s' % args.recog_unit)
-            logger.info('epoch: %d' % (epoch - 1))
+            logger.info('epoch: %d' % epoch)
             logger.info('batch size: %d' % args.recog_batch_size)
 
             # GPU setting
@@ -107,7 +109,6 @@ def main():
                 plot_ctc_probs(
                     ctc_probs[b, :xlens[b]],
                     indices_topk[b],
-                    n_frames=xlens[b],
                     subsample_factor=subsample_factor,
                     spectrogram=batch['xs'][b][:, :dataset.input_dim],
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),

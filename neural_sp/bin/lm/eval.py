@@ -11,6 +11,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import os
 import time
 
@@ -22,6 +23,8 @@ from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.lm.build import build_lm
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -40,8 +43,7 @@ def main():
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):
         os.remove(os.path.join(args.recog_dir, 'decode.log'))
-    logger = set_logger(os.path.join(args.recog_dir, 'decode.log'),
-                        key='decoding', stdout=args.recog_stdout)
+    set_logger(os.path.join(args.recog_dir, 'decode.log'), stdout=args.recog_stdout)
 
     ppl_avg = 0
     for i, s in enumerate(args.recog_sets):

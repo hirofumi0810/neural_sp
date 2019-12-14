@@ -13,6 +13,7 @@ from __future__ import print_function
 
 import argparse
 import copy
+import logging
 import os
 import time
 
@@ -29,6 +30,8 @@ from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -48,8 +51,7 @@ def main():
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):
         os.remove(os.path.join(args.recog_dir, 'decode.log'))
-    logger = set_logger(os.path.join(args.recog_dir, 'decode.log'),
-                        key='decoding', stdout=args.recog_stdout)
+    set_logger(os.path.join(args.recog_dir, 'decode.log'), stdout=args.recog_stdout)
 
     wer_avg, cer_avg, per_avg = 0, 0, 0
     ppl_avg, loss_avg = 0, 0
@@ -135,6 +137,7 @@ def main():
             logger.info('min length ratio: %.3f' % args.recog_min_len_ratio)
             logger.info('max length ratio: %.3f' % args.recog_max_len_ratio)
             logger.info('length penalty: %.3f' % args.recog_length_penalty)
+            logger.info('length norm: %s' % args.recog_length_norm)
             logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
             logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
             logger.info('CTC weight: %.3f' % args.recog_ctc_weight)
