@@ -19,6 +19,8 @@ import torch.nn as nn
 from neural_sp.models.seq2seq.encoders.conv import parse_config
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
+logger = logging.getLogger(__name__)
+
 
 class TDSEncoder(EncoderBase):
     """TDS (tim-depth separable convolutional) encoder.
@@ -45,7 +47,6 @@ class TDSEncoder(EncoderBase):
                  bottleneck_dim=0):
 
         super(TDSEncoder, self).__init__()
-        logger = logging.getLogger("training")
 
         channels, kernel_sizes, _, _ = parse_config(channels, kernel_sizes, '', '')
 
@@ -84,12 +85,10 @@ class TDSEncoder(EncoderBase):
 
         self.layers = nn.Sequential(layers)
 
-        # Initialize parameters
         self.reset_parameters()
 
     def reset_parameters(self):
         """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
@@ -104,7 +103,7 @@ class TDSEncoder(EncoderBase):
                 nn.init.uniform_(p, a=-math.sqrt(4 / fan_in), b=math.sqrt(4 / fan_in))  # conv weight
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', math.sqrt(4 / fan_in)))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def forward(self, xs, xlens):
         """Forward computation.

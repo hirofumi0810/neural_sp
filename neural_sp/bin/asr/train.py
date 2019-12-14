@@ -14,6 +14,7 @@ import argparse
 import copy
 import cProfile
 import editdistance
+import logging
 import numpy as np
 import os
 from setproctitle import setproctitle
@@ -37,6 +38,7 @@ from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.build import build_lm
+from neural_sp.models.seq2seq.acoustic_model import AcousticModel
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.trainers.model_name import set_asr_model_name
@@ -46,6 +48,8 @@ from neural_sp.utils import mkdir_join
 
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -94,8 +98,7 @@ def main():
         save_path = set_save_path(save_path)  # avoid overwriting
 
     # Set logger
-    logger = set_logger(os.path.join(save_path, 'train.log'),
-                        key='training', stdout=args.stdout)
+    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
 
     # for multi-GPUs
     if args.n_gpus > 1:
@@ -196,7 +199,10 @@ def main():
         assert args.vocab == args.lm_conf.vocab
 
     # Model setting
-    model = Speech2Text(args, save_path)
+    if args.am_pretrain_type:
+        model = AcousticModel(args, save_path)
+    else:
+        model = Speech2Text(args, save_path)
 
     if args.resume:
         # Set optimizer
@@ -259,13 +265,13 @@ def main():
             model_init = load_checkpoint(model_init, args.asr_init)[0]
 
             # Overwrite parameters
-            only_enc = (args.enc_n_layers != args_init.enc_n_layers) or (
-                args.unit != args_init.unit) or args_init.ctc_weight == 1
+            # only_enc = (args.enc_n_layers != args_init.enc_n_layers) or (
+            #     args.unit != args_init.unit) or args_init.ctc_weight == 1
             param_dict = dict(model_init.named_parameters())
             for n, p in model.named_parameters():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
-                    if only_enc and 'enc' not in n:
-                        continue
+                    # if only_enc and 'enc' not in n:
+                    #     continue
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
@@ -379,6 +385,7 @@ def main():
 
         if n_steps % args.print_step == 0:
             # Compute loss in the dev set
+            # batch_dev = dev_set.next()[0]
             batch_dev = dev_set.next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
             # Change mini-batch depending on task
             for task in tasks:

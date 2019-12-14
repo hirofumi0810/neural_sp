@@ -34,7 +34,7 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
-logger = logging.getLogger("training")
+logger = logging.getLogger(__name__)
 
 
 class Speech2Text(ModelBase):

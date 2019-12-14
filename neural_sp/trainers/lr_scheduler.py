@@ -10,13 +10,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from logging import getLogger
+import logging
 import torch
-# from torch.optim.lr_scheduler import _LRScheduler
 
 from neural_sp.trainers.optimizer import set_optimizer
 
-logger = getLogger('training')
+logger = logging.getLogger(__name__)
 
 
 class LRScheduler(object):

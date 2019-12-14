@@ -41,6 +41,8 @@ matplotlib.use('Agg')
 
 random.seed(1)
 
+logger = logging.getLogger(__name__)
+
 
 class RNNDecoder(DecoderBase):
     """RNN decoder.
@@ -134,7 +136,6 @@ class RNNDecoder(DecoderBase):
                  soft_label_weight=0.):
 
         super(RNNDecoder, self).__init__()
-        logger = logging.getLogger('training')
 
         self.eos = special_symbols['eos']
         self.unk = special_symbols['unk']
@@ -277,7 +278,6 @@ class RNNDecoder(DecoderBase):
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if 'score.monotonic_energy.v.weight_g' in n or 'score.monotonic_energy.r' in n:
@@ -299,7 +299,7 @@ class RNNDecoder(DecoderBase):
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def start_scheduled_sampling(self):
         self._ss_prob = self.ss_prob
@@ -627,7 +627,6 @@ class RNNDecoder(DecoderBase):
             aws (list): A list of length `[B]`, which contains arrays of size `[n_heads, L, T]`
 
         """
-        logger = logging.getLogger("decoding")
         bs, xtime, _ = eouts.size()
 
         # Initialization
@@ -753,8 +752,6 @@ class RNNDecoder(DecoderBase):
             scores (list):
 
         """
-        logger = logging.getLogger("decoding")
-
         bs = eouts.size(0)
         n_models = len(ensmbl_decs) + 1
 

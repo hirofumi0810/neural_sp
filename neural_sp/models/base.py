@@ -17,7 +17,7 @@ import torch.nn as nn
 
 np.random.seed(1)
 
-logger = logging.getLogger('training')
+logger = logging.getLogger(__name__)
 
 
 class ModelBase(nn.Module):

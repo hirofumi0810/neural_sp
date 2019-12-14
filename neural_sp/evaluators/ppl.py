@@ -18,7 +18,7 @@ from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.lm.transformerlm import TransformerLM
 
-logger = logging.getLogger("decoding").getChild('ppl')
+logger = logging.getLogger(__name__)
 
 
 def eval_ppl(models, dataset, batch_size=1, bptt=None,

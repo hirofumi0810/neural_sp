@@ -20,6 +20,8 @@ from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
+logger = logging.getLogger(__name__)
+
 
 class LMBase(ModelBase):
     """Base class for language models."""
@@ -27,7 +29,7 @@ class LMBase(ModelBase):
     def __init__(self, args):
 
         super(ModelBase, self).__init__()
-        logger = logging.getLogger('training')
+        logger.info(self.__class__.__name__)
         logger.info('Overriding LMBase class.')
 
     def reset_parameters(self, param_init):

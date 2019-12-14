@@ -16,6 +16,8 @@ import torch
 from neural_sp.models.base import ModelBase
 from neural_sp.models.torch_utils import tensor2np
 
+logger = logging.getLogger(__name__)
+
 
 class DecoderBase(ModelBase):
     """Base class for decoders."""
@@ -23,7 +25,7 @@ class DecoderBase(ModelBase):
     def __init__(self):
 
         super(ModelBase, self).__init__()
-        logger = logging.getLogger('training')
+
         logger.info('Overriding DecoderBase class.')
 
     @property

@@ -16,7 +16,7 @@ from tqdm import tqdm
 from neural_sp.evaluators.edit_distance import compute_wer
 from neural_sp.utils import mkdir_join
 
-logger = logging.getLogger("decoding").getChild('wordpiece')
+logger = logging.getLogger(__name__)
 
 
 def eval_wordpiece(models, dataset, recog_params, epoch,

@@ -15,6 +15,8 @@ import torch
 
 from neural_sp.models.base import ModelBase
 
+logger = logging.getLogger(__name__)
+
 
 class EncoderBase(ModelBase):
     """Base class for encoders."""
@@ -22,7 +24,6 @@ class EncoderBase(ModelBase):
     def __init__(self):
 
         super(ModelBase, self).__init__()
-        logger = logging.getLogger('training')
         logger.info('Overriding EncoderBase class.')
 
     @property

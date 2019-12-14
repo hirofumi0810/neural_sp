@@ -10,7 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from logging import getLogger
+import logging
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
@@ -25,7 +25,7 @@ blue = '#4682B4'
 orange = '#D2691E'
 green = '#82b74b'
 
-logger = getLogger('training')
+logger = logging.getLogger(__name__)
 
 
 class Reporter(object):
@@ -57,9 +57,9 @@ class Reporter(object):
     def add(self, observation, is_eval=False):
         """Restore values per step.
 
-            Args:
-                observation (dict):
-                is_eval (bool):
+        Args:
+            observation (dict):
+            is_eval (bool):
 
         """
         for k, v in observation.items():

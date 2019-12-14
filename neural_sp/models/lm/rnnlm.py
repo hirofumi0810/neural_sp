@@ -19,13 +19,15 @@ from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.torch_utils import repeat
 
 
+logger = logging.getLogger(__name__)
+
+
 class RNNLM(LMBase):
     """RNN language model."""
 
     def __init__(self, args, save_path=None):
 
         super(LMBase, self).__init__()
-        logger = logging.getLogger('training')
         logger.info(self.__class__.__name__)
 
         self.save_path = save_path
@@ -86,7 +88,6 @@ class RNNLM(LMBase):
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
                 self.output.weight = self.embed.weight
 
-        # Initialize parameters
         self.reset_parameters(args.param_init)
 
         # Recurrent weights are orthogonalized
@@ -99,7 +100,6 @@ class RNNLM(LMBase):
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
@@ -109,7 +109,7 @@ class RNNLM(LMBase):
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def decode(self, ys, state, is_asr=False):
         """Decode function.

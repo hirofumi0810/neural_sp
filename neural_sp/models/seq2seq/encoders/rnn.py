@@ -23,6 +23,8 @@ from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
 from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
 
+logger = logging.getLogger(__name__)
+
 
 class RNNEncoder(EncoderBase):
     """RNN encoder.
@@ -85,7 +87,6 @@ class RNNEncoder(EncoderBase):
                  bidirectional_sum_fwd_bwd=False):
 
         super(RNNEncoder, self).__init__()
-        logger = logging.getLogger("training")
 
         if len(subsample) > 0 and len(subsample) != n_layers:
             raise ValueError('subsample must be the same size as n_layers.')
@@ -229,12 +230,10 @@ class RNNEncoder(EncoderBase):
                 self.bridge = nn.Linear(self._odim, last_proj_dim)
                 self._odim = last_proj_dim
 
-        # Initialize parameters
         self.reset_parameters(param_init)
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if 'conv' in n or 'tds' in n or 'gated_conv' in n:
@@ -246,7 +245,7 @@ class RNNEncoder(EncoderBase):
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def forward(self, xs, xlens, task):
         """Forward computation.

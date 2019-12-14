@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import cProfile
+import logging
 import os
 from setproctitle import setproctitle
 import shutil
@@ -38,6 +39,8 @@ from neural_sp.utils import mkdir_join
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
 
+logger = logging.getLogger(__name__)
+
 
 def main():
 
@@ -61,8 +64,7 @@ def main():
         save_path = set_save_path(save_path)  # avoid overwriting
 
     # Set logger
-    logger = set_logger(os.path.join(save_path, 'train.log'),
-                        key='training', stdout=args.stdout)
+    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
 
     if args.resume:
         transformer = 'transformer' == conf['lm_type']

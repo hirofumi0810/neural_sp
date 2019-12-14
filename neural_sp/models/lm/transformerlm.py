@@ -30,6 +30,8 @@ matplotlib.use('Agg')
 
 random.seed(1)
 
+logger = logging.getLogger(__name__)
+
 
 class TransformerLM(LMBase):
     """Transformer language model."""
@@ -37,7 +39,7 @@ class TransformerLM(LMBase):
     def __init__(self, args, save_path=None):
 
         super(LMBase, self).__init__()
-        logging.info(self.__class__.__name__)
+        logger.info(self.__class__.__name__)
 
         self.save_path = save_path
 

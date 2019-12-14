@@ -19,7 +19,7 @@ from neural_sp.evaluators.edit_distance import compute_wer
 from neural_sp.evaluators.resolving_unk import resolve_unk
 from neural_sp.utils import mkdir_join
 
-logger = logging.getLogger("decoding").getChild('word')
+logger = logging.getLogger(__name__)
 
 
 def eval_word(models, dataset, recog_params, epoch,

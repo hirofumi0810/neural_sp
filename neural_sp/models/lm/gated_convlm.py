@@ -17,6 +17,8 @@ import torch.nn as nn
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.glu import ConvGLUBlock
 
+logger = logging.getLogger(__name__)
+
 
 class GatedConvLM(LMBase):
     """Gated convolutional neural network language model with Gated Linear Units (GLU)."""
@@ -24,7 +26,6 @@ class GatedConvLM(LMBase):
     def __init__(self, args, save_path=None):
 
         super(LMBase, self).__init__()
-        logger = logging.getLogger('training')
         logger.info(self.__class__.__name__)
 
         self.save_path = save_path
@@ -150,12 +151,10 @@ class GatedConvLM(LMBase):
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
                 self.output.weight = self.embed.weight
 
-        # Initialize parameters
         self.reset_parameters(args.param_init)
 
     def reset_parameters(self, param_init):
         """Initialize parameters with kaiming_uniform style."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
@@ -166,7 +165,7 @@ class GatedConvLM(LMBase):
                 # nn.init.kaiming_normal_(p, mode='fan_in', nonlinearity='relu')
                 logger.info('Initialize %s with %s / %.3f' % (n, 'kaiming_uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def decode(self, ys, state=None, is_asr=False):
         """Decode function.

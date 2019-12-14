@@ -29,9 +29,11 @@ random.seed(1)
 LOG_0 = float(np.finfo(np.float32).min)
 LOG_1 = 0
 
+logger = logging.getLogger(__name__)
+
 
 class CTC(DecoderBase):
-    """RNN Transducer.
+    """Connectionist temporal classificaiton (CTC).
 
     Args:
         eos (int): index for <eos> (shared with <sos>)
@@ -56,7 +58,6 @@ class CTC(DecoderBase):
                  param_init=0.1):
 
         super(CTC, self).__init__()
-        logger = logging.getLogger('training')
 
         self.eos = eos
         self.blank = blank
@@ -64,7 +65,7 @@ class CTC(DecoderBase):
         self.lsm_prob = lsm_prob
 
         self.space = -1
-        # TODO(hirofumi): fix layer
+        # TODO(hirofumi): fix later
 
         # Fully-connected layers before the softmax
         if len(fc_list) > 0:
@@ -83,17 +84,16 @@ class CTC(DecoderBase):
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
+                nn.init.constant_(p, 0.)  # bias
                 logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() in [2, 4]:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def forward(self, eouts, elens, ys):
         """Compute CTC loss.
@@ -180,7 +180,6 @@ class CTC(DecoderBase):
             best_hyps (list): Best path hypothesis. `[B, L]`
 
         """
-        logger = logging.getLogger("decoding")
         bs = eouts.size(0)
 
         beam_width = params['recog_beam_width']

@@ -12,18 +12,13 @@ from __future__ import print_function
 
 import functools
 from glob import glob
-from logging import DEBUG
-from logging import FileHandler
-from logging import Formatter
-from logging import getLogger
-from logging import StreamHandler
-from logging import WARNING
+import logging
 import os
 import time
 import torch
 import yaml
 
-logger = getLogger('training')
+logger = logging.getLogger(__name__)
 
 
 def measure_time(func):
@@ -63,34 +58,24 @@ def save_config(conf, save_path):
         f.write(yaml.dump({'param': conf}, default_flow_style=False))
 
 
-def set_logger(save_path, key, stdout=False):
+def set_logger(save_path, stdout=False):
     """Set logger.
 
     Args:
         save_path (str):
-        key (str):
         stdout (bool):
-    Returns:
-        logger ():
 
     """
-    logger = getLogger(key)
-    sh = StreamHandler()
-    fh = FileHandler(save_path)
+    format = '%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s'
+    logging.basicConfig(level=logging.INFO, format=format, filename=save_path)
 
-    logger.setLevel(DEBUG)
-    sh.setLevel(WARNING)
-    fh.setLevel(DEBUG)
-    formatter = Formatter('%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s')
-    sh.setFormatter(formatter)
-    fh.setFormatter(formatter)
-    logger.addHandler(sh)
-    logger.addHandler(fh)
+    console = logging.StreamHandler()
+    console_formatter = logging.Formatter(format)
+    console.setFormatter(console_formatter)
+    console.setLevel(logging.WARNING)
 
     if stdout:
         logger.info = lambda x: print(x)
-
-    return logger
 
 
 def set_save_path(save_path):
@@ -152,12 +137,13 @@ def load_checkpoint(model, checkpoint_path, optimizer=None, resume=False):
             for state in optimizer.optimizer.state.values():
                 for k, v in state.items():
                     if torch.is_tensor(v):
-                        state[k] = v.cuda(0)
+                        state[k] = v.cuda()
                         # state[k] = v.cuda(self.device_id)
                         # TODO(hirofumi): Fix for multi-GPU
             # NOTE: from https://github.com/pytorch/pytorch/issues/2830
         else:
             raise ValueError('Set optimizer.')
+            # logger.warning('Optimizer is not loaded.')
 
     return model, optimizer
 

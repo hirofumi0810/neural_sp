@@ -13,9 +13,6 @@ from __future__ import print_function
 from torch.nn import DataParallel
 from torch.nn.parallel.scatter_gather import gather
 
-import logging
-logger = logging.getLogger('training')
-
 
 class CustomDataParallel(DataParallel):
 

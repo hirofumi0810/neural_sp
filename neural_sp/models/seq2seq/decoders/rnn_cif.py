@@ -37,6 +37,8 @@ matplotlib.use('Agg')
 
 random.seed(1)
 
+logger = logging.getLogger(__name__)
+
 
 class RNNCIFDecoder(DecoderBase):
     """RNN decoder.
@@ -105,7 +107,6 @@ class RNNCIFDecoder(DecoderBase):
                  soft_label_weight=0.):
 
         super(RNNCIFDecoder, self).__init__()
-        logger = logging.getLogger('training')
 
         self.eos = special_symbols['eos']
         self.unk = special_symbols['unk']
@@ -196,7 +197,6 @@ class RNNCIFDecoder(DecoderBase):
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
                 self.output.weight = self.embed.weight
 
-        # Initialize parameters
         self.reset_parameters(param_init)
 
         # resister the external LM
@@ -225,10 +225,8 @@ class RNNCIFDecoder(DecoderBase):
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
-
             if p.dim() == 1:
                 if 'linear_lm_gate.fc.bias' in n:
                     # Initialize bias in gating with -1 for cold fusion
@@ -241,7 +239,7 @@ class RNNCIFDecoder(DecoderBase):
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def start_scheduled_sampling(self):
         self._ss_prob = 0
@@ -511,7 +509,6 @@ class RNNCIFDecoder(DecoderBase):
             aws (list): A list of length `[B]`, which contains arrays of size `[n_heads, L, T]`
 
         """
-        logger = logging.getLogger("decoding")
         bs, xtime, enc_dim = eouts.size()
 
         # Initialization
@@ -631,8 +628,6 @@ class RNNCIFDecoder(DecoderBase):
             scores (list):
 
         """
-        logger = logging.getLogger("decoding")
-
         bs, _, enc_dim = eouts.size()
         n_models = len(ensmbl_decs) + 1
 

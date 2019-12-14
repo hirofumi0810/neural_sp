@@ -19,6 +19,8 @@ from neural_sp.models.modules.glu import ConvGLUBlock
 from neural_sp.models.seq2seq.encoders.conv import parse_config
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
+logger = logging.getLogger(__name__)
+
 
 class GatedConvEncoder(EncoderBase):
     """Gated convolutional neural netwrok encoder.
@@ -47,7 +49,6 @@ class GatedConvEncoder(EncoderBase):
                  param_init=0.1):
 
         super(GatedConvEncoder, self).__init__()
-        logger = logging.getLogger("training")
 
         channels, kernel_sizes, _, _ = parse_config(channels, kernel_sizes, '', '')
 
@@ -78,12 +79,10 @@ class GatedConvEncoder(EncoderBase):
 
         self.layers = nn.Sequential(layers)
 
-        # Initialize parameters
         self.reset_parameters(param_init)
 
     def reset_parameters(self, param_init):
         """Initialize parameters with kaiming_uniform style."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
@@ -94,7 +93,7 @@ class GatedConvEncoder(EncoderBase):
                 # nn.init.kaiming_normal_(p, mode='fan_in', nonlinearity='relu')
                 logger.info('Initialize %s with %s / %.3f' % (n, 'kaiming_uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def forward(self, xs, xlens):
         """Forward computation.

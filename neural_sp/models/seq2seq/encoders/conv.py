@@ -18,6 +18,8 @@ import torch.nn as nn
 
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
+logger = logging.getLogger(__name__)
+
 
 class ConvEncoder(EncoderBase):
     """CNN encoder.
@@ -51,7 +53,6 @@ class ConvEncoder(EncoderBase):
                  param_init=0.1):
 
         super(ConvEncoder, self).__init__()
-        logger = logging.getLogger("training")
 
         channels, kernel_sizes, strides, poolings = parse_config(channels, kernel_sizes, strides, poolings)
 
@@ -87,12 +88,10 @@ class ConvEncoder(EncoderBase):
             self.bridge = nn.Linear(self._odim, bottleneck_dim)
             self._odim = bottleneck_dim
 
-        # Initialize parameters
         self.reset_parameters(param_init)
 
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
@@ -107,7 +106,7 @@ class ConvEncoder(EncoderBase):
                 nn.init.normal_(p, mean=0., std=1. / math.sqrt(fan_in))  # conv weight
                 logger.info('Initialize %s with %s / %.3f' % (n, 'lecun', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def forward(self, xs, xlens):
         """Forward computation.

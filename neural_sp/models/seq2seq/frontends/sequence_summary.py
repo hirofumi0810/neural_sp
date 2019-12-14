@@ -14,6 +14,8 @@ import logging
 import torch
 import torch.nn as nn
 
+logger = logging.getLogger(__name__)
+
 
 class SequenceSummaryNetwork(nn.Module):
     """Sequence summayr network.
@@ -50,22 +52,20 @@ class SequenceSummaryNetwork(nn.Module):
         self.ssn += [nn.Linear(bottleneck_dim, input_dim, bias=False)]
         self.ssn += [nn.Dropout(p=dropout)]
 
-        # Initialize parameters
         self.reset_parameters(param_init)
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() == 2:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def forward(self, xs, xlens):
         """Forward computation.

@@ -30,6 +30,8 @@ random.seed(1)
 LOG_0 = float(np.finfo(np.float32).min)
 LOG_1 = 0
 
+logger = logging.getLogger(__name__)
+
 
 class RNNTransducer(DecoderBase):
     """RNN Transducer.
@@ -86,7 +88,6 @@ class RNNTransducer(DecoderBase):
                  end_pointing=True):
 
         super(RNNTransducer, self).__init__()
-        logger = logging.getLogger('training')
 
         self.eos = special_symbols['eos']
         self.unk = special_symbols['unk']
@@ -145,7 +146,6 @@ class RNNTransducer(DecoderBase):
             self.w_dec = nn.Linear(dec_idim, bottleneck_dim, bias=False)
             self.output = nn.Linear(bottleneck_dim, vocab)
 
-        # Initialize parameters
         self.reset_parameters(param_init)
 
         # prediction network initialization with pre-trained LM
@@ -165,7 +165,6 @@ class RNNTransducer(DecoderBase):
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
@@ -175,7 +174,7 @@ class RNNTransducer(DecoderBase):
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def start_scheduled_sampling(self):
         self._ss_prob = 0.
@@ -371,7 +370,6 @@ class RNNTransducer(DecoderBase):
             aw: dummy
 
         """
-        logger = logging.getLogger("decoding")
         bs = eouts.size(0)
 
         hyps = []
@@ -449,8 +447,6 @@ class RNNTransducer(DecoderBase):
             scores: dummy
 
         """
-        logger = logging.getLogger("decoding")
-
         bs = eouts.size(0)
         best_hyps = []
 
