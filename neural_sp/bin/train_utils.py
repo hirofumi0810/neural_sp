@@ -62,20 +62,13 @@ def set_logger(save_path, stdout=False):
     """Set logger.
 
     Args:
-        save_path (str):
+        save_path (str): path to save a log file
         stdout (bool):
 
     """
     format = '%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s'
-    logging.basicConfig(level=logging.INFO, format=format, filename=save_path)
-
-    console = logging.StreamHandler()
-    console_formatter = logging.Formatter(format)
-    console.setFormatter(console_formatter)
-    console.setLevel(logging.WARNING)
-
-    if stdout:
-        logger.info = lambda x: print(x)
+    logging.basicConfig(level=logging.INFO, format=format,
+                        filename=save_path if not stdout else None)
 
 
 def set_save_path(save_path):
