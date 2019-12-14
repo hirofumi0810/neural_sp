@@ -28,7 +28,7 @@ def parse():
                         help='job name')
     parser.add_argument('--stdout', type=strtobool, default=False,
                         help='print to standard output')
-    parser.add_argument('--recog_stdout', type=strtobool, default=True,
+    parser.add_argument('--recog_stdout', type=strtobool, default=False,
                         help='print to standard output during evaluation')
     # dataset
     parser.add_argument('--train_set', type=str,
