@@ -404,10 +404,10 @@ class RNNTransducer(DecoderBase):
 
         for b in range(bs):
             if utt_ids is not None:
-                logger.info('Utt-id: %s' % utt_ids[b])
+                logger.debug('Utt-id: %s' % utt_ids[b])
             if refs_id is not None and self.vocab == idx2token.vocab:
-                logger.info('Ref: %s' % idx2token(refs_id[b]))
-            logger.info('Hyp: %s' % idx2token(hyps[b]))
+                logger.debug('Ref: %s' % idx2token(refs_id[b]))
+            logger.debug('Hyp: %s' % idx2token(hyps[b]))
 
         return hyps, None
 
