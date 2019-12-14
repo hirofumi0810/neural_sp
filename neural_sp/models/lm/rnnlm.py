@@ -111,7 +111,7 @@ class RNNLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def decode(self, ys, state):
+    def decode(self, ys, state, cache=False):
         """Decode function.
 
         Args:
@@ -119,6 +119,7 @@ class RNNLM(LMBase):
             state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
+            cache (bool): dummy interfance
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             ys_emb (FloatTensor): `[B, L, n_units]` (for cache)

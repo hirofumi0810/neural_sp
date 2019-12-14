@@ -152,7 +152,7 @@ class LMBase(ModelBase):
             log_probs (FloatTensor): `[B, L, vocab]`
 
         """
-        logits, out, new_state = self.decode(ys, state)
+        logits, out, new_state = self.decode(ys, state, cache=True)
         log_probs = torch.log_softmax(logits, dim=-1)
         return out, new_state, log_probs
 

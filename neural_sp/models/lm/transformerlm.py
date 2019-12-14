@@ -96,12 +96,13 @@ class TransformerLM(LMBase):
         nn.init.xavier_uniform_(self.output.weight)
         nn.init.constant_(self.output.bias, 0.)
 
-    def decode(self, ys, ys_prev=None):
+    def decode(self, ys, ys_prev=None, cache=False):
         """Decode function.
 
         Args:
             ys (LongTensor): `[B, L]`
             ys_prev (LongTensor): previous tokens
+            cahce (bool): concatenate previous tokens
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             ys_emb (FloatTensor): `[B, L, d_model]` (for ys_prev)
@@ -109,7 +110,7 @@ class TransformerLM(LMBase):
 
         """
         # Concatenate previous tokens
-        if ys_prev is not None:
+        if cache and ys_prev is not None:
             ys = torch.cat([ys_prev, ys], dim=1)
             # NOTE: this is used for ASR decoding
 

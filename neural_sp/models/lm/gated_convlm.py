@@ -167,16 +167,17 @@ class GatedConvLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def decode(self, ys, state=None):
+    def decode(self, ys, state=None, cache=False):
         """Decode function.
 
         Args:
             ys (LongTensor): `[B, L]`
-            state: dummy
+            state: dummy interfance
+            cache (bool): dummy interfance
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]` (for cache)
-            state: dummy
+            state: dummy interfance
 
         """
         out = self.dropout_embed(self.embed(ys.long()))
