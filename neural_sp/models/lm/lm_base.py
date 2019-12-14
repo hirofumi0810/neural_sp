@@ -133,26 +133,26 @@ class LMBase(ModelBase):
         raise NotImplementedError
 
     def predict(self, ys, state=None):
-        """Precict function.
+        """Precict function for ASR.
 
         Args:
-            ys (FloatTensor): `[B, T, n_units]`
+            ys (LongTensor): `[B, L]`
             state:
                 - RNNLM: dict
                     hxs (FloatTensor): `[n_layers, B, n_units]`
                     cxs (FloatTensor): `[n_layers, B, n_units]`
-                - TransformerLM: FloatTensor `[B, T', n_units]`
+                - TransformerLM (LongTensor): `[B, L]`
         Returns:
-            out (FloatTensor): `[B, T, vocab]`
+            out (FloatTensor): `[B, L, vocab]`
             state:
                 - RNNLM: dict
                     hxs (FloatTensor): `[n_layers, B, n_units]`
                     cxs (FloatTensor): `[n_layers, B, n_units]`
-                - TransformerLM: FloatTensor `[B, T', n_units]`
-            log_probs (FloatTensor): `[B, T, vocab]`
+                - TransformerLM (LongTensor): `[B, L]`
+            log_probs (FloatTensor): `[B, L, vocab]`
 
         """
-        logits, out, new_state = self.decode(ys, state, is_asr=True)
+        logits, out, new_state = self.decode(ys, state)
         log_probs = torch.log_softmax(logits, dim=-1)
         return out, new_state, log_probs
 

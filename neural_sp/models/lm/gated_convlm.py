@@ -167,13 +167,12 @@ class GatedConvLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def decode(self, ys, state=None, is_asr=False):
+    def decode(self, ys, state=None):
         """Decode function.
 
         Args:
             ys (LongTensor): `[B, L]`
             state: dummy
-            is_asr (bool):
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]` (for cache)

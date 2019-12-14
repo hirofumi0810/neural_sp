@@ -86,7 +86,7 @@ class TransformerLM(LMBase):
         self.reset_parameters()
 
     def reset_parameters(self):
-        """Initialize parameters."""
+        """Initialize parameters with Xavier uniform distribution."""
         logging.info('===== Initialize %s =====' % self.__class__.__name__)
         # see https://github.com/pytorch/fairseq/blob/master/fairseq/models/transformer.py
         # embedding
@@ -96,22 +96,21 @@ class TransformerLM(LMBase):
         nn.init.xavier_uniform_(self.output.weight)
         nn.init.constant_(self.output.bias, 0.)
 
-    def decode(self, ys, cache=None, is_asr=False):
+    def decode(self, ys, ys_prev=None):
         """Decode function.
 
         Args:
-            ys (FloatTensor): `[B, L]`
-            cache: previous tokens
-            is_asr (bool):
+            ys (LongTensor): `[B, L]`
+            ys_prev (LongTensor): previous tokens
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
-            ys_emb (FloatTensor): `[B, L, d_model]` (for cache)
-            cache: previous tokens
+            ys_emb (FloatTensor): `[B, L, d_model]` (for ys_prev)
+            ys_prev (LongTensor): previous tokens
 
         """
         # Concatenate previous tokens
-        if is_asr and cache is not None:
-            ys = torch.cat([cache, ys], dim=1)
+        if ys_prev is not None:
+            ys = torch.cat([ys_prev, ys], dim=1)
             # NOTE: this is used for ASR decoding
 
         # Create the self-attention mask
@@ -133,10 +132,7 @@ class TransformerLM(LMBase):
         else:
             logits = out
 
-        if is_asr:
-            cache = ys
-
-        return logits, out, cache
+        return logits, out, ys
 
     def plot_attention(self, n_cols=4):
         """Plot attention for each head in all layers."""
