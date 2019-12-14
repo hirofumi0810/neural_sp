@@ -20,7 +20,6 @@ from neural_sp.models.base import ModelBase
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.las import RNNDecoder
-from neural_sp.models.seq2seq.decoders.rnn_cif import RNNCIFDecoder
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
@@ -224,79 +223,48 @@ class Speech2Text(ModelBase):
                     mtl_per_batch=args.mtl_per_batch,
                     param_init=args.param_init)
             else:
-                if args.attn_type == 'cif':
-                    dec = RNNCIFDecoder(
-                        special_symbols=special_symbols,
-                        enc_n_units=self.enc.output_dim,
-                        attn_conv_kernel_size=args.attn_conv_width,
-                        rnn_type=args.dec_type,
-                        n_units=args.dec_n_units,
-                        n_projs=args.dec_n_projs,
-                        n_layers=args.dec_n_layers,
-                        bottleneck_dim=args.dec_bottleneck_dim,
-                        emb_dim=args.emb_dim,
-                        vocab=self.vocab,
-                        tie_embedding=args.tie_embedding,
-                        dropout=args.dropout_dec,
-                        dropout_emb=args.dropout_emb,
-                        lsm_prob=args.lsm_prob,
-                        ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
-                        ctc_lsm_prob=args.ctc_lsm_prob,
-                        ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
-                            '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
-                        backward=(dir == 'bwd'),
-                        lm_fusion=lm_fusion,
-                        lm_fusion_type=args.lm_fusion_type,
-                        discourse_aware=args.discourse_aware,
-                        lm_init=lm_init,
-                        global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
-                        mtl_per_batch=args.mtl_per_batch,
-                        param_init=args.param_init,
-                        replace_sos=args.replace_sos,
-                        soft_label_weight=args.soft_label_weight)
-                else:
-                    dec = RNNDecoder(
-                        special_symbols=special_symbols,
-                        enc_n_units=self.enc.output_dim,
-                        attn_type=args.attn_type,
-                        attn_dim=args.attn_dim,
-                        attn_sharpening_factor=args.attn_sharpening_factor,
-                        attn_sigmoid_smoothing=args.attn_sigmoid,
-                        attn_conv_out_channels=args.attn_conv_n_channels,
-                        attn_conv_kernel_size=args.attn_conv_width,
-                        attn_n_heads=args.attn_n_heads,
-                        rnn_type=args.dec_type,
-                        n_units=args.dec_n_units,
-                        n_projs=args.dec_n_projs,
-                        n_layers=args.dec_n_layers,
-                        bottleneck_dim=args.dec_bottleneck_dim,
-                        emb_dim=args.emb_dim,
-                        vocab=self.vocab,
-                        tie_embedding=args.tie_embedding,
-                        dropout=args.dropout_dec,
-                        dropout_emb=args.dropout_emb,
-                        dropout_att=args.dropout_att,
-                        ss_prob=args.ss_prob,
-                        ss_type=args.ss_type,
-                        lsm_prob=args.lsm_prob,
-                        ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
-                        ctc_lsm_prob=args.ctc_lsm_prob,
-                        ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
-                            '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
-                        backward=(dir == 'bwd'),
-                        lm_fusion=lm_fusion,
-                        lm_fusion_type=args.lm_fusion_type,
-                        discourse_aware=args.discourse_aware,
-                        lm_init=lm_init,
-                        global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
-                        mtl_per_batch=args.mtl_per_batch,
-                        param_init=args.param_init,
-                        mocha_chunk_size=args.mocha_chunk_size,
-                        mocha_adaptive=args.mocha_adaptive,
-                        mocha_1dconv=args.mocha_1dconv,
-                        mocha_quantity_loss_weight=args.mocha_quantity_loss_weight,
-                        replace_sos=args.replace_sos,
-                        soft_label_weight=args.soft_label_weight)
+                dec = RNNDecoder(
+                    special_symbols=special_symbols,
+                    enc_n_units=self.enc.output_dim,
+                    attn_type=args.attn_type,
+                    attn_dim=args.attn_dim,
+                    attn_sharpening_factor=args.attn_sharpening_factor,
+                    attn_sigmoid_smoothing=args.attn_sigmoid,
+                    attn_conv_out_channels=args.attn_conv_n_channels,
+                    attn_conv_kernel_size=args.attn_conv_width,
+                    attn_n_heads=args.attn_n_heads,
+                    rnn_type=args.dec_type,
+                    n_units=args.dec_n_units,
+                    n_projs=args.dec_n_projs,
+                    n_layers=args.dec_n_layers,
+                    bottleneck_dim=args.dec_bottleneck_dim,
+                    emb_dim=args.emb_dim,
+                    vocab=self.vocab,
+                    tie_embedding=args.tie_embedding,
+                    dropout=args.dropout_dec,
+                    dropout_emb=args.dropout_emb,
+                    dropout_att=args.dropout_att,
+                    ss_prob=args.ss_prob,
+                    ss_type=args.ss_type,
+                    lsm_prob=args.lsm_prob,
+                    ctc_weight=self.ctc_weight if dir == 'fwd' else 0,
+                    ctc_lsm_prob=args.ctc_lsm_prob,
+                    ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
+                        '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
+                    backward=(dir == 'bwd'),
+                    lm_fusion=lm_fusion,
+                    lm_fusion_type=args.lm_fusion_type,
+                    discourse_aware=args.discourse_aware,
+                    lm_init=lm_init,
+                    global_weight=self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
+                    mtl_per_batch=args.mtl_per_batch,
+                    param_init=args.param_init,
+                    mocha_chunk_size=args.mocha_chunk_size,
+                    mocha_adaptive=args.mocha_adaptive,
+                    mocha_1dconv=args.mocha_1dconv,
+                    mocha_quantity_loss_weight=args.mocha_quantity_loss_weight,
+                    replace_sos=args.replace_sos,
+                    soft_label_weight=args.soft_label_weight)
             setattr(self, 'dec_' + dir, dec)
 
         # sub task
@@ -432,9 +400,8 @@ class Speech2Text(ModelBase):
         # Append <sos> and <eos>
         eos = next(lm.parameters()).new_zeros(1).fill_(self.eos).long()
         ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id)for y in ys]
-        ys_in = [torch.cat([eos, y], dim=0) for y in ys]
-        ys_in_pad = pad_list(ys_in, self.pad)
-        lmout, _ = lm.decode(ys_in_pad, None)
+        ys_in = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
+        lmout, _ = lm.decode(ys_in, None)
         logits = lm.output(lmout)
         return logits
 
@@ -689,7 +656,7 @@ class Speech2Text(ModelBase):
 
                         nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            params, idx2token, lm_fwd, lm_bwd, ctc_log_probs,
+                            params, idx2token, lm_fwd, None, lm_bwd, ctc_log_probs,
                             params['recog_beam_width'], False, refs_id, utt_ids, speakers,
                             ensmbl_eouts_fwd, ensmbl_elens_fwd, ensmbl_decs_fwd)
 
@@ -724,7 +691,7 @@ class Speech2Text(ModelBase):
                             enc_outs_bwd = enc_outs
                         nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
                             enc_outs_bwd[task]['xs'], enc_outs[task]['xlens'],
-                            params, idx2token, lm_bwd, lm_fwd, ctc_log_probs,
+                            params, idx2token, lm_bwd, None, lm_fwd, ctc_log_probs,
                             params['recog_beam_width'], False, refs_id, utt_ids, speakers,
                             ensmbl_eouts_bwd, ensmbl_elens_bwd, ensmbl_decs_bwd)
 
@@ -737,9 +704,7 @@ class Speech2Text(ModelBase):
                         aws = None
                     else:
                         # ensemble
-                        ensmbl_eouts = []
-                        ensmbl_elens = []
-                        ensmbl_decs = []
+                        ensmbl_eouts, ensmbl_elens, ensmbl_decs = [], [], []
                         if len(ensemble_models) > 0:
                             for i_e, model in enumerate(ensemble_models):
                                 if model.input_type == 'speech' and model.mtl_per_batch and 'bwd' in dir:
@@ -751,18 +716,18 @@ class Speech2Text(ModelBase):
                                 ensmbl_decs += [getattr(model, 'dec_' + dir)]
                                 # NOTE: only support for the main task now
 
-                        lm, lm_second, lm_rev = None, None, None
-                        if params['recog_lm_weight'] > 0 and getattr(self, 'lm_' + dir, None) is not None:
-                            lm = getattr(self, 'lm_' + dir)
-                            if params['recog_reverse_lm_rescoring']:
-                                if dir == 'fwd':
-                                    lm_rev = self.lm_bwd
-                                else:
-                                    raise NotImplementedError
+                        lm = getattr(self, 'lm_' + dir, None)
+                        lm_2nd = getattr(self, 'lm_2nd', None)
+                        lm_2nd_rev = None
+                        # if params['recog_reverse_lm_rescoring']:
+                        #     if dir == 'fwd':
+                        #         lm_2nd_rev = self.lm_bwd
+                        #     else:
+                        #         raise NotImplementedError
 
                         nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
-                            params, idx2token, lm, lm_rev, ctc_log_probs,
+                            params, idx2token, lm, lm_2nd, lm_2nd_rev, ctc_log_probs,
                             nbest, exclude_eos, refs_id, utt_ids, speakers,
                             ensmbl_eouts, ensmbl_elens, ensmbl_decs)
 
