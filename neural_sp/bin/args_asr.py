@@ -356,11 +356,17 @@ def parse():
     parser.add_argument('--recog_eos_threshold', type=float, default=1.5,
                         help='threshold for emitting a EOS token')
     parser.add_argument('--recog_lm_weight', type=float, default=0.0,
-                        help='weight of LM score')
+                        help='weight of fisrt-path LM score')
+    parser.add_argument('--recog_lm_second_weight', type=float, default=0.0,
+                        help='weight of second-path LM score')
+    parser.add_argument('--recog_lm_rev_weight', type=float, default=0.0,
+                        help='weight of second-path bakward LM score')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
                         help='weight of CTC score')
     parser.add_argument('--recog_lm', type=str, default=False, nargs='?',
                         help='path to first path LM for shallow fusion')
+    parser.add_argument('--recog_lm_second', type=str, default=False, nargs='?',
+                        help='path to second path LM for rescoring')
     parser.add_argument('--recog_lm_bwd', type=str, default=False, nargs='?',
                         help='path to second path LM in the reverse direction for rescoring')
     parser.add_argument('--recog_resolving_unk', type=strtobool, default=False,

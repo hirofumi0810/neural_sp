@@ -412,7 +412,7 @@ class RNNTransducer(DecoderBase):
         return hyps, None
 
     def beam_search(self, eouts, elens, params, idx2token,
-                    lm=None, lm_rev=None, ctc_log_probs=None,
+                    lm=None, lm_2nd=None, lm_2nd_rev=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
                     ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[]):
@@ -430,8 +430,9 @@ class RNNTransducer(DecoderBase):
                 recog_coverage_threshold (float): threshold for coverage penalty
                 recog_lm_weight (float): weight of LM score
             idx2token (): converter from index to token
-            lm (RNNLM or GatedConvLM or TransformerLM):
-            lm_rev (RNNLM or GatedConvLM or TransformerLM):
+            lm: firsh path LM
+            lm_2nd: second path LM
+            lm_2nd_rev: secoding path backward LM
             ctc_log_probs (FloatTensor):
             nbest (int):
             exclude_eos (bool):

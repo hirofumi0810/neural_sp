@@ -635,12 +635,8 @@ class Speech2Text(ModelBase):
 
                     # forward-backward decoding
                     if params['recog_fwd_bwd_attention']:
-                        # forward decoder
-                        lm_fwd, lm_bwd = None, None
-                        if params['recog_lm_weight'] > 0 and getattr(self, 'lm_fwd', None) is not None:
-                            lm_fwd = self.lm_fwd
-                            if params['recog_reverse_lm_rescoring'] and getattr(self, 'lm_bwd', None) is not None:
-                                lm_bwd = self.lm_bwd
+                        lm_fwd = getattr(self, 'lm_fwd', None)
+                        lm_bwd = getattr(self, 'lm_bwd', None)
 
                         # ensemble (forward)
                         ensmbl_eouts_fwd = []
@@ -654,18 +650,12 @@ class Speech2Text(ModelBase):
                                 ensmbl_decs_fwd += [model.dec_fwd]
                                 # NOTE: only support for the main task now
 
+                        # forward decoder
                         nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],
                             params, idx2token, lm_fwd, None, lm_bwd, ctc_log_probs,
                             params['recog_beam_width'], False, refs_id, utt_ids, speakers,
                             ensmbl_eouts_fwd, ensmbl_elens_fwd, ensmbl_decs_fwd)
-
-                        # backward decoder
-                        lm_bwd, lm_fwd = None, None
-                        if params['recog_lm_weight'] > 0 and getattr(self, 'lm_bwd', None) is not None:
-                            lm_bwd = self.lm_bwd
-                            if params['recog_reverse_lm_rescoring'] and getattr(self, 'lm_fwd', None) is not None:
-                                lm_fwd = self.lm_fwd
 
                         # ensemble (backward)
                         ensmbl_eouts_bwd = []
@@ -683,6 +673,7 @@ class Speech2Text(ModelBase):
                                 # NOTE: only support for the main task now
                                 # TODO(hirofumi): merge with the forward for the efficiency
 
+                        # backward decoder
                         flip = False
                         if self.input_type == 'speech' and self.mtl_per_batch:
                             flip = True
@@ -718,12 +709,7 @@ class Speech2Text(ModelBase):
 
                         lm = getattr(self, 'lm_' + dir, None)
                         lm_2nd = getattr(self, 'lm_2nd', None)
-                        lm_2nd_rev = None
-                        # if params['recog_reverse_lm_rescoring']:
-                        #     if dir == 'fwd':
-                        #         lm_2nd_rev = self.lm_bwd
-                        #     else:
-                        #         raise NotImplementedError
+                        lm_2nd_rev = getattr(self, 'lm_bwd' if dir == 'fwd' else 'lm_bwd', None)
 
                         nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
                             enc_outs[task]['xs'], enc_outs[task]['xlens'],

@@ -101,6 +101,7 @@ def main():
 
             # Load the LM for shallow fusion
             if not args.lm_fusion:
+                # first path
                 if args.recog_lm is not None and args.recog_lm_weight > 0:
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm), 'conf.yml'))
                     args_lm = argparse.Namespace()
@@ -115,8 +116,18 @@ def main():
                     else:
                         model.lm_fwd = lm
 
-                if args.recog_lm_bwd is not None and args.recog_lm_weight > 0 \
-                        and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
+                # second path (forward)
+                if args.recog_lm_second is not None and args.recog_lm_second_weight > 0:
+                    conf_lm_2nd = load_config(os.path.join(os.path.dirname(args.recog_lm_second), 'conf.yml'))
+                    args_lm_2nd = argparse.Namespace()
+                    for k, v in conf_lm_2nd.items():
+                        setattr(args_lm_2nd, k, v)
+                    lm_2nd = build_lm(args_lm_2nd)
+                    lm_2nd = load_checkpoint(lm_2nd, args.recog_lm_second)[0]
+                    model.lm_2nd = lm_2nd
+
+                # second path (bakward)
+                if args.recog_lm_bwd is not None and args.recog_lm_rev_weight > 0:
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm_bwd), 'conf.yml'))
                     args_lm_bwd = argparse.Namespace()
                     for k, v in conf_lm.items():
@@ -141,12 +152,12 @@ def main():
             logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
             logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
             logger.info('CTC weight: %.3f' % args.recog_ctc_weight)
-            logger.info('LM path: %s' % args.recog_lm)
-            logger.info('LM path (bwd): %s' % args.recog_lm_bwd)
+            logger.info('fist LM path: %s' % args.recog_lm)
+            logger.info('second LM path: %s' % args.recog_lm_second)
+            logger.info('backward LM path: %s' % args.recog_lm_bwd)
             logger.info('LM weight: %.3f' % args.recog_lm_weight)
             logger.info('GNMT: %s' % args.recog_gnmt_decoding)
             logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
-            logger.info('reverse LM rescoring: %s' % args.recog_reverse_lm_rescoring)
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))

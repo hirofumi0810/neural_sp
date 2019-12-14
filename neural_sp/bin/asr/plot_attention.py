@@ -84,6 +84,7 @@ def main():
 
             # Load the LM for shallow fusion
             if not args.lm_fusion:
+                # first path
                 if args.recog_lm is not None and args.recog_lm_weight > 0:
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm), 'conf.yml'))
                     args_lm = argparse.Namespace()
@@ -95,16 +96,7 @@ def main():
                         model.lm_bwd = lm
                     else:
                         model.lm_fwd = lm
-
-                if args.recog_lm_bwd is not None and args.recog_lm_weight > 0 \
-                        and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
-                    conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm_bwd), 'conf.yml'))
-                    args_lm_bwd = argparse.Namespace()
-                    for k, v in conf_lm.items():
-                        setattr(args_lm_bwd, k, v)
-                    lm_bwd = build_lm(args_lm_bwd)
-                    lm_bwd = load_checkpoint(lm_bwd, args.recog_lm_bwd)[0]
-                    model.lm_bwd = lm_bwd
+                # NOTE: only support for first path
 
             if not args.recog_unit:
                 args.recog_unit = args.unit
@@ -121,16 +113,15 @@ def main():
             logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
             logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
             logger.info('CTC weight: %.3f' % args.recog_ctc_weight)
-            logger.info('LM path: %s' % args.recog_lm)
-            logger.info('LM path (bwd): %s' % args.recog_lm_bwd)
+            logger.info('fist LM path: %s' % args.recog_lm)
             logger.info('LM weight: %.3f' % args.recog_lm_weight)
             logger.info('GNMT: %s' % args.recog_gnmt_decoding)
             logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
-            logger.info('reverse LM rescoring: %s' % args.recog_reverse_lm_rescoring)
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))
             logger.info('LM state carry over: %s' % (args.recog_lm_state_carry_over))
+            logger.info('model average (Transformer): %d' % (args.recog_n_average))
 
             # GPU setting
             model.cuda()

@@ -31,6 +31,8 @@ from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import append_sos_eos
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import make_pad_mask
+from neural_sp.models.torch_utils import np2tensor
+from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
@@ -691,7 +693,7 @@ class RNNDecoder(DecoderBase):
         return hyps, aws
 
     def beam_search(self, eouts, elens, params, idx2token,
-                    lm=None, lm_rev=None, ctc_log_probs=None,
+                    lm=None, lm_2nd=None, lm_2nd_rev=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
                     ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[]):
@@ -709,8 +711,9 @@ class RNNDecoder(DecoderBase):
                 recog_coverage_threshold (float): threshold for coverage penalty
                 recog_lm_weight (float): weight of LM score
             idx2token (): converter from index to token
-            lm (RNNLM/GatedConvLM/TransformerLM):
-            lm_rev (RNNLM/GatedConvLM/TransformerLM):
+            lm: firsh path LM
+            lm_2nd: second path LM
+            lm_2nd_rev: secoding path backward LM
             ctc_log_probs (FloatTensor):
             nbest (int):
             exclude_eos (bool): exclude <eos> from hypothesis
@@ -739,6 +742,8 @@ class RNNDecoder(DecoderBase):
         cp_threshold = params['recog_coverage_threshold']
         length_norm = params['recog_length_norm']
         lm_weight = params['recog_lm_weight']
+        lm_weight_2nd = params['recog_lm_second_weight']
+        lm_weight_2nd_rev = params['recog_lm_rev_weight']
         gnmt_decoding = params['recog_gnmt_decoding']
         eos_threshold = params['recog_eos_threshold']
         asr_state_carry_over = params['recog_asr_state_carry_over']
@@ -746,8 +751,10 @@ class RNNDecoder(DecoderBase):
 
         if lm is not None:
             lm.eval()
-        if lm_rev is not None:
-            lm_rev.eval()
+        if lm_2nd is not None:
+            lm_2nd.eval()
+        if lm_2nd_rev is not None:
+            lm_2nd_rev.eval()
 
         # For joint CTC-Attention decoding
         if ctc_weight > 0 and ctc_log_probs is not None:
@@ -794,8 +801,7 @@ class RNNDecoder(DecoderBase):
                      'ensmbl_dstate': ensmbl_dstate,
                      'ensmbl_cv': ensmbl_cv,
                      'ensmbl_aws':[[None]] * (n_models - 1),
-                     'ctc_state': ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
-                     'ctc_score': 0.}]
+                     'ctc_state': ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None}]
             if oracle:
                 assert refs_id is not None
                 ytime = len(refs_id[b]) + 1
@@ -862,7 +868,7 @@ class RNNDecoder(DecoderBase):
                         total_scores_lm = torch.zeros((beam_width), dtype=torch.float32)
 
                     # Add length penalty
-                    lp = 1.0
+                    lp = 1.
                     if lp_weight > 0:
                         if gnmt_decoding:
                             lp = math.pow(6 + len(beam['hyp'][1:]), lp_weight) / math.pow(6, lp_weight)
@@ -872,7 +878,6 @@ class RNNDecoder(DecoderBase):
 
                     # Add coverage penalty
                     cp = 0.
-                    aw_mat = None
                     if cp_weight > 0:
                         aw_mat = torch.stack(beam['aws'][1:] + [aw], dim=-1)  # `[B, T, L, n_heads]`
                         aw_mat = aw_mat[:, :, :, 0]
@@ -935,8 +940,7 @@ class RNNDecoder(DecoderBase):
                              'ensmbl_dstate': ensmbl_dstate,
                              'ensmbl_cv': ensmbl_cv,
                              'ensmbl_aws': ensmbl_aws,
-                             'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
-                             'ctc_score': ctc_scores[joint_ids_topk[0, k]] if ctc_log_probs is not None else None})
+                             'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None})
 
                 # Local pruning
                 new_hyps_tmp = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
@@ -965,30 +969,13 @@ class RNNDecoder(DecoderBase):
             elif len(end_hyps) < nbest and nbest > 1:
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
-            # backward LM rescoring
-            if lm_rev is not None and lm_weight > 0:
-                for i in range(len(end_hyps)):
-                    # Initialize
-                    lmstate_rev = None
-                    score_lm_rev = 0.
-                    lp = 1.0
+            # forward second path LM rescoring
+            if lm_2nd is not None and lm_weight_2nd > 0:
+                self.lm_rescoring(end_hyps, lm_2nd, lm_weight_2nd, tag='2nd')
 
-                    # Append <eos>
-                    if end_hyps[i]['hyp'][-1] != self.eos:
-                        end_hyps[i]['hyp'].append(self.eos)
-                        logger.info('Append <eos>.')
-
-                    if lp_weight > 0 and gnmt_decoding:
-                        lp = math.pow(6 + (len(end_hyps[i]['hyp'][1:])), lp_weight) / math.pow(6, lp_weight)
-                    for t in range(len(end_hyps[i]['hyp'][1:])):
-                        lmout_rev, lmstate_rev = lm_rev.decode(
-                            eouts.new_zeros(1, 1).fill_(end_hyps[i]['hyp'][::-1][t]), lmstate_rev)
-                        lm_log_probs = torch.log_softmax(lm_rev.generate(lmout_rev).squeeze(1), dim=-1)
-                        score_lm_rev += lm_log_probs[0, -1, end_hyps[i]['hyp'][::-1][t + 1]]
-                    if gnmt_decoding:
-                        score_lm_rev /= lp  # normalize
-                    end_hyps[i]['score'] += score_lm_rev * lm_weight
-                    end_hyps[i]['score_lm_rev'] = score_lm_rev
+            # backward secodn path LM rescoring
+            if lm_2nd_rev is not None and lm_weight_2nd_rev > 0:
+                self.lm_rescoring(end_hyps, lm_2nd_rev, lm_weight_2nd_rev, tag='2nd_rev')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -1013,19 +1000,20 @@ class RNNDecoder(DecoderBase):
             if refs_id is not None and self.vocab == idx2token.vocab:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
             for k in range(len(end_hyps)):
-                if self.bwd:
-                    logger.info('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:][::-1]))
-                else:
-                    logger.info('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:]))
+                logger.info('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:][::-1] if self.bwd else end_hyps[k]['hyp'][1:]))
                 logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
                 logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
                 logger.info('log prob (hyp, cp): %.7f' % (end_hyps[k]['score_cp'] * cp_weight))
                 if ctc_weight > 0 and ctc_log_probs is not None:
                     logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                 if lm_weight > 0 and lm is not None:
-                    logger.info('log prob (hyp, lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
-                    if lm_rev is not None:
-                        logger.info('log prob (hyp, lm reverse): %.7f' % (end_hyps[k]['score_lm_rev'] * lm_weight))
+                    logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
+                    if lm_2nd is not None:
+                        logger.info('log prob (hyp, second-path lm): %.7f' %
+                                    (end_hyps[k]['score_lm_2nd'] * lm_weight))
+                    if lm_2nd_rev is not None:
+                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
+                                    (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
 
         # Concatenate in L dimension
         for b in range(len(aws)):
@@ -1046,3 +1034,19 @@ class RNNDecoder(DecoderBase):
         self.lmstate_final = end_hyps[0]['lmstate']
 
         return nbest_hyps_idx, aws, scores
+
+    def lm_rescoring(self, hyps, lm, lm_weight, reverse=False, tag=''):
+        for i in range(len(hyps)):
+            ys = hyps[i]['hyp']  # include <sos>
+            if reverse:
+                ys = ys[::-1]
+            ys = [np2tensor(np.fromiter(ys, dtype=np.int64), self.device_id)]
+            ys_in = pad_list([y[:-1] for y in ys], -1)  # `[1, L-1]`
+            ys_out = pad_list([y[1:] for y in ys], -1)  # `[1, L-1]`
+
+            lmout, lmstate, lm_log_probs = lm.predict(ys_in, None)
+            score_lm = sum([lm_log_probs[0, t, ys_out[0, t]] for t in range(ys_out.size(1))])
+            score_lm /= ys_out.size(1)
+
+            hyps[i]['score'] += score_lm * lm_weight
+            hyps[i]['score_lm_' + tag] = score_lm
