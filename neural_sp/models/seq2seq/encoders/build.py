@@ -47,6 +47,7 @@ def build_encoder(args):
             d_ff=args.transformer_d_ff,
             pe_type=args.transformer_pe_type,
             layer_norm_eps=args.transformer_layer_norm_eps,
+            ffn_activation=args.transformer_ffn_activation,
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
             dropout_att=args.dropout_att,

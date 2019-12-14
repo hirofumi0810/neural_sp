@@ -43,7 +43,7 @@ class TransformerEncoder(EncoderBase):
         d_ff (int): dimension of PositionwiseFeedForward
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
-        ffn_nonlinear (str): nonolinear function for PositionwiseFeedForward
+        ffn_activation (str): nonolinear function for PositionwiseFeedForward
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
@@ -70,7 +70,7 @@ class TransformerEncoder(EncoderBase):
                  d_ff,
                  pe_type='add',
                  layer_norm_eps=1e-12,
-                 ffn_nonlinear='relu',
+                 ffn_activation='relu',
                  dropout_in=0.,
                  dropout=0.,
                  dropout_att=0.,
@@ -118,7 +118,7 @@ class TransformerEncoder(EncoderBase):
         self.layers = repeat(TransformerEncoderBlock(
             d_model, d_ff, attn_type, n_heads,
             dropout, dropout_att,
-            layer_norm_eps, ffn_nonlinear), n_layers)
+            layer_norm_eps, ffn_activation), n_layers)
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if last_proj_dim != self.output_dim:

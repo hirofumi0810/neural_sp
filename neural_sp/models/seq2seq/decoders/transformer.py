@@ -50,7 +50,6 @@ class TransformerDecoder(DecoderBase):
             unk (int): index for <unk>
             pad (int): index for <pad>
             blank (int): index for <blank>
-        blank (int): index for <blank>
         enc_n_units (int): number of units of the encoder outputs
         attn_type (str): type of attention mechanism
         n_heads (int): number of attention heads
@@ -61,7 +60,7 @@ class TransformerDecoder(DecoderBase):
         tie_embedding (bool): tie parameters of the embedding and output layers
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
-        ffn_nonlinear (str): nonolinear function for PositionwiseFeedForward
+        ffn_activation (str): nonolinear function for PositionwiseFeedForward
         dropout (float): dropout probability for linear layers
         dropout_emb (float): dropout probability for the embedding layer
         dropout_att (float): dropout probability for attention distributions
@@ -87,7 +86,7 @@ class TransformerDecoder(DecoderBase):
                  tie_embedding=False,
                  pe_type='add',
                  layer_norm_eps=1e-12,
-                 ffn_nonlinear='relu',
+                 ffn_activation='relu',
                  dropout=0.,
                  dropout_emb=0.,
                  dropout_att=0.,
@@ -133,7 +132,7 @@ class TransformerDecoder(DecoderBase):
             self.layers = repeat(TransformerDecoderBlock(
                 d_model, d_ff, attn_type, n_heads,
                 dropout, dropout_att,
-                layer_norm_eps, ffn_nonlinear), n_layers)
+                layer_norm_eps, ffn_activation), n_layers)
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, vocab)
             if tie_embedding:

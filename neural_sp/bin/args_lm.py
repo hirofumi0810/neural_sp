@@ -160,8 +160,9 @@ def parse():
                         help='type of positional encoding')
     parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                         help='epsilon value for layer narmalization')
-    parser.add_argument('--transformer_ffn_nonlinear', type=str, default='relu',
-                        help='nonlinear function for position wise feed-forward layer')
+    parser.add_argument('--transformer_ffn_activation', type=str, default='relu',
+                        choices=['relu', 'gelu', 'gelu_accurate', 'glu'],
+                        help='nonlinear activation for position wise feed-forward layer')
     # contextualization
     parser.add_argument('--serialize', type=strtobool, default=False, nargs='?',
                         help='serialize text according to onset in dialogue')

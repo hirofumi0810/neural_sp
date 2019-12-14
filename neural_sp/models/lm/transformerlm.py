@@ -66,7 +66,7 @@ class TransformerLM(LMBase):
             self.d_model, args.transformer_d_ff,
             args.transformer_attn_type, self.n_heads,
             args.dropout_hidden, args.dropout_att,
-            args.transformer_layer_norm_eps, args.transformer_ffn_nonlinear,
+            args.transformer_layer_norm_eps, args.transformer_ffn_activation,
             src_tgt_attention=False), self.n_layers)
         self.norm_out = nn.LayerNorm(self.d_model, eps=args.transformer_layer_norm_eps)
 

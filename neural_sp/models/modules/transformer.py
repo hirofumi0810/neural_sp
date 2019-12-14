@@ -126,12 +126,12 @@ class TransformerEncoderBlock(nn.Module):
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
         layer_norm_eps (float): epsilon parameter for layer normalization
-        ffn_nonlinear (str): nonolinear function for PositionwiseFeedForward
+        ffn_activation (str): nonolinear function for PositionwiseFeedForward
 
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads,
-                 dropout, dropout_att, layer_norm_eps, ffn_nonlinear):
+                 dropout, dropout_att, layer_norm_eps, ffn_activation):
         super(TransformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
@@ -148,7 +148,7 @@ class TransformerEncoderBlock(nn.Module):
         # feed-forward
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.feed_forward = PositionwiseFeedForward(
-            d_model, d_ff, d_model, dropout, ffn_nonlinear)
+            d_model, d_ff, d_model, dropout, ffn_activation)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -192,12 +192,12 @@ class TransformerDecoderBlock(nn.Module):
             atype (str): type of self-attention, scaled_dot or average
             layer_norm_eps (float):
             src_tgt_attention (bool): if False, ignore source-target attention
-            ffn_nonlinear (str): nonolinear function for PositionwiseFeedForward
+            ffn_activation (str): nonolinear function for PositionwiseFeedForward
 
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads,
-                 dropout, dropout_att, layer_norm_eps, ffn_nonlinear,
+                 dropout, dropout_att, layer_norm_eps, ffn_activation,
                  src_tgt_attention=True):
         super(TransformerDecoderBlock, self).__init__()
 
@@ -230,7 +230,7 @@ class TransformerDecoderBlock(nn.Module):
         # feed-forward
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.feed_forward = PositionwiseFeedForward(
-            d_model, d_ff, d_model, dropout, ffn_nonlinear)
+            d_model, d_ff, d_model, dropout, ffn_activation)
 
         self.dropout = nn.Dropout(p=dropout)
 
