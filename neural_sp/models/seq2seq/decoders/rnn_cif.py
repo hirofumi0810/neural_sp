@@ -295,8 +295,8 @@ class RNNCIFDecoder(DecoderBase):
         Args:
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
-            ys_in_pad (LongTensor): `[B, L]`
-            ys_out_pad (LongTensor): `[B, L]`
+            ys_in (LongTensor): `[B, L]`
+            ys_out (LongTensor): `[B, L]`
             ylens (IntTensor): `[B]`
 
         """
@@ -306,13 +306,13 @@ class RNNCIFDecoder(DecoderBase):
                         self.device_id) for y in ys]
         if replace_sos:
             ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in_pad = pad_list([y for y in ys], self.pad)
-            ys_out_pad = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
+            ys_in = pad_list([y for y in ys], self.pad)
+            ys_out = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
         else:
             ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
-            ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
-        return ys_in_pad, ys_out_pad, ylens
+            ys_in = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
+            ys_out = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
+        return ys_in, ys_out, ylens
 
     def forward_att(self, eouts, elens, ys):
         """Compute XE loss for the CIF model.
@@ -330,7 +330,7 @@ class RNNCIFDecoder(DecoderBase):
         bs, xtime, enc_dim = eouts.size()
 
         # Append <sos> and <eos>
-        ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
+        ys_in, ys_out, ylens = self.append_sos_eos(ys, self.bwd)
 
         # Initialization
         dstate = self.zero_state(bs)
@@ -342,10 +342,10 @@ class RNNCIFDecoder(DecoderBase):
 
         # Update LM states for LM fusion
         if self.lm is not None:
-            lmouts, _ = self.lm.decode(ys_in_pad, lmstate)
+            lmouts, _ = self.lm.decode(ys_in, lmstate)
 
         # Recurrency -> Score -> Generate
-        ys_emb = self.dropout_emb(self.embed(ys_in_pad))
+        ys_emb = self.dropout_emb(self.embed(ys_in))
         dstate, logits = self.decode_step(cvs[:, :-1], cvs[:, 1:], dstate, ys_emb, lmouts)
         logits = self.output(logits)
 
@@ -354,7 +354,7 @@ class RNNCIFDecoder(DecoderBase):
             self.aws = tensor2np(aws)  # `[B, n_heads, L, T]`
 
         # Compute XE sequence loss (+ label smoothing)
-        loss, ppl = cross_entropy_lsm(logits, ys_out_pad,
+        loss, ppl = cross_entropy_lsm(logits, ys_out,
                                       self.lsm_prob, self.pad, self.training)
 
         # Quantity loss for CIF
@@ -362,7 +362,7 @@ class RNNCIFDecoder(DecoderBase):
         loss += quantity_loss * self.quantity_loss_weight
 
         # Compute token-level accuracy in teacher-forcing
-        acc = compute_accuracy(logits, ys_out_pad, self.pad)
+        acc = compute_accuracy(logits, ys_out, self.pad)
 
         return loss, acc, ppl
 

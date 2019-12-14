@@ -4,7 +4,7 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""RNN Transducer."""
+"""RNN transducer."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class RNNTransducer(DecoderBase):
-    """RNN Transducer.
+    """RNN transducer.
 
     Args:
         special_symbols (dict):
@@ -236,11 +236,11 @@ class RNNTransducer(DecoderBase):
         else:
             _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
-        ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)
-        ys_out_pad = pad_list(_ys, self.blank)
+        ys_in = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)
+        ys_out = pad_list(_ys, self.blank)
 
         # Update prediction network
-        ys_emb = self.dropout_emb(self.embed(ys_in_pad))
+        ys_emb = self.dropout_emb(self.embed(ys_in))
         dout, _ = self.recurrency(ys_emb, None)
 
         # Compute output distribution
@@ -249,15 +249,15 @@ class RNNTransducer(DecoderBase):
         # Compute Transducer loss
         log_probs = torch.log_softmax(logits, dim=-1)
         if self.device_id >= 0:
-            ys_out_pad = ys_out_pad.cuda(self.device_id)
+            ys_out = ys_out.cuda(self.device_id)
             elens = elens.cuda(self.device_id)
             ylens = ylens.cuda(self.device_id)
 
-        assert log_probs.size(2) == ys_out_pad.size(1) + 1
-        # loss = self.warprnnt_loss(log_probs, ys_out_pad.int(), elens, ylens)
+        assert log_probs.size(2) == ys_out.size(1) + 1
+        # loss = self.warprnnt_loss(log_probs, ys_out.int(), elens, ylens)
         # NOTE: Transducer loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warprnnt_pytorch
-        loss = warp_rnnt.rnnt_loss(log_probs, ys_out_pad.int(), elens, ylens,
+        loss = warp_rnnt.rnnt_loss(log_probs, ys_out.int(), elens, ylens,
                                    average_frames=False,
                                    reduction='mean',
                                    gather=False)

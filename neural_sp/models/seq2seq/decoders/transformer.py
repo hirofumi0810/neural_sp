@@ -141,7 +141,7 @@ class TransformerDecoder(DecoderBase):
         self.reset_parameters()
 
     def reset_parameters(self):
-        """Initialize parameters."""
+        """Initialize parameters with Xavier uniform distribution."""
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         # see https://github.com/pytorch/fairseq/blob/master/fairseq/models/transformer.py
         # embedding
@@ -199,8 +199,8 @@ class TransformerDecoder(DecoderBase):
         Args:
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
-            ys_in_pad (LongTensor): `[B, L]`
-            ys_out_pad (LongTensor): `[B, L]`
+            ys_in (LongTensor): `[B, L]`
+            ys_out (LongTensor): `[B, L]`
             ylens (IntTensor): `[B]`
 
         """
@@ -210,13 +210,13 @@ class TransformerDecoder(DecoderBase):
                         self.device_id) for y in ys]
         if replace_sos:
             ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in_pad = pad_list([y for y in ys], self.pad)
-            ys_out_pad = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
+            ys_in = pad_list([y for y in ys], self.pad)
+            ys_out = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
         else:
             ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
-            ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
-        return ys_in_pad, ys_out_pad, ylens
+            ys_in = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
+            ys_out = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
+        return ys_in, ys_out, ylens
 
     def forward_att(self, eouts, elens, ys, ys_hist=[],
                     return_logits=False, teacher_logits=None):
@@ -238,10 +238,10 @@ class TransformerDecoder(DecoderBase):
         bs = eouts.size(0)
 
         # Append <sos> and <eos>
-        ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
+        ys_in, ys_out, ylens = self.append_sos_eos(ys, self.bwd)
 
         # Create the self-attention mask
-        bs, ytime = ys_in_pad.size()[:2]
+        bs, ytime = ys_in.size()[:2]
         tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
         subsequent_mask = tgt_mask.new_ones(ytime, ytime).byte()
         subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
@@ -250,7 +250,7 @@ class TransformerDecoder(DecoderBase):
         # Create the source-target mask
         src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
 
-        out = self.pos_enc(self.embed(ys_in_pad))
+        out = self.pos_enc(self.embed(ys_in))
         for l in range(self.n_layers):
             out, yy_aws, xy_aws = self.layers[l](out, tgt_mask, eouts, src_mask)
             if not self.training:
@@ -263,11 +263,11 @@ class TransformerDecoder(DecoderBase):
             return logits
 
         # Compute XE sequence loss (+ label smoothing)
-        loss, ppl = cross_entropy_lsm(logits, ys_out_pad,
+        loss, ppl = cross_entropy_lsm(logits, ys_out,
                                       self.lsm_prob, self.pad, self.training)
 
         # Compute token-level accuracy in teacher-forcing
-        acc = compute_accuracy(logits, ys_out_pad, self.pad)
+        acc = compute_accuracy(logits, ys_out, self.pad)
 
         return loss, acc, ppl
 
@@ -330,7 +330,7 @@ class TransformerDecoder(DecoderBase):
         y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
         # Append <sos> and <eos>
-        ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(refs_id, self.bwd)
+        ys_in, ys_out, ylens = self.append_sos_eos(refs_id, self.bwd)
 
         hyps_batch = []
         ylens = torch.zeros(bs).int()

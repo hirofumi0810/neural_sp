@@ -359,8 +359,8 @@ class RNNDecoder(DecoderBase):
         Args:
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
         Returns:
-            ys_in_pad (LongTensor): `[B, L]`
-            ys_out_pad (LongTensor): `[B, L]`
+            ys_in (LongTensor): `[B, L]`
+            ys_out (LongTensor): `[B, L]`
             ylens (IntTensor): `[B]`
 
         """
@@ -370,13 +370,13 @@ class RNNDecoder(DecoderBase):
                         self.device_id) for y in ys]
         if replace_sos:
             ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in_pad = pad_list(ys, self.pad)
-            ys_out_pad = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
+            ys_in = pad_list(ys, self.pad)
+            ys_out = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
         else:
             ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in_pad = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
-            ys_out_pad = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
-        return ys_in_pad, ys_out_pad, ylens
+            ys_in = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
+            ys_out = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
+        return ys_in, ys_out, ylens
 
     def forward_att(self, eouts, elens, ys, ys_hist=[],
                     return_logits=False, teacher_logits=None):
@@ -398,7 +398,7 @@ class RNNDecoder(DecoderBase):
         bs, xtime = eouts.size()[:2]
 
         # Append <sos> and <eos>
-        ys_in_pad, ys_out_pad, ylens = self.append_sos_eos(ys, self.bwd)
+        ys_in, ys_out, ylens = self.append_sos_eos(ys, self.bwd)
 
         # Initialization
         dstates = self.zero_state(bs)
@@ -411,18 +411,18 @@ class RNNDecoder(DecoderBase):
         lmout, lmstate = None, None
 
         # Pre-computation of embedding
-        ys_emb = self.dropout_emb(self.embed(ys_in_pad))
+        ys_emb = self.dropout_emb(self.embed(ys_in))
 
         # Create the attention mask
         mask = make_pad_mask(elens, self.device_id)
 
         logits = []
-        for t in range(ys_in_pad.size(1)):
+        for t in range(ys_in.size(1)):
             is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob
 
             # Update LM states for LM fusion
             if self.lm is not None:
-                y_lm = self.output(logits[-1]).detach().argmax(-1) if is_sample else ys_in_pad[:, t:t + 1]
+                y_lm = self.output(logits[-1]).detach().argmax(-1) if is_sample else ys_in[:, t:t + 1]
                 lmout, lmstate = self.lm.decode(y_lm, lmstate)
 
             # Recurrency -> Score -> Generate
@@ -459,14 +459,14 @@ class RNNDecoder(DecoderBase):
             self.aws = tensor2np(torch.cat(aws, dim=2))  # `[B, n_heads, L, T]`
 
         # Compute XE sequence loss (+ label smoothing)
-        loss, ppl = cross_entropy_lsm(logits, ys_out_pad,
+        loss, ppl = cross_entropy_lsm(logits, ys_out,
                                       self.lsm_prob, self.pad, self.training)
 
         loss_quantity = 0.
         if self.quantity_loss_weight > 0:
             assert self.attn_type == 'mocha'
             n_tokens_pred = torch.cat(aws, dim=2).squeeze(1).sum(2).sum(1)
-            n_tokens_ref = (ys_out_pad != self.pad).sum(1).float()
+            n_tokens_ref = (ys_out != self.pad).sum(1).float()
             loss_quantity = torch.mean(torch.abs(n_tokens_pred - n_tokens_ref))
 
         # Knowledge distillation
@@ -475,7 +475,7 @@ class RNNDecoder(DecoderBase):
             loss = loss * (1 - self.soft_label_weight) + kl_loss * self.soft_label_weight
 
         # Compute token-level accuracy in teacher-forcing
-        acc = compute_accuracy(logits, ys_out_pad, self.pad)
+        acc = compute_accuracy(logits, ys_out, self.pad)
 
         return loss, acc, ppl, loss_quantity
 
