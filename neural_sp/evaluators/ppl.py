@@ -93,7 +93,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
     avg_loss = total_loss / n_tokens
     ppl = np.exp(avg_loss)
 
-    logger.info('PPL (%s): %.2f %%' % (dataset.set, ppl))
-    logger.info('Loss (%s): %.2f %%' % (dataset.set, avg_loss))
+    logger.debug('PPL (%s): %.2f %%' % (dataset.set, ppl))
+    logger.debug('Loss (%s): %.2f %%' % (dataset.set, avg_loss))
 
     return ppl, avg_loss

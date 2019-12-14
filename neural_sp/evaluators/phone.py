@@ -75,10 +75,10 @@ def eval_phone(models, dataset, recog_params, epoch,
                 speaker = str(batch['speakers'][b]).replace('-', '_')
                 f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
                 f_hyp.write(hyp + ' (' + speaker + '-' + utt_id + ')\n')
-                logger.info('utt-id: %s' % batch['utt_ids'][b])
-                logger.info('Ref: %s' % ref)
-                logger.info('Hyp: %s' % hyp)
-                logger.info('-' * 150)
+                logger.debug('utt-id: %s' % batch['utt_ids'][b])
+                logger.debug('Ref: %s' % ref)
+                logger.debug('Hyp: %s' % hyp)
+                logger.debug('-' * 150)
 
                 # Compute PER
                 per_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
@@ -107,7 +107,7 @@ def eval_phone(models, dataset, recog_params, epoch,
     n_ins /= n_phone
     n_del /= n_phone
 
-    logger.info('PER (%s): %.2f %%' % (dataset.set, per))
-    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
+    logger.debug('PER (%s): %.2f %%' % (dataset.set, per))
+    logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))
 
     return per

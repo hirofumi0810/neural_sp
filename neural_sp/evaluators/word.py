@@ -99,7 +99,7 @@ def eval_word(models, dataset, recog_params, epoch,
                         hyp, best_hyps_id_char[0], aws[b], aw_char[0], dataset.idx2token[1],
                         subsample_factor_word=np.prod(models[0].subsample),
                         subsample_factor_char=np.prod(models[0].subsample[:models[0].enc_n_layers_sub1 - 1]))
-                    logger.info('Hyp (after OOV resolution): %s' % hyp)
+                    logger.debug('Hyp (after OOV resolution): %s' % hyp)
                     hyp = hyp.replace('*', '')
 
                     # Compute CER
@@ -122,10 +122,10 @@ def eval_word(models, dataset, recog_params, epoch,
                 speaker = str(batch['speakers'][b]).replace('-', '_')
                 f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
                 f_hyp.write(hyp + ' (' + speaker + '-' + utt_id + ')\n')
-                logger.info('utt-id: %s' % batch['utt_ids'][b])
-                logger.info('Ref: %s' % ref)
-                logger.info('Hyp: %s' % hyp)
-                logger.info('-' * 150)
+                logger.debug('utt-id: %s' % batch['utt_ids'][b])
+                logger.debug('Ref: %s' % ref)
+                logger.debug('Hyp: %s' % hyp)
+                logger.debug('-' * 150)
 
                 # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
@@ -160,10 +160,10 @@ def eval_word(models, dataset, recog_params, epoch,
         n_ins_c /= n_char
         n_del_c /= n_char
 
-    logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
-    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
-    logger.info('CER (%s): %.2f %%' % (dataset.set, cer))
-    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
-    logger.info('OOV (total): %d' % (n_oov_total))
+    logger.debug('WER (%s): %.2f %%' % (dataset.set, wer))
+    logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
+    logger.debug('CER (%s): %.2f %%' % (dataset.set, cer))
+    logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
+    logger.debug('OOV (total): %d' % (n_oov_total))
 
     return wer, cer, n_oov_total
