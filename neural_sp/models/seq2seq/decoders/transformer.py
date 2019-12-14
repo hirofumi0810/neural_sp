@@ -12,7 +12,6 @@ from __future__ import print_function
 
 import logging
 import math
-import numpy as np
 import os
 import random
 import shutil
@@ -25,10 +24,9 @@ from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 # from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
+from neural_sp.models.torch_utils import append_sos_eos
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import make_pad_mask
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
@@ -193,31 +191,6 @@ class TransformerDecoder(DecoderBase):
         observation['loss'] = loss.item()
         return loss, observation
 
-    def append_sos_eos(self, ys, bwd=False, replace_sos=False):
-        """Append <sos> and <eos> and return padded sequences.
-
-        Args:
-            ys (list): A list of length `[B]`, which contains a list of size `[L]`
-        Returns:
-            ys_in (LongTensor): `[B, L]`
-            ys_out (LongTensor): `[B, L]`
-            ylens (IntTensor): `[B]`
-
-        """
-        w = next(self.parameters())
-        eos = w.new_zeros(1).fill_(self.eos).long()
-        ys = [np2tensor(np.fromiter(y[::-1] if bwd else y, dtype=np.int64),
-                        self.device_id) for y in ys]
-        if replace_sos:
-            ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in = pad_list([y for y in ys], self.pad)
-            ys_out = pad_list([torch.cat([y[1:], eos], dim=0) for y in ys], self.pad)
-        else:
-            ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-            ys_in = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
-            ys_out = pad_list([torch.cat([y, eos], dim=0) for y in ys], self.pad)
-        return ys_in, ys_out, ylens
-
     def forward_att(self, eouts, elens, ys, ys_hist=[],
                     return_logits=False, teacher_logits=None):
         """Compute XE loss for the Transformer model.
@@ -238,7 +211,7 @@ class TransformerDecoder(DecoderBase):
         bs = eouts.size(0)
 
         # Append <sos> and <eos>
-        ys_in, ys_out, ylens = self.append_sos_eos(ys, self.bwd)
+        ys_in, ys_out, ylens = append_sos_eos(eouts, ys, self.eos, self.pad, self.bwd)
 
         # Create the self-attention mask
         bs, ytime = ys_in.size()[:2]
