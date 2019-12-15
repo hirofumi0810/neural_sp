@@ -136,7 +136,7 @@ class TransformerDecoder(DecoderBase):
             if tie_embedding:
                 self.output.weight = self.embed.weight
 
-        self.reset_parameters()
+            self.reset_parameters()
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
@@ -178,7 +178,7 @@ class TransformerDecoder(DecoderBase):
                 loss += loss_ctc * self.ctc_weight
 
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task)):
+        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or 'ctc' not in task):
             loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
