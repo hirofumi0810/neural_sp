@@ -317,7 +317,7 @@ class Dataset(object):
 
         if is_new_epoch:
             # shuffle the whole data
-            if self.epoch == self.sort_stop_epoch:
+            if self.epoch + 1 == self.sort_stop_epoch:
                 self.sort_by = 'shuffle'
                 self.df = self.df.reindex(np.random.permutation(self.df.index))
                 for i in range(1, 3):
