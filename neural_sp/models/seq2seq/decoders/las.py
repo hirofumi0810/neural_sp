@@ -190,7 +190,7 @@ class RNNDecoder(DecoderBase):
             qdim = n_units if n_projs == 0 else n_projs
             if attn_type == 'mocha':
                 assert attn_n_heads == 1
-                self.score = MoChA(self.enc_n_units, qdim, attn_dim,
+                self.score = MoChA(enc_n_units, qdim, attn_dim,
                                    chunk_size=mocha_chunk_size,
                                    adaptive=mocha_adaptive,
                                    conv1d=mocha_1dconv,
@@ -198,12 +198,12 @@ class RNNDecoder(DecoderBase):
             else:
                 if attn_n_heads > 1:
                     self.score = MultiheadAttentionMechanism(
-                        self.enc_n_units, qdim, attn_dim, attn_type,
+                        enc_n_units, qdim, attn_dim, attn_type,
                         n_heads=attn_n_heads,
                         dropout=dropout_att)
                 else:
                     self.score = AttentionMechanism(
-                        self.enc_n_units, qdim, attn_dim, attn_type,
+                        enc_n_units, qdim, attn_dim, attn_type,
                         sharpening_factor=attn_sharpening_factor,
                         sigmoid_smoothing=attn_sigmoid_smoothing,
                         conv_out_channels=attn_conv_out_channels,
@@ -250,7 +250,6 @@ class RNNDecoder(DecoderBase):
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
                 self.output.weight = self.embed.weight
 
-        # Initialize parameters
         self.reset_parameters(param_init)
 
         # resister the external LM
@@ -337,7 +336,7 @@ class RNNDecoder(DecoderBase):
                 loss += loss_ctc * self.ctc_weight
 
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task)):
+        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or 'ctc' not in task):
             loss_att, acc_att, ppl_att, loss_quantity = self.forward_att(
                 eouts, elens, ys, ys_hist, teacher_logits=teacher_logits)
             observation['loss_att'] = loss_att.item()

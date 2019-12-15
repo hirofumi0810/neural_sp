@@ -131,7 +131,7 @@ class TransformerEncoder(EncoderBase):
         self.reset_parameters()
 
     def reset_parameters(self):
-        """Initialize parameters."""
+        """Initialize parameters with Xavier uniform distribution."""
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         if self.conv is None:
             nn.init.xavier_uniform_(self.embed.weight)

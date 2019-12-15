@@ -207,7 +207,7 @@ class RNNTransducer(DecoderBase):
                 loss += loss_ctc * self.ctc_weight
 
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or ('ctc' not in task)):
+        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or 'ctc' not in task):
             loss_transducer = self.forward_rnnt(eouts, elens, ys)
             observation['loss_transducer'] = loss_transducer.item()
             if self.mtl_per_batch:
