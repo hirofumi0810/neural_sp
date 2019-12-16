@@ -222,7 +222,7 @@ class Conv2LBlock(EncoderBase):
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv1, dim=1)[0]
         self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.dropout1 = nn.Dropout2d(p=dropout)
+        self.dropout = nn.Dropout2d(p=dropout)
 
         # 2nd layer
         self.conv2 = nn.Conv2d(in_channels=out_channel,
@@ -232,7 +232,6 @@ class Conv2LBlock(EncoderBase):
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv2, dim=1)[0]
         self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.dropout2 = nn.Dropout2d(p=dropout)
 
         # Max Pooling
         self.pool = None
@@ -263,7 +262,7 @@ class Conv2LBlock(EncoderBase):
         xs = self.conv1(xs)
         xs = self.batch_norm1(xs)
         xs = torch.relu(xs)
-        xs = self.dropout1(xs)
+        xs = self.dropout(xs)
         xlens = update_lens(xlens, self.conv1, dim=0)
 
         xs = self.conv2(xs)
@@ -272,7 +271,7 @@ class Conv2LBlock(EncoderBase):
             xs += residual
             # NOTE: this is based on ResNet
         xs = torch.relu(xs)
-        xs = self.dropout2(xs)
+        xs = self.dropout(xs)
         xlens = update_lens(xlens, self.conv2, dim=0)
 
         if self.pool is not None:
