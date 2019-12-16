@@ -13,7 +13,7 @@ batch_size=1
 n_caches=0
 cache_theta=0.1
 cache_lambda=0.1
-recog_n_average=1  # for Transformer
+n_average=1  # for Transformer
 
 . ./cmd.sh
 . ./path.sh
@@ -35,8 +35,8 @@ for set in eval1 eval2 eval3; do
     if [ ${n_caches} != 0 ]; then
         recog_dir=${recog_dir}_cache${n_caches}_theta${cache_theta}_lambda${cache_lambda}
     fi
-    if [ ${recog_n_average} != 1 ]; then
-        recog_dir=${recog_dir}_average${recog_n_average}
+    if [ ${n_average} != 1 ]; then
+        recog_dir=${recog_dir}_average${n_average}
     fi
     mkdir -p ${recog_dir}
 
@@ -61,6 +61,6 @@ for set in eval1 eval2 eval3; do
         --recog_n_caches ${n_caches} \
         --recog_cache_theta ${cache_theta} \
         --recog_cache_lambda ${cache_lambda} \
-        --recog_n_average ${recog_n_average} \
+        --recog_n_average ${n_average} \
         --recog_dir ${recog_dir} || exit 1;
 done

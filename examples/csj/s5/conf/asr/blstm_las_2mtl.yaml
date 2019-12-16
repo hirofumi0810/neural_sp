@@ -2,6 +2,7 @@
 n_stacks: 1
 n_skips: 1
 max_n_frames: 2000
+conv_in_channel: 1
 conv_channels: "32_32"
 conv_kernel_sizes: "(3,3)_(3,3)"
 conv_strides: "(1,1)_(1,1)"

@@ -4,7 +4,7 @@
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 echo ============================================================================
-echo "                                   CSJ                                     "
+echo "                                   CSJ                                    "
 echo ============================================================================
 
 stage=0
@@ -72,9 +72,12 @@ set -u
 set -o pipefail
 
 if [ ${speed_perturb} = true ]; then
-    conf2=conf/asr/speed_perturb.yaml
+    conf2=conf/speed_perturb.yaml
+    if [ ${specaug} = true ]; then
+        conf2=conf/spec_augment_speed_perturb.yaml
+    fi
 elif [ ${specaug} = true ]; then
-    conf2=conf/asr/spec_augment.yaml
+    conf2=conf/spec_augment.yaml
 fi
 
 if [ -z ${gpu} ]; then
@@ -256,7 +259,6 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
                  ${data}/dataset_lm/eval2_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
                  ${data}/dataset_lm/eval3_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv"
 
-    # NOTE: support only a single GPU for LM training
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus csj \
         --config ${lm_conf} \
@@ -271,7 +273,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
         --stdout ${stdout} \
         --resume ${lm_resume} || exit 1;
 
-    echo "Finish LM training (stage: 3)." && exit 1;
+    echo "Finish LM training (stage: 3)."
 fi
 
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then

@@ -4,7 +4,7 @@
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 echo ============================================================================
-echo "                                   CSJ                                     "
+echo "                                   CSJ                                    "
 echo ============================================================================
 
 stage=0
@@ -69,9 +69,9 @@ set -u
 set -o pipefail
 
 if [ ${speed_perturb} = true ]; then
-    conf2=conf/asr/speed_perturb.yaml
+    conf2=conf/speed_perturb.yaml
 elif [ ${specaug} = true ]; then
-    conf2=conf/asr/spec_augment.yaml
+    conf2=conf/spec_augment.yaml
 fi
 
 if [ -z ${gpu} ]; then
