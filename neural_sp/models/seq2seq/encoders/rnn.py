@@ -56,6 +56,8 @@ class RNNEncoder(EncoderBase):
         task_specific_layer (bool):
         param_init (float):
         bidirectional_sum_fwd_bwd (bool):
+        lc_chunk_size_left (int): left chunk size for latency-controlled bidirectional encoder
+        lc_chunk_size_right (int): right chunk size for latency-controlled bidirectional encoder
 
     """
 
@@ -84,7 +86,9 @@ class RNNEncoder(EncoderBase):
                  nin=False,
                  task_specific_layer=False,
                  param_init=0.1,
-                 bidirectional_sum_fwd_bwd=False):
+                 bidirectional_sum_fwd_bwd=False,
+                 lc_chunk_size_left=0,
+                 lc_chunk_size_right=0):
 
         super(RNNEncoder, self).__init__()
 
@@ -97,18 +101,24 @@ class RNNEncoder(EncoderBase):
 
         self.rnn_type = rnn_type
         self.bidirectional = True if ('blstm' in rnn_type or 'bgru' in rnn_type) else False
-        self.latency_controlled = True if ('lcblstm' in rnn_type or 'lcbrgu' in rnn_type) else False
-        self.chunk_size = 20  # for latency-controlled BRNN
         self.n_units = n_units
         self.n_dirs = 2 if self.bidirectional else 1
         self.n_layers = n_layers
 
-        # Setting for hierarchical encoder
+        # for latency-controlled
+        self.latency_controlled = lc_chunk_size_left > 0 and lc_chunk_size_right > 0
+        self.lc_chunk_size_left = lc_chunk_size_left
+        self.lc_chunk_size_right = lc_chunk_size_right
+        if self.latency_controlled:
+            assert n_layers_sub1 == 0
+            assert n_layers_sub2 == 0
+
+        # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
         self.n_layers_sub2 = n_layers_sub2
         self.task_specific_layer = task_specific_layer
 
-        # Setting for bridge layers
+        # for bridge layers
         self.bridge = None
         self.bridge_sub1 = None
         self.bridge_sub2 = None
@@ -155,6 +165,7 @@ class RNNEncoder(EncoderBase):
             logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
 
         self.padding = Padding()
+        self.subsample = subsample
 
         if rnn_type not in ['conv', 'tds', 'gated_conv']:
             self.rnn = nn.ModuleList()
@@ -166,19 +177,19 @@ class RNNEncoder(EncoderBase):
                 self.proj = nn.ModuleList()
 
             # subsample
-            self.subsample = None
+            self.subsample_layer = None
             if subsample_type == 'max_pool' and np.prod(subsample) > 1:
-                self.subsample = nn.ModuleList([MaxpoolSubsampler(subsample[l])
-                                                for l in range(n_layers)])
+                self.subsample_layer = nn.ModuleList([MaxpoolSubsampler(subsample[l])
+                                                      for l in range(n_layers)])
             elif subsample_type == 'concat' and np.prod(subsample) > 1:
-                self.subsample = nn.ModuleList([ConcatSubsampler(subsample[l], n_units * self.n_dirs)
-                                                for l in range(n_layers)])
+                self.subsample_layer = nn.ModuleList([ConcatSubsampler(subsample[l], n_units * self.n_dirs)
+                                                      for l in range(n_layers)])
             elif subsample_type == 'drop' and np.prod(subsample) > 1:
-                self.subsample = nn.ModuleList([DropSubsampler(subsample[l])
-                                                for l in range(n_layers)])
+                self.subsample_layer = nn.ModuleList([DropSubsampler(subsample[l])
+                                                      for l in range(n_layers)])
             elif subsample_type == '1dconv' and np.prod(subsample) > 1:
-                self.subsample = nn.ModuleList([Conv1dSubsampler(subsample[l], n_units * self.n_dirs)
-                                                for l in range(n_layers)])
+                self.subsample_layer = nn.ModuleList([Conv1dSubsampler(subsample[l], n_units * self.n_dirs)
+                                                      for l in range(n_layers)])
 
             # NiN
             self.nin = nn.ModuleList() if nin else None
@@ -233,6 +244,16 @@ class RNNEncoder(EncoderBase):
 
         self.reset_parameters(param_init)
 
+        # for streaming inference
+        self.reset_cache()
+
+    def subsampling_factor(self):
+        factor = 1
+        if self.conv is not None:
+            factor *= self.conv.subsampling_factor()
+        factor *= np.prod(self.subsample)
+        return factor
+
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
@@ -248,13 +269,19 @@ class RNNEncoder(EncoderBase):
             else:
                 raise ValueError(n)
 
-    def forward(self, xs, xlens, task):
+    def reset_cache(self):
+        self.fwd_states = [None] * self.n_layers
+        logger.debug('Reset cache.')
+
+    def forward(self, xs, xlens, task, use_cache=False, streaming=True):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
             xlens (list): A list of length `[B]`
             task (str): all or ys or ys_sub1 or ys_sub2
+            use_cache (bool): use the cached forward encoder state in the previous chunk as the initial state
+            streaming (bool): streaming encoding
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T // prod(subsample), n_units (*2)]`
@@ -277,61 +304,47 @@ class RNNEncoder(EncoderBase):
         # Dropout for inputs-hidden connection
         xs = self.dropout_in(xs)
 
-        # Path through CNN blocks before RNN layers
-        if self.conv is not None:
-            xs, xlens = self.conv(xs, xlens)
-            if self.rnn_type in ['conv', 'tds', 'gated_conv']:
-                eouts['ys']['xs'] = xs
-                eouts['ys']['xlens'] = xlens
-                return eouts
+        if self.latency_controlled:
+            if not use_cache:
+                self.reset_cache()
 
-        for l in range(self.n_layers):
-            self.rnn[l].flatten_parameters()  # for multi-GPUs
-            if self.latency_controlled:
-                self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
-                xs_chunks = []
-                fwd_state = None
-                for t in range(0, xs.size(1), self.chunk_size):
-                    # bwd
-                    xs_chunk_bwd = torch.flip(xs[:, t:t + self.chunk_size * 2], [1])
-                    xs_chunk_bwd, _ = self.rnn_bwd[l](xs_chunk_bwd, hx=None)
-                    xs_chunk_bwd = torch.flip(xs_chunk_bwd, [1])[:, :self.chunk_size]
-                    # fwd
-                    xs_chunk_fwd = xs[:, t:t + self.chunk_size]
-                    xs_chunk_fwd, fwd_state = self.rnn[l](xs_chunk_fwd, hx=fwd_state)
-                    if self.bidirectional_sum_fwd_bwd:
-                        xs_chunk = xs_chunk_fwd + xs_chunk_bwd
-                    else:
-                        xs_chunk = torch.cat([xs_chunk_fwd, xs_chunk_bwd], dim=-1)
-                    xs_chunks.append(xs_chunk)
-                xs = torch.cat(xs_chunks, dim=1)
-            else:
+            # Flip the layer and time loop
+            xs, xlens = self._forward_streaming(xs)
+        else:
+            # Path through CNN blocks before RNN layers
+            if self.conv is not None:
+                xs, xlens = self.conv(xs, xlens)
+                if self.rnn_type in ['conv', 'tds', 'gated_conv']:
+                    eouts['ys']['xs'] = xs
+                    eouts['ys']['xlens'] = xlens
+                    return eouts
+
+            for l in range(self.n_layers):
+                self.rnn[l].flatten_parameters()  # for multi-GPUs
                 xs = self.padding(xs, xlens, self.rnn[l], self.bidirectional_sum_fwd_bwd)
-            xs = self.dropout(xs)
+                xs = self.dropout(xs)
 
-            # Pick up outputs in the sub task before the projection layer
-            if l == self.n_layers_sub1 - 1:
-                xs_sub1, xlens_sub1 = self.sub_module(xs, xlens, perm_ids_unsort, 'sub1')
-                if task == 'ys_sub1':
-                    eouts[task]['xs'] = xs_sub1
-                    eouts[task]['xlens'] = xlens_sub1
-                    return eouts
-            if l == self.n_layers_sub2 - 1:
-                xs_sub2, xlens_sub2 = self.sub_module(xs, xlens, perm_ids_unsort, 'sub2')
-                if task == 'ys_sub2':
-                    eouts[task]['xs'] = xs_sub2
-                    eouts[task]['xlens'] = xlens_sub2
-                    return eouts
+                # Pick up outputs in the sub task before the projection layer
+                if l == self.n_layers_sub1 - 1:
+                    xs_sub1, xlens_sub1 = self.sub_module(xs, xlens, perm_ids_unsort, 'sub1')
+                    if task == 'ys_sub1':
+                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens_sub1
+                        return eouts
+                if l == self.n_layers_sub2 - 1:
+                    xs_sub2, xlens_sub2 = self.sub_module(xs, xlens, perm_ids_unsort, 'sub2')
+                    if task == 'ys_sub2':
+                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens_sub2
+                        return eouts
 
-            # NOTE: Exclude the last layer
-            if l != self.n_layers - 1:
-                # Projection layer -> Subsampling -> NiN
-                if self.proj is not None:
-                    xs = torch.tanh(self.proj[l](xs))
-                if self.subsample is not None:
-                    xs, xlens = self.subsample[l](xs, xlens)
-                if self.nin is not None:
-                    xs = self.nin[l](xs)
+                # NOTE: Exclude the last layer
+                if l != self.n_layers - 1:
+                    # Projection layer -> Subsampling -> NiN
+                    if self.proj is not None:
+                        xs = torch.tanh(self.proj[l](xs))
+                    if self.subsample_layer is not None:
+                        xs, xlens = self.subsample_layer[l](xs, xlens)
+                    if self.nin is not None:
+                        xs = self.nin[l](xs)
 
         # Bridge layer
         if self.bridge is not None:
@@ -342,15 +355,59 @@ class RNNEncoder(EncoderBase):
         xlens = xlens[perm_ids_unsort]
 
         if task in ['all', 'ys']:
-            eouts['ys']['xs'] = xs
-            eouts['ys']['xlens'] = xlens
+            eouts['ys']['xs'], eouts['ys']['xlens'] = xs, xlens
         if self.n_layers_sub1 >= 1 and task == 'all':
-            eouts['ys_sub1']['xs'] = xs_sub1
-            eouts['ys_sub1']['xlens'] = xlens_sub1
+            eouts['ys_sub1']['xs'], eouts['ys_sub1']['xlens'] = xs_sub1, xlens_sub1
         if self.n_layers_sub2 >= 1 and task == 'all':
-            eouts['ys_sub2']['xs'] = xs_sub2
-            eouts['ys_sub2']['xlens'] = xlens_sub2
+            eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens_sub2
         return eouts
+
+    def _forward_streaming(self, xs):
+        """Streaming encoding for the latency-controlled bidirectional encoder.
+
+        Args:
+            xs (FloatTensor): `[B, T, n_units]`
+        Returns:
+            xs (FloatTensor): `[B, T, n_units]`
+
+        """
+        cs_l = self.lc_chunk_size_left
+        cs_r = self.lc_chunk_size_right
+        xlens = torch.IntTensor(xs.size(0)).fill_(0)
+        xs_chunks = []
+        for t in range(0, xs.size(1), cs_l):
+            xs_chunk = xs[:, t:t + cs_l + cs_r]
+
+            # Path through CNN blocks before RNN layers
+            xlens_chunk = torch.IntTensor(xs_chunk.size(0)).fill_(min(cs_l, xs_chunk.size(1)))
+            if self.conv is not None:
+                xs_chunk, xlens_chunk = self.conv(xs_chunk, xlens_chunk)
+            xlens += xlens_chunk
+
+            cs_l_sub = cs_l // self.subsampling_factor()
+            for l in range(self.n_layers):
+                self.rnn[l].flatten_parameters()  # for multi-GPUs
+                self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
+                # bwd
+                xs_chunk_bwd = torch.flip(xs_chunk, dims=[1])
+                xs_chunk_bwd, _ = self.rnn_bwd[l](xs_chunk_bwd, hx=None)
+                xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, cs_l_sub+cs_r_sub, n_units]`
+                # fwd
+                if xs_chunk.size(1) <= cs_l_sub:
+                    # for the last chunk
+                    xs_chunk_fwd, self.fwd_states[l] = self.rnn[l](xs_chunk, hx=self.fwd_states[l])
+                else:
+                    xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :cs_l_sub], hx=self.fwd_states[l])
+                    xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, cs_l_sub:], hx=self.fwd_states[l])
+                    xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, cs_l_sub+cs_r_sub, n_units]`
+                if self.bidirectional_sum_fwd_bwd:
+                    xs_chunk = xs_chunk_fwd + xs_chunk_bwd
+                else:
+                    xs_chunk = torch.cat([xs_chunk_fwd, xs_chunk_bwd], dim=-1)
+            xs_chunks.append(xs_chunk[:, :cs_l_sub])
+        xs = torch.cat(xs_chunks, dim=1)
+        xs = self.dropout(xs)
+        return xs, xlens
 
     def sub_module(self, xs, xlens, perm_ids_unsort, module='sub1'):
         if self.task_specific_layer:
@@ -395,7 +452,6 @@ class MaxpoolSubsampler(nn.Module):
         if self.factor == 1:
             return xs, xlens
 
-        # subsample
         xs = self.max_pool(xs.transpose(2, 1)).transpose(2, 1).contiguous()
 
         xlens //= self.factor
@@ -422,7 +478,6 @@ class Conv1dSubsampler(nn.Module):
         if self.factor == 1:
             return xs, xlens
 
-        # subsample
         xs = torch.relu(self.conv1d(xs.transpose(2, 1)))
         xs = self.max_pool(xs).transpose(2, 1).contiguous()
 
@@ -442,7 +497,6 @@ class DropSubsampler(nn.Module):
         if self.factor == 1:
             return xs, xlens
 
-        # subsample
         xs = xs[:, ::self.factor, :]
 
         xlens = [max(1, (i + self.factor - 1) // self.factor) for i in xlens]
@@ -451,7 +505,7 @@ class DropSubsampler(nn.Module):
 
 
 class ConcatSubsampler(nn.Module):
-    """Subsample by concatenating input frames."""
+    """Subsample by concatenating successive input frames."""
 
     def __init__(self, factor, n_units):
         super(ConcatSubsampler, self).__init__()
@@ -464,16 +518,13 @@ class ConcatSubsampler(nn.Module):
         if self.factor == 1:
             return xs, xlens
 
-        # Concatenate the successive frames
         xs = xs.transpose(1, 0).contiguous()
         xs = [torch.cat([xs[t - r:t - r + 1] for r in range(self.factor - 1, -1, -1)], dim=-1)
               for t in range(xs.size(0)) if (t + 1) % self.factor == 0]
         xs = torch.cat(xs, dim=0).transpose(1, 0)
         # NOTE: Exclude the last frames if the length is not divisible
 
-        # Projection
         xs = torch.relu(self.proj(xs))
-
         xlens //= self.factor
         return xs, xlens
 

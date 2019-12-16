@@ -92,7 +92,9 @@ def build_encoder(args):
             nin=args.enc_nin,
             task_specific_layer=args.task_specific_layer,
             param_init=args.param_init,
-            bidirectional_sum_fwd_bwd=args.bidirectional_sum_fwd_bwd)
+            bidirectional_sum_fwd_bwd=args.bidirectional_sum_fwd_bwd,
+            lc_chunk_size_left=args.lc_chunk_size_left,
+            lc_chunk_size_right=args.lc_chunk_size_right)
         # NOTE: pure Conv/TDS/GatedConv encoders are also included
 
     return encoder

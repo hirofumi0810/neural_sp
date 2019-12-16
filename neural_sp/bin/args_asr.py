@@ -106,11 +106,10 @@ def parse():
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
-                        choices=['blstm', 'lstm', 'bgru', 'gru', 'lcblstm',
+                        choices=['blstm', 'lstm', 'bgru', 'gru',
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
-                                 'lcbgru', 'conv', 'conv_lcblstm', 'conv_lcbgru',
                                  'transformer', 'conv_transformer',
-                                 'tds', 'gated_conv'],
+                                 'conv', 'tds', 'gated_conv'],
                         help='type of the encoder')
     parser.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
                         help='sum forward and backward RNN outputs for dimension reduction')
@@ -133,6 +132,10 @@ def parse():
                         help='type of subsampling in the encoder')
     parser.add_argument('--freeze_encoder', type=strtobool, default=False,
                         help='freeze the encoder parameter')
+    parser.add_argument('--lc_chunk_size_left', type=int, default=0,
+                        help='left chunk size for latency-controlled bidirectional encoder')
+    parser.add_argument('--lc_chunk_size_right', type=int, default=0,
+                        help='left chunk size for latency-controlled bidirectional encoder')
     # topology (decoder)
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['no', 'location', 'add', 'dot',

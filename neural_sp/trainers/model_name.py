@@ -40,6 +40,8 @@ def set_asr_model_name(args, subsample_factor):
             dir_name += 'NiN'
         if args.bidirectional_sum_fwd_bwd:
             dir_name += '_sumfwdbwd'
+        if args.lc_chunk_size_left > 0 and args.lc_chunk_size_right > 0:
+            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
     if args.n_stacks > 1:
         dir_name += '_stack' + str(args.n_stacks)
     else:
