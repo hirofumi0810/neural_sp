@@ -67,7 +67,8 @@ def set_logger(save_path, stdout=False):
 
     """
     format = '%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s'
-    logging.basicConfig(level=logging.INFO, format=format,
+    logging.basicConfig(level=logging.DEBUG if stdout else logging.INFO,
+                        format=format,
                         filename=save_path if not stdout else None)
 
 
@@ -102,11 +103,11 @@ def load_checkpoint(model, checkpoint_path, optimizer=None, resume=False):
         model (torch.nn.Module):
         checkpoint_path (str): path to the saved model (model..epoch-*)
         epoch (int): negative values mean the offset from the last saved model
-        optimizer ():
+        optimizer (LRScheduler): optimizer wrapped by LRScheduler class
         resume (bool): if True, restore the save optimizer
     Returns:
         model (torch.nn.Module):
-        optimizer ():
+        optimizer (LRScheduler): optimizer wrapped by LRScheduler class
 
     """
     if not os.path.isfile(checkpoint_path):
@@ -126,7 +127,7 @@ def load_checkpoint(model, checkpoint_path, optimizer=None, resume=False):
     # Restore optimizer
     if resume:
         if optimizer is not None:
-            optimizer.load_state_dict(checkpoint['optimizer'])
+            optimizer.load_state_dict(checkpoint['optimizer'])  # LRScheduler class
             for state in optimizer.optimizer.state.values():
                 for k, v in state.items():
                     if torch.is_tensor(v):
@@ -147,7 +148,7 @@ def save_checkpoint(model, save_path, optimizer, epoch, remove_old_checkpoints=T
     Args:
         model (torch.nn.Module):
         save_path (str): path to the directory to save a model
-        optimizer (LRScheduler): optimizer
+        optimizer (LRScheduler): optimizer wrapped by LRScheduler class
         epoch (int): currnet epoch
         remove_old_checkpoints (bool): if True, all checkpoints
             other than the best one will be deleted
@@ -163,7 +164,7 @@ def save_checkpoint(model, save_path, optimizer, epoch, remove_old_checkpoints=T
     # Save parameters, optimizer, step index etc.
     checkpoint = {
         "state_dict": model.module.state_dict(),
-        "optimizer": optimizer.state_dict(),  # LR scheduler
+        "optimizer": optimizer.state_dict(),  # LRScheduler class
     }
     torch.save(checkpoint, model_path)
 
