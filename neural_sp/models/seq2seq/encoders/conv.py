@@ -55,6 +55,7 @@ class ConvEncoder(EncoderBase):
         super(ConvEncoder, self).__init__()
 
         channels, kernel_sizes, strides, poolings = parse_config(channels, kernel_sizes, strides, poolings)
+        self.poolings = poolings
 
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
@@ -89,6 +90,13 @@ class ConvEncoder(EncoderBase):
             self._odim = bottleneck_dim
 
         self.reset_parameters(param_init)
+
+    def subsampling_factor(self):
+        factor = 1
+        if self.poolings:
+            for p in self.poolings:
+                factor *= p[1]
+        return factor
 
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""
@@ -283,6 +291,7 @@ class Conv2LBlock(EncoderBase):
 
 def update_lens(seq_lens, layer, dim=0, device_id=-1):
     """Update lenghts (frequency or time).
+
     Args:
         seq_lens (list or IntTensor):
         layer (nn.Conv2d or nn.MaxPool2d):
@@ -290,7 +299,10 @@ def update_lens(seq_lens, layer, dim=0, device_id=-1):
         device_id (int):
     Returns:
         seq_lens (IntTensor):
+
     """
+    if seq_lens is None:
+        return seq_lens
     assert type(layer) in [nn.Conv2d, nn.MaxPool2d]
     if type(layer) == nn.MaxPool2d and layer.ceil_mode:
         def update(seq_len): return math.ceil(
