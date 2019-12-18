@@ -140,7 +140,7 @@ def parse():
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['no', 'location', 'add', 'dot',
                                  'luong_dot', 'luong_general', 'luong_concat',
-                                 'mocha', 'cif'],
+                                 'mocha', 'gmm', 'cif'],
                         help='type of attention for RNN sequence-to-sequence models')
     parser.add_argument('--mocha_chunk_size', type=int, default=4,
                         help='chunk size for MoChA')
@@ -150,6 +150,8 @@ def parse():
                         help='1dconv for MoChA')
     parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
                         help='Quantity loss weight for MoChA')
+    parser.add_argument('--gmm_attn_n_mixtures', type=int, default=5,
+                        help='number of mixtures for GMM attention')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='dimension of the attention layer')
     parser.add_argument('--attn_conv_n_channels', type=int, default=10,
@@ -220,6 +222,8 @@ def parse():
                         help='number of epochs to tolerate stopping training when validation perfomance is not improved')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
                         help='epoch to stop soring utterances by length')
+    parser.add_argument('--sort_short2long', type=strtobool, default=True,
+                        help='sort utterances in the ascending order')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
                         help='first epoch to start evalaution')
     parser.add_argument('--warmup_start_lr', type=float, default=0,
@@ -315,8 +319,6 @@ def parse():
     parser.add_argument('--transformer_ffn_activation', type=str, default='relu',
                         choices=['relu', 'gelu', 'gelu_accurate', 'glu'],
                         help='nonlinear activation for position wise feed-forward layer')
-    parser.add_argument('--transformer_chunk_hop_size', type=int, default=0,
-                        help='chunk-hopping mechanism for time-restricted Transformer')
     # contextualization
     parser.add_argument('--discourse_aware', type=str, default=False, nargs='?',
                         choices=['state_carry_over', 'hierarchical', ''],
@@ -386,7 +388,7 @@ def parse():
                         help='carry over LM state')
     parser.add_argument('--recog_wordlm', type=strtobool, default=False,
                         help='')
-    parser.add_argument('--recog_n_average', type=int, default=5,
+    parser.add_argument('--recog_n_average', type=int, default=1,
                         help='number of models for the model averaging of Transformer')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,

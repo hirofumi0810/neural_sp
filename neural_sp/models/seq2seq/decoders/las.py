@@ -22,6 +22,7 @@ import torch.nn as nn
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import distillation
 from neural_sp.models.lm.rnnlm import RNNLM
+from neural_sp.models.modules.gmm_attention import GMMAttention
 from neural_sp.models.modules.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.modules.singlehead_attention import AttentionMechanism
@@ -133,6 +134,7 @@ class RNNDecoder(DecoderBase):
                  mocha_adaptive=False,
                  mocha_1dconv=False,
                  mocha_quantity_loss_weight=0.,
+                 gmm_attn_n_mixtures=5,
                  replace_sos=False,
                  soft_label_weight=0.):
 
@@ -195,6 +197,9 @@ class RNNDecoder(DecoderBase):
                                    adaptive=mocha_adaptive,
                                    conv1d=mocha_1dconv,
                                    sharpening_factor=attn_sharpening_factor)
+            elif attn_type == 'gmm':
+                self.score = GMMAttention(enc_n_units, qdim, attn_dim,
+                                          n_mixtures=gmm_attn_n_mixtures)
             else:
                 if attn_n_heads > 1:
                     self.score = MultiheadAttentionMechanism(

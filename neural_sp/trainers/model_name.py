@@ -29,8 +29,6 @@ def set_asr_model_name(args, subsample_factor):
         dir_name += str(args.transformer_d_ff) + 'dff'
         dir_name += str(args.enc_n_layers) + 'L'
         dir_name += str(args.transformer_n_heads) + 'head'
-        if args.transformer_chunk_hop_size > 0:
-            dir_name += '_chunkhop' + str(args.transformer_chunk_hop_size)
     else:
         dir_name += str(args.enc_n_units) + 'H'
         if args.enc_n_projs > 0:
@@ -40,8 +38,8 @@ def set_asr_model_name(args, subsample_factor):
             dir_name += 'NiN'
         if args.bidirectional_sum_fwd_bwd:
             dir_name += '_sumfwdbwd'
-        if args.lc_chunk_size_left > 0 and args.lc_chunk_size_right > 0:
-            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
+    if args.lc_chunk_size_left > 0 and args.lc_chunk_size_right > 0:
+        dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
     if args.n_stacks > 1:
         dir_name += '_stack' + str(args.n_stacks)
     else:
@@ -75,6 +73,8 @@ def set_asr_model_name(args, subsample_factor):
                     dir_name += '_temp' + str(args.attn_sharpening_factor)
                 if args.mocha_quantity_loss_weight > 0:
                     dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
+            elif args.attn_type == 'gmm':
+                dir_name += '_mix' + str(args.gmm_attn_n_mixtures)
         if args.attn_n_heads > 1:
             dir_name += '_head' + str(args.attn_n_heads)
         if args.tie_embedding:
