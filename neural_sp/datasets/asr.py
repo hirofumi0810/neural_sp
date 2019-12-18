@@ -472,20 +472,11 @@ class Dataset(object):
         if not self.dynamic_batching:
             return batch_size
 
-        # v1
-        # if min_xlen <= 800:
-        #     pass
-        # elif min_xlen <= 1600 or 80 < min_ylen <= 100:
-        #     batch_size //= 2
-        # else:
-        #     batch_size //= 4
-
-        # v2
-        if min_xlen >= 1500 or min_ylen >= 100:
-            batch_size = math.ceil(batch_size / 8)
-        elif min_xlen >= 1200 or min_ylen >= 70:
-            batch_size = math.ceil(batch_size / 4)
-        elif min_xlen >= 800:
-            batch_size = math.ceil(batch_size / 2)
+        if min_xlen <= 800:
+            pass
+        elif min_xlen <= 1600 or 80 < min_ylen <= 100:
+            batch_size //= 2
+        else:
+            batch_size //= 4
 
         return max(1, batch_size)
