@@ -94,6 +94,7 @@ class PositionwiseFeedForward(nn.Module):
             self.activation = LinearGLUBlock(d_ff)
         else:
             raise NotImplementedError(activation)
+        logger.info('FFN activation: %s' % activation)
 
         self.reset_parameters()
 

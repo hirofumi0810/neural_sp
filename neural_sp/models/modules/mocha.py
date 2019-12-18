@@ -4,6 +4,8 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
+"""Monotonic chunkwise atteniton (MoChA)."""
+
 # [reference]
 # https://github.com/j-min/MoChA-pytorch/blob/94b54a7fa13e4ac6dc255b509dd0febc8c0a0ee6/attention.py
 
@@ -153,7 +155,6 @@ class MoChA(nn.Module):
         Return:
             cv (FloatTensor): `[B, 1, value_dim]`
             alpha (FloatTensor): `[B, kmax, 1]`
-            beta (FloatTensor): `[B, kmax, 1]`
 
         """
         bs, kmax = key.size()[:2]
