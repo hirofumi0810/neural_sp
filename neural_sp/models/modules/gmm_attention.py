@@ -19,7 +19,7 @@ NEG_INF = float(np.finfo(np.float32).min)
 
 
 class GMMAttention(nn.Module):
-    def __init__(self, kdim, qdim, adim, n_mixtures, eps=1e-6):
+    def __init__(self, kdim, qdim, adim, n_mixtures, vfloor=1e-6):
         """GMM attention.
 
         Args:
@@ -27,13 +27,14 @@ class GMMAttention(nn.Module):
             qdim (int): dimension of query
             adim: (int) dimension of the attention layer
             n_mixtures (int): number of mixtures
+            vfloor (float):
 
         """
         super(GMMAttention, self).__init__()
 
         self.n_mix = n_mixtures
         self.n_heads = 1  # dummy for attention plot
-        self.eps = eps
+        self.vfloor = vfloor
         self.mask = None
         self.myu = None
 
@@ -49,18 +50,18 @@ class GMMAttention(nn.Module):
         """Soft monotonic attention during training.
 
         Args:
-            key (FloatTensor): `[B, kmax, kdim]`
-            value (FloatTensor): `[B, kmax, value_dim]`
+            key (FloatTensor): `[B, klen, kdim]`
+            value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, 1, qdim]`
-            mask (ByteTensor): `[B, qmax, kmax]`
-            aw_prev (FloatTensor): `[B, kmax, 1]`
+            mask (ByteTensor): `[B, qmax, klen]`
+            aw_prev (FloatTensor): `[B, klen, 1]`
             mode (str): dummy interface
         Return:
             cv (FloatTensor): `[B, 1, value_dim]`
-            alpha (FloatTensor): `[B, kmax, 1]`
+            alpha (FloatTensor): `[B, klen, 1]`
 
         """
-        bs, kmax = key.size()[:2]
+        bs, klen = key.size()[:2]
 
         if self.myu is None:
             myu_prev = key.new_zeros(bs, 1, self.n_mix)
@@ -77,12 +78,12 @@ class GMMAttention(nn.Module):
 
         # Compute attention weights
         device_id = torch.cuda.device_of(next(self.parameters())).idx
-        js = torch.arange(kmax).unsqueeze(0).unsqueeze(2).repeat([bs, 1, self.n_mix])
+        js = torch.arange(klen).unsqueeze(0).unsqueeze(2).repeat([bs, 1, self.n_mix])
         js = js.cuda(device_id).float()
-        numerator = torch.exp(-torch.pow(js - myu, 2) / (2 * v + self.eps))
-        denominator = torch.pow(2 * math.pi * v + self.eps, 0.5)
-        aw = w * numerator / denominator  # `[B, kmax, n_mix]`
-        aw = aw.sum(2)  # `[B, kmax]`
+        numerator = torch.exp(-torch.pow(js - myu, 2) / (2 * v + self.vfloor))
+        denominator = torch.pow(2 * math.pi * v + self.vfloor, 0.5)
+        aw = w * numerator / denominator  # `[B, klen, n_mix]`
+        aw = aw.sum(2)  # `[B, klen]`
 
         # Compute context vector
         if self.mask is not None:

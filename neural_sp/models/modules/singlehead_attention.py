@@ -102,22 +102,22 @@ class AttentionMechanism(nn.Module):
         """Forward computation.
 
         Args:
-            key (FloatTensor): `[B, kmax, kdim]`
+            key (FloatTensor): `[B, klen, kdim]`
             klens (IntTensor): `[B]`
-            value (FloatTensor): `[B, kmax, vdim]`
+            value (FloatTensor): `[B, klen, vdim]`
             query (FloatTensor): `[B, 1, qdim]`
-            mask (ByteTensor): `[B, qmax, kmax]`
-            aw_prev (FloatTensor): `[B, kmax, 1 (n_heads)]`
+            mask (ByteTensor): `[B, qmax, klen]`
+            aw_prev (FloatTensor): `[B, klen, 1 (n_heads)]`
             mode: dummy interface for MoChA
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
-            aw (FloatTensor): `[B, kmax, 1 (n_heads)]`
+            aw (FloatTensor): `[B, klen, 1 (n_heads)]`
 
         """
-        bs, kmax = key.size()[:2]
+        bs, klen = key.size()[:2]
 
         if aw_prev is None:
-            aw_prev = key.new_zeros(bs, kmax, 1)
+            aw_prev = key.new_zeros(bs, klen, 1)
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None:
@@ -134,13 +134,13 @@ class AttentionMechanism(nn.Module):
             # return cv, None
 
         elif self.atype == 'add':
-            query = query.repeat([1, kmax, 1])
+            query = query.repeat([1, klen, 1])
             e = self.v(torch.tanh(self.key + self.w_query(query)))
 
         elif self.atype == 'location':
-            query = query.repeat([1, kmax, 1])
-            conv_feat = self.conv(aw_prev.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, ch, kmax]`
-            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, kmax, ch]`
+            query = query.repeat([1, klen, 1])
+            conv_feat = self.conv(aw_prev.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, ch, klen]`
+            conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, klen, ch]`
             e = self.v(torch.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat)))
 
         elif self.atype == 'dot':
@@ -153,11 +153,11 @@ class AttentionMechanism(nn.Module):
             e = torch.bmm(self.key, query.transpose(-2, -1))
 
         elif self.atype == 'luong_concat':
-            query = query.repeat([1, kmax, 1])
+            query = query.repeat([1, klen, 1])
             e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1))))
 
         # Compute attention weights, context vector
-        e = e.squeeze(2)  # `[B, kmax]`
+        e = e.squeeze(2)  # `[B, klen]`
         if self.mask is not None:
             e = e.masked_fill_(self.mask == 0, NEG_INF)
         if self.sigmoid_smoothing:

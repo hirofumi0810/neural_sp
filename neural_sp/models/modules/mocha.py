@@ -27,6 +27,7 @@ class Energy(nn.Module):
             adim (int): dimension of attention space
             init_r (int): initial value for offset r
             conv1d (bool): use 1d convolution for energy calculation
+            conv_kernel_size (int): kernel size for 1D convolution
 
         """
         super().__init__()
@@ -64,15 +65,15 @@ class Energy(nn.Module):
         """Compute energy.
 
         Args:
-            key (FloatTensor): `[B, kmax, kdim]`
+            key (FloatTensor): `[B, klen, kdim]`
             query (FloatTensor): `[B, 1, qdim]`
-            mask (ByteTensor): `[B, qmax, kmax]`
-            aw_prev (FloatTensor): `[B, kmax, 1]`
+            mask (ByteTensor): `[B, qmax, klen]`
+            aw_prev (FloatTensor): `[B, klen, 1]`
         Return:
             energy (FloatTensor): `[B, value_dim]`
 
         """
-        bs, kmax, kdim = key.size()
+        bs, klen, kdim = key.size()
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None:
@@ -84,7 +85,7 @@ class Energy(nn.Module):
 
         # energy = torch.tanh(self.key + self.w_query(query))
         energy = torch.relu(self.key + self.w_query(query))
-        energy = self.v(energy).squeeze(-1)  # `[B, kmax]`
+        energy = self.v(energy).squeeze(-1)  # `[B, klen]`
         if self.r is not None:
             energy = energy + self.r
         if self.mask is not None:
@@ -111,7 +112,10 @@ class MoChA(nn.Module):
             chunk_size (int): size of chunk
             adaptive (bool): adaptive MoChA
             conv1d (bool): apply 1d convolution for energy calculation
-            init_r (int): initial value for parameter 'r' used in monotonic/chunk attention
+            init_r (int): initial value for parameter 'r' used for monotonic attention
+            noise_std (float): standard deviation for input noise
+            eps (float):
+            sharpening_factor (flaot): sharping factor for beta calculation
 
         """
         super(MoChA, self).__init__()
@@ -146,42 +150,42 @@ class MoChA(nn.Module):
         """Soft monotonic attention during training.
 
         Args:
-            key (FloatTensor): `[B, kmax, kdim]`
-            value (FloatTensor): `[B, kmax, value_dim]`
+            key (FloatTensor): `[B, klen, kdim]`
+            value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, 1, qdim]`
-            mask (ByteTensor): `[B, qmax, kmax]`
-            aw_prev (FloatTensor): `[B, kmax, 1]`
+            mask (ByteTensor): `[B, qmax, klen]`
+            aw_prev (FloatTensor): `[B, klen, 1]`
             mode (str): recursive/parallel/hard
         Return:
             cv (FloatTensor): `[B, 1, value_dim]`
-            alpha (FloatTensor): `[B, kmax, 1]`
+            alpha (FloatTensor): `[B, klen, 1]`
 
         """
-        bs, kmax = key.size()[:2]
+        bs, klen = key.size()[:2]
 
         if aw_prev is None:
             # aw_prev = [1, 0, 0 ... 0]
-            aw_prev = key.new_zeros(bs, kmax, 1)
+            aw_prev = key.new_zeros(bs, klen, 1)
             aw_prev[:, 0:1] = key.new_ones(bs, 1, 1)
 
         # Compute monotonic energy
         e_mono = self.monotonic_energy(key, query, mask)
 
         if mode == 'recursive':  # training
-            p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, kmax]`
+            p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, klen]`
             # Compute [1, 1 - p_choose_i[0], 1 - p_choose_i[1], ..., 1 - p_choose_i[-2]]
             shifted_1mp_choose_i = torch.cat([key.new_ones(bs, 1),
                                               1 - p_choose_i[:, :-1]], dim=1)
             # Compute attention distribution recursively as
             # q[j] = (1 - p_choose_i[j]) * q[j - 1] + aw_prev[j]
             # alpha[j] = p_choose_i[j] * q[j]
-            q = key.new_zeros(bs, kmax + 1)
-            for j in range(kmax):
+            q = key.new_zeros(bs, klen + 1)
+            for j in range(klen):
                 q[:, j + 1] = shifted_1mp_choose_i[:, j].clone() * q[:, j].clone() + aw_prev[:, j, 0].clone()
             alpha = p_choose_i * q[:, 1:]
 
         elif mode == 'parallel':  # training
-            p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, kmax]`
+            p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, klen]`
             # safe_cumprod computes cumprod in logspace with numeric checks
             cumprod_1mp_choose_i = safe_cumprod(1 - p_choose_i, eps=self.eps)
             # Compute recurrence relation solution
@@ -193,7 +197,7 @@ class MoChA(nn.Module):
             emit_probs = torch.sigmoid(e_mono)
             p_choose_i = (emit_probs >= 0.5).float()
             # Remove any probabilities before the index chosen at the last time step
-            p_choose_i *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, kmax]`
+            p_choose_i *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, klen]`
             # Now, use exclusive cumprod to remove probabilities after the first
             # chosen index, like so:
             # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
@@ -257,12 +261,12 @@ def moving_sum(x, back, forward):
     """Compute the moving sum of x over a chunk_size with the provided bounds.
 
     Args:
-        x (FloatTensor): `[B, T]`
+        x (FloatTensor): `[B, klen]`
         back (int):
         forward (int):
 
     Returns:
-        x_sum (FloatTensor): `[B, T]`
+        x_sum (FloatTensor): `[B, klen]`
     """
     # Moving sum is computed as a carefully-padded 1D convolution with ones
     x_padded = F.pad(x, pad=[back, forward])
@@ -279,11 +283,11 @@ def efficient_chunkwise_attention(alpha, e_chunk, chunk_size, sharpening_factor=
     """Compute chunkwise attention distribution efficiently by clipping logits.
 
     Args:
-        alpha (FloatTensor): `[B, T]`
-        e_chunk (FloatTensor): `[B, T]`
+        alpha (FloatTensor): `[B, klen]`
+        e_chunk (FloatTensor): `[B, klen]`
         chunk_size (int): size of chunk
     Return
-        beta (FloatTensor): `[B, T]`
+        beta (FloatTensor): `[B, klen]`
 
     """
     # Shift logits to avoid overflow
@@ -303,11 +307,11 @@ def efficient_adaptive_chunkwise_attention(alpha, e_chunk, chunk_len_dist, sharp
     """Compute adaptive chunkwise attention distribution efficiently by clipping logits.
 
     Args:
-        alpha (FloatTensor): `[B, T]`
-        e_chunk (FloatTensor): `[B, T]`
-        chunk_len_dist (IntTensor): `[B, T]`
+        alpha (FloatTensor): `[B, klen]`
+        e_chunk (FloatTensor): `[B, klen]`
+        chunk_len_dist (IntTensor): `[B, klen]`
     Return
-        beta (FloatTensor): `[B, T]`
+        beta (FloatTensor): `[B, klen]`
 
     """
     # Shift logits to avoid overflow
