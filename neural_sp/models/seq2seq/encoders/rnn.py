@@ -393,6 +393,10 @@ class RNNEncoder(EncoderBase):
                 else:
                     xs = torch.cat([xs_fwd, xs_bwd], dim=-1)
                 xs = self.dropout(xs)
+
+                # Projection layer
+                if self.proj is not None and l != self.n_layers - 1:
+                    xs = torch.tanh(self.proj[l](xs))
             return xs, xlens
 
         # zero padding on the right side
@@ -432,6 +436,10 @@ class RNNEncoder(EncoderBase):
                 else:
                     xs_chunk = torch.cat([xs_chunk_fwd, xs_chunk_bwd], dim=-1)
                 xs_chunk = self.dropout(xs_chunk)
+
+                # Projection layer
+                if self.proj is not None and l != self.n_layers - 1:
+                    xs_chunk = torch.tanh(self.proj[l](xs_chunk))
             xs_chunks.append(xs_chunk[:, :cs_l])
         xs = torch.cat(xs_chunks, dim=1)
         return xs, xlens
