@@ -779,12 +779,13 @@ class RNNDecoder(DecoderBase):
                     ensmbl_cv += [eouts.new_zeros(1, 1, dec.enc_n_units)]
                     dec.score.reset()
 
-            if speakers is not None and speakers[b] == self.prev_spk:
-                if lm_state_carry_over and isinstance(lm, RNNLM):
-                    lmstate = self.lmstate_final
-                if asr_state_carry_over:
-                    dstates = self.dstates_final
-            self.prev_spk = speakers[b]
+            if speakers is not None:
+                if speakers[b] == self.prev_spk:
+                    if lm_state_carry_over and isinstance(lm, RNNLM):
+                        lmstate = self.lmstate_final
+                    if asr_state_carry_over:
+                        dstates = self.dstates_final
+                self.prev_spk = speakers[b]
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
@@ -939,7 +940,7 @@ class RNNDecoder(DecoderBase):
                              'ensmbl_dstate': ensmbl_dstate,
                              'ensmbl_cv': ensmbl_cv,
                              'ensmbl_aws': ensmbl_aws,
-                             'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None})
+                             'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_weight > 0 and ctc_log_probs is not None else None})
 
                 # Local pruning
                 new_hyps_tmp = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
@@ -995,24 +996,25 @@ class RNNDecoder(DecoderBase):
             eos_flags.append(eos_flag)
 
             if utt_ids is not None:
-                logger.info('Utt-id: %s' % utt_ids[b])
+                logger.debug('Utt-id: %s' % utt_ids[b])
             if refs_id is not None and self.vocab == idx2token.vocab:
-                logger.info('Ref: %s' % idx2token(refs_id[b]))
+                logger.debug('Ref: %s' % idx2token(refs_id[b]))
             for k in range(len(end_hyps)):
-                logger.info('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:][::-1] if self.bwd else end_hyps[k]['hyp'][1:]))
-                logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
-                logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
-                logger.info('log prob (hyp, cp): %.7f' % (end_hyps[k]['score_cp'] * cp_weight))
+                logger.debug('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:]
+                                                   [::-1] if self.bwd else end_hyps[k]['hyp'][1:]))
+                logger.debug('log prob (hyp): %.7f' % end_hyps[k]['score'])
+                logger.debug('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
+                logger.debug('log prob (hyp, cp): %.7f' % (end_hyps[k]['score_cp'] * cp_weight))
                 if ctc_weight > 0 and ctc_log_probs is not None:
-                    logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
+                    logger.debug('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                 if lm_weight > 0 and lm is not None:
-                    logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
+                    logger.debug('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_2nd is not None:
-                        logger.info('log prob (hyp, second-path lm): %.7f' %
-                                    (end_hyps[k]['score_lm_2nd'] * lm_weight))
+                        logger.debug('log prob (hyp, second-path lm): %.7f' %
+                                     (end_hyps[k]['score_lm_2nd'] * lm_weight))
                     if lm_2nd_rev is not None:
-                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
+                        logger.debug('log prob (hyp, second-path lm, reverse): %.7f' %
+                                     (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
 
         # Concatenate in L dimension
         for b in range(len(aws)):
