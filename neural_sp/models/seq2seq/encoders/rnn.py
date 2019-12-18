@@ -165,7 +165,6 @@ class RNNEncoder(EncoderBase):
             logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
 
         self.padding = Padding()
-        self.subsample = subsample
 
         if rnn_type not in ['conv', 'tds', 'gated_conv']:
             self.rnn = nn.ModuleList()
@@ -242,17 +241,16 @@ class RNNEncoder(EncoderBase):
                 self.bridge = nn.Linear(self._odim, last_proj_dim)
                 self._odim = last_proj_dim
 
+        # calculate subsampling factor
+        self._factor = 1
+        if self.conv is not None:
+            self._factor *= self.conv.subsampling_factor()
+        self._factor *= np.prod(subsample)
+
         self.reset_parameters(param_init)
 
         # for streaming inference
         self.reset_cache()
-
-    def subsampling_factor(self):
-        factor = 1
-        if self.conv is not None:
-            factor *= self.conv.subsampling_factor()
-        factor *= np.prod(self.subsample)
-        return factor
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
@@ -371,40 +369,47 @@ class RNNEncoder(EncoderBase):
             xs (FloatTensor): `[B, T, n_units]`
 
         """
+        bs, xmax, input_dim = xs.size()
         cs_l = self.lc_chunk_size_left
         cs_r = self.lc_chunk_size_right
-        xlens = torch.IntTensor(xs.size(0)).fill_(0)
+
+        # zero padding on the right side
+        n_pad = cs_l + cs_r - (xmax % (cs_l + cs_r))
+        if n_pad > 0:
+            zero_pad = xs.new_zeros(bs, n_pad, input_dim)
+            xs = torch.cat([xs, zero_pad], dim=1)
+        n_chunks = xs.size(1) // (cs_l + cs_r)
+        xlens = torch.IntTensor(bs).fill_(n_chunks * cs_l)
+
+        # Path through CNN blocks before RNN layers
+        if self.conv is not None:
+            xs = xs.view(bs * xs.size(1) // (cs_l + cs_r), cs_l + cs_r, input_dim)
+            xs, xlens = self.conv(xs, xlens)
+            xs = xs.view(bs, -1, self.conv.output_dim)
+
+        cs_l //= self.subsampling_factor()
+        cs_r //= self.subsampling_factor()
         xs_chunks = []
-        for t in range(0, xs.size(1), cs_l):
+        for t in range(0, cs_l * n_chunks, cs_l):
             xs_chunk = xs[:, t:t + cs_l + cs_r]
 
-            # Path through CNN blocks before RNN layers
-            xlens_chunk = torch.IntTensor(xs_chunk.size(0)).fill_(min(cs_l, xs_chunk.size(1)))
-            if self.conv is not None:
-                xs_chunk, xlens_chunk = self.conv(xs_chunk, xlens_chunk)
-            xlens += xlens_chunk
-
-            cs_l_sub = cs_l // self.subsampling_factor()
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
                 self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
                 # bwd
                 xs_chunk_bwd = torch.flip(xs_chunk, dims=[1])
                 xs_chunk_bwd, _ = self.rnn_bwd[l](xs_chunk_bwd, hx=None)
-                xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, cs_l_sub+cs_r_sub, n_units]`
+                xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, cs_l+cs_r, n_units]`
                 # fwd
-                if xs_chunk.size(1) <= cs_l_sub:
-                    # for the last chunk
-                    xs_chunk_fwd, self.fwd_states[l] = self.rnn[l](xs_chunk, hx=self.fwd_states[l])
-                else:
-                    xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :cs_l_sub], hx=self.fwd_states[l])
-                    xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, cs_l_sub:], hx=self.fwd_states[l])
-                    xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, cs_l_sub+cs_r_sub, n_units]`
+                xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :cs_l], hx=self.fwd_states[l])
+                xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, cs_l:], hx=self.fwd_states[l])
+                xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, cs_l+cs_r, n_units]`
+                # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer
                 if self.bidirectional_sum_fwd_bwd:
                     xs_chunk = xs_chunk_fwd + xs_chunk_bwd
                 else:
                     xs_chunk = torch.cat([xs_chunk_fwd, xs_chunk_bwd], dim=-1)
-            xs_chunks.append(xs_chunk[:, :cs_l_sub])
+            xs_chunks.append(xs_chunk[:, :cs_l])
         xs = torch.cat(xs_chunks, dim=1)
         xs = self.dropout(xs)
         return xs, xlens

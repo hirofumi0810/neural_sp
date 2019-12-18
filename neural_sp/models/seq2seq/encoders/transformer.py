@@ -121,11 +121,6 @@ class TransformerEncoder(EncoderBase):
             self._odim = input_dim * n_splices * n_stacks
             self.embed = nn.Linear(self._odim, d_model)
 
-        # calculate subsampling factor
-        self._factor = 1
-        if self.conv is not None:
-            self._factor *= self.conv.subsampling_factor()
-
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
         self.layers = repeat(TransformerEncoderBlock(
             d_model, d_ff, attn_type, n_heads,
@@ -139,6 +134,11 @@ class TransformerEncoder(EncoderBase):
         else:
             self.bridge = None
             self._odim = d_model
+
+        # calculate subsampling factor
+        self._factor = 1
+        if self.conv is not None:
+            self._factor *= self.conv.subsampling_factor()
 
         self.reset_parameters()
 
