@@ -32,6 +32,7 @@ class GMMAttention(nn.Module):
         super(GMMAttention, self).__init__()
 
         self.n_mix = n_mixtures
+        self.n_heads = 1  # dummy for attention plot
         self.eps = eps
         self.mask = None
         self.myu = None
