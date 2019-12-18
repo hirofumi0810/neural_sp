@@ -106,7 +106,7 @@ class RNNEncoder(EncoderBase):
         self.n_layers = n_layers
 
         # for latency-controlled
-        self.latency_controlled = lc_chunk_size_left > 0 and lc_chunk_size_right > 0
+        self.latency_controlled = lc_chunk_size_left > 0 or lc_chunk_size_right > 0
         self.lc_chunk_size_left = lc_chunk_size_left
         self.lc_chunk_size_right = lc_chunk_size_right
         if self.latency_controlled:
@@ -307,7 +307,7 @@ class RNNEncoder(EncoderBase):
                 self.reset_cache()
 
             # Flip the layer and time loop
-            xs, xlens = self._forward_streaming(xs)
+            xs, xlens = self._forward_streaming(xs, xlens)
         else:
             # Path through CNN blocks before RNN layers
             if self.conv is not None:
@@ -360,7 +360,7 @@ class RNNEncoder(EncoderBase):
             eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens_sub2
         return eouts
 
-    def _forward_streaming(self, xs):
+    def _forward_streaming(self, xs, xlens):
         """Streaming encoding for the latency-controlled bidirectional encoder.
 
         Args:
@@ -372,6 +372,28 @@ class RNNEncoder(EncoderBase):
         bs, xmax, input_dim = xs.size()
         cs_l = self.lc_chunk_size_left
         cs_r = self.lc_chunk_size_right
+
+        # full context BPTT
+        if cs_l < 0:
+            # Path through CNN blocks before RNN layers
+            if self.conv is not None:
+                xs, xlens = self.conv(xs, xlens)
+
+            for l in range(self.n_layers):
+                self.rnn[l].flatten_parameters()  # for multi-GPUs
+                self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
+                # bwd
+                xs_bwd = torch.flip(xs, dims=[1])
+                xs_bwd, _ = self.rnn_bwd[l](xs_bwd, hx=None)
+                xs_bwd = torch.flip(xs_bwd, dims=[1])
+                # fwd
+                xs_fwd, _ = self.rnn[l](xs, hx=None)
+                if self.bidirectional_sum_fwd_bwd:
+                    xs = xs_fwd + xs_bwd
+                else:
+                    xs = torch.cat([xs_fwd, xs_bwd], dim=-1)
+                xs = self.dropout(xs)
+            return xs, xlens
 
         # zero padding on the right side
         n_pad = cs_l + cs_r - (xmax % (cs_l + cs_r))
