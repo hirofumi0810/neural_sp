@@ -58,6 +58,9 @@ class TransformerEncoder(EncoderBase):
         conv_batch_norm (bool): apply batch normalization only in the CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
         conv_param_init (float): only for CNN layers before Transformer layers
+        chunk_size_left (int): left chunk size for time-restricted Transformer encoder
+        chunk_size_current (int): current chunk size for time-restricted Transformer encoder
+        chunk_size_right (int): right chunk size for time-restricted Transformer encoder
 
     """
 
@@ -85,7 +88,9 @@ class TransformerEncoder(EncoderBase):
                  conv_batch_norm=False,
                  conv_bottleneck_dim=0,
                  conv_param_init=0.1,
-                 chunk_hop_size=0):
+                 chunk_size_left=0,
+                 chunk_size_current=0,
+                 chunk_size_right=0):
 
         super(TransformerEncoder, self).__init__()
 
@@ -93,7 +98,9 @@ class TransformerEncoder(EncoderBase):
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.pe_type = pe_type
-        self.chunk_hop_size = chunk_hop_size
+        self.chunk_size_left = chunk_size_left
+        self.chunk_size_current = chunk_size_current
+        self.chunk_size_right = chunk_size_right
 
         # Setting for CNNs before RNNs
         if conv_channels:
@@ -113,6 +120,11 @@ class TransformerEncoder(EncoderBase):
             self.conv = None
             self._odim = input_dim * n_splices * n_stacks
             self.embed = nn.Linear(self._odim, d_model)
+
+        # calculate subsampling factor
+        self._factor = 1
+        if self.conv is not None:
+            self._factor *= self.conv.subsampling_factor()
 
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
         self.layers = repeat(TransformerEncoderBlock(
@@ -140,7 +152,7 @@ class TransformerEncoder(EncoderBase):
             nn.init.xavier_uniform_(self.bridge.weight)
             nn.init.constant_(self.bridge.bias, 0.)
 
-    def forward(self, xs, xlens, task):
+    def forward(self, xs, xlens, task, use_cache=False, streaming=False):
         """Forward computation.
 
         Args:
@@ -165,20 +177,24 @@ class TransformerEncoder(EncoderBase):
 
         bs, xmax, idim = xs.size()
         xs = self.pos_enc(xs)
-        if self.chunk_hop_size > 0:
+        if self.chunk_size_left > 0:
             # Time-restricted self-attention for streaming models
+            cs_l = self.chunk_size_left
+            cs_c = self.chunk_size_current
+            cs_r = self.chunk_size_right
+            hop_size = self.chunk_size_current
             xs_chunks = []
             xx_aws = [[] for l in range(self.n_layers)]
-            xs_pad = torch.cat([xs.new_zeros(bs, self.chunk_hop_size, idim), xs,
-                                xs.new_zeros(bs, self.chunk_hop_size, idim)], dim=1)
-            for t in range(self.chunk_hop_size, xmax + self.chunk_hop_size, self.chunk_hop_size):
-                xs_chunk = xs_pad[:, t - self.chunk_hop_size:t + self.chunk_hop_size * 2]
+            xs_pad = torch.cat([xs.new_zeros(bs, cs_l, idim), xs,
+                                xs.new_zeros(bs, cs_r, idim)], dim=1)
+            # TODO: remove right padding
+            for t in range(cs_l, xmax + cs_r, hop_size):
+                xs_chunk = xs_pad[:, t - cs_l:t + cs_c + cs_r]
                 for l in range(self.n_layers):
                     xs_chunk, xx_aws_chunk = self.layers[l](xs_chunk, None)  # no mask
-                    xx_aws[l].append(xx_aws_chunk[:, :, self.chunk_hop_size:self.chunk_hop_size * 2,
-                                                  self.chunk_hop_size:self.chunk_hop_size * 2])
-                xs_chunk = self.norm_out(xs_chunk)
-                xs_chunks.append(xs_chunk[:, self.chunk_hop_size:self.chunk_hop_size * 2])
+                    xx_aws[l].append(xx_aws_chunk[:, :, cs_l:cs_l + cs_c,
+                                                  cs_l:cs_l + cs_c])
+                xs_chunks.append(xs_chunk[:, cs_l:cs_l + cs_c])
             xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
             if not self.training:
                 for l in range(self.n_layers):
@@ -191,7 +207,7 @@ class TransformerEncoder(EncoderBase):
                 xs, xx_aws = self.layers[l](xs, xx_mask)
                 if not self.training:
                     setattr(self, 'xx_aws_layer%d' % l, tensor2np(xx_aws))
-            xs = self.norm_out(xs)
+        xs = self.norm_out(xs)
 
         # Bridge layer
         if self.bridge is not None:

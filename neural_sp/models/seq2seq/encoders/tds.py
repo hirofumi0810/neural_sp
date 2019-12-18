@@ -85,6 +85,8 @@ class TDSEncoder(EncoderBase):
 
         self.layers = nn.Sequential(layers)
 
+        self._factor = 8
+
         self.reset_parameters()
 
     def reset_parameters(self):

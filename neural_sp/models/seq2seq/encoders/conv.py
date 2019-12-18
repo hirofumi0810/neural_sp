@@ -55,7 +55,6 @@ class ConvEncoder(EncoderBase):
         super(ConvEncoder, self).__init__()
 
         channels, kernel_sizes, strides, poolings = parse_config(channels, kernel_sizes, strides, poolings)
-        self.poolings = poolings
 
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
@@ -89,14 +88,13 @@ class ConvEncoder(EncoderBase):
             self.bridge = nn.Linear(self._odim, bottleneck_dim)
             self._odim = bottleneck_dim
 
-        self.reset_parameters(param_init)
+        # calculate subsampling factor
+        self._factor = 1
+        if poolings:
+            for p in poolings:
+                self._factor *= p[1]
 
-    def subsampling_factor(self):
-        factor = 1
-        if self.poolings:
-            for p in self.poolings:
-                factor *= p[1]
-        return factor
+        self.reset_parameters(param_init)
 
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""

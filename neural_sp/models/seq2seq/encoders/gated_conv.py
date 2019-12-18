@@ -79,6 +79,8 @@ class GatedConvEncoder(EncoderBase):
 
         self.layers = nn.Sequential(layers)
 
+        self._factor = 1
+
         self.reset_parameters(param_init)
 
     def reset_parameters(self, param_init):

@@ -34,6 +34,9 @@ class EncoderBase(ModelBase):
     def output_dim(self):
         return self._odim
 
+    def subsampling_factor(self):
+        return self._factor
+
     def reset_parameters(self, param_init):
         raise NotImplementedError
 
