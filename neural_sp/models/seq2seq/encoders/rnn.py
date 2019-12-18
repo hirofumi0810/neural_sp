@@ -400,16 +400,17 @@ class RNNEncoder(EncoderBase):
             return xs, xlens
 
         # zero padding on the right side
-        n_pad = cs_l + cs_r - (xmax % (cs_l + cs_r))
+        n_pad = cs_l - ((xmax - cs_r) % cs_l) + cs_r
         if n_pad > 0:
             zero_pad = xs.new_zeros(bs, n_pad, input_dim)
             xs = torch.cat([xs, zero_pad], dim=1)
-        n_chunks = xs.size(1) // (cs_l + cs_r)
+        n_chunks = (xs.size(1) - cs_r) // cs_l
         xlens = torch.IntTensor(bs).fill_(n_chunks * cs_l)
 
         # Path through CNN blocks before RNN layers
         if self.conv is not None:
-            xs = xs.view(bs * xs.size(1) // (cs_l + cs_r), cs_l + cs_r, input_dim)
+            xs = torch.cat([xs[:, t:t + cs_l + cs_r] for t in range(0, cs_l * n_chunks, cs_l)], dim=1)
+            xs = xs.view(-1, (cs_l + cs_r) * n_chunks, input_dim)
             xs, xlens = self.conv(xs, xlens)
             xs = xs.view(bs, -1, self.conv.output_dim)
 
