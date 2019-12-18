@@ -409,9 +409,9 @@ class RNNEncoder(EncoderBase):
                     xs_chunk = xs_chunk_fwd + xs_chunk_bwd
                 else:
                     xs_chunk = torch.cat([xs_chunk_fwd, xs_chunk_bwd], dim=-1)
+                xs_chunk = self.dropout(xs_chunk)
             xs_chunks.append(xs_chunk[:, :cs_l])
         xs = torch.cat(xs_chunks, dim=1)
-        xs = self.dropout(xs)
         return xs, xlens
 
     def sub_module(self, xs, xlens, perm_ids_unsort, module='sub1'):
