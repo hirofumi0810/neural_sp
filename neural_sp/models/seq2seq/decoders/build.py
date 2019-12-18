@@ -10,18 +10,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from neural_sp.models.seq2seq.decoders.las import RNNDecoder
-from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
-from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
-from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
 
-
-def build_decoder(args, special_symbols, enc_n_units, vocab, ctc_weight, global_weight,
+def build_decoder(args, special_symbols, enc_n_units, vocab,
+                  ctc_weight, global_weight,
                   lm_fusion=None, lm_init=None):
     if args.dec_type == 'transformer':
         if args.attn_type == 'cif':
             raise NotImplementedError
         else:
+            from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
             decoder = TransformerDecoder(
                 special_symbols=special_symbols,
                 enc_n_units=enc_n_units,
@@ -45,7 +42,9 @@ def build_decoder(args, special_symbols, enc_n_units, vocab, ctc_weight, global_
                 backward=(dir == 'bwd'),
                 global_weight=global_weight,
                 mtl_per_batch=args.mtl_per_batch)
+
     elif args.dec_type == 'transformer_transducer':
+        from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
         decoder = TrasformerTransducer(
             special_symbols=special_symbols,
             enc_n_units=enc_n_units,
@@ -68,7 +67,9 @@ def build_decoder(args, special_symbols, enc_n_units, vocab, ctc_weight, global_
             lm_init=lm_init,
             global_weight=global_weight,
             mtl_per_batch=args.mtl_per_batch)
+
     elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
+        from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
         decoder = RNNTransducer(
             special_symbols=special_symbols,
             enc_n_units=enc_n_units,
@@ -90,7 +91,9 @@ def build_decoder(args, special_symbols, enc_n_units, vocab, ctc_weight, global_
             global_weight=global_weight,
             mtl_per_batch=args.mtl_per_batch,
             param_init=args.param_init)
+
     else:
+        from neural_sp.models.seq2seq.decoders.las import RNNDecoder
         decoder = RNNDecoder(
             special_symbols=special_symbols,
             enc_n_units=enc_n_units,

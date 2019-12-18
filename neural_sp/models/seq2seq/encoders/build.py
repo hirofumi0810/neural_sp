@@ -10,34 +10,34 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
-from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
-from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
-from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
-
 
 def build_encoder(args):
 
     if args.enc_type == 'tds':
+        from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
         raise ValueError
-        # encoder = TDSEncoder(
-        #     input_dim=args.input_dim * args.n_stacks,
-        #     in_channel=args.conv_in_channel,
-        #     channels=args.conv_channels,
-        #     kernel_sizes=args.conv_kernel_sizes,
-        #     dropout=args.dropout_enc,
-        #     bottleneck_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units)
+        encoder = TDSEncoder(
+            input_dim=args.input_dim * args.n_stacks,
+            in_channel=args.conv_in_channel,
+            channels=args.conv_channels,
+            kernel_sizes=args.conv_kernel_sizes,
+            dropout=args.dropout_enc,
+            bottleneck_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units)
+
     elif args.enc_type == 'gated_conv':
+        from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
         raise ValueError
-        # encoder = GatedConvEncoder(
-        #     input_dim=args.input_dim * args.n_stacks,
-        #     in_channel=args.conv_in_channel,
-        #     channels=args.conv_channels,
-        #     kernel_sizes=args.conv_kernel_sizes,
-        #     dropout=args.dropout_enc,
-        #     bottleneck_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units,
-        #     param_init=args.param_init)
+        encoder = GatedConvEncoder(
+            input_dim=args.input_dim * args.n_stacks,
+            in_channel=args.conv_in_channel,
+            channels=args.conv_channels,
+            kernel_sizes=args.conv_kernel_sizes,
+            dropout=args.dropout_enc,
+            bottleneck_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units,
+            param_init=args.param_init)
+
     elif 'transformer' in args.enc_type:
+        from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
         encoder = TransformerEncoder(
             input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
             attn_type=args.transformer_attn_type,
@@ -62,11 +62,16 @@ def build_encoder(args):
             conv_batch_norm=args.conv_batch_norm,
             conv_bottleneck_dim=args.conv_bottleneck_dim,
             conv_param_init=args.param_init,
-            chunk_hop_size=args.transformer_chunk_hop_size)
+            chunk_size_left=args.lc_chunk_size_left,
+            chunk_size_current=args.lc_chunk_size_left,
+            chunk_size_right=args.lc_chunk_size_right)
+
     else:
         subsample = [1] * args.enc_n_layers
         for l, s in enumerate(list(map(int, args.subsample.split('_')[:args.enc_n_layers]))):
             subsample[l] = s
+
+        from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
         encoder = RNNEncoder(
             input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
             rnn_type=args.enc_type,
