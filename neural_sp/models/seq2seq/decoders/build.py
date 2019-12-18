@@ -12,7 +12,7 @@ from __future__ import print_function
 
 
 def build_decoder(args, special_symbols, enc_n_units, vocab,
-                  ctc_weight, global_weight,
+                  ctc_weight, ctc_fc_list, global_weight,
                   lm_fusion=None, lm_init=None):
     if args.dec_type == 'transformer':
         if args.attn_type == 'cif':
@@ -37,8 +37,7 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
                 lsm_prob=args.lsm_prob,
                 ctc_weight=ctc_weight,
                 ctc_lsm_prob=args.ctc_lsm_prob,
-                ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
-                    '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
+                ctc_fc_list=ctc_fc_list,
                 backward=(dir == 'bwd'),
                 global_weight=global_weight,
                 mtl_per_batch=args.mtl_per_batch)
@@ -62,8 +61,7 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             lsm_prob=args.lsm_prob,
             ctc_weight=ctc_weight,
             ctc_lsm_prob=args.ctc_lsm_prob,
-            ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
-                '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
+            ctc_fc_list=ctc_fc_list,
             lm_init=lm_init,
             global_weight=global_weight,
             mtl_per_batch=args.mtl_per_batch)
@@ -85,8 +83,7 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             lsm_prob=args.lsm_prob,
             ctc_weight=ctc_weight,
             ctc_lsm_prob=args.ctc_lsm_prob,
-            ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
-                '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
+            ctc_fc_list=ctc_fc_list,
             lm_init=lm_init,
             global_weight=global_weight,
             mtl_per_batch=args.mtl_per_batch,
@@ -120,8 +117,7 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             lsm_prob=args.lsm_prob,
             ctc_weight=ctc_weight,
             ctc_lsm_prob=args.ctc_lsm_prob,
-            ctc_fc_list=[int(fc) for fc in args.ctc_fc_list.split(
-                '_')] if args.ctc_fc_list is not None and len(args.ctc_fc_list) > 0 else [],
+            ctc_fc_list=ctc_fc_list,
             backward=(dir == 'bwd'),
             lm_fusion=lm_fusion,
             lm_fusion_type=args.lm_fusion_type,

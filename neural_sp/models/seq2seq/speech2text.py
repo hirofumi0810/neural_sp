@@ -155,6 +155,7 @@ class Speech2Text(ModelBase):
             dec = build_decoder(args, special_symbols, self.enc.output_dim,
                                 args.vocab,
                                 self.ctc_weight if dir == 'fwd' else 0,
+                                args.ctc_fc_list,
                                 self.main_weight - self.bwd_weight if dir == 'fwd' else self.bwd_weight,
                                 lm_init, lm_fusion)
             setattr(self, 'dec_' + dir, dec)
@@ -165,10 +166,9 @@ class Speech2Text(ModelBase):
                 dec_sub = build_decoder(args, special_symbols, self.enc_n_units,
                                         getattr(self, 'vocab_' + sub),
                                         getattr(self, 'ctc_weight_' + sub),
+                                        getattr(args, 'ctc_fc_list_' + sub),
                                         getattr(self, sub + '_weight'),
                                         lm_init, lm_fusion)
-                # ctc_fc_list=[int(fc) for fc in getattr(args, 'ctc_fc_list_' + sub).split('_')
-                #              ] if getattr(args, 'ctc_fc_list_' + sub) is not None and len(getattr(args, 'ctc_fc_list_' + sub)) > 0 else [],
                 setattr(self, 'dec_fwd_' + sub, dec_sub)
 
         if args.input_type == 'text':
