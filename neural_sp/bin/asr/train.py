@@ -135,7 +135,7 @@ def main():
                         min_n_frames=args.min_n_frames,
                         max_n_frames=args.max_n_frames,
                         sort_by='input',
-                        short2long=True,
+                        short2long=args.sort_short2long,
                         sort_stop_epoch=args.sort_stop_epoch,
                         dynamic_batching=args.dynamic_batching,
                         ctc=args.ctc_weight > 0,
@@ -443,7 +443,7 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
+                save_checkpoint(model, optimizer, save_path,
                                 remove_old_checkpoints=not transformer)
             else:
                 start_time_eval = time.time()
@@ -455,7 +455,7 @@ def main():
 
                 if optimizer.is_best:
                     # Save the model
-                    save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
+                    save_checkpoint(model, optimizer, save_path,
                                     remove_old_checkpoints=not transformer)
 
                     # test

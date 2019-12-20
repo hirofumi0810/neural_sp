@@ -142,19 +142,18 @@ def load_checkpoint(model, checkpoint_path, optimizer=None, resume=False):
     return model, optimizer
 
 
-def save_checkpoint(model, save_path, optimizer, epoch, remove_old_checkpoints=True):
+def save_checkpoint(model, optimizer, save_path, remove_old_checkpoints=True):
     """Save checkpoint.
 
     Args:
         model (torch.nn.Module):
         save_path (str): path to the directory to save a model
         optimizer (LRScheduler): optimizer wrapped by LRScheduler class
-        epoch (int): currnet epoch
         remove_old_checkpoints (bool): if True, all checkpoints
             other than the best one will be deleted
 
     """
-    model_path = os.path.join(save_path, 'model.epoch-' + str(epoch))
+    model_path = os.path.join(save_path, 'model.epoch-' + str(optimizer.n_epochs))
 
     # Remove old checkpoints
     if remove_old_checkpoints:
@@ -168,4 +167,4 @@ def save_checkpoint(model, save_path, optimizer, epoch, remove_old_checkpoints=T
     }
     torch.save(checkpoint, model_path)
 
-    logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))
+    logger.info("=> Saved checkpoint (epoch:%d): %s" % (optimizer.n_epochs, model_path))

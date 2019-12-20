@@ -259,7 +259,7 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
+                save_checkpoint(model, optimizer, save_path,
                                 remove_old_checkpoints=not transformer)
             else:
                 start_time_eval = time.time()
@@ -273,7 +273,7 @@ def main():
 
                 if optimizer.is_best:
                     # Save the model
-                    save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
+                    save_checkpoint(model, optimizer, save_path,
                                     remove_old_checkpoints=not transformer)
 
                     # test
