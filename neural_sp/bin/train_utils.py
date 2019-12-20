@@ -96,15 +96,13 @@ def set_save_path(save_path):
     return save_path_new
 
 
-def load_checkpoint(model, checkpoint_path, optimizer=None, resume=False):
+def load_checkpoint(model, checkpoint_path, optimizer=None):
     """Load checkpoint.
 
     Args:
         model (torch.nn.Module):
         checkpoint_path (str): path to the saved model (model..epoch-*)
-        epoch (int): negative values mean the offset from the last saved model
         optimizer (LRScheduler): optimizer wrapped by LRScheduler class
-        resume (bool): if True, restore the save optimizer
     Returns:
         model (torch.nn.Module):
         optimizer (LRScheduler): optimizer wrapped by LRScheduler class
@@ -125,19 +123,17 @@ def load_checkpoint(model, checkpoint_path, optimizer=None, resume=False):
     model.load_state_dict(checkpoint['state_dict'])
 
     # Restore optimizer
-    if resume:
-        if optimizer is not None:
-            optimizer.load_state_dict(checkpoint['optimizer'])  # LRScheduler class
-            for state in optimizer.optimizer.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v):
-                        state[k] = v.cuda()
-                        # state[k] = v.cuda(self.device_id)
-                        # TODO(hirofumi): Fix for multi-GPU
-            # NOTE: from https://github.com/pytorch/pytorch/issues/2830
-        else:
-            raise ValueError('Set optimizer.')
-            # logger.warning('Optimizer is not loaded.')
+    if optimizer is not None:
+        optimizer.load_state_dict(checkpoint['optimizer'])  # LRScheduler class
+        for state in optimizer.optimizer.state.values():
+            for k, v in state.items():
+                if torch.is_tensor(v):
+                    state[k] = v.cuda()
+                    # state[k] = v.cuda(self.device_id)
+                    # TODO(hirofumi): Fix for multi-GPU
+        # NOTE: from https://github.com/pytorch/pytorch/issues/2830
+    else:
+        logger.warning('Optimizer is not loaded.')
 
     return model, optimizer
 
