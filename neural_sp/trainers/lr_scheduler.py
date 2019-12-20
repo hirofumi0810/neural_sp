@@ -171,7 +171,9 @@ class LRScheduler(object):
         is not the optimizer.
 
         """
-        return {key: value for key, value in self.__dict__.items()}
+        dict = {key: value for key, value in self.__dict__.items()}
+        dict['optimizer_state_dict'] = self.optimizer.state_dict()
+        return dict
 
     def load_state_dict(self, state_dict):
         """Loads the schedulers state.
@@ -181,8 +183,8 @@ class LRScheduler(object):
                 from a call to :meth:`state_dict`.
 
         """
-        self.__dict__.update(state_dict)
-        self.optimizer.load_state_dict(state_dict['optimizer'].state_dict())
+        self.__dict__.update({k: v for k, v in state_dict.items() if k != 'optimizer_state_dict'})
+        self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
 
     def convert_to_sgd(self, model, lr, weight_decay, decay_type, decay_rate):
         self.lr = lr

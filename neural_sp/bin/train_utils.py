@@ -120,11 +120,17 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
 
     # Restore parameters
     logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
-    model.load_state_dict(checkpoint['state_dict'])
+    try:
+        model.load_state_dict(checkpoint['model_state_dict'])
+    except KeyError:
+        model.load_state_dict(checkpoint['state_dict'])
 
     # Restore optimizer
     if optimizer is not None:
-        optimizer.load_state_dict(checkpoint['optimizer'])  # LRScheduler class
+        try:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        except KeyError:
+            optimizer.load_state_dict(checkpoint['optimizer'])
         for state in optimizer.optimizer.state.values():
             for k, v in state.items():
                 if torch.is_tensor(v):
@@ -158,8 +164,8 @@ def save_checkpoint(model, optimizer, save_path, remove_old_checkpoints=True):
 
     # Save parameters, optimizer, step index etc.
     checkpoint = {
-        "state_dict": model.module.state_dict(),
-        "optimizer": optimizer.state_dict(),  # LRScheduler class
+        "model_state_dict": model.module.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),  # LRScheduler class
     }
     torch.save(checkpoint, model_path)
 
