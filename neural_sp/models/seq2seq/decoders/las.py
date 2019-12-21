@@ -444,7 +444,7 @@ class RNNDecoder(DecoderBase):
 
         loss_quantity = 0.
         if self.quantity_loss_weight > 0:
-            assert self.attn_type == 'mocha'
+            assert self.attn_type in ['mocha', 'gmm']
             n_tokens_pred = torch.cat(aws, dim=2).squeeze(1).sum(2).sum(1)
             n_tokens_ref = (ys_out != self.pad).sum(1).float()
             loss_quantity = torch.mean(torch.abs(n_tokens_pred - n_tokens_ref))
@@ -474,15 +474,14 @@ class RNNDecoder(DecoderBase):
             dstates (dict):
                 dout (FloatTensor): `[B, 1, dec_n_units]`
                 dstate (tuple): A tuple of (hxs, cxs)
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
+                    hxs (FloatTensor): `[n_layers, B, dec_n_units]`
+                    cxs (FloatTensor): `[n_layers, B, dec_n_units]`
 
         """
         dstates = {'dstate': None}
         w = next(self.parameters())
-        state = w.new_zeros((batch_size, self.dec_n_units))
-        hxs = [state for _ in range(self.n_layers)]
-        cxs = [state for _ in range(self.n_layers)] if self.rnn_type == 'lstm' else []
+        hxs = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
+        cxs = w.new_zeros(self.n_layers, batch_size, self.dec_n_units) if self.rnn_type == 'lstm' else None
         dstates['dstate'] = (hxs, cxs)
         return dstates
 
@@ -493,39 +492,43 @@ class RNNDecoder(DecoderBase):
             inputs (FloatTensor): `[B, 1, emb_dim + enc_n_units]`
             dstate (tuple): A tuple of (hxs, cxs)
         Returns:
-            dstates_new (dict):
+            new_dstates (dict):
                 dout_score (FloatTensor): `[B, 1, dec_n_units]`
                 dout_gen (FloatTensor): `[B, 1, dec_n_units]`
                 dstate (tuple): A tuple of (hxs, cxs)
-                    hxs (list of FloatTensor):
-                    cxs (list of FloatTensor):
+                    hxs (FloatTensor): `[n_layers, B, dec_n_units]`
+                    cxs (FloatTensor): `[n_layers, B, dec_n_units]`
 
         """
         hxs, cxs = dstate
+        dout = inputs.squeeze(1)
 
-        dstates_new = {'dout_score': None,  # for attention scoring
+        new_dstates = {'dout_score': None,  # for attention scoring
                        'dout_gen': None,  # for token generation
                        'dstate': None}
 
-        dout = inputs.squeeze(1)
-
+        new_hxs, new_cxs = [], []
         for l in range(self.n_layers):
             if self.rnn_type == 'lstm':
-                hxs[l], cxs[l] = self.rnn[l](dout, (hxs[l], cxs[l]))
+                h, c = self.rnn[l](dout, (hxs[l], cxs[l]))
+                new_cxs.append(c)
             elif self.rnn_type == 'gru':
-                hxs[l] = self.rnn[l](dout, hxs[l])
-            dout = self.dropout(hxs[l])
+                h = self.rnn[l](dout, hxs[l])
+            new_hxs.append(h)
+            dout = self.dropout(h)
             if self.n_projs > 0:
                 dout = torch.tanh(self.proj[l](dout))
-
+            # use output in the first layer for attention scoring
             if l == 0:
-                # use output in the first layer for attention scoring
-                dstates_new['dout_score'] = dout.unsqueeze(1)
+                new_dstates['dout_score'] = dout.unsqueeze(1)
+        new_hxs = torch.stack(new_hxs, dim=0)
+        if self.rnn_type == 'lstm':
+            new_cxs = torch.stack(new_cxs, dim=0)
 
         # use oupput in the the last layer for label generation
-        dstates_new['dout_gen'] = dout.unsqueeze(1)
-        dstates_new['dstate'] = (hxs[:], cxs[:])
-        return dstates_new
+        new_dstates['dout_gen'] = dout.unsqueeze(1)
+        new_dstates['dstate'] = (new_hxs, new_cxs)
+        return new_dstates
 
     def generate(self, cv, dout, lmout):
         """Generate function.
@@ -814,6 +817,7 @@ class RNNDecoder(DecoderBase):
                 ytime = int(math.floor(elens[b] * max_len_ratio)) + 1
             for t in range(ytime):
                 new_hyps = []
+
                 for beam in hyps:
                     if self.replace_sos and t == 0:
                         prev_idx = refs_id[0][0]
@@ -1001,25 +1005,25 @@ class RNNDecoder(DecoderBase):
             eos_flags.append(eos_flag)
 
             if utt_ids is not None:
-                logger.debug('Utt-id: %s' % utt_ids[b])
+                logger.info('Utt-id: %s' % utt_ids[b])
             if refs_id is not None and self.vocab == idx2token.vocab:
-                logger.debug('Ref: %s' % idx2token(refs_id[b]))
+                logger.info('Ref: %s' % idx2token(refs_id[b]))
             for k in range(len(end_hyps)):
-                logger.debug('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:]
-                                                   [::-1] if self.bwd else end_hyps[k]['hyp'][1:]))
-                logger.debug('log prob (hyp): %.7f' % end_hyps[k]['score'])
-                logger.debug('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
-                logger.debug('log prob (hyp, cp): %.7f' % (end_hyps[k]['score_cp'] * cp_weight))
+                logger.info('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:]
+                                                  [::-1] if self.bwd else end_hyps[k]['hyp'][1:]))
+                logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
+                logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
+                logger.info('log prob (hyp, cp): %.7f' % (end_hyps[k]['score_cp'] * cp_weight))
                 if ctc_weight > 0 and ctc_log_probs is not None:
-                    logger.debug('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
+                    logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                 if lm_weight > 0 and lm is not None:
-                    logger.debug('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
+                    logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_2nd is not None:
-                        logger.debug('log prob (hyp, second-path lm): %.7f' %
-                                     (end_hyps[k]['score_lm_2nd'] * lm_weight))
+                        logger.info('log prob (hyp, second-path lm): %.7f' %
+                                    (end_hyps[k]['score_lm_2nd'] * lm_weight))
                     if lm_2nd_rev is not None:
-                        logger.debug('log prob (hyp, second-path lm, reverse): %.7f' %
-                                     (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
+                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
+                                    (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
 
         # Concatenate in L dimension
         for b in range(len(aws)):

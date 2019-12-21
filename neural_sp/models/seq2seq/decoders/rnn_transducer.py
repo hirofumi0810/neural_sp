@@ -16,7 +16,6 @@ import numpy as np
 import random
 import torch
 import torch.nn as nn
-import warp_rnnt
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.seq2seq.decoders.ctc import CTC
@@ -257,6 +256,7 @@ class RNNTransducer(DecoderBase):
         # loss = self.warprnnt_loss(log_probs, ys_out.int(), elens, ylens)
         # NOTE: Transducer loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warprnnt_pytorch
+        import warp_rnnt
         loss = warp_rnnt.rnnt_loss(log_probs, ys_out.int(), elens, ylens,
                                    average_frames=False,
                                    reduction='mean',
@@ -275,15 +275,15 @@ class RNNTransducer(DecoderBase):
         """Combine encoder outputs and prediction network outputs.
 
         Args:
-            eouts (FloatTensor): `[B, T, n_units]`
-            douts (FloatTensor): `[B, L, n_units]`
+            eouts (FloatTensor): `[B, T, dec_n_units]`
+            douts (FloatTensor): `[B, L, dec_n_units]`
         Returns:
             out (FloatTensor): `[B, T, L, vocab]`
 
         """
         # broadcast
-        eouts = eouts.unsqueeze(2)  # `[B, T, 1, n_units]`
-        douts = douts.unsqueeze(1)  # `[B, 1, L, n_units]`
+        eouts = eouts.unsqueeze(2)  # `[B, T, 1, dec_n_units]`
+        douts = douts.unsqueeze(1)  # `[B, 1, L, dec_n_units]`
         out = non_linear(self.w_enc(eouts) + self.w_dec(douts))
         out = self.output(out)
         return out
@@ -294,13 +294,13 @@ class RNNTransducer(DecoderBase):
         Args:
             ys_emb (FloatTensor): `[B, L, emb_dim]`
             dstate (dict):
-                hxs (FloatTensor): `[n_layers, B, n_units]`
-                cxs (FloatTensor): `[n_layers, B, n_units]`
+                hxs (FloatTensor): `[n_layers, B, dec_n_units]`
+                cxs (FloatTensor): `[n_layers, B, dec_n_units]`
         Returns:
             dout (FloatTensor): `[B, L, emb_dim]`
             new_dstate (dict):
-                hxs (FloatTensor): `[n_layers, B, n_units]`
-                cxs (FloatTensor): `[n_layers, B, n_units]`
+                hxs (FloatTensor): `[n_layers, B, dec_n_units]`
+                cxs (FloatTensor): `[n_layers, B, dec_n_units]`
 
         """
         if dstate is None:
@@ -310,12 +310,12 @@ class RNNTransducer(DecoderBase):
         new_hxs, new_cxs = [], []
         for l in range(self.n_layers):
             if self.rnn_type == 'lstm_transducer':
-                ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(dstate['hxs'][l:l + 1],
-                                                             dstate['cxs'][l:l + 1]))
-                new_cxs.append(c_l)
+                ys_emb, (h, c) = self.rnn[l](ys_emb, hx=(dstate['hxs'][l:l + 1],
+                                                         dstate['cxs'][l:l + 1]))
+                new_cxs.append(c)
             elif self.rnn_type == 'gru_transducer':
-                ys_emb, h_l = self.rnn[l](ys_emb, hx=dstate['hxs'][l:l + 1])
-            new_hxs.append(h_l)
+                ys_emb, h = self.rnn[l](ys_emb, hx=dstate['hxs'][l:l + 1])
+            new_hxs.append(h)
             ys_emb = self.dropout(ys_emb)
             if self.n_projs > 0:
                 ys_emb = torch.tanh(self.proj[l](ys_emb))
@@ -334,20 +334,15 @@ class RNNTransducer(DecoderBase):
             batch_size (int): batch size
         Returns:
             zero_state (dict):
-                hxs (FloatTensor): `[n_layers, B, n_units]`
-                cxs (FloatTensor): `[n_layers, B, n_units]`
+                hxs (FloatTensor): `[n_layers, B, dec_n_units]`
+                cxs (FloatTensor): `[n_layers, B, dec_n_units]`
 
         """
         w = next(self.parameters())
         zero_state = {'hxs': None, 'cxs': None}
-        hxs, cxs = [], []
-        for l in range(self.n_layers):
-            if self.rnn_type == 'lstm_transducer':
-                cxs.append(w.new_zeros(1, batch_size, self.dec_n_units))
-            hxs.append(w.new_zeros(1, batch_size, self.dec_n_units))
-        zero_state['hxs'] = torch.cat(hxs, dim=0)  # `[n_layers, B, dec_n_units]`
+        zero_state['hxs'] = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
         if self.rnn_type == 'lstm_transducer':
-            zero_state['cxs'] = torch.cat(cxs, dim=0)  # `[n_layers, B, dec_n_units]`
+            zero_state['cxs'] = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
         return zero_state
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
