@@ -408,8 +408,7 @@ class RNNDecoder(DecoderBase):
             # Recurrency -> Score -> Generate
             y_emb = self.dropout_emb(self.embed(
                 self.output(logits[-1]).detach().argmax(-1))) if is_sample else ys_emb[:, t:t + 1]
-            dstates, cv, aw, attn_v = self.decode_step(
-                eouts, dstates, cv, y_emb, mask, aw, lmout, mode='parallel')
+            dstates, cv, aw, attn_v = self.decode_step(eouts, dstates, cv, y_emb, mask, aw, lmout, mode='parallel')
             # if not self.training:
             aws.append(aw.transpose(2, 1).unsqueeze(2))  # `[B, n_heads, 1, T]`
             logits.append(attn_v)
@@ -638,8 +637,7 @@ class RNNDecoder(DecoderBase):
 
             # Recurrency -> Score -> Generate
             y_emb = self.dropout_emb(self.embed(y))
-            dstates, cv, aw, attn_v = self.decode_step(
-                eouts, dstates, cv, y_emb, mask, aw, lmout)
+            dstates, cv, aw, attn_v = self.decode_step(eouts, dstates, cv, y_emb, mask, aw, lmout)
             aws_batch += [aw.transpose(2, 1).unsqueeze(2)]  # `[B, n_heads, 1, T]`
 
             # Pick up 1-best
@@ -736,7 +734,7 @@ class RNNDecoder(DecoderBase):
             scores (list):
 
         """
-        bs = eouts.size(0)
+        bs, xmax, _ = eouts.size()
         n_models = len(ensmbl_decs) + 1
 
         oracle = params['recog_oracle']
@@ -774,9 +772,8 @@ class RNNDecoder(DecoderBase):
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
-            dstates = self.zero_state(1)
-            cv = eouts.new_zeros(1, 1, self.enc_n_units)
             self.score.reset()
+            dstates = self.zero_state(1)
             lmstate = None
 
             # Ensemble initialization
@@ -803,8 +800,8 @@ class RNNDecoder(DecoderBase):
                      'score_ctc': 0.,
                      'score_lm': 0.,
                      'dstates': dstates,
-                     'cv': cv,
-                     'aws': [None],
+                     'cv': eouts.new_zeros(1, 1, self.enc_n_units),
+                     'aws': [eouts.new_zeros(1, xmax, self.score.n_heads)],
                      'lmstate': lmstate,
                      'ensmbl_dstate': ensmbl_dstate,
                      'ensmbl_cv': ensmbl_cv,
@@ -816,68 +813,104 @@ class RNNDecoder(DecoderBase):
             else:
                 ytime = int(math.floor(elens[b] * max_len_ratio)) + 1
             for t in range(ytime):
-                new_hyps = []
-
-                for beam in hyps:
+                # preprocess for batch decoding
+                y = eouts.new_zeros(len(hyps), 1).long()
+                cv, aw = [], []
+                hxs, cxs = [], []
+                lm_hxs, lm_cxs = [], []
+                for j, beam in enumerate(hyps):
                     if self.replace_sos and t == 0:
                         prev_idx = refs_id[0][0]
                     else:
                         prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam['hyp'][-1]
-                    y = eouts.new_zeros(1, 1).fill_(prev_idx).long()
+                    y[j, 0] = prev_idx
 
-                    lmout, lmstate, lm_log_probs = None, None, None
-                    if self.lm is not None:
-                        # Update LM states for LM fusion
-                        lmout, lmstate, lm_log_probs = self.lm.predict(y, beam['lmstate'])
-                    elif lm_weight > 0 and lm is not None:
-                        # Update LM states for shallow fusion
-                        lmout, lmstate, lm_log_probs = lm.predict(y, beam['lmstate'])
+                    cv += [beam['cv']]
+                    aw += [beam['aws'][-1]]
+                    hxs += [beam['dstates']['dstate'][0]]
+                    if self.rnn_type == 'lstm':
+                        cxs += [beam['dstates']['dstate'][1]]
+                    if (lm is not None or self.lm is not None) and beam['lmstate'] is not None:
+                        lm_hxs += [beam['lmstate']['hxs']]
+                        lm_cxs += [beam['lmstate']['cxs']]
 
-                    # for the main model
-                    y_emb = self.dropout_emb(self.embed(y))
-                    dstates, cv, aw, attn_v = self.decode_step(
-                        eouts[b:b + 1, :elens[b]],
-                        beam['dstates'], beam['cv'], y_emb,
-                        None,  # mask
-                        beam['aws'][-1], lmout)
-                    probs = torch.softmax(self.output(attn_v).squeeze(1), dim=1)
+                cv = torch.cat(cv, dim=0)
+                aw = torch.cat(aw, dim=0)
+                hxs = torch.cat(hxs, dim=1)
+                if self.rnn_type == 'lstm':
+                    cxs = torch.cat(cxs, dim=1)
+                dstates = {'dstate': (hxs, cxs)}
+                if (lm is not None or self.lm is not None) and beam['lmstate'] is not None:
+                    lm_hxs = torch.cat(lm_hxs, dim=1)
+                    lm_cxs = torch.cat(lm_cxs, dim=1)
+                    lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
+                else:
+                    lmstate = None
 
-                    # for the ensemble
-                    ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
-                    if n_models > 1:
-                        for i_e, dec in enumerate(ensmbl_decs):
-                            y_emb = dec.dropout_emb(dec.embed(y))
-                            ensmbl_dstate, cv_e, aw_e, attn_v_e = dec.decode_step(
-                                ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]],
-                                beam['ensmbl_dstate'][i_e], beam['ensmbl_cv'], y_emb,
-                                None,  # mask
-                                beam['ensmbl_aws'][-1], lmout)
+                lmout, scores_lm = None, None
+                if self.lm is not None:
+                    # Update LM states for LM fusion
+                    lmout, lmstate, scores_lm = self.lm.predict(y, lmstate)
+                elif lm_weight > 0 and lm is not None:
+                    # Update LM states for shallow fusion
+                    lmout, lmstate, scores_lm = lm.predict(y, lmstate)
 
-                            ensmbl_dstate += [ensmbl_dstate]
-                            ensmbl_cv += [cv_e]
-                            ensmbl_aws += [aw_e.unsqueeze(0)]  # TODO(hirofumi): unsqueeze?
-                            probs += torch.softmax(dec.output(attn_v_e).squeeze(1), dim=1)
-                            # NOTE: sum in the probability scale (not log-scale)
+                # for the main model
+                dstates, cv, aw, attn_v = self.decode_step(
+                    eouts[b:b + 1, :elens[b]].repeat([cv.size(0), 1, 1]),
+                    dstates, cv, self.dropout_emb(self.embed(y)), None, aw, lmout)
+                probs = torch.softmax(self.output(attn_v).squeeze(1), dim=1)
 
-                    # Ensemble in log-scale
-                    local_scores_attn = torch.log(probs)
-                    local_scores_attn /= n_models
+                # for the ensemble
+                ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
+                if n_models > 1:
+                    for i_e, dec in enumerate(ensmbl_decs):
+                        cv_e, aw_e = [], []
+                        hxs_e, cxs_e = [], []
+                        for j, beam in enumerate(hyps):
+                            cv_e += [beam['ensmbl_cv'][i_e]]
+                            aw_e += [beam['ensmbl_aws'][i_e][-1]]
+                            hxs_e += [beam['ensmbl_dstate'][i_e]['dstate'][0]]
+                            if self.rnn_type == 'lstm':
+                                cxs_e += [beam['dstates'][i_e]['dstate'][1]]
 
+                        cv_e = torch.cat(cv_e, dim=0)
+                        aw_e = torch.cat(aw_e, dim=0)
+                        hxs_e = torch.cat(hxs_e, dim=1)
+                        if self.rnn_type == 'lstm':
+                            cxs_e = torch.cat(cxs_e, dim=1)
+                        dstates_e = {'dstate': (hxs_e, cxs_e)}
+
+                        dstate_e, cv_e, aw_e, attn_v_e = dec.decode_step(
+                            ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]].repeat([cv_e.size(0), 1, 1]),
+                            dstates_e, cv_e, dec.dropout_emb(dec.embed(y)), None, aw_e, lmout)
+
+                        ensmbl_dstate += [{'dstate': (beam['dstates'][i_e]['dstate'][0][:, j:j + 1],
+                                                      beam['dstates'][i_e]['dstate'][1][:, j:j + 1])}]
+                        ensmbl_cv += [cv_e[j:j + 1]]
+                        ensmbl_aws += [beam['ensmbl_aws'][i_e] + [aw_e[j:j + 1]]]
+                        probs += torch.softmax(dec.output(attn_v_e).squeeze(1), dim=1)
+                        # NOTE: sum in the probability scale (not log-scale)
+
+                # Ensemble in log-scale
+                scores_attn = torch.log(probs) / n_models
+
+                new_hyps = []
+                for j, beam in enumerate(hyps):
                     # Attention scores
-                    scores_attn = beam['score_attn'] + local_scores_attn
-                    total_scores = scores_attn * (1 - ctc_weight)
+                    total_scores_attn = beam['score_attn'] + scores_attn[j:j + 1]
+                    total_scores = total_scores_attn * (1 - ctc_weight)
 
                     # Add LM score <after> top-K selection
                     total_scores_topk, topk_ids = torch.topk(
                         total_scores, k=beam_width, dim=1, largest=True, sorted=True)
                     if lm_weight > 0 and lm is not None:
-                        total_scores_lm = beam['score_lm'] + lm_log_probs[0, -1, topk_ids[0]]
+                        total_scores_lm = beam['score_lm'] + scores_lm[j, -1, topk_ids[0]]
                         total_scores_topk += total_scores_lm * lm_weight
                     else:
-                        total_scores_lm = torch.zeros((beam_width), dtype=torch.float32)
+                        total_scores_lm = eouts.new_zeros(beam_width)
 
                     # Add length penalty
-                    lp = 1.
                     if lp_weight > 0:
                         if gnmt_decoding:
                             lp = math.pow(6 + len(beam['hyp'][1:]), lp_weight) / math.pow(6, lp_weight)
@@ -886,7 +919,6 @@ class RNNDecoder(DecoderBase):
                             total_scores_topk += (len(beam['hyp'][1:]) + 1) * lp_weight
 
                     # Add coverage penalty
-                    cp = 0.
                     if cp_weight > 0:
                         aw_mat = torch.stack(beam['aws'][1:] + [aw], dim=-1)  # `[B, T, L, n_heads]`
                         aw_mat = aw_mat[:, :, :, 0]
@@ -896,13 +928,15 @@ class RNNDecoder(DecoderBase):
                             # TODO(hirofumi): mask by elens[b]
                             total_scores_topk += cp * cp_weight
                         else:
-                            # Recompute converage penalty in each step
+                            # Recompute converage penalty at each step
                             if cp_threshold == 0:
                                 cp = aw_mat.sum() / self.score.n_heads
                             else:
                                 cp = torch.where(aw_mat > cp_threshold, aw_mat,
                                                  aw_mat.new_zeros(aw_mat.size())).sum() / self.score.n_heads
                             total_scores_topk += cp * cp_weight
+                    else:
+                        cp = 0.
 
                     # CTC score
                     if ctc_weight > 0 and ctc_log_probs is not None:
@@ -915,7 +949,7 @@ class RNNDecoder(DecoderBase):
                             total_scores_topk, k=beam_width, dim=1, largest=True, sorted=True)
                         topk_ids = topk_ids[:, joint_ids_topk[0]]
                     else:
-                        total_scores_ctc = torch.zeros((beam_width,), dtype=torch.float32)
+                        total_scores_ctc = eouts.new_zeros(beam_width)
 
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
@@ -924,32 +958,32 @@ class RNNDecoder(DecoderBase):
                             length_norm_factor = len(beam['hyp'][1:]) + 1
                         total_score = total_scores_topk[0, k].item() / length_norm_factor
 
-                        # Exclude short hypotheses
                         if idx == self.eos:
+                            # Exclude short hypotheses
                             if len(beam['hyp']) - 1 < elens[b] * min_len_ratio:
                                 continue
                             # EOS threshold
-                            max_score_no_eos = local_scores_attn[0, :idx].max(0)[0].item()
-                            max_score_no_eos = max(max_score_no_eos, local_scores_attn[0, idx + 1:].max(0)[0].item())
-                            if local_scores_attn[0, idx].item() <= eos_threshold * max_score_no_eos:
+                            max_score_no_eos = scores_attn[j, :idx].max(0)[0].item()
+                            max_score_no_eos = max(max_score_no_eos, scores_attn[j, idx + 1:].max(0)[0].item())
+                            if scores_attn[j, idx].item() <= eos_threshold * max_score_no_eos:
                                 continue
 
                         new_hyps.append(
                             {'hyp': beam['hyp'] + [idx],
                              'score': total_score,
                              'hist_score': beam['hist_score'] + [total_score],
-                             'score_attn': scores_attn[0, idx].item(),
+                             'score_attn': total_scores_attn[0, idx].item(),
                              'score_cp': cp,
                              'score_ctc': total_scores_ctc[k].item(),
                              'score_lm': total_scores_lm[k].item(),
-                             'dstates': dstates,
-                             'cv': cv,
-                             'aws': beam['aws'] + [aw],
-                             'lmstate': lmstate,
+                             'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1], dstates['dstate'][1][:, j:j + 1])},
+                             'cv': cv[j:j + 1],
+                             'aws': beam['aws'] + [aw[j:j + 1]],
+                             'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]},
+                             'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_weight > 0 and ctc_log_probs is not None else None，
                              'ensmbl_dstate': ensmbl_dstate,
                              'ensmbl_cv': ensmbl_cv,
-                             'ensmbl_aws': ensmbl_aws,
-                             'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_weight > 0 and ctc_log_probs is not None else None})
+                             'ensmbl_aws': ensmbl_aws})
 
                 # Local pruning
                 new_hyps_tmp = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
@@ -1054,8 +1088,8 @@ class RNNDecoder(DecoderBase):
             ys_in = pad_list([y[:-1] for y in ys], -1)  # `[1, L-1]`
             ys_out = pad_list([y[1:] for y in ys], -1)  # `[1, L-1]`
 
-            lmout, lmstate, lm_log_probs = lm.predict(ys_in, None)
-            score_lm = sum([lm_log_probs[0, t, ys_out[0, t]] for t in range(ys_out.size(1))])
+            lmout, lmstate, scores_lm = lm.predict(ys_in, None)
+            score_lm = sum([scores_lm[0, t, ys_out[0, t]] for t in range(ys_out.size(1))])
             score_lm /= ys_out.size(1)
 
             hyps[i]['score'] += score_lm * lm_weight
