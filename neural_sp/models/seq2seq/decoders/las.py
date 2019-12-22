@@ -801,7 +801,7 @@ class RNNDecoder(DecoderBase):
                      'score_lm': 0.,
                      'dstates': dstates,
                      'cv': eouts.new_zeros(1, 1, self.enc_n_units),
-                     'aws': [eouts.new_zeros(1, xmax, self.score.n_heads)],
+                     'aws': [None],
                      'lmstate': lmstate,
                      'ensmbl_dstate': ensmbl_dstate,
                      'ensmbl_cv': ensmbl_cv,
@@ -826,7 +826,8 @@ class RNNDecoder(DecoderBase):
                     y[j, 0] = prev_idx
 
                     cv += [beam['cv']]
-                    aw += [beam['aws'][-1]]
+                    if beam['aws'][-1] is not None:
+                        aw += [beam['aws'][-1]]
                     hxs += [beam['dstates']['dstate'][0]]
                     if self.rnn_type == 'lstm':
                         cxs += [beam['dstates']['dstate'][1]]
@@ -835,7 +836,10 @@ class RNNDecoder(DecoderBase):
                         lm_cxs += [beam['lmstate']['cxs']]
 
                 cv = torch.cat(cv, dim=0)
-                aw = torch.cat(aw, dim=0)
+                if beam['aws'][-1] is not None:
+                    aw = torch.cat(aw, dim=0)
+                else:
+                    aw = None
                 hxs = torch.cat(hxs, dim=1)
                 if self.rnn_type == 'lstm':
                     cxs = torch.cat(cxs, dim=1)
@@ -979,7 +983,7 @@ class RNNDecoder(DecoderBase):
                              'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1], dstates['dstate'][1][:, j:j + 1])},
                              'cv': cv[j:j + 1],
                              'aws': beam['aws'] + [aw[j:j + 1]],
-                             'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]},
+                             'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                              'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_weight > 0 and ctc_log_probs is not None else None,
                              'ensmbl_dstate': ensmbl_dstate,
                              'ensmbl_cv': ensmbl_cv,
