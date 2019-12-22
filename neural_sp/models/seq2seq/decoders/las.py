@@ -980,7 +980,7 @@ class RNNDecoder(DecoderBase):
                              'cv': cv[j:j + 1],
                              'aws': beam['aws'] + [aw[j:j + 1]],
                              'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]},
-                             'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_weight > 0 and ctc_log_probs is not None else None，
+                             'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_weight > 0 and ctc_log_probs is not None else None,
                              'ensmbl_dstate': ensmbl_dstate,
                              'ensmbl_cv': ensmbl_cv,
                              'ensmbl_aws': ensmbl_aws})
