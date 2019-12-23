@@ -280,9 +280,9 @@ class Dataset(object):
 
         # Re-indexing
         self.df = df.reset_index()
-
         if shuffle_bucket:
-            self.df_indices = self.backeting(batch_size)
+            self.df_indices_buckets = self.backeting(batch_size)
+            self.n_buckets = len(self.df_indices_buckets)
         else:
             self.df_indices = list(self.df.index)
 
@@ -292,12 +292,13 @@ class Dataset(object):
     @property
     def epoch_detail(self):
         """Percentage of the current epoch."""
-        return 1 - (len(self.df_indices) / len(self))
+        return self.offset / len(self)
 
     def reset(self):
         """Reset data counter and offset."""
         if self.shuffle_bucket:
-            self.df_indices = self.backeting(self.batch_size)
+            self.df_indices_buckets = self.backeting(self.batch_size)
+            self.n_buckets = len(self.df_indices_buckets)
         else:
             self.df_indices = list(self.df.index)
         self.offset = 0
@@ -370,6 +371,13 @@ class Dataset(object):
                     self.n_utt_session_dict_epoch = copy.deepcopy(self.n_utt_session_dict)
                     is_new_epoch = True
 
+        elif self.shuffle_bucket:
+            df_indices_mb = self.df_indices_buckets.pop(0)
+            self.offset += len(df_indices_mb)
+            is_new_epoch = len(self.df_indices_buckets) == 0
+
+            # Shuffle uttrances in mini-batch
+            df_indices_mb = random.sample(df_indices_mb, len(df_indices_mb))
         else:
             if len(self.df_indices) > batch_size:
                 # Change batch size dynamically
@@ -382,6 +390,7 @@ class Dataset(object):
             else:
                 # Last mini-batch
                 df_indices_mb = self.df_indices[:]
+                self.offset = len(self)
                 is_new_epoch = True
 
                 # Change batch size dynamically
@@ -473,15 +482,18 @@ class Dataset(object):
         return max(1, batch_size)
 
     def backeting(self, batch_size):
-        df_indices = []
+        df_indices_buckets = []  # list of list
         offset = 0
         while True:
             min_xlen = self.df[offset:offset + 1]['xlen'].values[0]
             min_ylen = self.df[offset:offset + 1]['ylen'].values[0]
             batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
             df_indices_mb = list(self.df[offset:offset + batch_size].index)
-            df_indices += df_indices_mb
+            df_indices_buckets.append(df_indices_mb)
             offset += len(df_indices_mb)
             if offset + batch_size >= len(self):
                 break
-        return df_indices
+
+        # shuffle buckets
+        random.shuffle(df_indices_buckets)
+        return df_indices_buckets
