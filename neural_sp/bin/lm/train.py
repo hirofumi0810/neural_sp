@@ -98,18 +98,16 @@ def main():
                       bptt=args.bptt,
                       backward=args.backward,
                       serialize=args.serialize)
-    eval_sets = []
-    for s in args.eval_sets:
-        eval_sets += [Dataset(corpus=args.corpus,
-                              tsv_path=s,
-                              dict_path=args.dict,
-                              nlsyms=args.nlsyms,
-                              unit=args.unit,
-                              wp_model=args.wp_model,
-                              batch_size=1,
-                              bptt=args.bptt,
-                              backward=args.backward,
-                              serialize=args.serialize)]
+    eval_sets = [Dataset(corpus=args.corpus,
+                         tsv_path=s,
+                         dict_path=args.dict,
+                         nlsyms=args.nlsyms,
+                         unit=args.unit,
+                         wp_model=args.wp_model,
+                         batch_size=1,
+                         bptt=args.bptt,
+                         backward=args.backward,
+                         serialize=args.serialize) for s in args.eval_sets]
 
     args.vocab = train_set.vocab
 

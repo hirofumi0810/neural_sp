@@ -169,17 +169,15 @@ def main():
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
                       discourse_aware=args.discourse_aware)
-    eval_sets = []
-    for s in args.eval_sets:
-        eval_sets += [Dataset(corpus=args.corpus,
-                              tsv_path=s,
-                              dict_path=args.dict,
-                              nlsyms=args.nlsyms,
-                              unit=args.unit,
-                              wp_model=args.wp_model,
-                              batch_size=1,
-                              discourse_aware=args.discourse_aware,
-                              is_test=True)]
+    eval_sets = [Dataset(corpus=args.corpus,
+                         tsv_path=s,
+                         dict_path=args.dict,
+                         nlsyms=args.nlsyms,
+                         unit=args.unit,
+                         wp_model=args.wp_model,
+                         batch_size=1,
+                         discourse_aware=args.discourse_aware,
+                         is_test=True) for s in args.eval_sets]
 
     args.vocab = train_set.vocab
     args.vocab_sub1 = train_set.vocab_sub1
