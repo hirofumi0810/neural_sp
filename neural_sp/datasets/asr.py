@@ -280,7 +280,11 @@ class Dataset(object):
 
         # Re-indexing
         self.df = df.reset_index()
-        self.df_indices = list(self.df.index)
+
+        if shuffle_bucket:
+            self.df_indices = self.backeting(batch_size)
+        else:
+            self.df_indices = list(self.df.index)
 
     def __len__(self):
         return len(self.df)
@@ -292,7 +296,10 @@ class Dataset(object):
 
     def reset(self):
         """Reset data counter and offset."""
-        self.df_indices = list(self.df.index)
+        if self.shuffle_bucket:
+            self.df_indices = self.backeting(self.batch_size)
+        else:
+            self.df_indices = list(self.df.index)
         self.offset = 0
 
     def next(self, batch_size=None):
@@ -301,7 +308,7 @@ class Dataset(object):
         Args:
             batch_size (int): size of mini-batch
         Returns:
-            batch (dict):
+            mini_batch (dict):
             is_new_epoch (bool): flag for the end of the current epoch
 
         """
@@ -311,8 +318,8 @@ class Dataset(object):
         if self.epoch >= self.max_epoch:
             raise StopIteration
 
-        df_indices, is_new_epoch = self.sample_index(batch_size)
-        batch = self.make_batch(df_indices)
+        df_indices_mb, is_new_epoch = self.sample_index(batch_size)
+        mini_batch = self.make_mini_batch(df_indices_mb)
 
         if is_new_epoch:
             # shuffle the whole data
@@ -330,7 +337,7 @@ class Dataset(object):
             self.reset()
             self.epoch += 1
 
-        return batch, is_new_epoch
+        return mini_batch, is_new_epoch
 
     def sample_index(self, batch_size):
         """Sample data indices of mini-batch.
@@ -338,7 +345,7 @@ class Dataset(object):
         Args:
             batch_size (int): size of mini-batch
         Returns:
-            df_indices (np.ndarray): indices for dataframe
+            df_indices_mb (np.ndarray): indices of dataframe in the current mini-batch
             is_new_epoch (bool): flag for the end of the current epoch
 
         """
@@ -347,8 +354,8 @@ class Dataset(object):
         if self.discourse_aware:
             n_utt = min(self.n_utt_session_dict_epoch.keys())
             assert self.utt_offset < n_utt
-            df_indices = [self.df[self.session_offset_dict[session_id] + self.utt_offset:self.session_offset_dict[session_id] + self.utt_offset + 1].index[0]
-                          for session_id in self.n_utt_session_dict_epoch[n_utt][:batch_size]]
+            df_indices_mb = [self.df[self.session_offset_dict[session_id] + self.utt_offset:self.session_offset_dict[session_id] + self.utt_offset + 1].index[0]
+                             for session_id in self.n_utt_session_dict_epoch[n_utt][:batch_size]]
 
             self.utt_offset += 1
             if self.utt_offset == n_utt:
@@ -365,55 +372,41 @@ class Dataset(object):
 
         else:
             if len(self.df_indices) > batch_size:
-                if self.shuffle_bucket:
-                    # Sample offset randomly
-                    offset = random.sample(self.df_indices, 1)[0]
-                    df_indices_offset = self.df_indices.index(offset)
-                else:
-                    offset = self.offset
-
                 # Change batch size dynamically
-                if self.sort_by is not None:
-                    min_xlen = self.df[offset:offset + 1]['xlen'].values[0]
-                    min_ylen = self.df[offset:offset + 1]['ylen'].values[0]
-                    batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
+                min_xlen = self.df[self.offset:self.offset + 1]['xlen'].values[0]
+                min_ylen = self.df[self.offset:self.offset + 1]['ylen'].values[0]
+                batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
 
-                if self.shuffle_bucket:
-                    if len(self.df_indices[df_indices_offset:]) < batch_size:
-                        df_indices = self.df_indices[df_indices_offset:][:]
-                    else:
-                        df_indices = self.df_indices[df_indices_offset:df_indices_offset + batch_size][:]
-                else:
-                    df_indices = list(self.df[offset:offset + batch_size].index)
-                    self.offset += len(df_indices)
+                df_indices_mb = list(self.df[self.offset:self.offset + batch_size].index)
+                self.offset += len(df_indices_mb)
             else:
                 # Last mini-batch
-                df_indices = self.df_indices[:]
+                df_indices_mb = self.df_indices[:]
                 is_new_epoch = True
 
                 # Change batch size dynamically
-                if self.sort_by is not None:
-                    min_xlen = self.df[df_indices[0]:df_indices[0] + 1]['xlen'].values[0]
-                    min_ylen = self.df[df_indices[0]:df_indices[0] + 1]['ylen'].values[0]
-                    batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
-                    # Remove the rest
-                    df_indices = df_indices[:batch_size]
+                min_xlen = self.df[df_indices_mb[0]:df_indices_mb[0] + 1]['xlen'].values[0]
+                min_ylen = self.df[df_indices_mb[0]:df_indices_mb[0] + 1]['ylen'].values[0]
+                batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
+
+                # Remove the rest
+                df_indices_mb = df_indices_mb[:batch_size]
 
             # Shuffle uttrances in mini-batch
-            df_indices = random.sample(df_indices, len(df_indices))
+            df_indices_mb = random.sample(df_indices_mb, len(df_indices_mb))
 
-            for i in df_indices:
+            for i in df_indices_mb:
                 self.df_indices.remove(i)
 
-        return df_indices, is_new_epoch
+        return df_indices_mb, is_new_epoch
 
-    def make_batch(self, df_indices):
+    def make_mini_batch(self, df_indices_mb):
         """Create mini-batch per step.
 
         Args:
-            df_indices (np.ndarray): indices for dataframe
+            df_indices_mb (np.ndarray): indices of dataframe in the current mini-batch
         Returns:
-            batch (dict):
+            mini_batch_dict (dict):
                 xs (list): input data of size `[T, input_dim]`
                 xlens (list): lengths of xs
                 ys (list): reference labels in the main task of size `[L]`
@@ -425,46 +418,46 @@ class Dataset(object):
 
         """
         # inputs
-        xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in df_indices]
+        xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in df_indices_mb]
 
         # outputs
         if self.is_test:
-            ys = [self.token2idx[0](self.df['text'][i]) for i in df_indices]
+            ys = [self.token2idx[0](self.df['text'][i]) for i in df_indices_mb]
         else:
-            ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in df_indices]
+            ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in df_indices_mb]
 
-        ys_hist = [[] for _ in range(len(df_indices))]
+        ys_hist = [[] for _ in range(len(df_indices_mb))]
         if self.discourse_aware:
-            for j, i in enumerate(df_indices):
+            for j, i in enumerate(df_indices_mb):
                 for idx in self.df['prev_utt'][i]:
                     ys_hist[j].append(list(map(int, str(self.df['token_id'][idx]).split())))
 
         ys_sub1 = []
         if self.df_sub1 is not None:
-            ys_sub1 = [list(map(int, str(self.df_sub1['token_id'][i]).split())) for i in df_indices]
+            ys_sub1 = [list(map(int, str(self.df_sub1['token_id'][i]).split())) for i in df_indices_mb]
         elif self.vocab_sub1 > 0 and not self.is_test:
-            ys_sub1 = [self.token2idx[1](self.df['text'][i]) for i in df_indices]
+            ys_sub1 = [self.token2idx[1](self.df['text'][i]) for i in df_indices_mb]
 
         ys_sub2 = []
         if self.df_sub2 is not None:
-            ys_sub2 = [list(map(int, str(self.df_sub2['token_id'][i]).split())) for i in df_indices]
+            ys_sub2 = [list(map(int, str(self.df_sub2['token_id'][i]).split())) for i in df_indices_mb]
         elif self.vocab_sub2 > 0 and not self.is_test:
-            ys_sub2 = [self.token2idx[2](self.df['text'][i]) for i in df_indices]
+            ys_sub2 = [self.token2idx[2](self.df['text'][i]) for i in df_indices_mb]
 
-        batch_dict = {
+        mini_batch_dict = {
             'xs': xs,
-            'xlens': [self.df['xlen'][i] for i in df_indices],
+            'xlens': [self.df['xlen'][i] for i in df_indices_mb],
             'ys': ys,
             'ys_hist': ys_hist,
             'ys_sub1': ys_sub1,
             'ys_sub2': ys_sub2,
-            'utt_ids': [self.df['utt_id'][i] for i in df_indices],
-            'speakers': [self.df['speaker'][i] for i in df_indices],
-            'sessions': [self.df['session'][i] for i in df_indices],
-            'text': [self.df['text'][i] for i in df_indices],
-            'feat_path': [self.df['feat_path'][i] for i in df_indices],  # for plot
+            'utt_ids': [self.df['utt_id'][i] for i in df_indices_mb],
+            'speakers': [self.df['speaker'][i] for i in df_indices_mb],
+            'sessions': [self.df['session'][i] for i in df_indices_mb],
+            'text': [self.df['text'][i] for i in df_indices_mb],
+            'feat_path': [self.df['feat_path'][i] for i in df_indices_mb],  # for plot
         }
-        return batch_dict
+        return mini_batch_dict
 
     def set_batch_size(self, batch_size, min_xlen, min_ylen):
         if not self.dynamic_batching:
@@ -478,3 +471,17 @@ class Dataset(object):
             batch_size //= 4
 
         return max(1, batch_size)
+
+    def backeting(self, batch_size):
+        df_indices = []
+        offset = 0
+        while True:
+            min_xlen = self.df[offset:offset + 1]['xlen'].values[0]
+            min_ylen = self.df[offset:offset + 1]['ylen'].values[0]
+            batch_size = self.set_batch_size(batch_size, min_xlen, min_ylen)
+            df_indices_mb = list(self.df[offset:offset + batch_size].index)
+            df_indices += df_indices_mb
+            offset += len(df_indices_mb)
+            if offset + batch_size >= len(self):
+                break
+        return df_indices
