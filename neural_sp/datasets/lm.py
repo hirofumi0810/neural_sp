@@ -35,7 +35,7 @@ np.random.seed(1)
 class Dataset(object):
 
     def __init__(self, tsv_path, dict_path,
-                 unit, batch_size, nlsyms=False, n_epochs=None,
+                 unit, batch_size, nlsyms=False, n_epochs=1000,
                  is_test=False, min_n_tokens=1, bptt=2,
                  shuffle=False, backward=False, serialize=False,
                  wp_model=None, corpus=''):
@@ -47,7 +47,7 @@ class Dataset(object):
             unit (str): word or wp or char or phone or word_char
             batch_size (int): size of mini-batch
             nlsyms (str): path to the non-linguistic symbols file
-            n_epochs (int): max epoch. None means infinite loop
+            n_epochs (int): total epochs for training
             is_test (bool):
             min_n_tokens (int): exclude utterances shorter than this value
             bptt (int): BPTT length
@@ -162,9 +162,7 @@ class Dataset(object):
             batch_size (int): size of mini-batch
             bptt (int): BPTT length
         Returns:
-            batch (dict):
-                ys (list): target labels in the main task of size `[B, L]`
-                utt_ids (list): file names of input data of size `[B]`
+            ys (np.ndarray): target labels in the main task of size `[B, bptt]`
             is_new_epoch (bool): flag for the end of the current epoch
 
         """
@@ -179,9 +177,8 @@ class Dataset(object):
         if bptt is None:
             bptt = self.bptt
 
-        if self.max_epoch is not None and self.epoch >= self.max_epoch:
+        if self.epoch >= self.max_epoch:
             raise StopIteration
-            # NOTE: max_epoch == None means infinite loop
 
         ys = self.concat_ids[:, self.offset:self.offset + bptt]
         self.offset += bptt - 1

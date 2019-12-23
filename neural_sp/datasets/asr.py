@@ -16,7 +16,6 @@ from __future__ import print_function
 import codecs
 import copy
 import kaldiio
-import math
 import numpy as np
 import os
 import pandas as pd
@@ -47,7 +46,7 @@ def count_vocab_size(dict_path):
 class Dataset(object):
 
     def __init__(self, tsv_path, dict_path,
-                 unit, batch_size, nlsyms=False, n_epochs=None,
+                 unit, batch_size, nlsyms=False, n_epochs=1000,
                  is_test=False, min_n_frames=40, max_n_frames=2000,
                  shuffle_bucket=False, sort_by='utt_id',
                  short2long=False, sort_stop_epoch=None, dynamic_batching=False,
@@ -65,7 +64,7 @@ class Dataset(object):
             unit (str): word or wp or char or phone or word_char
             batch_size (int): size of mini-batch
             nlsyms (str): path to the non-linguistic symbols file
-            n_epochs (int): max epoch. None means infinite loop.
+            n_epochs (int): total epochs for training.
             is_test (bool):
             min_n_frames (int): exclude utterances shorter than this value
             max_n_frames (int): exclude utterances longer than this value
@@ -157,7 +156,7 @@ class Dataset(object):
         # Load dataset tsv file
         df = pd.read_csv(tsv_path, encoding='utf-8', delimiter='\t')
         df = df.loc[:, ['utt_id', 'speaker', 'feat_path',
-                                  'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
+                        'xlen', 'xdim', 'text', 'token_id', 'ylen', 'ydim']]
         for i in range(1, 3):
             if locals()['tsv_path_sub' + str(i)]:
                 df_sub = pd.read_csv(locals()['tsv_path_sub' + str(i)], encoding='utf-8', delimiter='\t')
@@ -309,9 +308,8 @@ class Dataset(object):
         if batch_size is None:
             batch_size = self.batch_size
 
-        if self.max_epoch is not None and self.epoch >= self.max_epoch:
+        if self.epoch >= self.max_epoch:
             raise StopIteration
-            # NOTE: max_epoch == None means infinite loop
 
         df_indices, is_new_epoch = self.sample_index(batch_size)
         batch = self.make_batch(df_indices)
