@@ -224,6 +224,8 @@ def parse():
                         help='epoch to stop soring utterances by length')
     parser.add_argument('--sort_short2long', type=strtobool, default=True,
                         help='sort utterances in the ascending order')
+    parser.add_argument('--shuffle_bucket', type=strtobool, default=False,
+                        help='gather the similar length of utterances and shuffle them')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
                         help='first epoch to start evalaution')
     parser.add_argument('--warmup_start_lr', type=float, default=0,

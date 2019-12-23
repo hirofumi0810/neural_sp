@@ -134,6 +134,7 @@ def main():
                         n_epochs=args.n_epochs,
                         min_n_frames=args.min_n_frames,
                         max_n_frames=args.max_n_frames,
+                        shuffle_bucket=args.shuffle_bucket,
                         sort_by='input',
                         short2long=args.sort_short2long,
                         sort_stop_epoch=args.sort_stop_epoch,
