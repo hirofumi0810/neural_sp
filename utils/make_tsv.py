@@ -113,6 +113,10 @@ def main():
             words.remove('')
         text = ' '.join(words)
 
+        # Skip empty line
+        if text == '':
+            continue
+
         if args.feat:
             feat_path = utt2featpath[utt_id]
             if utt_id in utt2num_frames.keys():
