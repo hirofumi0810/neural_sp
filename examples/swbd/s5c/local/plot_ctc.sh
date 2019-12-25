@@ -11,7 +11,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/inaguma/corpus/swbd
+data=/n/work1/inaguma/corpus/swbd
 
 unit=
 batch_size=1

@@ -2,6 +2,7 @@
 n_stacks: 1
 n_skips: 1
 max_n_frames: 2000
+conv_in_channel: 1
 conv_channels: "32_32"
 conv_kernel_sizes: "(3,3)_(3,3)"
 conv_strides: "(1,1)_(1,1)"
@@ -15,9 +16,9 @@ enc_n_projs: 0
 enc_n_layers: 6
 subsample_type: drop
 attn_type: location
-attn_dim: 512
 attn_conv_n_channels: 10
 attn_conv_width: 201
+attn_dim: 512
 attn_n_heads: 1
 dec_type: lstm
 dec_n_units: 1024

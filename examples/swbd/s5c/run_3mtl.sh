@@ -59,9 +59,9 @@ set -u
 set -o pipefail
 
 if [ ${speed_perturb} = true ]; then
-    conf2=conf/asr/speed_perturb.yaml
+    conf2=conf/speed_perturb.yaml
 elif [ ${specaug} = true ]; then
-    conf2=conf/asr/spec_augment.yaml
+    conf2=conf/spec_augment.yaml
 fi
 
 if [ -z ${gpu} ]; then
