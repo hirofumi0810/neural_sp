@@ -16,9 +16,9 @@ enc_n_projs: 0
 enc_n_layers: 5
 subsample_type: drop
 attn_type: location
-attn_dim: 512
 attn_conv_n_channels: 10
 attn_conv_width: 201
+attn_dim: 512
 attn_n_heads: 1
 dec_type: lstm
 dec_n_units: 1024

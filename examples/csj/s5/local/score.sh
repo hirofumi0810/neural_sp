@@ -74,7 +74,7 @@ for set in eval1 eval2 eval3; do
             recog_dir=${recog_dir}_wordlm
         fi
     fi
-    if [ ! -z ${lm_second} ] && [ ${lm_weight} != 0 ]; then
+    if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
