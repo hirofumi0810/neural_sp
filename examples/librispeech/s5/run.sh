@@ -4,17 +4,18 @@
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 echo ============================================================================
-echo "                              LibriSpeech                                  "
+echo "                                LibriSpeech                               "
 echo ============================================================================
 
 stage=0
+stop_stage=5
 gpu=
 specaug=false
 stdout=false
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char
-vocab=30000
+vocab=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
 
 #########################
@@ -72,7 +73,7 @@ set -u
 set -o pipefail
 
 if [ ${specaug} = true ]; then
-    conf2=conf/asr/spec_augment.yaml
+    conf2=conf/spec_augment.yaml
 fi
 
 if [ -z ${gpu} ]; then
@@ -97,7 +98,7 @@ if [ ${unit} != wp ]; then
     wp_type=
 fi
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
@@ -127,7 +128,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize} ]; then
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1_${datasize} ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
@@ -173,7 +174,7 @@ fi
 
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab}.txt; mkdir -p ${data}/dict
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab} ]; then
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
@@ -223,7 +224,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
 fi
 
 mkdir -p ${model}
-if [ ${stage} -le 3 ]; then
+if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo ============================================================================
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
@@ -267,7 +268,6 @@ if [ ${stage} -le 3 ]; then
                  ${data}/dataset_lm/test_clean_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
                  ${data}/dataset_lm/test_other_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv"
 
-    # NOTE: support only a single GPU for LM training
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus librispeech \
         --config ${lm_conf} \
@@ -282,10 +282,10 @@ if [ ${stage} -le 3 ]; then
         --stdout ${stdout} \
         --resume ${lm_resume} || exit 1;
 
-    echo "Finish LM training (stage: 3)." && exit 1;
+    echo "Finish LM training (stage: 3)."
 fi
 
-if [ ${stage} -le 4 ]; then
+if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
