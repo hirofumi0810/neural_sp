@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
+import math
 import numpy as np
 import torch
 import torch.nn as nn
@@ -271,7 +272,7 @@ class RNNEncoder(EncoderBase):
         self.fwd_states = [None] * self.n_layers
         logger.debug('Reset cache.')
 
-    def forward(self, xs, xlens, task, use_cache=False, streaming=True):
+    def forward(self, xs, xlens, task, use_cache=False, streaming=False):
         """Forward computation.
 
         Args:
@@ -302,21 +303,21 @@ class RNNEncoder(EncoderBase):
         # Dropout for inputs-hidden connection
         xs = self.dropout_in(xs)
 
+        # Path through CNN blocks before RNN layers
+        if self.conv is not None:
+            xs, xlens = self.conv(xs, xlens)
+            if self.rnn_type in ['conv', 'tds', 'gated_conv']:
+                eouts['ys']['xs'] = xs
+                eouts['ys']['xlens'] = xlens
+                return eouts
+
         if self.latency_controlled:
             if not use_cache:
                 self.reset_cache()
 
             # Flip the layer and time loop
-            xs, xlens = self._forward_streaming(xs, xlens)
+            xs, xlens = self._forward_streaming(xs, xlens, streaming)
         else:
-            # Path through CNN blocks before RNN layers
-            if self.conv is not None:
-                xs, xlens = self.conv(xs, xlens)
-                if self.rnn_type in ['conv', 'tds', 'gated_conv']:
-                    eouts['ys']['xs'] = xs
-                    eouts['ys']['xlens'] = xlens
-                    return eouts
-
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
                 xs = self.padding(xs, xlens, self.rnn[l], self.bidirectional_sum_fwd_bwd)
@@ -360,7 +361,7 @@ class RNNEncoder(EncoderBase):
             eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens_sub2
         return eouts
 
-    def _forward_streaming(self, xs, xlens):
+    def _forward_streaming(self, xs, xlens, streaming):
         """Streaming encoding for the latency-controlled bidirectional encoder.
 
         Args:
@@ -369,16 +370,11 @@ class RNNEncoder(EncoderBase):
             xs (FloatTensor): `[B, T, n_units]`
 
         """
-        bs, xmax, input_dim = xs.size()
-        cs_l = self.lc_chunk_size_left
-        cs_r = self.lc_chunk_size_right
+        cs_l = self.lc_chunk_size_left // self.subsampling_factor()
+        cs_r = self.lc_chunk_size_right // self.subsampling_factor()
 
         # full context BPTT
         if cs_l < 0:
-            # Path through CNN blocks before RNN layers
-            if self.conv is not None:
-                xs, xlens = self.conv(xs, xlens)
-
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
                 self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
@@ -399,27 +395,13 @@ class RNNEncoder(EncoderBase):
                     xs = torch.tanh(self.proj[l](xs))
             return xs, xlens
 
-        # zero padding on the right side
-        n_pad = cs_l - ((xmax - cs_r) % cs_l) + cs_r
-        if n_pad > 0:
-            zero_pad = xs.new_zeros(bs, n_pad, input_dim)
-            xs = torch.cat([xs, zero_pad], dim=1)
-        n_chunks = (xs.size(1) - cs_r) // cs_l
-        xlens = torch.IntTensor(bs).fill_(n_chunks * cs_l)
+        bs, xmax, input_dim = xs.size()
+        n_chunks = 1 if streaming else math.ceil(xmax / cs_l)
+        xlens = torch.IntTensor(bs).fill_(cs_l if streaming else xmax)
 
-        # Path through CNN blocks before RNN layers
-        if self.conv is not None:
-            xs = torch.cat([xs[:, t:t + cs_l + cs_r] for t in range(0, cs_l * n_chunks, cs_l)], dim=1)
-            xs = xs.view(-1, (cs_l + cs_r) * n_chunks, input_dim)
-            xs, xlens = self.conv(xs, xlens)
-            xs = xs.view(bs, -1, self.conv.output_dim)
-
-        cs_l //= self.subsampling_factor()
-        cs_r //= self.subsampling_factor()
         xs_chunks = []
         for t in range(0, cs_l * n_chunks, cs_l):
-            xs_chunk = xs[:, t:t + cs_l + cs_r]
-
+            xs_chunk = xs[:, t:t + (cs_l + cs_r)]
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
                 self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
@@ -428,9 +410,12 @@ class RNNEncoder(EncoderBase):
                 xs_chunk_bwd, _ = self.rnn_bwd[l](xs_chunk_bwd, hx=None)
                 xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, cs_l+cs_r, n_units]`
                 # fwd
-                xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :cs_l], hx=self.fwd_states[l])
-                xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, cs_l:], hx=self.fwd_states[l])
-                xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, cs_l+cs_r, n_units]`
+                if xs_chunk.size(1) <= cs_l:
+                    xs_chunk_fwd, self.fwd_states[l] = self.rnn[l](xs_chunk, hx=self.fwd_states[l])
+                else:
+                    xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :cs_l], hx=self.fwd_states[l])
+                    xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, cs_l:], hx=self.fwd_states[l])
+                    xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, cs_l+cs_r, n_units]`
                 # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer
                 if self.bidirectional_sum_fwd_bwd:
                     xs_chunk = xs_chunk_fwd + xs_chunk_bwd
