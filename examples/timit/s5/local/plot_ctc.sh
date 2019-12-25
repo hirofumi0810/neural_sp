@@ -8,7 +8,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/sd3/inaguma/corpus/timit
+data=/n/work1/inaguma/corpus/timit
 
 batch_size=1
 

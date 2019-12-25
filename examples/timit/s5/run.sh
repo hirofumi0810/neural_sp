@@ -14,20 +14,18 @@ stdout=false
 #########################
 # ASR configuration
 #########################
-asr_conf=conf/ctc.yaml
-# asr_conf=conf/attention.yaml
-# asr_conf=conf/rnn_transducer.yaml
-pretrained_model=
+conf=conf/ctc.yaml
+conf2=
 
 
 ### path to save the model
-model=/n/sd3/inaguma/result/timit
+model=/n/work1/inaguma/results/timit
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-export data=/n/sd3/inaguma/corpus/timit
+export data=/n/work1/inaguma/corpus/timit
 
 ### path to original data
 TIMITDATATOP=/n/rd21/corpora_1/TIMIT
@@ -124,7 +122,7 @@ if [ ${stage} -le 4 ]; then
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus timit \
-        --config ${asr_conf} \
+        --config ${conf} \
         --n_gpus ${n_gpus} \
         --train_set ${data}/dataset/${train_set}.tsv \
         --dev_set ${data}/dataset/${dev_set}.tsv \
@@ -133,7 +131,6 @@ if [ ${stage} -le 4 ]; then
         --dict ${dict} \
         --model_save_dir ${model}/asr \
         --model ${model}/asr \
-        --pretrained_model ${pretrained_model} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 

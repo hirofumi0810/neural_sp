@@ -11,11 +11,14 @@ conv_poolings: "(1,1)_(1,1)"
 conv_batch_norm: false
 subsample: "1_1_1_1_1"
 enc_type: blstm
+bidirectional_sum_fwd_bwd: false
 enc_n_units: 256
 enc_n_projs: 0
 enc_n_layers: 5
 subsample_type: drop
 attn_type: location
+attn_conv_n_channels: 10
+attn_conv_width: 201
 attn_dim: 256
 attn_n_heads: 1
 dec_type: lstm
@@ -56,10 +59,8 @@ weight_decay: 1e-6
 ss_prob: 0.0
 ss_type: constant
 lsm_prob: 0.0
-focal_loss_weight: 0.0
 ### MTL
-ctc_weight: 1.0
+ctc_weight: 0.0
 ctc_lsm_prob: 0.0
-bwd_weight: 0.0
 mtl_per_batch: false
 task_specific_layer: false
