@@ -4,16 +4,23 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
+"""Utility functions for evaluation."""
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import logging
 import os
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 def average_checkpoints(model, best_model_path, epoch, n_average):
     if n_average == 1:
         return model
 
-    logger = logging.getLogger('decoding')
     n_models = 1
     state_dict_ave = model.state_dict()
     for i in range(epoch - 1, 0, -1):

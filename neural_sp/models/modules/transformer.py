@@ -51,6 +51,8 @@ class PositionalEncoding(nn.Module):
 
             self.dropout = nn.Dropout(p=dropout)
 
+        logger.info('Positional encoding: %s' % pe_type)
+
     def forward(self, xs):
         xs = xs * math.sqrt(self.d_model)
 

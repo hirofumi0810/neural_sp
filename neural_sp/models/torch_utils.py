@@ -91,7 +91,6 @@ def make_pad_mask(seq_lens, device_id=-1):
 
     if device_id >= 0:
         mask = mask.cuda(device_id)
-
     return mask
 
 

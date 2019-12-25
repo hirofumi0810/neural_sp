@@ -49,7 +49,7 @@ class Dataset(object):
                  unit, batch_size, nlsyms=False, n_epochs=1000,
                  is_test=False, min_n_frames=40, max_n_frames=2000,
                  shuffle_bucket=False, sort_by='utt_id',
-                 short2long=False, sort_stop_epoch=None, dynamic_batching=False,
+                 short2long=False, sort_stop_epoch=1000, dynamic_batching=False,
                  ctc=False, subsample_factor=1, wp_model=False, corpus='',
                  tsv_path_sub1=False, dict_path_sub1=False, unit_sub1=False,
                  wp_model_sub1=False, ctc_sub1=False, subsample_factor_sub1=1,

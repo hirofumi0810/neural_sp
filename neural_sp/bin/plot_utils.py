@@ -70,11 +70,11 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
         if ctc_probs is not None:
             plt.subplot(n_col, 1, n_col - 1)
             times_probs = np.arange(ctc_probs.shape[0])
-            for i in ctc_indices_topk:
-                if i == 0:
+            for idx in set(ctc_indices_topk.reshape(-1).tolist()):
+                if idx == 0:
                     plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
                 else:
-                    plt.plot(times_probs, ctc_probs[:, i])
+                    plt.plot(times_probs, ctc_probs[:, idx])
             plt.ylabel('CTC posteriors', fontsize=12)
             plt.tick_params(labelbottom=False)
             plt.yticks(list(range(0, 2, 1)))
@@ -160,7 +160,7 @@ def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
     plt.close()
 
 
-def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space_id=None, hyp='',
+def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space=-1, hyp='',
                    spectrogram=None, save_path=None, figsize=(20, 8), topk=None):
     """Plot CTC posteriors.
 
@@ -168,7 +168,7 @@ def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space_id=None, hyp
         ctc_probs (np.ndarray): A tensor of size `[T, vocab]`
         indices_topk ():
         subsample_factor (int): the number of frames to stack
-        space_id (int):
+        space (int): index for space mark
         hyp (str):
         save_path (str): path to save a figure
         figsize (tuple):
@@ -188,15 +188,13 @@ def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space_id=None, hyp
 
     if spectrogram is None:
         # NOTE: index 0 is reserved for blank
-        if 0 not in indices_topk:
-            plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
-        for i in indices_topk:
-            if i == 0:
+        for idx in set(indices_topk.reshape(-1).tolist()):
+            if idx == 0:
                 plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
-            elif space_id is not None and i == space_id:
-                plt.plot(times_probs, ctc_probs[:, space_id], label='<space>', color='black')
+            elif idx == space:
+                plt.plot(times_probs, ctc_probs[:, space], label='<space>', color='black')
             else:
-                plt.plot(times_probs, ctc_probs[:, i])
+                plt.plot(times_probs, ctc_probs[:, idx])
         plt.xlabel(u'Time [sec]', fontsize=12)
         plt.ylabel('Posteriors', fontsize=12)
         plt.xticks(list(range(0, int(n_frames * subsample_factor / 100) + 1, 1)))
@@ -204,15 +202,13 @@ def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space_id=None, hyp
     else:
         plt.subplot(211)
         # NOTE: index 0 is reserved for blank
-        if 0 not in indices_topk:
-            plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
-        for i in indices_topk:
-            if i == 0:
+        for idx in set(indices_topk.reshape(-1).tolist()):
+            if idx == 0:
                 plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
-            elif space_id is not None and i == space_id:
-                plt.plot(times_probs, ctc_probs[:, space_id], label='<space>', color='black')
+            elif idx == space:
+                plt.plot(times_probs, ctc_probs[:, space], label='<space>', color='black')
             else:
-                plt.plot(times_probs, ctc_probs[:, i])
+                plt.plot(times_probs, ctc_probs[:, idx])
         plt.ylabel('Posteriors', fontsize=12)
         plt.tick_params(labelbottom=False)
         plt.yticks(list(range(0, 2, 1)))
@@ -232,8 +228,8 @@ def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space_id=None, hyp
     plt.close()
 
 
-def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, n_frames, subsample_factor,
-                                space_id=None, hyp='', hyp_sub='',
+def plot_hierarchical_ctc_probs(ctc_probs, indices_topk, ctc_probs_sub, indices_topk_sub,
+                                subsample_factor, space=-1, space_sub=-1, hyp='', hyp_sub='',
                                 spectrogram=None, save_path=None, figsize=(20, 8)):
     """Plot CTC posteriors for the hierarchical model.
 
@@ -244,13 +240,14 @@ def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, n_frames, subsample_fa
         subsample_factor (int):
         save_path (str): path to save a figure
         figsize (tuple):
-        space_id (int):
+        space (int): index for space mark
 
     """
     # TODO(hirofumi): add spectrogram
 
     plt.clf()
     plt.figure(figsize=figsize)
+    n_frames = ctc_probs.shape[0]
     times_probs = np.arange(n_frames) * subsample_factor / 100
     if len(hyp) > 0:
         plt.title(hyp)
@@ -261,11 +258,13 @@ def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, n_frames, subsample_fa
     plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
 
     # Plot only top-k
-    # indices = np.argmax(ctc_probs[:, 1:], axis=-1)
-    # plt.plot(times_probs, ctc_probs[:, indices])
-    # for i in range(1, ctc_probs.shape[-1], 1):
-    for i in range(1, 100, 1):
-        plt.plot(times_probs, ctc_probs[:, i])
+    for idx in set(indices_topk.reshape(-1).tolist()):
+        if idx == 0:
+            plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
+        elif idx == space:
+            plt.plot(times_probs, ctc_probs[:, space], label='<space>', color='black')
+        else:
+            plt.plot(times_probs, ctc_probs[:, idx])
 
     plt.ylabel('Posteriors (Word)', fontsize=12)
     plt.xlim([0, n_frames * subsample_factor / 100])
@@ -276,11 +275,13 @@ def plot_hierarchical_ctc_probs(ctc_probs, ctc_probs_sub, n_frames, subsample_fa
 
     plt.subplot(212)
     plt.plot(times_probs, ctc_probs_sub[:, 0], ':', label='<blank>', color='grey')
-    for i in range(1, ctc_probs_sub.shape[-1], 1):
-        if space_id is not None and i == space_id:
-            plt.plot(times_probs, ctc_probs_sub[:, space_id], label='<space>', color='black')
+    for idx in set(indices_topk_sub.reshape(-1).tolist()):
+        if idx == 0:
+            plt.plot(times_probs, ctc_probs_sub[:, 0], ':', label='<blank>', color='grey')
+        elif idx == space_sub:
+            plt.plot(times_probs, ctc_probs_sub[:, space_sub], label='<space>', color='black')
         else:
-            plt.plot(times_probs, ctc_probs_sub[:, i])
+            plt.plot(times_probs, ctc_probs_sub[:, idx])
     plt.xlabel(u'Time [sec]', fontsize=12)
     plt.ylabel('Posteriors (Char)', fontsize=12)
     plt.xlim([0, n_frames * subsample_factor / 100])
