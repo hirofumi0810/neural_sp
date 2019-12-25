@@ -13,13 +13,14 @@ from __future__ import print_function
 import logging
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from neural_sp.models.base import ModelBase
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
+
+logger = logging.getLogger(__name__)
 
 
 class LMBase(ModelBase):
@@ -28,20 +29,19 @@ class LMBase(ModelBase):
     def __init__(self, args):
 
         super(ModelBase, self).__init__()
-        logger = logging.getLogger('training')
+        logger.info(self.__class__.__name__)
         logger.info('Overriding LMBase class.')
 
     def reset_parameters(self, param_init):
         raise NotImplementedError
 
-    def forward(self, ys, state=None, reporter=None, is_eval=False, n_caches=0,
+    def forward(self, ys, state=None, is_eval=False, n_caches=0,
                 ylens=[], predict_last=False):
         """Forward computation.
 
         Args:
             ys (list): A list of length `[B]`, which contains arrays of size `[L]`
             state (tuple or list): (h_n, c_n) or (hxs, cxs)
-            reporter ():
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
             n_caches (int):
@@ -50,31 +50,24 @@ class LMBase(ModelBase):
         Returns:
             loss (FloatTensor): `[1]`
             state (tuple or list): (h_n, c_n) or (hxs, cxs)
-            reporter ():
+            observation (dict):
 
         """
         if is_eval:
             self.eval()
             with torch.no_grad():
-                loss, state, reporter = self._forward(ys, state, reporter, n_caches, predict_last)
+                loss, state, observation = self._forward(ys, state, n_caches, predict_last)
         else:
             self.train()
-            loss, state, reporter = self._forward(ys, state, reporter)
+            loss, state, observation = self._forward(ys, state)
+        return loss, state, observation
 
-        return loss, state, reporter
-
-    def _forward(self, ys, state, reporter, n_caches=0, predict_last=False):
+    def _forward(self, ys, state, n_caches=0, predict_last=False):
         ys = [np2tensor(y, self.device_id) for y in ys]  # <eos> is included
-        ylens = np2tensor(np.fromiter([y.size(0) - 1 for y in ys], dtype=np.int32))  # -1 for <eos>
         ys = pad_list(ys, self.pad)
-        ys_in = ys[:, :-1]
-        ys_out = ys[:, 1:]
+        ys_in, ys_out = ys[:, :-1], ys[:, 1:]
 
-        out, state = self.decode(ys_in, state)
-        if self.adaptive_softmax is None:
-            logits = self.output(out)
-        else:
-            logits = out
+        logits, out, state = self.decode(ys_in, state)
 
         if predict_last:
             ys_out = ys_out[:, -1].unsqueeze(1)
@@ -85,7 +78,7 @@ class LMBase(ModelBase):
             assert ys_out.size(1) == 1
             assert ys_out.size(0) == 1
             if self.adaptive_softmax is None:
-                probs = F.softmax(logits, dim=-1)
+                probs = torch.softmax(logits, dim=-1)
             else:
                 probs = self.adaptive_softmax.log_prob(logits).exp()
             cache_probs = probs.new_zeros(probs.size())
@@ -95,7 +88,7 @@ class LMBase(ModelBase):
             self.cache_keys = self.cache_keys[-n_caches:]  # list of `[B, 1, n_units]`
 
             # Compute inner-product over caches
-            cache_attn = F.softmax(self.cache_theta * torch.matmul(
+            cache_attn = torch.softmax(self.cache_theta * torch.matmul(
                 torch.cat(self.cache_keys, dim=1), out.transpose(2, 1)).squeeze(2), dim=1)
 
             # For visualization
@@ -110,18 +103,13 @@ class LMBase(ModelBase):
             loss = -torch.log(probs[:, :, ys_out[:, -1]])
         else:
             if self.adaptive_softmax is None:
-                if self.lsm_prob > 0 and self.training:
-                    # Label smoothing
-                    loss = cross_entropy_lsm(logits.view((-1, logits.size(2))),
-                                             ys_out.contiguous().view(-1),
-                                             self.lsm_prob, self.pad)
-                else:
-                    loss = F.cross_entropy(logits.view((-1, logits.size(2))),
-                                           ys_out.contiguous().view(-1),
-                                           ignore_index=self.pad, size_average=True)
+                loss, ppl = cross_entropy_lsm(logits, ys_out.contiguous(),
+                                              self.lsm_prob, self.pad, self.training,
+                                              normalize_length=True)
             else:
                 loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
                                              ys_out.contiguous().view(-1)).loss
+                ppl = np.exp(loss.item())
 
         if n_caches > 0:
             # Register to cache
@@ -135,16 +123,8 @@ class LMBase(ModelBase):
             acc = compute_accuracy(self.adaptive_softmax.log_prob(
                 logits.view((-1, logits.size(2)))), ys_out, pad=self.pad)
 
-        observation = {'loss.lm': loss.item(),
-                       'acc.lm': acc,
-                       'ppl.lm': min(np.exp(loss.item()), np.inf)}
-
-        # Report here
-        if reporter is not None:
-            is_eval = not self.training
-            reporter.add(observation, is_eval)
-
-        return loss, state, reporter
+        observation = {'loss.lm': loss.item(), 'acc.lm': acc, 'ppl.lm': ppl}
+        return loss, state, observation
 
     def repackage_state(self, state):
         return state
@@ -153,27 +133,27 @@ class LMBase(ModelBase):
         raise NotImplementedError
 
     def predict(self, ys, state=None):
-        """Precict function.
+        """Precict function for ASR.
 
         Args:
-            ys (FloatTensor): `[B, T, n_units]`
+            ys (LongTensor): `[B, L]`
             state:
                 - RNNLM: dict
                     hxs (FloatTensor): `[n_layers, B, n_units]`
                     cxs (FloatTensor): `[n_layers, B, n_units]`
-                - TransformerLM: FloatTensor `[B, T', n_units]`
+                - TransformerLM (LongTensor): `[B, L]`
         Returns:
-            out (FloatTensor): `[B, T, vocab]`
+            out (FloatTensor): `[B, L, vocab]`
             state:
                 - RNNLM: dict
                     hxs (FloatTensor): `[n_layers, B, n_units]`
                     cxs (FloatTensor): `[n_layers, B, n_units]`
-                - TransformerLM: FloatTensor `[B, T', n_units]`
-            log_probs (FloatTensor): `[B, T, vocab]`
+                - TransformerLM (LongTensor): `[B, L]`
+            log_probs (FloatTensor): `[B, L, vocab]`
 
         """
-        out, new_state = self.decode(ys, state, is_asr=True)
-        log_probs = F.log_softmax(self.output(out), dim=-1)
+        logits, out, new_state = self.decode(ys, state, cache=True)
+        log_probs = torch.log_softmax(logits, dim=-1)
         return out, new_state, log_probs
 
     def plot_attention(self):

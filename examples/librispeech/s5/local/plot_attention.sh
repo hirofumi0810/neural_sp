@@ -12,7 +12,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/csj
+data=/n/work1/inaguma/corpus/librispeech
 
 unit=
 batch_size=1
@@ -24,7 +24,7 @@ length_norm=false
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
-eos_threshold=1.0
+eos_threshold=1.5
 lm=
 lm_bwd=
 lm_weight=0.3
@@ -35,7 +35,7 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_average=1  # for Transformer
+recog_n_average=1  # for Transformer
 oracle=false
 
 . ./cmd.sh
@@ -53,7 +53,7 @@ if [ -z ${gpu} ]; then
 fi
 gpu=$(echo ${gpu} | cut -d "," -f 1)
 
-for set in eval1 eval2 eval3; do
+for set in dev_clean dev_other test_clean test_other; do
     recog_dir=$(dirname ${model})/plot_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -85,8 +85,8 @@ for set in eval1 eval2 eval3; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${n_average} != 1 ]; then
-        recog_dir=${recog_dir}_average${n_average}
+    if [ ${recog_n_average} != 1 ]; then
+        recog_dir=${recog_dir}_average${recog_n_average}
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ] && [ ${lm_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_LMcarryover
@@ -103,18 +103,12 @@ for set in eval1 eval2 eval3; do
     fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep 'train_sp_') ]; then
-        if [ $(echo ${model} | grep 'all') ]; then
-            recog_set=${data}/dataset/${set}_sp_all_wpbpe10000.tsv
-        elif [ $(echo ${model} | grep 'aps_other') ]; then
-            recog_set=${data}/dataset/${set}_sp_aps_other_wpbpe10000.tsv
-        fi
-    else
-        if [ $(echo ${model} | grep 'all') ]; then
-            recog_set=${data}/dataset/${set}_all_wpbpe10000.tsv
-        elif [ $(echo ${model} | grep 'aps_other') ]; then
-            recog_set=${data}/dataset/${set}_aps_other_wpbpe10000.tsv
-        fi
+    if [ $(echo ${model} | grep '960') ]; then
+        recog_set=${data}/dataset/${set}_960_wpbpe10000.tsv
+    elif [ $(echo ${model} | grep '460') ]; then
+        recog_set=${data}/dataset/${set}_460_wpbpe10000.tsv
+    elif [ $(echo ${model} | grep '100') ]; then
+        recog_set=${data}/dataset/${set}_100_wpbpe1000.tsv
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_attention.py \
@@ -143,7 +137,7 @@ for set in eval1 eval2 eval3; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
-        --recog_n_average ${n_average} \
+        --recog_n_average ${recog_n_average} \
         --recog_oracle ${oracle} \
         --recog_stdout ${stdout} || exit 1;
 done

@@ -12,18 +12,13 @@ from __future__ import print_function
 
 import functools
 from glob import glob
-from logging import DEBUG
-from logging import FileHandler
-from logging import Formatter
-from logging import getLogger
-from logging import StreamHandler
-from logging import WARNING
+import logging
 import os
 import time
 import torch
 import yaml
 
-logger = getLogger('training')
+logger = logging.getLogger(__name__)
 
 
 def measure_time(func):
@@ -63,34 +58,18 @@ def save_config(conf, save_path):
         f.write(yaml.dump({'param': conf}, default_flow_style=False))
 
 
-def set_logger(save_path, key, stdout=False):
+def set_logger(save_path, stdout=False):
     """Set logger.
 
     Args:
-        save_path (str):
-        key (str):
+        save_path (str): path to save a log file
         stdout (bool):
-    Returns:
-        logger ():
 
     """
-    logger = getLogger(key)
-    sh = StreamHandler()
-    fh = FileHandler(save_path)
-
-    logger.setLevel(DEBUG)
-    sh.setLevel(WARNING)
-    fh.setLevel(DEBUG)
-    formatter = Formatter('%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s')
-    sh.setFormatter(formatter)
-    fh.setFormatter(formatter)
-    logger.addHandler(sh)
-    logger.addHandler(fh)
-
-    if stdout:
-        logger.info = lambda x: print(x)
-
-    return logger
+    format = '%(asctime)s %(name)s line:%(lineno)d %(levelname)s: %(message)s'
+    logging.basicConfig(level=logging.DEBUG if stdout else logging.INFO,
+                        format=format,
+                        filename=save_path if not stdout else None)
 
 
 def set_save_path(save_path):
@@ -117,18 +96,13 @@ def set_save_path(save_path):
     return save_path_new
 
 
-def load_checkpoint(model, checkpoint_path, optimizer=None, resume=False):
+def load_checkpoint(model, checkpoint_path, optimizer=None):
     """Load checkpoint.
 
     Args:
         model (torch.nn.Module):
         checkpoint_path (str): path to the saved model (model..epoch-*)
-        epoch (int): negative values mean the offset from the last saved model
-        optimizer ():
-        resume (bool): if True, restore the save optimizer
-    Returns:
-        model (torch.nn.Module):
-        optimizer ():
+        optimizer (LRScheduler): optimizer wrapped by LRScheduler class
 
     """
     if not os.path.isfile(checkpoint_path):
@@ -143,38 +117,39 @@ def load_checkpoint(model, checkpoint_path, optimizer=None, resume=False):
 
     # Restore parameters
     logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
-    model.load_state_dict(checkpoint['state_dict'])
+    try:
+        model.load_state_dict(checkpoint['model_state_dict'])
+    except KeyError:
+        model.load_state_dict(checkpoint['state_dict'])
+        checkpoint['model_state_dict'] = checkpoint['state_dict']
+        checkpoint['optimizer_state_dict'] = checkpoint['optimizer']
+        del checkpoint['state_dict']
+        del checkpoint['optimizer']
+        torch.save(checkpoint, checkpoint_path + '.tmp')
 
     # Restore optimizer
-    if resume:
-        if optimizer is not None:
-            optimizer.load_state_dict(checkpoint['optimizer'])
-            for state in optimizer.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v):
-                        state[k] = v.cuda(0)
-                        # state[k] = v.cuda(self.device_id)
-                        # TODO(hirofumi): Fix for multi-GPU
-            # NOTE: from https://github.com/pytorch/pytorch/issues/2830
-        else:
-            raise ValueError('Set optimizer.')
-
-    return model, optimizer
+    if optimizer is not None:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # NOTE: fix this later
+        optimizer.optimizer.param_groups[0]['params'] = []
+        for param_group in list(model.parameters()):
+            optimizer.optimizer.param_groups[0]['params'].append(param_group)
+    else:
+        logger.warning('Optimizer is not loaded.')
 
 
-def save_checkpoint(model, save_path, optimizer, epoch, remove_old_checkpoints=True):
+def save_checkpoint(model, optimizer, save_path, remove_old_checkpoints=True):
     """Save checkpoint.
 
     Args:
         model (torch.nn.Module):
         save_path (str): path to the directory to save a model
-        optimizer (LRScheduler): optimizer
-        epoch (int): currnet epoch
+        optimizer (LRScheduler): optimizer wrapped by LRScheduler class
         remove_old_checkpoints (bool): if True, all checkpoints
             other than the best one will be deleted
 
     """
-    model_path = os.path.join(save_path, 'model.epoch-' + str(epoch))
+    model_path = os.path.join(save_path, 'model.epoch-' + str(optimizer.n_epochs))
 
     # Remove old checkpoints
     if remove_old_checkpoints:
@@ -183,9 +158,9 @@ def save_checkpoint(model, save_path, optimizer, epoch, remove_old_checkpoints=T
 
     # Save parameters, optimizer, step index etc.
     checkpoint = {
-        "state_dict": model.module.state_dict(),
-        "optimizer": optimizer.state_dict(),  # LR scheduler
+        "model_state_dict": model.module.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),  # LRScheduler class
     }
     torch.save(checkpoint, model_path)
 
-    logger.info("=> Saved checkpoint (epoch:%d): %s" % (epoch, model_path))
+    logger.info("=> Saved checkpoint (epoch:%d): %s" % (optimizer.n_epochs, model_path))

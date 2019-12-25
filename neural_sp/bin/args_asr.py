@@ -32,7 +32,6 @@ def parse():
                         help='print to standard output during training')
     parser.add_argument('--recog_stdout', type=strtobool, default=False,
                         help='print to standard output during evaluation')
-
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')
@@ -107,10 +106,13 @@ def parse():
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
-                        choices=['blstm', 'lstm', 'bgru', 'gru', 'conv',
+                        choices=['blstm', 'lstm', 'bgru', 'gru',
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
-                                 'transformer', 'conv_transformer', 'tds', 'gated_conv'],
+                                 'transformer', 'conv_transformer',
+                                 'conv', 'tds', 'gated_conv'],
                         help='type of the encoder')
+    parser.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
+                        help='sum forward and backward RNN outputs for dimension reduction')
     parser.add_argument('--enc_n_units', type=int, default=512,
                         help='number of units in each encoder RNN layer')
     parser.add_argument('--enc_n_projs', type=int, default=0,
@@ -126,28 +128,40 @@ def parse():
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
-                        choices=['drop', 'concat', 'max_pool'],
+                        choices=['drop', 'concat', 'max_pool', '1dconv'],
                         help='type of subsampling in the encoder')
     parser.add_argument('--freeze_encoder', type=strtobool, default=False,
                         help='freeze the encoder parameter')
+    parser.add_argument('--lc_chunk_size_left', type=int, default=0,
+                        help='left chunk size for latency-controlled bidirectional encoder')
+    parser.add_argument('--lc_chunk_size_right', type=int, default=0,
+                        help='left chunk size for latency-controlled bidirectional encoder')
     # topology (decoder)
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['no', 'location', 'add', 'dot',
                                  'luong_dot', 'luong_general', 'luong_concat',
-                                 'mocha', 'cif'],
+                                 'mocha', 'gmm', 'cif'],
                         help='type of attention for RNN sequence-to-sequence models')
-    parser.add_argument('--mocha_chunk_size', type=int, default=1,
+    parser.add_argument('--mocha_chunk_size', type=int, default=4,
                         help='chunk size for MoChA')
+    parser.add_argument('--mocha_adaptive', type=strtobool, default=False,
+                        help='adaptive MoChA')
+    parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
+                        help='1dconv for MoChA')
+    parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
+                        help='Quantity loss weight for MoChA')
+    parser.add_argument('--gmm_attn_n_mixtures', type=int, default=5,
+                        help='number of mixtures for GMM attention')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='dimension of the attention layer')
     parser.add_argument('--attn_conv_n_channels', type=int, default=10,
                         help='')
-    parser.add_argument('--attn_conv_width', type=int, default=100,
+    parser.add_argument('--attn_conv_width', type=int, default=201,
                         help='')
     parser.add_argument('--attn_n_heads', type=int, default=1,
                         help='number of heads in the attention layer')
-    parser.add_argument('--attn_sharpening', type=float, default=1.0,
-                        help='')
+    parser.add_argument('--attn_sharpening_factor', type=float, default=1.0,
+                        help='sharpening factor')
     parser.add_argument('--attn_sigmoid', type=strtobool, default=False, nargs='?',
                         help='')
     parser.add_argument('--bridge_layer', type=strtobool, default=False,
@@ -208,14 +222,18 @@ def parse():
                         help='number of epochs to tolerate stopping training when validation perfomance is not improved')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
                         help='epoch to stop soring utterances by length')
+    parser.add_argument('--sort_short2long', type=strtobool, default=True,
+                        help='sort utterances in the ascending order')
+    parser.add_argument('--shuffle_bucket', type=strtobool, default=False,
+                        help='gather the similar length of utterances and shuffle them')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
                         help='first epoch to start evalaution')
     parser.add_argument('--warmup_start_lr', type=float, default=0,
                         help='initial learning rate for learning rate warm up')
     parser.add_argument('--warmup_n_steps', type=int, default=0,
                         help='number of steps to warm up learing rate')
-    parser.add_argument('--accum_grad_n_tokens', type=int, default=0,
-                        help='total number of tokens to accumulate gradients')
+    parser.add_argument('--accum_grad_n_steps', type=int, default=1,
+                        help='total number of steps to accumulate gradients')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
                         help='')
@@ -278,9 +296,7 @@ def parse():
                         help='cross etnropy loss weight for the backward decoder in the main task')
     # cold fusion
     parser.add_argument('--lm_fusion_type', type=str, default='cold', nargs='?',
-                        choices=['cold', 'cold_prob', 'cold_recurrency',
-                                 'deep_original', 'deep',
-                                 'cache', 'cache_bi'],
+                        choices=['cold', 'cold_prob', 'deep'],
                         help='type of LM fusion')
     parser.add_argument('--lm_fusion', type=str, default=False, nargs='?',
                         help='LM path for LM fusion during training')
@@ -288,20 +304,23 @@ def parse():
     parser.add_argument('--lm_init', type=str, default=False, nargs='?',
                         help='LM path for initialization of the decoder network')
     # transformer
-    parser.add_argument('--d_model', type=int, default=256,
+    parser.add_argument('--transformer_d_model', type=int, default=256,
                         help='number of units in self-attention layers in Transformer')
-    parser.add_argument('--d_ff', type=int, default=2048,
+    parser.add_argument('--transformer_d_ff', type=int, default=2048,
                         help='number of units in feed-forward fully-conncected layers in Transformer')
     parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
                         choices=['scaled_dot', 'add', 'average'],
                         help='type of attention for Transformer')
-    parser.add_argument('--transformer_attn_n_heads', type=int, default=4,
+    parser.add_argument('--transformer_n_heads', type=int, default=4,
                         help='number of heads in the attention layer for Transformer')
-    parser.add_argument('--pe_type', type=str, default='add',
+    parser.add_argument('--transformer_pe_type', type=str, default='add',
                         choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
                         help='type of positional encoding')
-    parser.add_argument('--layer_norm_eps', type=float, default=1e-12,
+    parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                         help='epsilon value for layer normalization')
+    parser.add_argument('--transformer_ffn_activation', type=str, default='relu',
+                        choices=['relu', 'gelu', 'gelu_accurate', 'glu'],
+                        help='nonlinear activation for position wise feed-forward layer')
     # contextualization
     parser.add_argument('--discourse_aware', type=str, default=False, nargs='?',
                         choices=['state_carry_over', 'hierarchical', ''],
@@ -333,6 +352,8 @@ def parse():
                         help='')
     parser.add_argument('--recog_length_penalty', type=float, default=0.0,
                         help='length penalty')
+    parser.add_argument('--recog_length_norm', type=strtobool, default=False, nargs='?',
+                        help='normalize score by hypothesis length')
     parser.add_argument('--recog_coverage_penalty', type=float, default=0.0,
                         help='coverage penalty')
     parser.add_argument('--recog_coverage_threshold', type=float, default=0.0,
@@ -342,16 +363,19 @@ def parse():
     parser.add_argument('--recog_eos_threshold', type=float, default=1.5,
                         help='threshold for emitting a EOS token')
     parser.add_argument('--recog_lm_weight', type=float, default=0.0,
-                        help='weight of LM score')
+                        help='weight of fisrt-path LM score')
+    parser.add_argument('--recog_lm_second_weight', type=float, default=0.0,
+                        help='weight of second-path LM score')
+    parser.add_argument('--recog_lm_rev_weight', type=float, default=0.0,
+                        help='weight of second-path bakward LM score')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
                         help='weight of CTC score')
     parser.add_argument('--recog_lm', type=str, default=False, nargs='?',
-                        help='LM path')
+                        help='path to first path LM for shallow fusion')
+    parser.add_argument('--recog_lm_second', type=str, default=False, nargs='?',
+                        help='path to second path LM for rescoring')
     parser.add_argument('--recog_lm_bwd', type=str, default=False, nargs='?',
-                        help='LM path in the reverse direction')
-    parser.add_argument('--recog_lm_usage', type=str, default='shallow_fusion', nargs='?',
-                        choices=['shallow_fusion', 'rescoring'],
-                        help='usage of the external LM')
+                        help='path to second path LM in the reverse direction for rescoring')
     parser.add_argument('--recog_resolving_unk', type=strtobool, default=False,
                         help='resolving UNK for the word-based model')
     parser.add_argument('--recog_fwd_bwd_attention', type=strtobool, default=False,
@@ -366,25 +390,8 @@ def parse():
                         help='carry over LM state')
     parser.add_argument('--recog_wordlm', type=strtobool, default=False,
                         help='')
-    parser.add_argument('--recog_n_average', type=int, default=10,
+    parser.add_argument('--recog_n_average', type=int, default=1,
                         help='number of models for the model averaging of Transformer')
-    # cache parameters
-    parser.add_argument('--recog_n_caches', type=int, default=0,
-                        help='number of tokens for cache')
-    parser.add_argument('--recog_cache_theta_speech', type=float, default=0.1,
-                        help='theta paramter for acoustic cache')
-    parser.add_argument('--recog_cache_lambda_speech', type=float, default=0.1,
-                        help='lambda paramter for acoustic cache')
-    parser.add_argument('--recog_cache_theta_lm', type=float, default=0.1,
-                        help='theta paramter for LM cache')
-    parser.add_argument('--recog_cache_lambda_lm', type=float, default=0.1,
-                        help='lambda paramter for LM cache')
-    parser.add_argument('--recog_cache_type', type=str, default='speech',
-                        choices=['speech_fifo', 'speech_fifo_online',
-                                 'speech_dict', 'speech_dict_overwrite',
-                                 'lm_fifo', 'lm_fifo_online',
-                                 'lm_dict', 'lm_dict_overwrite', ],
-                        help='cache type')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')
@@ -394,11 +401,6 @@ def parse():
                         help='Teacher LM for knowledge distillation')
     parser.add_argument('--soft_label_weight', type=float, default=0.1,
                         help='KL-div loss weight for soft labels')
-    # pre-training
-    parser.add_argument('--am_pretrain_type', type=str, default='masked_audio_lm',
-                        choices=['audio_lm', 'masked_audio_lm',
-                                 'dae', 'mass'],
-                        help='')
     # special label
     parser.add_argument('--replace_sos', type=strtobool, default=False,
                         help='')

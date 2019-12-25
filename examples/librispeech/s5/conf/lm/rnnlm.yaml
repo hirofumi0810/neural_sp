@@ -16,8 +16,8 @@ n_epochs: 40
 convert_to_sgd_epoch: 40
 print_step: 2000
 lr: 1e-3
-lr_decay_start_epoch: 10
-lr_decay_rate: 0.8
+lr_decay_start_epoch: 5
+lr_decay_rate: 0.9
 lr_decay_patient_n_epochs: 0
 lr_decay_type: always
 early_stop_patient_n_epochs: 5
@@ -30,6 +30,6 @@ dropout_in: 0.0
 dropout_hidden: 0.0
 dropout_out: 0.0
 weight_decay: 1e-6
-lsm_prob: 0.0
+lsm_prob: 0.1  ###
 backward: false
 adaptive_softmax: false

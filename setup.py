@@ -21,6 +21,10 @@ requirements = {
         'tensorboardX>=1.6',
         'tqdm',
         'torch==1.0.0',
+        'warp_rnnt',
+        'configargparse',
+        'editdistance',
+        'tensorboard',
     ],
     'setup': [
 

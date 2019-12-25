@@ -11,16 +11,20 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import os
 import time
 
 from neural_sp.bin.args_lm import parse
+from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.lm.build import build_lm
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -39,8 +43,7 @@ def main():
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):
         os.remove(os.path.join(args.recog_dir, 'decode.log'))
-    logger = set_logger(os.path.join(args.recog_dir, 'decode.log'),
-                        key='decoding', stdout=args.recog_stdout)
+    set_logger(os.path.join(args.recog_dir, 'decode.log'), stdout=args.recog_stdout)
 
     ppl_avg = 0
     for i, s in enumerate(args.recog_sets):
@@ -59,10 +62,15 @@ def main():
         if i == 0:
             # Load the LM
             model = build_lm(args)
-            model = load_checkpoint(model, args.recog_model[0])[0]
+            load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
 
-            logger.info('epoch: %d' % (epoch - 1))
+            # Model averaging for Transformer
+            if conf['lm_type'] == 'transformer':
+                model = average_checkpoints(model, args.recog_model[0], epoch,
+                                            n_average=args.recog_n_average)
+
+            logger.info('epoch: %d' % epoch)
             logger.info('batch size: %d' % args.recog_batch_size)
             # logger.info('recog unit: %s' % args.recog_unit)
             # logger.info('ensemble: %d' % (len(ensemble_models)))
@@ -70,6 +78,7 @@ def main():
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache theta: %.3f' % (args.recog_cache_theta))
             logger.info('cache lambda: %.3f' % (args.recog_cache_lambda))
+            logger.info('model average (Transformer): %d' % (args.recog_n_average))
             model.cache_theta = args.recog_cache_theta
             model.cache_lambda = args.recog_cache_lambda
 

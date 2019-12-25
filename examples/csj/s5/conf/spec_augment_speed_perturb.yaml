@@ -1,0 +1,13 @@
+# optimization
+n_epochs: 40
+convert_to_sgd_epoch: 40
+print_step: 1200
+lr_decay_start_epoch: 7
+lr_decay_rate: 0.875
+
+# mask
+freq_width: 27
+n_freq_masks: 2
+time_width: 100
+n_time_masks: 2
+time_width_upper: 1.0

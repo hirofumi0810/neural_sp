@@ -18,7 +18,7 @@ from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.lm.transformerlm import TransformerLM
 
-logger = logging.getLogger("decoding").getChild('ppl')
+logger = logging.getLogger(__name__)
 
 
 def eval_ppl(models, dataset, batch_size=1, bptt=None,
@@ -41,11 +41,8 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
     dataset.reset()
 
     is_lm = False
-    skip_thought = False
     if isinstance(models[0], RNNLM) or isinstance(models[0], GatedConvLM) or isinstance(models[0], TransformerLM):
         is_lm = True
-    elif 'skip' in models[0].enc_type:
-        skip_thought = True
 
     total_loss = 0
     n_tokens = 0
@@ -76,13 +73,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
         else:
             batch, is_new_epoch = dataset.next(batch_size)
             bs = len(batch['ys'])
-            if skip_thought:
-                loss, _ = models[0](batch['ys'],
-                                    ys_prev=batch['ys_prev'],
-                                    ys_next=batch['ys_next'],
-                                    is_eval=True)
-            else:
-                loss, _ = models[0](batch, task='all', is_eval=True)
+            loss, _ = models[0](batch, task='all', is_eval=True)
             total_loss += loss.item() * bs
             n_tokens += sum([len(y) for y in batch['ys']])
             # NOTE: loss is divided by batch size in the ASR model
@@ -102,7 +93,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
     avg_loss = total_loss / n_tokens
     ppl = np.exp(avg_loss)
 
-    logger.info('PPL (%s): %.2f %%' % (dataset.set, ppl))
-    logger.info('Loss (%s): %.2f %%' % (dataset.set, avg_loss))
+    logger.debug('PPL (%s): %.2f %%' % (dataset.set, ppl))
+    logger.debug('Loss (%s): %.2f %%' % (dataset.set, avg_loss))
 
     return ppl, avg_loss

@@ -10,13 +10,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from logging import getLogger
+import logging
 import torch
 
-logger = getLogger('training')
+logger = logging.getLogger(__name__)
 
 
-def set_optimizer(model, optimizer, lr, weight_decay=0.0):
+def set_optimizer(model, optimizer, lr, weight_decay=0.):
     """Set optimizer.
 
     Args:
@@ -68,8 +68,8 @@ def set_optimizer(model, optimizer, lr, weight_decay=0.0):
 
     elif optimizer == 'noam':
         opt = torch.optim.Adam(parameters,
-                               lr=lr,
-                               betas=(0.9, 0.997),
+                               lr=0,
+                               betas=(0.9, 0.98),
                                eps=1e-09,
                                weight_decay=weight_decay)
 

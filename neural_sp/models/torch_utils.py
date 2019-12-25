@@ -10,7 +10,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
+import numpy as np
 import torch
+
+
+def repeat(module, n_layers):
+    return torch.nn.ModuleList([copy.deepcopy(module) for _ in range(n_layers)])
 
 
 def tensor2np(x):
@@ -41,7 +47,7 @@ def np2tensor(array, device_id=-1):
     return tensor
 
 
-def pad_list(xs, pad_value=0.0, pad_left=False):
+def pad_list(xs, pad_value=0., pad_left=False):
     """Convert list of Tensors to a single Tensor with padding.
 
     Args:
@@ -85,12 +91,37 @@ def make_pad_mask(seq_lens, device_id=-1):
 
     if device_id >= 0:
         mask = mask.cuda(device_id)
-
     return mask
 
 
+def append_sos_eos(xs, ys, eos, pad, bwd=False, replace_sos=False):
+    """Append <sos> and <eos> and return padded sequences.
+
+    Args:
+        ys (list): A list of length `[B]`, which contains a list of size `[L]`
+    Returns:
+        ys_in (LongTensor): `[B, L]`
+        ys_out (LongTensor): `[B, L]`
+        ylens (IntTensor): `[B]`
+
+    """
+    device_id = torch.cuda.device_of(xs.data).idx
+    _eos = xs.new_zeros(1).fill_(eos).long()
+    ys = [np2tensor(np.fromiter(y[::-1] if bwd else y, dtype=np.int64),
+                    device_id) for y in ys]
+    if replace_sos:
+        ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
+        ys_in = pad_list([y for y in ys], pad)
+        ys_out = pad_list([torch.cat([y[1:], _eos], dim=0) for y in ys], pad)
+    else:
+        ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
+        ys_in = pad_list([torch.cat([_eos, y], dim=0) for y in ys], pad)
+        ys_out = pad_list([torch.cat([y, _eos], dim=0) for y in ys], pad)
+    return ys_in, ys_out, ylens
+
+
 def compute_accuracy(logits, ys_ref, pad):
-    """Compute accuracy.
+    """Compute teacher-forcing accuracy.
 
     Args:
         logits (FloatTensor): `[B, T, vocab]`

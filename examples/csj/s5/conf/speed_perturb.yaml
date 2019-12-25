@@ -4,3 +4,10 @@ convert_to_sgd_epoch: 15
 print_step: 600
 lr_decay_start_epoch: 5
 lr_decay_rate: 0.8
+
+
+n_epochs: 25
+convert_to_sgd_epoch: 20
+print_step: 200
+lr_decay_start_epoch: 10
+lr_decay_rate: 0.85

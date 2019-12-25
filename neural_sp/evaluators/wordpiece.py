@@ -16,7 +16,7 @@ from tqdm import tqdm
 from neural_sp.evaluators.edit_distance import compute_wer
 from neural_sp.utils import mkdir_join
 
-logger = logging.getLogger("decoding").getChild('wordpiece')
+logger = logging.getLogger(__name__)
 
 
 def eval_wordpiece(models, dataset, recog_params, epoch,
@@ -61,7 +61,7 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, _, _ = models[0].decode(
+            best_hyps_id, _ = models[0].decode(
                 batch['xs'], recog_params, dataset.idx2token[0],
                 exclude_eos=True,
                 refs_id=batch['ys'],
@@ -80,10 +80,10 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
                 speaker = str(batch['speakers'][b]).replace('-', '_')
                 f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
                 f_hyp.write(hyp + ' (' + speaker + '-' + utt_id + ')\n')
-                logger.info('utt-id: %s' % batch['utt_ids'][b])
-                logger.info('Ref: %s' % ref)
-                logger.info('Hyp: %s' % hyp)
-                logger.info('-' * 150)
+                logger.debug('utt-id: %s' % batch['utt_ids'][b])
+                logger.debug('Ref: %s' % ref)
+                logger.debug('Hyp: %s' % hyp)
+                logger.debug('-' * 150)
 
                 # Compute WER
                 wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
@@ -130,9 +130,9 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     n_ins_c /= n_char
     n_del_c /= n_char
 
-    logger.info('WER (%s): %.2f %%' % (dataset.set, wer))
-    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
-    logger.info('CER (%s): %.2f %%' % (dataset.set, cer))
-    logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
+    logger.debug('WER (%s): %.2f %%' % (dataset.set, wer))
+    logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
+    logger.debug('CER (%s): %.2f %%' % (dataset.set, cer))
+    logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
 
     return wer, cer

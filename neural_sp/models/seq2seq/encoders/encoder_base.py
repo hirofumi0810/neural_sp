@@ -15,6 +15,8 @@ import torch
 
 from neural_sp.models.base import ModelBase
 
+logger = logging.getLogger(__name__)
+
 
 class EncoderBase(ModelBase):
     """Base class for encoders."""
@@ -22,7 +24,6 @@ class EncoderBase(ModelBase):
     def __init__(self):
 
         super(ModelBase, self).__init__()
-        logger = logging.getLogger('training')
         logger.info('Overriding EncoderBase class.')
 
     @property
@@ -31,10 +32,22 @@ class EncoderBase(ModelBase):
 
     @property
     def output_dim(self):
-        return self._output_dim
+        return self._odim
+
+    def subsampling_factor(self):
+        return self._factor
 
     def reset_parameters(self, param_init):
         raise NotImplementedError
 
     def forward(self, xs, xlens, task):
         raise NotImplementedError
+
+    def turn_off_ceil_mode(self, encoder):
+        if isinstance(encoder, torch.nn.Module):
+            for name, module in encoder.named_children():
+                if isinstance(module, torch.nn.MaxPool2d):
+                    module.ceil_mode = False
+                    logging.debug('Turn off ceil_mode in %s.' % name)
+                else:
+                    self.turn_off_ceil_mode(module)

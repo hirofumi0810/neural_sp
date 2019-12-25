@@ -13,9 +13,6 @@ from __future__ import print_function
 from torch.nn import DataParallel
 from torch.nn.parallel.scatter_gather import gather
 
-import logging
-logger = logging.getLogger('training')
-
 
 class CustomDataParallel(DataParallel):
 
@@ -24,9 +21,19 @@ class CustomDataParallel(DataParallel):
 
     def gather(self, outputs, output_device):
         n_returns = len(outputs[0])
-        reporter = outputs[0][1]  # TODO(hirofumi): average reporter
+        n_gpus = len(outputs)
         if n_returns == 2:
             losses = [output[0] for output in outputs]
-            return gather(losses, output_device, dim=self.dim).mean(), reporter
+            observation_mean = {}
+            for output in outputs:
+                for k, v in output[1].items():
+                    if v is None:
+                        continue
+                    if k not in observation_mean.keys():
+                        observation_mean[k] = v
+                    else:
+                        observation_mean[k] += v
+                observation_mean = {k: v / n_gpus for k, v in observation_mean.items()}
+            return gather(losses, output_device, dim=self.dim).mean(), observation_mean
         else:
             raise ValueError(n_returns)

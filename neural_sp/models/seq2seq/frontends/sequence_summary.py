@@ -14,7 +14,7 @@ import logging
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.linear import Linear
+logger = logging.getLogger(__name__)
 
 
 class SequenceSummaryNetwork(nn.Module):
@@ -43,28 +43,29 @@ class SequenceSummaryNetwork(nn.Module):
         self.n_layers = n_layers
 
         self.ssn = nn.ModuleList()
-        self.ssn += [Linear(input_dim, n_units, bias=False, dropout=dropout)]
+        self.ssn += [nn.Linear(input_dim, n_units, bias=False)]
+        self.ssn += [nn.Dropout(p=dropout)]
         for l in range(1, n_layers - 1, 1):
-            self.ssn += [Linear(n_units, bottleneck_dim if l == n_layers - 2 else n_units,
-                                bias=False, dropout=dropout)]
-        self.ssn += [Linear(bottleneck_dim, input_dim, bias=False, dropout=dropout)]
+            self.ssn += [nn.Linear(n_units, bottleneck_dim if l == n_layers - 2 else n_units,
+                                   bias=False)]
+            self.ssn += [nn.Dropout(p=dropout)]
+        self.ssn += [nn.Linear(bottleneck_dim, input_dim, bias=False)]
+        self.ssn += [nn.Dropout(p=dropout)]
 
-        # Initialize parameters
         self.reset_parameters(param_init)
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() == 2:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def forward(self, xs, xlens):
         """Forward computation.

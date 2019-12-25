@@ -7,12 +7,13 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd3/inaguma/corpus/swbd
+data=/n/work1/inaguma/corpus/swbd
 
 batch_size=1
 n_caches=0
 cache_theta=0.1
 cache_lambda=0.1
+n_average=1  # for Transformer
 
 . ./cmd.sh
 . ./path.sh
@@ -34,14 +35,17 @@ for set in eval2000_swbd eval2000_ch; do
     if [ ${n_caches} != 0 ]; then
         recog_dir=${recog_dir}_cache${n_caches}_theta${cache_theta}_lambda${cache_lambda}
     fi
+    if [ ${n_average} != 1 ]; then
+        recog_dir=${recog_dir}_average${n_average}
+    fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep 'fisher_swbd_train_fisher_swbd') ]; then
-        recog_set=${data}/dataset_lm/${set}_fisher_swbd_train_fisher_swbd_wpbpe30000.tsv
-    elif [ $(echo ${model} | grep 'fisher_swbd_train_swbd') ]; then
-        recog_set=${data}/dataset_lm/${set}_fisher_swbd_train_swbd_wpbpe10000.tsv
-    elif [ $(echo ${model} | grep 'fisher_swbd_train_fisher_swbd') ]; then
-        recog_set=${data}/dataset_lm/${set}_swbd_train_swbd_wpbpe10000.tsv
+    if [ $(echo ${model} | grep 'fisher_swbd_vocabfisher_swbd') ]; then
+        recog_set=${data}/dataset_lm/${set}_fisher_swbd_vocabfisher_swbd_wpbpe30000.tsv
+    elif [ $(echo ${model} | grep 'fisher_swbd_vocabswbd') ]; then
+        recog_set=${data}/dataset_lm/${set}_fisher_swbd_vocabswbd_wpbpe10000.tsv
+    elif [ $(echo ${model} | grep 'fisher_swbd_vocabfisher_swbd') ]; then
+        recog_set=${data}/dataset_lm/${set}_swbd_vocabswbd_wpbpe10000.tsv
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/eval.py \
@@ -51,5 +55,6 @@ for set in eval2000_swbd eval2000_ch; do
         --recog_n_caches ${n_caches} \
         --recog_cache_theta ${cache_theta} \
         --recog_cache_lambda ${cache_lambda} \
+        --recog_n_average ${n_average} \
         --recog_dir ${recog_dir} || exit 1;
 done

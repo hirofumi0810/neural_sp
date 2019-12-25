@@ -25,7 +25,7 @@ CONDA=$(TOOL)/miniconda
 
 all: miniconda.done kaldi.done python extra
 python: neural_sp.done warp-ctc.done warp-rnnt.done
-extra: sentencepiece.done nkf.done
+extra: sentencepiece.done nkf.done moses.done
 
 # miniconda
 miniconda.done:
@@ -91,8 +91,9 @@ warp-rnnt.done:
 sentencepiece.done:
 	if [ -e $(TOOL)/sentencepiece ]; then rm -rf $(TOOL)/sentencepiece; fi
 	git clone https://github.com/google/sentencepiece.git $(TOOL)/sentencepiece
-	command -v bazel > /dev/null || echo "SentencePiece requires Bazel, see https://bazel.build/"
-	cd $(TOOL)/sentencepiece && bazel build src:all --incompatible_disable_deprecated_attr_params=false
+	cd $(TOOL)/sentencepiece && mkdir build && cd build && (cmake3 .. || cmake ..) && $(MAKE)
+	# command -v bazel > /dev/null || echo "SentencePiece requires Bazel, see https://bazel.build/"
+	# cd $(TOOL)/sentencepiece && bazel build src:all --incompatible_disable_deprecated_attr_params=false
 	touch sentencepiece.done
 
 nkf.done:
@@ -100,3 +101,8 @@ nkf.done:
 	cd $(TOOL)/nkf; wget https://ja.osdn.net/dl/nkf/nkf-2.1.4.tar.gz -P $(TOOL)/nkf
 	cd $(TOOL)/nkf; tar zxvf nkf-2.1.4.tar.gz; cd nkf-2.1.4; $(MAKE) prefix=.
 	touch nkf.done
+
+moses.done:
+	if [ -e $(TOOL)/moses ]; then rm -rf $(TOOL)/moses; fi
+	cd $(TOOL)/moses; git clone https://github.com/moses-smt/mosesdecoder.git $(TOOL)/moses
+	touch moses.done

@@ -8,7 +8,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/sd3/inaguma/corpus/timit
+data=/n/work1/inaguma/corpus/timit
 
 batch_size=1
 beam_width=5
@@ -40,7 +40,7 @@ for set in dev test; do
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
     fi
-    if ${gnmt_decoding}; then
+    if [ ${gnmt_decoding} = true ]; then
         recog_dir=${recog_dir}_gnmt
     fi
     mkdir -p ${recog_dir}
@@ -59,5 +59,4 @@ for set in dev test; do
         --recog_gnmt_decoding ${gnmt_decoding} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_stdout ${stdout} || exit 1;
-
 done

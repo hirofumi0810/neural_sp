@@ -12,7 +12,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/sd3/inaguma/corpus/swbd
+data=/n/work1/inaguma/corpus/swbd
 
 unit=
 metric=edit_distance
@@ -21,14 +21,16 @@ beam_width=5
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
+length_norm=false
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
 eos_threshold=1.0
 lm=
+lm_second=
 lm_bwd=
 lm_weight=0.2
-lm_usage=shallow_fusion
+lm_second_weight=0.2
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -36,12 +38,7 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_caches=0
-cache_theta_speech=1.5
-cache_lambda_speech=0.1
-cache_theta_lm=0.1
-cache_lambda_lm=0.1
-cache_type=lm_fifo
+n_average=1  # for Transformer
 oracle=false
 
 . ./cmd.sh
@@ -65,11 +62,17 @@ for set in eval2000; do
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
     fi
+    if [ ${length_norm} = true ]; then
+        recog_dir=${recog_dir}_norm
+    fi
     if [ ${metric} != 'edit_distance' ]; then
         recog_dir=${recog_dir}_${metric}
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
-        recog_dir=${recog_dir}_lm${lm_weight}_${lm_usage}
+        recog_dir=${recog_dir}_lm${lm_weight}
+    fi
+    if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
+        recog_dir=${recog_dir}_rescore${lm_second_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
@@ -92,11 +95,11 @@ for set in eval2000; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
+    if [ ${n_average} != 1 ]; then
+        recog_dir=${recog_dir}_average${n_average}
+    fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ] && [ ${lm_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_LMcarryover
-    fi
-    if [ ${n_caches} != 0 ]; then
-        recog_dir=${recog_dir}_${cache_type}cache${n_caches}
     fi
     if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
@@ -114,7 +117,7 @@ for set in eval2000; do
         recog_set=${data}/dataset/${set}_sp_swbd_wpbpe10000.tsv
     else
         if [ $(echo ${model} | grep 'fisher_swbd') ]; then
-            recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe30000.tsv
+            recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe34000.tsv
         else
             recog_set=${data}/dataset/${set}_swbd_wpbpe10000.tsv
         fi
@@ -132,14 +135,16 @@ for set in eval2000; do
         --recog_max_len_ratio ${max_len_ratio} \
         --recog_min_len_ratio ${min_len_ratio} \
         --recog_length_penalty ${length_penalty} \
+        --recog_length_norm ${length_norm} \
         --recog_coverage_penalty ${coverage_penalty} \
         --recog_coverage_threshold ${coverage_threshold} \
         --recog_gnmt_decoding ${gnmt_decoding} \
         --recog_eos_threshold ${eos_threshold} \
         --recog_lm ${lm} \
+        --recog_lm_second ${lm_second} \
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
-        --recog_lm_usage ${lm_usage} \
+        --recog_lm_second_weight ${lm_second_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
@@ -147,12 +152,7 @@ for set in eval2000; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
-        --recog_n_caches ${n_caches} \
-        --recog_cache_theta_speech ${cache_theta_speech} \
-        --recog_cache_lambda_speech ${cache_lambda_speech} \
-        --recog_cache_theta_lm ${cache_theta_lm} \
-        --recog_cache_lambda_lm ${cache_lambda_lm} \
-        --recog_cache_type ${cache_type} \
+        --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_stdout ${stdout} || exit 1;
 

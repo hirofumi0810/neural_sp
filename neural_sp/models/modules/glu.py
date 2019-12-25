@@ -15,8 +15,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class GLUBlock(nn.Module):
-    """GLU block.
+class LinearGLUBlock(nn.Module):
+    """A linear GLU block.
+
+    Args:
+        size (int): input and output dimension
+
+    """
+
+    def __init__(self, size):
+        super().__init__()
+
+        self.fc = nn.Linear(size, size * 2)
+
+    def forward(self, xs):
+        return F.glu(self.fc(xs), dim=-1)
+
+
+class ConvGLUBlock(nn.Module):
+    """A convolutional GLU block.
 
     Args:
         kernel_size (int): kernel size
@@ -27,7 +44,7 @@ class GLUBlock(nn.Module):
 
     """
 
-    def __init__(self, kernel_size, in_ch, out_ch, bottlececk_dim=0, dropout=0.0):
+    def __init__(self, kernel_size, in_ch, out_ch, bottlececk_dim=0, dropout=0.):
         super().__init__()
 
         self.conv_residual = None
@@ -47,6 +64,7 @@ class GLUBlock(nn.Module):
                           out_channels=out_ch * 2,
                           kernel_size=(kernel_size, 1)), name='weight', dim=0)
             layers['dropout'] = nn.Dropout(p=dropout)
+            layers['glu'] = nn.GLU()
 
         elif bottlececk_dim > 0:
             layers['conv_in'] = nn.utils.weight_norm(
@@ -54,11 +72,12 @@ class GLUBlock(nn.Module):
                           out_channels=bottlececk_dim,
                           kernel_size=(1, 1)), name='weight', dim=0)
             layers['dropout_in'] = nn.Dropout(p=dropout)
-            layers['layers'] = nn.utils.weight_norm(
+            layers['conv_bottleneck'] = nn.utils.weight_norm(
                 nn.Conv2d(in_channels=bottlececk_dim,
                           out_channels=bottlececk_dim,
                           kernel_size=(kernel_size, 1)), name='weight', dim=0)
             layers['dropout'] = nn.Dropout(p=dropout)
+            layers['glu'] = nn.GLU()
             layers['conv_out'] = nn.utils.weight_norm(
                 nn.Conv2d(in_channels=bottlececk_dim,
                           out_channels=out_ch * 2,
@@ -79,6 +98,5 @@ class GLUBlock(nn.Module):
             residual = self.dropout_residual(self.conv_residual(residual))
         xs = self.pad_left(xs)  # `[B, embed_dim, T+kernel-1, 1]`
         xs = self.layers(xs)  # `[B, out_ch * 2, T ,1]`
-        xs = F.glu(xs, dim=1)
         xs = xs + residual
         return xs

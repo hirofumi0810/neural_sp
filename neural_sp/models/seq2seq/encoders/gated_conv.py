@@ -15,9 +15,11 @@ import logging
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.modules.glu import GLUBlock
-from neural_sp.models.modules.linear import Linear
+from neural_sp.models.modules.glu import ConvGLUBlock
+from neural_sp.models.seq2seq.encoders.conv import parse_config
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
+
+logger = logging.getLogger(__name__)
 
 
 class GatedConvEncoder(EncoderBase):
@@ -47,7 +49,8 @@ class GatedConvEncoder(EncoderBase):
                  param_init=0.1):
 
         super(GatedConvEncoder, self).__init__()
-        logger = logging.getLogger("training")
+
+        channels, kernel_sizes, _, _ = parse_config(channels, kernel_sizes, '', '')
 
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
@@ -59,39 +62,40 @@ class GatedConvEncoder(EncoderBase):
 
         layers = OrderedDict()
         for l in range(len(channels)):
-            layers['conv%d' % l] = GLUBlock(kernel_sizes[l][0], input_dim, channels[l],
-                                            weight_norm=True,
-                                            dropout=0.2)
+            layers['conv%d' % l] = ConvGLUBlock(kernel_sizes[l][0], input_dim, channels[l],
+                                                weight_norm=True,
+                                                dropout=0.2)
             input_dim = channels[l]
 
         # weight normalization + GLU for the last fully-connected layer
-        self.fc_glu = Linear(input_dim, input_dim * 2, weight_norm=True)
+        self.fc_glu = nn.utils.weight_norm(nn.Linear(input_dim, input_dim * 2),
+                                           name='weight', dim=0)
 
-        self._output_dim = int(input_dim)
+        self._odim = int(input_dim)
 
         if bottleneck_dim > 0:
-            self.bridge = Linear(self._output_dim, bottleneck_dim)
-            self._output_dim = bottleneck_dim
+            self.bridge = nn.Linear(self._odim, bottleneck_dim)
+            self._odim = bottleneck_dim
 
         self.layers = nn.Sequential(layers)
 
-        # Initialize parameters
+        self._factor = 1
+
         self.reset_parameters(param_init)
 
     def reset_parameters(self, param_init):
         """Initialize parameters with kaiming_uniform style."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() in [2, 4]:
                 nn.init.kaiming_uniform_(p, mode='fan_in', nonlinearity='relu')
                 # nn.init.kaiming_normal_(p, mode='fan_in', nonlinearity='relu')
                 logger.info('Initialize %s with %s / %.3f' % (n, 'kaiming_uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
     def forward(self, xs, xlens):
         """Forward computation.

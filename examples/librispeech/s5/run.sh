@@ -4,24 +4,24 @@
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 echo ============================================================================
-echo "                              LibriSpeech                                  "
+echo "                                LibriSpeech                               "
 echo ============================================================================
 
 stage=0
+stop_stage=5
 gpu=
-speed_perturb=false
-spec_augment=false
+specaug=false
 stdout=false
 
 ### vocabulary
 unit=wp      # word/wp/char/word_char
-vocab=30000
+vocab=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
 
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/rnn_seq2seq.yaml
+conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
 lm_init=
@@ -47,14 +47,14 @@ lm_init=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/sd3/inaguma/result/librispeech
+model=/n/work1/inaguma/results/librispeech
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/sd3/inaguma/corpus/librispeech
+export data=/n/work1/inaguma/corpus/librispeech
 
 ### path to download data
 data_download_path=/n/rd21/corpora_7/librispeech/
@@ -72,10 +72,8 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ]; then
-    conf2=conf/asr/speed_perturb.yaml
-elif [ ${spec_augment} = true ]; then
-    conf2=conf/asr/spec_augment.yaml
+if [ ${specaug} = true ]; then
+    conf2=conf/spec_augment.yaml
 fi
 
 if [ -z ${gpu} ]; then
@@ -84,7 +82,6 @@ if [ -z ${gpu} ]; then
     exit 1
 fi
 n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
-lm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 # Base url for downloads.
 data_url=www.openslr.org/resources/12
@@ -93,11 +90,6 @@ lm_url=www.openslr.org/resources/11
 train_set=train_${datasize}
 dev_set=dev_clean
 test_set="dev_clean dev_other test_clean test_other"
-if [ ${speed_perturb} = true ]; then
-    train_set=train_sp_${datasize}
-    dev_set=dev_clean_sp
-    test_set="dev_clean_sp dev_other_sp test_clean_sp test_other_sp"
-fi
 
 if [ ${unit} = char ]; then
     vocab=
@@ -106,7 +98,7 @@ if [ ${unit} != wp ]; then
     wp_type=
 fi
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
@@ -136,7 +128,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1_${datasize} ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
@@ -165,16 +157,6 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
         echo "datasize is 100 or 460 or 960." && exit 1;
     fi
 
-    if [ ${speed_perturb} = true ]; then
-        # speed-perturbed
-        speed_perturb_3way.sh ${data} train_${datasize} ${train_set}
-
-        cp -rf ${data}/dev_clean ${data}/dev_clean_sp
-        cp -rf ${data}/dev_other ${data}/dev_other_sp
-        cp -rf ${data}/test_clean ${data}/test_clean_sp
-        cp -rf ${data}/test_other ${data}/test_other_sp
-    fi
-
     # Compute global CMVN
     compute-cmvn-stats scp:${data}/${train_set}/feats.scp ${data}/${train_set}/cmvn.ark || exit 1;
 
@@ -187,12 +169,12 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
             ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${datasize} ${dump_dir} || exit 1;
     done
 
-    touch ${data}/.done_stage_1_${datasize}_sp${speed_perturb} && echo "Finish feature extranction (stage: 1)."
+    touch ${data}/.done_stage_1_${datasize} && echo "Finish feature extranction (stage: 1)."
 fi
 
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab}.txt; mkdir -p ${data}/dict
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} ]; then
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
@@ -204,19 +186,13 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
     [ ${unit} = char ] && echo "<space> 4" >> ${dict}
     offset=$(cat ${dict} | wc -l)
     if [ ${unit} = wp ]; then
-        if [ ${speed_perturb} = true ]; then
-            grep sp1.0 ${data}/${train_set}/text > ${data}/${train_set}/text.org
-            cp ${data}/${dev_set}/text ${data}/${dev_set}/text.org
-            cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
-        else
-            cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        fi
+        cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
         spm_train --input=${data}/dict/input.txt --vocab_size=${vocab} \
             --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
         spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
             sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
     else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab ${vocab} --speed_perturb ${speed_perturb} | \
+        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab ${vocab} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
     fi
     echo "vocab size:" $(cat ${dict} | wc -l)
@@ -226,13 +202,8 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
         mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
         echo "OOV rate:" > ${data}/dict/oov_rate/word${vocab}_${datasize}.txt
         for x in ${train_set} ${test_set}; do
-            if [ ${speed_perturb} = true ]; then
-                cut -f 2- -d " " ${data}/${x}/text.org | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-                    > ${data}/dict/word_count/${x}_${datasize}.txt || exit 1;
-            else
-                cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-                    > ${data}/dict/word_count/${x}_${datasize}.txt || exit 1;
-            fi
+            cut -f 2- -d " " ${data}/${x}/text.org | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+                > ${data}/dict/word_count/${x}_${datasize}.txt || exit 1;
             compute_oov_rate.py ${data}/dict/word_count/${x}_${datasize}.txt ${dict} ${x} \
                 >> ${data}/dict/oov_rate/word${vocab}_${datasize}.txt || exit 1;
         done
@@ -249,27 +220,27 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
     done
 
-    touch ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."
+    touch ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}
-if [ ${stage} -le 3 ]; then
+if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo ============================================================================
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
 
     if [ ! -e ${data}/.done_stage_3_${datasize}${lm_datasize}_${unit}${wp_type}${vocab}_${use_external_text} ]; then
-        [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ] && echo "run ./run.sh --datasize ${lm_datasize} first" && exit 1
+        [ ! -e ${data}/.done_stage_1_${datasize} ] && echo "run ./run.sh --datasize ${lm_datasize} first" && exit 1
 
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
         for x in train dev_clean dev_other test_clean test_other; do
             if [ ${lm_datasize} = ${datasize} ]; then
                 cp ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv \
-                    ${data}/dataset_lm/${x}_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                    ${data}/dataset_lm/${x}_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
             else
                 make_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-                    ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                    ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
             fi
         done
 
@@ -281,29 +252,28 @@ if [ ${stage} -le 3 ]; then
             zcat ${data}/local/lm_train/librispeech-lm-norm.txt.gz | shuf | awk '{print "unpaired-text-"NR, tolower($0)}' > ${data}/dataset_lm/text
             update_dataset.sh --unit ${unit} --wp_model ${wp_model} \
                 ${data}/dataset_lm/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-                > ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}_external.tsv || exit 1;
+                > ${data}/dataset_lm/train_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}_external.tsv || exit 1;
         fi
 
         touch ${data}/.done_stage_3_${datasize}${lm_datasize}_${unit}${wp_type}${vocab}_${use_external_text} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
     if ${use_external_text}; then
-        lm_train_set="${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}_external.tsv"
+        lm_train_set="${data}/dataset_lm/train_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}_external.tsv"
     else
-        lm_train_set="${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv"
+        lm_train_set="${data}/dataset_lm/train_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv"
     fi
 
-    lm_test_set="${data}/dataset_lm/dev_other_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
-                 ${data}/dataset_lm/test_clean_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
-                 ${data}/dataset_lm/test_other_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv"
+    lm_test_set="${data}/dataset_lm/dev_other_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/test_clean_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/test_other_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv"
 
-    # NOTE: support only a single GPU for LM training
-    CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus librispeech \
         --config ${lm_conf} \
-        --n_gpus 1 \
+        --n_gpus ${n_gpus} \
         --train_set ${lm_train_set} \
-        --dev_set ${data}/dataset_lm/dev_clean_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/dev_clean_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${lm_test_set} \
         --unit ${unit} \
         --dict ${dict} \
@@ -312,10 +282,10 @@ if [ ${stage} -le 3 ]; then
         --stdout ${stdout} \
         --resume ${lm_resume} || exit 1;
 
-    echo "Finish LM training (stage: 3)." && exit 1;
+    echo "Finish LM training (stage: 3)."
 fi
 
-if [ ${stage} -le 4 ]; then
+if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================

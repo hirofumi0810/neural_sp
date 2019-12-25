@@ -8,9 +8,10 @@ echo "                              Switchboard                                 
 echo ============================================================================
 
 stage=0
+stop_stage=5
 gpu=
 speed_perturb=false
-spec_augment=false
+specaug=false
 stdout=false
 
 ### vocabulary
@@ -21,7 +22,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/rnn_seq2seq.yaml
+conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
 lm_init=
@@ -32,14 +33,14 @@ lm_init=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/sd3/inaguma/result/swbd
+model=/n/work1/inaguma/results/swbd
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/sd3/inaguma/corpus/swbd
+export data=/n/work1/inaguma/corpus/swbd
 
 ### path to original data
 SWBD_AUDIOPATH=/n/rd21/corpora_7/swb
@@ -61,13 +62,13 @@ set -u
 set -o pipefail
 
 if [ ${speed_perturb} = true ]; then
-    conf2=conf/asr/speed_perturb.yaml
-elif [ ${spec_augment} = true ]; then
-    conf2=conf/asr/spec_augment.yaml
+    conf2=conf/speed_perturb.yaml
+elif [ ${specaug} = true ]; then
+    conf2=conf/spec_augment.yaml
 fi
 
 if [ ${datasize} = fisher_swbd ]; then
-    conf=conf/asr/rnn_seq2seq_fisher_swbd.yaml
+    conf=conf/asr/blstm_las_fisher_swbd.yaml
 fi
 
 if [ -z ${gpu} ]; then
@@ -76,7 +77,6 @@ if [ -z ${gpu} ]; then
     exit 1
 fi
 n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
-lm_gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 train_set=train_nodev_${datasize}
 dev_set=dev
@@ -94,7 +94,7 @@ if [ ${unit} != wp ]; then
     wp_type=
 fi
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
@@ -130,7 +130,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
@@ -182,7 +182,7 @@ fi
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab}.txt; mkdir -p ${data}/dict
 nlsyms=${data}/dict/nlsyms_${train_set}.txt
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab}
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} ]; then
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
@@ -285,44 +285,43 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_ty
 fi
 
 mkdir -p ${model}
-if [ ${stage} -le 3 ] && [ ${speed_perturb} = false ]; then
+if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]; then
     echo ============================================================================
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
 
-    if [ ! -e ${data}/.done_stage_3_${lm_datasize}_${unit}${wp_type}${vocab} ]; then
+    if [ ! -e ${data}/.done_stage_3_${datasize}${lm_datasize}_${unit}${wp_type}${vocab} ]; then
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
         if [ ${lm_datasize} = fisher_swbd ]; then
             update_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
                 ${data}/train_fisher/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-                > ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                    > ${data}/dataset_lm/train_nodev_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         else
             cp ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-                ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                ${data}/dataset_lm/train_nodev_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         fi
         cp ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
-            ${data}/dataset_lm/dev_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
+            ${data}/dataset_lm/dev_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         for x in ${test_set}; do
             make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.swbd \
-                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_swbd_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_swbd_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
             make_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} --text ${data}/${test_set}/text.ch \
-                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_ch_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
+                ${data}/${x} ${dict} > ${data}/dataset_lm/${x}_ch_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
         done
 
-        touch ${data}/.done_stage_3_${lm_datasize}_${unit}${wp_type}${vocab} && echo "Finish creating dataset for LM (stage: 3)."
+        touch ${data}/.done_stage_3_${datasize}${lm_datasize}_${unit}${wp_type}${vocab} && echo "Finish creating dataset for LM (stage: 3)."
     fi
 
-    lm_test_set="${data}/dataset_lm/${test_set}_swbd_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
-                 ${data}/dataset_lm/${test_set}_ch_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv"
+    lm_test_set="${data}/dataset_lm/${test_set}_swbd_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
+                 ${data}/dataset_lm/${test_set}_ch_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv"
 
-    # NOTE: support only a single GPU for LM training
-    CUDA_VISIBLE_DEVICES=${lm_gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
+    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus swbd \
         --config ${lm_conf} \
-        --n_gpus 1 \
-        --train_set ${data}/dataset_lm/train_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset_lm/dev_lm${lm_datasize}_asr${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --n_gpus ${n_gpus} \
+        --train_set ${data}/dataset_lm/train_nodev_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/dev_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${lm_test_set} \
         --unit ${unit} \
         --nlsyms ${nlsyms} \
@@ -332,10 +331,10 @@ if [ ${stage} -le 3 ] && [ ${speed_perturb} = false ]; then
         --stdout ${stdout} \
         --resume ${lm_resume} || exit 1;
 
-    echo "Finish LM training (stage: 3)." && exit 1;
+    echo "Finish LM training (stage: 3)."
 fi
 
-if [ ${stage} -le 4 ]; then
+if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================

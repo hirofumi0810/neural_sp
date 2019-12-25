@@ -11,7 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import cProfile
-import numpy as np
+import logging
 import os
 from setproctitle import setproctitle
 import shutil
@@ -39,6 +39,8 @@ from neural_sp.utils import mkdir_join
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
 
+logger = logging.getLogger(__name__)
+
 
 def main():
 
@@ -62,8 +64,16 @@ def main():
         save_path = set_save_path(save_path)  # avoid overwriting
 
     # Set logger
-    logger = set_logger(os.path.join(save_path, 'train.log'),
-                        key='training', stdout=args.stdout)
+    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
+
+    if args.resume:
+        transformer = 'transformer' == conf['lm_type']
+        if transformer and conf['optimizer'] != 'noam':
+            logger.warning('Noam Optimizer is not set for Transformer.')
+    else:
+        transformer = 'transformer' == args.lm_type
+        if transformer and args.optimizer != 'noam':
+            logger.warning('Noam Optimizer is not set for Transformer.')
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
@@ -88,18 +98,16 @@ def main():
                       bptt=args.bptt,
                       backward=args.backward,
                       serialize=args.serialize)
-    eval_sets = []
-    for s in args.eval_sets:
-        eval_sets += [Dataset(corpus=args.corpus,
-                              tsv_path=s,
-                              dict_path=args.dict,
-                              nlsyms=args.nlsyms,
-                              unit=args.unit,
-                              wp_model=args.wp_model,
-                              batch_size=1,
-                              bptt=args.bptt,
-                              backward=args.backward,
-                              serialize=args.serialize)]
+    eval_sets = [Dataset(corpus=args.corpus,
+                         tsv_path=s,
+                         dict_path=args.dict,
+                         nlsyms=args.nlsyms,
+                         unit=args.unit,
+                         wp_model=args.wp_model,
+                         batch_size=1,
+                         bptt=args.bptt,
+                         backward=args.backward,
+                         serialize=args.serialize) for s in args.eval_sets]
 
     args.vocab = train_set.vocab
 
@@ -121,16 +129,16 @@ def main():
                                 early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
                                 warmup_start_lr=conf['warmup_start_lr'],
                                 warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['d_model'],
+                                model_size=conf['transformer_d_model'],
                                 factor=conf['lr_factor'],
-                                noam=conf['lm_type'] == 'transformer')
+                                noam=transformer)
 
         # Restore the last saved model
-        model, optimizer = load_checkpoint(model, args.resume, optimizer, resume=True)
+        load_checkpoint(model, args.resume, optimizer)
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
-            optimizer.convert_to_sgd(model, 'sgd', args.lr, conf['weight_decay'],
+            optimizer.convert_to_sgd(model, args.lr, conf['weight_decay'],
                                      decay_type='always', decay_rate=0.5)
     else:
         # Save the conf file as a yaml file
@@ -165,9 +173,9 @@ def main():
                                 early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
-                                model_size=args.d_model,
+                                model_size=args.transformer_d_model,
                                 factor=args.lr_factor,
-                                noam=args.lm_type == 'transformer')
+                                noam=transformer)
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -188,49 +196,52 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     pbar_epoch = tqdm(total=len(train_set))
-    accum_n_tokens = 0
+    accum_n_steps = 0
+    n_steps = 0
     while True:
         # Compute loss in the training set
         ys_train, is_new_epoch = train_set.next()
-        accum_n_tokens += sum([len(y) for y in ys_train])
-        optimizer.zero_grad()
-        loss, hidden, reporter = model(ys_train, hidden, reporter)
+        accum_n_steps += 1
+
+        loss, hidden, observation = model(ys_train, hidden)
+        reporter.add(observation)
         loss.backward()
         loss.detach()  # Trancate the graph
-        if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
+        if args.accum_grad_n_steps == 1 or accum_n_steps >= args.accum_grad_n_steps:
             if args.clip_grad_norm > 0:
                 total_norm = torch.nn.utils.clip_grad_norm_(
                     model.module.parameters(), args.clip_grad_norm)
                 reporter.add_tensorboard_scalar('total_norm', total_norm)
             optimizer.step()
             optimizer.zero_grad()
-            accum_n_tokens = 0
+            accum_n_steps = 0
         loss_train = loss.item()
         del loss
         hidden = model.module.repackage_state(hidden)
         reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
         # NOTE: loss/acc/ppl are already added in the model
         reporter.step()
+        pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
+        n_steps += 1
 
-        if optimizer.n_steps % args.print_step == 0:
+        if n_steps % args.print_step == 0:
             # Compute loss in the dev set
             ys_dev = dev_set.next()[0]
-            loss, _, reporter = model(ys_dev, None, reporter, is_eval=True)
+            loss, _, observation = model(ys_dev, None, is_eval=True)
+            reporter.add(observation, is_eval=True)
             loss_dev = loss.item()
             del loss
             reporter.step(is_eval=True)
 
             duration_step = time.time() - start_time_step
-            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/ppl:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                        (optimizer.n_steps, optimizer.n_epochs + train_set.epoch_detail,
+            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
+                        (n_steps, optimizer.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
-                         np.exp(loss_train), np.exp(loss_dev),
                          optimizer.lr, ys_train.shape[0], duration_step / 60))
             start_time_step = time.time()
-        pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
 
         # Save fugures of loss and accuracy
-        if optimizer.n_steps % (args.print_step * 10) == 0:
+        if n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             if args.lm_type == 'transformer':
                 model.module.plot_attention()
@@ -246,8 +257,8 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
-                                remove_old_checkpoints=args.lm_type != 'transformer')
+                save_checkpoint(model, optimizer, save_path,
+                                remove_old_checkpoints=not transformer)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -260,8 +271,8 @@ def main():
 
                 if optimizer.is_best:
                     # Save the model
-                    save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
-                                    remove_old_checkpoints=args.lm_type != 'transformer')
+                    save_checkpoint(model, optimizer, save_path,
+                                    remove_old_checkpoints=not transformer)
 
                     # test
                     ppl_test_avg = 0.
@@ -284,7 +295,7 @@ def main():
 
                 # Convert to fine-tuning stage
                 if optimizer.n_epochs == args.convert_to_sgd_epoch:
-                    optimizer.convert_to_sgd(model, 'sgd', args.lr, args.weight_decay,
+                    optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
                                              decay_type='always', decay_rate=0.5)
 
             pbar_epoch = tqdm(total=len(train_set))

@@ -13,11 +13,12 @@ from __future__ import print_function
 
 import argparse
 import copy
+import logging
 import os
 import time
-import torch
 
 from neural_sp.bin.args_asr import parse
+from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
@@ -28,8 +29,9 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.lm.build import build_lm
-from neural_sp.models.seq2seq.skip_thought import SkipThought
 from neural_sp.models.seq2seq.speech2text import Speech2Text
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -49,10 +51,7 @@ def main():
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):
         os.remove(os.path.join(args.recog_dir, 'decode.log'))
-    logger = set_logger(os.path.join(args.recog_dir, 'decode.log'),
-                        key='decoding', stdout=args.recog_stdout)
-
-    skip_thought = 'skip' in args.enc_type
+    set_logger(os.path.join(args.recog_dir, 'decode.log'), stdout=args.recog_stdout)
 
     wer_avg, cer_avg, per_avg = 0, 0, 0
     ppl_avg, loss_avg = 0, 0
@@ -73,40 +72,18 @@ def main():
                           unit_sub1=args.unit_sub1,
                           unit_sub2=args.unit_sub2,
                           batch_size=args.recog_batch_size,
-                          skip_thought=skip_thought,
                           is_test=True)
 
         if i == 0:
             # Load the ASR model
-            if skip_thought:
-                model = SkipThought(args, dir_name)
-            else:
-                model = Speech2Text(args, dir_name)
-            model = load_checkpoint(model, args.recog_model[0])[0]
+            model = Speech2Text(args, dir_name)
+            load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
 
             # Model averaging for Transformer
             if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
-                n_models = 1
-                state_dict_ave = model.state_dict()
-                best_model_path = args.recog_model[0]
-                for i in range(epoch - 1, 0, -1):
-                    checkpoint_path = best_model_path.replace('-' + str(epoch), '-' + str(i))
-                    if os.path.isfile(checkpoint_path):
-                        logger.info("=> Loading checkpoint (epoch:%d): %s" % (i, checkpoint_path))
-                        params = torch.load(checkpoint_path,
-                                            map_location=lambda storage, loc: storage)['state_dict']
-                        for k, v in params.items():
-                            state_dict_ave[k] += v
-                        n_models += 1
-                        if n_models == args.recog_n_average:
-                            break
-
-                # take average
-                logger.info('Take average for %d models' % n_models)
-                for k, v in state_dict_ave.items():
-                    state_dict_ave[k] /= n_models
-                model.load_state_dict(state_dict_ave)
+                model = average_checkpoints(model, args.recog_model[0], epoch,
+                                            n_average=args.recog_n_average)
 
             # Ensemble (different models)
             ensemble_models = [model]
@@ -118,12 +95,13 @@ def main():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
-                    model_e = load_checkpoint(model_e, recog_model_e)[0]
+                    load_checkpoint(model_e, recog_model_e)
                     model_e.cuda()
                     ensemble_models += [model_e]
 
             # Load the LM for shallow fusion
             if not args.lm_fusion:
+                # first path
                 if args.recog_lm is not None and args.recog_lm_weight > 0:
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm), 'conf.yml'))
                     args_lm = argparse.Namespace()
@@ -132,20 +110,30 @@ def main():
                     lm = build_lm(args_lm, wordlm=args.recog_wordlm,
                                   lm_dict_path=os.path.join(os.path.dirname(args.recog_lm), 'dict.txt'),
                                   asr_dict_path=os.path.join(dir_name, 'dict.txt'))
-                    lm = load_checkpoint(lm, args.recog_lm)[0]
+                    load_checkpoint(lm, args.recog_lm)
                     if args_lm.backward:
                         model.lm_bwd = lm
                     else:
                         model.lm_fwd = lm
 
-                if args.recog_lm_bwd is not None and args.recog_lm_weight > 0 \
-                        and (args.recog_fwd_bwd_attention or args.recog_reverse_lm_rescoring):
+                # second path (forward)
+                if args.recog_lm_second is not None and args.recog_lm_second_weight > 0:
+                    conf_lm_2nd = load_config(os.path.join(os.path.dirname(args.recog_lm_second), 'conf.yml'))
+                    args_lm_2nd = argparse.Namespace()
+                    for k, v in conf_lm_2nd.items():
+                        setattr(args_lm_2nd, k, v)
+                    lm_2nd = build_lm(args_lm_2nd)
+                    load_checkpoint(lm_2nd, args.recog_lm_second)
+                    model.lm_2nd = lm_2nd
+
+                # second path (bakward)
+                if args.recog_lm_bwd is not None and args.recog_lm_rev_weight > 0:
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm_bwd), 'conf.yml'))
                     args_lm_bwd = argparse.Namespace()
                     for k, v in conf_lm.items():
                         setattr(args_lm_bwd, k, v)
                     lm_bwd = build_lm(args_lm_bwd)
-                    lm_bwd = load_checkpoint(lm_bwd, args.recog_lm_bwd)[0]
+                    load_checkpoint(lm_bwd, args.recog_lm_bwd)
                     model.lm_bwd = lm_bwd
 
             if not args.recog_unit:
@@ -154,31 +142,26 @@ def main():
             logger.info('recog unit: %s' % args.recog_unit)
             logger.info('recog metric: %s' % args.recog_metric)
             logger.info('recog oracle: %s' % args.recog_oracle)
-            logger.info('epoch: %d' % (epoch - 1))
+            logger.info('epoch: %d' % epoch)
             logger.info('batch size: %d' % args.recog_batch_size)
             logger.info('beam width: %d' % args.recog_beam_width)
             logger.info('min length ratio: %.3f' % args.recog_min_len_ratio)
             logger.info('max length ratio: %.3f' % args.recog_max_len_ratio)
             logger.info('length penalty: %.3f' % args.recog_length_penalty)
+            logger.info('length norm: %s' % args.recog_length_norm)
             logger.info('coverage penalty: %.3f' % args.recog_coverage_penalty)
             logger.info('coverage threshold: %.3f' % args.recog_coverage_threshold)
             logger.info('CTC weight: %.3f' % args.recog_ctc_weight)
-            logger.info('LM path: %s' % args.recog_lm)
-            logger.info('LM path (bwd): %s' % args.recog_lm_bwd)
+            logger.info('fist LM path: %s' % args.recog_lm)
+            logger.info('second LM path: %s' % args.recog_lm_second)
+            logger.info('backward LM path: %s' % args.recog_lm_bwd)
             logger.info('LM weight: %.3f' % args.recog_lm_weight)
             logger.info('GNMT: %s' % args.recog_gnmt_decoding)
             logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
-            logger.info('reverse LM rescoring: %s' % args.recog_reverse_lm_rescoring)
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
             logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('ASR decoder state carry over: %s' % (args.recog_asr_state_carry_over))
             logger.info('LM state carry over: %s' % (args.recog_lm_state_carry_over))
-            logger.info('cache size: %d' % (args.recog_n_caches))
-            logger.info('cache type: %s' % (args.recog_cache_type))
-            logger.info('cache theta (speech): %.3f' % (args.recog_cache_theta_speech))
-            logger.info('cache lambda (speech): %.3f' % (args.recog_cache_lambda_speech))
-            logger.info('cache theta (lm): %.3f' % (args.recog_cache_theta_lm))
-            logger.info('cache lambda (lm): %.3f' % (args.recog_cache_lambda_lm))
             logger.info('model average (Transformer): %d' % (args.recog_n_average))
 
             # GPU setting
@@ -198,6 +181,7 @@ def main():
                 wer, cer = eval_wordpiece(ensemble_models, dataset, recog_params,
                                           epoch=epoch - 1,
                                           recog_dir=args.recog_dir,
+                                          streaming=args.recog_streaming,
                                           progressbar=True)
                 wer_avg += wer
                 cer_avg += cer

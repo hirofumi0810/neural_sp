@@ -28,6 +28,8 @@ def parse():
                         help='job name')
     parser.add_argument('--stdout', type=strtobool, default=False,
                         help='print to standard output')
+    parser.add_argument('--recog_stdout', type=strtobool, default=False,
+                        help='print to standard output during evaluation')
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')
@@ -113,8 +115,8 @@ def parse():
                         help='initial learning rate for learning rate warm up')
     parser.add_argument('--warmup_n_steps', type=int, default=0,
                         help='number of steps to warm up learing rate')
-    parser.add_argument('--accum_grad_n_tokens', type=int, default=0,
-                        help='total number of tokens to accumulate gradients')
+    parser.add_argument('--accum_grad_n_steps', type=int, default=1,
+                        help='total number of steps to accumulate gradients')
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
                         help='')
@@ -132,7 +134,7 @@ def parse():
     parser.add_argument('--dropout_out', type=float, default=0.0,
                         help='dropout probability for the output layer')
     parser.add_argument('--dropout_att', type=float, default=0.1,
-                        help='dropout probability for the attention weights')
+                        help='dropout probability for the attention weights (for Transformer)')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help='')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
@@ -144,20 +146,23 @@ def parse():
     parser.add_argument('--adaptive_softmax', type=strtobool, default=False,
                         help='use adaptive softmax')
     # transformer
-    parser.add_argument('--d_model', type=int, default=256,
+    parser.add_argument('--transformer_d_model', type=int, default=256,
                         help='number of units in self-attention layers in Transformer')
-    parser.add_argument('--d_ff', type=int, default=2048,
+    parser.add_argument('--transformer_d_ff', type=int, default=2048,
                         help='number of units in feed-forward fully-conncected layers in Transformer')
-    parser.add_argument('--attn_type', type=str, default='scaled_dot',
+    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
                         choices=['scaled_dot', 'add', 'average'],
                         help='type of attention for Transformer')
-    parser.add_argument('--attn_n_heads', type=int, default=4,
+    parser.add_argument('--transformer_n_heads', type=int, default=4,
                         help='number of heads in the attention layer for Transformer')
-    parser.add_argument('--pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
+    parser.add_argument('--transformer_pe_type', type=str, default='add',
+                        choices=['add', 'concat', 'learned_add', 'learned_concat', 'none'],
                         help='type of positional encoding')
-    parser.add_argument('--layer_norm_eps', type=float, default=1e-6,
+    parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                         help='epsilon value for layer narmalization')
+    parser.add_argument('--transformer_ffn_activation', type=str, default='relu',
+                        choices=['relu', 'gelu', 'gelu_accurate', 'glu'],
+                        help='nonlinear activation for position wise feed-forward layer')
     # contextualization
     parser.add_argument('--serialize', type=strtobool, default=False, nargs='?',
                         help='serialize text according to onset in dialogue')
@@ -170,6 +175,8 @@ def parse():
                         help='directory to save decoding results')
     parser.add_argument('--recog_batch_size', type=int, default=1,
                         help='size of mini-batch in evaluation')
+    parser.add_argument('--recog_n_average', type=int, default=5,
+                        help='number of models for the model averaging of Transformer')
     # cache parameters
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')

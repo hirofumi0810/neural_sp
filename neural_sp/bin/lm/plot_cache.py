@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import numpy as np
 import os
 import shutil
@@ -22,6 +23,8 @@ from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.lm import Dataset
 from neural_sp.models.lm.build import build_lm
 from neural_sp.utils import mkdir_join
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -40,8 +43,7 @@ def main():
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'plot.log')):
         os.remove(os.path.join(args.recog_dir, 'plot.log'))
-    logger = set_logger(os.path.join(args.recog_dir, 'plot.log'),
-                        key='decoding', stdout=args.recog_stdout)
+    set_logger(os.path.join(args.recog_dir, 'plot.log'), stdout=args.recog_stdout)
 
     for i, s in enumerate(args.recog_sets):
         # Load dataset
@@ -59,7 +61,7 @@ def main():
         if i == 0:
             # Load the LM
             model = build_lm(args, dir_name)
-            model = load_checkpoint(model, args.recog_model[0])[0]
+            load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
 
             logger.info('epoch: %d' % (epoch - 1))

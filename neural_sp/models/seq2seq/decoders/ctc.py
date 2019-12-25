@@ -17,10 +17,8 @@ import numpy as np
 import random
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
-from neural_sp.models.modules.linear import Linear
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
@@ -31,9 +29,11 @@ random.seed(1)
 LOG_0 = float(np.finfo(np.float32).min)
 LOG_1 = 0
 
+logger = logging.getLogger(__name__)
+
 
 class CTC(DecoderBase):
-    """RNN Transducer.
+    """Connectionist temporal classificaiton (CTC).
 
     Args:
         eos (int): index for <eos> (shared with <sos>)
@@ -52,49 +52,35 @@ class CTC(DecoderBase):
                  blank,
                  enc_n_units,
                  vocab,
-                 dropout=0.0,
-                 lsm_prob=0.0,
-                 fc_list=[],
+                 dropout=0.,
+                 lsm_prob=0.,
+                 fc_list=None,
                  param_init=0.1):
 
         super(CTC, self).__init__()
-        logger = logging.getLogger('training')
 
         self.eos = eos
         self.blank = blank
         self.vocab = vocab
         self.lsm_prob = lsm_prob
 
-        self.space = -1
-        # TODO(hirofumi): fix layer
+        self.space = -1  # TODO(hirofumi): fix later
 
         # Fully-connected layers before the softmax
-        if len(fc_list) > 0:
+        if fc_list is not None and len(fc_list) > 0:
+            _fc_list = [int(fc) for fc in fc_list.split('_')]
             fc_layers = OrderedDict()
-            for i in range(len(fc_list)):
-                input_dim = enc_n_units if i == 0 else fc_list[i - 1]
-                fc_layers['fc' + str(i)] = Linear(input_dim, fc_list[i], dropout=dropout)
-            fc_layers['fc' + str(len(fc_list))] = Linear(fc_list[-1], vocab)
+            for i in range(len(_fc_list)):
+                input_dim = enc_n_units if i == 0 else _fc_list[i - 1]
+                fc_layers['fc' + str(i)] = nn.Linear(input_dim, _fc_list[i])
+                fc_layers['dropout' + str(i)] = nn.Dropout(p=dropout)
+            fc_layers['fc' + str(len(_fc_list))] = nn.Linear(_fc_list[-1], vocab)
             self.output = nn.Sequential(fc_layers)
         else:
-            self.output = Linear(enc_n_units, vocab)
+            self.output = nn.Linear(enc_n_units, vocab)
 
         import warpctc_pytorch
         self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
-
-    def reset_parameters(self, param_init):
-        """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
-        for n, p in self.named_parameters():
-            if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
-            elif p.dim() in [2, 4]:
-                nn.init.uniform_(p, a=-param_init, b=param_init)
-                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
-            else:
-                raise ValueError
 
     def forward(self, eouts, elens, ys):
         """Compute CTC loss.
@@ -114,7 +100,7 @@ class CTC(DecoderBase):
 
         # Compute CTC loss
         logits = self.output(eouts)
-        loss = self.warpctc_loss(logits.transpose(1, 0).cpu(),  # time-major
+        loss = self.warpctc_loss(logits.transpose(1, 0),  # time-major
                                  ys_ctc, elens.cpu(), ylens)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
@@ -140,7 +126,7 @@ class CTC(DecoderBase):
         bs = eouts.size(0)
         hyps = []
 
-        log_probs = F.log_softmax(self.output(eouts), dim=-1)
+        log_probs = torch.log_softmax(self.output(eouts), dim=-1)
 
         # Pickup argmax class
         for b in range(bs):
@@ -159,7 +145,8 @@ class CTC(DecoderBase):
 
         return np.array(hyps)
 
-    def beam_search(self, eouts, elens, params, idx2token, lm=None,
+    def beam_search(self, eouts, elens, params, idx2token,
+                    lm=None, lm_2nd=None, lm_2nd_rev=None,
                     nbest=1, refs_id=None, utt_ids=None, speakers=None):
         """Beam search decoding.
 
@@ -169,10 +156,13 @@ class CTC(DecoderBase):
             params (dict):
                 recog_beam_width (int): size of beam
                 recog_length_penalty (float): length penalty
-                recog_lm_weight (float): weight of LM score
-                recog_lm_usage (str): rescoring or shallow_fusion
+                recog_lm_weight (float): weight of first path LM score
+                recog_lm_second_weight (float): weight of second path LM score
+                recog_lm_rev_weight (float): weight of second path backward LM score
             idx2token (): converter from index to token
-            lm (RNNLM or GatedConvLM or TransformerLM):
+            lm: firsh path LM
+            lm_2nd: second path LM
+            lm_2nd_rev: secoding path backward LM
             nbest (int):
             refs_id (list): reference list
             utt_ids (list): utterance id list
@@ -181,27 +171,26 @@ class CTC(DecoderBase):
             best_hyps (list): Best path hypothesis. `[B, L]`
 
         """
-        logger = logging.getLogger("decoding")
         bs = eouts.size(0)
 
         beam_width = params['recog_beam_width']
         lp_weight = params['recog_length_penalty']
         lm_weight = params['recog_lm_weight']
-        lm_usage = params['recog_lm_usage']
+        lm_weight_2nd = params['recog_lm_second_weight']
+        lm_weight_2nd_rev = params['recog_lm_rev_weight']
 
         best_hyps = []
-        log_probs = F.log_softmax(self.output(eouts), dim=-1)
+        log_probs = torch.log_softmax(self.output(eouts), dim=-1)
 
         for b in range(bs):
             # Elements in the beam are (prefix, (p_b, p_no_blank))
             # Initialize the beam with the empty sequence, a probability of
             # 1 for ending in blank and zero for ending in non-blank (in log space).
-            beam = [{'hyp_id': [self.eos],  # <eos> is used for LM
+            beam = [{'hyp': [self.eos],  # <eos> is used for LM
                      'p_b': LOG_1,
                      'p_nb': LOG_0,
                      'score_lm': LOG_1,
-                     'lmstate': None,
-                     }]
+                     'lmstate': None}]
 
             for t in range(elens[b]):
                 new_beam = []
@@ -211,7 +200,7 @@ class CTC(DecoderBase):
                     log_probs[b:b + 1, t], k=min(beam_width, self.vocab), dim=-1, largest=True, sorted=True)
 
                 for i_beam in range(len(beam)):
-                    hyp_id = beam[i_beam]['hyp_id'][:]
+                    hyp = beam[i_beam]['hyp'][:]
                     p_b = beam[i_beam]['p_b']
                     p_nb = beam[i_beam]['p_nb']
                     score_lm = beam[i_beam]['score_lm']
@@ -219,26 +208,25 @@ class CTC(DecoderBase):
                     # case 1. hyp is not extended
                     new_p_b = np.logaddexp(p_b + log_probs[b, t, self.blank].item(),
                                            p_nb + log_probs[b, t, self.blank].item())
-                    if len(hyp_id) > 1:
-                        new_p_nb = p_nb + log_probs[b, t, hyp_id[-1]].item()
+                    if len(hyp) > 1:
+                        new_p_nb = p_nb + log_probs[b, t, hyp[-1]].item()
                     else:
                         new_p_nb = LOG_0
                     score_ctc = np.logaddexp(new_p_b, new_p_nb)
-                    score_lp = len(hyp_id[1:]) * lp_weight
-                    new_beam.append({'hyp_id': hyp_id,
+                    score_lp = len(hyp[1:]) * lp_weight
+                    new_beam.append({'hyp': hyp,
                                      'score': score_ctc + score_lm + score_lp,
                                      'p_b': new_p_b,
                                      'p_nb': new_p_nb,
                                      'score_ctc': score_ctc,
                                      'score_lm': score_lm,
                                      'score_lp': score_lp,
-                                     'lmstate': beam[i_beam]['lmstate'],
-                                     })
+                                     'lmstate': beam[i_beam]['lmstate']})
 
                     # Update LM states for shallow fusion
-                    if lm_weight > 0 and lm is not None and lm_usage == 'shallow_fusion':
+                    if lm_weight > 0 and lm is not None:
                         _, lmstate, lm_log_probs = lm.predict(
-                            eouts.new_zeros(1, 1).fill_(hyp_id[-1]), beam[i_beam]['lmstate'])
+                            eouts.new_zeros(1, 1).fill_(hyp[-1]), beam[i_beam]['lmstate'])
                     else:
                         lmstate = None
 
@@ -250,7 +238,7 @@ class CTC(DecoderBase):
                         if c == self.blank:
                             continue
 
-                        c_prev = hyp_id[-1] if len(hyp_id) > 1 else None
+                        c_prev = hyp[-1] if len(hyp) > 1 else None
                         if c == c_prev:
                             new_p_nb = p_b + p_t
                             # TODO(hirofumi): apply character LM here
@@ -262,47 +250,46 @@ class CTC(DecoderBase):
                                 # TODO(hirofumi): apply word LM here
 
                         score_ctc = np.logaddexp(new_p_b, new_p_nb)
-                        score_lp = (len(hyp_id[1:]) + 1) * lp_weight
-                        if lm_weight > 0 and lm is not None and lm_usage == 'shallow_fusion':
+                        score_lp = (len(hyp[1:]) + 1) * lp_weight
+                        if lm_weight > 0 and lm is not None:
                             local_score_lm = lm_log_probs[0, 0, c].item() * lm_weight
                             score_lm += local_score_lm
-                        new_beam.append({'hyp_id': hyp_id + [c],
+                        new_beam.append({'hyp': hyp + [c],
                                          'score': score_ctc + score_lm + score_lp,
                                          'p_b': new_p_b,
                                          'p_nb': new_p_nb,
                                          'score_ctc': score_ctc,
                                          'score_lm': score_lm,
                                          'score_lp': score_lp,
-                                         'lmstate': lmstate,
-                                         })
+                                         'lmstate': lmstate})
 
                 # Pruning
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
 
             # Rescoing lattice
-            if lm_weight > 0 and lm is not None and lm_usage == 'rescoring':
+            if lm_weight_2nd > 0 and lm_2nd is not None:
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp_id'], dtype=np.int64), self.device_id)]
-                    ys_pad = pad_list(ys, lm.pad)
-                    _, _, lm_log_probs = lm.predict(ys_pad, None)
+                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), self.device_id)]
+                    ys_pad = pad_list(ys, lm_2nd.pad)
+                    _, _, lm_log_probs = lm_2nd.predict(ys_pad, None)
                     score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
-                    score_lm = lm_log_probs.sum() * lm_weight
-                    score_lp = len(beam[i_beam]['hyp_id'][1:]) * lp_weight
-                    new_beam.append({'hyp_id': beam[i_beam]['hyp_id'],
+                    score_lm = lm_log_probs.sum() * lm_weight_2nd
+                    score_lp = len(beam[i_beam]['hyp'][1:]) * lp_weight
+                    new_beam.append({'hyp': beam[i_beam]['hyp'],
                                      'score': score_ctc + score_lm + score_lp,
                                      'score_ctc': score_ctc,
                                      'score_lp': score_lp,
                                      'score_lm': score_lm})
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
 
-            best_hyps.append(np.array(beam[0]['hyp_id'][1:]))
+            best_hyps.append(np.array(beam[0]['hyp'][1:]))
 
             if utt_ids is not None:
                 logger.info('Utt-id: %s' % utt_ids[b])
             if refs_id is not None and self.vocab == idx2token.vocab:
                 logger.info('Ref: %s' % idx2token(refs_id[b]))
-            logger.info('Hyp: %s' % idx2token(beam[0]['hyp_id'][1:]))
+            logger.info('Hyp: %s' % idx2token(beam[0]['hyp'][1:]))
             logger.info('log prob (hyp): %.7f' % beam[0]['score'])
             logger.info('log prob (CTC): %.7f' % beam[0]['score_ctc'])
             logger.info('log prob (lp): %.7f' % beam[0]['score_lp'])
@@ -365,6 +352,7 @@ class CTCPrefixScore(object):
         """
         # initialize CTC states
         ylen = len(hyp) - 1  # ignore sos
+        ylen = min(ylen, self.xlen)  # for streaming
         # new CTC states are prepared as a frame x (n or b) x n_labels tensor
         # that corresponds to r_t^n(h) and r_t^b(h).
         r = np.ndarray((self.xlen, 2, len(cs)), dtype=np.float32)

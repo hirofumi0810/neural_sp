@@ -12,6 +12,8 @@ from __future__ import print_function
 
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                       nbest_hyps_bwd, aws_bwd, scores_bwd,
@@ -34,7 +36,6 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
     Returns:
 
     """
-    logger = logging.getLogger("decoding")
     bs = len(nbest_hyps_fwd)
     nbest = len(nbest_hyps_fwd[0])
 

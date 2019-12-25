@@ -14,6 +14,7 @@ import argparse
 import copy
 import cProfile
 import editdistance
+import logging
 import numpy as np
 import os
 from setproctitle import setproctitle
@@ -37,7 +38,7 @@ from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.build import build_lm
-from neural_sp.models.seq2seq.skip_thought import SkipThought
+from neural_sp.models.seq2seq.acoustic_model import AcousticModel
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.trainers.model_name import set_asr_model_name
@@ -47,6 +48,8 @@ from neural_sp.utils import mkdir_join
 
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -95,8 +98,7 @@ def main():
         save_path = set_save_path(save_path)  # avoid overwriting
 
     # Set logger
-    logger = set_logger(os.path.join(save_path, 'train.log'),
-                        key='training', stdout=args.stdout)
+    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
 
     # for multi-GPUs
     if args.n_gpus > 1:
@@ -104,7 +106,14 @@ def main():
                     (args.batch_size, args.batch_size // 2))
         args.batch_size //= 2
 
-    skip_thought = 'skip' in args.enc_type
+    if args.resume:
+        transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
+        if transformer and conf['optimizer'] != 'noam':
+            logger.warning('Noam Optimizer is not set for Transformer.')
+    else:
+        transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
+        if transformer and args.optimizer != 'noam':
+            logger.warning('Noam Optimizer is not set for Transformer.')
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
@@ -125,8 +134,9 @@ def main():
                         n_epochs=args.n_epochs,
                         min_n_frames=args.min_n_frames,
                         max_n_frames=args.max_n_frames,
+                        shuffle_bucket=args.shuffle_bucket,
                         sort_by='input',
-                        short2long=True,
+                        short2long=args.sort_short2long,
                         sort_stop_epoch=args.sort_stop_epoch,
                         dynamic_batching=args.dynamic_batching,
                         ctc=args.ctc_weight > 0,
@@ -135,8 +145,7 @@ def main():
                         subsample_factor=subsample_factor,
                         subsample_factor_sub1=subsample_factor_sub1,
                         subsample_factor_sub2=subsample_factor_sub2,
-                        discourse_aware=args.discourse_aware,
-                        skip_thought=skip_thought)
+                        discourse_aware=args.discourse_aware)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
                       tsv_path_sub1=args.dev_set_sub1,
@@ -160,20 +169,16 @@ def main():
                       subsample_factor=subsample_factor,
                       subsample_factor_sub1=subsample_factor_sub1,
                       subsample_factor_sub2=subsample_factor_sub2,
-                      discourse_aware=args.discourse_aware,
-                      skip_thought=skip_thought)
-    eval_sets = []
-    for s in args.eval_sets:
-        eval_sets += [Dataset(corpus=args.corpus,
-                              tsv_path=s,
-                              dict_path=args.dict,
-                              nlsyms=args.nlsyms,
-                              unit=args.unit,
-                              wp_model=args.wp_model,
-                              batch_size=1,
-                              discourse_aware=args.discourse_aware,
-                              skip_thought=skip_thought,
-                              is_test=True)]
+                      discourse_aware=args.discourse_aware)
+    eval_sets = [Dataset(corpus=args.corpus,
+                         tsv_path=s,
+                         dict_path=args.dict,
+                         nlsyms=args.nlsyms,
+                         unit=args.unit,
+                         wp_model=args.wp_model,
+                         batch_size=1,
+                         discourse_aware=args.discourse_aware,
+                         is_test=True) for s in args.eval_sets]
 
     args.vocab = train_set.vocab
     args.vocab_sub1 = train_set.vocab_sub1
@@ -193,7 +198,10 @@ def main():
         assert args.vocab == args.lm_conf.vocab
 
     # Model setting
-    model = Speech2Text(args, save_path) if not skip_thought else SkipThought(args, save_path)
+    if args.am_pretrain_type:
+        model = AcousticModel(args, save_path)
+    else:
+        model = Speech2Text(args, save_path)
 
     if args.resume:
         # Set optimizer
@@ -202,7 +210,6 @@ def main():
                                   conf['lr'], conf['weight_decay'])
 
         # Wrap optimizer by learning rate scheduler
-        noam = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
         optimizer = LRScheduler(optimizer, conf['lr'],
                                 decay_type=conf['lr_decay_type'],
                                 decay_start_epoch=conf['lr_decay_start_epoch'],
@@ -211,16 +218,16 @@ def main():
                                 early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
                                 warmup_start_lr=conf['warmup_start_lr'],
                                 warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['d_model'],
+                                model_size=conf['transformer_d_model'],
                                 factor=conf['lr_factor'],
-                                noam=noam)
+                                noam=transformer)
 
         # Restore the last saved model
-        model, optimizer = load_checkpoint(model, args.resume, optimizer, resume=True)
+        load_checkpoint(model, args.resume, optimizer)
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
-            optimizer.convert_to_sgd(model, 'sgd', args.lr, conf['weight_decay'],
+            optimizer.convert_to_sgd(model, args.lr, conf['weight_decay'],
                                      decay_type='always', decay_rate=0.5)
     else:
         # Save the conf file as a yaml file
@@ -254,18 +261,16 @@ def main():
             for k, v in conf_init.items():
                 setattr(args_init, k, v)
             model_init = Speech2Text(args_init)
-            model_init = load_checkpoint(model_init, args.asr_init)[0]
+            load_checkpoint(model_init, args.asr_init)
 
             # Overwrite parameters
-            only_enc = (args.enc_n_layers != args_init.enc_n_layers) or (
-                args.unit != args_init.unit) or args_init.ctc_weight == 1
+            # only_enc = (args.enc_n_layers != args_init.enc_n_layers) or (
+            #     args.unit != args_init.unit) or args_init.ctc_weight == 1
             param_dict = dict(model_init.named_parameters())
             for n, p in model.named_parameters():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
-                    if only_enc and 'enc' not in n:
-                        continue
-                    if args.lm_fusion_type == 'cache' and 'output' in n:
-                        continue
+                    # if only_enc and 'enc' not in n:
+                    #     continue
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
@@ -273,7 +278,6 @@ def main():
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
         # Wrap optimizer by learning rate scheduler
-        noam = 'transformer' in args.enc_type or args.dec_type == 'transformer'
         optimizer = LRScheduler(optimizer, args.lr,
                                 decay_type=args.lr_decay_type,
                                 decay_start_epoch=args.lr_decay_start_epoch,
@@ -282,9 +286,9 @@ def main():
                                 early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
-                                model_size=args.d_model,
+                                model_size=args.transformer_d_model,
                                 factor=args.lr_factor,
-                                noam=noam)
+                                noam=transformer)
 
     # Load the teacher ASR model
     teacher = None
@@ -296,7 +300,7 @@ def main():
         args_teacher.ss_prob = 0
         args.lsm_prob = 0
         teacher = Speech2Text(args_teacher)
-        teacher = load_checkpoint(teacher, args.teacher)[0]
+        load_checkpoint(teacher, args.teacher)
 
     # Load the teacher LM
     teacher_lm = None
@@ -306,7 +310,7 @@ def main():
         for k, v in conf_lm.items():
             setattr(args_lm, k, v)
         teacher_lm = build_lm(args_lm)
-        teacher_lm = load_checkpoint(teacher_lm, args.teacher_lm)[0]
+        load_checkpoint(teacher_lm, args.teacher_lm)
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -348,51 +352,45 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     pbar_epoch = tqdm(total=len(train_set))
-    accum_n_tokens = 0
+    accum_n_steps = 0
+    n_steps = 0
     while True:
         # Compute loss in the training set
         batch_train, is_new_epoch = train_set.next()
-        accum_n_tokens += sum([len(y) for y in batch_train['ys']])
+        accum_n_steps += 1
 
         # Change mini-batch depending on task
         for task in tasks:
-            if skip_thought:
-                loss, reporter = model(batch_train['ys'],
-                                       ys_prev=batch_train['ys_prev'],
-                                       ys_next=batch_train['ys_next'],
-                                       reporter=reporter)
-            else:
-                loss, reporter = model(batch_train, reporter, task,
-                                       teacher=teacher, teacher_lm=teacher_lm)
+            loss, observation = model(batch_train, task,
+                                      teacher=teacher, teacher_lm=teacher_lm)
+            reporter.add(observation)
             loss.backward()
             loss.detach()  # Trancate the graph
-            if args.accum_grad_n_tokens == 0 or accum_n_tokens >= args.accum_grad_n_tokens:
+            if args.accum_grad_n_steps == 1 or accum_n_steps >= args.accum_grad_n_steps:
                 if args.clip_grad_norm > 0:
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         model.module.parameters(), args.clip_grad_norm)
                     reporter.add_tensorboard_scalar('total_norm', total_norm)
                 optimizer.step()
                 optimizer.zero_grad()
-                accum_n_tokens = 0
+                accum_n_steps = 0
             loss_train = loss.item()
             del loss
+
         reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
         # NOTE: loss/acc/ppl are already added in the model
         reporter.step()
+        pbar_epoch.update(len(batch_train['utt_ids']))
+        n_steps += 1
 
-        if optimizer.n_steps % args.print_step == 0:
+        if n_steps % args.print_step == 0:
             # Compute loss in the dev set
-            batch_dev = dev_set.next()[0]
+            # batch_dev = dev_set.next()[0]
+            batch_dev = dev_set.next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
             # Change mini-batch depending on task
             for task in tasks:
-                if skip_thought:
-                    loss, reporter = model(batch_dev['ys'],
-                                           ys_prev=batch_dev['ys_prev'],
-                                           ys_next=batch_dev['ys_next'],
-                                           reporter=reporter,
-                                           is_eval=True)
-                else:
-                    loss, reporter = model(batch_dev, reporter, task, is_eval=True)
+                loss, observation = model(batch_dev, task, is_eval=True)
+                reporter.add(observation, is_eval=True)
                 loss_dev = loss.item()
                 del loss
             # NOTE: this makes training slow
@@ -423,15 +421,14 @@ def main():
                 xlen = max(len(x) for x in batch_train['ys'])
                 ylen = max(len(y) for y in batch_train['ys_sub1'])
             logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.7f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
-                        (optimizer.n_steps, optimizer.n_epochs + train_set.epoch_detail,
+                        (n_steps, optimizer.n_epochs + train_set.epoch_detail,
                          loss_train, loss_dev,
                          optimizer.lr, len(batch_train['utt_ids']),
                          xlen, ylen, duration_step / 60))
             start_time_step = time.time()
-        pbar_epoch.update(len(batch_train['utt_ids']))
 
         # Save fugures of loss and accuracy
-        if optimizer.n_steps % (args.print_step * 10) == 0:
+        if n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
 
@@ -446,8 +443,8 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
-                                remove_old_checkpoints=not noam)
+                save_checkpoint(model, optimizer, save_path,
+                                remove_old_checkpoints=not transformer)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -458,8 +455,8 @@ def main():
 
                 if optimizer.is_best:
                     # Save the model
-                    save_checkpoint(model, save_path, optimizer, optimizer.n_epochs,
-                                    remove_old_checkpoints=not noam)
+                    save_checkpoint(model, optimizer, save_path,
+                                    remove_old_checkpoints=not transformer)
 
                     # test
                     for eval_set in eval_sets:
@@ -479,7 +476,7 @@ def main():
 
                 # Convert to fine-tuning stage
                 if optimizer.n_epochs == args.convert_to_sgd_epoch:
-                    optimizer.convert_to_sgd(model, 'sgd', args.lr, args.weight_decay,
+                    optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
                                              decay_type='always', decay_rate=0.5)
 
             pbar_epoch = tqdm(total=len(train_set))

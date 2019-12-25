@@ -7,7 +7,7 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd8/inaguma/corpus/librispeech
+data=/n/work1/inaguma/corpus/librispeech
 
 batch_size=1
 n_caches=0
@@ -37,7 +37,7 @@ for set in dev_clean dev_other test_clean test_other; do
     mkdir -p ${recog_dir}
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/eval.py \
-        --recog_sets ${data}/dataset_lm/${set}_960_train_960_wpbpe30000.tsv \
+        --recog_sets ${data}/dataset_lm/${set}_960_train_960_wpbpe10000.tsv \
         --recog_model ${model} \
         --recog_batch_size ${batch_size} \
         --recog_n_caches ${n_caches} \

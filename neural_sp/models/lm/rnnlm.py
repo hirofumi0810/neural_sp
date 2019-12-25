@@ -13,11 +13,13 @@ from __future__ import print_function
 import logging
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.lm.lm_base import LMBase
-from neural_sp.models.modules.embedding import Embedding
-from neural_sp.models.modules.linear import Linear
+from neural_sp.models.modules.glu import LinearGLUBlock
+from neural_sp.models.torch_utils import repeat
+
+
+logger = logging.getLogger(__name__)
 
 
 class RNNLM(LMBase):
@@ -26,7 +28,6 @@ class RNNLM(LMBase):
     def __init__(self, args, save_path=None):
 
         super(LMBase, self).__init__()
-        logger = logging.getLogger('training')
         logger.info(self.__class__.__name__)
 
         self.save_path = save_path
@@ -38,7 +39,6 @@ class RNNLM(LMBase):
         self.n_projs = args.n_projs
         self.n_layers = args.n_layers
         self.residual = args.residual
-        self.use_glu = args.use_glu
         self.n_units_cv = args.n_units_null_context
         self.lsm_prob = args.lsm_prob
 
@@ -54,32 +54,24 @@ class RNNLM(LMBase):
         self.cache_keys = []
         self.cache_attn = []
 
-        self.embed = Embedding(vocab=self.vocab,
-                               emb_dim=args.emb_dim,
-                               dropout=args.dropout_in,
-                               ignore_index=self.pad)
+        self.embed = nn.Embedding(self.vocab, args.emb_dim, padding_idx=self.pad)
+        self.dropout_embed = nn.Dropout(p=args.dropout_in)
 
         rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
         self.rnn = nn.ModuleList()
-        self.dropout = nn.ModuleList([nn.Dropout(p=args.dropout_hidden)
-                                      for _ in range(args.n_layers)])
+        self.dropout = repeat(nn.Dropout(p=args.dropout_hidden), args.n_layers)
         if args.n_projs > 0:
-            self.proj = nn.ModuleList([Linear(args.n_units, args.n_projs)
-                                       for _ in range(args.n_layers)])
+            self.proj = repeat(nn.Linear(args.n_units, args.n_projs), args.n_layers)
         rnn_idim = args.emb_dim + args.n_units_null_context
         for l in range(args.n_layers):
-            self.rnn += [rnn(rnn_idim, args.n_units, 1,
-                             bias=True,
-                             batch_first=True,
-                             dropout=0,
-                             bidirectional=False)]
+            self.rnn += [rnn(rnn_idim, args.n_units, 1, batch_first=True)]
             rnn_idim = args.n_units
             if args.n_projs > 0:
                 rnn_idim = args.n_projs
 
-        if self.use_glu:
-            self.fc_glu = Linear(rnn_idim, rnn_idim * 2,
-                                 dropout=args.dropout_hidden)
+        self.glu = None
+        if args.use_glu:
+            self.glu = LinearGLUBlock(rnn_idim)
 
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
@@ -90,22 +82,12 @@ class RNNLM(LMBase):
             self.output = None
         else:
             self.adaptive_softmax = None
-            self.output = Linear(rnn_idim, self.vocab,
-                                 dropout=args.dropout_out)
-            # NOTE: include bias even when tying weights
-
-            # Optionally tie weights as in:
-            # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-            # https://arxiv.org/abs/1608.05859
-            # and
-            # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-            # https://arxiv.org/abs/1611.01462
+            self.output = nn.Linear(rnn_idim, self.vocab)
             if args.tie_embedding:
                 if args.n_units != args.emb_dim:
                     raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
-                self.output.fc.weight = self.embed.embed.weight
+                self.output.weight = self.embed.weight
 
-        # Initialize parameters
         self.reset_parameters(args.param_init)
 
         # Recurrent weights are orthogonalized
@@ -118,19 +100,18 @@ class RNNLM(LMBase):
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
-        logger = logging.getLogger('training')
         logger.info('===== Initialize %s =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
-                nn.init.constant_(p, val=0)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0))
+                nn.init.constant_(p, 0.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
             elif p.dim() == 2:
                 nn.init.uniform_(p, a=-param_init, b=param_init)
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
-                raise ValueError
+                raise ValueError(n)
 
-    def decode(self, ys, state, is_asr=False):
+    def decode(self, ys, state, cache=False):
         """Decode function.
 
         Args:
@@ -138,22 +119,25 @@ class RNNLM(LMBase):
             state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
-            is_asr (bool):
+            cache (bool): dummy interfance
         Returns:
-            ys_emb (FloatTensor): `[B, L, n_units]`
+            logits (FloatTensor): `[B, L, vocab]`
+            ys_emb (FloatTensor): `[B, L, n_units]` (for cache)
             new_state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
 
         """
-        ys_emb = self.embed(ys.long())
+        bs, ymax = ys.size()
+        ys_emb = self.dropout_embed(self.embed(ys.long()))
 
         if state is None:
-            state = self.zero_state(ys_emb.size(0))
+            state = self.zero_state(bs)
         new_state = {'hxs': None, 'cxs': None}
 
+        # for ASR decoder pre-training
         if self.n_units_cv > 0:
-            cv = ys_emb.new_zeros(ys_emb.size(0), ys_emb.size(1), self.n_units_cv)
+            cv = ys.new_zeros(bs, ymax, self.n_units_cv)
             ys_emb = torch.cat([ys_emb, cv], dim=-1)
 
         residual = None
@@ -161,12 +145,12 @@ class RNNLM(LMBase):
         for l in range(self.n_layers):
             # Path through RNN
             if self.rnn_type == 'lstm':
-                ys_emb, (h_l, c_l) = self.rnn[l](ys_emb, hx=(state['hxs'][l:l + 1],
-                                                             state['cxs'][l:l + 1]))
-                new_cxs.append(c_l)
+                ys_emb, (h, c) = self.rnn[l](ys_emb, hx=(state['hxs'][l:l + 1],
+                                                         state['cxs'][l:l + 1]))
+                new_cxs.append(c)
             elif self.rnn_type == 'gru':
-                ys_emb, h_l = self.rnn[l](ys_emb, hx=state['hxs'][l:l + 1])
-            new_hxs.append(h_l)
+                ys_emb, h = self.rnn[l](ys_emb, hx=state['hxs'][l:l + 1])
+            new_hxs.append(h)
             ys_emb = self.dropout[l](ys_emb)
             if self.n_projs > 0:
                 ys_emb = torch.tanh(self.proj[l](ys_emb))
@@ -182,14 +166,19 @@ class RNNLM(LMBase):
         if self.rnn_type == 'lstm':
             new_state['cxs'] = torch.cat(new_cxs, dim=0)
 
-        if self.use_glu:
+        if self.glu is not None:
             if self.residual:
                 residual = ys_emb
-            ys_emb = F.glu(self.fc_glu(ys_emb), dim=-1)
+            ys_emb = self.glu(ys_emb)
             if self.residual:
                 ys_emb = ys_emb + residual
 
-        return ys_emb, new_state
+        if self.adaptive_softmax is None:
+            logits = self.output(ys_emb)
+        else:
+            logits = ys_emb
+
+        return logits, ys_emb, new_state
 
     def zero_state(self, batch_size):
         """Initialize hidden state.
