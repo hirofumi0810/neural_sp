@@ -223,7 +223,7 @@ def main():
                                 noam=transformer)
 
         # Restore the last saved model
-        model, optimizer = load_checkpoint(model, args.resume, optimizer)
+        load_checkpoint(model, args.resume, optimizer)
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:
@@ -261,7 +261,7 @@ def main():
             for k, v in conf_init.items():
                 setattr(args_init, k, v)
             model_init = Speech2Text(args_init)
-            model_init = load_checkpoint(model_init, args.asr_init)[0]
+            load_checkpoint(model_init, args.asr_init)
 
             # Overwrite parameters
             # only_enc = (args.enc_n_layers != args_init.enc_n_layers) or (
@@ -300,7 +300,7 @@ def main():
         args_teacher.ss_prob = 0
         args.lsm_prob = 0
         teacher = Speech2Text(args_teacher)
-        teacher = load_checkpoint(teacher, args.teacher)[0]
+        load_checkpoint(teacher, args.teacher)
 
     # Load the teacher LM
     teacher_lm = None
@@ -310,7 +310,7 @@ def main():
         for k, v in conf_lm.items():
             setattr(args_lm, k, v)
         teacher_lm = build_lm(args_lm)
-        teacher_lm = load_checkpoint(teacher_lm, args.teacher_lm)[0]
+        load_checkpoint(teacher_lm, args.teacher_lm)
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -376,6 +376,7 @@ def main():
                 accum_n_steps = 0
             loss_train = loss.item()
             del loss
+
         reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
         # NOTE: loss/acc/ppl are already added in the model
         reporter.step()

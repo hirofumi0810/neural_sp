@@ -77,7 +77,7 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            model = load_checkpoint(model, args.recog_model[0])[0]
+            load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
 
             # Model averaging for Transformer
@@ -95,7 +95,7 @@ def main():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
-                    model_e = load_checkpoint(model_e, recog_model_e)[0]
+                    load_checkpoint(model_e, recog_model_e)
                     model_e.cuda()
                     ensemble_models += [model_e]
 
@@ -110,7 +110,7 @@ def main():
                     lm = build_lm(args_lm, wordlm=args.recog_wordlm,
                                   lm_dict_path=os.path.join(os.path.dirname(args.recog_lm), 'dict.txt'),
                                   asr_dict_path=os.path.join(dir_name, 'dict.txt'))
-                    lm = load_checkpoint(lm, args.recog_lm)[0]
+                    load_checkpoint(lm, args.recog_lm)
                     if args_lm.backward:
                         model.lm_bwd = lm
                     else:
@@ -123,7 +123,7 @@ def main():
                     for k, v in conf_lm_2nd.items():
                         setattr(args_lm_2nd, k, v)
                     lm_2nd = build_lm(args_lm_2nd)
-                    lm_2nd = load_checkpoint(lm_2nd, args.recog_lm_second)[0]
+                    load_checkpoint(lm_2nd, args.recog_lm_second)
                     model.lm_2nd = lm_2nd
 
                 # second path (bakward)
@@ -133,7 +133,7 @@ def main():
                     for k, v in conf_lm.items():
                         setattr(args_lm_bwd, k, v)
                     lm_bwd = build_lm(args_lm_bwd)
-                    lm_bwd = load_checkpoint(lm_bwd, args.recog_lm_bwd)[0]
+                    load_checkpoint(lm_bwd, args.recog_lm_bwd)
                     model.lm_bwd = lm_bwd
 
             if not args.recog_unit:
@@ -181,6 +181,7 @@ def main():
                 wer, cer = eval_wordpiece(ensemble_models, dataset, recog_params,
                                           epoch=epoch - 1,
                                           recog_dir=args.recog_dir,
+                                          streaming=args.recog_streaming,
                                           progressbar=True)
                 wer_avg += wer
                 cer_avg += cer

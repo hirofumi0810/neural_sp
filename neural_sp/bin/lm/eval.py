@@ -62,7 +62,7 @@ def main():
         if i == 0:
             # Load the LM
             model = build_lm(args)
-            model = load_checkpoint(model, args.recog_model[0])[0]
+            load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
 
             # Model averaging for Transformer

@@ -134,7 +134,7 @@ def main():
                                 noam=transformer)
 
         # Restore the last saved model
-        model, optimizer = load_checkpoint(model, args.resume, optimizer)
+        load_checkpoint(model, args.resume, optimizer)
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if epoch == conf['convert_to_sgd_epoch']:

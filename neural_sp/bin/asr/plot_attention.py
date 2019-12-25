@@ -65,7 +65,7 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            model = load_checkpoint(model, args.recog_model[0])[0]
+            load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
 
             # ensemble (different models)
@@ -78,7 +78,7 @@ def main():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
-                    model_e = load_checkpoint(model_e, recog_model_e)[0]
+                    load_checkpoint(model_e, recog_model_e)
                     model_e.cuda()
                     ensemble_models += [model_e]
 
@@ -91,7 +91,7 @@ def main():
                     for k, v in conf_lm.items():
                         setattr(args_lm, k, v)
                     lm = build_lm(args_lm)
-                    lm = load_checkpoint(lm, args.recog_lm)[0]
+                    load_checkpoint(lm, args.recog_lm)
                     if args_lm.backward:
                         model.lm_bwd = lm
                     else:

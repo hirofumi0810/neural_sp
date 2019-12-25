@@ -103,9 +103,6 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
         model (torch.nn.Module):
         checkpoint_path (str): path to the saved model (model..epoch-*)
         optimizer (LRScheduler): optimizer wrapped by LRScheduler class
-    Returns:
-        model (torch.nn.Module):
-        optimizer (LRScheduler): optimizer wrapped by LRScheduler class
 
     """
     if not os.path.isfile(checkpoint_path):
@@ -124,24 +121,21 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
         model.load_state_dict(checkpoint['model_state_dict'])
     except KeyError:
         model.load_state_dict(checkpoint['state_dict'])
+        checkpoint['model_state_dict'] = checkpoint['state_dict']
+        checkpoint['optimizer_state_dict'] = checkpoint['optimizer']
+        del checkpoint['state_dict']
+        del checkpoint['optimizer']
+        torch.save(checkpoint, checkpoint_path + '.tmp')
 
     # Restore optimizer
     if optimizer is not None:
-        try:
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        except KeyError:
-            optimizer.load_state_dict(checkpoint['optimizer'])
-        for state in optimizer.optimizer.state.values():
-            for k, v in state.items():
-                if torch.is_tensor(v):
-                    state[k] = v.cuda()
-                    # state[k] = v.cuda(self.device_id)
-                    # TODO(hirofumi): Fix for multi-GPU
-        # NOTE: from https://github.com/pytorch/pytorch/issues/2830
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # NOTE: fix this later
+        optimizer.optimizer.param_groups[0]['params'] = []
+        for param_group in list(model.parameters()):
+            optimizer.optimizer.param_groups[0]['params'].append(param_group)
     else:
         logger.warning('Optimizer is not loaded.')
-
-    return model, optimizer
 
 
 def save_checkpoint(model, optimizer, save_path, remove_old_checkpoints=True):
