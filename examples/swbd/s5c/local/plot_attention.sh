@@ -35,7 +35,7 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-recog_n_average=1  # for Transformer
+n_average=1  # for Transformer
 oracle=false
 
 . ./cmd.sh
@@ -47,11 +47,10 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: local/plot_attention.sh --gpu 0" 1>&2
-    exit 1
+    n_gpus=0
+else
+    n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
-gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in eval2000; do
     recog_dir=$(dirname ${model})/plot_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
@@ -85,8 +84,8 @@ for set in eval2000; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${recog_n_average} != 1 ]; then
-        recog_dir=${recog_dir}_average${recog_n_average}
+    if [ ${n_average} != 1 ]; then
+        recog_dir=${recog_dir}_average${n_average}
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ] && [ ${lm_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_LMcarryover
@@ -118,6 +117,7 @@ for set in eval2000; do
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_attention.py \
+        --recog_n_gpus ${n_gpus} \
         --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
@@ -143,7 +143,7 @@ for set in eval2000; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
-        --recog_n_average ${recog_n_average} \
+        --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_stdout ${stdout} || exit 1;
 done

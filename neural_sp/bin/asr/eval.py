@@ -96,7 +96,8 @@ def main():
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
                     load_checkpoint(model_e, recog_model_e)
-                    model_e.cuda()
+                    if args.recog_n_gpus >= 1:
+                        model_e.cuda()
                     ensemble_models += [model_e]
 
             # Load the LM for shallow fusion
@@ -165,7 +166,8 @@ def main():
             logger.info('model average (Transformer): %d' % (args.recog_n_average))
 
             # GPU setting
-            model.cuda()
+            if args.recog_n_gpus >= 1:
+                model.cuda()
 
         start_time = time.time()
 

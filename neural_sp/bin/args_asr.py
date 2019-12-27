@@ -326,6 +326,8 @@ def parse():
                         choices=['state_carry_over', 'hierarchical', ''],
                         help='')
     # decoding parameters
+    parser.add_argument('--recog_n_gpus', type=int, default=0,
+                        help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='tsv file paths for the evaluation sets')
     parser.add_argument('--recog_model', type=str, default=False, nargs='+',
