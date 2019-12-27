@@ -25,11 +25,10 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: local/plot_ctc.sh --gpu 0" 1>&2
-    exit 1
+    n_gpus=0
+else
+    n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
-gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in eval2000; do
     recog_dir=$(dirname ${model})/plot_${set}
@@ -60,6 +59,7 @@ for set in eval2000; do
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_ctc.py \
+        --recog_n_gpus ${n_gpus} \
         --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \

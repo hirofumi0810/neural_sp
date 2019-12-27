@@ -27,9 +27,10 @@ coverage_threshold=0.0
 gnmt_decoding=false
 eos_threshold=1.5
 lm=
-lm_second_path=
+lm_second=
 lm_bwd=
 lm_weight=0.3
+lm_second_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -37,7 +38,7 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-recog_n_average=1  # for Transformer
+n_average=1  # for Transformer
 oracle=false
 
 . ./cmd.sh
@@ -49,11 +50,10 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: local/score.sh --gpu 0" 1>&2
-    exit 1
+    n_gpus=0
+else
+    n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
-gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in dev_clean dev_other test_clean test_other; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
@@ -68,6 +68,9 @@ for set in dev_clean dev_other test_clean test_other; do
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
         recog_dir=${recog_dir}_lm${lm_weight}
+    fi
+    if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
+        recog_dir=${recog_dir}_rescore${lm_second_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
@@ -90,8 +93,8 @@ for set in dev_clean dev_other test_clean test_other; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${recog_n_average} != 1 ]; then
-        recog_dir=${recog_dir}_average${recog_n_average}
+    if [ ${n_average} != 1 ]; then
+        recog_dir=${recog_dir}_average${n_average}
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ] && [ ${lm_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_LMcarryover
@@ -117,6 +120,7 @@ for set in dev_clean dev_other test_clean test_other; do
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
+        --recog_n_gpus ${n_gpus} \
         --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
@@ -134,8 +138,10 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_gnmt_decoding ${gnmt_decoding} \
         --recog_eos_threshold ${eos_threshold} \
         --recog_lm ${lm} \
+        --recog_lm_second ${lm_second} \
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
+        --recog_lm_second_weight ${lm_second_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
@@ -143,7 +149,7 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
-        --recog_n_average ${recog_n_average} \
+        --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_stdout ${stdout} || exit 1;
 
