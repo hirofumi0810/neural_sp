@@ -29,14 +29,14 @@ sns.set(font='Noto Sans CJK JP')
 
 def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
                            save_path=None, figsize=(20, 8),
-                           ctc_probs=None, ctc_indices_topk=None):
+                           ctc_probs=None, ctc_topk_ids=None):
     """Plot attention weights.
 
     Args:
         aw (np.ndarray): A tensor of size `[L, T, n_heads]
-        tokens (list):
+        tokens (list): hypothesis tokens
         spectrogram (np.ndarray): A tensor of size `[T, feature_dim]`
-        ref (str):
+        ref (str): reference text
         save_path (str): path to save a figure
         figsize (tuple):
 
@@ -54,23 +54,25 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
     if spectrogram is None:
         sns.heatmap(aw[:, :, 0], cmap='viridis',
                     xticklabels=False,
-                    yticklabels=tokens if len(tokens) > 0 else False)
-        plt.ylabel(u'Output labels (←)', fontsize=8)
+                    yticklabels=tokens if len(tokens) > 0 else False,
+                    annot_kws={'size': 5})
+        plt.ylabel(u'Output labels (←)', fontsize=12)
         plt.yticks(rotation=0)
     else:
-        for head in range(1, n_heads + 1, 1):
-            plt.subplot(n_col, 1, head)
-            sns.heatmap(aw[:, :, head - 1], cmap='viridis',
+        for h in range(1, n_heads + 1, 1):
+            plt.subplot(n_col, 1, h)
+            sns.heatmap(aw[:, :, h - 1], cmap='viridis',
                         xticklabels=False,
                         yticklabels=tokens if len(tokens) > 0 else False,
                         cbar_kws={"orientation": "horizontal"})
             plt.ylabel(u'Output labels (←)', fontsize=12)
             plt.yticks(rotation=0)
 
+        # CTC propabilities for joint CTC-attention
         if ctc_probs is not None:
             plt.subplot(n_col, 1, n_col - 1)
             times_probs = np.arange(ctc_probs.shape[0])
-            for idx in set(ctc_indices_topk.reshape(-1).tolist()):
+            for idx in set(ctc_topk_ids.reshape(-1).tolist()):
                 if idx == 0:
                     plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
                 else:
@@ -87,6 +89,9 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
         plt.ylabel(u'Frequency bin', fontsize=12)
         # plt.colorbar()
         plt.grid('off')
+
+    if ref is not None:
+        plt.title(ref)
 
     # Save as a png file
     if save_path is not None:
@@ -160,13 +165,13 @@ def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
     plt.close()
 
 
-def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space=-1, hyp='',
+def plot_ctc_probs(ctc_probs, topk_ids, subsample_factor, space=-1, hyp='',
                    spectrogram=None, save_path=None, figsize=(20, 8), topk=None):
     """Plot CTC posteriors.
 
     Args:
         ctc_probs (np.ndarray): A tensor of size `[T, vocab]`
-        indices_topk ():
+        topk_ids ():
         subsample_factor (int): the number of frames to stack
         space (int): index for space mark
         hyp (str):
@@ -188,7 +193,7 @@ def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space=-1, hyp='',
 
     if spectrogram is None:
         # NOTE: index 0 is reserved for blank
-        for idx in set(indices_topk.reshape(-1).tolist()):
+        for idx in set(topk_ids.reshape(-1).tolist()):
             if idx == 0:
                 plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
             elif idx == space:
@@ -202,7 +207,7 @@ def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space=-1, hyp='',
     else:
         plt.subplot(211)
         # NOTE: index 0 is reserved for blank
-        for idx in set(indices_topk.reshape(-1).tolist()):
+        for idx in set(topk_ids.reshape(-1).tolist()):
             if idx == 0:
                 plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
             elif idx == space:
@@ -228,7 +233,7 @@ def plot_ctc_probs(ctc_probs, indices_topk, subsample_factor, space=-1, hyp='',
     plt.close()
 
 
-def plot_hierarchical_ctc_probs(ctc_probs, indices_topk, ctc_probs_sub, indices_topk_sub,
+def plot_hierarchical_ctc_probs(ctc_probs, topk_ids, ctc_probs_sub, topk_ids_sub,
                                 subsample_factor, space=-1, space_sub=-1, hyp='', hyp_sub='',
                                 spectrogram=None, save_path=None, figsize=(20, 8)):
     """Plot CTC posteriors for the hierarchical model.
@@ -258,7 +263,7 @@ def plot_hierarchical_ctc_probs(ctc_probs, indices_topk, ctc_probs_sub, indices_
     plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
 
     # Plot only top-k
-    for idx in set(indices_topk.reshape(-1).tolist()):
+    for idx in set(topk_ids.reshape(-1).tolist()):
         if idx == 0:
             plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
         elif idx == space:
@@ -275,7 +280,7 @@ def plot_hierarchical_ctc_probs(ctc_probs, indices_topk, ctc_probs_sub, indices_
 
     plt.subplot(212)
     plt.plot(times_probs, ctc_probs_sub[:, 0], ':', label='<blank>', color='grey')
-    for idx in set(indices_topk_sub.reshape(-1).tolist()):
+    for idx in set(topk_ids_sub.reshape(-1).tolist()):
         if idx == 0:
             plt.plot(times_probs, ctc_probs_sub[:, 0], ':', label='<blank>', color='grey')
         elif idx == space_sub:

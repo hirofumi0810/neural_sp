@@ -79,7 +79,8 @@ def main():
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
                     load_checkpoint(model_e, recog_model_e)
-                    model_e.cuda()
+                    if args.recog_n_gpus > 0:
+                        model_e.cuda()
                     ensemble_models += [model_e]
 
             # Load the LM for shallow fusion
@@ -124,7 +125,8 @@ def main():
             logger.info('model average (Transformer): %d' % (args.recog_n_average))
 
             # GPU setting
-            model.cuda()
+            if args.recog_n_gpus > 0:
+                model.cuda()
 
         save_path = mkdir_join(args.recog_dir, 'att_weights')
 
@@ -143,9 +145,9 @@ def main():
                 speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
 
             # Get CTC probs
-            ctc_probs, indices_topk = None, None
+            ctc_probs, topk_ids = None, None
             if args.ctc_weight > 0:
-                ctc_probs, indices_topk, xlens = model.get_ctc_probs(
+                ctc_probs, topk_ids, xlens = model.get_ctc_probs(
                     batch['xs'], temperature=1, topk=min(100, model.vocab))
                 # NOTE: ctc_probs: '[B, T, topk]'
 
@@ -159,13 +161,13 @@ def main():
                 spk = batch['speakers'][b]
 
                 plot_attention_weights(
-                    aws[b][:len(tokens)],
-                    tokens,
+                    aws[b][:len(tokens)], tokens,
                     spectrogram=batch['xs'][b][:, :dataset.input_dim] if args.input_type == 'speech' else None,
+                    ref=batch['text'][b].lower(),
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8),
                     ctc_probs=ctc_probs[b, :xlens[b]] if ctc_probs is not None else None,
-                    ctc_indices_topk=indices_topk[b] if indices_topk is not None else None)
+                    ctc_topk_ids=topk_ids[b] if topk_ids is not None else None)
 
                 if model.bwd_weight > 0.5:
                     hyp = ' '.join(tokens[::-1])

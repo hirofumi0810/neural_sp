@@ -83,7 +83,8 @@ def main():
             logger.info('batch size: %d' % args.recog_batch_size)
 
             # GPU setting
-            model.cuda()
+            if args.recog_n_gpus > 0:
+                model.cuda()
 
         save_path = mkdir_join(args.recog_dir, 'ctc_probs')
 
@@ -98,7 +99,7 @@ def main():
                                               exclude_eos=False)
 
             # Get CTC probs
-            ctc_probs, indices_topk, xlens = model.get_ctc_probs(
+            ctc_probs, topk_ids, xlens = model.get_ctc_probs(
                 batch['xs'], temperature=1, topk=min(100, model.vocab))
             # NOTE: ctc_probs: '[B, T, topk]'
 
@@ -107,8 +108,7 @@ def main():
                 spk = batch['speakers'][b]
 
                 plot_ctc_probs(
-                    ctc_probs[b, :xlens[b]],
-                    indices_topk[b],
+                    ctc_probs[b, :xlens[b]], topk_ids[b],
                     subsample_factor=subsample_factor,
                     spectrogram=batch['xs'][b][:, :dataset.input_dim],
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
