@@ -10,7 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
-speed_perturb=false
+speed_perturb=true  # default
 specaug=false
 stdout=false
 
@@ -55,6 +55,9 @@ set -o pipefail
 
 if [ ${speed_perturb} = true ]; then
     conf2=conf/speed_perturb.yaml
+    if [ ${specaug} = true ]; then
+        conf2=conf/spec_augment_speed_perturb.yaml
+    fi
 elif [ ${specaug} = true ]; then
     conf2=conf/spec_augment.yaml
 fi
@@ -106,10 +109,12 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in train dev test; do
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-    done
+    if [ ! -e ${data}/.done_stage_1_spfalse ]; then
+        for x in train dev test; do
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+        done
+    fi
 
     if [ ${speed_perturb} = true ]; then
         # speed-perturbed
