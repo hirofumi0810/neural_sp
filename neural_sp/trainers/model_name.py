@@ -38,7 +38,7 @@ def set_asr_model_name(args, subsample_factor):
             dir_name += 'NiN'
         if args.bidirectional_sum_fwd_bwd:
             dir_name += '_sumfwdbwd'
-    if args.lc_chunk_size_left > 0 and args.lc_chunk_size_right > 0:
+    if args.lc_chunk_size_left > 0 or args.lc_chunk_size_right > 0:
         dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
     if args.n_stacks > 1:
         dir_name += '_stack' + str(args.n_stacks)
@@ -50,7 +50,7 @@ def set_asr_model_name(args, subsample_factor):
     # decoder
     if args.ctc_weight < 1:
         dir_name += '_' + args.dec_type
-        if args.dec_type in ['transformer', 'transformer_transducer']:
+        if 'transformer' in args.dec_type:
             dir_name += str(args.transformer_d_model) + 'dmodel'
             dir_name += str(args.transformer_d_ff) + 'dff'
             dir_name += str(args.dec_n_layers) + 'L'
@@ -60,23 +60,24 @@ def set_asr_model_name(args, subsample_factor):
             if args.dec_n_projs > 0:
                 dir_name += str(args.dec_n_projs) + 'P'
             dir_name += str(args.dec_n_layers) + 'L'
-            dir_name += '_' + args.attn_type
-            if args.attn_sigmoid:
-                dir_name += '_sig'
-            if args.attn_type == 'mocha':
-                dir_name += '_chunk' + str(args.mocha_chunk_size)
-                if args.mocha_adaptive:
-                    dir_name += '_adaptive'
-                if args.mocha_1dconv:
-                    dir_name += '_1dconv'
-                if args.attn_sharpening_factor:
-                    dir_name += '_temp' + str(args.attn_sharpening_factor)
-                if args.mocha_quantity_loss_weight > 0:
-                    dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
-            elif args.attn_type == 'gmm':
-                dir_name += '_mix' + str(args.gmm_attn_n_mixtures)
-        if args.attn_n_heads > 1:
-            dir_name += '_head' + str(args.attn_n_heads)
+            if 'transducer' not in args.dec_type:
+                dir_name += '_' + args.attn_type
+                if args.attn_sigmoid:
+                    dir_name += '_sig'
+                if args.attn_type == 'mocha':
+                    dir_name += '_chunk' + str(args.mocha_chunk_size)
+                    if args.mocha_adaptive:
+                        dir_name += '_adaptive'
+                    if args.mocha_1dconv:
+                        dir_name += '_1dconv'
+                    if args.attn_sharpening_factor:
+                        dir_name += '_temp' + str(args.attn_sharpening_factor)
+                    if args.mocha_quantity_loss_weight > 0:
+                        dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
+                elif args.attn_type == 'gmm':
+                    dir_name += '_mix' + str(args.gmm_attn_n_mixtures)
+                if args.attn_n_heads > 1:
+                    dir_name += '_head' + str(args.attn_n_heads)
         if args.tie_embedding:
             dir_name += '_tie'
 
@@ -87,6 +88,8 @@ def set_asr_model_name(args, subsample_factor):
     else:
         dir_name += '_lr' + str(args.lr)
     dir_name += '_bs' + str(args.batch_size)
+    if args.shuffle_bucket:
+        dir_name += '_bucket'
 
     # regularization
     if args.ctc_weight < 1 and args.ss_prob > 0:
