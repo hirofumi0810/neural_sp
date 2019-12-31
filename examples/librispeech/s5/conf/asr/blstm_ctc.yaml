@@ -1,7 +1,7 @@
 ### topology
 n_stacks: 3
 n_skips: 3
-max_n_frames: 2000
+max_n_frames: 1600
 conv_in_channel: 1
 conv_channels: "32_32"
 conv_kernel_sizes: "(3,3)_(3,3)"
@@ -15,8 +15,7 @@ enc_n_projs: 0
 enc_n_layers: 5
 subsample_type: drop
 dec_type: lstm
-# ctc_fc_list: "512"
-ctc_fc_list: ""
+ctc_fc_list: ""  # for character
 ### optimization
 batch_size: 50
 optimizer: adam

@@ -26,21 +26,6 @@ conf2=
 asr_init=
 lm_init=
 
-# TDS
-# enc_type=tds
-# conv_channels="10_10_14_14_14_18_18_18_18_18_18"
-# conv_kernel_sizes="(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)"
-# subsample="1_1_1_1_1"
-# clip_grad_norm=15.0
-# dropout_enc=0.2
-# lsm_prob=0.05
-
-# GatedConv
-# enc_type=gated_conv
-# conv_channels="200_220_242_266_292_321_353_388_426_468_514_565_621_683_751_826_908"
-# conv_kernel_sizes="(13,1)_(14,1)_(15,1)_(16,1)_(17,1)_(18,1)_(19,1)_(20,1)_(21,1)_(22,1)_(23,1)_(24,1)_(25,1)_(26,1)_(27,1)_(28,1)_(29,1)"
-# subsample="1_1_1_1_1"
-
 #########################
 # LM configuration
 #########################
@@ -88,7 +73,7 @@ data_url=www.openslr.org/resources/12
 lm_url=www.openslr.org/resources/11
 
 train_set=train_${datasize}
-dev_set=dev_clean
+dev_set=dev_other
 test_set="dev_clean dev_other test_clean test_other"
 
 if [ ${unit} = char ]; then
