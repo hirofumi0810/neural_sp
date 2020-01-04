@@ -46,7 +46,7 @@ def count_vocab_size(dict_path):
 class Dataset(object):
 
     def __init__(self, tsv_path, dict_path,
-                 unit, batch_size, nlsyms=False, n_epochs=1000,
+                 unit, batch_size, nlsyms=False, n_epochs=1e10,
                  is_test=False, min_n_frames=40, max_n_frames=2000,
                  shuffle_bucket=False, sort_by='utt_id',
                  short2long=False, sort_stop_epoch=1000, dynamic_batching=False,

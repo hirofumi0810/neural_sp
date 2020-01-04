@@ -35,7 +35,7 @@ np.random.seed(1)
 class Dataset(object):
 
     def __init__(self, tsv_path, dict_path,
-                 unit, batch_size, nlsyms=False, n_epochs=1000,
+                 unit, batch_size, nlsyms=False, n_epochs=1e10,
                  is_test=False, min_n_tokens=1, bptt=2,
                  shuffle=False, backward=False, serialize=False,
                  wp_model=None, corpus=''):
