@@ -222,13 +222,13 @@ class RNNEncoder(EncoderBase):
                     self.rnn_sub1 = rnn_i(self._odim, n_units, 1,
                                           batch_first=True,
                                           bidirectional=self.bidirectional)
-                    if last_proj_dim != self.output_dim:
+                    if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                         self.bridge_sub1 = nn.Linear(n_units, last_proj_dim)
                 if l == n_layers_sub2 - 1 and task_specific_layer:
                     self.rnn_sub2 = rnn_i(self._odim, n_units, 1,
                                           batch_first=True,
                                           bidirectional=self.bidirectional)
-                    if last_proj_dim != self.output_dim:
+                    if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                         self.bridge_sub2 = nn.Linear(n_units, last_proj_dim)
 
                 # Network in network
@@ -238,7 +238,7 @@ class RNNEncoder(EncoderBase):
                     # if n_layers_sub1 > 0 or n_layers_sub2 > 0:
                     #     assert task_specific_layer
 
-            if last_proj_dim != self.output_dim:
+            if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge = nn.Linear(self._odim, last_proj_dim)
                 self._odim = last_proj_dim
 
