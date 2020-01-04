@@ -136,6 +136,10 @@ def parse():
                         help='left chunk size for latency-controlled bidirectional encoder')
     parser.add_argument('--lc_chunk_size_right', type=int, default=0,
                         help='left chunk size for latency-controlled bidirectional encoder')
+    parser.add_argument('--lc_batchwise_n_chunks', type=int, default=None,
+                        help='')
+    parser.add_argument('--lc_state_reset_prob', type=float, default=0.,
+                        help='probability to reset states for latency-controlled bidirectional encoder')
     # topology (decoder)
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['no', 'location', 'add', 'dot',
@@ -348,7 +352,7 @@ def parse():
                         help='size of mini-batch in evaluation')
     parser.add_argument('--recog_beam_width', type=int, default=1,
                         help='size of beam')
-    parser.add_argument('--recog_max_len_ratio', type=float, default=1,
+    parser.add_argument('--recog_max_len_ratio', type=float, default=1.0,
                         help='')
     parser.add_argument('--recog_min_len_ratio', type=float, default=0.0,
                         help='')

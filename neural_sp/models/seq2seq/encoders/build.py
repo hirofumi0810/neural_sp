@@ -100,6 +100,7 @@ def build_encoder(args):
             bidirectional_sum_fwd_bwd=args.bidirectional_sum_fwd_bwd,
             lc_chunk_size_left=args.lc_chunk_size_left,
             lc_chunk_size_right=args.lc_chunk_size_right,
+            lc_batchwise_n_chunks=args.lc_batchwise_n_chunks,
             lc_state_reset_prob=args.lc_state_reset_prob)
         # NOTE: pure Conv/TDS/GatedConv encoders are also included
 

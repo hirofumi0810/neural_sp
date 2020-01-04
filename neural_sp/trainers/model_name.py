@@ -40,6 +40,10 @@ def set_asr_model_name(args, subsample_factor):
             dir_name += '_sumfwdbwd'
     if args.lc_chunk_size_left > 0 or args.lc_chunk_size_right > 0:
         dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
+        if args.lc_batchwise_n_chunks is not None:
+            dir_name += '_batchwise' + str(args.lc_batchwise_n_chunks)
+        if args.lc_state_reset_prob > 0:
+            dir_name += '_reset' + str(args.lc_state_reset_prob)
     if args.n_stacks > 1:
         dir_name += '_stack' + str(args.n_stacks)
     else:
