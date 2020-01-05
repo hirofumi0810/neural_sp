@@ -426,7 +426,7 @@ class RNNEncoder(EncoderBase):
                 if i_chunk < n_chunks - 1:
                     xs_bw[:, i_block, cs_l * i_chunk:cs_l * i_chunk + xs_chunk.size(1)] = xs_chunk
                     if i_chunk == 0 and i_block > 0:
-                        xs_bw[:, i_block - 1, cs_l * (n_chunks - 1):cs_l * (n_chunks - 1) +
+                        xs_bw[:, i_block - 1, cs_l * n_chunks:cs_l * n_chunks +
                               xs_chunk[:, :cs_r].size(1)] = xs_chunk[:, :cs_r]
                     i_chunk += 1
                 elif i_chunk == n_chunks - 1:
