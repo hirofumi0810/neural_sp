@@ -11,9 +11,12 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
+import numpy as np
 import torch
 
 from neural_sp.models.base import ModelBase
+from neural_sp.models.torch_utils import np2tensor
+from neural_sp.models.torch_utils import pad_list
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,17 @@ class DecoderBase(ModelBase):
                                              nbest, refs_id, utt_ids, speakers)
         return best_hyps
 
+    def ctc_probs(self, eouts, temperature=1.):
+        """Return CTC probabilities.
+
+        Args:
+            eouts (FloatTensor): `[B, T, enc_units]`
+        Returns:
+            probs (FloatTensor): `[B, T, vocab]`
+
+        """
+        return torch.softmax(self.ctc.output(eouts) / temperature, dim=-1)
+
     def ctc_log_probs(self, eouts, temperature=1.):
         """Return log-scale CTC probabilities.
 
@@ -102,3 +116,19 @@ class DecoderBase(ModelBase):
             topk = probs.size(-1)
         _, topk_ids = torch.topk(probs, k=topk, dim=-1, largest=True, sorted=True)
         return probs, topk_ids
+
+    def lm_rescoring(self, hyps, lm, lm_weight, reverse=False, tag=''):
+        for i in range(len(hyps)):
+            ys = hyps[i]['hyp']  # include <sos>
+            if reverse:
+                ys = ys[::-1]
+            ys = [np2tensor(np.fromiter(ys, dtype=np.int64), self.device_id)]
+            ys_in = pad_list([y[:-1] for y in ys], -1)  # `[1, L-1]`
+            ys_out = pad_list([y[1:] for y in ys], -1)  # `[1, L-1]`
+
+            lmout, lmstate, scores_lm = lm.predict(ys_in, None)
+            score_lm = sum([scores_lm[0, t, ys_out[0, t]] for t in range(ys_out.size(1))])
+            score_lm /= ys_out.size(1)
+
+            hyps[i]['score'] += score_lm * lm_weight
+            hyps[i]['score_lm_' + tag] = score_lm
