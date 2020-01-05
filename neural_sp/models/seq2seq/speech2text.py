@@ -20,9 +20,7 @@ from neural_sp.models.base import ModelBase
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.build import build_decoder
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
-from neural_sp.models.seq2seq.decoders.las import RNNDecoder
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
-# from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
 from neural_sp.models.seq2seq.encoders.build import build_encoder
 from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
@@ -306,6 +304,9 @@ class Speech2Text(ModelBase):
                 if 'loss_quantity' not in obs_fwd.keys():
                     obs_fwd['loss_quantity'] = None
                 observation['loss.quantity'] = obs_fwd['loss_quantity']
+                if 'loss_latency' not in obs_fwd.keys():
+                    obs_fwd['loss_latency'] = None
+                observation['loss.latency'] = obs_fwd['loss_latency']
                 observation['acc.att'] = obs_fwd['acc_att']
                 observation['ppl.att'] = obs_fwd['ppl_att']
             observation['loss.ctc'] = obs_fwd['loss_ctc']
@@ -422,8 +423,147 @@ class Speech2Text(ModelBase):
         if 'transformer' in self.dec_type or 'transducer' not in self.dec_type:
             self.dec_fwd._plot_attention(self.save_path)
 
+    def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
+        self.eval()
+        with torch.no_grad():
+            assert task == 'ys'
+            assert self.input_type == 'speech'
+            assert self.ctc_weight > 0
+            assert self.fwd_weight > 0
+            assert len(xs) == 1  # batch size
+            params['recog_length_norm'] = True
+
+            lm = getattr(self, 'lm_fwd', None)
+            lm_2nd = getattr(self, 'lm_2nd', None)
+
+            # hyper parameters
+            blank_threshold = 40
+            ctc_spike_threshold = 0.6
+            ctc_vad = True
+            params['recog_max_len_ratio'] = 0.3
+            # NOTE: mask hyperparameter
+
+            cs_l = self.enc.lc_chunk_size_left
+            cs_r = self.enc.lc_chunk_size_right
+            blank_threshold /= self.enc.subsampling_factor()
+            x_whole = xs[0]  # `[T, input_dim]`
+            # self.enc.turn_off_ceil_mode(self.enc)
+
+            eout_chunks = []
+            ctc_probs_chunks = []
+            t = 0
+            n_blanks = 0  # inter-chunk
+            boundary_offset = -1
+            reset_beam = True
+            global_attention = False
+            empty_pred_prev = False
+            best_hyps_id = []
+            aws = []
+            while True:
+                # Encode input features chunk by chunk
+                x_chunk = x_whole[t:t + (cs_l + cs_r)]
+                eout_dict_chunk = self.encode([x_chunk], task,
+                                              use_cache=not reset_beam,
+                                              streaming=True)
+                eout_chunk = eout_dict_chunk[task]['xs']
+                boundary_offset = -1  # reset
+
+                # CTC-based VAD
+                if ctc_vad:
+                    ctc_probs_chunk = self.dec_fwd.ctc_probs(eout_chunk)
+                    _, topk_ids_chunk = torch.topk(ctc_probs_chunk, k=1, dim=-1, largest=True, sorted=True)
+                    ctc_probs_chunks.append(ctc_probs_chunk)
+                    n_blanks_chunk = 0  # intra-chunk
+                    for j in range(ctc_probs_chunk.size(1)):
+                        if topk_ids_chunk[0, j, 0] == self.blank:
+                            n_blanks += 1
+                            n_blanks_chunk += 1
+                        elif ctc_probs_chunk[0, j, topk_ids_chunk[0, j, 0]] < ctc_spike_threshold:
+                            n_blanks += 1
+                            n_blanks_chunk += 1
+                        else:
+                            n_blanks = 0
+                            # print('CTC (T:%d): %s' % (t + j, idx2token([topk_ids_chunk[0, j, 0].item()])))
+                        if n_blanks > blank_threshold:
+                            boundary_offset = j  # select the most right blank offset
+                    ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
+
+                    if boundary_offset >= 0 and not empty_pred_prev:
+                        global_attention = True
+                    empty_pred_prev = (n_blanks_chunk == ctc_probs_chunk.size(1))
+                else:
+                    ctc_log_probs_chunk = None
+
+                # Truncate the most right frames
+                if boundary_offset > 0:
+                    eout_chunk = eout_chunk[:, :boundary_offset]
+                if boundary_offset != 0:
+                    eout_chunks.append(eout_chunk)
+
+                # Chunk-synchronous attention decoding
+                if boundary_offset != 0:
+                    best_hyp_id_prefix, aws_prefix = self.dec_fwd.beam_search_chunk_sync(
+                        eout_chunk, params, idx2token,
+                        lm=lm, ctc_log_probs=ctc_log_probs_chunk,
+                        reset_beam=reset_beam)
+                    reset_beam = boundary_offset >= 0
+                    # print('Sync MoChA (T:%d): %s' % (t + eout_chunk.size(1), idx2token(best_hyp_id_prefix)))
+                    # print('-' * 50)
+
+                if not ctc_vad:
+                    if best_hyp_id_prefix[-1] == self.eos:
+                        reset_beam = True
+                        global_attention = True
+
+                # Segmentation strategy 1:
+                # If any segmentation points are not found in the current chunk,
+                # encoder states will be carried over to the next chunk.
+                # Otherwise, the current chunk is segmented at the point where
+                # n_blanks surpasses the threshold.
+
+                # Segmentation strategy 2:
+                # If <eos> is emitted from the decoder (not CTC),
+                # the current chunk is segmented.
+
+                if reset_beam and global_attention:
+                    # Global decoding over the segmented region
+                    # eout = torch.cat(eout_chunks, dim=1)
+                    # elens = torch.IntTensor([eout.size(1)])
+                    # nbest_hyps_id, aws, scores = self.dec_fwd.beam_search(
+                    #     eout, elens, params, idx2token, lm, lm_2nd)
+                    # print('MoChA: ' + idx2token(nbest_hyps_id[0][0]))
+                    # print('*' * 100)
+
+                    # pick up the best hyp
+                    best_hyps_id.append(best_hyp_id_prefix)
+                    aws.append(aws_prefix)
+
+                    # reset
+                    eout_chunks = []
+                    ctc_probs_chunks = []
+                    global_attention = False
+
+                # next chunk will start from the frame next to the boundary
+                if 0 <= boundary_offset < cs_l - 1:
+                    t -= x_chunk[boundary_offset + 1:cs_l].shape[0]
+
+                t += cs_l
+                if t >= x_whole.shape[0] - 1:
+                    break
+
+            # for the last chunk
+            # if len(eout_chunks) > 0:
+            #     eout = torch.cat(eout_chunks, dim=1)
+            #     elens = torch.IntTensor([eout.size(1)])
+            #     nbest_hyps_id, aws, scores = self.dec_fwd.beam_search(
+            #         eout, elens, params, idx2token, lm, lm_2nd, None)
+            #     print('MoChA: ' + idx2token(nbest_hyps_id[0][0]))
+            #     print('*' * 50)
+
+            return best_hyps_id, aws
+
     def decode(self, xs, params, idx2token, nbest=1, exclude_eos=False,
-               refs_id=None, refs_text=None, utt_ids=None, speakers=None,
+               refs_id=None, refs=None, utt_ids=None, speakers=None,
                task='ys', ensemble_models=[]):
         """Decoding in the inference stage.
 
@@ -443,7 +583,7 @@ class Speech2Text(ModelBase):
             nbest (int):
             exclude_eos (bool): exclude <eos> from best_hyps_id
             refs_id (list): gold token IDs to compute log likelihood
-            refs_text (list): gold transcriptions
+            refs (list): gold transcriptions
             utt_ids (list):
             speakers (list):
             task (str): ys* or ys_sub1* or ys_sub2*
