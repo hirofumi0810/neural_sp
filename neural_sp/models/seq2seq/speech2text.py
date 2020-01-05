@@ -441,7 +441,6 @@ class Speech2Text(ModelBase):
             ctc_spike_threshold = 0.6
             ctc_vad = True
             params['recog_max_len_ratio'] = 0.3
-            # NOTE: mask hyperparameter
 
             cs_l = self.enc.lc_chunk_size_left
             cs_r = self.enc.lc_chunk_size_right
@@ -457,8 +456,7 @@ class Speech2Text(ModelBase):
             reset_beam = True
             global_attention = False
             empty_pred_prev = False
-            best_hyps_id = []
-            aws = []
+            best_hyp_id_stream = []
             while True:
                 # Encode input features chunk by chunk
                 x_chunk = x_whole[t:t + (cs_l + cs_r)]
@@ -529,14 +527,15 @@ class Speech2Text(ModelBase):
                     # Global decoding over the segmented region
                     # eout = torch.cat(eout_chunks, dim=1)
                     # elens = torch.IntTensor([eout.size(1)])
-                    # nbest_hyps_id, aws, scores = self.dec_fwd.beam_search(
+                    # nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
                     #     eout, elens, params, idx2token, lm, lm_2nd)
-                    # print('MoChA: ' + idx2token(nbest_hyps_id[0][0]))
+                    # print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
                     # print('*' * 100)
 
+                    # TODO(hirofumi): second pass rescoring here
+
                     # pick up the best hyp
-                    best_hyps_id.append(best_hyp_id_prefix)
-                    aws.append(aws_prefix)
+                    best_hyp_id_stream.extend(best_hyp_id_prefix)
 
                     # reset
                     eout_chunks = []
@@ -555,12 +554,12 @@ class Speech2Text(ModelBase):
             # if len(eout_chunks) > 0:
             #     eout = torch.cat(eout_chunks, dim=1)
             #     elens = torch.IntTensor([eout.size(1)])
-            #     nbest_hyps_id, aws, scores = self.dec_fwd.beam_search(
+            #     nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
             #         eout, elens, params, idx2token, lm, lm_2nd, None)
-            #     print('MoChA: ' + idx2token(nbest_hyps_id[0][0]))
+            #     print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
             #     print('*' * 50)
 
-            return best_hyps_id, aws
+            return [np.stack(best_hyp_id_stream, axis=0)], [None]
 
     def decode(self, xs, params, idx2token, nbest=1, exclude_eos=False,
                refs_id=None, refs=None, utt_ids=None, speakers=None,
