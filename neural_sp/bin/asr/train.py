@@ -255,8 +255,9 @@ def main():
         logger.info(model)
 
         # Initialize with pre-trained model's parameters
-        if args.asr_init and os.path.isfile(args.asr_init):
+        if args.asr_init:
             # Load the ASR model
+            assert os.path.isfile(args.asr_init), 'There is no checkpoint.'
             conf_init = load_config(os.path.join(os.path.dirname(args.asr_init), 'conf.yml'))
             for k, v in conf_init.items():
                 setattr(args_init, k, v)
@@ -292,7 +293,8 @@ def main():
 
     # Load the teacher ASR model
     teacher = None
-    if args.teacher and os.path.isfile(args.teacher):
+    if args.teacher:
+        assert os.path.isfile(args.teacher), 'There is no checkpoint.'
         conf_teacher = load_config(os.path.join(os.path.dirname(args.teacher), 'conf.yml'))
         for k, v in conf_teacher.items():
             setattr(args_teacher, k, v)
@@ -304,7 +306,8 @@ def main():
 
     # Load the teacher LM
     teacher_lm = None
-    if args.teacher_lm and os.path.isfile(args.teacher_lm):
+    if args.teacher_lm:
+        assert os.path.isfile(args.teacher_lm), 'There is no checkpoint.'
         conf_lm = load_config(os.path.join(os.path.dirname(args.teacher_lm), 'conf.yml'))
         args_lm = argparse.Namespace()
         for k, v in conf_lm.items():
