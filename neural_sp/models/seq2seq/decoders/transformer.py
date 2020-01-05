@@ -170,7 +170,7 @@ class TransformerDecoder(DecoderBase):
 
         # CTC loss
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
-            loss_ctc = self.ctc(eouts, elens, ys)
+            loss_ctc, _ = self.ctc(eouts, elens, ys)
             observation['loss_ctc'] = loss_ctc.item()
             if self.mtl_per_batch:
                 loss += loss_ctc

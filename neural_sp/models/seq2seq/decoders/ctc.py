@@ -20,13 +20,15 @@ import torch.nn as nn
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
+from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import tensor2np
 
 random.seed(1)
 
-LOG_0 = float(np.finfo(np.float32).min)
+# LOG_0 = float(np.finfo(np.float32).min)
+LOG_0 = -1e10
 LOG_1 = 0
 
 logger = logging.getLogger(__name__)
@@ -82,7 +84,9 @@ class CTC(DecoderBase):
         import warpctc_pytorch
         self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
 
-    def forward(self, eouts, elens, ys):
+        self.forced_aligner = CTCForcedAligner()
+
+    def forward(self, eouts, elens, ys, forced_align=False):
         """Compute CTC loss.
 
         Args:
@@ -111,7 +115,14 @@ class CTC(DecoderBase):
         if self.lsm_prob > 0:
             loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits, elens) * self.lsm_prob
 
-        return loss
+        if forced_align:
+            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
+            ys_in_pad = pad_list(ys, 0)  # pad by zero
+            trigger_points = self.forced_aligner.align(logits.clone(), elens, ys_in_pad, ylens)
+        else:
+            trigger_points = None
+
+        return loss, trigger_points
 
     def greedy(self, eouts, elens):
         """Greedy decoding.
@@ -299,6 +310,170 @@ class CTC(DecoderBase):
         return np.array(best_hyps)
 
 
+def _label_to_path(labels, blank):
+    path = labels.new_zeros(labels.size(0), labels.size(1) * 2 + 1).fill_(blank).long()
+    path[:, 1::2] = labels
+    return path
+
+
+def _flip_path(path, path_lens):
+    """Flips label sequence.
+    This function rotates a label sequence and flips it.
+    ``path[b, t]`` stores a label at time ``t`` in ``b``-th batch.
+    The rotated matrix ``r`` is defined as
+    ``r[b, t] = path[b, t + path_lens[b]]``
+    .. ::
+       a b c d .     . a b c d    d c b a .
+       e f . . .  -> . . . e f -> f e . . .
+       g h i j k     g h i j k    k j i h g
+    """
+    bs, max_path_len = path.size()
+    rotate = (torch.arange(max_path_len) + path_lens[:, None]) % max_path_len
+    return torch.flip(path[torch.arange(bs, dtype=torch.int64)[:, None], rotate], dims=[1])
+
+
+def _flip_label_probability(log_probs, xlens):
+    """Flips a label probability matrix.
+    This function rotates a label probability matrix and flips it.
+    ``log_probs[i, b, l]`` stores log probability of label ``l`` at ``i``-th
+    input in ``b``-th batch.
+    The rotated matrix ``r`` is defined as
+    ``r[i, b, l] = log_probs[i + xlens[b], b, l]``
+    """
+    xmax, bs, vocab = log_probs.size()
+    rotate = (torch.arange(xmax, dtype=torch.int64)[:, None] + xlens) % xmax
+    return torch.flip(log_probs[rotate[:, :, None],
+                                torch.arange(bs, dtype=torch.int64)[None, :, None],
+                                torch.arange(vocab, dtype=torch.int64)[None, None, :]], dims=[0])
+
+
+def _flip_path_probability(cum_log_prob, xlens, path_lens):
+    """Flips a path probability matrix.
+    This function returns a path probability matrix and flips it.
+    ``cum_log_prob[i, b, t]`` stores log probability at ``i``-th input and
+    at time ``t`` in a output sequence in ``b``-th batch.
+    The rotated matrix ``r`` is defined as
+    ``r[i, j, k] = cum_log_prob[i + xlens[j], j, k + path_lens[j]]``
+    """
+    xmax, bs, max_path_len = cum_log_prob.size()
+    rotate_input = ((torch.arange(xmax, dtype=torch.int64)[:, None] + xlens) % xmax)
+    rotate_label = ((torch.arange(max_path_len, dtype=torch.int64) + path_lens[:, None]) % max_path_len)
+    return torch.flip(cum_log_prob[rotate_input[:, :, None],
+                                   torch.arange(bs, dtype=torch.int64)[None, :, None],
+                                   rotate_label], dims=[0, 2])
+
+
+class CTCForcedAligner(object):
+    def __init__(self, blank=0):
+        self.blank = blank
+        self.log0 = LOG_0
+
+    def _computes_transition(self, prev_log_prob, path, path_lens, cum_log_prob, y, skip_accum=False):
+        bs, max_path_len = path.size()
+        mat = prev_log_prob.new_zeros(3, bs, max_path_len).fill_(self.log0)
+        mat[0, :, :] = prev_log_prob
+        mat[1, :, 1:] = prev_log_prob[:, :-1]
+        mat[2, :, 2:] = prev_log_prob[:, :-2]
+        # disable transition between the same symbols
+        # (including blank-to-blank)
+        same_transition = (path[:, :-2] == path[:, 2:])
+        mat[2, :, 2:][same_transition] = self.log0
+        log_prob = torch.logsumexp(mat, dim=0)
+        outside = torch.arange(max_path_len, dtype=torch.int64) >= path_lens.unsqueeze(1)
+        log_prob[outside] = self.log0
+        if not skip_accum:
+            cum_log_prob += log_prob
+        batch_index = torch.arange(bs, dtype=torch.int64).unsqueeze(1)
+        log_prob += y[batch_index, path]
+        return log_prob
+
+    def align(self, logits, xlens, ys, ylens, left2right=True):
+        bs, xmax, vocab = logits.size()
+
+        # zero padding
+        device_id = torch.cuda.device_of(logits).idx
+        mask = make_pad_mask(xlens, device_id)
+        mask = mask.unsqueeze(2).repeat([1, 1, vocab])
+        logits = logits.masked_fill_(mask == 0, self.log0)
+        log_probs = torch.log_softmax(logits, dim=-1).transpose(0, 1)  # `[T, B, vocab]`
+
+        path = _label_to_path(ys, self.blank)
+        path_lens = 2 * ylens.long() + 1
+
+        ymax = ys.size(1)
+        max_path_len = path.size(1)
+        assert ys.size() == (bs, ymax), ys.size()
+        assert path.size() == (bs, ymax * 2 + 1)
+
+        alpha = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
+        alpha[:, 0] = LOG_1
+        beta = alpha.clone()
+        gamma = alpha.clone()
+
+        batch_index = torch.arange(bs, dtype=torch.int64).unsqueeze(1)
+        seq_index = torch.arange(xmax, dtype=torch.int64).unsqueeze(1).unsqueeze(2)
+        fwd_bwd_log_probs = log_probs[seq_index, batch_index, path]
+
+        # forward algorithm
+        for t in range(xmax):
+            alpha = self._computes_transition(
+                alpha, path, path_lens, fwd_bwd_log_probs[t], log_probs[t])
+
+        # backward algorithm
+        r_path = _flip_path(path, path_lens)
+        log_probs_inv = _flip_label_probability(log_probs, xlens.long())
+        fwd_bwd_log_probs = _flip_path_probability(fwd_bwd_log_probs, xlens.long(), path_lens)
+        for t in range(xmax):
+            beta = self._computes_transition(
+                beta, r_path, path_lens, fwd_bwd_log_probs[t], log_probs_inv[t])
+
+        # backward algorithm
+        best_lattices = log_probs.new_zeros((bs, xmax), dtype=torch.int64)
+        trigger_lattices = torch.zeros((bs, xmax), dtype=torch.int64)
+        trigger_points = log_probs.new_zeros((bs, ymax + 1), dtype=torch.int32)  # +1 for <eos>
+        for b in range(bs):
+            trigger_points[b, :] = xlens[b] - 1
+        is_trigger = np.ones((bs,), dtype=bool)
+        n_triggers = np.zeros((bs,), dtype=np.int32)
+        for t in range(xmax):
+            gamma = self._computes_transition(
+                gamma, r_path, path_lens, fwd_bwd_log_probs[t], log_probs_inv[t],
+                skip_accum=True)
+
+            # select paths where gamma is valid
+            fwd_bwd_log_probs[t] = fwd_bwd_log_probs[t].masked_fill_(gamma == self.log0, self.log0)
+
+            # pick up the best lattice
+            offsets = fwd_bwd_log_probs[t].argmax(1)
+            for b in range(bs):
+                if t <= xlens[b] - 1:
+                    token_id = r_path[b, offsets[b]]
+                    best_lattices[b, (xmax - 1) - t] = token_id
+
+                    if n_triggers[b] >= ylens[b]:
+                        continue
+                    if (token_id != self.blank) and (t > 0 and best_lattices[b, (xmax - 1) - (t - 1)] != token_id):
+                        is_trigger[b] = True
+                    if token_id != self.blank and is_trigger[b]:
+                        trigger_lattices[b, (xmax - 1) - t] = token_id
+                        trigger_points[b, (ylens[b] - 1) - n_triggers[b]] = (xmax - 1) - t
+                        is_trigger[b] = False
+                        n_triggers[b] += 1
+                    if token_id == self.blank:
+                        is_trigger[b] = True
+
+            # remove the rest of paths
+            gamma = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
+            for b in range(bs):
+                gamma[b, offsets[b]] = LOG_1
+
+        # print(best_lattices[-1])
+        # print(trigger_lattices[-1])
+        # print(trigger_points[-1])
+        assert ylens.sum() == (trigger_lattices != 0).sum()
+        return trigger_points
+
+
 class CTCPrefixScore(object):
     """Compute CTC label sequence scores.
 
@@ -314,7 +489,7 @@ class CTCPrefixScore(object):
     def __init__(self, log_probs, blank, eos):
         """
         Args:
-            log_probs ():
+            log_probs (np.ndarray):
             blank (int): index of <blank>
             eos (int): index of <eos>
 
@@ -323,7 +498,7 @@ class CTCPrefixScore(object):
         self.eos = eos
         self.xlen = len(log_probs)
         self.log_probs = log_probs
-        self.logzero = -10000000000.0
+        self.log0 = LOG_0
 
     def initial_state(self):
         """Obtain an initial CTC state
@@ -333,7 +508,7 @@ class CTCPrefixScore(object):
         # initial CTC state is made of a frame x 2 tensor that corresponds to
         # r_t^n(<sos>) and r_t^b(<sos>), where 0 and 1 of axis=1 represent
         # superscripts n and b (non-blank and blank), respectively.
-        r = np.full((self.xlen, 2), self.logzero, dtype=np.float32)
+        r = np.full((self.xlen, 2), self.log0, dtype=np.float32)
         r[0, 1] = self.log_probs[0, self.blank]
         for i in range(1, self.xlen):
             r[i, 1] = r[i - 1, 1] + self.log_probs[i, self.blank]
@@ -359,9 +534,9 @@ class CTCPrefixScore(object):
         xs = self.log_probs[:, cs]
         if ylen == 0:
             r[0, 0] = xs[0]
-            r[0, 1] = self.logzero
+            r[0, 1] = self.log0
         else:
-            r[ylen - 1] = self.logzero
+            r[ylen - 1] = self.log0
 
         # prepare forward probabilities for the last label
         r_sum = np.logaddexp(r_prev[:, 0], r_prev[:, 1])  # log(r_t^n(g) + r_t^b(g))
