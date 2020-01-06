@@ -360,9 +360,10 @@ class RNNDecoder(DecoderBase):
             if self.quantity_loss_weight > 0:
                 loss_att += loss_qua * self.quantity_loss_weight
                 observation['loss_quantity'] = loss_qua.item()
-            if self.mocha_ctc_sync == 'minlt':
-                loss_att += loss_lat * 1.0
-                observation['loss_latency'] = loss_lat.item()
+            if self.mocha_ctc_sync in ['decot', 'minlt']:
+                observation['loss_latency'] = loss_lat.item() if self.training else 0
+                if self.mocha_ctc_sync == 'minlt':
+                    loss_att += loss_lat * 1.0
             if self.mtl_per_batch:
                 loss += loss_att
             else:
@@ -460,7 +461,7 @@ class RNNDecoder(DecoderBase):
 
         # Latency loss
         loss_lat = 0.
-        if trigger_points is not None and self.mocha_ctc_sync == 'minlt':
+        if trigger_points is not None and self.mocha_ctc_sync in ['decot', 'minlt']:
             time_indices = torch.arange(xtime).repeat([bs, ys_in.size(1), 1]).float().cuda(self.device_id)
             _aws = torch.cat(aws, dim=2).squeeze(1)  # `[B, L, T]`
             exp_trigger = (time_indices * _aws).sum(2)  # `[B, L]`
@@ -1042,11 +1043,11 @@ class RNNDecoder(DecoderBase):
             if self.bwd:
                 # Reverse the order
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:][::-1]) for n in range(nbest)]]
-                aws += [[end_hyps[n]['aws'][1:][::-1] for n in range(nbest)]]
+                aws += [tensor2np(torch.stack(end_hyps[0]['aws'][1:][::-1], dim=1).squeeze(0))]
                 scores += [[end_hyps[n]['hist_score'][1:][::-1] for n in range(nbest)]]
             else:
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
-                aws += [[end_hyps[n]['aws'][1:] for n in range(nbest)]]
+                aws += [tensor2np(torch.stack(end_hyps[0]['aws'][1:], dim=1).squeeze(0))]
                 scores += [[end_hyps[n]['hist_score'][1:] for n in range(nbest)]]
 
             # Check <eos>
@@ -1072,11 +1073,6 @@ class RNNDecoder(DecoderBase):
                     if lm_2nd_rev is not None:
                         logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
                                     (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
-
-        # Concatenate in L dimension
-        for b in range(len(aws)):
-            for n in range(nbest):
-                aws[b][n] = tensor2np(torch.stack(aws[b][n], dim=1).squeeze(0))
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
@@ -1246,8 +1242,7 @@ class RNNDecoder(DecoderBase):
                          'aws': beam['aws'] + [aw[j:j + 1]],
                          'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                          'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_weight > 0 and ctc_log_probs is not None else None,
-                         'no_trigger': False
-                         })
+                         'no_trigger': False})
 
             # Local pruning
             new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
