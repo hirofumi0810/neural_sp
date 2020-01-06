@@ -1,10 +1,10 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-""
+"""Word-level token <-> index converter."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -26,7 +26,7 @@ class Word2idx(object):
         self.word_char_mix = word_char_mix
 
         # Load a dictionary file
-        self.token2idx = {}
+        self.token2idx = {'<blank>': 0}
         with codecs.open(dict_path, 'r', 'utf-8') as f:
             for line in f:
                 w, idx = line.strip().split(' ')
