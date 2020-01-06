@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -154,6 +154,9 @@ def parse():
                         help='1dconv for MoChA')
     parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
                         help='Quantity loss weight for MoChA')
+    parser.add_argument('--mocha_ctc_sync', type=str, default=False,
+                        choices=[False, 'decot', 'minlt'],
+                        help='')
     parser.add_argument('--gmm_attn_n_mixtures', type=int, default=5,
                         help='number of mixtures for GMM attention')
     parser.add_argument('--attn_dim', type=int, default=128,
@@ -398,6 +401,14 @@ def parse():
                         help='')
     parser.add_argument('--recog_n_average', type=int, default=1,
                         help='number of models for the model averaging of Transformer')
+    parser.add_argument('--recog_streaming', type=strtobool, default=False,
+                        help='streaming decoding')
+    parser.add_argument('--recog_ctc_vad', type=strtobool, default=True,
+                        help='')
+    parser.add_argument('--recog_ctc_vad_blank_threshold', type=int, default=40,
+                        help='')
+    parser.add_argument('--recog_ctc_vad_spike_threshold', type=float, default=0.6,
+                        help='')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,
                         help='N-best list for sampling')
