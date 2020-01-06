@@ -958,7 +958,7 @@ class RNNDecoder(DecoderBase):
                             beam['hyp'], tensor2np(topk_ids[0]), beam['ctc_state'])
                         total_scores_ctc = torch.from_numpy(ctc_scores)
                         if self.device_id >= 0:
-                            total_scores_ctc.cuda(self.device_id)
+                            total_scores_ctc = total_scores_ctc.cuda(self.device_id)
                         total_scores_topk += total_scores_ctc * ctc_weight
                         # Sort again
                         total_scores_topk, joint_ids_topk = torch.topk(
@@ -1117,6 +1117,7 @@ class RNNDecoder(DecoderBase):
         end_hyps = []
         if reset_beam:
             # print('Reset decoder states.')
+            self.n_frames = 0
             self.hyps_sync = [{'hyp': [self.eos],
                                'score': 0.,
                                'hist_score': [0.],
@@ -1209,7 +1210,7 @@ class RNNDecoder(DecoderBase):
                         beam['hyp'], tensor2np(topk_ids[0]), beam['ctc_state'])
                     total_scores_ctc = torch.from_numpy(ctc_scores)
                     if self.device_id >= 0:
-                        total_scores_ctc.cuda(self.device_id)
+                        total_scores_ctc = total_scores_ctc.cuda(self.device_id)
                     total_scores_topk += total_scores_ctc * ctc_weight
                     # Sort again
                     total_scores_topk, joint_ids_topk = torch.topk(
@@ -1292,9 +1293,12 @@ class RNNDecoder(DecoderBase):
                 logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
             if lm_weight > 0 and lm is not None:
                 logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
+            # print('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:]))
 
         # Exclude <eos>
         if exclude_eos:
             best_hyps_idx = best_hyps_idx[:-1] if eos_flag else best_hyps_idx
+
+        self.n_frames += eouts_chunk.size(1)
 
         return best_hyps_idx, aws

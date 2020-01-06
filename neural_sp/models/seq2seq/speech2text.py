@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import logging
 import numpy as np
 import torch
@@ -431,31 +432,31 @@ class Speech2Text(ModelBase):
             assert self.ctc_weight > 0
             assert self.fwd_weight > 0
             assert len(xs) == 1  # batch size
-            params['recog_length_norm'] = True
+            assert params['recog_length_norm']
+            global_params = copy.deepcopy(params)
+            global_params['recog_max_len_ratio'] = 1.0
 
             lm = getattr(self, 'lm_fwd', None)
             lm_2nd = getattr(self, 'lm_2nd', None)
 
             # hyper parameters
-            blank_threshold = 40
-            ctc_spike_threshold = 0.6
-            ctc_vad = True
-            params['recog_max_len_ratio'] = 0.3
+            ctc_vad = params['recog_ctc_vad']
+            blank_threshold = params['recog_ctc_vad_blank_threshold']
+            spike_threshold = params['recog_ctc_vad_spike_threshold']
 
             cs_l = self.enc.lc_chunk_size_left
             cs_r = self.enc.lc_chunk_size_right
-            blank_threshold /= self.enc.subsampling_factor()
+            factor = self.enc.subsampling_factor()
+            blank_threshold /= factor
             x_whole = xs[0]  # `[T, input_dim]`
             # self.enc.turn_off_ceil_mode(self.enc)
 
             eout_chunks = []
             ctc_probs_chunks = []
-            t = 0
+            t = 0  # global time offset
             n_blanks = 0  # inter-chunk
-            boundary_offset = -1
+            boundary_offset = -1  # boudnary offset in each chunk (after subsampling)
             reset_beam = True
-            global_attention = False
-            empty_pred_prev = False
             best_hyp_id_stream = []
             while True:
                 # Encode input features chunk by chunk
@@ -476,42 +477,40 @@ class Speech2Text(ModelBase):
                         if topk_ids_chunk[0, j, 0] == self.blank:
                             n_blanks += 1
                             n_blanks_chunk += 1
-                        elif ctc_probs_chunk[0, j, topk_ids_chunk[0, j, 0]] < ctc_spike_threshold:
+                        elif ctc_probs_chunk[0, j, topk_ids_chunk[0, j, 0]] < spike_threshold:
                             n_blanks += 1
                             n_blanks_chunk += 1
                         else:
                             n_blanks = 0
-                            # print('CTC (T:%d): %s' % (t + j, idx2token([topk_ids_chunk[0, j, 0].item()])))
+                            # print('CTC (T:%d): %s' % (t + j * factor, idx2token([topk_ids_chunk[0, j, 0].item()])))
                         if n_blanks > blank_threshold:
                             boundary_offset = j  # select the most right blank offset
                     ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
-
-                    if boundary_offset >= 0 and not empty_pred_prev:
-                        global_attention = True
-                    empty_pred_prev = (n_blanks_chunk == ctc_probs_chunk.size(1))
                 else:
                     ctc_log_probs_chunk = None
 
                 # Truncate the most right frames
-                if boundary_offset > 0:
-                    eout_chunk = eout_chunk[:, :boundary_offset]
-                if boundary_offset != 0:
-                    eout_chunks.append(eout_chunk)
+                if boundary_offset >= 0:
+                    eout_chunk = eout_chunk[:, :boundary_offset + 1]
+                eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
-                if boundary_offset != 0:
-                    best_hyp_id_prefix, aws_prefix = self.dec_fwd.beam_search_chunk_sync(
-                        eout_chunk, params, idx2token,
-                        lm=lm, ctc_log_probs=ctc_log_probs_chunk,
-                        reset_beam=reset_beam)
-                    reset_beam = boundary_offset >= 0
-                    # print('Sync MoChA (T:%d): %s' % (t + eout_chunk.size(1), idx2token(best_hyp_id_prefix)))
-                    # print('-' * 50)
+                best_hyp_id_prefix, aws_prefix = self.dec_fwd.beam_search_chunk_sync(
+                    eout_chunk, params, idx2token,
+                    lm=lm, ctc_log_probs=ctc_log_probs_chunk,
+                    reset_beam=reset_beam)
+                reset_beam = boundary_offset >= 0
+                # print('Sync MoChA (Glo-T:%d, Loc-T:%d, blank:%d frames): %s' %
+                #       (t + eout_chunk.size(1) * factor,
+                #        self.dec_fwd.n_frames * factor,
+                #        n_blanks * factor, idx2token(best_hyp_id_prefix)))
+                # print('-' * 50)
 
-                if not ctc_vad:
-                    if best_hyp_id_prefix[-1] == self.eos:
+                if len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos:
+                    if len(best_hyp_id_prefix) > 1:
+                        best_hyp_id_prefix = best_hyp_id_prefix[:-1]
+                    if not ctc_vad:
                         reset_beam = True
-                        global_attention = True
 
                 # Segmentation strategy 1:
                 # If any segmentation points are not found in the current chunk,
@@ -523,16 +522,17 @@ class Speech2Text(ModelBase):
                 # If <eos> is emitted from the decoder (not CTC),
                 # the current chunk is segmented.
 
-                if reset_beam and global_attention:
+                if reset_beam:
                     # Global decoding over the segmented region
                     # eout = torch.cat(eout_chunks, dim=1)
                     # elens = torch.IntTensor([eout.size(1)])
                     # nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
-                    #     eout, elens, params, idx2token, lm, lm_2nd)
+                    #     eout, elens, global_params, idx2token, lm, lm_2nd)
                     # print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
-                    # print('*' * 100)
 
                     # TODO(hirofumi): second pass rescoring here
+
+                    # print('*' * 100)
 
                     # pick up the best hyp
                     best_hyp_id_stream.extend(best_hyp_id_prefix)
@@ -540,11 +540,10 @@ class Speech2Text(ModelBase):
                     # reset
                     eout_chunks = []
                     ctc_probs_chunks = []
-                    global_attention = False
 
                 # next chunk will start from the frame next to the boundary
-                if 0 <= boundary_offset < cs_l - 1:
-                    t -= x_chunk[boundary_offset + 1:cs_l].shape[0]
+                if 0 <= boundary_offset * factor < cs_l - 1:
+                    t -= x_chunk[boundary_offset * factor + 1:cs_l].shape[0]
 
                 t += cs_l
                 if t >= x_whole.shape[0] - 1:
@@ -555,7 +554,7 @@ class Speech2Text(ModelBase):
             #     eout = torch.cat(eout_chunks, dim=1)
             #     elens = torch.IntTensor([eout.size(1)])
             #     nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
-            #         eout, elens, params, idx2token, lm, lm_2nd, None)
+            #         eout, elens, global_params, idx2token, lm, lm_2nd, None)
             #     print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
             #     print('*' * 50)
 
@@ -725,7 +724,6 @@ class Speech2Text(ModelBase):
 
                         if nbest == 1:
                             best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
-                            aws = [aw[0] for aw in aws] if aws is not None else aws
                         else:
                             return nbest_hyps_id, aws, scores
                         # NOTE: nbest >= 2 is used for MWER training only
