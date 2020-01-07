@@ -466,31 +466,32 @@ class Speech2Text(ModelBase):
                                               streaming=True)
                 eout_chunk = eout_dict_chunk[task]['xs']
                 boundary_offset = -1  # reset
+                is_boundary = False  # detect the first boundary in the same chunk
 
                 # CTC-based VAD
                 if ctc_vad:
                     ctc_probs_chunk = self.dec_fwd.ctc_probs(eout_chunk)
                     _, topk_ids_chunk = torch.topk(ctc_probs_chunk, k=1, dim=-1, largest=True, sorted=True)
                     ctc_probs_chunks.append(ctc_probs_chunk)
-                    n_blanks_chunk = 0  # intra-chunk
                     for j in range(ctc_probs_chunk.size(1)):
                         if topk_ids_chunk[0, j, 0] == self.blank:
                             n_blanks += 1
-                            n_blanks_chunk += 1
+                            # print('CTC (T:%d): <blank>' % (t + j * factor))
                         elif ctc_probs_chunk[0, j, topk_ids_chunk[0, j, 0]] < spike_threshold:
                             n_blanks += 1
-                            n_blanks_chunk += 1
+                            # print('CTC (T:%d): <blank>' % (t + j * factor))
                         else:
                             n_blanks = 0
                             # print('CTC (T:%d): %s' % (t + j * factor, idx2token([topk_ids_chunk[0, j, 0].item()])))
-                        if n_blanks > blank_threshold:
+                        if not is_boundary and n_blanks > blank_threshold:
                             boundary_offset = j  # select the most right blank offset
+                            is_boundary = True
                     ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
                 else:
                     ctc_log_probs_chunk = None
 
                 # Truncate the most right frames
-                if boundary_offset >= 0:
+                if is_boundary:
                     eout_chunk = eout_chunk[:, :boundary_offset + 1]
                 eout_chunks.append(eout_chunk)
 
@@ -499,8 +500,8 @@ class Speech2Text(ModelBase):
                     eout_chunk, params, idx2token,
                     lm=lm, ctc_log_probs=ctc_log_probs_chunk,
                     reset_beam=reset_beam)
-                reset_beam = boundary_offset >= 0
-                # print('Sync MoChA (Glo-T:%d, Loc-T:%d, blank:%d frames): %s' %
+                reset_beam = is_boundary  # NOTE: reset after beam_search_chunk_sync
+                # print('Sync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
                 #       (t + eout_chunk.size(1) * factor,
                 #        self.dec_fwd.n_frames * factor,
                 #        n_blanks * factor, idx2token(best_hyp_id_prefix)))
@@ -540,10 +541,12 @@ class Speech2Text(ModelBase):
                     # reset
                     eout_chunks = []
                     ctc_probs_chunks = []
+                    n_blanks = 0
 
                 # next chunk will start from the frame next to the boundary
                 if 0 <= boundary_offset * factor < cs_l - 1:
-                    t -= x_chunk[boundary_offset * factor + 1:cs_l].shape[0]
+                    t -= x_chunk[boundary_offset * factor:cs_l].shape[0]
+                    # print('Back %d frames' % x_chunk[boundary_offset * factor:cs_l].shape[0])
 
                 t += cs_l
                 if t >= x_whole.shape[0] - 1:
