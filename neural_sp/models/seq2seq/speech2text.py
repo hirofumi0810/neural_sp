@@ -425,29 +425,31 @@ class Speech2Text(ModelBase):
             self.dec_fwd._plot_attention(self.save_path)
 
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
+        # check configurations
+        assert task == 'ys'
+        assert self.input_type == 'speech'
+        assert self.ctc_weight > 0
+        assert self.fwd_weight > 0
+        assert len(xs) == 1  # batch size
+        assert params['recog_length_norm']
+        global_params = copy.deepcopy(params)
+        global_params['recog_max_len_ratio'] = 1.0
+
+        # hyper parameters
+        ctc_vad = params['recog_ctc_vad']
+        BLANK_THRESHOLD = params['recog_ctc_vad_blank_threshold']
+        SPIKE_THRESHOLD = params['recog_ctc_vad_spike_threshold']
+        MAX_N_ACCUM_FRAMES = params['recog_ctc_vad_n_accum_frames']
+
         self.eval()
         with torch.no_grad():
-            assert task == 'ys'
-            assert self.input_type == 'speech'
-            assert self.ctc_weight > 0
-            assert self.fwd_weight > 0
-            assert len(xs) == 1  # batch size
-            assert params['recog_length_norm']
-            global_params = copy.deepcopy(params)
-            global_params['recog_max_len_ratio'] = 1.0
-
             lm = getattr(self, 'lm_fwd', None)
             lm_2nd = getattr(self, 'lm_2nd', None)
-
-            # hyper parameters
-            ctc_vad = params['recog_ctc_vad']
-            blank_threshold = params['recog_ctc_vad_blank_threshold']
-            spike_threshold = params['recog_ctc_vad_spike_threshold']
 
             cs_l = self.enc.lc_chunk_size_left
             cs_r = self.enc.lc_chunk_size_right
             factor = self.enc.subsampling_factor()
-            blank_threshold /= factor
+            BLANK_THRESHOLD /= factor
             x_whole = xs[0]  # `[T, input_dim]`
             # self.enc.turn_off_ceil_mode(self.enc)
 
@@ -456,7 +458,9 @@ class Speech2Text(ModelBase):
             t = 0  # global time offset
             n_blanks = 0  # inter-chunk
             boundary_offset = -1  # boudnary offset in each chunk (after subsampling)
+            dec_state_carry_over = False
             reset_beam = True
+            n_accum_frames = 0
             best_hyp_id_stream = []
             while True:
                 # Encode input features chunk by chunk
@@ -477,30 +481,35 @@ class Speech2Text(ModelBase):
                         if topk_ids_chunk[0, j, 0] == self.blank:
                             n_blanks += 1
                             # print('CTC (T:%d): <blank>' % (t + j * factor))
-                        elif ctc_probs_chunk[0, j, topk_ids_chunk[0, j, 0]] < spike_threshold:
+                        elif ctc_probs_chunk[0, j, topk_ids_chunk[0, j, 0]] < SPIKE_THRESHOLD:
                             n_blanks += 1
                             # print('CTC (T:%d): <blank>' % (t + j * factor))
                         else:
                             n_blanks = 0
                             # print('CTC (T:%d): %s' % (t + j * factor, idx2token([topk_ids_chunk[0, j, 0].item()])))
-                        if not is_boundary and n_blanks > blank_threshold:
+                        if not is_boundary and n_blanks > BLANK_THRESHOLD:
                             boundary_offset = j  # select the most right blank offset
                             is_boundary = True
                     ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
+                    # reset_dec_state = n_blanks == ctc_probs_chunk.size(1) - 1
                 else:
                     ctc_log_probs_chunk = None
 
                 # Truncate the most right frames
-                if is_boundary:
+                n_accum_frames += eout_chunk.size(1) * factor
+                if is_boundary and n_accum_frames >= MAX_N_ACCUM_FRAMES:
                     eout_chunk = eout_chunk[:, :boundary_offset + 1]
                 eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
                 best_hyp_id_prefix, aws_prefix = self.dec_fwd.beam_search_chunk_sync(
                     eout_chunk, params, idx2token,
-                    lm=lm, ctc_log_probs=ctc_log_probs_chunk,
-                    reset_beam=reset_beam)
-                reset_beam = is_boundary  # NOTE: reset after beam_search_chunk_sync
+                    lm=lm, lm_2nd=lm_2nd, ctc_log_probs=ctc_log_probs_chunk,
+                    reset_beam=reset_beam,
+                    merge_active_hyps=(is_boundary and n_accum_frames >= MAX_N_ACCUM_FRAMES),
+                    state_carry_over=dec_state_carry_over)
+                reset_beam = is_boundary and n_accum_frames >= MAX_N_ACCUM_FRAMES  # NOTE: reset after beam_search_chunk_sync
+                # dec_state_carry_over = False
                 # print('Sync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
                 #       (t + eout_chunk.size(1) * factor,
                 #        self.dec_fwd.n_frames * factor,
@@ -511,6 +520,7 @@ class Speech2Text(ModelBase):
                     if len(best_hyp_id_prefix) > 1:
                         best_hyp_id_prefix = best_hyp_id_prefix[:-1]
                     if not ctc_vad:
+                        # reset_dec_state = len(best_hyp_id_prefix) == 0
                         reset_beam = True
 
                 # Segmentation strategy 1:
@@ -537,16 +547,26 @@ class Speech2Text(ModelBase):
 
                     # pick up the best hyp
                     best_hyp_id_stream.extend(best_hyp_id_prefix)
+                    # for test
+                    # eos_hyp = np.zeros(1, dtype=np.int32)
+                    # eos_hyp[0] = self.eos
+                    # best_hyp_id_stream.extend(eos_hyp)
 
                     # reset
                     eout_chunks = []
                     ctc_probs_chunks = []
+                    # if n_blanks < ctc_probs_chunk.size(1) - 1:
+                    #     dec_state_carry_over = True
                     n_blanks = 0
+                    n_accum_frames = 0
 
                 # next chunk will start from the frame next to the boundary
-                if 0 <= boundary_offset * factor < cs_l - 1:
+                if 0 <= boundary_offset * factor < cs_l - 1 and n_accum_frames >= MAX_N_ACCUM_FRAMES:
+                    delta = 0
                     t -= x_chunk[boundary_offset * factor:cs_l].shape[0]
-                    # print('Back %d frames' % x_chunk[boundary_offset * factor:cs_l].shape[0])
+                    t -= delta
+                    # print('Back %d frames' % (x_chunk[boundary_offset * factor:cs_l].shape[0] - delta))
+                    assert reset_beam
 
                 t += cs_l
                 if t >= x_whole.shape[0] - 1:
@@ -560,6 +580,10 @@ class Speech2Text(ModelBase):
             #         eout, elens, global_params, idx2token, lm, lm_2nd, None)
             #     print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
             #     print('*' * 50)
+
+            # pick up the best hyp
+            if not reset_beam:
+                best_hyp_id_stream.extend(best_hyp_id_prefix)
 
             return [np.stack(best_hyp_id_stream, axis=0)], [None]
 
@@ -594,26 +618,24 @@ class Speech2Text(ModelBase):
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
 
         """
+        if task.split('.')[0] == 'ys':
+            dir = 'bwd' if self.bwd_weight > 0 and params['recog_bwd_attention'] else 'fwd'
+        elif task.split('.')[0] == 'ys_sub1':
+            dir = 'fwd_sub1'
+        elif task.split('.')[0] == 'ys_sub2':
+            dir = 'fwd_sub2'
+        else:
+            raise ValueError(task)
+
         self.eval()
         with torch.no_grad():
-            if task.split('.')[0] == 'ys':
-                dir = 'bwd' if self.bwd_weight > 0 and params['recog_bwd_attention'] else 'fwd'
-            elif task.split('.')[0] == 'ys_sub1':
-                dir = 'fwd_sub1'
-            elif task.split('.')[0] == 'ys_sub2':
-                dir = 'fwd_sub2'
-            else:
-                raise ValueError(task)
-
             # Encode input features
             if self.input_type == 'speech' and self.mtl_per_batch and 'bwd' in dir:
                 eout_dict = self.encode(xs, task, flip=True)
             else:
                 eout_dict = self.encode(xs, task, flip=False)
 
-            #########################
             # CTC
-            #########################
             if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
                 lm = getattr(self, 'lm_' + dir, None)
                 lm_2nd = getattr(self, 'lm_2nd', None)
@@ -624,111 +646,108 @@ class Speech2Text(ModelBase):
                     lm, lm_2nd, lm_2nd_rev, nbest, refs_id, utt_ids, speakers)
                 return best_hyps_id, None
 
-            #########################
             # Attention
-            #########################
+            elif params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
+                best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
+                    eout_dict[task]['xs'], eout_dict[task]['xlens'],
+                    params['recog_max_len_ratio'], idx2token,
+                    exclude_eos,  params['recog_oracle'],
+                    refs_id, utt_ids, speakers)
             else:
-                if params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
-                    best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
+                assert params['recog_batch_size'] == 1
+
+                ctc_log_probs = None
+                if params['recog_ctc_weight'] > 0:
+                    ctc_log_probs = self.dec_fwd.ctc_log_probs(eout_dict[task]['xs'])
+
+                # forward-backward decoding
+                if params['recog_fwd_bwd_attention']:
+                    lm_fwd = getattr(self, 'lm_fwd', None)
+                    lm_bwd = getattr(self, 'lm_bwd', None)
+
+                    # ensemble (forward)
+                    ensmbl_eouts_fwd = []
+                    ensmbl_elens_fwd = []
+                    ensmbl_decs_fwd = []
+                    if len(ensemble_models) > 0:
+                        for i_e, model in enumerate(ensemble_models):
+                            enc_outs_e_fwd = model.encode(xs, task, flip=False)
+                            ensmbl_eouts_fwd += [enc_outs_e_fwd[task]['xs']]
+                            ensmbl_elens_fwd += [enc_outs_e_fwd[task]['xlens']]
+                            ensmbl_decs_fwd += [model.dec_fwd]
+                            # NOTE: only support for the main task now
+
+                    # forward decoder
+                    nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                         eout_dict[task]['xs'], eout_dict[task]['xlens'],
-                        params['recog_max_len_ratio'], idx2token,
-                        exclude_eos,  params['recog_oracle'],
-                        refs_id, utt_ids, speakers)
-                else:
-                    assert params['recog_batch_size'] == 1
+                        params, idx2token, lm_fwd, None, lm_bwd, ctc_log_probs,
+                        params['recog_beam_width'], False, refs_id, utt_ids, speakers,
+                        ensmbl_eouts_fwd, ensmbl_elens_fwd, ensmbl_decs_fwd)
 
-                    ctc_log_probs = None
-                    if params['recog_ctc_weight'] > 0:
-                        ctc_log_probs = self.dec_fwd.ctc_log_probs(eout_dict[task]['xs'])
+                    # ensemble (backward)
+                    ensmbl_eouts_bwd = []
+                    ensmbl_elens_bwd = []
+                    ensmbl_decs_bwd = []
+                    if len(ensemble_models) > 0:
+                        for i_e, model in enumerate(ensemble_models):
+                            if self.input_type == 'speech' and self.mtl_per_batch:
+                                enc_outs_e_bwd = model.encode(xs, task, flip=True)
+                            else:
+                                enc_outs_e_bwd = model.encode(xs, task, flip=False)
+                            ensmbl_eouts_bwd += [enc_outs_e_bwd[task]['xs']]
+                            ensmbl_elens_bwd += [enc_outs_e_bwd[task]['xlens']]
+                            ensmbl_decs_bwd += [model.dec_bwd]
+                            # NOTE: only support for the main task now
+                            # TODO(hirofumi): merge with the forward for the efficiency
 
-                    # forward-backward decoding
-                    if params['recog_fwd_bwd_attention']:
-                        lm_fwd = getattr(self, 'lm_fwd', None)
-                        lm_bwd = getattr(self, 'lm_bwd', None)
-
-                        # ensemble (forward)
-                        ensmbl_eouts_fwd = []
-                        ensmbl_elens_fwd = []
-                        ensmbl_decs_fwd = []
-                        if len(ensemble_models) > 0:
-                            for i_e, model in enumerate(ensemble_models):
-                                enc_outs_e_fwd = model.encode(xs, task, flip=False)
-                                ensmbl_eouts_fwd += [enc_outs_e_fwd[task]['xs']]
-                                ensmbl_elens_fwd += [enc_outs_e_fwd[task]['xlens']]
-                                ensmbl_decs_fwd += [model.dec_fwd]
-                                # NOTE: only support for the main task now
-
-                        # forward decoder
-                        nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
-                            eout_dict[task]['xs'], eout_dict[task]['xlens'],
-                            params, idx2token, lm_fwd, None, lm_bwd, ctc_log_probs,
-                            params['recog_beam_width'], False, refs_id, utt_ids, speakers,
-                            ensmbl_eouts_fwd, ensmbl_elens_fwd, ensmbl_decs_fwd)
-
-                        # ensemble (backward)
-                        ensmbl_eouts_bwd = []
-                        ensmbl_elens_bwd = []
-                        ensmbl_decs_bwd = []
-                        if len(ensemble_models) > 0:
-                            for i_e, model in enumerate(ensemble_models):
-                                if self.input_type == 'speech' and self.mtl_per_batch:
-                                    enc_outs_e_bwd = model.encode(xs, task, flip=True)
-                                else:
-                                    enc_outs_e_bwd = model.encode(xs, task, flip=False)
-                                ensmbl_eouts_bwd += [enc_outs_e_bwd[task]['xs']]
-                                ensmbl_elens_bwd += [enc_outs_e_bwd[task]['xlens']]
-                                ensmbl_decs_bwd += [model.dec_bwd]
-                                # NOTE: only support for the main task now
-                                # TODO(hirofumi): merge with the forward for the efficiency
-
-                        # backward decoder
-                        flip = False
-                        if self.input_type == 'speech' and self.mtl_per_batch:
-                            flip = True
-                            enc_outs_bwd = self.encode(xs, task, flip=True)
-                        else:
-                            enc_outs_bwd = eout_dict
-                        nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
-                            enc_outs_bwd[task]['xs'], eout_dict[task]['xlens'],
-                            params, idx2token, lm_bwd, None, lm_fwd, ctc_log_probs,
-                            params['recog_beam_width'], False, refs_id, utt_ids, speakers,
-                            ensmbl_eouts_bwd, ensmbl_elens_bwd, ensmbl_decs_bwd)
-
-                        # forward-backward attention
-                        best_hyps_id = fwd_bwd_attention(
-                            nbest_hyps_id_fwd, aws_fwd, scores_fwd,
-                            nbest_hyps_id_bwd, aws_bwd, scores_bwd,
-                            flip, self.eos, params['recog_gnmt_decoding'], params['recog_length_penalty'],
-                            idx2token, refs_id)
-                        aws = None
+                    # backward decoder
+                    flip = False
+                    if self.input_type == 'speech' and self.mtl_per_batch:
+                        flip = True
+                        enc_outs_bwd = self.encode(xs, task, flip=True)
                     else:
-                        # ensemble
-                        ensmbl_eouts, ensmbl_elens, ensmbl_decs = [], [], []
-                        if len(ensemble_models) > 0:
-                            for i_e, model in enumerate(ensemble_models):
-                                if model.input_type == 'speech' and model.mtl_per_batch and 'bwd' in dir:
-                                    enc_outs_e = model.encode(xs, task, flip=True)
-                                else:
-                                    enc_outs_e = model.encode(xs, task, flip=False)
-                                ensmbl_eouts += [enc_outs_e[task]['xs']]
-                                ensmbl_elens += [enc_outs_e[task]['xlens']]
-                                ensmbl_decs += [getattr(model, 'dec_' + dir)]
-                                # NOTE: only support for the main task now
+                        enc_outs_bwd = eout_dict
+                    nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
+                        enc_outs_bwd[task]['xs'], eout_dict[task]['xlens'],
+                        params, idx2token, lm_bwd, None, lm_fwd, ctc_log_probs,
+                        params['recog_beam_width'], False, refs_id, utt_ids, speakers,
+                        ensmbl_eouts_bwd, ensmbl_elens_bwd, ensmbl_decs_bwd)
 
-                        lm = getattr(self, 'lm_' + dir, None)
-                        lm_2nd = getattr(self, 'lm_2nd', None)
-                        lm_2nd_rev = getattr(self, 'lm_bwd' if dir == 'fwd' else 'lm_bwd', None)
+                    # forward-backward attention
+                    best_hyps_id = fwd_bwd_attention(
+                        nbest_hyps_id_fwd, aws_fwd, scores_fwd,
+                        nbest_hyps_id_bwd, aws_bwd, scores_bwd,
+                        flip, self.eos, params['recog_gnmt_decoding'], params['recog_length_penalty'],
+                        idx2token, refs_id)
+                    aws = None
+                else:
+                    # ensemble
+                    ensmbl_eouts, ensmbl_elens, ensmbl_decs = [], [], []
+                    if len(ensemble_models) > 0:
+                        for i_e, model in enumerate(ensemble_models):
+                            if model.input_type == 'speech' and model.mtl_per_batch and 'bwd' in dir:
+                                enc_outs_e = model.encode(xs, task, flip=True)
+                            else:
+                                enc_outs_e = model.encode(xs, task, flip=False)
+                            ensmbl_eouts += [enc_outs_e[task]['xs']]
+                            ensmbl_elens += [enc_outs_e[task]['xlens']]
+                            ensmbl_decs += [getattr(model, 'dec_' + dir)]
+                            # NOTE: only support for the main task now
 
-                        nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
-                            eout_dict[task]['xs'], eout_dict[task]['xlens'],
-                            params, idx2token, lm, lm_2nd, lm_2nd_rev, ctc_log_probs,
-                            nbest, exclude_eos, refs_id, utt_ids, speakers,
-                            ensmbl_eouts, ensmbl_elens, ensmbl_decs)
+                    lm = getattr(self, 'lm_' + dir, None)
+                    lm_2nd = getattr(self, 'lm_2nd', None)
+                    lm_2nd_rev = getattr(self, 'lm_bwd' if dir == 'fwd' else 'lm_bwd', None)
 
-                        if nbest == 1:
-                            best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
-                        else:
-                            return nbest_hyps_id, aws, scores
-                        # NOTE: nbest >= 2 is used for MWER training only
+                    nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
+                        eout_dict[task]['xs'], eout_dict[task]['xlens'],
+                        params, idx2token, lm, lm_2nd, lm_2nd_rev, ctc_log_probs,
+                        nbest, exclude_eos, refs_id, utt_ids, speakers,
+                        ensmbl_eouts, ensmbl_elens, ensmbl_decs)
+
+                    if nbest == 1:
+                        best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
+                    else:
+                        return nbest_hyps_id, aws, scores
+                    # NOTE: nbest >= 2 is used for MWER training only
 
                 return best_hyps_id, aws
