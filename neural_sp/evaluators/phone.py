@@ -88,15 +88,16 @@ def eval_phone(models, dataset, recog_params, epoch,
                 logger.debug('Hyp: %s' % hyp)
                 logger.debug('-' * 150)
 
-                # Compute PER
-                per_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
-                                                         hyp=hyp.split(' '),
-                                                         normalize=False)
-                per += per_b
-                n_sub += sub_b
-                n_ins += ins_b
-                n_del += del_b
-                n_phone += len(ref.split(' '))
+                if not streaming:
+                    # Compute PER
+                    per_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
+                                                             hyp=hyp.split(' '),
+                                                             normalize=False)
+                    per += per_b
+                    n_sub += sub_b
+                    n_ins += ins_b
+                    n_del += del_b
+                    n_phone += len(ref.split(' '))
 
                 if progressbar:
                     pbar.update(1)
@@ -110,10 +111,11 @@ def eval_phone(models, dataset, recog_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    per /= n_phone
-    n_sub /= n_phone
-    n_ins /= n_phone
-    n_del /= n_phone
+    if not streaming:
+        per /= n_phone
+        n_sub /= n_phone
+        n_ins /= n_phone
+        n_del /= n_phone
 
     logger.debug('PER (%s): %.2f %%' % (dataset.set, per))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))

@@ -100,6 +100,8 @@ def eval_word(models, dataset, recog_params, epoch,
                         task='ys_sub1')
                     # TODO(hirofumi): support ys_sub2 and ys_sub3
 
+                    assert not streaming
+
                     hyp = resolve_unk(
                         hyp, best_hyps_id_char[0], aws[b], aw_char[0], dataset.idx2token[1],
                         subsample_factor_word=np.prod(models[0].subsample),
@@ -135,15 +137,16 @@ def eval_word(models, dataset, recog_params, epoch,
                 logger.debug('Hyp: %s' % hyp)
                 logger.debug('-' * 150)
 
-                # Compute WER
-                wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
-                                                         hyp=hyp.split(' '),
-                                                         normalize=False)
-                wer += wer_b
-                n_sub_w += sub_b
-                n_ins_w += ins_b
-                n_del_w += del_b
-                n_word += len(ref.split(' '))
+                if not streaming:
+                    # Compute WER
+                    wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
+                                                             hyp=hyp.split(' '),
+                                                             normalize=False)
+                    wer += wer_b
+                    n_sub_w += sub_b
+                    n_ins_w += ins_b
+                    n_del_w += del_b
+                    n_word += len(ref.split(' '))
 
                 if progressbar:
                     pbar.update(1)
@@ -157,16 +160,17 @@ def eval_word(models, dataset, recog_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    wer /= n_word
-    n_sub_w /= n_word
-    n_ins_w /= n_word
-    n_del_w /= n_word
+    if not streaming:
+        wer /= n_word
+        n_sub_w /= n_word
+        n_ins_w /= n_word
+        n_del_w /= n_word
 
-    if n_char > 0:
-        cer /= n_char
-        n_sub_c /= n_char
-        n_ins_c /= n_char
-        n_del_c /= n_char
+        if n_char > 0:
+            cer /= n_char
+            n_sub_c /= n_char
+            n_ins_c /= n_char
+            n_del_c /= n_char
 
     logger.debug('WER (%s): %.2f %%' % (dataset.set, wer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))

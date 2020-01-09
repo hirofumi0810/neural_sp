@@ -105,29 +105,30 @@ def eval_char(models, dataset, recog_params, epoch,
                 logger.debug('Hyp: %s' % hyp)
                 logger.debug('-' * 150)
 
-                if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub1 == 'char'):
-                    # Compute WER
-                    wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
-                                                             hyp=hyp.split(' '),
-                                                             normalize=False)
-                    wer += wer_b
-                    n_sub_w += sub_b
-                    n_ins_w += ins_b
-                    n_del_w += del_b
-                    n_word += len(ref.split(' '))
+                if not streaming:
+                    if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub1 == 'char'):
+                        # Compute WER
+                        wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
+                                                                 hyp=hyp.split(' '),
+                                                                 normalize=False)
+                        wer += wer_b
+                        n_sub_w += sub_b
+                        n_ins_w += ins_b
+                        n_del_w += del_b
+                        n_word += len(ref.split(' '))
 
-                # Compute CER
-                if dataset.corpus == 'csj':
-                    ref = ref.replace(' ', '')
-                    hyp = hyp.replace(' ', '')
-                cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref),
-                                                         hyp=list(hyp),
-                                                         normalize=False)
-                cer += cer_b
-                n_sub_c += sub_b
-                n_ins_c += ins_b
-                n_del_c += del_b
-                n_char += len(ref)
+                    # Compute CER
+                    if dataset.corpus == 'csj':
+                        ref = ref.replace(' ', '')
+                        hyp = hyp.replace(' ', '')
+                    cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref),
+                                                             hyp=list(hyp),
+                                                             normalize=False)
+                    cer += cer_b
+                    n_sub_c += sub_b
+                    n_ins_c += ins_b
+                    n_del_c += del_b
+                    n_char += len(ref)
 
                 if progressbar:
                     pbar.update(1)
@@ -141,18 +142,19 @@ def eval_char(models, dataset, recog_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub1 == 'char'):
-        wer /= n_word
-        n_sub_w /= n_word
-        n_ins_w /= n_word
-        n_del_w /= n_word
-    else:
-        wer = n_sub_w = n_ins_w = n_del_w = 0
+    if not streaming:
+        if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub1 == 'char'):
+            wer /= n_word
+            n_sub_w /= n_word
+            n_ins_w /= n_word
+            n_del_w /= n_word
+        else:
+            wer = n_sub_w = n_ins_w = n_del_w = 0
 
-    cer /= n_char
-    n_sub_c /= n_char
-    n_ins_c /= n_char
-    n_del_c /= n_char
+        cer /= n_char
+        n_sub_c /= n_char
+        n_ins_c /= n_char
+        n_del_c /= n_char
 
     logger.debug('WER (%s): %.2f %%' % (dataset.set, wer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
