@@ -136,8 +136,6 @@ def parse():
                         help='left chunk size for latency-controlled bidirectional encoder')
     parser.add_argument('--lc_chunk_size_right', type=int, default=0,
                         help='left chunk size for latency-controlled bidirectional encoder')
-    parser.add_argument('--lc_batchwise_n_chunks', type=int, default=None,
-                        help='')
     parser.add_argument('--lc_state_reset_prob', type=float, default=0.,
                         help='probability to reset states for latency-controlled bidirectional encoder')
     # topology (decoder)
@@ -403,11 +401,15 @@ def parse():
                         help='number of models for the model averaging of Transformer')
     parser.add_argument('--recog_streaming', type=strtobool, default=False,
                         help='streaming decoding')
+    parser.add_argument('--recog_chunk_sync', type=strtobool, default=False,
+                        help='')
     parser.add_argument('--recog_ctc_vad', type=strtobool, default=True,
                         help='')
     parser.add_argument('--recog_ctc_vad_blank_threshold', type=int, default=40,
                         help='')
-    parser.add_argument('--recog_ctc_vad_spike_threshold', type=float, default=0.6,
+    parser.add_argument('--recog_ctc_vad_spike_threshold', type=float, default=0.1,
+                        help='')
+    parser.add_argument('--recog_ctc_vad_n_accum_frames', type=float, default=1200,
                         help='')
     # distillation related
     parser.add_argument('--recog_nbest', type=float, default=1,

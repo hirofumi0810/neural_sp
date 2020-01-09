@@ -67,9 +67,10 @@ def eval_word(models, dataset, recog_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            if streaming:
+            if streaming or recog_params['recog_chunk_sync']:
                 best_hyps_id, _ = models[0].decode_streaming(
-                    batch['xs'], recog_params, dataset.idx2token[0], exclude_eos=True)
+                    batch['xs'], recog_params, dataset.idx2token[0],
+                    exclude_eos=True)
             else:
                 best_hyps_id, _ = models[0].decode(
                     batch['xs'], recog_params, dataset.idx2token[0],
