@@ -62,7 +62,6 @@ class RNNEncoder(EncoderBase):
         bidirectional_sum_fwd_bwd (bool):
         lc_chunk_size_left (int): left chunk size for latency-controlled bidirectional encoder
         lc_chunk_size_right (int): right chunk size for latency-controlled bidirectional encoder
-        lc_batchwise_n_chunks (int):
         lc_state_reset_prob (float): probability to reset states for latency-controlled bidirectional encoder
 
     """
@@ -95,7 +94,6 @@ class RNNEncoder(EncoderBase):
                  bidirectional_sum_fwd_bwd=False,
                  lc_chunk_size_left=0,
                  lc_chunk_size_right=0,
-                 lc_batchwise_n_chunks=None,
                  lc_state_reset_prob=0.):
 
         super(RNNEncoder, self).__init__()
@@ -117,7 +115,6 @@ class RNNEncoder(EncoderBase):
         self.latency_controlled = lc_chunk_size_left > 0 or lc_chunk_size_right > 0
         self.lc_chunk_size_left = lc_chunk_size_left
         self.lc_chunk_size_right = lc_chunk_size_right
-        self.lc_batchwise_n_chunks = lc_batchwise_n_chunks
         self.lc_state_reset_prob = lc_state_reset_prob
         if self.latency_controlled:
             assert n_layers_sub1 == 0
@@ -406,37 +403,7 @@ class RNNEncoder(EncoderBase):
 
         bs, xmax, input_dim = xs.size()
         n_chunks = 1 if streaming else math.ceil(xmax / cs_l)
-        batchwise_chunk = False
-
-        if self.lc_batchwise_n_chunks is None or n_chunks < self.lc_batchwise_n_chunks * 2:
-            xlens = torch.IntTensor(bs).fill_(cs_l if streaming else xmax)
-        else:
-            # batchwise BPTT for efficient training
-            batchwise_chunk = True
-            n_chunks = self.lc_batchwise_n_chunks
-            xmax_bw = cs_l * n_chunks + cs_r
-
-            # pad the right side
-            n_blocks = math.ceil(xmax / (cs_l * n_chunks))
-            xs_bw = xs.new_zeros(bs, n_blocks, xmax_bw, input_dim)
-            i_block = 0
-            i_chunk = 0
-            for t in range(0, cs_l * n_chunks, cs_l):
-                xs_chunk = xs[:, t:t + (cs_l + cs_r)]
-                if i_chunk < n_chunks - 1:
-                    xs_bw[:, i_block, cs_l * i_chunk:cs_l * i_chunk + xs_chunk.size(1)] = xs_chunk
-                    if i_chunk == 0 and i_block > 0:
-                        xs_bw[:, i_block - 1, cs_l * n_chunks:cs_l * n_chunks +
-                              xs_chunk[:, :cs_r].size(1)] = xs_chunk[:, :cs_r]
-                    i_chunk += 1
-                elif i_chunk == n_chunks - 1:
-                    xs_bw[:, i_block, cs_l * i_chunk:cs_l * i_chunk + xs_chunk.size(1)] = xs_chunk
-                    i_chunk = 0
-                    i_block += 1
-
-            # reshape
-            xs = xs_bw.view(bs * n_blocks, xmax_bw, input_dim)
-            xlens = torch.IntTensor(bs).fill_(cs_l * n_chunks * n_blocks)
+        xlens = torch.IntTensor(bs).fill_(cs_l if streaming else xmax)
 
         xs_chunks = []
         for t in range(0, cs_l * n_chunks, cs_l):
@@ -449,13 +416,13 @@ class RNNEncoder(EncoderBase):
                 xs_chunk_bwd, _ = self.rnn_bwd[l](xs_chunk_bwd, hx=None)
                 xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, cs_l+cs_r, n_units]`
                 # fwd
-                if xs_chunk.size(1) <= cs_l and not batchwise_chunk:
+                if xs_chunk.size(1) <= cs_l:
                     xs_chunk_fwd, self.fwd_states[l] = self.rnn[l](xs_chunk, hx=self.fwd_states[l])
-                    if self.lc_state_reset_prob > 0 and random.random() < self.lc_state_reset_prob:
+                    if self.training and self.lc_state_reset_prob > 0 and random.random() < self.lc_state_reset_prob:
                         self.fwd_states[l] = None
                 else:
                     xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :cs_l], hx=self.fwd_states[l])
-                    if self.lc_state_reset_prob > 0 and random.random() < self.lc_state_reset_prob:
+                    if self.training and self.lc_state_reset_prob > 0 and random.random() < self.lc_state_reset_prob:
                         self.fwd_states[l] = None
                     xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, cs_l:], hx=self.fwd_states[l])
                     xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, cs_l+cs_r, n_units]`
@@ -471,11 +438,6 @@ class RNNEncoder(EncoderBase):
                     xs_chunk = torch.tanh(self.proj[l](xs_chunk))
             xs_chunks.append(xs_chunk[:, :cs_l])
         xs = torch.cat(xs_chunks, dim=1)
-
-        if batchwise_chunk:
-            xs = xs.view(bs, n_blocks, cs_l * n_chunks, xs.size(-1))
-            xs = xs.transpose(2, 1).contiguous()
-            xs = xs.view(bs, cs_l * n_chunks * n_blocks, xs.size(-1))
 
         return xs, xlens
 
