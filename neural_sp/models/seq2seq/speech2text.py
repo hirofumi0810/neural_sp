@@ -540,9 +540,6 @@ class Speech2Text(ModelBase):
                     # nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
                     #     eout, elens, global_params, idx2token, lm, lm_2nd)
                     # print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
-
-                    # TODO(hirofumi): second pass rescoring here
-
                     # print('*' * 100)
 
                     # pick up the best hyp
@@ -572,7 +569,7 @@ class Speech2Text(ModelBase):
                 if t >= x_whole.shape[0] - 1:
                     break
 
-            # for the last chunk
+            # Global decoding over the last chunk
             # if len(eout_chunks) > 0:
             #     eout = torch.cat(eout_chunks, dim=1)
             #     elens = torch.IntTensor([eout.size(1)])
@@ -750,4 +747,4 @@ class Speech2Text(ModelBase):
                         return nbest_hyps_id, aws, scores
                     # NOTE: nbest >= 2 is used for MWER training only
 
-                return best_hyps_id, aws
+            return best_hyps_id, aws
