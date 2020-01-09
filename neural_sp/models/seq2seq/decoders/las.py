@@ -815,10 +815,10 @@ class RNNDecoder(DecoderBase):
 
             if speakers is not None:
                 if speakers[b] == self.prev_spk:
-                    if lm_state_carry_over and isinstance(lm, RNNLM):
-                        lmstate = self.lmstate_final
                     if asr_state_carry_over:
                         dstates = self.dstates_final
+                    if lm_state_carry_over and isinstance(lm, RNNLM):
+                        lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
 
             end_hyps = []
@@ -1067,12 +1067,12 @@ class RNNDecoder(DecoderBase):
                     logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                 if lm_weight > 0 and lm is not None:
                     logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
-                    if lm_2nd is not None:
-                        logger.info('log prob (hyp, second-path lm): %.7f' %
-                                    (end_hyps[k]['score_lm_2nd'] * lm_weight))
-                    if lm_2nd_rev is not None:
-                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
+                if lm_weight_2nd > 0 and lm_2nd is not None:
+                    logger.info('log prob (hyp, second-path lm): %.7f' %
+                                (end_hyps[k]['score_lm_2nd'] * lm_weight))
+                if lm_weight_2nd_rev > 0 and lm_2nd_rev is not None:
+                    logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
+                                (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
@@ -1090,8 +1090,9 @@ class RNNDecoder(DecoderBase):
         return nbest_hyps_idx, aws, scores
 
     def beam_search_chunk_sync(self, eouts_chunk, params, idx2token,
-                               lm=None, ctc_log_probs=None, exclude_eos=False,
-                               reset_beam=False):
+                               lm=None, lm_2nd=None, ctc_log_probs=None, exclude_eos=False,
+                               reset_beam=False, merge_active_hyps=False,
+                               state_carry_over=False,):
         assert eouts_chunk.size(0) == 1
         assert self.attn_type == 'mocha'
 
@@ -1100,10 +1101,13 @@ class RNNDecoder(DecoderBase):
         max_len_ratio = params['recog_max_len_ratio']
         lp_weight = params['recog_length_penalty']
         lm_weight = params['recog_lm_weight']
+        lm_weight_2nd = params['recog_lm_second_weight']
         eos_threshold = params['recog_eos_threshold']
 
         if lm is not None:
             lm.eval()
+        if lm_2nd is not None:
+            lm_2nd.eval()
 
         # For joint CTC-Attention decoding
         if ctc_weight > 0 and ctc_log_probs is not None:
@@ -1113,6 +1117,11 @@ class RNNDecoder(DecoderBase):
         self.score.reset()
         dstates = self.zero_state(1)
         lmstate = None
+
+        if state_carry_over:
+            dstates = self.dstates_final
+            if isinstance(lm, RNNLM):
+                lmstate = self.lmstate_final
 
         end_hyps = []
         if reset_beam:
@@ -1266,6 +1275,13 @@ class RNNDecoder(DecoderBase):
         # Global pruning
         if len(end_hyps) == 0:
             end_hyps = self.hyps_sync[:]
+        elif merge_active_hyps:
+            end_hyps.extend(self.hyps_sync[:])
+
+        # forward second path LM rescoring
+        if lm_2nd is not None and lm_weight_2nd > 0:
+            self.lm_rescoring(end_hyps, lm_2nd, lm_weight_2nd, tag='2nd')
+            # TODO: fix bug for empty hypotheses
 
         # Sort by score
         end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -1293,11 +1309,17 @@ class RNNDecoder(DecoderBase):
                 logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
             if lm_weight > 0 and lm is not None:
                 logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
-            # print('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:]))
+            if lm_weight_2nd > 0 and lm_2nd is not None:
+                logger.info('log prob (hyp, second-path lm): %.7f' %
+                            (end_hyps[k]['score_lm_2nd'] * lm_weight))
 
         # Exclude <eos>
         if exclude_eos:
             best_hyps_idx = best_hyps_idx[:-1] if eos_flag else best_hyps_idx
+
+        # Store ASR/LM state
+        self.dstates_final = end_hyps[0]['dstates']
+        self.lmstate_final = end_hyps[0]['lmstate']
 
         self.n_frames += eouts_chunk.size(1)
 
