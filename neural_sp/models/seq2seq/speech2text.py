@@ -471,33 +471,35 @@ class Speech2Text(ModelBase):
                 eout_chunk = eout_dict_chunk[task]['xs']
                 boundary_offset = -1  # reset
                 is_boundary = False  # detect the first boundary in the same chunk
+                n_accum_frames += eout_chunk.size(1) * factor
 
                 # CTC-based VAD
                 if ctc_vad:
                     ctc_probs_chunk = self.dec_fwd.ctc_probs(eout_chunk)
-                    _, topk_ids_chunk = torch.topk(ctc_probs_chunk, k=1, dim=-1, largest=True, sorted=True)
-                    ctc_probs_chunks.append(ctc_probs_chunk)
-                    for j in range(ctc_probs_chunk.size(1)):
-                        if topk_ids_chunk[0, j, 0] == self.blank:
-                            n_blanks += 1
-                            # print('CTC (T:%d): <blank>' % (t + j * factor))
-                        elif ctc_probs_chunk[0, j, topk_ids_chunk[0, j, 0]] < SPIKE_THRESHOLD:
-                            n_blanks += 1
-                            # print('CTC (T:%d): <blank>' % (t + j * factor))
-                        else:
-                            n_blanks = 0
-                            # print('CTC (T:%d): %s' % (t + j * factor, idx2token([topk_ids_chunk[0, j, 0].item()])))
-                        if not is_boundary and n_blanks > BLANK_THRESHOLD:
-                            boundary_offset = j  # select the most right blank offset
-                            is_boundary = True
                     ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
+
+                    if n_accum_frames >= MAX_N_ACCUM_FRAMES:
+                        _, topk_ids_chunk = torch.topk(ctc_probs_chunk, k=1, dim=-1, largest=True, sorted=True)
+                        ctc_probs_chunks.append(ctc_probs_chunk)
+                        for j in range(ctc_probs_chunk.size(1)):
+                            if topk_ids_chunk[0, j, 0] == self.blank:
+                                n_blanks += 1
+                                # print('CTC (T:%d): <blank>' % (t + j * factor))
+                            elif ctc_probs_chunk[0, j, topk_ids_chunk[0, j, 0]] < SPIKE_THRESHOLD:
+                                n_blanks += 1
+                                # print('CTC (T:%d): <blank>' % (t + j * factor))
+                            else:
+                                n_blanks = 0
+                                # print('CTC (T:%d): %s' % (t + j * factor, idx2token([topk_ids_chunk[0, j, 0].item()])))
+                            if not is_boundary and n_blanks > BLANK_THRESHOLD:
+                                boundary_offset = j  # select the most right blank offset
+                                is_boundary = True
                     # reset_dec_state = n_blanks == ctc_probs_chunk.size(1) - 1
                 else:
                     ctc_log_probs_chunk = None
 
                 # Truncate the most right frames
-                n_accum_frames += eout_chunk.size(1) * factor
-                if is_boundary and n_accum_frames >= MAX_N_ACCUM_FRAMES:
+                if is_boundary:
                     eout_chunk = eout_chunk[:, :boundary_offset + 1]
                 eout_chunks.append(eout_chunk)
 
@@ -506,9 +508,9 @@ class Speech2Text(ModelBase):
                     eout_chunk, params, idx2token,
                     lm=lm, lm_2nd=lm_2nd, ctc_log_probs=ctc_log_probs_chunk,
                     reset_beam=reset_beam,
-                    merge_active_hyps=(is_boundary and n_accum_frames >= MAX_N_ACCUM_FRAMES),
+                    merge_active_hyps=is_boundary,
                     state_carry_over=dec_state_carry_over)
-                reset_beam = is_boundary and n_accum_frames >= MAX_N_ACCUM_FRAMES  # NOTE: reset after beam_search_chunk_sync
+                reset_beam = is_boundary  # NOTE: reset after beam_search_chunk_sync
                 # dec_state_carry_over = False
                 # print('Sync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
                 #       (t + eout_chunk.size(1) * factor,
@@ -557,13 +559,12 @@ class Speech2Text(ModelBase):
                     n_blanks = 0
                     n_accum_frames = 0
 
-                # next chunk will start from the frame next to the boundary
-                if 0 <= boundary_offset * factor < cs_l - 1 and n_accum_frames >= MAX_N_ACCUM_FRAMES:
-                    delta = 0
-                    t -= x_chunk[boundary_offset * factor:cs_l].shape[0]
-                    t -= delta
-                    # print('Back %d frames' % (x_chunk[boundary_offset * factor:cs_l].shape[0] - delta))
-                    assert reset_beam
+                    # next chunk will start from the frame next to the boundary
+                    if 0 <= boundary_offset * factor < cs_l - 1:
+                        delta = 0
+                        t -= x_chunk[boundary_offset * factor:cs_l].shape[0]
+                        t -= delta
+                        # print('Back %d frames' % (x_chunk[boundary_offset * factor:cs_l].shape[0] - delta))
 
                 t += cs_l
                 if t >= x_whole.shape[0] - 1:
