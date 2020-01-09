@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import logging
 import math
 import numpy as np
@@ -1152,16 +1153,8 @@ class RNNDecoder(DecoderBase):
             for j, beam in enumerate(self.hyps_sync):
                 y[j, 0] = beam['hyp'][-1]
 
-                # reset attention weights for MoChA
-                if beam['aws'][-1] is not None and beam['aws'][-1].sum() == 1:
-                    beam['aws'][-1] = eouts_chunk.new_zeros(1, eouts_chunk.size(1), 1)
-                    beam['aws'][-1][:, 0:1] = eouts_chunk.new_ones(1, 1, 1)
-
             cv = torch.cat([beam['cv'] for beam in self.hyps_sync], dim=0)
-            if self.hyps_sync[0]['aws'][-1] is not None:
-                aw = torch.cat([beam['aws'][-1] for beam in self.hyps_sync], dim=0)
-            else:
-                aw = None
+            aw = torch.cat([beam['aws'][-1] for beam in self.hyps_sync], dim=0) if t > 0 else None
             hxs = torch.cat([beam['dstates']['dstate'][0] for beam in self.hyps_sync], dim=1)
             if self.rnn_type == 'lstm':
                 cxs = torch.cat([beam['dstates']['dstate'][1] for beam in self.hyps_sync], dim=1)
@@ -1190,13 +1183,6 @@ class RNNDecoder(DecoderBase):
 
             new_hyps = []
             for j, beam in enumerate(self.hyps_sync):
-                if aw[j].sum() == 0:
-                    # if aw[j].sum() == 0 and idx != self.eos:
-                    # no triggered point found in this chunk
-                    beam['no_trigger'] = True
-                    new_hyps.append(beam)
-                    continue
-
                 # Attention scores
                 total_scores_attn = beam['score_attn'] + scores_attn[j:j + 1]
                 total_scores = total_scores_attn * (1 - ctc_weight)
@@ -1227,6 +1213,15 @@ class RNNDecoder(DecoderBase):
                     topk_ids = topk_ids[:, joint_ids_topk[0]]
                 else:
                     total_scores_ctc = eouts_chunk.new_zeros(beam_width)
+
+                # no triggered point found in this chunk
+                if aw[j].sum() == 0:
+                    beam['no_trigger'] = True
+                    beam['aws'][-1] = eouts_chunk.new_zeros(eouts_chunk.size(0), eouts_chunk.size(1), 1)
+                    # NOTE: for the case where the first token in the current chunk is <eos>
+                    new_hyps.append(copy.deepcopy(beam))
+                    continue
+                # TODO: implement force_eos
 
                 for k in range(beam_width):
                     idx = topk_ids[0, k].item()
