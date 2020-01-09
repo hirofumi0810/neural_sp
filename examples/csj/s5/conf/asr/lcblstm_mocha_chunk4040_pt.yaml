@@ -15,7 +15,7 @@ enc_n_units: 512
 enc_n_projs: 0
 enc_n_layers: 5
 subsample_type: drop
-lc_chunk_size_left: -1  # offline
+lc_chunk_size_left: 40
 lc_chunk_size_right: 40
 attn_type: mocha
 mocha_chunk_size: 4
@@ -34,11 +34,11 @@ emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 30
+batch_size: 20
 optimizer: adam
 n_epochs: 25
 convert_to_sgd_epoch: 20
-print_step: 400
+print_step: 800
 metric: edit_distance
 lr: 1e-3
 lr_decay_type: always
