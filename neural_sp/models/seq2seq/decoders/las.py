@@ -1039,20 +1039,6 @@ class RNNDecoder(DecoderBase):
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
 
-            # N-best list
-            if self.bwd:
-                # Reverse the order
-                nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:][::-1]) for n in range(nbest)]]
-                aws += [tensor2np(torch.stack(end_hyps[0]['aws'][1:][::-1], dim=1).squeeze(0))]
-                scores += [[end_hyps[n]['hist_score'][1:][::-1] for n in range(nbest)]]
-            else:
-                nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
-                aws += [tensor2np(torch.stack(end_hyps[0]['aws'][1:], dim=1).squeeze(0))]
-                scores += [[end_hyps[n]['hist_score'][1:] for n in range(nbest)]]
-
-            # Check <eos>
-            eos_flags.append([(end_hyps[n]['hyp'][-1] == self.eos) for n in range(nbest)])
-
             if utt_ids is not None:
                 logger.info('Utt-id: %s' % utt_ids[b])
             if refs_id is not None and self.vocab == idx2token.vocab:
@@ -1074,6 +1060,20 @@ class RNNDecoder(DecoderBase):
                     logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
                                 (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
 
+            # N-best list
+            if self.bwd:
+                # Reverse the order
+                nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:][::-1]) for n in range(nbest)]]
+                aws += [tensor2np(torch.stack(end_hyps[0]['aws'][1:][::-1], dim=1).squeeze(0))]
+                scores += [[end_hyps[n]['hist_score'][1:][::-1] for n in range(nbest)]]
+            else:
+                nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
+                aws += [tensor2np(torch.stack(end_hyps[0]['aws'][1:], dim=1).squeeze(0))]
+                scores += [[end_hyps[n]['hist_score'][1:] for n in range(nbest)]]
+
+            # Check <eos>
+            eos_flags.append([(end_hyps[n]['hyp'][-1] == self.eos) for n in range(nbest)])
+
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
             if self.bwd:
@@ -1090,9 +1090,8 @@ class RNNDecoder(DecoderBase):
         return nbest_hyps_idx, aws, scores
 
     def beam_search_chunk_sync(self, eouts_chunk, params, idx2token,
-                               lm=None, lm_2nd=None, ctc_log_probs=None, exclude_eos=False,
-                               hyps_segment=False, merge_active_hyps=False,
-                               state_carry_over=False,):
+                               lm=None, lm_2nd=None, ctc_log_probs=None,
+                               hyps_segment=False, state_carry_over=False,):
         assert eouts_chunk.size(0) == 1
         assert self.attn_type == 'mocha'
 
@@ -1294,55 +1293,33 @@ class RNNDecoder(DecoderBase):
                 break
             hyps_segment = new_hyps[:]
 
-        # Global pruning
-        if len(end_hyps) == 0:
-            end_hyps = hyps_segment[:]
-        elif merge_active_hyps:
-            end_hyps.extend(hyps_segment[:])
-
         # forward second path LM rescoring
         if lm_2nd is not None and lm_weight_2nd > 0:
             self.lm_rescoring(end_hyps, lm_2nd, lm_weight_2nd, tag='2nd')
             # TODO: fix bug for empty hypotheses
 
         # Sort by score
-        end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
+        if len(end_hyps) > 0:
+            end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
 
-        # 1-best list
-        best_hyps_idx = np.array(end_hyps[0]['hyp'][1:])
-        aws = end_hyps[0]['aws'][1:]
-        # Concatenate in L dimension
-        if len(aws) > 0:
-            if len(aws) > 1 and aws[-1].size(1) != aws[0].size(1):
-                for u in range(1, len(aws)):
-                    _aw = aws[0].new_zeros(aws[0].size())
-                    _aw[:, :aws[u].size(1)] = aws[u]
-                    aws[u] = _aw
-            aws = tensor2np(torch.stack(aws, dim=1).squeeze(0))
-
-        # Check <eos>
-        eos_flag = (end_hyps[0]['hyp'][-1] == self.eos)
-
-        for k in range(len(end_hyps)):
-            logger.info('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:]))
-            logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
-            logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
+        merged_hyps = sorted(end_hyps + hyps_segment, key=lambda x: x['score'], reverse=True)[:beam_width]
+        for k in range(len(merged_hyps)):
+            logger.info('Hyp: %s' % idx2token(merged_hyps[k]['hyp'][1:]))
+            logger.info('log prob (hyp): %.7f' % merged_hyps[k]['score'])
+            logger.info('log prob (hyp, att): %.7f' % (merged_hyps[k]['score_attn'] * (1 - ctc_weight)))
             if ctc_weight > 0 and ctc_log_probs is not None:
-                logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
+                logger.info('log prob (hyp, ctc): %.7f' % (merged_hyps[k]['score_ctc'] * ctc_weight))
             if lm_weight > 0 and lm is not None:
-                logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
+                logger.info('log prob (hyp, first-path lm): %.7f' % (merged_hyps[k]['score_lm'] * lm_weight))
             if lm_weight_2nd > 0 and lm_2nd is not None:
                 logger.info('log prob (hyp, second-path lm): %.7f' %
-                            (end_hyps[k]['score_lm_2nd'] * lm_weight))
-
-        # Exclude <eos>
-        if exclude_eos:
-            best_hyps_idx = best_hyps_idx[:-1] if eos_flag else best_hyps_idx
+                            (merged_hyps[k]['score_lm_2nd'] * lm_weight))
 
         # Store ASR/LM state
-        self.dstates_final = end_hyps[0]['dstates']
-        self.lmstate_final = end_hyps[0]['lmstate']
+        if len(end_hyps) > 0:
+            self.dstates_final = end_hyps[0]['dstates']
+            self.lmstate_final = end_hyps[0]['lmstate']
 
         self.n_frames += eouts_chunk.size(1)
 
-        return best_hyps_idx, aws, hyps_segment
+        return end_hyps, hyps_segment

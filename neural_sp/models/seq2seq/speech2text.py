@@ -459,26 +459,31 @@ class Speech2Text(ModelBase):
             n_blanks = 0
             n_accum_frames = 0
             boundary_offset = -1  # boudnary offset in each chunk (after subsampling)
-            dec_state_carry_over = False
-            is_boundary = True   # for the first step
+            is_reset = True   # for the first step
             hyps_segment = None
             best_hyp_id_stream = []
             while True:
                 # Encode input features chunk by chunk
                 x_chunk = x_whole[t:t + (cs_l + cs_r)]
                 eout_dict_chunk = self.encode([x_chunk], task,
-                                              use_cache=not is_boundary,
+                                              use_cache=not is_reset,
                                               streaming=True)
                 eout_chunk = eout_dict_chunk[task]['xs']
                 boundary_offset = -1  # reset
-                is_boundary = False  # detect the first boundary in the same chunk
+                is_reset = False  # detect the first boundary in the same chunk
                 n_accum_frames += eout_chunk.size(1) * factor
 
                 # CTC-based VAD
+                ctc_log_probs_chunk = None
                 if ctc_vad:
                     ctc_probs_chunk = self.dec_fwd.ctc_probs(eout_chunk)
                     ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
 
+                    # Segmentation strategy 1:
+                    # If any segmentation points are not found in the current chunk,
+                    # encoder states will be carried over to the next chunk.
+                    # Otherwise, the current chunk is segmented at the point where
+                    # n_blanks surpasses the threshold.
                     if n_accum_frames >= MAX_N_ACCUM_FRAMES:
                         _, topk_ids_chunk = torch.topk(ctc_probs_chunk, k=1, dim=-1, largest=True, sorted=True)
                         ctc_probs_chunks.append(ctc_probs_chunk)
@@ -492,60 +497,55 @@ class Speech2Text(ModelBase):
                             else:
                                 n_blanks = 0
                                 # print('CTC (T:%d): %s' % (t + j * factor, idx2token([topk_ids_chunk[0, j, 0].item()])))
-                            if not is_boundary and n_blanks > BLANK_THRESHOLD:
+                            if not is_reset and n_blanks > BLANK_THRESHOLD:
                                 boundary_offset = j  # select the most right blank offset
-                                is_boundary = True
-                    # reset_dec_state = n_blanks == ctc_probs_chunk.size(1) - 1
-                else:
-                    ctc_log_probs_chunk = None
+                                is_reset = True
 
                 # Truncate the most right frames
-                if is_boundary:
+                if is_reset:
                     eout_chunk = eout_chunk[:, :boundary_offset + 1]
                 eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
-                best_hyp_id_prefix, aws_prefix, hyps_segment = self.dec_fwd.beam_search_chunk_sync(
+                end_hyps, hyps_segment = self.dec_fwd.beam_search_chunk_sync(
                     eout_chunk, params, idx2token,
                     lm=lm, lm_2nd=lm_2nd, ctc_log_probs=ctc_log_probs_chunk,
                     hyps_segment=hyps_segment,
-                    merge_active_hyps=is_boundary,
-                    state_carry_over=dec_state_carry_over)
-                # dec_state_carry_over = False
+                    state_carry_over=False)
+                merged_hyps = sorted(end_hyps + hyps_segment, key=lambda x: x['score'], reverse=True)
+                best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
+                if len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos:
+                    # reset beam if <eos> is generated from the best hypothesis
+                    best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
+                    # Segmentation strategy 2:
+                    # If <eos> is emitted from the decoder (not CTC),
+                    # the current chunk is segmented.
+                    if not is_reset:
+                        boundary_offset = eout_chunk.size(1) - 1
+                        is_reset = True
+
                 # print('Sync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
                 #       (t + eout_chunk.size(1) * factor,
                 #        self.dec_fwd.n_frames * factor,
                 #        n_blanks * factor, idx2token(best_hyp_id_prefix)))
                 # print('-' * 50)
 
-                if len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos:
-                    if len(best_hyp_id_prefix) > 1:
-                        best_hyp_id_prefix = best_hyp_id_prefix[:-1]
-                    if not ctc_vad:
-                        # reset_dec_state = len(best_hyp_id_prefix) == 0
-                        is_boundary = True
-
-                # Segmentation strategy 1:
-                # If any segmentation points are not found in the current chunk,
-                # encoder states will be carried over to the next chunk.
-                # Otherwise, the current chunk is segmented at the point where
-                # n_blanks surpasses the threshold.
-
-                # Segmentation strategy 2:
-                # If <eos> is emitted from the decoder (not CTC),
-                # the current chunk is segmented.
-
-                if is_boundary:
+                if is_reset:
                     # Global decoding over the segmented region
                     # eout = torch.cat(eout_chunks, dim=1)
                     # elens = torch.IntTensor([eout.size(1)])
                     # nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
                     #     eout, elens, global_params, idx2token, lm, lm_2nd)
                     # print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
-                    # print('*' * 100)
 
-                    # pick up the best hyp
-                    best_hyp_id_stream.extend(best_hyp_id_prefix)
+                    # pick up the best hyp from ended and active hyps
+                    if len(best_hyp_id_prefix) > 0:
+                        best_hyp_id_stream.extend(best_hyp_id_prefix)
+                    # print('Final Sync MoChA (T:%d, segment:%d frames): %s' %
+                    #       (t + eout_chunk.size(1) * factor,
+                    #        self.dec_fwd.n_frames * factor,
+                    #        idx2token(best_hyp_id_prefix)))
+                    # print('-' * 50)
                     # for test
                     # eos_hyp = np.zeros(1, dtype=np.int32)
                     # eos_hyp[0] = self.eos
@@ -554,8 +554,6 @@ class Speech2Text(ModelBase):
                     # reset
                     eout_chunks = []
                     ctc_probs_chunks = []
-                    # if n_blanks < ctc_probs_chunk.size(1) - 1:
-                    #     dec_state_carry_over = True
                     n_blanks = 0
                     n_accum_frames = 0
                     hyps_segment = None
@@ -581,7 +579,7 @@ class Speech2Text(ModelBase):
             #     print('*' * 50)
 
             # pick up the best hyp
-            if not is_boundary:
+            if not is_reset:
                 best_hyp_id_stream.extend(best_hyp_id_prefix)
 
             return [np.stack(best_hyp_id_stream, axis=0)], [None]
