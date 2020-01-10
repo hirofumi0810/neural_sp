@@ -1091,7 +1091,7 @@ class RNNDecoder(DecoderBase):
 
     def beam_search_chunk_sync(self, eouts_chunk, params, idx2token,
                                lm=None, lm_2nd=None, ctc_log_probs=None, exclude_eos=False,
-                               reset_beam=False, merge_active_hyps=False,
+                               hyps_segment=False, merge_active_hyps=False,
                                state_carry_over=False,):
         assert eouts_chunk.size(0) == 1
         assert self.attn_type == 'mocha'
@@ -1124,44 +1124,43 @@ class RNNDecoder(DecoderBase):
                 lmstate = self.lmstate_final
 
         end_hyps = []
-        if reset_beam:
-            # print('Reset decoder states.')
+        if hyps_segment is None:
             self.n_frames = 0
-            self.hyps_sync = [{'hyp': [self.eos],
-                               'score': 0.,
-                               'hist_score': [0.],
-                               'score_attn': 0.,
-                               'score_ctc': 0.,
-                               'score_lm': 0.,
-                               'dstates': dstates,
-                               'cv': eouts_chunk.new_zeros(1, 1, self.enc_n_units),
-                               'aws': [None],
-                               'lmstate': lmstate,
-                               'ctc_state': ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
-                               'no_trigger': False}]
+            hyps_segment = [{'hyp': [self.eos],
+                             'score': 0.,
+                             'hist_score': [0.],
+                             'score_attn': 0.,
+                             'score_ctc': 0.,
+                             'score_lm': 0.,
+                             'dstates': dstates,
+                             'cv': eouts_chunk.new_zeros(1, 1, self.enc_n_units),
+                             'aws': [None],
+                             'lmstate': lmstate,
+                             'ctc_state': ctc_prefix_score.initial_state() if ctc_weight > 0 and ctc_log_probs is not None else None,
+                             'no_trigger': False}]
 
         ytime = int(math.floor(eouts_chunk.size(1) * max_len_ratio)) + 1
         n_hyps_prev = 1
         n_forced_eos = 0
         for t in range(ytime):
             # finish if additional triggered points are not found in all candidates
-            if t > 0 and sum([cand['no_trigger'] for cand in self.hyps_sync]) == len(self.hyps_sync):
+            if t > 0 and sum([cand['no_trigger'] for cand in hyps_segment]) == len(hyps_segment):
                 break
 
             # preprocess for batch decoding
-            y = eouts_chunk.new_zeros(len(self.hyps_sync), 1).long()
-            for j, beam in enumerate(self.hyps_sync):
+            y = eouts_chunk.new_zeros(len(hyps_segment), 1).long()
+            for j, beam in enumerate(hyps_segment):
                 y[j, 0] = beam['hyp'][-1]
 
-            cv = torch.cat([beam['cv'] for beam in self.hyps_sync], dim=0)
-            aw = torch.cat([beam['aws'][-1] for beam in self.hyps_sync], dim=0) if t > 0 else None
-            hxs = torch.cat([beam['dstates']['dstate'][0] for beam in self.hyps_sync], dim=1)
+            cv = torch.cat([beam['cv'] for beam in hyps_segment], dim=0)
+            aw = torch.cat([beam['aws'][-1] for beam in hyps_segment], dim=0) if t > 0 else None
+            hxs = torch.cat([beam['dstates']['dstate'][0] for beam in hyps_segment], dim=1)
             if self.rnn_type == 'lstm':
-                cxs = torch.cat([beam['dstates']['dstate'][1] for beam in self.hyps_sync], dim=1)
+                cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps_segment], dim=1)
             dstates = {'dstate': (hxs, cxs)}
             if (lm is not None or self.lm is not None) and beam['lmstate'] is not None:
-                lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in self.hyps_sync], dim=1)
-                lm_cxs = torch.cat([beam['lmstate']['cxs'] for beam in self.hyps_sync], dim=1)
+                lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in hyps_segment], dim=1)
+                lm_cxs = torch.cat([beam['lmstate']['cxs'] for beam in hyps_segment], dim=1)
                 lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
             else:
                 lmstate = None
@@ -1182,7 +1181,7 @@ class RNNDecoder(DecoderBase):
             n_hyps_prev = cv.size(0)
 
             new_hyps = []
-            for j, beam in enumerate(self.hyps_sync):
+            for j, beam in enumerate(hyps_segment):
                 # Attention scores
                 total_scores_attn = beam['score_attn'] + scores_attn[j:j + 1]
                 total_scores = total_scores_attn * (1 - ctc_weight)
@@ -1293,13 +1292,13 @@ class RNNDecoder(DecoderBase):
             if len(end_hyps) >= beam_width + n_forced_eos:
                 end_hyps = end_hyps[:beam_width + n_forced_eos]
                 break
-            self.hyps_sync = new_hyps[:]
+            hyps_segment = new_hyps[:]
 
         # Global pruning
         if len(end_hyps) == 0:
-            end_hyps = self.hyps_sync[:]
+            end_hyps = hyps_segment[:]
         elif merge_active_hyps:
-            end_hyps.extend(self.hyps_sync[:])
+            end_hyps.extend(hyps_segment[:])
 
         # forward second path LM rescoring
         if lm_2nd is not None and lm_weight_2nd > 0:
@@ -1346,4 +1345,4 @@ class RNNDecoder(DecoderBase):
 
         self.n_frames += eouts_chunk.size(1)
 
-        return best_hyps_idx, aws
+        return best_hyps_idx, aws, hyps_segment

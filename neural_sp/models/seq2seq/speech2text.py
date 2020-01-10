@@ -456,17 +456,18 @@ class Speech2Text(ModelBase):
             eout_chunks = []
             ctc_probs_chunks = []
             t = 0  # global time offset
-            n_blanks = 0  # inter-chunk
+            n_blanks = 0
+            n_accum_frames = 0
             boundary_offset = -1  # boudnary offset in each chunk (after subsampling)
             dec_state_carry_over = False
-            reset_beam = True
-            n_accum_frames = 0
+            is_boundary = True   # for the first step
+            hyps_segment = None
             best_hyp_id_stream = []
             while True:
                 # Encode input features chunk by chunk
                 x_chunk = x_whole[t:t + (cs_l + cs_r)]
                 eout_dict_chunk = self.encode([x_chunk], task,
-                                              use_cache=not reset_beam,
+                                              use_cache=not is_boundary,
                                               streaming=True)
                 eout_chunk = eout_dict_chunk[task]['xs']
                 boundary_offset = -1  # reset
@@ -504,13 +505,12 @@ class Speech2Text(ModelBase):
                 eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
-                best_hyp_id_prefix, aws_prefix = self.dec_fwd.beam_search_chunk_sync(
+                best_hyp_id_prefix, aws_prefix, hyps_segment = self.dec_fwd.beam_search_chunk_sync(
                     eout_chunk, params, idx2token,
                     lm=lm, lm_2nd=lm_2nd, ctc_log_probs=ctc_log_probs_chunk,
-                    reset_beam=reset_beam,
+                    hyps_segment=hyps_segment,
                     merge_active_hyps=is_boundary,
                     state_carry_over=dec_state_carry_over)
-                reset_beam = is_boundary  # NOTE: reset after beam_search_chunk_sync
                 # dec_state_carry_over = False
                 # print('Sync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
                 #       (t + eout_chunk.size(1) * factor,
@@ -523,7 +523,7 @@ class Speech2Text(ModelBase):
                         best_hyp_id_prefix = best_hyp_id_prefix[:-1]
                     if not ctc_vad:
                         # reset_dec_state = len(best_hyp_id_prefix) == 0
-                        reset_beam = True
+                        is_boundary = True
 
                 # Segmentation strategy 1:
                 # If any segmentation points are not found in the current chunk,
@@ -535,7 +535,7 @@ class Speech2Text(ModelBase):
                 # If <eos> is emitted from the decoder (not CTC),
                 # the current chunk is segmented.
 
-                if reset_beam:
+                if is_boundary:
                     # Global decoding over the segmented region
                     # eout = torch.cat(eout_chunks, dim=1)
                     # elens = torch.IntTensor([eout.size(1)])
@@ -558,6 +558,7 @@ class Speech2Text(ModelBase):
                     #     dec_state_carry_over = True
                     n_blanks = 0
                     n_accum_frames = 0
+                    hyps_segment = None
 
                     # next chunk will start from the frame next to the boundary
                     if 0 <= boundary_offset * factor < cs_l - 1:
@@ -580,7 +581,7 @@ class Speech2Text(ModelBase):
             #     print('*' * 50)
 
             # pick up the best hyp
-            if not reset_beam:
+            if not is_boundary:
                 best_hyp_id_stream.extend(best_hyp_id_prefix)
 
             return [np.stack(best_hyp_id_stream, axis=0)], [None]
