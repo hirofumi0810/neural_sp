@@ -10,7 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import copy
 import logging
 import math
 import numpy as np
@@ -1143,6 +1142,7 @@ class RNNDecoder(DecoderBase):
 
         ytime = int(math.floor(eouts_chunk.size(1) * max_len_ratio)) + 1
         n_hyps_prev = 1
+        n_forced_eos = 0
         for t in range(ytime):
             # finish if additional triggered points are not found in all candidates
             if t > 0 and sum([cand['no_trigger'] for cand in self.hyps_sync]) == len(self.hyps_sync):
@@ -1214,19 +1214,47 @@ class RNNDecoder(DecoderBase):
                 else:
                     total_scores_ctc = eouts_chunk.new_zeros(beam_width)
 
+                topk_ids = [topk_ids[0, k].item() for k in range(beam_width)]
+
                 # no triggered point found in this chunk
                 if aw[j].sum() == 0:
-                    beam['no_trigger'] = True
                     beam['aws'][-1] = eouts_chunk.new_zeros(eouts_chunk.size(0), eouts_chunk.size(1), 1)
                     # NOTE: for the case where the first token in the current chunk is <eos>
-                    new_hyps.append(copy.deepcopy(beam))
+                    new_hyps.append(beam.copy())
                     continue
-                # TODO: implement force_eos
+
+                    # forced generation of <eos>
+                    # if self.eos not in topk_ids:
+                    #     continue
+                    # idx = self.eos
+                    # k = topk_ids.index(idx)
+                    # total_score = total_scores_topk[0, k].item() / (len(beam['hyp'][1:]) + 1)
+                    #
+                    # # EOS threshold
+                    # max_score_no_eos = scores_attn[j, :idx].max(0)[0].item()
+                    # max_score_no_eos = max(max_score_no_eos, scores_attn[j, idx + 1:].max(0)[0].item())
+                    # if scores_attn[j, idx].item() <= eos_threshold * max_score_no_eos:
+                    #     continue
+                    #
+                    # end_hyps.append(
+                    #     {'hyp': beam['hyp'] + [idx],
+                    #      'score': total_score,
+                    #      'hist_score': beam['hist_score'] + [total_score],
+                    #      'score_attn': total_scores_attn[0, idx].item(),
+                    #      'score_ctc': total_scores_ctc[k].item(),
+                    #      'score_lm': total_scores_lm[k].item(),
+                    #      'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1], dstates['dstate'][1][:, j:j + 1])},
+                    #      'cv': cv[j:j + 1],
+                    #      'aws': beam['aws'] + [aw[j:j + 1]],
+                    #      'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
+                    #      'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_weight > 0 and ctc_log_probs is not None else None,
+                    #      'no_trigger': True})
+                    # n_forced_eos += 1
+                    # continue
 
                 for k in range(beam_width):
-                    idx = topk_ids[0, k].item()
-                    length_norm_factor = len(beam['hyp'][1:]) + 1
-                    total_score = total_scores_topk[0, k].item() / length_norm_factor
+                    idx = topk_ids[k]
+                    total_score = total_scores_topk[0, k].item() / (len(beam['hyp'][1:]) + 1)
 
                     if idx == self.eos:
                         # EOS threshold
@@ -1262,8 +1290,8 @@ class RNNDecoder(DecoderBase):
                     end_hyps += [hyp]
                 else:
                     new_hyps += [hyp]
-            if len(end_hyps) >= beam_width:
-                end_hyps = end_hyps[:beam_width]
+            if len(end_hyps) >= beam_width + n_forced_eos:
+                end_hyps = end_hyps[:beam_width + n_forced_eos]
                 break
             self.hyps_sync = new_hyps[:]
 
