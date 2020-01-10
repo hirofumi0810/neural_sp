@@ -493,11 +493,11 @@ class RNNDecoder(DecoderBase):
         attn_v = self.generate(cv, dstates['dout_gen'], lmout)
         return dstates, cv, aw, attn_v
 
-    def zero_state(self, batch_size):
+    def zero_state(self, bs):
         """Initialize decoder state.
 
         Args:
-            batch_size (int): batch size
+            bs (int): batch size
         Returns:
             dstates (dict):
                 dout (FloatTensor): `[B, 1, dec_n_units]`
@@ -508,8 +508,8 @@ class RNNDecoder(DecoderBase):
         """
         dstates = {'dstate': None}
         w = next(self.parameters())
-        hxs = w.new_zeros(self.n_layers, batch_size, self.dec_n_units)
-        cxs = w.new_zeros(self.n_layers, batch_size, self.dec_n_units) if self.rnn_type == 'lstm' else None
+        hxs = w.new_zeros(self.n_layers, bs, self.dec_n_units)
+        cxs = w.new_zeros(self.n_layers, bs, self.dec_n_units) if self.rnn_type == 'lstm' else None
         dstates['dstate'] = (hxs, cxs)
         return dstates
 
