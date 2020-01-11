@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -118,6 +118,9 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             ctc_weight=ctc_weight,
             ctc_lsm_prob=args.ctc_lsm_prob,
             ctc_fc_list=ctc_fc_list,
+            mbr_weight=args.mbr_weight,
+            mbr_nbest=args.mbr_nbest,
+            mbr_softmax_smoothing=args.mbr_softmax_smoothing,
             backward=(dir == 'bwd'),
             lm_fusion=lm_fusion,
             lm_fusion_type=args.lm_fusion_type,

@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -149,22 +149,24 @@ class TransformerDecoder(DecoderBase):
         nn.init.xavier_uniform_(self.output.weight)
         nn.init.constant_(self.output.bias, 0.)
 
-    def forward(self, eouts, elens, ys, task='all', ys_hist=[], teacher_logits=None):
+    def forward(self, eouts, elens, ys, task='all', ys_hist=[],
+                teacher_logits=None, recog_params={}):
         """Forward computation.
 
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            task (str): all/ys/ys_sub*
+            task (str): all/ys*/ys_sub*
             ys_hist (list): dummy (not used)
             teacher_logits (FloatTensor): `[B, L, vocab]`
+            recog_params (dict): parameters for MBR training
         Returns:
             loss (FloatTensor): `[1]`
             observation (dict):
 
         """
-        observation = {'loss': None, 'loss_att': None, 'loss_ctc': None,
+        observation = {'loss': None, 'loss_att': None, 'loss_ctc': None, 'loss_mbr': None,
                        'acc_att': None, 'ppl_att': None}
         loss = eouts.new_zeros((1,))
 

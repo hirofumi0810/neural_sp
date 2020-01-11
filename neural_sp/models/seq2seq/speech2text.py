@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -87,6 +87,11 @@ class Speech2Text(ModelBase):
         self.fwd_weight = self.main_weight - self.bwd_weight - self.ctc_weight
         self.fwd_weight_sub1 = self.sub1_weight - self.ctc_weight_sub1
         self.fwd_weight_sub2 = self.sub2_weight - self.ctc_weight_sub2
+
+        # for MBR
+        self.mbr_weight = args.mbr_weight
+        self.mbr_nbest = args.mbr_nbest
+        self.recog_params = vars(args)
 
         # Feature extraction
         self.gaussian_noise = args.gaussian_noise
@@ -285,7 +290,7 @@ class Speech2Text(ModelBase):
         loss = torch.zeros((1,), dtype=torch.float32).cuda(self.device_id)
 
         # for the forward decoder in the main task
-        if (self.fwd_weight > 0 or self.ctc_weight > 0) and task in ['all', 'ys', 'ys.ctc']:
+        if (self.fwd_weight > 0 or self.ctc_weight > 0 or self.mbr_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.mbr']:
             teacher_logits = None
             if teacher is not None:
                 teacher.eval()
@@ -296,12 +301,14 @@ class Speech2Text(ModelBase):
                 teacher_logits = self.generate_lm_logits(batch['ys'], lm=teacher_lm)
 
             loss_fwd, obs_fwd = self.dec_fwd(eout_dict['ys']['xs'], eout_dict['ys']['xlens'],
-                                             batch['ys'], task, batch['ys_hist'], teacher_logits)
+                                             batch['ys'], task, batch['ys_hist'],
+                                             teacher_logits, self.recog_params)
             loss += loss_fwd
             if isinstance(self.dec_fwd, RNNTransducer) or isinstance(self.dec_fwd, TrasformerTransducer):
                 observation['loss.transducer'] = obs_fwd['loss_transducer']
             else:
                 observation['loss.att'] = obs_fwd['loss_att']
+                observation['loss.mbr'] = obs_fwd['loss_mbr']
                 if 'loss_quantity' not in obs_fwd.keys():
                     obs_fwd['loss_quantity'] = None
                 observation['loss.quantity'] = obs_fwd['loss_quantity']
@@ -584,7 +591,7 @@ class Speech2Text(ModelBase):
 
             return [np.stack(best_hyp_id_stream, axis=0)], [None]
 
-    def decode(self, xs, params, idx2token, nbest=1, exclude_eos=False,
+    def decode(self, xs, params, idx2token, exclude_eos=False,
                refs_id=None, refs=None, utt_ids=None, speakers=None,
                task='ys', ensemble_models=[]):
         """Decoding in the inference stage.
@@ -602,7 +609,6 @@ class Speech2Text(ModelBase):
                 resolving_unk (bool): not used (to make compatible)
                 fwd_bwd_attention (bool):
             idx2token (): converter from index to token
-            nbest (int):
             exclude_eos (bool): exclude <eos> from best_hyps_id
             refs_id (list): gold token IDs to compute log likelihood
             refs (list): gold transcriptions
@@ -640,7 +646,7 @@ class Speech2Text(ModelBase):
 
                 best_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
                     eout_dict[task]['xs'], eout_dict[task]['xlens'], params, idx2token,
-                    lm, lm_2nd, lm_2nd_rev, nbest, refs_id, utt_ids, speakers)
+                    lm, lm_2nd, lm_2nd_rev, 1, refs_id, utt_ids, speakers)
                 return best_hyps_id, None
 
             # Attention
@@ -738,13 +744,8 @@ class Speech2Text(ModelBase):
                     nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
                         eout_dict[task]['xs'], eout_dict[task]['xlens'],
                         params, idx2token, lm, lm_2nd, lm_2nd_rev, ctc_log_probs,
-                        nbest, exclude_eos, refs_id, utt_ids, speakers,
+                        1, exclude_eos, refs_id, utt_ids, speakers,
                         ensmbl_eouts, ensmbl_elens, ensmbl_decs)
-
-                    if nbest == 1:
-                        best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
-                    else:
-                        return nbest_hyps_id, aws, scores
-                    # NOTE: nbest >= 2 is used for MWER training only
+                    best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
 
             return best_hyps_id, aws

@@ -296,6 +296,13 @@ def parse():
                         help='change mini-batch per task')
     parser.add_argument('--task_specific_layer', type=strtobool, default=False, nargs='?',
                         help='insert a task-specific encoder layer per task')
+    # MBR
+    parser.add_argument('--mbr_weight', type=float, default=0.0,
+                        help='MBR loss weight for the main task')
+    parser.add_argument('--mbr_nbest', type=int, default=4,
+                        help='N-best for MBR training')
+    parser.add_argument('--mbr_softmax_smoothing', type=float, default=0.8,
+                        help='softmax smoothing (beta) for MBR training')
     # foroward-backward
     parser.add_argument('--bwd_weight', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the main task')
@@ -395,6 +402,8 @@ def parse():
                         help='carry over ASR decoder state')
     parser.add_argument('--recog_lm_state_carry_over', type=strtobool, default=False,
                         help='carry over LM state')
+    parser.add_argument('--recog_softmax_smoothing', type=float, default=1.0,
+                        help='softmax smoothing (beta) for diverse hypothesis generation')
     parser.add_argument('--recog_wordlm', type=strtobool, default=False,
                         help='')
     parser.add_argument('--recog_n_average', type=int, default=1,
@@ -409,11 +418,9 @@ def parse():
                         help='')
     parser.add_argument('--recog_ctc_vad_spike_threshold', type=float, default=0.1,
                         help='')
-    parser.add_argument('--recog_ctc_vad_n_accum_frames', type=float, default=1200,
+    parser.add_argument('--recog_ctc_vad_n_accum_frames', type=float, default=800,
                         help='')
     # distillation related
-    parser.add_argument('--recog_nbest', type=float, default=1,
-                        help='N-best list for sampling')
     parser.add_argument('--teacher', default=False, nargs='?',
                         help='Teacher ASR model for knowledge distillation')
     parser.add_argument('--teacher_lm', default=False, nargs='?',

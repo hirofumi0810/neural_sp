@@ -342,6 +342,8 @@ def main():
             tasks = ['ys.bwd'] + tasks
         if args.ctc_weight > 0:
             tasks = ['ys.ctc'] + tasks
+        if args.mbr_weight > 0:
+            tasks = ['ys.mbr'] + tasks
         for sub in ['sub1', 'sub2']:
             if getattr(args, 'train_set_' + sub):
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) > 0:

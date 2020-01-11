@@ -40,8 +40,6 @@ def set_asr_model_name(args, subsample_factor):
             dir_name += '_sumfwdbwd'
     if args.lc_chunk_size_left > 0 or args.lc_chunk_size_right > 0:
         dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
-        if args.lc_batchwise_n_chunks is not None:
-            dir_name += '_batchwise' + str(args.lc_batchwise_n_chunks)
         if args.lc_state_reset_prob > 0:
             dir_name += '_reset' + str(args.lc_state_reset_prob)
     if args.n_stacks > 1:
@@ -78,6 +76,8 @@ def set_asr_model_name(args, subsample_factor):
                         dir_name += '_temp' + str(args.attn_sharpening_factor)
                     if args.mocha_quantity_loss_weight > 0:
                         dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
+                    if args.mocha_ctc_sync:
+                        dir_name += '_' + args.mocha_ctc_sync
                 elif args.attn_type == 'gmm':
                     dir_name += '_mix' + str(args.gmm_attn_n_mixtures)
                 if args.attn_n_heads > 1:
@@ -101,7 +101,7 @@ def set_asr_model_name(args, subsample_factor):
     if args.lsm_prob > 0:
         dir_name += '_ls' + str(args.lsm_prob)
     if args.warmup_n_steps > 0:
-        dir_name += '_warmpup' + str(args.warmup_n_steps)
+        dir_name += '_warmup' + str(args.warmup_n_steps)
     if args.accum_grad_n_steps > 1:
         dir_name += '_accum' + str(args.accum_grad_n_steps)
 
@@ -164,6 +164,10 @@ def set_asr_model_name(args, subsample_factor):
     if args.teacher_lm:
         dir_name += '_lmKD' + str(args.soft_label_weight)
 
+    # MBR training
+    if args.mbr_weight > 0:
+        dir_name += '_mbr' + str(args.mbr_nbest) + 'best' + str(args.mbr_softmax_smoothing) + 'smooth'
+
     if args.n_gpus > 1:
         dir_name += '_' + str(args.n_gpus) + 'GPU'
     return dir_name
@@ -204,7 +208,7 @@ def set_lm_name(args):
     if args.lsm_prob > 0:
         dir_name += '_ls' + str(args.lsm_prob)
     if args.warmup_n_steps > 0:
-        dir_name += '_warmpup' + str(args.warmup_n_steps)
+        dir_name += '_warmup' + str(args.warmup_n_steps)
     if args.accum_grad_n_steps > 1:
         dir_name += '_accum' + str(args.accum_grad_n_steps)
 
