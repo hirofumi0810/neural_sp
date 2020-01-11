@@ -190,9 +190,15 @@ class CTC(DecoderBase):
         lm_weight_2nd = params['recog_lm_second_weight']
         lm_weight_2nd_rev = params['recog_lm_rev_weight']
 
+        if lm is not None:
+            assert lm_weight > 0
+            lm.eval()
+        if lm_2nd is not None:
+            assert lm_weight_2nd > 0
+            lm_2nd.eval()
+
         best_hyps = []
         log_probs = torch.log_softmax(self.output(eouts), dim=-1)
-
         for b in range(bs):
             # Elements in the beam are (prefix, (p_b, p_no_blank))
             # Initialize the beam with the empty sequence, a probability of
@@ -278,7 +284,7 @@ class CTC(DecoderBase):
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
 
             # Rescoing lattice
-            if lm_weight_2nd > 0 and lm_2nd is not None:
+            if lm_2nd is not None:
                 new_beam = []
                 for i_beam in range(len(beam)):
                     ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), self.device_id)]
@@ -304,7 +310,7 @@ class CTC(DecoderBase):
             logger.info('log prob (hyp): %.7f' % beam[0]['score'])
             logger.info('log prob (CTC): %.7f' % beam[0]['score_ctc'])
             logger.info('log prob (lp): %.7f' % beam[0]['score_lp'])
-            if lm_weight > 0 and lm is not None:
+            if lm is not None:
                 logger.info('log prob (hyp, lm): %.7f' % (beam[0]['score_lm']))
 
         return np.array(best_hyps)
