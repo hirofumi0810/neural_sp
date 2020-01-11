@@ -19,9 +19,9 @@ metric=edit_distance
 batch_size=1
 beam_width=5
 min_len_ratio=0.0
-max_len_ratio=1.0
+max_len_ratio=0.4  ###
 length_penalty=0.0
-length_norm=false
+length_norm=true  ###
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
@@ -39,8 +39,14 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
+chunk_sync=false  # for MoChA
 n_average=1  # for Transformer
 oracle=false
+
+# for streaming
+blank_threshold=40
+spike_threshold=0.1
+n_accum_frames=800
 
 . ./cmd.sh
 . ./path.sh
@@ -97,6 +103,9 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
+    if [ ${chunk_sync} = true ]; then
+        recog_dir=${recog_dir}_chunksync
+    fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
     fi
@@ -113,6 +122,7 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
     elif [ ! -z ${model1} ]; then
         recog_dir=${recog_dir}_ensemble2
     fi
+    recog_dir=${recog_dir}_blank${blank_threshold}_spike${spike_threshold}_accum${n_accum_frames}
     mkdir -p ${recog_dir}
 
     if [ $(echo ${model} | grep 'train_sp_') ]; then
@@ -167,6 +177,11 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_streaming true \
+        --recog_chunk_sync ${chunk_sync} \
+        --recog_ctc_vad true \
+        --recog_ctc_vad_blank_threshold ${blank_threshold} \
+        --recog_ctc_vad_spike_threshold ${spike_threshold} \
+        --recog_ctc_vad_n_accum_frames ${n_accum_frames} \
         --recog_stdout ${stdout} || exit 1;
 
     # remove <unk>
@@ -180,11 +195,11 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
         sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt >> ${recog_dir}/RESULTS
         # CER
-        echo 'CER' >> ${recog_dir}/RESULTS
-        cat ${recog_dir}/ref.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/ref.trn.filt.char
-        cat ${recog_dir}/hyp.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/hyp.trn.filt.char
-        sclite -r ${recog_dir}/ref.trn.filt.char trn -h ${recog_dir}/hyp.trn.filt.char trn -i rm -o all stdout > ${recog_dir}/result.char.txt
-        grep -e Avg -e SPKR -m 2 ${recog_dir}/result.char.txt >> ${recog_dir}/RESULTS
+        # echo 'CER' >> ${recog_dir}/RESULTS
+        # cat ${recog_dir}/ref.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/ref.trn.filt.char
+        # cat ${recog_dir}/hyp.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/hyp.trn.filt.char
+        # sclite -r ${recog_dir}/ref.trn.filt.char trn -h ${recog_dir}/hyp.trn.filt.char trn -i rm -o all stdout > ${recog_dir}/result.char.txt
+        # grep -e Avg -e SPKR -m 2 ${recog_dir}/result.char.txt >> ${recog_dir}/RESULTS
         cat ${recog_dir}/RESULTS
     fi
 done

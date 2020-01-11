@@ -441,6 +441,7 @@ class Speech2Text(ModelBase):
         assert params['recog_length_norm']
         global_params = copy.deepcopy(params)
         global_params['recog_max_len_ratio'] = 1.0
+        offline_decoding = not params['recog_chunk_sync']  # offline decoding after CTC-VAD
 
         # hyper parameters
         ctc_vad = params['recog_ctc_vad']
@@ -515,49 +516,61 @@ class Speech2Text(ModelBase):
                 eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
-                end_hyps, hyps_segment = self.dec_fwd.beam_search_chunk_sync(
-                    eout_chunk, params, idx2token,
-                    lm=lm, lm_2nd=lm_2nd, ctc_log_probs=ctc_log_probs_chunk,
-                    hyps_segment=hyps_segment,
-                    state_carry_over=False)
-                merged_hyps = sorted(end_hyps + hyps_segment, key=lambda x: x['score'], reverse=True)
-                best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
-                if len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos:
-                    # reset beam if <eos> is generated from the best hypothesis
-                    best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
-                    # Segmentation strategy 2:
-                    # If <eos> is emitted from the decoder (not CTC),
-                    # the current chunk is segmented.
-                    if not is_reset:
-                        boundary_offset = eout_chunk.size(1) - 1
-                        is_reset = True
+                if not offline_decoding:
+                    end_hyps, hyps_segment = self.dec_fwd.beam_search_chunk_sync(
+                        eout_chunk, params, idx2token, lm, lm_2nd,
+                        ctc_log_probs=ctc_log_probs_chunk,
+                        hyps_segment=hyps_segment,
+                        state_carry_over=False)
+                    merged_hyps = sorted(end_hyps + hyps_segment, key=lambda x: x['score'], reverse=True)
+                    best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
+                    if len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos:
+                        # reset beam if <eos> is generated from the best hypothesis
+                        best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
+                        # Segmentation strategy 2:
+                        # If <eos> is emitted from the decoder (not CTC),
+                        # the current chunk is segmented.
+                        if not is_reset:
+                            boundary_offset = eout_chunk.size(1) - 1
+                            is_reset = True
 
-                # print('Sync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
-                #       (t + eout_chunk.size(1) * factor,
-                #        self.dec_fwd.n_frames * factor,
-                #        n_blanks * factor, idx2token(best_hyp_id_prefix)))
-                # print('-' * 50)
+                    # print('Sync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
+                    #       (t + eout_chunk.size(1) * factor,
+                    #        self.dec_fwd.n_frames * factor,
+                    #        n_blanks * factor, idx2token(best_hyp_id_prefix)))
+                    # print('-' * 50)
 
                 if is_reset:
                     # Global decoding over the segmented region
-                    # eout = torch.cat(eout_chunks, dim=1)
-                    # elens = torch.IntTensor([eout.size(1)])
-                    # nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
-                    #     eout, elens, global_params, idx2token, lm, lm_2nd)
-                    # print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
+                    if offline_decoding:
+                        eout = torch.cat(eout_chunks, dim=1)
+                        elens = torch.IntTensor([eout.size(1)])
+                        ctc_log_probs = None
+                        if params['recog_ctc_weight'] > 0:
+                            ctc_log_probs = torch.log(self.dec_fwd.ctc_probs(eout))
+                        nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
+                            eout, elens, global_params, idx2token, lm, lm_2nd,
+                            ctc_log_probs=ctc_log_probs)
+                        # print('Offline MoChA (T:%d): %s' %
+                        #       (t + eout_chunk.size(1) * factor,
+                        #        idx2token(nbest_hyps_id_offline[0][0])))
 
                     # pick up the best hyp from ended and active hyps
-                    if len(best_hyp_id_prefix) > 0:
-                        best_hyp_id_stream.extend(best_hyp_id_prefix)
-                    # print('Final Sync MoChA (T:%d, segment:%d frames): %s' %
-                    #       (t + eout_chunk.size(1) * factor,
-                    #        self.dec_fwd.n_frames * factor,
-                    #        idx2token(best_hyp_id_prefix)))
-                    # print('-' * 50)
-                    # for test
-                    # eos_hyp = np.zeros(1, dtype=np.int32)
-                    # eos_hyp[0] = self.eos
-                    # best_hyp_id_stream.extend(eos_hyp)
+                    if offline_decoding:
+                        if len(nbest_hyps_id_offline[0][0]) > 0:
+                            best_hyp_id_stream.extend(nbest_hyps_id_offline[0][0])
+                    else:
+                        if len(best_hyp_id_prefix) > 0:
+                            best_hyp_id_stream.extend(best_hyp_id_prefix)
+                        # print('Final Sync MoChA (T:%d, segment:%d frames): %s' %
+                        #       (t + eout_chunk.size(1) * factor,
+                        #        self.dec_fwd.n_frames * factor,
+                        #        idx2token(best_hyp_id_prefix)))
+                        # print('-' * 50)
+                        # for test
+                        # eos_hyp = np.zeros(1, dtype=np.int32)
+                        # eos_hyp[0] = self.eos
+                        # best_hyp_id_stream.extend(eos_hyp)
 
                     # reset
                     eout_chunks = []
@@ -578,16 +591,18 @@ class Speech2Text(ModelBase):
                     break
 
             # Global decoding over the last chunk
-            # if len(eout_chunks) > 0:
-            #     eout = torch.cat(eout_chunks, dim=1)
-            #     elens = torch.IntTensor([eout.size(1)])
-            #     nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
-            #         eout, elens, global_params, idx2token, lm, lm_2nd, None)
-            #     print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
-            #     print('*' * 50)
+            if offline_decoding and len(eout_chunks) > 0:
+                eout = torch.cat(eout_chunks, dim=1)
+                elens = torch.IntTensor([eout.size(1)])
+                nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
+                    eout, elens, global_params, idx2token, lm, lm_2nd, None)
+                # print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
+                # print('*' * 50)
+                if len(nbest_hyps_id_offline[0][0]) > 0:
+                    best_hyp_id_stream.extend(nbest_hyps_id_offline[0][0])
 
             # pick up the best hyp
-            if not is_reset:
+            if not is_reset and not offline_decoding and len(best_hyp_id_prefix) > 0:
                 best_hyp_id_stream.extend(best_hyp_id_prefix)
 
             return [np.stack(best_hyp_id_stream, axis=0)], [None]
