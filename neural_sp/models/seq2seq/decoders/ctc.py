@@ -533,6 +533,7 @@ class CTCPrefixScore(object):
         """
         self.blank = blank
         self.eos = eos
+        self.xlen_prev = 0
         self.xlen = len(log_probs)
         self.log_probs = log_probs
         self.log0 = LOG_0
@@ -540,7 +541,9 @@ class CTCPrefixScore(object):
     def initial_state(self):
         """Obtain an initial CTC state
 
-        :return: CTC state
+        Returns:
+            ctc_states (np.ndarray): `[T, 2]`
+
         """
         # initial CTC state is made of a frame x 2 tensor that corresponds to
         # r_t^n(<sos>) and r_t^b(<sos>), where 0 and 1 of axis=1 represent
@@ -551,23 +554,30 @@ class CTCPrefixScore(object):
             r[i, 1] = r[i - 1, 1] + self.log_probs[i, self.blank]
         return r
 
-    def __call__(self, hyp, cs, r_prev):
+    def register_new_chunk(self, log_probs_chunk):
+        self.xlen_prev = self.xlen
+        self.log_probs = np.concatenate([self.log_probs, log_probs_chunk], axis=0)
+        self.xlen = len(self.log_probs)
+
+    def __call__(self, hyp, cs, r_prev, new_chunk=False):
         """Compute CTC prefix scores for next labels.
 
         Args:
             hyp (list): prefix label sequence
             cs (np.ndarray): array of next labels. A tensor of size `[beam_width]`
-            r_prev (np.ndarray): previous CTC state
+            r_prev (np.ndarray): previous CTC state `[T, 2]`
         Returns:
-            ctc_scores (np.ndarray):
-            ctc_states (np.ndarray):
+            ctc_scores (np.ndarray): `[beam_width]`
+            ctc_states (np.ndarray): `[beam_width, T, 2]`
+
         """
+        beam_width = len(cs)
+
         # initialize CTC states
         ylen = len(hyp) - 1  # ignore sos
-        ylen = min(ylen, self.xlen)  # for streaming
         # new CTC states are prepared as a frame x (n or b) x n_labels tensor
         # that corresponds to r_t^n(h) and r_t^b(h).
-        r = np.ndarray((self.xlen, 2, len(cs)), dtype=np.float32)
+        r = np.ndarray((self.xlen, 2, beam_width), dtype=np.float32)
         xs = self.log_probs[:, cs]
         if ylen == 0:
             r[0, 0] = xs[0]
@@ -575,15 +585,25 @@ class CTCPrefixScore(object):
         else:
             r[ylen - 1] = self.log0
 
+        # Initialize CTC state for the new chunk
+        if new_chunk and self.xlen_prev > 0:
+            xlen_prev = r_prev.shape[0]
+            r_new = np.full((self.xlen - xlen_prev, 2), self.log0, dtype=np.float32)
+            r_new[0, 1] = r_prev[xlen_prev - 1, 1] + self.log_probs[xlen_prev, self.blank]
+            for i in range(xlen_prev + 1, self.xlen):
+                r_new[i - xlen_prev, 1] = r_new[i - xlen_prev - 1, 1] + self.log_probs[i, self.blank]
+            r_prev = np.concatenate([r_prev, r_new], axis=0)
+
         # prepare forward probabilities for the last label
         r_sum = np.logaddexp(r_prev[:, 0], r_prev[:, 1])  # log(r_t^n(g) + r_t^b(g))
         last = hyp[-1]
         if ylen > 0 and last in cs:
-            log_phi = np.ndarray((self.xlen, len(cs)), dtype=np.float32)
-            for i in range(len(cs)):
-                log_phi[:, i] = r_sum if cs[i] != last else r_prev[:, 1]
+            log_phi = np.ndarray((self.xlen, beam_width), dtype=np.float32)
+            for k in range(beam_width):
+                log_phi[:, k] = r_sum if cs[k] != last else r_prev[:, 1]
         else:
-            log_phi = r_sum
+
+            log_phi = r_sum  # `[T]`
 
         # compute forward probabilities log(r_t^n(h)), log(r_t^b(h)),
         # and log prefix probabilites log(psi)
