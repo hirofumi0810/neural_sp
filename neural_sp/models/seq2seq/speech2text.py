@@ -449,17 +449,17 @@ class Speech2Text(ModelBase):
         SPIKE_THRESHOLD = params['recog_ctc_vad_spike_threshold']
         MAX_N_ACCUM_FRAMES = params['recog_ctc_vad_n_accum_frames']
 
+        cs_l = self.enc.lc_chunk_size_left
+        cs_r = self.enc.lc_chunk_size_right
+        factor = self.enc.subsampling_factor()
+        BLANK_THRESHOLD /= factor
+        x_whole = xs[0]  # `[T, input_dim]`
+        # self.enc.turn_off_ceil_mode(self.enc)
+
         self.eval()
         with torch.no_grad():
             lm = getattr(self, 'lm_fwd', None)
             lm_2nd = getattr(self, 'lm_2nd', None)
-
-            cs_l = self.enc.lc_chunk_size_left
-            cs_r = self.enc.lc_chunk_size_right
-            factor = self.enc.subsampling_factor()
-            BLANK_THRESHOLD /= factor
-            x_whole = xs[0]  # `[T, input_dim]`
-            # self.enc.turn_off_ceil_mode(self.enc)
 
             eout_chunks = []
             ctc_probs_chunks = []
