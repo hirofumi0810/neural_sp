@@ -484,7 +484,8 @@ class Speech2Text(ModelBase):
                 ctc_log_probs_chunk = None
                 if ctc_vad:
                     ctc_probs_chunk = self.dec_fwd.ctc_probs(eout_chunk)
-                    ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
+                    if params['recog_ctc_weight'] > 0:
+                        ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
 
                     # Segmentation strategy 1:
                     # If any segmentation points are not found in the current chunk,
