@@ -954,10 +954,7 @@ class RNNDecoder(DecoderBase):
                     y[j, 0] = prev_idx
 
                 cv = torch.cat([beam['cv'] for beam in hyps], dim=0)
-                if hyps[0]['aws'][-1] is not None:
-                    aw = torch.cat([beam['aws'][-1] for beam in hyps], dim=0)
-                else:
-                    aw = None
+                aw = torch.cat([beam['aws'][-1] for beam in hyps], dim=0) if t > 0 else None
                 hxs = torch.cat([beam['dstates']['dstate'][0] for beam in hyps], dim=1)
                 if self.rnn_type == 'lstm':
                     cxs = torch.cat([beam['dstates']['dstate'][1] for beam in hyps], dim=1)
@@ -988,10 +985,7 @@ class RNNDecoder(DecoderBase):
                 if n_models > 1:
                     for i_e, dec in enumerate(ensmbl_decs):
                         cv_e = torch.cat([beam['ensmbl_cv'][i_e] for beam in hyps], dim=0)
-                        if hyps[0]['ensmbl_aws'][i_e][-1] is not None:
-                            aw_e = torch.cat([beam['ensmbl_aws'][i_e][-1] for beam in hyps], dim=0)
-                        else:
-                            aw_e = None
+                        aw_e = torch.cat([beam['ensmbl_aws'][i_e][-1] for beam in hyps], dim=0) if t > 0 else None
                         hxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][0] for beam in hyps], dim=1)
                         if self.rnn_type == 'lstm':
                             cxs_e = torch.cat([beam['dstates'][i_e]['dstate'][1] for beam in hyps], dim=1)
