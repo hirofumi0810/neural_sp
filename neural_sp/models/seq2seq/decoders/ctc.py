@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -608,7 +608,6 @@ class CTCPrefixScore(object):
             for k in range(beam_width):
                 log_phi[:, k] = r_sum if cs[k] != last else r_prev[:, 1]
         else:
-
             log_phi = r_sum  # `[T]`
 
         # compute forward probabilities log(r_t^n(h)), log(r_t^b(h)),

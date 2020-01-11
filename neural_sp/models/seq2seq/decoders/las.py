@@ -197,7 +197,6 @@ class RNNDecoder(DecoderBase):
         self.dstate_prev = None
 
         self.prev_spk = ''
-        self.total_step = 0
         self.dstates_final = None
         self.lmstate_final = None
 
