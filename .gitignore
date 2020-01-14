@@ -6,7 +6,4 @@ __pycache__
 .ftpconfig
 .nfs*
 *.done
-
-examples/*/*/steps
-examples/*/*/utils
 neural_sp.egg-info
