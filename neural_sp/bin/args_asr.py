@@ -333,6 +333,9 @@ def parse():
     parser.add_argument('--transformer_ffn_activation', type=str, default='relu',
                         choices=['relu', 'gelu', 'gelu_accurate', 'glu'],
                         help='nonlinear activation for position wise feed-forward layer')
+    parser.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
+                        choices=['xavier_uniform', 'pytorch'],
+                        help='parameter initializatin for Transformer')
     # contextualization
     parser.add_argument('--discourse_aware', type=str, default=False, nargs='?',
                         choices=['state_carry_over', 'hierarchical', ''],
@@ -411,7 +414,7 @@ def parse():
     parser.add_argument('--recog_streaming', type=strtobool, default=False,
                         help='streaming decoding')
     parser.add_argument('--recog_chunk_sync', type=strtobool, default=False,
-                        help='')
+                        help='chunk-synchronous beam search decoding for MoChA')
     parser.add_argument('--recog_ctc_vad', type=strtobool, default=True,
                         help='')
     parser.add_argument('--recog_ctc_vad_blank_threshold', type=int, default=40,
