@@ -95,6 +95,9 @@ def set_asr_model_name(args, subsample_factor):
     if args.shuffle_bucket:
         dir_name += '_bucket'
 
+    if 'transformer' in args.enc_type or 'transformer' in args.dec_type:
+        dir_name += '_' + args.transformer_param_init
+
     # regularization
     if args.ctc_weight < 1 and args.ss_prob > 0:
         dir_name += '_ss' + str(args.ss_prob)
@@ -214,6 +217,8 @@ def set_lm_name(args):
 
     if args.backward:
         dir_name += '_bwd'
+    if args.shuffle:
+        dir_name += '_shuffle'
     if args.serialize:
         dir_name += '_serialize'
     if args.min_n_tokens > 1:
