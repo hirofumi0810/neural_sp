@@ -22,26 +22,28 @@ def average_checkpoints(model, best_model_path, epoch, n_average):
         return model
 
     n_models = 1
-    state_dict_ave = model.state_dict()
+    checkpoint_avg = {'model_state_dict': model.state_dict()}
     for i in range(epoch - 1, 0, -1):
         if n_models == n_average:
             break
         checkpoint_path = best_model_path.replace('-' + str(epoch), '-' + str(i))
         if os.path.isfile(checkpoint_path):
             logger.info("=> Loading checkpoint (epoch:%d): %s" % (i, checkpoint_path))
-            params = torch.load(checkpoint_path,
-                                map_location=lambda storage, loc: storage)['state_dict']
-            for k, v in params.items():
-                state_dict_ave[k] += v
+            checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
+            for k, v in checkpoint['model_state_dict'].items():
+                checkpoint_avg['model_state_dict'][k] += v
             n_models += 1
 
     # take an average
     logger.info('Take average for %d models' % n_models)
-    for k, v in state_dict_ave.items():
-        state_dict_ave[k] /= n_models
-    model.load_state_dict(state_dict_ave)
+    for k, v in checkpoint_avg['model_state_dict'].items():
+        checkpoint_avg['model_state_dict'][k] /= n_models
+    model.load_state_dict(checkpoint_avg['model_state_dict'])
 
-    avrage_checkpoint_path = best_model_path.replace('-' + str(epoch), '-avg' + str(n_average))
-    torch.save(model, avrage_checkpoint_path)
+    # save as a new checkpoint
+    checkpoint_avg_path = best_model_path.replace('-' + str(epoch), '-avg' + str(n_average))
+    if os.path.isfile(checkpoint_avg_path):
+        os.remove(checkpoint_avg_path)
+    torch.save(checkpoint_avg, checkpoint_avg_path)
 
     return model

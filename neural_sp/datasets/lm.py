@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -13,6 +13,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import numpy as np
 import os
 import pandas as pd
@@ -30,6 +31,8 @@ from neural_sp.datasets.token_converter.wordpiece import Wp2idx
 
 random.seed(1)
 np.random.seed(1)
+
+logger = logging.getLogger(__name__)
 
 
 class Dataset(object):
@@ -51,13 +54,11 @@ class Dataset(object):
             is_test (bool):
             min_n_tokens (int): exclude utterances shorter than this value
             bptt (int): BPTT length
-            shuffle (bool): shuffle utterances.
-                This is disabled when sort_by_input_length is True.
+            shuffle (bool): shuffle utterances per epoch.
             backward (bool): flip all text in the corpus
             serialize (bool): serialize text according to contexts in dialogue
             wp_model (): path to the word-piece model for sentencepiece
             corpus (str): name of corpus
-
 
         """
         super(Dataset, self).__init__()
@@ -75,6 +76,7 @@ class Dataset(object):
         self.eos = 2
         self.max_epoch = n_epochs
         self.shuffle = shuffle
+        self.backward = backward
         self.vocab = count_vocab_size(dict_path)
         assert bptt >= 2
 
@@ -116,8 +118,10 @@ class Dataset(object):
 
         # Sort tsv records
         if shuffle:
+            assert not serialize
             self.df = self.df.reindex(np.random.permutation(self.df.index))
         elif serialize:
+            assert not shuffle
             assert corpus == 'swbd'
             self.df['session'] = self.df['speaker'].apply(lambda x: str(x).split('-')[0])
             self.df['onset'] = self.df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
@@ -126,21 +130,26 @@ class Dataset(object):
             self.df = self.df.sort_values(by='utt_id', ascending=True)
 
         # Concatenate into a single sentence
-        concat_ids = []
-        indices = list(self.df.index)
-        if backward:
+        self.concat_ids = self.concat_utterances(self.df)
+
+    def concat_utterances(self, df):
+        indices = list(df.index)
+        if self.backward:
             indices = indices[::-1]
+        concat_ids = []
         for i in indices:
-            assert self.df['token_id'][i] != ''
-            concat_ids += [self.eos] + list(map(int, self.df['token_id'][i].split()))
-        concat_ids += [self.eos]
+            assert df['token_id'][i] != ''
+            concat_ids += [self.eos] + list(map(int, df['token_id'][i].split()))
+        concat_ids += [self.eos]  # for the last sentence
         # NOTE: <sos> and <eos> have the same index
 
         # Reshape
         n_utts = len(concat_ids)
-        concat_ids = concat_ids[:n_utts // batch_size * batch_size]
-        print('Removed %d tokens / %d tokens' % (n_utts - len(concat_ids), n_utts))
-        self.concat_ids = np.array(concat_ids).reshape((batch_size, -1))
+        concat_ids = concat_ids[:n_utts // self.batch_size * self.batch_size]
+        logger.info('Removed %d tokens / %d tokens' % (n_utts - len(concat_ids), n_utts))
+        concat_ids = np.array(concat_ids).reshape((self.batch_size, -1))
+
+        return concat_ids
 
     def __len__(self):
         return len(self.concat_ids.reshape((-1,)))
@@ -152,7 +161,9 @@ class Dataset(object):
 
     def reset(self):
         """Reset data counter and offset."""
-        self.df_indices = list(self.df.index)
+        if self.shuffle:
+            self.df = self.df.reindex(np.random.permutation(self.df.index))
+            self.concat_ids = self.concat_utterances(self.df)
         self.offset = 0
 
     def next(self, batch_size=None, bptt=None):
@@ -166,8 +177,6 @@ class Dataset(object):
             is_new_epoch (bool): flag for the end of the current epoch
 
         """
-        is_new_epoch = False
-
         if batch_size is None:
             batch_size = self.batch_size
         elif self.concat_ids.shape[0] != batch_size:
@@ -184,10 +193,12 @@ class Dataset(object):
         self.offset += bptt - 1
         # NOTE: the last token in ys must be feeded as inputs in the next mini-batch
 
+        is_new_epoch = False
+
         # Last mini-batch
         if (self.offset + 1) * batch_size >= len(self):
-            self.offset = 0
             is_new_epoch = True
+            self.reset()
             self.epoch += 1
 
         return ys, is_new_epoch

@@ -163,7 +163,12 @@ def parse():
     parser.add_argument('--transformer_ffn_activation', type=str, default='relu',
                         choices=['relu', 'gelu', 'gelu_accurate', 'glu'],
                         help='nonlinear activation for position wise feed-forward layer')
+    parser.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
+                        choices=['xavier_uniform', 'pytorch'],
+                        help='parameter initializatin for Transformer')
     # contextualization
+    parser.add_argument('--shuffle', type=strtobool, default=False, nargs='?',
+                        help='shuffle utterances per epoch')
     parser.add_argument('--serialize', type=strtobool, default=False, nargs='?',
                         help='serialize text according to onset in dialogue')
     # evaluation parameters

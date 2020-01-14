@@ -1,4 +1,4 @@
-# ! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -32,10 +32,12 @@ class MultiheadAttentionMechanism(nn.Module):
         dropout (float): dropout probability
         n_heads (int): number of heads
         bias (bool): use bias term in linear layers
+        param_init (str):
 
     """
 
-    def __init__(self, kdim, qdim, adim, atype, dropout=0., n_heads=4, bias=True):
+    def __init__(self, kdim, qdim, adim, atype, dropout=0., n_heads=4, bias=True,
+                 param_init=''):
         super(MultiheadAttentionMechanism, self).__init__()
 
         self.atype = atype
@@ -65,7 +67,8 @@ class MultiheadAttentionMechanism(nn.Module):
 
         self.w_out = nn.Linear(adim, kdim, bias=bias)
 
-        self.reset_parameters(bias)
+        if param_init == 'xavier_uniform':
+            self.reset_parameters(bias)
 
     def reset_parameters(self, bias):
         """Initialize parameters."""
@@ -74,6 +77,9 @@ class MultiheadAttentionMechanism(nn.Module):
         nn.init.xavier_uniform_(self.w_key.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_value.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_query.weight, gain=1 / math.sqrt(2))
+        # nn.init.xavier_uniform_(self.w_key.weight)
+        # nn.init.xavier_uniform_(self.w_value.weight)
+        # nn.init.xavier_uniform_(self.w_query.weight)
         if bias:
             # newly introduced
             nn.init.constant_(self.w_key.bias, 0.)
@@ -98,7 +104,7 @@ class MultiheadAttentionMechanism(nn.Module):
             klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, vdim]`
             query (FloatTensor): `[B, qlen, qdim]`
-            mask (ByteTensor): `[B, klen, qlen]`
+            mask (ByteTensor): `[B, qlen, klen]`
             aw_prev: dummy interface for single-head attention
             mode: dummy interface for MoChA
             cache (bool): cache key and mask
@@ -116,7 +122,10 @@ class MultiheadAttentionMechanism(nn.Module):
             value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
             self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
             self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
-            self.mask = mask.unsqueeze(1) if mask is not None else None  # `[B, 1, klen, qlen]`
+            self.mask = mask.unsqueeze(1).repeat(
+                [1, self.n_heads, 1, 1]) if mask is not None else None  # `[B, n_heads, qlen, klen]`
+            if self.mask is not None:
+                assert self.mask.size() == (bs, self.n_heads, qlen, klen)
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
@@ -131,7 +140,6 @@ class MultiheadAttentionMechanism(nn.Module):
         # Compute attention weights
         if self.mask is not None:
             e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
-            # e = e.transpose(3, 2).masked_fill_(self.mask.transpose(3, 2) == 0, NEG_INF).transpose(3, 2)
         aw = torch.softmax(e, dim=-1)
         aw = self.attn_dropout(aw)
         cv = torch.matmul(aw, self.value)  # `[B, n_heads, qlen, d_k]`

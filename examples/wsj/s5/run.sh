@@ -136,15 +136,15 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in train_${datasize} test_dev93 test_eval92; do
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-    done
+    if [ ! -e ${data}/.done_stage_1_${datasize}_spfalse ]; then
+        for x in train_${datasize} test_dev93 test_eval92; do
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+        done
+    fi
 
     if [ ${speed_perturb} = true ]; then
-        # speed-perturbed
         speed_perturb_3way.sh ${data} train_${datasize} ${train_set}
-
         cp -rf ${data}/test_dev93 ${data}/test_dev93_sp
         cp -rf ${data}/test_eval92 ${data}/test_eval92_sp
     fi
