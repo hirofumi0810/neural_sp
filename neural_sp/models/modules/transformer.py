@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -77,10 +77,11 @@ class PositionwiseFeedForward(nn.Module):
         d_out (int): output dimension of PositionwiseFeedForward
         dropout (float): dropout probability (equal to d_model)
         activation: non-linear function
+        param_init (str):
 
     """
 
-    def __init__(self, d_in, d_ff, d_out, dropout, activation='relu'):
+    def __init__(self, d_in, d_ff, d_out, dropout, activation, param_init):
         super(PositionwiseFeedForward, self).__init__()
 
         self.w_1 = nn.Linear(d_in, d_ff)
@@ -98,7 +99,8 @@ class PositionwiseFeedForward(nn.Module):
             raise NotImplementedError(activation)
         logger.info('FFN activation: %s' % activation)
 
-        self.reset_parameters()
+        if param_init == 'xavier_uniform':
+            self.reset_parameters()
 
     def reset_parameters(self):
         """Initialize parameters."""
@@ -130,11 +132,12 @@ class TransformerEncoderBlock(nn.Module):
         dropout_att (float): dropout probabilities for attention distributions
         layer_norm_eps (float): epsilon parameter for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        param_init (str):
 
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads,
-                 dropout, dropout_att, layer_norm_eps, ffn_activation):
+                 dropout, dropout_att, layer_norm_eps, ffn_activation, param_init):
         super(TransformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
@@ -146,12 +149,13 @@ class TransformerEncoderBlock(nn.Module):
                                                      adim=d_model,
                                                      atype=atype,
                                                      n_heads=n_heads,
-                                                     dropout=dropout_att)
+                                                     dropout=dropout_att,
+                                                     param_init=param_init)
 
         # feed-forward
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.feed_forward = PositionwiseFeedForward(
-            d_model, d_ff, d_model, dropout, ffn_activation)
+            d_model, d_ff, d_model, dropout, ffn_activation, param_init)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -166,12 +170,10 @@ class TransformerEncoderBlock(nn.Module):
             xx_aws (FloatTensor): `[B, T, T]`
 
         """
-        self.self_attn.reset()
-
         # self-attention
         residual = xs
         xs = self.norm1(xs)
-        xs, xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)
+        xs, xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask, cache=False)
         xs = self.dropout(xs) + residual
 
         # position-wise feed-forward
@@ -196,11 +198,12 @@ class TransformerDecoderBlock(nn.Module):
             layer_norm_eps (float):
             src_tgt_attention (bool): if False, ignore source-target attention
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
+            param_init (str):
 
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads,
-                 dropout, dropout_att, layer_norm_eps, ffn_activation,
+                 dropout, dropout_att, layer_norm_eps, ffn_activation, param_init,
                  src_tgt_attention=True):
         super(TransformerDecoderBlock, self).__init__()
 
@@ -218,7 +221,8 @@ class TransformerDecoderBlock(nn.Module):
                                                          adim=d_model,
                                                          atype=atype,
                                                          n_heads=n_heads,
-                                                         dropout=dropout_att)
+                                                         dropout=dropout_att,
+                                                         param_init=param_init)
 
         # attention for encoder stacks
         if src_tgt_attention:
@@ -228,52 +232,63 @@ class TransformerDecoderBlock(nn.Module):
                                                         adim=d_model,
                                                         atype=atype,
                                                         n_heads=n_heads,
-                                                        dropout=dropout_att)
+                                                        dropout=dropout_att,
+                                                        param_init=param_init)
 
         # feed-forward
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.feed_forward = PositionwiseFeedForward(
-            d_model, d_ff, d_model, dropout, ffn_activation)
+            d_model, d_ff, d_model, dropout, ffn_activation, param_init)
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, ys, yy_mask=None, xs=None, xy_mask=None):
+    def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None):
         """Transformer decoder layer definition.
 
         Args:
             ys (FloatTensor): `[B, L, d_model]`
             yy_mask (ByteTensor): `[B, L, L]`
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
-            xy_mask (ByteTensor): `[B, T, L]`
+            xy_mask (ByteTensor): `[B, L, T]`
+            cache (FloatTensor): `[B, L-1, d_model]`
         Returns:
-            ys (FloatTensor): `[B, L, d_model]`
+            out (FloatTensor): `[B, L, d_model]`
             yy_aw (FloatTensor)`[B, L, L]`
             xy_aw (FloatTensor): `[B, L, T]`
 
         """
+        residual = ys
+        ys = self.norm1(ys)
+
+        if cache is not None:
+            ys_q = ys[:, -1:]
+            residual = residual[:, -1:]
+            yy_mask = yy_mask[:, -1:]
+        else:
+            ys_q = ys
+
         # self-attention
         if self.atype == "average":
             raise NotImplementedError
         else:
-            self.self_attn.reset()
-            residual = ys
-            ys = self.norm1(ys)
-            ys, yy_aw = self.self_attn(ys, ys, ys, mask=yy_mask)
-            ys = self.dropout(ys) + residual
+            out, yy_aw = self.self_attn(ys, ys, ys_q, mask=yy_mask, cache=False)  # k/v/q
+            out = self.dropout(out) + residual
 
         # attention for encoder stacks
         xy_aw = None
         if self.src_tgt_attention:
-            self.src_attn.reset()
-            residual = ys
-            ys = self.norm2(ys)
-            ys, xy_aw = self.src_attn(xs, xs, ys, mask=xy_mask)  # k/v/q
-            ys = self.dropout(ys) + residual
+            residual = out
+            out = self.norm2(out)
+            out, xy_aw = self.src_attn(xs, xs, out, mask=xy_mask, cache=False)  # k/v/q
+            out = self.dropout(out) + residual
 
         # position-wise feed-forward
-        residual = ys
-        ys = self.norm3(ys)
-        ys = self.feed_forward(ys)
-        ys = self.dropout(ys) + residual
+        residual = out
+        out = self.norm3(out)
+        out = self.feed_forward(out)
+        out = self.dropout(out) + residual
 
-        return ys, yy_aw, xy_aw
+        if cache is not None:
+            out = torch.cat([cache, out], dim=1)
+
+        return out, yy_aw, xy_aw
