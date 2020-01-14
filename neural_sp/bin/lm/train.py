@@ -86,6 +86,7 @@ def main():
                         n_epochs=args.n_epochs,
                         min_n_tokens=args.min_n_tokens,
                         bptt=args.bptt,
+                        shuffle=args.shuffle,
                         backward=args.backward,
                         serialize=args.serialize)
     dev_set = Dataset(corpus=args.corpus,
