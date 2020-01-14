@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -136,8 +136,6 @@ def parse():
                         help='left chunk size for latency-controlled bidirectional encoder')
     parser.add_argument('--lc_chunk_size_right', type=int, default=0,
                         help='left chunk size for latency-controlled bidirectional encoder')
-    parser.add_argument('--lc_batchwise_n_chunks', type=int, default=None,
-                        help='')
     parser.add_argument('--lc_state_reset_prob', type=float, default=0.,
                         help='probability to reset states for latency-controlled bidirectional encoder')
     # topology (decoder)
@@ -154,6 +152,9 @@ def parse():
                         help='1dconv for MoChA')
     parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
                         help='Quantity loss weight for MoChA')
+    parser.add_argument('--mocha_ctc_sync', type=str, default=False,
+                        choices=[False, 'decot', 'minlt'],
+                        help='')
     parser.add_argument('--gmm_attn_n_mixtures', type=int, default=5,
                         help='number of mixtures for GMM attention')
     parser.add_argument('--attn_dim', type=int, default=128,
@@ -295,6 +296,13 @@ def parse():
                         help='change mini-batch per task')
     parser.add_argument('--task_specific_layer', type=strtobool, default=False, nargs='?',
                         help='insert a task-specific encoder layer per task')
+    # MBR
+    parser.add_argument('--mbr_weight', type=float, default=0.0,
+                        help='MBR loss weight for the main task')
+    parser.add_argument('--mbr_nbest', type=int, default=4,
+                        help='N-best for MBR training')
+    parser.add_argument('--mbr_softmax_smoothing', type=float, default=0.8,
+                        help='softmax smoothing (beta) for MBR training')
     # foroward-backward
     parser.add_argument('--bwd_weight', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the main task')
@@ -394,13 +402,25 @@ def parse():
                         help='carry over ASR decoder state')
     parser.add_argument('--recog_lm_state_carry_over', type=strtobool, default=False,
                         help='carry over LM state')
+    parser.add_argument('--recog_softmax_smoothing', type=float, default=1.0,
+                        help='softmax smoothing (beta) for diverse hypothesis generation')
     parser.add_argument('--recog_wordlm', type=strtobool, default=False,
                         help='')
     parser.add_argument('--recog_n_average', type=int, default=1,
                         help='number of models for the model averaging of Transformer')
+    parser.add_argument('--recog_streaming', type=strtobool, default=False,
+                        help='streaming decoding')
+    parser.add_argument('--recog_chunk_sync', type=strtobool, default=False,
+                        help='')
+    parser.add_argument('--recog_ctc_vad', type=strtobool, default=True,
+                        help='')
+    parser.add_argument('--recog_ctc_vad_blank_threshold', type=int, default=40,
+                        help='')
+    parser.add_argument('--recog_ctc_vad_spike_threshold', type=float, default=0.1,
+                        help='')
+    parser.add_argument('--recog_ctc_vad_n_accum_frames', type=float, default=800,
+                        help='')
     # distillation related
-    parser.add_argument('--recog_nbest', type=float, default=1,
-                        help='N-best list for sampling')
     parser.add_argument('--teacher', default=False, nargs='?',
                         help='Teacher ASR model for knowledge distillation')
     parser.add_argument('--teacher_lm', default=False, nargs='?',

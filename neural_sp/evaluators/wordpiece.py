@@ -20,15 +20,16 @@ logger = logging.getLogger(__name__)
 
 
 def eval_wordpiece(models, dataset, recog_params, epoch,
-                   recog_dir=None, progressbar=False):
+                   recog_dir=None, streaming=False, progressbar=False):
     """Evaluate the wordpiece-level model by WER.
 
     Args:
         models (list): models to evaluate
         dataset (Dataset): evaluation dataset
-        recog_params (recog_dict):
+        recog_params (dict):
         epoch (int):
         recog_dir (str):
+        streaming (bool): streaming decoding for the session-level evaluation
         progressbar (bool): visualize the progressbar
     Returns:
         wer (float): Word error rate
@@ -61,13 +62,18 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, _ = models[0].decode(
-                batch['xs'], recog_params, dataset.idx2token[0],
-                exclude_eos=True,
-                refs_id=batch['ys'],
-                utt_ids=batch['utt_ids'],
-                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
-                ensemble_models=models[1:] if len(models) > 1 else [])
+            if streaming or recog_params['recog_chunk_sync']:
+                best_hyps_id, _ = models[0].decode_streaming(
+                    batch['xs'], recog_params, dataset.idx2token[0],
+                    exclude_eos=True)
+            else:
+                best_hyps_id, _ = models[0].decode(
+                    batch['xs'], recog_params, dataset.idx2token[0],
+                    exclude_eos=True,
+                    refs_id=batch['ys'],
+                    utt_ids=batch['utt_ids'],
+                    speakers=batch['sessions' if dataset.corpus == 'swbd' else 'speakers'],
+                    ensemble_models=models[1:] if len(models) > 1 else [])
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
@@ -76,37 +82,41 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
                 hyp = dataset.idx2token[0](best_hyps_id[b])
 
                 # Write to trn
-                utt_id = str(batch['utt_ids'][b])
                 speaker = str(batch['speakers'][b]).replace('-', '_')
+                if streaming:
+                    utt_id = str(batch['utt_ids'][b]) + '_0000000_0000001'
+                else:
+                    utt_id = str(batch['utt_ids'][b])
                 f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
                 f_hyp.write(hyp + ' (' + speaker + '-' + utt_id + ')\n')
-                logger.debug('utt-id: %s' % batch['utt_ids'][b])
+                logger.debug('utt-id: %s' % utt_id)
                 logger.debug('Ref: %s' % ref)
                 logger.debug('Hyp: %s' % hyp)
                 logger.debug('-' * 150)
 
-                # Compute WER
-                wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
-                                                         hyp=hyp.split(' '),
-                                                         normalize=False)
-                wer += wer_b
-                n_sub_w += sub_b
-                n_ins_w += ins_b
-                n_del_w += del_b
-                n_word += len(ref.split(' '))
+                if not streaming:
+                    # Compute WER
+                    wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
+                                                             hyp=hyp.split(' '),
+                                                             normalize=False)
+                    wer += wer_b
+                    n_sub_w += sub_b
+                    n_ins_w += ins_b
+                    n_del_w += del_b
+                    n_word += len(ref.split(' '))
 
-                # Compute CER
-                if dataset.corpus == 'csj':
-                    ref = ref.replace(' ', '')
-                    hyp = hyp.replace(' ', '')
-                cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref),
-                                                         hyp=list(hyp),
-                                                         normalize=False)
-                cer += cer_b
-                n_sub_c += sub_b
-                n_ins_c += ins_b
-                n_del_c += del_b
-                n_char += len(ref)
+                    # Compute CER
+                    if dataset.corpus == 'csj':
+                        ref = ref.replace(' ', '')
+                        hyp = hyp.replace(' ', '')
+                    cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref),
+                                                             hyp=list(hyp),
+                                                             normalize=False)
+                    cer += cer_b
+                    n_sub_c += sub_b
+                    n_ins_c += ins_b
+                    n_del_c += del_b
+                    n_char += len(ref)
 
                 if progressbar:
                     pbar.update(1)
@@ -120,15 +130,16 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    wer /= n_word
-    n_sub_w /= n_word
-    n_ins_w /= n_word
-    n_del_w /= n_word
+    if not streaming:
+        wer /= n_word
+        n_sub_w /= n_word
+        n_ins_w /= n_word
+        n_del_w /= n_word
 
-    cer /= n_char
-    n_sub_c /= n_char
-    n_ins_c /= n_char
-    n_del_c /= n_char
+        cer /= n_char
+        n_sub_c /= n_char
+        n_ins_c /= n_char
+        n_del_c /= n_char
 
     logger.debug('WER (%s): %.2f %%' % (dataset.set, wer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))

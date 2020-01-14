@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def eval_phone(models, dataset, recog_params, epoch,
-               recog_dir=None, progressbar=False):
+               recog_dir=None, streaming=False, progressbar=False):
     """Evaluate a phone-level model by PER.
 
     Args:
@@ -29,6 +29,7 @@ def eval_phone(models, dataset, recog_params, epoch,
         recog_params (dict):
         epoch (int):
         recog_dir (str):
+        streaming (bool): streaming decoding for the session-level evaluation
         progressbar (bool): visualize the progressbar
     Returns:
         per (float): Phone error rate
@@ -58,37 +59,46 @@ def eval_phone(models, dataset, recog_params, epoch,
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, _ = models[0].decode(
-                batch['xs'], recog_params, dataset.idx2token[0],
-                exclude_eos=True,
-                refs_id=batch['ys'],
-                utt_ids=batch['utt_ids'],
-                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
-                ensemble_models=models[1:] if len(models) > 1 else [])
+            if streaming or recog_params['recog_chunk_sync']:
+                best_hyps_id, _ = models[0].decode_streaming(
+                    batch['xs'], recog_params, dataset.idx2token[0],
+                    exclude_eos=True)
+            else:
+                best_hyps_id, _ = models[0].decode(
+                    batch['xs'], recog_params, dataset.idx2token[0],
+                    exclude_eos=True,
+                    refs_id=batch['ys'],
+                    utt_ids=batch['utt_ids'],
+                    speakers=batch['sessions' if dataset.corpus == 'swbd' else 'speakers'],
+                    ensemble_models=models[1:] if len(models) > 1 else [])
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
                 hyp = dataset.idx2token[0](best_hyps_id[b])
 
                 # Write to trn
-                utt_id = str(batch['utt_ids'][b])
                 speaker = str(batch['speakers'][b]).replace('-', '_')
+                if streaming:
+                    utt_id = str(batch['utt_ids'][b]) + '_0000000_0000001'
+                else:
+                    utt_id = str(batch['utt_ids'][b])
                 f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
                 f_hyp.write(hyp + ' (' + speaker + '-' + utt_id + ')\n')
-                logger.debug('utt-id: %s' % batch['utt_ids'][b])
+                logger.debug('utt-id: %s' % utt_id)
                 logger.debug('Ref: %s' % ref)
                 logger.debug('Hyp: %s' % hyp)
                 logger.debug('-' * 150)
 
-                # Compute PER
-                per_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
-                                                         hyp=hyp.split(' '),
-                                                         normalize=False)
-                per += per_b
-                n_sub += sub_b
-                n_ins += ins_b
-                n_del += del_b
-                n_phone += len(ref.split(' '))
+                if not streaming:
+                    # Compute PER
+                    per_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
+                                                             hyp=hyp.split(' '),
+                                                             normalize=False)
+                    per += per_b
+                    n_sub += sub_b
+                    n_ins += ins_b
+                    n_del += del_b
+                    n_phone += len(ref.split(' '))
 
                 if progressbar:
                     pbar.update(1)
@@ -102,10 +112,11 @@ def eval_phone(models, dataset, recog_params, epoch,
     # Reset data counters
     dataset.reset()
 
-    per /= n_phone
-    n_sub /= n_phone
-    n_ins /= n_phone
-    n_del /= n_phone
+    if not streaming:
+        per /= n_phone
+        n_sub /= n_phone
+        n_ins /= n_phone
+        n_del /= n_phone
 
     logger.debug('PER (%s): %.2f %%' % (dataset.set, per))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub, n_ins, n_del))

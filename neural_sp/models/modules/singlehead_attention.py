@@ -98,7 +98,8 @@ class AttentionMechanism(nn.Module):
         self.key = None
         self.mask = None
 
-    def forward(self, key, value, query, mask=None, aw_prev=None, mode=''):
+    def forward(self, key, value, query, mask=None, aw_prev=None,
+                mode='', cache=True, trigger_point=None):
         """Forward computation.
 
         Args:
@@ -109,6 +110,8 @@ class AttentionMechanism(nn.Module):
             mask (ByteTensor): `[B, qmax, klen]`
             aw_prev (FloatTensor): `[B, klen, 1 (n_heads)]`
             mode: dummy interface for MoChA
+            cache (bool): cache key and mask
+            trigger_point (IntTensor): dummy
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, klen, 1 (n_heads)]`
@@ -120,7 +123,7 @@ class AttentionMechanism(nn.Module):
             aw_prev = key.new_zeros(bs, klen, 1)
 
         # Pre-computation of encoder-side features for computing scores
-        if self.key is None:
+        if self.key is None or not cache:
             if self.atype in ['add', 'location', 'dot', 'luong_general']:
                 self.key = self.w_key(key)
             else:

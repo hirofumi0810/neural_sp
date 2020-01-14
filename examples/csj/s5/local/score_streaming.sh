@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2018 Kyoto University (Hirofumi Inaguma)
+# Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 model=
@@ -19,9 +19,9 @@ metric=edit_distance
 batch_size=1
 beam_width=5
 min_len_ratio=0.0
-max_len_ratio=1.0
+max_len_ratio=0.4  ###
 length_penalty=0.0
-length_norm=false
+length_norm=true  ###
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
@@ -43,6 +43,11 @@ chunk_sync=false  # for MoChA
 n_average=1  # for Transformer
 oracle=false
 
+# for streaming
+blank_threshold=40
+spike_threshold=0.1
+n_accum_frames=800
+
 . ./cmd.sh
 . ./path.sh
 . utils/parse_options.sh
@@ -57,7 +62,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in eval1 eval2 eval3; do
+for set in eval1_streaming eval2_streaming eval3_streaming; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -117,6 +122,7 @@ for set in eval1 eval2 eval3; do
     elif [ ! -z ${model1} ]; then
         recog_dir=${recog_dir}_ensemble2
     fi
+    recog_dir=${recog_dir}_blank${blank_threshold}_spike${spike_threshold}_accum${n_accum_frames}
     mkdir -p ${recog_dir}
 
     if [ $(echo ${model} | grep 'train_sp_') ]; then
@@ -168,9 +174,14 @@ for set in eval1 eval2 eval3; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
-        --recog_chunk_sync ${chunk_sync} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
+        --recog_streaming true \
+        --recog_chunk_sync ${chunk_sync} \
+        --recog_ctc_vad true \
+        --recog_ctc_vad_blank_threshold ${blank_threshold} \
+        --recog_ctc_vad_spike_threshold ${spike_threshold} \
+        --recog_ctc_vad_n_accum_frames ${n_accum_frames} \
         --recog_stdout ${stdout} || exit 1;
 
     # remove <unk>
@@ -184,11 +195,11 @@ for set in eval1 eval2 eval3; do
         sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt >> ${recog_dir}/RESULTS
         # CER
-        echo 'CER' >> ${recog_dir}/RESULTS
-        cat ${recog_dir}/ref.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/ref.trn.filt.char
-        cat ${recog_dir}/hyp.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/hyp.trn.filt.char
-        sclite -r ${recog_dir}/ref.trn.filt.char trn -h ${recog_dir}/hyp.trn.filt.char trn -i rm -o all stdout > ${recog_dir}/result.char.txt
-        grep -e Avg -e SPKR -m 2 ${recog_dir}/result.char.txt >> ${recog_dir}/RESULTS
+        # echo 'CER' >> ${recog_dir}/RESULTS
+        # cat ${recog_dir}/ref.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/ref.trn.filt.char
+        # cat ${recog_dir}/hyp.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/hyp.trn.filt.char
+        # sclite -r ${recog_dir}/ref.trn.filt.char trn -h ${recog_dir}/hyp.trn.filt.char trn -i rm -o all stdout > ${recog_dir}/result.char.txt
+        # grep -e Avg -e SPKR -m 2 ${recog_dir}/result.char.txt >> ${recog_dir}/RESULTS
         cat ${recog_dir}/RESULTS
     fi
 done
