@@ -146,9 +146,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1
     rm -rf ${data}/*.tmp
 
     if [ ${speed_perturb} = true ]; then
-        # speed-perturbed
         speed_perturb_3way.sh ${data} train_nodev_${datasize} ${train_set}
-
         cp -rf ${data}/dev_${datasize} ${data}/${dev_set}
         cp -rf ${data}/eval1 ${data}/eval1_sp
         cp -rf ${data}/eval2 ${data}/eval2_sp
