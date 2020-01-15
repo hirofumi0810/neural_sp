@@ -103,8 +103,8 @@ class PositionwiseFeedForward(nn.Module):
             self.reset_parameters()
 
     def reset_parameters(self):
-        """Initialize parameters."""
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        """Initialize parameters with Xavier uniform distribution."""
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/transformer_layer.py
         for n, p in self.named_parameters():
             if p.dim() == 1:

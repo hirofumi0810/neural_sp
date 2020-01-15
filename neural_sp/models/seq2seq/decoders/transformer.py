@@ -132,7 +132,7 @@ class TransformerDecoder(DecoderBase):
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         # see https://github.com/pytorch/fairseq/blob/master/fairseq/models/transformer.py
         # embedding
         nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
