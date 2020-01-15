@@ -45,7 +45,7 @@ def build_encoder(args):
             n_layers=args.enc_n_layers,
             d_model=args.transformer_d_model,
             d_ff=args.transformer_d_ff,
-            pe_type=args.transformer_pe_type,
+            pe_type=args.transformer_enc_pe_type,
             layer_norm_eps=args.transformer_layer_norm_eps,
             ffn_activation=args.transformer_ffn_activation,
             dropout_in=args.dropout_in,
@@ -62,6 +62,7 @@ def build_encoder(args):
             conv_batch_norm=args.conv_batch_norm,
             conv_bottleneck_dim=args.conv_bottleneck_dim,
             conv_param_init=args.param_init,
+            param_init=args.transformer_param_init,
             chunk_size_left=args.lc_chunk_size_left,
             chunk_size_current=args.lc_chunk_size_left,
             chunk_size_right=args.lc_chunk_size_right)
@@ -85,6 +86,7 @@ def build_encoder(args):
             subsample=subsample,
             subsample_type=args.subsample_type,
             last_proj_dim=args.transformer_d_model if 'transformer' in args.dec_type else 0,
+            # last_proj_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
             conv_in_channel=args.conv_in_channel,
@@ -100,7 +102,6 @@ def build_encoder(args):
             bidirectional_sum_fwd_bwd=args.bidirectional_sum_fwd_bwd,
             lc_chunk_size_left=args.lc_chunk_size_left,
             lc_chunk_size_right=args.lc_chunk_size_right,
-            lc_batchwise_n_chunks=args.lc_batchwise_n_chunks,
             lc_state_reset_prob=args.lc_state_reset_prob)
         # NOTE: pure Conv/TDS/GatedConv encoders are also included
 

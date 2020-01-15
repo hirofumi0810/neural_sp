@@ -61,36 +61,20 @@ class TransformerEncoder(EncoderBase):
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
         chunk_size_current (int): current chunk size for time-restricted Transformer encoder
         chunk_size_right (int): right chunk size for time-restricted Transformer encoder
+        param_init (str):
 
     """
 
-    def __init__(self,
-                 input_dim,
-                 attn_type,
-                 n_heads,
-                 n_layers,
-                 d_model,
-                 d_ff,
-                 pe_type='add',
-                 layer_norm_eps=1e-12,
-                 ffn_activation='relu',
-                 dropout_in=0.,
-                 dropout=0.,
-                 dropout_att=0.,
-                 last_proj_dim=0,
-                 n_stacks=1,
-                 n_splices=1,
-                 conv_in_channel=1,
-                 conv_channels=0,
-                 conv_kernel_sizes=[],
-                 conv_strides=[],
-                 conv_poolings=[],
-                 conv_batch_norm=False,
-                 conv_bottleneck_dim=0,
-                 conv_param_init=0.1,
-                 chunk_size_left=0,
-                 chunk_size_current=0,
-                 chunk_size_right=0):
+    def __init__(self, input_dim,
+                 attn_type, n_heads, n_layers, d_model, d_ff,
+                 pe_type, layer_norm_eps, ffn_activation,
+                 dropout_in, dropout, dropout_att,
+                 last_proj_dim,
+                 n_stacks, n_splices,
+                 conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
+                 conv_batch_norm, conv_bottleneck_dim, conv_param_init,
+                 param_init,
+                 chunk_size_left, chunk_size_current, chunk_size_right):
 
         super(TransformerEncoder, self).__init__()
 
@@ -125,7 +109,7 @@ class TransformerEncoder(EncoderBase):
         self.layers = repeat(TransformerEncoderBlock(
             d_model, d_ff, attn_type, n_heads,
             dropout, dropout_att,
-            layer_norm_eps, ffn_activation), n_layers)
+            layer_norm_eps, ffn_activation, param_init), n_layers)
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if last_proj_dim != self.output_dim:
@@ -140,7 +124,8 @@ class TransformerEncoder(EncoderBase):
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor()
 
-        self.reset_parameters()
+        if param_init == 'xavier_uniform':
+            self.reset_parameters()
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
@@ -159,6 +144,8 @@ class TransformerEncoder(EncoderBase):
             xs (FloatTensor): `[B, T, input_dim]`
             xlens (list): `[B]`
             task (str): not supported now
+            use_cache (bool):
+            streaming (bool): streaming encoding
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T, d_model]`
@@ -188,7 +175,7 @@ class TransformerEncoder(EncoderBase):
             xs_pad = torch.cat([xs.new_zeros(bs, cs_l, idim), xs,
                                 xs.new_zeros(bs, cs_r, idim)], dim=1)
             # TODO: remove right padding
-            for t in range(cs_l, xmax + cs_r, hop_size):
+            for t in range(cs_l, cs_l + xmax, hop_size):
                 xs_chunk = xs_pad[:, t - cs_l:t + cs_c + cs_r]
                 for l in range(self.n_layers):
                     xs_chunk, xx_aws_chunk = self.layers[l](xs_chunk, None)  # no mask
