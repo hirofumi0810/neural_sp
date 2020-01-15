@@ -14,6 +14,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from neural_sp.models.modules.causal_conv import CausalConv1d
+
 NEG_INF = float(np.finfo(np.float32).min)
 
 
@@ -26,7 +28,7 @@ class Energy(nn.Module):
             qdim (int): dimension of quary
             adim (int): dimension of attention space
             init_r (int): initial value for offset r
-            conv1d (bool): use 1D convolution for energy calculation
+            conv1d (bool): use 1D causal convolution for energy calculation
             conv_kernel_size (int): kernel size for 1D convolution
 
         """
@@ -51,11 +53,11 @@ class Energy(nn.Module):
 
         self.conv1d = None
         if conv1d:
-            self.conv1d = nn.Conv1d(in_channels=kdim,
-                                    out_channels=kdim,
-                                    kernel_size=conv_kernel_size,
-                                    stride=1,
-                                    padding=(conv_kernel_size - 1) // 2)
+            self.conv1d = CausalConv1d(in_channels=kdim,
+                                       out_channels=kdim,
+                                       kernel_size=conv_kernel_size,
+                                       stride=1)
+            # padding=(conv_kernel_size - 1) // 2
 
     def reset(self):
         self.key = None
@@ -80,8 +82,7 @@ class Energy(nn.Module):
         if self.key is None or not cache:
             # 1d conv
             if self.conv1d is not None:
-                key = self.conv1d(key.transpose(2, 1)).transpose(2, 1).contiguous()
-                key = torch.relu(key)
+                key = torch.relu(self.conv1d(key))
             self.key = self.w_key(key)
             self.mask = mask
 
