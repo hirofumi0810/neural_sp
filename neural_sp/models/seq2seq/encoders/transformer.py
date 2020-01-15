@@ -98,6 +98,7 @@ class TransformerEncoder(EncoderBase):
                                     dropout=0.,
                                     batch_norm=conv_batch_norm,
                                     layer_norm=conv_layer_norm,
+                                    layer_norm_eps=layer_norm_eps,
                                     residual=False,
                                     bottleneck_dim=d_model,
                                     param_init=conv_param_init)
@@ -131,7 +132,7 @@ class TransformerEncoder(EncoderBase):
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         if self.conv is None:
             nn.init.xavier_uniform_(self.embed.weight)
             nn.init.constant_(self.embed.bias, 0.)
