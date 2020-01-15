@@ -103,6 +103,8 @@ def parse():
                         help='delimited list of poolings in each CNN block')
     parser.add_argument('--conv_batch_norm', type=strtobool, default=False, nargs='?',
                         help='apply batch normalization in each CNN block')
+    parser.add_argument('--conv_layer_norm', type=strtobool, default=False, nargs='?',
+                        help='apply layer normalization in each CNN block')
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
