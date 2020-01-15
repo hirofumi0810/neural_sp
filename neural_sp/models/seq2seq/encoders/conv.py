@@ -33,6 +33,7 @@ class ConvEncoder(EncoderBase):
         poolings (list): size of poolings in CNN blocks
         dropout (float): probability to drop nodes in hidden-hidden connection
         batch_norm (bool): apply batch normalization
+        layer_norm (bool): apply layer normalization
         residual (bool): add residual connections
         bottleneck_dim (int): dimension of the bridge layer after the last layer
         param_init (float):
@@ -48,6 +49,7 @@ class ConvEncoder(EncoderBase):
                  poolings,
                  dropout,
                  batch_norm=False,
+                 layer_norm=False,
                  residual=False,
                  bottleneck_dim=0,
                  param_init=0.1):
@@ -77,6 +79,7 @@ class ConvEncoder(EncoderBase):
                                 pooling=poolings[l],
                                 dropout=dropout,
                                 batch_norm=batch_norm,
+                                layer_norm=layer_norm,
                                 residual=residual)
             self.layers += [block]
             in_freq = block.input_dim
@@ -144,15 +147,9 @@ class ConvEncoder(EncoderBase):
 class Conv1LBlock(EncoderBase):
     """1-layer CNN block without residual connection."""
 
-    def __init__(self,
-                 input_dim,
-                 in_channel,
-                 out_channel,
-                 kernel_size,
-                 stride,
-                 pooling,
-                 dropout,
-                 batch_norm=False):
+    def __init__(self, input_dim, in_channel, out_channel,
+                 kernel_size, stride, pooling,
+                 dropout, batch_norm, layer_norm):
 
         super(Conv1LBlock, self).__init__()
 
@@ -164,6 +161,7 @@ class Conv1LBlock(EncoderBase):
                               padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv, dim=1)[0]
         self.batch_norm = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
+        self.layer_norm = nn.LayerNorm(out_channel, eps=1e-12) if layer_norm else lambda x: x
         self.dropout = nn.Dropout2d(p=dropout)
 
         # Max Pooling
@@ -191,6 +189,7 @@ class Conv1LBlock(EncoderBase):
         """
         xs = self.conv(xs)
         xs = self.batch_norm(xs)
+        xs = self.layer_norm(xs)
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens(xlens, self.conv, dim=0)
@@ -205,20 +204,14 @@ class Conv1LBlock(EncoderBase):
 class Conv2LBlock(EncoderBase):
     """2-layer CNN block."""
 
-    def __init__(self,
-                 input_dim,
-                 in_channel,
-                 out_channel,
-                 kernel_size,
-                 stride,
-                 pooling,
-                 dropout,
-                 batch_norm=False,
-                 residual=False):
+    def __init__(self, input_dim, in_channel, out_channel,
+                 kernel_size, stride, pooling,
+                 dropout, batch_norm, layer_norm, residual):
 
         super(Conv2LBlock, self).__init__()
 
         self.batch_norm = batch_norm
+        self.layer_norm = layer_norm
 
         # 1st layer
         self.conv1 = nn.Conv2d(in_channels=in_channel,
@@ -228,6 +221,7 @@ class Conv2LBlock(EncoderBase):
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv1, dim=1)[0]
         self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
+        self.layer_norm1 = nn.LayerNorm(out_channel, eps=1e-12) if layer_norm else lambda x: x
         self.dropout = nn.Dropout2d(p=dropout)
 
         # 2nd layer
@@ -238,6 +232,7 @@ class Conv2LBlock(EncoderBase):
                                padding=(1, 1))
         input_dim = update_lens([input_dim], self.conv2, dim=1)[0]
         self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
+        self.layer_norm2 = nn.LayerNorm(out_channel, eps=1e-12) if layer_norm else lambda x: x
 
         # Max Pooling
         self.pool = None
@@ -267,12 +262,14 @@ class Conv2LBlock(EncoderBase):
 
         xs = self.conv1(xs)
         xs = self.batch_norm1(xs)
+        xs = self.layer_norm1(xs)
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens(xlens, self.conv1, dim=0)
 
         xs = self.conv2(xs)
         xs = self.batch_norm2(xs)
+        xs = self.layer_norm2(xs)
         if self.residual and xs.size() == residual.size():
             xs += residual
             # NOTE: this is based on ResNet

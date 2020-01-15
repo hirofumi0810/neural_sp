@@ -56,6 +56,7 @@ class TransformerEncoder(EncoderBase):
         conv_strides (list): number of strides in the CNN blocks
         conv_poolings (list): size of poolings in the CNN blocks
         conv_batch_norm (bool): apply batch normalization only in the CNN blocks
+        conv_layer_norm (bool): apply layer normalization only in the CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
         conv_param_init (float): only for CNN layers before Transformer layers
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
@@ -72,7 +73,7 @@ class TransformerEncoder(EncoderBase):
                  last_proj_dim,
                  n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
-                 conv_batch_norm, conv_bottleneck_dim, conv_param_init,
+                 conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  param_init,
                  chunk_size_left, chunk_size_current, chunk_size_right):
 
@@ -97,6 +98,7 @@ class TransformerEncoder(EncoderBase):
                                     poolings=conv_poolings,
                                     dropout=0.,
                                     batch_norm=conv_batch_norm,
+                                    layer_norm=conv_layer_norm,
                                     bottleneck_dim=d_model,
                                     param_init=conv_param_init)
             self._odim = self.conv.output_dim

@@ -60,6 +60,7 @@ def build_encoder(args):
             conv_strides=args.conv_strides,
             conv_poolings=args.conv_poolings,
             conv_batch_norm=args.conv_batch_norm,
+            conv_layer_norm=args.conv_layer_norm,
             conv_bottleneck_dim=args.conv_bottleneck_dim,
             conv_param_init=args.param_init,
             param_init=args.transformer_param_init,
