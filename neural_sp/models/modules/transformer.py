@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import logging
 import math
 import torch
@@ -39,7 +40,20 @@ class PositionalEncoding(nn.Module):
         self.d_model = d_model
         self.pe_type = pe_type
 
-        if pe_type != 'none':
+        if pe_type == '1dconv':
+            conv_kernel_size = 3
+            conv1d = nn.Conv1d(in_channels=d_model,
+                               out_channels=d_model,
+                               kernel_size=conv_kernel_size,
+                               stride=1,
+                               padding=(conv_kernel_size - 1) // 2)
+            self.pe = nn.Sequential(copy.deepcopy(conv1d),
+                                    nn.Dropout(p=dropout),
+                                    copy.deepcopy(conv1d),
+                                    nn.Dropout(p=dropout),
+                                    copy.deepcopy(conv1d))
+            self.dropout = nn.Dropout(p=dropout)  # for the last layer
+        elif pe_type != 'none':
             # Compute the positional encodings once in log space.
             pe = torch.zeros(max_len, d_model, dtype=torch.float32)
             position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
@@ -48,13 +62,20 @@ class PositionalEncoding(nn.Module):
             pe[:, 1::2] = torch.cos(position * div_term)
             pe = pe.unsqueeze(0)  # for batch dimension
             self.register_buffer('pe', pe)
-
             self.dropout = nn.Dropout(p=dropout)
 
         logger.info('Positional encoding: %s' % pe_type)
 
     def forward(self, xs):
-        xs = xs * math.sqrt(self.d_model)
+        """Forward computation.
+
+        Args:
+            xs (FloatTensor): `[B, T, d_model]`
+        Returns:
+            xs (FloatTensor): `[B, T, d_model]`
+
+        """
+        xs = xs * math.sqrt(self.d_model)  # after embedding
 
         if self.pe_type == 'none':
             return xs
@@ -63,6 +84,8 @@ class PositionalEncoding(nn.Module):
             xs = xs + self.pe[:, :xs.size(1)]
         elif self.pe_type == 'concat':
             xs = torch.cat([xs, self.pe[:, :xs.size(1)]], dim=-1)
+        elif self.pe_type == '1dconv':
+            xs = self.pe(xs.transpose(2, 1)).transpose(2, 1).contiguous()
         else:
             raise NotImplementedError(self.pe_type)
         return self.dropout(xs)
@@ -117,6 +140,14 @@ class PositionwiseFeedForward(nn.Module):
                 raise ValueError(n)
 
     def forward(self, xs):
+        """Forward computation.
+
+        Args:
+            xs (FloatTensor): `[B, T, d_model]`
+        Returns:
+            xs (FloatTensor): `[B, T, d_model]`
+
+        """
         return self.w_2(self.dropout(self.activation(self.w_1(xs))))
 
 
