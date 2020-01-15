@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -40,19 +40,10 @@ class ConvEncoder(EncoderBase):
 
     """
 
-    def __init__(self,
-                 input_dim,
-                 in_channel,
-                 channels,
-                 kernel_sizes,
-                 strides,
-                 poolings,
-                 dropout,
-                 batch_norm=False,
-                 layer_norm=False,
-                 residual=False,
-                 bottleneck_dim=0,
-                 param_init=0.1):
+    def __init__(self, input_dim, in_channel, channels,
+                 kernel_sizes, strides, poolings,
+                 dropout, batch_norm, layer_norm, residual,
+                 bottleneck_dim, param_init):
 
         super(ConvEncoder, self).__init__()
 
