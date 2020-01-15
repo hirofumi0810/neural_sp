@@ -41,13 +41,13 @@ class TransformerEncoder(EncoderBase):
         n_layers (int): number of blocks
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
+        last_proj_dim (int): dimension of the last projection layer
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
-        last_proj_dim (int): dimension of the last projection layer
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
@@ -67,10 +67,9 @@ class TransformerEncoder(EncoderBase):
     """
 
     def __init__(self, input_dim,
-                 attn_type, n_heads, n_layers, d_model, d_ff,
+                 attn_type, n_heads, n_layers, d_model, d_ff, last_proj_dim,
                  pe_type, layer_norm_eps, ffn_activation,
                  dropout_in, dropout, dropout_att,
-                 last_proj_dim,
                  n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
@@ -99,6 +98,7 @@ class TransformerEncoder(EncoderBase):
                                     dropout=0.,
                                     batch_norm=conv_batch_norm,
                                     layer_norm=conv_layer_norm,
+                                    residual=False,
                                     bottleneck_dim=d_model,
                                     param_init=conv_param_init)
             self._odim = self.conv.output_dim
