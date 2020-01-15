@@ -24,13 +24,14 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
                 enc_n_units=enc_n_units,
                 attn_type=args.transformer_attn_type,
                 n_heads=args.transformer_n_heads,
+                n_layers=args.dec_n_layers,
                 d_model=args.transformer_d_model,
                 d_ff=args.transformer_d_ff,
-                n_layers=args.dec_n_layers,
+                layer_norm_eps=args.transformer_layer_norm_eps,
+                ffn_activation=args.transformer_ffn_activation,
+                pe_type=args.transformer_dec_pe_type,
                 vocab=vocab,
                 tie_embedding=args.tie_embedding,
-                pe_type=args.transformer_pe_type,
-                layer_norm_eps=args.transformer_layer_norm_eps,
                 dropout=args.dropout_dec,
                 dropout_emb=args.dropout_emb,
                 dropout_att=args.dropout_att,
@@ -40,21 +41,24 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
                 ctc_fc_list=ctc_fc_list,
                 backward=(dir == 'bwd'),
                 global_weight=global_weight,
-                mtl_per_batch=args.mtl_per_batch)
+                mtl_per_batch=args.mtl_per_batch,
+                param_init=args.transformer_param_init)
 
     elif args.dec_type == 'transformer_transducer':
+        raise NotImplementedError
         from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
         decoder = TrasformerTransducer(
             special_symbols=special_symbols,
             enc_n_units=enc_n_units,
             attn_type=args.transformer_attn_type,
             n_heads=args.transformer_n_heads,
+            n_layers=args.dec_n_layers,
             d_model=args.transformer_d_model,
             d_ff=args.transformer_d_ff,
-            n_layers=args.dec_n_layers,
-            vocab=vocab,
-            pe_type=args.transformer_pe_type,
             layer_norm_eps=args.transformer_layer_norm_eps,
+            ffn_activation=args.transformer_ffn_activation,
+            pe_type=args.transformer_dec_pe_type,
+            vocab=vocab,
             dropout=args.dropout_dec,
             dropout_emb=args.dropout_emb,
             dropout_att=args.dropout_att,
@@ -64,7 +68,8 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             ctc_fc_list=ctc_fc_list,
             lm_init=lm_init,
             global_weight=global_weight,
-            mtl_per_batch=args.mtl_per_batch)
+            mtl_per_batch=args.mtl_per_batch,
+            param_init=args.transformer_param_init)
 
     elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
         from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer

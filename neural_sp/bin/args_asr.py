@@ -103,6 +103,8 @@ def parse():
                         help='delimited list of poolings in each CNN block')
     parser.add_argument('--conv_batch_norm', type=strtobool, default=False, nargs='?',
                         help='apply batch normalization in each CNN block')
+    parser.add_argument('--conv_layer_norm', type=strtobool, default=False, nargs='?',
+                        help='apply layer normalization in each CNN block')
     parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
                         help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
@@ -135,7 +137,7 @@ def parse():
     parser.add_argument('--lc_chunk_size_left', type=int, default=0,
                         help='left chunk size for latency-controlled bidirectional encoder')
     parser.add_argument('--lc_chunk_size_right', type=int, default=0,
-                        help='left chunk size for latency-controlled bidirectional encoder')
+                        help='right chunk size for latency-controlled bidirectional encoder')
     parser.add_argument('--lc_state_reset_prob', type=float, default=0.,
                         help='probability to reset states for latency-controlled bidirectional encoder')
     # topology (decoder)
@@ -325,9 +327,12 @@ def parse():
                         help='type of attention for Transformer')
     parser.add_argument('--transformer_n_heads', type=int, default=4,
                         help='number of heads in the attention layer for Transformer')
-    parser.add_argument('--transformer_pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'learned_add', 'learned_concat', ''],
-                        help='type of positional encoding')
+    parser.add_argument('--transformer_enc_pe_type', type=str, default='add',
+                        choices=['add', 'concat', 'none'],
+                        help='type of positional encoding for the Transformer encoder')
+    parser.add_argument('--transformer_dec_pe_type', type=str, default='add',
+                        choices=['add', 'concat', 'none', '1dconv'],
+                        help='type of positional encoding for the Transformer encoder')
     parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                         help='epsilon value for layer normalization')
     parser.add_argument('--transformer_ffn_activation', type=str, default='relu',

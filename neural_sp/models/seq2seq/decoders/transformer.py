@@ -53,14 +53,14 @@ class TransformerDecoder(DecoderBase):
         enc_n_units (int): number of units of the encoder outputs
         attn_type (str): type of attention mechanism
         n_heads (int): number of attention heads
+        n_layers (int): number of self-attention layers
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
-        n_layers (int): number of self-attention layers
-        vocab (int): number of nodes in softmax layer
-        tie_embedding (bool): tie parameters of the embedding and output layers
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        vocab (int): number of nodes in softmax layer
+        tie_embedding (bool): tie parameters of the embedding and output layers
         dropout (float): dropout probability for linear layers
         dropout_emb (float): dropout probability for the embedding layer
         dropout_att (float): dropout probability for attention distributions
@@ -75,30 +75,14 @@ class TransformerDecoder(DecoderBase):
 
     """
 
-    def __init__(self,
-                 special_symbols,
-                 enc_n_units,
-                 attn_type,
-                 n_heads,
-                 d_model,
-                 d_ff,
-                 n_layers,
-                 vocab,
-                 tie_embedding=False,
-                 pe_type='add',
-                 layer_norm_eps=1e-12,
-                 ffn_activation='relu',
-                 dropout=0.,
-                 dropout_emb=0.,
-                 dropout_att=0.,
-                 lsm_prob=0.,
-                 ctc_weight=0.,
-                 ctc_lsm_prob=0.,
-                 ctc_fc_list=[],
-                 backward=False,
-                 global_weight=1.,
-                 mtl_per_batch=False,
-                 param_init='xavier_uniform'):
+    def __init__(self, special_symbols,
+                 enc_n_units, attn_type, n_heads, n_layers, d_model, d_ff,
+                 pe_type, layer_norm_eps, ffn_activation,
+                 vocab, tie_embedding,
+                 dropout, dropout_emb, dropout_att, lsm_prob,
+                 ctc_weight, ctc_lsm_prob, ctc_fc_list,
+                 backward, global_weight, mtl_per_batch,
+                 param_init):
 
         super(TransformerDecoder, self).__init__()
 
@@ -148,7 +132,7 @@ class TransformerDecoder(DecoderBase):
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         # see https://github.com/pytorch/fairseq/blob/master/fairseq/models/transformer.py
         # embedding
         nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
@@ -391,7 +375,7 @@ class TransformerDecoder(DecoderBase):
         """Beam search decoding.
 
         Args:
-            eouts (FloatTensor): `[B, T, enc_n_units]`
+            eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
             params (dict):
                 recog_beam_width (int): size of beam

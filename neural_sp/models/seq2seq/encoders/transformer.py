@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -41,13 +41,13 @@ class TransformerEncoder(EncoderBase):
         n_layers (int): number of blocks
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
+        last_proj_dim (int): dimension of the last projection layer
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
-        last_proj_dim (int): dimension of the last projection layer
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
@@ -56,41 +56,25 @@ class TransformerEncoder(EncoderBase):
         conv_strides (list): number of strides in the CNN blocks
         conv_poolings (list): size of poolings in the CNN blocks
         conv_batch_norm (bool): apply batch normalization only in the CNN blocks
+        conv_layer_norm (bool): apply layer normalization only in the CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
         conv_param_init (float): only for CNN layers before Transformer layers
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
         chunk_size_current (int): current chunk size for time-restricted Transformer encoder
         chunk_size_right (int): right chunk size for time-restricted Transformer encoder
+        param_init (str):
 
     """
 
-    def __init__(self,
-                 input_dim,
-                 attn_type,
-                 n_heads,
-                 n_layers,
-                 d_model,
-                 d_ff,
-                 pe_type='add',
-                 layer_norm_eps=1e-12,
-                 ffn_activation='relu',
-                 dropout_in=0.,
-                 dropout=0.,
-                 dropout_att=0.,
-                 last_proj_dim=0,
-                 n_stacks=1,
-                 n_splices=1,
-                 conv_in_channel=1,
-                 conv_channels=0,
-                 conv_kernel_sizes=[],
-                 conv_strides=[],
-                 conv_poolings=[],
-                 conv_batch_norm=False,
-                 conv_bottleneck_dim=0,
-                 conv_param_init=0.1,
-                 chunk_size_left=0,
-                 chunk_size_current=0,
-                 chunk_size_right=0):
+    def __init__(self, input_dim,
+                 attn_type, n_heads, n_layers, d_model, d_ff, last_proj_dim,
+                 pe_type, layer_norm_eps, ffn_activation,
+                 dropout_in, dropout, dropout_att,
+                 n_stacks, n_splices,
+                 conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
+                 conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
+                 param_init,
+                 chunk_size_left, chunk_size_current, chunk_size_right):
 
         super(TransformerEncoder, self).__init__()
 
@@ -113,6 +97,9 @@ class TransformerEncoder(EncoderBase):
                                     poolings=conv_poolings,
                                     dropout=0.,
                                     batch_norm=conv_batch_norm,
+                                    layer_norm=conv_layer_norm,
+                                    layer_norm_eps=layer_norm_eps,
+                                    residual=False,
                                     bottleneck_dim=d_model,
                                     param_init=conv_param_init)
             self._odim = self.conv.output_dim
@@ -125,7 +112,7 @@ class TransformerEncoder(EncoderBase):
         self.layers = repeat(TransformerEncoderBlock(
             d_model, d_ff, attn_type, n_heads,
             dropout, dropout_att,
-            layer_norm_eps, ffn_activation), n_layers)
+            layer_norm_eps, ffn_activation, param_init), n_layers)
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if last_proj_dim != self.output_dim:
@@ -140,11 +127,12 @@ class TransformerEncoder(EncoderBase):
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor()
 
-        self.reset_parameters()
+        if param_init == 'xavier_uniform':
+            self.reset_parameters()
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         if self.conv is None:
             nn.init.xavier_uniform_(self.embed.weight)
             nn.init.constant_(self.embed.bias, 0.)
@@ -159,6 +147,8 @@ class TransformerEncoder(EncoderBase):
             xs (FloatTensor): `[B, T, input_dim]`
             xlens (list): `[B]`
             task (str): not supported now
+            use_cache (bool):
+            streaming (bool): streaming encoding
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T, d_model]`
@@ -188,7 +178,7 @@ class TransformerEncoder(EncoderBase):
             xs_pad = torch.cat([xs.new_zeros(bs, cs_l, idim), xs,
                                 xs.new_zeros(bs, cs_r, idim)], dim=1)
             # TODO: remove right padding
-            for t in range(cs_l, xmax + cs_r, hop_size):
+            for t in range(cs_l, cs_l + xmax, hop_size):
                 xs_chunk = xs_pad[:, t - cs_l:t + cs_c + cs_r]
                 for l in range(self.n_layers):
                     xs_chunk, xx_aws_chunk = self.layers[l](xs_chunk, None)  # no mask

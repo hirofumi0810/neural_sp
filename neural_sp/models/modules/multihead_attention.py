@@ -71,8 +71,8 @@ class MultiheadAttentionMechanism(nn.Module):
             self.reset_parameters(bias)
 
     def reset_parameters(self, bias):
-        """Initialize parameters."""
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        """Initialize parameters with Xavier uniform distribution."""
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/multihead_attention.py
         nn.init.xavier_uniform_(self.w_key.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_value.weight, gain=1 / math.sqrt(2))

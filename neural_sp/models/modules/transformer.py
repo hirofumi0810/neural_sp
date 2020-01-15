@@ -10,11 +10,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import logging
 import math
 import torch
 import torch.nn as nn
 
+from neural_sp.models.modules.causal_conv import CausalConv1d
 from neural_sp.models.modules.gelu import gelu, gelu_accurate
 from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
@@ -33,13 +35,32 @@ class PositionalEncoding(nn.Module):
 
     """
 
-    def __init__(self, d_model, dropout, pe_type, max_len=5000):
+    def __init__(self, d_model, dropout, pe_type, max_len=5000,
+                 conv_kernel_size=3, layer_norm_eps=1e-12):
         super(PositionalEncoding, self).__init__()
 
         self.d_model = d_model
         self.pe_type = pe_type
 
-        if pe_type != 'none':
+        if pe_type == '1dconv':
+            causal_conv1d = CausalConv1d(in_channels=d_model,
+                                         out_channels=d_model,
+                                         kernel_size=conv_kernel_size,
+                                         stride=1)
+            # padding=(conv_kernel_size - 1) // 2
+            self.pe = nn.Sequential(copy.deepcopy(causal_conv1d),
+                                    nn.LayerNorm(d_model, eps=layer_norm_eps),
+                                    nn.ReLU(),
+                                    nn.Dropout(p=dropout),
+                                    copy.deepcopy(causal_conv1d),
+                                    nn.LayerNorm(d_model, eps=layer_norm_eps),
+                                    nn.ReLU(),
+                                    nn.Dropout(p=dropout),
+                                    copy.deepcopy(causal_conv1d),
+                                    nn.LayerNorm(d_model, eps=layer_norm_eps),
+                                    nn.ReLU())
+            self.dropout = nn.Dropout(p=dropout)  # for the last layer
+        elif pe_type != 'none':
             # Compute the positional encodings once in log space.
             pe = torch.zeros(max_len, d_model, dtype=torch.float32)
             position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
@@ -48,13 +69,21 @@ class PositionalEncoding(nn.Module):
             pe[:, 1::2] = torch.cos(position * div_term)
             pe = pe.unsqueeze(0)  # for batch dimension
             self.register_buffer('pe', pe)
-
             self.dropout = nn.Dropout(p=dropout)
 
         logger.info('Positional encoding: %s' % pe_type)
 
-    def forward(self, xs):
-        xs = xs * math.sqrt(self.d_model)
+    def forward(self, xs, tgt_mask=None):
+        """Forward computation.
+
+        Args:
+            xs (FloatTensor): `[B, T, d_model]`
+            tgt_mask (ByteTensor): `[B, T, T]`
+        Returns:
+            xs (FloatTensor): `[B, T, d_model]`
+
+        """
+        xs = xs * math.sqrt(self.d_model)  # after embedding
 
         if self.pe_type == 'none':
             return xs
@@ -63,6 +92,8 @@ class PositionalEncoding(nn.Module):
             xs = xs + self.pe[:, :xs.size(1)]
         elif self.pe_type == 'concat':
             xs = torch.cat([xs, self.pe[:, :xs.size(1)]], dim=-1)
+        elif self.pe_type == '1dconv':
+            xs = self.pe(xs)
         else:
             raise NotImplementedError(self.pe_type)
         return self.dropout(xs)
@@ -103,8 +134,8 @@ class PositionwiseFeedForward(nn.Module):
             self.reset_parameters()
 
     def reset_parameters(self):
-        """Initialize parameters."""
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        """Initialize parameters with Xavier uniform distribution."""
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/transformer_layer.py
         for n, p in self.named_parameters():
             if p.dim() == 1:
@@ -117,6 +148,14 @@ class PositionwiseFeedForward(nn.Module):
                 raise ValueError(n)
 
     def forward(self, xs):
+        """Forward computation.
+
+        Args:
+            xs (FloatTensor): `[B, T, d_model]`
+        Returns:
+            xs (FloatTensor): `[B, T, d_model]`
+
+        """
         return self.w_2(self.dropout(self.activation(self.w_1(xs))))
 
 
