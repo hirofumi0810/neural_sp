@@ -16,6 +16,7 @@ import math
 import torch
 import torch.nn as nn
 
+from neural_sp.models.modules.causal_conv import CausalConv1d
 from neural_sp.models.modules.gelu import gelu, gelu_accurate
 from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
@@ -34,24 +35,30 @@ class PositionalEncoding(nn.Module):
 
     """
 
-    def __init__(self, d_model, dropout, pe_type, max_len=5000):
+    def __init__(self, d_model, dropout, pe_type, max_len=5000,
+                 conv_kernel_size=3, layer_norm_eps=1e-12):
         super(PositionalEncoding, self).__init__()
 
         self.d_model = d_model
         self.pe_type = pe_type
 
         if pe_type == '1dconv':
-            conv_kernel_size = 3
-            conv1d = nn.Conv1d(in_channels=d_model,
-                               out_channels=d_model,
-                               kernel_size=conv_kernel_size,
-                               stride=1,
-                               padding=(conv_kernel_size - 1) // 2)
-            self.pe = nn.Sequential(copy.deepcopy(conv1d),
+            causal_conv1d = CausalConv1d(in_channels=d_model,
+                                         out_channels=d_model,
+                                         kernel_size=conv_kernel_size,
+                                         stride=1)
+            # padding=(conv_kernel_size - 1) // 2
+            self.pe = nn.Sequential(copy.deepcopy(causal_conv1d),
+                                    nn.LayerNorm(d_model, eps=layer_norm_eps),
+                                    nn.ReLU(),
                                     nn.Dropout(p=dropout),
-                                    copy.deepcopy(conv1d),
+                                    copy.deepcopy(causal_conv1d),
+                                    nn.LayerNorm(d_model, eps=layer_norm_eps),
+                                    nn.ReLU(),
                                     nn.Dropout(p=dropout),
-                                    copy.deepcopy(conv1d))
+                                    copy.deepcopy(causal_conv1d),
+                                    nn.LayerNorm(d_model, eps=layer_norm_eps),
+                                    nn.ReLU())
             self.dropout = nn.Dropout(p=dropout)  # for the last layer
         elif pe_type != 'none':
             # Compute the positional encodings once in log space.
@@ -66,11 +73,12 @@ class PositionalEncoding(nn.Module):
 
         logger.info('Positional encoding: %s' % pe_type)
 
-    def forward(self, xs):
+    def forward(self, xs, tgt_mask=None):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
+            tgt_mask (ByteTensor): `[B, T, T]`
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
 
@@ -85,7 +93,7 @@ class PositionalEncoding(nn.Module):
         elif self.pe_type == 'concat':
             xs = torch.cat([xs, self.pe[:, :xs.size(1)]], dim=-1)
         elif self.pe_type == '1dconv':
-            xs = self.pe(xs.transpose(2, 1)).transpose(2, 1).contiguous()
+            xs = self.pe(xs)
         else:
             raise NotImplementedError(self.pe_type)
         return self.dropout(xs)
