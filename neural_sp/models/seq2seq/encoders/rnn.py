@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -38,13 +38,15 @@ class RNNEncoder(EncoderBase):
         rnn_type (str): type of encoder (including pure CNN layers)
         n_units (int): number of units in each layer
         n_projs (int): number of units in each projection layer
+        last_proj_dim (int): dimension of the last projection layer
         n_layers (int): number of layers
+        n_layers_sub1 (int): number of layers in the 1st auxiliary task
+        n_layers_sub2 (int): number of layers in the 2nd auxiliary task
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probability for hidden-hidden connection
         subsample (list): subsample in the corresponding RNN layers
             ex.) [False, True, True, False] means that subsample is conducted in the 2nd and 3rd layers.
         subsample_type (str): drop/concat/max_pool
-        last_proj_dim (int): dimension of the last projection layer
         n_stacks (int): number of frames to stack
         n_splices (int): number of frames to splice
         conv_in_channel (int): number of channels of input features
@@ -53,48 +55,27 @@ class RNNEncoder(EncoderBase):
         conv_strides (list): number of strides in the CNN blocks
         conv_poolings (list): size of poolings in the CNN blocks
         conv_batch_norm (bool): apply batch normalization only in the CNN blocks
+        conv_layer_norm (bool): apply layer normalization only in the CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and RNN layers
-        n_layers_sub1 (int): number of layers in the 1st auxiliary task
-        n_layers_sub2 (int): number of layers in the 2nd auxiliary task
         nin (bool): insert 1*1 conv + batch normalization + ReLU
+        bidirectional_sum_fwd_bwd (bool):
         task_specific_layer (bool):
         param_init (float):
-        bidirectional_sum_fwd_bwd (bool):
         lc_chunk_size_left (int): left chunk size for latency-controlled bidirectional encoder
         lc_chunk_size_right (int): right chunk size for latency-controlled bidirectional encoder
         lc_state_reset_prob (float): probability to reset states for latency-controlled bidirectional encoder
 
     """
 
-    def __init__(self,
-                 input_dim,
-                 rnn_type,
-                 n_units,
-                 n_projs,
-                 n_layers,
-                 dropout_in,
-                 dropout,
-                 subsample,
-                 subsample_type='drop',
-                 n_stacks=1,
-                 n_splices=1,
-                 last_proj_dim=0,
-                 conv_in_channel=1,
-                 conv_channels=0,
-                 conv_kernel_sizes=[],
-                 conv_strides=[],
-                 conv_poolings=[],
-                 conv_batch_norm=False,
-                 conv_bottleneck_dim=0,
-                 n_layers_sub1=0,
-                 n_layers_sub2=0,
-                 nin=False,
-                 task_specific_layer=False,
-                 param_init=0.1,
-                 bidirectional_sum_fwd_bwd=False,
-                 lc_chunk_size_left=0,
-                 lc_chunk_size_right=0,
-                 lc_state_reset_prob=0.):
+    def __init__(self, input_dim, rnn_type, n_units, n_projs, last_proj_dim,
+                 n_layers, n_layers_sub1, n_layers_sub2,
+                 dropout_in, dropout,
+                 subsample, subsample_type, n_stacks, n_splices,
+                 conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
+                 conv_batch_norm, conv_layer_norm, conv_bottleneck_dim,
+                 nin, bidirectional_sum_fwd_bwd,
+                 task_specific_layer, param_init,
+                 lc_chunk_size_left, lc_chunk_size_right, lc_state_reset_prob):
 
         super(RNNEncoder, self).__init__()
 
@@ -159,6 +140,8 @@ class RNNEncoder(EncoderBase):
                                     poolings=conv_poolings,
                                     dropout=0.,
                                     batch_norm=conv_batch_norm,
+                                    layer_norm=conv_layer_norm,
+                                    residual=False,
                                     bottleneck_dim=conv_bottleneck_dim,
                                     param_init=param_init)
         else:
@@ -171,7 +154,7 @@ class RNNEncoder(EncoderBase):
             subsample = [1] * self.n_layers
             logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
 
-        self.padding = Padding()
+        self.padding = Padding(bidirectional_sum_fwd_bwd=bidirectional_sum_fwd_bwd)
 
         if rnn_type not in ['conv', 'tds', 'gated_conv']:
             self.rnn = nn.ModuleList()
@@ -317,16 +300,17 @@ class RNNEncoder(EncoderBase):
                 eouts['ys']['xlens'] = xlens
                 return eouts
 
-        if self.latency_controlled:
-            if not use_cache:
-                self.reset_cache()
+        if not use_cache:
+            self.reset_cache()
 
+        if self.latency_controlled:
             # Flip the layer and time loop
             xs, xlens = self._forward_streaming(xs, xlens, streaming)
         else:
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
-                xs = self.padding(xs, xlens, self.rnn[l], self.bidirectional_sum_fwd_bwd)
+                xs, self.fwd_states[l] = self.padding(xs, xlens, self.rnn[l],
+                                                      prev_state=self.fwd_states[l])
                 xs = self.dropout(xs)
 
                 # Pick up outputs in the sub task before the projection layer
@@ -444,7 +428,7 @@ class RNNEncoder(EncoderBase):
     def sub_module(self, xs, xlens, perm_ids_unsort, module='sub1'):
         if self.task_specific_layer:
             getattr(self, 'rnn_' + module).flatten_parameters()  # for multi-GPUs
-            xs_sub = self.padding(xs, xlens, getattr(self, 'rnn_' + module))
+            xs_sub, _ = self.padding(xs, xlens, getattr(self, 'rnn_' + module))
             xs_sub = self.dropout(xs_sub)
         else:
             xs_sub = xs.clone()[perm_ids_unsort]
@@ -457,17 +441,19 @@ class RNNEncoder(EncoderBase):
 class Padding(nn.Module):
     """Padding variable length of sequences."""
 
-    def __init__(self):
+    def __init__(self, bidirectional_sum_fwd_bwd):
         super(Padding, self).__init__()
+        self.bidirectional_sum_fwd_bwd = bidirectional_sum_fwd_bwd
 
-    def forward(self, xs, xlens, rnn, bidirectional_sum_fwd_bwd=False):
+    def forward(self, xs, xlens, rnn, prev_state=None):
         xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
-        xs, _ = rnn(xs, hx=None)
+        xs, state = rnn(xs, hx=prev_state)
         xs = pad_packed_sequence(xs, batch_first=True)[0]
-        if bidirectional_sum_fwd_bwd and rnn.bidirectional:
+        if self.bidirectional_sum_fwd_bwd:
+            assert rnn.bidirectional
             half = xs.size(-1) // 2
             xs = xs[:, :, :half] + xs[:, :, half:]
-        return xs
+        return xs, state
 
 
 class MaxpoolSubsampler(nn.Module):
