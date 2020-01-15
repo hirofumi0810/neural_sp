@@ -331,7 +331,7 @@ def parse():
                         choices=['add', 'concat', 'none'],
                         help='type of positional encoding for the Transformer encoder')
     parser.add_argument('--transformer_dec_pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'none'],
+                        choices=['add', 'concat', 'none', '1dconv'],
                         help='type of positional encoding for the Transformer encoder')
     parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                         help='epsilon value for layer normalization')
