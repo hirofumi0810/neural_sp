@@ -23,6 +23,8 @@ def set_asr_model_name(args, subsample_factor):
         dir_name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
         if args.conv_batch_norm:
             dir_name += 'bn'
+        if args.conv_layer_norm:
+            dir_name += 'ln'
         dir_name += tmp
     if 'transformer' in args.enc_type:
         dir_name += str(args.transformer_d_model) + 'dmodel'
