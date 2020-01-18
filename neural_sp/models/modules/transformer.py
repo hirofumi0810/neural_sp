@@ -36,7 +36,7 @@ class PositionalEncoding(nn.Module):
     """
 
     def __init__(self, d_model, dropout, pe_type, max_len=5000,
-                 conv_kernel_size=3, layer_norm_eps=1e-12):
+                 conv_kernel_size=3, conv_nlayers=3, layer_norm_eps=1e-12):
         super(PositionalEncoding, self).__init__()
 
         self.d_model = d_model
@@ -47,18 +47,13 @@ class PositionalEncoding(nn.Module):
                                          out_channels=d_model,
                                          kernel_size=conv_kernel_size,
                                          stride=1)
-            # padding=(conv_kernel_size - 1) // 2
-            self.pe = nn.Sequential(copy.deepcopy(causal_conv1d),
-                                    nn.LayerNorm(d_model, eps=layer_norm_eps),
-                                    nn.ReLU(),
-                                    nn.Dropout(p=dropout),
-                                    copy.deepcopy(causal_conv1d),
-                                    nn.LayerNorm(d_model, eps=layer_norm_eps),
-                                    nn.ReLU(),
-                                    nn.Dropout(p=dropout),
-                                    copy.deepcopy(causal_conv1d),
-                                    nn.LayerNorm(d_model, eps=layer_norm_eps),
-                                    nn.ReLU())
+            layers = []
+            for l in range(conv_nlayers):
+                layers.append(copy.deepcopy(causal_conv1d))
+                layers.append(nn.LayerNorm(d_model, eps=layer_norm_eps))
+                layers.append(nn.ReLU())
+                layers.append(nn.Dropout(p=dropout))
+            self.pe = nn.Sequential(*layers)
             self.dropout = nn.Dropout(p=dropout)  # for the last layer
         elif pe_type != 'none':
             # Compute the positional encodings once in log space.
@@ -73,12 +68,11 @@ class PositionalEncoding(nn.Module):
 
         logger.info('Positional encoding: %s' % pe_type)
 
-    def forward(self, xs, tgt_mask=None):
+    def forward(self, xs):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
-            tgt_mask (ByteTensor): `[B, T, T]`
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
 
