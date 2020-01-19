@@ -27,15 +27,15 @@ ctc_fc_list: "512"
 ### optimization
 batch_size: 32
 optimizer: noam
-n_epochs: 40
-convert_to_sgd_epoch: 40
+n_epochs: 50
+convert_to_sgd_epoch: 50
 print_step: 400
 metric: edit_distance
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5
 shuffle_bucket: true  ### this is important
-sort_stop_epoch: 40
-eval_start_epoch: 40
+sort_stop_epoch: 50
+eval_start_epoch: 50
 warmup_n_steps: 25000
 accum_grad_n_steps: 8
 ### regularization
