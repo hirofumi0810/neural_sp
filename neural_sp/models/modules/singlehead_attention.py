@@ -49,8 +49,7 @@ class AttentionMechanism(nn.Module):
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
         self.n_heads = 1
-        self.key = None
-        self.mask = None
+        self.reset()
 
         # attention dropout applied after the softmax layer
         self.attn_dropout = nn.Dropout(p=dropout)

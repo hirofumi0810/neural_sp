@@ -44,9 +44,7 @@ class MultiheadAttentionMechanism(nn.Module):
         assert adim % n_heads == 0
         self.d_k = adim // n_heads
         self.n_heads = n_heads
-        self.key = None
-        self.value = None
-        self.mask = None
+        self.reset()
 
         # attention dropout applied AFTER the softmax layer
         self.attn_dropout = nn.Dropout(p=dropout)
