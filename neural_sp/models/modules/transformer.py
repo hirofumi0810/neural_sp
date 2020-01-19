@@ -41,6 +41,7 @@ class PositionalEncoding(nn.Module):
 
         self.d_model = d_model
         self.pe_type = pe_type
+        self.scale = math.sqrt(self.d_model)
 
         if pe_type == '1dconv':
             causal_conv1d = CausalConv1d(in_channels=d_model,
@@ -77,7 +78,7 @@ class PositionalEncoding(nn.Module):
             xs (FloatTensor): `[B, T, d_model]`
 
         """
-        xs = xs * math.sqrt(self.d_model)  # after embedding
+        xs = xs * self.scale  # after embedding
 
         if self.pe_type == 'none':
             return xs
@@ -229,20 +230,22 @@ class TransformerDecoderBlock(nn.Module):
             dropout_att (float): dropout probabilities for attention probabilities
             atype (str): type of self-attention, scaled_dot or average
             layer_norm_eps (float):
-            src_tgt_attention (bool): if False, ignore source-target attention
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
             param_init (str):
+            src_tgt_attention (bool): if False, ignore source-target attention
+            sybc_bidir_attention (bool):
 
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads,
                  dropout, dropout_att, layer_norm_eps, ffn_activation, param_init,
-                 src_tgt_attention=True):
+                 src_tgt_attention=True, sync_bidir_attention=False):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
         self.n_heads = n_heads
         self.src_tgt_attention = src_tgt_attention
+        self.sync_bidir_attention = sync_bidir_attention
 
         # self-attention
         if atype == "average":

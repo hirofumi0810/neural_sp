@@ -44,6 +44,7 @@ class MultiheadAttentionMechanism(nn.Module):
         assert adim % n_heads == 0
         self.d_k = adim // n_heads
         self.n_heads = n_heads
+        self.scale = math.sqrt(self.d_k)
         self.reset()
 
         # attention dropout applied AFTER the softmax layer
@@ -126,7 +127,7 @@ class MultiheadAttentionMechanism(nn.Module):
         query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
 
         if self.atype == 'scaled_dot':
-            e = torch.matmul(query, self.key.transpose(3, 2)) / math.sqrt(self.d_k)
+            e = torch.matmul(query, self.key.transpose(3, 2)) / self.scale
         elif self.atype == 'add':
             e = torch.tanh(self.key.unsqueeze(2) + query.unsqueeze(3))
             e = e.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
