@@ -345,7 +345,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
     def __init__(self, d_model, d_ff, atype, n_heads, dropout, dropout_att,
                  layer_norm_eps, ffn_activation, param_init):
-        super(TransformerDecoderBlock, self).__init__()
+        super(SyncBidirTransformerDecoderBlock, self).__init__()
 
         self.atype = atype
         self.n_heads = n_heads

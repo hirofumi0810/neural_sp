@@ -170,15 +170,17 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
         cv_bwd_h = torch.matmul(aw_bwd_h, self.value_bwd)  # `[B, n_heads, qlen, d_k]`
         cv_bwd_f = torch.matmul(aw_bwd_f, self.value_fwd)  # `[B, n_heads, qlen, d_k]`
 
-        cvs = []
-        for cv in [cv_fwd_h, cv_fwd_f, cv_bwd_h, cv_bwd_f]:
-            cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
-            cvs.append(cv)
-        cvs = self.w_out(torch.cat(cvs, dim=1))
+        cv_fwd_h = cv_fwd_h.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
+        cv_fwd_h = self.w_out(cv_fwd_h)
+        cv_fwd_f = cv_fwd_f.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
+        cv_fwd_f = self.w_out(cv_fwd_f)
+        cv_bwd_h = cv_bwd_h.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
+        cv_bwd_h = self.w_out(cv_bwd_h)
+        cv_bwd_f = cv_bwd_f.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
+        cv_bwd_f = self.w_out(cv_bwd_f)
 
         # merge history and future information
-        time = cv.size(1)
-        cv_fwd = cvs[:, :time // 4] + self.future_weight * torch.tanh(cvs[:, time // 4:time // 2])
-        cv_bwd = cvs[:, time // 2:time * 3 // 4] + self.future_weight * torch.tanh(cvs[:, time * 3 // 4:])
+        cv_fwd = cv_fwd_h + self.future_weight * torch.tanh(cv_fwd_f)
+        cv_bwd = cv_bwd_h + self.future_weight * torch.tanh(cv_bwd_f)
 
         return cv_fwd, cv_bwd, aw_fwd_h, aw_fwd_f, aw_bwd_h, aw_bwd_f

@@ -218,14 +218,14 @@ class TransformerDecoder(DecoderBase):
         # Append <sos> and <eos>
         ys_in, ys_out, ylens = append_sos_eos(eouts, ys, self.eos, self.pad, self.bwd)
 
-        # Create the self-attention mask
+        # Create target self-attention mask
         bs, ytime = ys_in.size()[:2]
         tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
         subsequent_mask = tgt_mask.new_ones(ytime, ytime).byte()
         subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
         tgt_mask = tgt_mask & subsequent_mask
 
-        # Create the source-target mask
+        # Create source-target mask
         src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
 
         out = self.pos_enc(self.embed(ys_in))
@@ -267,20 +267,22 @@ class TransformerDecoder(DecoderBase):
         ys_in_fwd, ys_out_fwd, ylens = append_sos_eos(eouts, ys, self.eos, self.pad, bwd=False)
         ys_in_bwd, ys_out_bwd, ylens = append_sos_eos(eouts, ys, self.eos, self.pad, bwd=True)
 
-        # Create the self-attention mask
+        # Create target self-attention mask
         bs, ytime = ys_in_fwd.size()[:2]
         tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
         subsequent_mask = tgt_mask.new_ones(ytime, ytime).byte()
         subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
         tgt_mask = tgt_mask & subsequent_mask
 
-        # Create the source-target mask
+        # Create source-target mask
         src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
+
+        # Create idendity token mask for synchronous bidirectional attention
 
         out_fwd = self.pos_enc(self.embed(ys_in_fwd))
         out_bwd = self.pos_enc(self.embed(ys_in_bwd))
         for l in range(self.n_layers):
-            out_fwd, yy_aws_fwd_h, yy_aws_fwd_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws = self.layers[l](
+            out_fwd, out_bwd, yy_aws_fwd_h, yy_aws_fwd_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws = self.layers[l](
                 out_fwd, out_bwd, tgt_mask, eouts, src_mask)
             if not self.training:
                 self.aws_dict['yy_aws_fwd_history_layer%d' % l] = tensor2np(yy_aws_fwd_h)
