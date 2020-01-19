@@ -108,6 +108,9 @@ class TransformerDecoder(DecoderBase):
         self.prev_spk = ''
         self.lmstate_final = None
 
+        # for attention plot
+        self.aws_dict = {}
+
         if ctc_weight > 0:
             self.ctc = CTC(eos=self.eos,
                            blank=self.blank,
@@ -229,8 +232,8 @@ class TransformerDecoder(DecoderBase):
         for l in range(self.n_layers):
             out, yy_aws, xy_aws = self.layers[l](out, tgt_mask, eouts, src_mask)
             if not self.training:
-                setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
-                setattr(self, 'xy_aws_layer%d' % l, tensor2np(xy_aws))
+                self.aws_dict['yy_aws_layer%d' % l] = tensor2np(yy_aws)
+                self.aws_dict['xy_aws_layer%d' % l] = tensor2np(xy_aws)
         logits = self.output(self.norm_out(out))
 
         # for knowledge distillation
@@ -277,10 +280,14 @@ class TransformerDecoder(DecoderBase):
         out_fwd = self.pos_enc(self.embed(ys_in_fwd))
         out_bwd = self.pos_enc(self.embed(ys_in_bwd))
         for l in range(self.n_layers):
-            out_fwd, yy_aws_fwd_h, xy_aws = self.layers[l](out_fwd, out_bwd, tgt_mask, eouts, src_mask)
+            out_fwd, yy_aws_fwd_h, yy_aws_fwd_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws = self.layers[l](
+                out_fwd, out_bwd, tgt_mask, eouts, src_mask)
             if not self.training:
-                setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws_fwd_h))
-                setattr(self, 'xy_aws_layer%d' % l, tensor2np(xy_aws))
+                self.aws_dict['yy_aws_fwd_history_layer%d' % l] = tensor2np(yy_aws_fwd_h)
+                self.aws_dict['yy_aws_fwd_future_layer%d' % l] = tensor2np(yy_aws_fwd_f)
+                self.aws_dict['yy_aws_bwd_history_layer%d' % l] = tensor2np(yy_aws_bwd_h)
+                self.aws_dict['yy_aws_bwd_future_layer%d' % l] = tensor2np(yy_aws_bwd_f)
+                self.aws_dict['xy_aws_layer%d' % l] = tensor2np(xy_aws)
         logits_fwd = self.output(self.norm_out(out_fwd))
         logits_bwd = self.output(self.norm_out(out_bwd))
 
@@ -304,33 +311,29 @@ class TransformerDecoder(DecoderBase):
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
-        for attn in ['yy', 'xy']:
-            _save_path = mkdir_join(save_path, 'dec_%s_att_weights' % attn)
+        _save_path = mkdir_join(save_path, 'dec_att_weights')
 
-            # Clean directory
-            if _save_path is not None and os.path.isdir(_save_path):
-                shutil.rmtree(_save_path)
-                os.mkdir(_save_path)
+        # Clean directory
+        if _save_path is not None and os.path.isdir(_save_path):
+            shutil.rmtree(_save_path)
+            os.mkdir(_save_path)
 
-            for l in range(self.n_layers):
-                if hasattr(self, '%s_aws_layer%d' % (attn, l)):
-                    aws = getattr(self, '%s_aws_layer%d' % (attn, l))
+        for k, aw in self.aws_dict.items():
+            plt.clf()
+            fig, axes = plt.subplots(max(1, self.n_heads // n_cols), n_cols,
+                                     figsize=(20, 8), squeeze=False)
+            for h in range(self.n_heads):
+                ax = axes[h // n_cols, h % n_cols]
+                ax.imshow(aw[-1, h, :, :], aspect="auto")
+                ax.grid(False)
+                ax.set_xlabel("Input (head%d)" % h)
+                ax.set_ylabel("Output (head%d)" % h)
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
-                    plt.clf()
-                    fig, axes = plt.subplots(max(1, self.n_heads // n_cols), n_cols,
-                                             figsize=(20, 8), squeeze=False)
-                    for h in range(self.n_heads):
-                        ax = axes[h // n_cols, h % n_cols]
-                        ax.imshow(aws[-1, h, :, :], aspect="auto")
-                        ax.grid(False)
-                        ax.set_xlabel("Input (head%d)" % h)
-                        ax.set_ylabel("Output (head%d)" % h)
-                        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-                        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-
-                    fig.tight_layout()
-                    fig.savefig(os.path.join(_save_path, 'layer%d.png' % (l)), dvi=500)
-                    plt.close()
+            fig.tight_layout()
+            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
+            plt.close()
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
                exclude_eos=False, oracle=False,

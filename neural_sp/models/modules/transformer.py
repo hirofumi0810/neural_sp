@@ -444,4 +444,4 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
             out_fwd = torch.cat([cache, out_fwd], dim=1)
             out_bwd = torch.cat([cache, out_bwd], dim=1)
 
-        return out_fwd, out_bwd, yy_aw_fwd_h, xy_aw
+        return out_fwd, out_bwd, yy_aw_fwd_h, yy_aw_fwd_f, yy_aw_bwd_h, yy_aw_bwd_f, xy_aw
