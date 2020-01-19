@@ -77,9 +77,6 @@ class MultiheadAttentionMechanism(nn.Module):
         nn.init.xavier_uniform_(self.w_key.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_value.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_query.weight, gain=1 / math.sqrt(2))
-        # nn.init.xavier_uniform_(self.w_key.weight)
-        # nn.init.xavier_uniform_(self.w_value.weight)
-        # nn.init.xavier_uniform_(self.w_query.weight)
         if bias:
             # newly introduced
             nn.init.constant_(self.w_key.bias, 0.)
