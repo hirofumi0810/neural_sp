@@ -49,6 +49,6 @@ lsm_prob: 0.1
 ### MTL
 ctc_weight: 0.3
 ctc_lsm_prob: 0.1
-bwd_weight: 0.0
+bwd_weight: 0.5
 mtl_per_batch: false
 task_specific_layer: false
