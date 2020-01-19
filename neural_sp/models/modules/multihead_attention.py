@@ -102,7 +102,7 @@ class MultiheadAttentionMechanism(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             aw_prev: dummy interface for single-head attention
             mode: dummy interface for MoChA
-            cache (bool): cache key and mask
+            cache (bool): cache key, value, and mask
             trigger_point (IntTensor): dummy
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
@@ -114,8 +114,8 @@ class MultiheadAttentionMechanism(nn.Module):
 
         if self.key is None or not cache:
             key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-            value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
             self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
+            value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
             self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
             self.mask = mask.unsqueeze(1).repeat(
                 [1, self.n_heads, 1, 1]) if mask is not None else None  # `[B, n_heads, qlen, klen]`

@@ -92,19 +92,22 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value_bwd = None
         self.mask = None
 
-    def forward(self, key_fwd, value_fwd, query_fwd, mask, aw_prev=None,
-                mode='', cache=True, trigger_point=None):
+    def forward(self, key_fwd, key_bwd, value_fwd, value_bwd, query_fwd, query_bwd,
+                mask, aw_prev=None, mode='', cache=True, trigger_point=None):
         """Forward computation.
 
         Args:
             key_fwd (FloatTensor): `[B, klen, kdim]`
+            key_bwd (FloatTensor): `[B, klen, kdim]`
             klens (IntTensor): `[B]`
             value_fwd (FloatTensor): `[B, klen, vdim]`
+            value_bwd (FloatTensor): `[B, klen, vdim]`
             query_fwd (FloatTensor): `[B, qlen, qdim]`
+            query_bwd (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             aw_prev: dummy interface for single-head attention
             mode: dummy interface for MoChA
-            cache (bool): cache key_fwd and mask
+            cache (bool): cache key, value, and mask
             trigger_point (IntTensor): dummy
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
@@ -116,13 +119,18 @@ class MultiheadAttentionMechanism(nn.Module):
 
         if self.key_fwd is None or not cache:
             key_fwd = self.w_key(key_fwd).view(bs, -1, self.n_heads, self.d_k)
-            value_fwd = self.w_value(value_fwd).view(bs, -1, self.n_heads, self.d_k)
             self.key_fwd = key_fwd.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
+            value_fwd = self.w_value(value_fwd).view(bs, -1, self.n_heads, self.d_k)
             self.value_fwd = value_fwd.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
             self.mask = mask.unsqueeze(1).repeat(
                 [1, self.n_heads, 1, 1]) if mask is not None else None  # `[B, n_heads, qlen, klen]`
             if self.mask is not None:
                 assert self.mask.size() == (bs, self.n_heads, qlen, klen)
+        if self.key_bwd is None or not cache:
+            key_bwd = self.w_key(key_bwd).view(bs, -1, self.n_heads, self.d_k)
+            self.key_bwd = key_bwd.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
+            value_bwd = self.w_value(value_bwd).view(bs, -1, self.n_heads, self.d_k)
+            self.value_bwd = value_bwd.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
 
         query_fwd = self.w_query(query_fwd).view(bs, -1, self.n_heads, self.d_k)
         query_fwd = query_fwd.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
