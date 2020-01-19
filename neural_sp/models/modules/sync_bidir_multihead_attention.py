@@ -149,10 +149,18 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
             e_bwd_h = torch.matmul(query_bwd, self.key_bwd.transpose(3, 2)) / self.scale
             e_bwd_f = torch.matmul(query_bwd, self.key_fwd.transpose(3, 2)) / self.scale
         elif self.atype == 'add':
-            raise NotImplementedError
             e_fwd_h = torch.tanh(self.key_fwd.unsqueeze(2) + query_fwd.unsqueeze(3))
             e_fwd_h = e_fwd_h.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
             e_fwd_h = self.v(e_fwd_h).permute(0, 3, 1, 2)
+            e_fwd_f = torch.tanh(self.key_bwd.unsqueeze(2) + query_fwd.unsqueeze(3))
+            e_fwd_f = e_fwd_f.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
+            e_fwd_f = self.v(e_fwd_f).permute(0, 3, 1, 2)
+            e_bwd_h = torch.tanh(self.key_bwd.unsqueeze(2) + query_bwd.unsqueeze(3))
+            e_bwd_h = e_bwd_h.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
+            e_bwd_h = self.v(e_bwd_h).permute(0, 3, 1, 2)
+            e_bwd_f = torch.tanh(self.key_fwd.unsqueeze(2) + query_bwd.unsqueeze(3))
+            e_bwd_f = e_bwd_f.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
+            e_bwd_f = self.v(e_bwd_f).permute(0, 3, 1, 2)
 
         # Compute attention weights
         if self.mask is not None:
