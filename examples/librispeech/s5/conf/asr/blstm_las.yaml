@@ -24,7 +24,7 @@ dec_type: lstm
 dec_n_units: 1024
 dec_n_projs: 0
 dec_n_layers: 1
-dec_bottleneck_dim: 512
+dec_bottleneck_dim: 1024  ###
 emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
@@ -33,7 +33,7 @@ batch_size: 50
 optimizer: adam
 n_epochs: 25
 convert_to_sgd_epoch: 25
-print_step: 500
+print_step: 1000
 metric: edit_distance
 lr: 1e-3
 lr_decay_type: always
