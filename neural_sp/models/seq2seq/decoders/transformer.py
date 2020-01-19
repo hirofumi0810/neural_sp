@@ -286,8 +286,9 @@ class TransformerDecoder(DecoderBase):
         idendity_mask = ylens_mask.clone()
         for b in range(bs):
             for i in range(ylens[b] - 1):
-                idendity_mask[b, i, (ylens[b] - 1) - 1 - i]
+                idendity_mask[b, i, (ylens[b] - 1) - 1 - i] = 0
                 # NOTE: ylens counts <eos>
+            idendity_mask[b, ylens[b] - 1, ylens[b] - 1] = 0  # for <eos>
 
         out_fwd = self.pos_enc(self.embed(ys_in_fwd))
         out_bwd = self.pos_enc(self.embed(ys_in_bwd))
