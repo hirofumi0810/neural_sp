@@ -377,13 +377,14 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, ys_fwd, ys_bwd, yy_mask, xs, xy_mask, cache=None):
+    def forward(self, ys_fwd, ys_bwd, yy_mask, identity_mask, xs, xy_mask, cache=None):
         """Transformer decoder layer definition.
 
         Args:
             ys_fwd (FloatTensor): `[B, L, d_model]`
             ys_bwd (FloatTensor): `[B, L, d_model]`
             yy_mask (ByteTensor): `[B, L, L]`
+            identity_mask (ByteTensor): `[B, L, L]`
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
             xy_mask (ByteTensor): `[B, L, T]`
             cache (FloatTensor): `[B, L-1, d_model]`
@@ -412,7 +413,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         out_fwd, out_bwd, yy_aw_fwd_h, yy_aw_fwd_f, yy_aw_bwd_h, yy_aw_bwd_f = self.self_attn(
             ys_fwd, ys_fwd, ys_fwd_q,  # k/v/q
             ys_bwd, ys_bwd, ys_bwd_q,  # k/v/q
-            mask=yy_mask, cache=False)
+            tgt_mask=yy_mask, identity_mask=identity_mask, cache=False)
         out_fwd = self.dropout(out_fwd) + residual_fwd
         out_bwd = self.dropout(out_bwd) + residual_bwd
 

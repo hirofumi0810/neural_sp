@@ -92,11 +92,13 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
         self.key_bwd = None
         self.value_fwd = None
         self.value_bwd = None
-        self.mask = None
+        self.tgt_mask = None
+        self.identity_mask = None
 
     def forward(self, key_fwd, value_fwd, query_fwd,
                 key_bwd, value_bwd, query_bwd,
-                mask, aw_prev=None, mode='', cache=True, trigger_point=None):
+                tgt_mask, identity_mask,
+                aw_prev=None, mode='', cache=True, trigger_point=None):
         """Forward computation.
 
         Args:
@@ -106,10 +108,11 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
             key_bwd (FloatTensor): `[B, klen, kdim]`
             value_bwd (FloatTensor): `[B, klen, vdim]`
             query_bwd (FloatTensor): `[B, qlen, qdim]`
-            mask (ByteTensor): `[B, qlen, klen]`
+            tgt_mask (ByteTensor): `[B, qlen, klen]`
+            identity_mask (ByteTensor): `[B, qlen, klen]`
             aw_prev: dummy interface for single-head attention
             mode: dummy interface for MoChA
-            cache (bool): cache key, value, and mask
+            cache (bool): cache key, value, and tgt_mask
             trigger_point (IntTensor): dummy
         Returns:
             cv_fwd (FloatTensor): `[B, qlen, vdim]`
@@ -128,10 +131,14 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
             self.key_fwd = key_fwd.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
             value_fwd = self.w_value(value_fwd).view(bs, -1, self.n_heads, self.d_k)
             self.value_fwd = value_fwd.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
-            self.mask = mask.unsqueeze(1).repeat(
-                [1, self.n_heads, 1, 1]) if mask is not None else None  # `[B, n_heads, qlen, klen]`
-            if self.mask is not None:
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen)
+            self.tgt_mask = tgt_mask.unsqueeze(1).repeat(
+                [1, self.n_heads, 1, 1]) if tgt_mask is not None else None  # `[B, n_heads, qlen, klen]`
+            self.identity_mask = identity_mask.unsqueeze(1).repeat(
+                [1, self.n_heads, 1, 1]) if identity_mask is not None else None  # `[B, n_heads, qlen, klen]`
+            if self.tgt_mask is not None:
+                assert self.tgt_mask.size() == (bs, self.n_heads, qlen, klen)
+            if self.identity_mask is not None:
+                assert self.identity_mask.size() == (bs, self.n_heads, qlen, klen)
         if self.key_bwd is None or not cache:
             key_bwd = self.w_key(key_bwd).view(bs, -1, self.n_heads, self.d_k)
             self.key_bwd = key_bwd.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
@@ -163,11 +170,12 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
             e_bwd_f = self.v(e_bwd_f).permute(0, 3, 1, 2)
 
         # Compute attention weights
-        if self.mask is not None:
-            e_fwd_h = e_fwd_h.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
-            e_fwd_f = e_fwd_f.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
-            e_bwd_h = e_bwd_h.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
-            e_bwd_f = e_bwd_f.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
+        if self.tgt_mask is not None:
+            e_fwd_h = e_fwd_h.masked_fill_(self.tgt_mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
+            e_bwd_h = e_bwd_h.masked_fill_(self.tgt_mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
+        if self.identity_mask is not None:
+            e_fwd_f = e_fwd_f.masked_fill_(self.identity_mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
+            e_bwd_f = e_bwd_f.masked_fill_(self.identity_mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
         aw_fwd_h = self.attn_dropout(torch.softmax(e_fwd_h, dim=-1))
         aw_fwd_f = self.attn_dropout(torch.softmax(e_fwd_f, dim=-1))
         aw_bwd_h = self.attn_dropout(torch.softmax(e_bwd_h, dim=-1))

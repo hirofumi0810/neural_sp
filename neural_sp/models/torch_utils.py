@@ -94,11 +94,16 @@ def make_pad_mask(seq_lens, device_id=-1):
     return mask
 
 
-def append_sos_eos(xs, ys, eos, pad, bwd=False, replace_sos=False):
+def append_sos_eos(xs, ys, sos, eos, pad, bwd=False, replace_sos=False):
     """Append <sos> and <eos> and return padded sequences.
 
     Args:
         ys (list): A list of length `[B]`, which contains a list of size `[L]`
+        sos (int):
+        eos (int):
+        pad (int):
+        bwd (bool):
+        replace_sos (bool):
     Returns:
         ys_in (LongTensor): `[B, L]`
         ys_out (LongTensor): `[B, L]`
@@ -114,8 +119,9 @@ def append_sos_eos(xs, ys, eos, pad, bwd=False, replace_sos=False):
         ys_in = pad_list([y for y in ys], pad)
         ys_out = pad_list([torch.cat([y[1:], _eos], dim=0) for y in ys], pad)
     else:
+        _sos = xs.new_zeros(1).fill_(sos).long()
         ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
-        ys_in = pad_list([torch.cat([_eos, y], dim=0) for y in ys], pad)
+        ys_in = pad_list([torch.cat([_sos, y], dim=0) for y in ys], pad)
         ys_out = pad_list([torch.cat([y, _eos], dim=0) for y in ys], pad)
     return ys_in, ys_out, ylens
 
