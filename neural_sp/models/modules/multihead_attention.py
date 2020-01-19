@@ -97,7 +97,6 @@ class MultiheadAttentionMechanism(nn.Module):
 
         Args:
             key (FloatTensor): `[B, klen, kdim]`
-            klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, vdim]`
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`

@@ -23,6 +23,7 @@ from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
+from neural_sp.models.modules.transformer import SyncBidirTransformerDecoderBlock
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
@@ -72,6 +73,7 @@ class TransformerDecoder(DecoderBase):
         global_weight (float):
         mtl_per_batch (bool):
         param_init (str):
+        sync_bidir_attention (bool): synchronous bidirectional attention
 
     """
 
@@ -82,7 +84,7 @@ class TransformerDecoder(DecoderBase):
                  dropout, dropout_emb, dropout_att, lsm_prob,
                  ctc_weight, ctc_lsm_prob, ctc_fc_list,
                  backward, global_weight, mtl_per_batch,
-                 param_init):
+                 param_init, sync_bidir_attention):
 
         super(TransformerDecoder, self).__init__()
 
@@ -101,6 +103,7 @@ class TransformerDecoder(DecoderBase):
         self.bwd = backward
         self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
+        self.sync_bidir_attention = sync_bidir_attention
 
         self.prev_spk = ''
         self.lmstate_final = None
@@ -118,10 +121,16 @@ class TransformerDecoder(DecoderBase):
         if ctc_weight < global_weight:
             self.embed = nn.Embedding(vocab, d_model, padding_idx=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
-            self.layers = repeat(TransformerDecoderBlock(
-                d_model, d_ff, attn_type, n_heads,
-                dropout, dropout_att,
-                layer_norm_eps, ffn_activation, param_init), n_layers)
+            if sync_bidir_attention:
+                self.layers = repeat(SyncBidirTransformerDecoderBlock(
+                    d_model, d_ff, attn_type, n_heads,
+                    dropout, dropout_att,
+                    layer_norm_eps, ffn_activation, param_init), n_layers)
+            else:
+                self.layers = repeat(TransformerDecoderBlock(
+                    d_model, d_ff, attn_type, n_heads,
+                    dropout, dropout_att,
+                    layer_norm_eps, ffn_activation, param_init), n_layers)
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, vocab)
             if tie_embedding:
@@ -173,7 +182,10 @@ class TransformerDecoder(DecoderBase):
 
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and (task == 'all' or 'ctc' not in task):
-            loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys)
+            if self.sync_bidir_attention:
+                loss_att, acc_att, ppl_att = self.forward_sync_bidir_att(eouts, elens, ys)
+            else:
+                loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
@@ -185,15 +197,13 @@ class TransformerDecoder(DecoderBase):
         observation['loss'] = loss.item()
         return loss, observation
 
-    def forward_att(self, eouts, elens, ys, ys_hist=[],
-                    return_logits=False, teacher_logits=None):
+    def forward_att(self, eouts, elens, ys, return_logits=False, teacher_logits=None):
         """Compute XE loss for the Transformer model.
 
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            ys_hist (list):
             return_logits (bool): return logits for knowledge distillation
             teacher_logits (FloatTensor): `[B, L, vocab]`
         Returns:
@@ -202,8 +212,6 @@ class TransformerDecoder(DecoderBase):
             ppl (float): perplexity
 
         """
-        bs = eouts.size(0)
-
         # Append <sos> and <eos>
         ys_in, ys_out, ylens = append_sos_eos(eouts, ys, self.eos, self.pad, self.bwd)
 
@@ -230,13 +238,66 @@ class TransformerDecoder(DecoderBase):
             return logits
 
         # Compute XE sequence loss (+ label smoothing)
-        loss, ppl = cross_entropy_lsm(logits, ys_out,
-                                      self.lsm_prob, self.pad, self.training)
+        loss, ppl = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out, self.pad)
 
         return loss, acc, ppl
+
+    def forward_sync_bidir_att(self, eouts, elens, ys, return_logits=False, teacher_logits=None):
+        """Compute XE loss for the synchronous bidirectional Transformer model.
+
+        Args:
+            eouts (FloatTensor): `[B, T, d_model]`
+            elens (IntTensor): `[B]`
+            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            return_logits (bool): return logits for knowledge distillation
+            teacher_logits (FloatTensor): `[B, L, vocab]`
+        Returns:
+            loss (FloatTensor): `[1]`
+            acc_fwd (float): accuracy for token prediction
+            ppl_fwd (float): perplexity
+
+        """
+        # Append <sos> and <eos>
+        ys_in_fwd, ys_out_fwd, ylens = append_sos_eos(eouts, ys, self.eos, self.pad, bwd=False)
+        ys_in_bwd, ys_out_bwd, ylens = append_sos_eos(eouts, ys, self.eos, self.pad, bwd=True)
+
+        # Create the self-attention mask
+        bs, ytime = ys_in_fwd.size()[:2]
+        tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
+        subsequent_mask = tgt_mask.new_ones(ytime, ytime).byte()
+        subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
+        tgt_mask = tgt_mask & subsequent_mask
+
+        # Create the source-target mask
+        src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
+
+        out_fwd = self.pos_enc(self.embed(ys_in_fwd))
+        out_bwd = self.pos_enc(self.embed(ys_in_bwd))
+        for l in range(self.n_layers):
+            out_fwd, yy_aws_fwd_h, xy_aws = self.layers[l](out_fwd, out_bwd, tgt_mask, eouts, src_mask)
+            if not self.training:
+                setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws_fwd_h))
+                setattr(self, 'xy_aws_layer%d' % l, tensor2np(xy_aws))
+        logits_fwd = self.output(self.norm_out(out_fwd))
+        logits_bwd = self.output(self.norm_out(out_bwd))
+
+        # for knowledge distillation
+        if return_logits:
+            return logits_fwd
+
+        # Compute XE sequence loss (+ label smoothing)
+        loss_fwd, ppl_fwd = cross_entropy_lsm(logits_fwd, ys_out_fwd, self.lsm_prob, self.pad, self.training)
+        loss_bwd, ppl_bwd = cross_entropy_lsm(logits_bwd, ys_out_bwd, self.lsm_prob, self.pad, self.training)
+        loss = loss_fwd * 0.5 + loss_bwd * 0.5
+
+        # Compute token-level accuracy in teacher-forcing
+        acc_fwd = compute_accuracy(logits_fwd, ys_out_fwd, self.pad)
+        # acc_bwd = compute_accuracy(logits_bwd, ys_out_bwd, self.pad)
+
+        return loss, acc_fwd, ppl_fwd
 
     def _plot_attention(self, save_path, n_cols=2):
         """Plot attention for each head in all layers."""

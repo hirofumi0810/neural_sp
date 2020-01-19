@@ -1,10 +1,10 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright 2018 Kyoto University (Hirofumi Inaguma)
+# Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Multi-head attention layer."""
+"""Synchronous bidirectional multi-head attention layer."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -21,7 +21,7 @@ NEG_INF = float(np.finfo(np.float32).min)
 logger = logging.getLogger(__name__)
 
 
-class MultiheadAttentionMechanism(nn.Module):
+class SyncBidirMultiheadAttentionMechanism(nn.Module):
     """Multi-headed attention layer.
 
     Args:
@@ -38,7 +38,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
     def __init__(self, kdim, qdim, adim, atype, dropout=0., n_heads=4, bias=True,
                  param_init='', future_weight=0.1):
-        super(MultiheadAttentionMechanism, self).__init__()
+        super(SyncBidirMultiheadAttentionMechanism, self).__init__()
 
         self.atype = atype
         assert adim % n_heads == 0
@@ -94,17 +94,17 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value_bwd = None
         self.mask = None
 
-    def forward(self, key_fwd, key_bwd, value_fwd, value_bwd, query_fwd, query_bwd,
+    def forward(self, key_fwd, value_fwd, query_fwd,
+                key_bwd, value_bwd, query_bwd,
                 mask, aw_prev=None, mode='', cache=True, trigger_point=None):
         """Forward computation.
 
         Args:
             key_fwd (FloatTensor): `[B, klen, kdim]`
-            key_bwd (FloatTensor): `[B, klen, kdim]`
-            klens (IntTensor): `[B]`
             value_fwd (FloatTensor): `[B, klen, vdim]`
-            value_bwd (FloatTensor): `[B, klen, vdim]`
             query_fwd (FloatTensor): `[B, qlen, qdim]`
+            key_bwd (FloatTensor): `[B, klen, kdim]`
+            value_bwd (FloatTensor): `[B, klen, vdim]`
             query_bwd (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             aw_prev: dummy interface for single-head attention
@@ -115,6 +115,9 @@ class MultiheadAttentionMechanism(nn.Module):
             cv_fwd (FloatTensor): `[B, qlen, vdim]`
             cv_bwd (FloatTensor): `[B, qlen, vdim]`
             aw_fwd_h (FloatTensor): `[B, n_heads, qlen, klen]`
+            aw_fwd_f (FloatTensor): `[B, n_heads, qlen, klen]`
+            aw_bwd_h (FloatTensor): `[B, n_heads, qlen, klen]`
+            aw_bwd_f (FloatTensor): `[B, n_heads, qlen, klen]`
 
         """
         bs, klen = key_fwd.size()[: 2]
@@ -178,4 +181,4 @@ class MultiheadAttentionMechanism(nn.Module):
         cv_fwd = cvs[:, :time // 4] + self.future_weight * torch.tanh(cvs[:, time // 4:time // 2])
         cv_bwd = cvs[:, time // 2:time * 3 // 4] + self.future_weight * torch.tanh(cvs[:, time * 3 // 4:])
 
-        return cv_fwd, cv_bwd, aw_fwd_h
+        return cv_fwd, cv_bwd, aw_fwd_h, aw_fwd_f, aw_bwd_h, aw_bwd_f

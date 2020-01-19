@@ -20,6 +20,7 @@ from neural_sp.models.modules.causal_conv import CausalConv1d
 from neural_sp.models.modules.gelu import gelu, gelu_accurate
 from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
+from neural_sp.models.modules.sync_bidir_multihead_attention import SyncBidirMultiheadAttentionMechanism
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,7 @@ class TransformerEncoderBlock(nn.Module):
     Args:
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimention of PositionwiseFeedForward
-        atype (str):
+        atype (str): type of attention
         n_heads (int): number of heads for multi-head attention
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
@@ -170,8 +171,8 @@ class TransformerEncoderBlock(nn.Module):
 
     """
 
-    def __init__(self, d_model, d_ff, atype, n_heads,
-                 dropout, dropout_att, layer_norm_eps, ffn_activation, param_init):
+    def __init__(self, d_model, d_ff, atype, n_heads, dropout, dropout_att,
+                 layer_norm_eps, ffn_activation, param_init):
         super(TransformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
@@ -224,28 +225,24 @@ class TransformerDecoderBlock(nn.Module):
         Args:
             d_model (int): dimension of MultiheadAttentionMechanism
             d_ff (int): dimention of PositionwiseFeedForward
-            atype (str):
+            atype (str): type of attention
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
-            atype (str): type of self-attention, scaled_dot or average
             layer_norm_eps (float):
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
             param_init (str):
             src_tgt_attention (bool): if False, ignore source-target attention
-            sybc_bidir_attention (bool):
 
     """
 
-    def __init__(self, d_model, d_ff, atype, n_heads,
-                 dropout, dropout_att, layer_norm_eps, ffn_activation, param_init,
-                 src_tgt_attention=True, sync_bidir_attention=False):
+    def __init__(self, d_model, d_ff, atype, n_heads, dropout, dropout_att,
+                 layer_norm_eps, ffn_activation, param_init, src_tgt_attention=True):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
         self.n_heads = n_heads
         self.src_tgt_attention = src_tgt_attention
-        self.sync_bidir_attention = sync_bidir_attention
 
         # self-attention
         if atype == "average":
@@ -260,7 +257,7 @@ class TransformerDecoderBlock(nn.Module):
                                                          dropout=dropout_att,
                                                          param_init=param_init)
 
-        # attention for encoder stacks
+        # attention over encoder stacks
         if src_tgt_attention:
             self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
@@ -310,7 +307,7 @@ class TransformerDecoderBlock(nn.Module):
             out, yy_aw = self.self_attn(ys, ys, ys_q, mask=yy_mask, cache=False)  # k/v/q
             out = self.dropout(out) + residual
 
-        # attention for encoder stacks
+        # attention over encoder stacks
         xy_aw = None
         if self.src_tgt_attention:
             residual = out
@@ -328,3 +325,123 @@ class TransformerDecoderBlock(nn.Module):
             out = torch.cat([cache, out], dim=1)
 
         return out, yy_aw, xy_aw
+
+
+class SyncBidirTransformerDecoderBlock(nn.Module):
+    """A single layer of the synchronous bidirectional transformer decoder.
+
+        Args:
+            d_model (int): dimension of MultiheadAttentionMechanism
+            d_ff (int): dimention of PositionwiseFeedForward
+            atype (str): type of attention
+            n_heads (int): number of heads for multi-head attention
+            dropout (float): dropout probabilities for linear layers
+            dropout_att (float): dropout probabilities for attention probabilities
+            layer_norm_eps (float):
+            ffn_activation (str): nonolinear function for PositionwiseFeedForward
+            param_init (str):
+
+    """
+
+    def __init__(self, d_model, d_ff, atype, n_heads, dropout, dropout_att,
+                 layer_norm_eps, ffn_activation, param_init):
+        super(TransformerDecoderBlock, self).__init__()
+
+        self.atype = atype
+        self.n_heads = n_heads
+
+        # synchronous bidirectional attention
+        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.self_attn = SyncBidirMultiheadAttentionMechanism(kdim=d_model,
+                                                              qdim=d_model,
+                                                              adim=d_model,
+                                                              atype=atype,
+                                                              n_heads=n_heads,
+                                                              dropout=dropout_att,
+                                                              param_init=param_init)
+
+        # attention over encoder stacks
+        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
+                                                    qdim=d_model,
+                                                    adim=d_model,
+                                                    atype=atype,
+                                                    n_heads=n_heads,
+                                                    dropout=dropout_att,
+                                                    param_init=param_init)
+
+        # feed-forward
+        self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.feed_forward = PositionwiseFeedForward(
+            d_model, d_ff, d_model, dropout, ffn_activation, param_init)
+
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, ys_fwd, ys_bwd, yy_mask, xs, xy_mask, cache=None):
+        """Transformer decoder layer definition.
+
+        Args:
+            ys_fwd (FloatTensor): `[B, L, d_model]`
+            ys_bwd (FloatTensor): `[B, L, d_model]`
+            yy_mask (ByteTensor): `[B, L, L]`
+            xs (FloatTensor): encoder outputs. `[B, T, d_model]`
+            xy_mask (ByteTensor): `[B, L, T]`
+            cache (FloatTensor): `[B, L-1, d_model]`
+        Returns:
+            out (FloatTensor): `[B, L, d_model]`
+            yy_aw (FloatTensor)`[B, L, L]`
+            xy_aw (FloatTensor): `[B, L, T]`
+
+        """
+        residual_fwd = ys_fwd
+        residual_bwd = ys_bwd
+        ys_fwd = self.norm1(ys_fwd)
+        ys_bwd = self.norm1(ys_bwd)
+
+        if cache is not None:
+            ys_fwd_q = ys_fwd[:, -1:]
+            ys_bwd_q = ys_bwd[:, -1:]
+            residual_fwd = residual_fwd[:, -1:]
+            residual_bwd = residual_bwd[:, -1:]
+            yy_mask = yy_mask[:, -1:]
+        else:
+            ys_fwd_q = ys_fwd
+            ys_bwd_q = ys_bwd
+
+        # synchronous bidirectional attention
+        out_fwd, out_bwd, yy_aw_fwd_h, yy_aw_fwd_f, yy_aw_bwd_h, yy_aw_bwd_f = self.self_attn(
+            ys_fwd, ys_fwd, ys_fwd_q,  # k/v/q
+            ys_bwd, ys_bwd, ys_bwd_q,  # k/v/q
+            mask=yy_mask, cache=False)
+        out_fwd = self.dropout(out_fwd) + residual_fwd
+        out_bwd = self.dropout(out_bwd) + residual_bwd
+
+        # attention over encoder stacks
+        # fwd
+        residual_fwd = out_fwd
+        out_fwd = self.norm2(out_fwd)
+        out_fwd, xy_aw = self.src_attn(xs, xs, out_fwd, mask=xy_mask, cache=False)  # k/v/q
+        out_fwd = self.dropout(out_fwd) + residual_fwd
+        # bwd
+        residual_bwd = out_bwd
+        out_bwd = self.norm2(out_bwd)
+        out_bwd, xy_aw = self.src_attn(xs, xs, out_bwd, mask=xy_mask, cache=False)  # k/v/q
+        out_bwd = self.dropout(out_bwd) + residual_bwd
+
+        # position-wise feed-forward
+        # fwd
+        residual_fwd = out_fwd
+        out_fwd = self.norm3(out_fwd)
+        out_fwd = self.feed_forward(out_fwd)
+        out_fwd = self.dropout(out_fwd) + residual_fwd
+        # bwd
+        residual_bwd = out_bwd
+        out_bwd = self.norm3(out_bwd)
+        out_bwd = self.feed_forward(out_bwd)
+        out_bwd = self.dropout(out_bwd) + residual_bwd
+
+        if cache is not None:
+            out_fwd = torch.cat([cache, out_fwd], dim=1)
+            out_bwd = torch.cat([cache, out_bwd], dim=1)
+
+        return out_fwd, out_bwd, yy_aw_fwd_h, xy_aw
