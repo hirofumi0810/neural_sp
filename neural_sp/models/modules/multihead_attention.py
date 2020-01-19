@@ -29,14 +29,14 @@ class MultiheadAttentionMechanism(nn.Module):
         qdim (int): dimension of query
         adim: (int) dimension of the attention space
         atype (str): type of attention mechanisms
-        dropout (float): dropout probability
         n_heads (int): number of heads
+        dropout (float): dropout probability
         bias (bool): use bias term in linear layers
         param_init (str):
 
     """
 
-    def __init__(self, kdim, qdim, adim, atype, dropout=0., n_heads=4, bias=True,
+    def __init__(self, kdim, qdim, adim, atype, n_heads, dropout, bias=True,
                  param_init=''):
         super(MultiheadAttentionMechanism, self).__init__()
 
