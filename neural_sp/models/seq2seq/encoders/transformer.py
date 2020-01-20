@@ -86,6 +86,9 @@ class TransformerEncoder(EncoderBase):
         self.chunk_size_current = chunk_size_current
         self.chunk_size_right = chunk_size_right
 
+        # for attention plot
+        self.aws_dict = {}
+
         # Setting for CNNs before RNNs
         if conv_channels:
             assert n_stacks == 1 and n_splices == 1
@@ -188,7 +191,7 @@ class TransformerEncoder(EncoderBase):
             xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
             if not self.training:
                 for l in range(self.n_layers):
-                    setattr(self, 'xx_aws_layer%d' % l, tensor2np(torch.cat(xx_aws[l], dim=3)[:, :, :xmax, :xmax]))
+                    self.aws_dict['xx_aws_layer%d' % l] = tensor2np(torch.cat(xx_aws[l], dim=3)[:, :, :xmax, :xmax])
         else:
             # Create the self-attention mask
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
@@ -196,7 +199,7 @@ class TransformerEncoder(EncoderBase):
             for l in range(self.n_layers):
                 xs, xx_aws = self.layers[l](xs, xx_mask)
                 if not self.training:
-                    setattr(self, 'xx_aws_layer%d' % l, tensor2np(xx_aws))
+                    self.aws_dict['xx_aws_layer%d' % l] = tensor2np(xx_aws)
         xs = self.norm_out(xs)
 
         # Bridge layer
@@ -212,27 +215,20 @@ class TransformerEncoder(EncoderBase):
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
-        save_path = mkdir_join(save_path, 'enc_xx_att_weights')
+        _save_path = mkdir_join(save_path, 'enc_att_weights')
 
         # Clean directory
-        if save_path is not None and os.path.isdir(save_path):
-            shutil.rmtree(save_path)
-            os.mkdir(save_path)
+        if _save_path is not None and os.path.isdir(_save_path):
+            shutil.rmtree(_save_path)
+            os.mkdir(_save_path)
 
-        for l in range(self.n_layers):
-            if not hasattr(self, 'xx_aws_layer%d' % l):
-                continue
-
-            xx_aws = getattr(self, 'xx_aws_layer%d' % l)
-
+        for k, aw in self.aws_dict.items():
             plt.clf()
-            fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
+            fig, axes = plt.subplots(max(1, self.n_heads // n_cols), n_cols,
+                                     figsize=(20, 8), squeeze=False)
             for h in range(self.n_heads):
-                if self.n_heads > n_cols:
-                    ax = axes[h // n_cols, h % n_cols]
-                else:
-                    ax = axes[h]
-                ax.imshow(xx_aws[-1, h, :, :], aspect="auto")
+                ax = axes[h // n_cols, h % n_cols]
+                ax.imshow(aw[-1, h, :, :], aspect="auto")
                 ax.grid(False)
                 ax.set_xlabel("Input (head%d)" % h)
                 ax.set_ylabel("Output (head%d)" % h)
@@ -240,5 +236,5 @@ class TransformerEncoder(EncoderBase):
                 ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
             fig.tight_layout()
-            fig.savefig(os.path.join(save_path, 'layer%d.png' % (l)), dvi=500)
+            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
             plt.close()
