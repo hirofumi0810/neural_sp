@@ -555,13 +555,6 @@ class TransformerDecoder(DecoderBase):
                     ctc_prefix_score = CTCPrefixScore(
                         tensor2np(ctc_log_probs)[b], self.blank, self.eos)
 
-            # Ensemble initialization
-            ensmbl_dstate, ensmbl_cv = [], []
-            if n_models > 1:
-                for dec in ensmbl_decs:
-                    ensmbl_dstate += [dec.zero_state(1)]
-                    ensmbl_cv += [eouts.new_zeros(1, 1, dec.enc_n_units)]
-
             if speakers is not None:
                 if speakers[b] == self.prev_spk:
                     if lm_state_carry_over and isinstance(lm, RNNLM):
@@ -619,31 +612,30 @@ class TransformerDecoder(DecoderBase):
                     dout, _, xy_aws = self.layers[l](dout, subsequent_mask, eouts_b, None,
                                                      cache=cache[l])
                     new_cache[l] = dout
-
                 dout = self.norm_out(dout)  # `[beam_width, L, d_model]`
                 probs = torch.softmax(self.output(dout)[:, -1] * softmax_smoothing, dim=1)
 
                 # for the ensemble
-                ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
-                # if n_models > 1:
-                #     for i_e, dec in enumerate(ensmbl_decs):
-                #         cv_e = torch.cat([beam['ensmbl_cv'][i_e] for beam in hyps], dim=0)
-                #         aw_e = torch.cat([beam['ensmbl_aws'][i_e][-1] for beam in hyps], dim=0) if t > 0 else None
-                #         hxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][0] for beam in hyps], dim=1)
-                #         if self.rnn_type == 'lstm':
-                #             cxs_e = torch.cat([beam['dstates'][i_e]['dstate'][1] for beam in hyps], dim=1)
-                #         dstates_e = {'dstate': (hxs_e, cxs_e)}
-                #
-                #         dstate_e, cv_e, aw_e, attn_v_e = dec.decode_step(
-                #             ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]].repeat([cv_e.size(0), 1, 1]),
-                #             dstates_e, cv_e, dec.dropout_emb(dec.embed(y)), None, aw_e, lmout)
-                #
-                #         ensmbl_dstate += [{'dstate': (beam['dstates'][i_e]['dstate'][0][:, j:j + 1],
-                #                                       beam['dstates'][i_e]['dstate'][1][:, j:j + 1])}]
-                #         ensmbl_cv += [cv_e[j:j + 1]]
-                #         ensmbl_aws += [beam['ensmbl_aws'][i_e] + [aw_e[j:j + 1]]]
-                #         probs += torch.softmax(dec.output(attn_v_e).squeeze(1), dim=1)
-                #         # NOTE: sum in the probability scale (not log-scale)
+                ensmbl_new_cache = []
+                if n_models > 1:
+                    # Ensemble initialization
+                    ensmbl_cache = []
+                    # cache_e = [None] * self.n_layers
+                    # if cache_states and t > 0:
+                    #     for l in range(self.n_layers):
+                    #         cache_e[l] = torch.cat([beam['ensmbl_cache'][l] for beam in hyps], dim=0)
+                    for i_e, dec in enumerate(ensmbl_decs):
+                        dout_e = dec.pos_enc(dec.embed(y_seq))
+                        eouts_e = ensmbl_eouts[i_e][b:b + 1, :elens[b]].repeat([y_seq.size(0), 1, 1])
+                        new_cache_e = [None] * dec.n_layers
+                        for l in range(dec.n_layers):
+                            dout_e, _, xy_aws = dec.layers[l](dout_e, subsequent_mask, eouts_e, None,
+                                                              cache=cache[l])
+                            new_cache_e[l] = dout_e
+                        ensmbl_new_cache.append(new_cache_e)
+                        dout_e = dec.norm_out(dout_e)  # `[beam_width, L, d_model]`
+                        probs += torch.softmax(dec.output(dout_e)[:, -1] * softmax_smoothing, dim=1)
+                        # NOTE: sum in the probability scale (not log-scale)
 
                 # Ensemble in log-scale
                 scores_attn = torch.log(probs) / n_models
@@ -712,7 +704,7 @@ class TransformerDecoder(DecoderBase):
                              # 'aws': beam['aws'] + [aw[j:j + 1]],
                              'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                              'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
-                             'ensmbl_aws': ensmbl_aws})
+                             'ensmbl_cache': ensmbl_new_cache})
 
                 # Local pruning
                 new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
