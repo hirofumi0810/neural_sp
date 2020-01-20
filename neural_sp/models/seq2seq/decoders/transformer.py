@@ -74,6 +74,7 @@ class TransformerDecoder(DecoderBase):
         mtl_per_batch (bool):
         param_init (str):
         sync_bidir_attention (bool): synchronous bidirectional attention
+        half_pred (bool):
 
     """
 
@@ -84,7 +85,7 @@ class TransformerDecoder(DecoderBase):
                  dropout, dropout_emb, dropout_att, lsm_prob,
                  ctc_weight, ctc_lsm_prob, ctc_fc_list,
                  backward, global_weight, mtl_per_batch,
-                 param_init, sync_bidir_attention):
+                 param_init, sync_bidir_attention, half_pred):
 
         super(TransformerDecoder, self).__init__()
 
@@ -111,10 +112,14 @@ class TransformerDecoder(DecoderBase):
         self.aws_dict = {}
 
         self.sync_bidir_attention = sync_bidir_attention
+        self.half_pred = half_pred
         if sync_bidir_attention:
             self.vocab += 2  # add <l2r> and <r2l>
             self.l2r = self.vocab - 2
             self.r2l = self.vocab - 1
+            if half_pred:
+                self.vocab += 1
+                self.null = self.vocab - 1
 
         if ctc_weight > 0:
             self.ctc = CTC(eos=self.eos,
@@ -260,6 +265,7 @@ class TransformerDecoder(DecoderBase):
             eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            half_pred (bool): predict tokens until the middle in both directions
             return_logits (bool): return logits for knowledge distillation
             teacher_logits (FloatTensor): `[B, L, vocab]`
         Returns:
@@ -269,11 +275,27 @@ class TransformerDecoder(DecoderBase):
 
         """
         # Append <sos> and <eos>
-        ys_in_fwd, ys_out_fwd, ylens = append_sos_eos(eouts, ys, self.l2r, self.eos, self.pad)
-        ys_in_bwd, ys_out_bwd, ylens = append_sos_eos(eouts, ys, self.r2l, self.eos, self.pad, bwd=True)
+        if self.half_pred:
+            ys_first = [y[:math.ceil(len(y) / 2)] for y in ys]
+            ys_second = [y[len(y) // 2:] for y in ys]
+            ys_fwd_in, ys_fwd_out, ylens = append_sos_eos(
+                eouts, ys_first, self.l2r, self.eos, self.pad)
+            ys_bwd_in, ys_bwd_out, _ = append_sos_eos(
+                eouts, ys_second, self.r2l, self.eos, self.pad, bwd=True)
+            for b in range(eouts.size(0)):
+                if len(ys[b]) % 2 != 0:
+                    ys_bwd_in[b, ylens[b] - 1] = self.null
+                    ys_bwd_out[b, ylens[b] - 2] = self.null
+                    ys_bwd_out[b, ylens[b] - 1] = self.eos
+                    # NOTE: ylens counts <eos>
+        else:
+            ys_fwd_in, ys_fwd_out, ylens = append_sos_eos(
+                eouts, ys, self.l2r, self.eos, self.pad)
+            ys_bwd_in, ys_bwd_out, _ = append_sos_eos(
+                eouts, ys, self.r2l, self.eos, self.pad, bwd=True)
 
         # Create target self-attention mask
-        bs, ytime = ys_in_fwd.size()[:2]
+        bs, ytime = ys_fwd_in.size()[:2]
         ylens_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
         subsequent_mask = ylens_mask.new_ones(ytime, ytime).byte()
         subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
@@ -284,14 +306,15 @@ class TransformerDecoder(DecoderBase):
 
         # Create idendity token mask for synchronous bidirectional attention
         idendity_mask = ylens_mask.clone()
-        for b in range(bs):
-            for i in range(ylens[b] - 1):
-                idendity_mask[b, i, (ylens[b] - 1) - 1 - i] = 0
-                # NOTE: ylens counts <eos>
-            idendity_mask[b, ylens[b] - 1, ylens[b] - 1] = 0  # for <eos>
+        if not self.half_pred:
+            for b in range(bs):
+                for i in range(ylens[b] - 1):
+                    idendity_mask[b, i, (ylens[b] - 1) - 1 - i] = 0
+                    # NOTE: ylens counts <eos>
+                idendity_mask[b, ylens[b] - 1, ylens[b] - 1] = 0  # for <eos>
 
-        out_fwd = self.pos_enc(self.embed(ys_in_fwd))
-        out_bwd = self.pos_enc(self.embed(ys_in_bwd))
+        out_fwd = self.pos_enc(self.embed(ys_fwd_in))
+        out_bwd = self.pos_enc(self.embed(ys_bwd_in))
         for l in range(self.n_layers):
             out_fwd, out_bwd, yy_aws_fwd_h, yy_aws_fwd_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws = self.layers[l](
                 out_fwd, out_bwd, tgt_mask, idendity_mask, eouts, src_mask)
@@ -309,13 +332,13 @@ class TransformerDecoder(DecoderBase):
             return logits_fwd
 
         # Compute XE sequence loss (+ label smoothing)
-        loss_fwd, ppl_fwd = cross_entropy_lsm(logits_fwd, ys_out_fwd, self.lsm_prob, self.pad, self.training)
-        loss_bwd, ppl_bwd = cross_entropy_lsm(logits_bwd, ys_out_bwd, self.lsm_prob, self.pad, self.training)
+        loss_fwd, ppl_fwd = cross_entropy_lsm(logits_fwd, ys_fwd_out, self.lsm_prob, self.pad, self.training)
+        loss_bwd, ppl_bwd = cross_entropy_lsm(logits_bwd, ys_bwd_out, self.lsm_prob, self.pad, self.training)
         loss = loss_fwd * 0.5 + loss_bwd * 0.5
 
         # Compute token-level accuracy in teacher-forcing
-        acc_fwd = compute_accuracy(logits_fwd, ys_out_fwd, self.pad)
-        # acc_bwd = compute_accuracy(logits_bwd, ys_out_bwd, self.pad)
+        acc_fwd = compute_accuracy(logits_fwd, ys_fwd_out, self.pad)
+        # acc_bwd = compute_accuracy(logits_bwd, ys_bwd_out, self.pad)
 
         return loss, acc_fwd, ppl_fwd
 

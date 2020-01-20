@@ -43,7 +43,8 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
                 global_weight=global_weight,
                 mtl_per_batch=args.mtl_per_batch,
                 param_init=args.transformer_param_init,
-                sync_bidir_attention=args.sync_bidir_attention)
+                sync_bidir_attention=args.sync_bidir_attention,
+                half_pred=args.half_pred)
 
     elif args.dec_type == 'transformer_transducer':
         raise NotImplementedError

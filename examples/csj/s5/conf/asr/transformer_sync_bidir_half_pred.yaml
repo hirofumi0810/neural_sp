@@ -22,6 +22,7 @@ transformer_ffn_activation: relu
 transformer_n_heads: 4
 transformer_param_init: xavier_uniform
 sync_bidir_attention: true  ###
+half_pred: true  ###
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
