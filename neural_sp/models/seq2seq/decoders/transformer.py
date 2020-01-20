@@ -316,14 +316,15 @@ class TransformerDecoder(DecoderBase):
         out_fwd = self.pos_enc(self.embed(ys_fwd_in))
         out_bwd = self.pos_enc(self.embed(ys_bwd_in))
         for l in range(self.n_layers):
-            out_fwd, out_bwd, yy_aws_fwd_h, yy_aws_fwd_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws = self.layers[l](
+            out_fwd, out_bwd, yy_aws_fwd_h, yy_aws_fwd_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws_fwd, xy_aws_bwd = self.layers[l](
                 out_fwd, out_bwd, tgt_mask, idendity_mask, eouts, src_mask)
             if not self.training:
                 self.aws_dict['yy_aws_fwd_history_layer%d' % l] = tensor2np(yy_aws_fwd_h)
                 self.aws_dict['yy_aws_fwd_future_layer%d' % l] = tensor2np(yy_aws_fwd_f)
                 self.aws_dict['yy_aws_bwd_history_layer%d' % l] = tensor2np(yy_aws_bwd_h)
                 self.aws_dict['yy_aws_bwd_future_layer%d' % l] = tensor2np(yy_aws_bwd_f)
-                self.aws_dict['xy_aws_layer%d' % l] = tensor2np(xy_aws)
+                self.aws_dict['xy_aws_fwd_layer%d' % l] = tensor2np(xy_aws_fwd)
+                self.aws_dict['xy_aws_bwd_layer%d' % l] = tensor2np(xy_aws_bwd)
         logits_fwd = self.output(self.norm_out(out_fwd))
         logits_bwd = self.output(self.norm_out(out_bwd))
 

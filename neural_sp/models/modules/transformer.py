@@ -390,8 +390,12 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
             cache (FloatTensor): `[B, L-1, d_model]`
         Returns:
             out (FloatTensor): `[B, L, d_model]`
-            yy_aw (FloatTensor)`[B, L, L]`
-            xy_aw (FloatTensor): `[B, L, T]`
+            yy_aw_fwd_h (FloatTensor)`[B, L, L]`
+            yy_aw_fwd_f (FloatTensor)`[B, L, L]`
+            yy_aw_bwd_h (FloatTensor)`[B, L, L]`
+            yy_aw_bwd_f (FloatTensor)`[B, L, L]`
+            xy_aw_fwd (FloatTensor): `[B, L, T]`
+            xy_aw_bwd (FloatTensor): `[B, L, T]`
 
         """
         residual_fwd = ys_fwd
@@ -421,12 +425,12 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         # fwd
         residual_fwd = out_fwd
         out_fwd = self.norm2(out_fwd)
-        out_fwd, xy_aw = self.src_attn(xs, xs, out_fwd, mask=xy_mask, cache=False)  # k/v/q
+        out_fwd, xy_aw_fwd = self.src_attn(xs, xs, out_fwd, mask=xy_mask, cache=False)  # k/v/q
         out_fwd = self.dropout(out_fwd) + residual_fwd
         # bwd
         residual_bwd = out_bwd
         out_bwd = self.norm2(out_bwd)
-        out_bwd, xy_aw = self.src_attn(xs, xs, out_bwd, mask=xy_mask, cache=False)  # k/v/q
+        out_bwd, xy_aw_bwd = self.src_attn(xs, xs, out_bwd, mask=xy_mask, cache=False)  # k/v/q
         out_bwd = self.dropout(out_bwd) + residual_bwd
 
         # position-wise feed-forward
@@ -445,4 +449,4 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
             out_fwd = torch.cat([cache, out_fwd], dim=1)
             out_bwd = torch.cat([cache, out_bwd], dim=1)
 
-        return out_fwd, out_bwd, yy_aw_fwd_h, yy_aw_fwd_f, yy_aw_bwd_h, yy_aw_bwd_f, xy_aw
+        return out_fwd, out_bwd, yy_aw_fwd_h, yy_aw_fwd_f, yy_aw_bwd_h, yy_aw_bwd_f, xy_aw_fwd, xy_aw_bwd
