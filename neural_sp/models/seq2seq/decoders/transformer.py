@@ -309,9 +309,8 @@ class TransformerDecoder(DecoderBase):
         if not self.half_pred:
             for b in range(bs):
                 for i in range(ylens[b] - 1):
-                    idendity_mask[b, i, (ylens[b] - 1) - 1 - i] = 0
+                    idendity_mask[b, i, (ylens[b] - 1) - i] = 0
                     # NOTE: ylens counts <eos>
-                idendity_mask[b, ylens[b] - 1, ylens[b] - 1] = 0  # for <eos>
 
         out_fwd = self.pos_enc(self.embed(ys_fwd_in))
         out_bwd = self.pos_enc(self.embed(ys_bwd_in))
@@ -394,7 +393,11 @@ class TransformerDecoder(DecoderBase):
         """
         bs, xtime = eouts.size()[:2]
 
-        y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
+        if self.sync_bidir_attention:
+            y_seq = eouts.new_zeros(bs, 1).fill_(self.l2r).long()
+            y_seq_bwd = eouts.new_zeros(bs, 1).fill_(self.r2l).long()
+        else:
+            y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
         hyps_batch = []
         ylens = torch.zeros(bs).int()
@@ -409,12 +412,22 @@ class TransformerDecoder(DecoderBase):
             subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
 
             dout = self.pos_enc(self.embed(y_seq))
-            for l in range(self.n_layers):
-                dout, _, xy_aws = self.layers[l](dout, subsequent_mask, eouts, None)
-            dout = self.norm_out(dout)
+            if self.sync_bidir_attention:
+                dout_bwd = self.pos_enc(self.embed(y_seq_bwd))
+                for l in range(self.n_layers):
+                    dout, dout_bwd, _, _, _, _, xy_aws, xy_aws_bwd = self.layers[l](
+                        dout, dout_bwd, subsequent_mask, None, eouts, None)
+                logits_bwd = self.output(self.norm_out(dout_bwd))
+
+                # Pick up 1-best
+                y_bwd = logits_bwd[:, -1:].argmax(-1)
+            else:
+                for l in range(self.n_layers):
+                    dout, _, xy_aws = self.layers[l](dout, subsequent_mask, eouts, None)
 
             # Pick up 1-best
-            y = self.output(dout)[:, -1:].argmax(-1)
+            logits = self.output(self.norm_out(dout))
+            y = logits[:, -1:].argmax(-1)
             hyps_batch += [y]
 
             # Count lengths of hypotheses
@@ -435,6 +448,8 @@ class TransformerDecoder(DecoderBase):
                 for b in range(bs):
                     y[b, 0] = refs_id[b][t]
             y_seq = torch.cat([y_seq, y], dim=-1)
+            if self.sync_bidir_attention:
+                y_seq_bwd = torch.cat([y_seq_bwd, y_bwd], dim=-1)
 
         # Concatenate in L dimension
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
