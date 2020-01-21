@@ -601,24 +601,20 @@ class TransformerDecoder(DecoderBase):
                 ytime = int(math.floor(elens[b] * max_len_ratio)) + 1
             for t in range(ytime):
                 # preprocess for batch decoding
-                y_seq = eouts.new_zeros(len(hyps), t + 1).long()
-                for j, beam in enumerate(hyps):
-                    y_seq[j, :] = beam['y_seq']
                 cache = [None] * self.n_layers
                 if cache_states and t > 0:
                     for l in range(self.n_layers):
                         cache[l] = torch.cat([beam['cache'][l] for beam in hyps], dim=0)
+                y_seq = eouts.new_zeros(len(hyps), t + 1).long()
+                for j, beam in enumerate(hyps):
+                    y_seq[j, :] = beam['y_seq']
 
+                # Update LM states for shallow fusion
+                lmout, lmstate, scores_lm = None, None, None
                 if lm is not None and beam['lmstate'] is not None:
                     lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in hyps], dim=1)
                     lm_cxs = torch.cat([beam['lmstate']['cxs'] for beam in hyps], dim=1)
                     lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
-                else:
-                    lmstate = None
-
-                lmout, scores_lm = None, None
-                if lm is not None:
-                    # Update LM states for shallow fusion
                     lmout, lmstate, scores_lm = lm.predict(y_seq[:, -1:], lmstate)
 
                 # for the main model
