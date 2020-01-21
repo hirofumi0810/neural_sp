@@ -278,7 +278,7 @@ class TransformerDecoder(DecoderBase):
         if self.half_pred:
             ys_first = [y[:math.ceil(len(y) / 2)] for y in ys]
             ys_second = [y[len(y) // 2:] for y in ys]
-            ys_fwd_in, ys_fwd_out, ylens = append_sos_eos(
+            ys_in, ys_out, ylens = append_sos_eos(
                 eouts, ys_first, self.l2r, self.eos, self.pad)
             ys_bwd_in, ys_bwd_out, _ = append_sos_eos(
                 eouts, ys_second, self.r2l, self.eos, self.pad, bwd=True)
@@ -289,13 +289,13 @@ class TransformerDecoder(DecoderBase):
                     ys_bwd_out[b, ylens[b] - 1] = self.eos
                     # NOTE: ylens counts <eos>
         else:
-            ys_fwd_in, ys_fwd_out, ylens = append_sos_eos(
+            ys_in, ys_out, ylens = append_sos_eos(
                 eouts, ys, self.l2r, self.eos, self.pad)
             ys_bwd_in, ys_bwd_out, _ = append_sos_eos(
                 eouts, ys, self.r2l, self.eos, self.pad, bwd=True)
 
         # Create target self-attention mask
-        bs, ytime = ys_fwd_in.size()[:2]
+        bs, ytime = ys_in.size()[:2]
         ylens_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
         subsequent_mask = ylens_mask.new_ones(ytime, ytime).byte()
         subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
@@ -312,32 +312,32 @@ class TransformerDecoder(DecoderBase):
                     idendity_mask[b, i, (ylens[b] - 1) - i] = 0
                     # NOTE: ylens counts <eos>
 
-        out_fwd = self.pos_enc(self.embed(ys_fwd_in))
+        out = self.pos_enc(self.embed(ys_in))
         out_bwd = self.pos_enc(self.embed(ys_bwd_in))
         for l in range(self.n_layers):
-            out_fwd, out_bwd, yy_aws_fwd_h, yy_aws_fwd_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws_fwd, xy_aws_bwd = self.layers[l](
-                out_fwd, out_bwd, tgt_mask, idendity_mask, eouts, src_mask)
+            out, out_bwd, yy_aws_h, yy_aws_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws, xy_aws_bwd = self.layers[l](
+                out, out_bwd, tgt_mask, idendity_mask, eouts, src_mask)
             if not self.training:
-                self.aws_dict['yy_aws_fwd_history_layer%d' % l] = tensor2np(yy_aws_fwd_h)
-                self.aws_dict['yy_aws_fwd_future_layer%d' % l] = tensor2np(yy_aws_fwd_f)
+                self.aws_dict['yy_aws_fwd_history_layer%d' % l] = tensor2np(yy_aws_h)
+                self.aws_dict['yy_aws_fwd_future_layer%d' % l] = tensor2np(yy_aws_f)
                 self.aws_dict['yy_aws_bwd_history_layer%d' % l] = tensor2np(yy_aws_bwd_h)
                 self.aws_dict['yy_aws_bwd_future_layer%d' % l] = tensor2np(yy_aws_bwd_f)
-                self.aws_dict['xy_aws_fwd_layer%d' % l] = tensor2np(xy_aws_fwd)
+                self.aws_dict['xy_aws_fwd_layer%d' % l] = tensor2np(xy_aws)
                 self.aws_dict['xy_aws_bwd_layer%d' % l] = tensor2np(xy_aws_bwd)
-        logits_fwd = self.output(self.norm_out(out_fwd))
+        logits = self.output(self.norm_out(out))
         logits_bwd = self.output(self.norm_out(out_bwd))
 
         # for knowledge distillation
         if return_logits:
-            return logits_fwd
+            return logits
 
         # Compute XE sequence loss (+ label smoothing)
-        loss_fwd, ppl_fwd = cross_entropy_lsm(logits_fwd, ys_fwd_out, self.lsm_prob, self.pad, self.training)
+        loss_fwd, ppl_fwd = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
         loss_bwd, ppl_bwd = cross_entropy_lsm(logits_bwd, ys_bwd_out, self.lsm_prob, self.pad, self.training)
         loss = loss_fwd * 0.5 + loss_bwd * 0.5
 
         # Compute token-level accuracy in teacher-forcing
-        acc_fwd = compute_accuracy(logits_fwd, ys_fwd_out, self.pad)
+        acc_fwd = compute_accuracy(logits, ys_out, self.pad)
         # acc_bwd = compute_accuracy(logits_bwd, ys_bwd_out, self.pad)
 
         return loss, acc_fwd, ppl_fwd
@@ -558,7 +558,12 @@ class TransformerDecoder(DecoderBase):
         for b in range(bs):
             # Initialization per utterance
             lmstate = None
-            y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
+            if self.sync_bidir_attention:
+                y_seq = eouts.new_zeros(bs, 1).fill_(self.l2r).long()
+                y_seq_bwd = eouts.new_zeros(bs, 1).fill_(self.r2l).long()
+            else:
+                y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
+                y_seq_bwd = None
 
             # For joint CTC-Attention decoding
             if ctc_log_probs is not None:
@@ -579,6 +584,7 @@ class TransformerDecoder(DecoderBase):
             end_hyps = []
             hyps = [{'hyp': [self.eos],
                      'y_seq': y_seq,
+                     'y_seq_bwd': y_seq_bwd,
                      'cache': None,
                      'score': 0.,
                      'score_attn': 0.,
