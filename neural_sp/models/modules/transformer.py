@@ -377,7 +377,8 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, ys_fwd, ys_bwd, yy_mask, identity_mask, xs, xy_mask, cache=None):
+    def forward(self, ys_fwd, ys_bwd, yy_mask, identity_mask, xs, xy_mask,
+                cache_fwd=None, cache_bwd=None):
         """Transformer decoder layer definition.
 
         Args:
@@ -387,7 +388,8 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
             identity_mask (ByteTensor): `[B, L, L]`
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
             xy_mask (ByteTensor): `[B, L, T]`
-            cache (FloatTensor): `[B, L-1, d_model]`
+            cache_fwd (FloatTensor): `[B, L-1, d_model]`
+            cache_bwd (FloatTensor): `[B, L-1, d_model]`
         Returns:
             out (FloatTensor): `[B, L, d_model]`
             yy_aw_fwd_h (FloatTensor)`[B, L, L]`
@@ -403,7 +405,8 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         ys_fwd = self.norm1(ys_fwd)
         ys_bwd = self.norm1(ys_bwd)
 
-        if cache is not None:
+        if cache_fwd is not None:
+            assert cache_bwd is not None
             ys_fwd_q = ys_fwd[:, -1:]
             ys_bwd_q = ys_bwd[:, -1:]
             residual_fwd = residual_fwd[:, -1:]
@@ -445,8 +448,8 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         out_bwd = self.feed_forward(out_bwd)
         out_bwd = self.dropout(out_bwd) + residual_bwd
 
-        if cache is not None:
-            out_fwd = torch.cat([cache, out_fwd], dim=1)
-            out_bwd = torch.cat([cache, out_bwd], dim=1)
+        if cache_fwd is not None:
+            out_fwd = torch.cat([cache_fwd, out_fwd], dim=1)
+            out_bwd = torch.cat([cache_bwd, out_bwd], dim=1)
 
         return out_fwd, out_bwd, yy_aw_fwd_h, yy_aw_fwd_f, yy_aw_bwd_h, yy_aw_bwd_f, xy_aw_fwd, xy_aw_bwd

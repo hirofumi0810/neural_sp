@@ -106,7 +106,7 @@ class AttentionMechanism(nn.Module):
             klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, vdim]`
             query (FloatTensor): `[B, 1, qdim]`
-            mask (ByteTensor): `[B, qmax, klen]`
+            mask (ByteTensor): `[B, qlen, klen]`
             aw_prev (FloatTensor): `[B, klen, 1 (n_heads)]`
             mode: dummy interface for MoChA
             cache (bool): cache key and mask
@@ -161,7 +161,7 @@ class AttentionMechanism(nn.Module):
         # Compute attention weights, context vector
         e = e.squeeze(2)  # `[B, klen]`
         if self.mask is not None:
-            e = e.masked_fill_(self.mask == 0, NEG_INF)
+            e = e.masked_fill_(self.mask.squeeze(1) == 0, NEG_INF)
         if self.sigmoid_smoothing:
             aw = torch.sigmoid(e) / torch.sigmoid(e).sum(1).unsqueeze(1)
         else:

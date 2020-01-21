@@ -69,7 +69,7 @@ class Energy(nn.Module):
         Args:
             key (FloatTensor): `[B, klen, kdim]`
             query (FloatTensor): `[B, 1, qdim]`
-            mask (ByteTensor): `[B, qmax, klen]`
+            mask (ByteTensor): `[B, qlen, klen]`
             aw_prev (FloatTensor): `[B, klen, 1]`
             cache (bool): cache key and mask
         Return:
@@ -92,7 +92,7 @@ class Energy(nn.Module):
         if self.r is not None:
             energy = energy + self.r
         if self.mask is not None:
-            energy = energy.masked_fill_(self.mask == 0, NEG_INF)
+            energy = energy.masked_fill_(self.mask.squeeze(1) == 0, NEG_INF)
         return energy
 
 
@@ -157,7 +157,7 @@ class MoChA(nn.Module):
             key (FloatTensor): `[B, klen, kdim]`
             value (FloatTensor): `[B, klen, value_dim]`
             query (FloatTensor): `[B, 1, qdim]`
-            mask (ByteTensor): `[B, qmax, klen]`
+            mask (ByteTensor): `[B, qlen, klen]`
             aw_prev (FloatTensor): `[B, klen, 1]`
             mode (str): recursive/parallel/hard
             cache (bool): cache key and mask
