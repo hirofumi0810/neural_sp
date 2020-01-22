@@ -16,28 +16,50 @@ from __future__ import print_function
 # import os
 # import random
 # import shutil
-# import torch
+import torch
 # import torch.nn as nn
 
-
-def remove_complete_hyp(hyps_sorted, end_hyps, beam_width, eos, prune=True):
-    new_hyps = []
-    is_finish = False
-    for hyp in hyps_sorted:
-        if len(hyp['hyp']) > 1 and hyp['hyp'][-1] == eos:
-            end_hyps += [hyp]
-        else:
-            new_hyps += [hyp]
-    if len(end_hyps) >= beam_width:
-        if prune:
-            end_hyps = end_hyps[:beam_width]
-        is_finish = True
-    return new_hyps, end_hyps, is_finish
+from neural_sp.models.torch_utils import tensor2np
 
 
-def add_ctc_score():
-    raise NotImplementedError
+class BeamSearch(object):
+    def __init__(self, beam_width, eos, ctc_weight, device_id):
 
+        super(BeamSearch, self).__init__()
 
-def add_lm_score():
-    raise NotImplementedError
+        self.beam_width = beam_width
+        self.eos = eos
+        self.device_id = device_id
+
+        self.ctc_weight = ctc_weight
+        # self.lm_weight = lm_weight
+
+    def remove_complete_hyp(self, hyps_sorted, end_hyps, prune=True):
+        new_hyps = []
+        is_finish = False
+        for hyp in hyps_sorted:
+            if len(hyp['hyp']) > 1 and hyp['hyp'][-1] == self.eos:
+                end_hyps += [hyp]
+            else:
+                new_hyps += [hyp]
+        if len(end_hyps) >= self.beam_width:
+            if prune:
+                end_hyps = end_hyps[:self.beam_width]
+            is_finish = True
+        return new_hyps, end_hyps, is_finish
+
+    def add_ctc_score(self, hyp, topk_ids, ctc_state, total_scores_topk, ctc_prefix_scorer):
+        ctc_scores, new_ctc_states = ctc_prefix_scorer(hyp, tensor2np(topk_ids[0]), ctc_state)
+        total_scores_ctc = torch.from_numpy(ctc_scores)
+        if self.device_id >= 0:
+            total_scores_ctc = total_scores_ctc.cuda(self.device_id)
+        total_scores_topk += total_scores_ctc * self.ctc_weight
+        # Sort again
+        total_scores_topk, joint_ids_topk = torch.topk(
+            total_scores_topk, k=self.beam_width, dim=1, largest=True, sorted=True)
+        topk_ids = topk_ids[:, joint_ids_topk[0]]
+        new_ctc_states = new_ctc_states[joint_ids_topk[0].cpu().numpy()]
+        return new_ctc_states, total_scores_ctc, total_scores_topk
+
+    def add_lm_score(self):
+        raise NotImplementedError

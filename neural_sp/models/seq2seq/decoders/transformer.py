@@ -24,7 +24,7 @@ from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.modules.transformer import SyncBidirTransformerDecoderBlock
-from neural_sp.models.seq2seq.decoders.beam_search import remove_complete_hyp
+from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
@@ -579,19 +579,22 @@ class TransformerDecoder(DecoderBase):
                 y_seq_bwd = None
 
             # For joint CTC-Attention decoding
+            ctc_prefix_scorer = None
             if ctc_log_probs is not None:
                 if self.bwd:
-                    ctc_prefix_score = CTCPrefixScore(ctc_log_probs[b][::-1], self.blank, self.eos)
+                    ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[b][::-1], self.blank, self.eos)
                 else:
-                    ctc_prefix_score = CTCPrefixScore(ctc_log_probs[b], self.blank, self.eos)
+                    ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[b], self.blank, self.eos)
                     if self.sync_bidir_attn:
-                        ctc_prefix_score_bwd = CTCPrefixScore(ctc_log_probs[b][::-1], self.blank, self.eos)
+                        ctc_prefix_scorer_bwd = CTCPrefixScore(ctc_log_probs[b][::-1], self.blank, self.eos)
 
             if speakers is not None:
                 if speakers[b] == self.prev_spk:
                     if lm_state_carry_over and isinstance(lm, RNNLM):
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
+
+            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id)
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
@@ -610,8 +613,8 @@ class TransformerDecoder(DecoderBase):
                      'lmstate': lmstate,
                      #  'lmstate_bwd': lmstate_bwd,
                      'ensmbl_aws':[[None]] * (n_models - 1),
-                     'ctc_state': ctc_prefix_score.initial_state() if ctc_log_probs is not None else None,
-                     'ctc_state_bwd': ctc_prefix_score_bwd.initial_state() if ctc_log_probs is not None and self.sync_bidir_attn else None}]
+                     'ctc_state': ctc_prefix_scorer.initial_state() if ctc_prefix_scorer is not None else None,
+                     'ctc_state_bwd': ctc_prefix_scorer_bwd.initial_state() if ctc_prefix_scorer is not None and self.sync_bidir_attn else None}]
             if self.sync_bidir_attn:
                 hyps_bwd = hyps[:]
             ytime = int(math.floor(elens[b] * max_len_ratio)) + 1
@@ -737,28 +740,15 @@ class TransformerDecoder(DecoderBase):
 
                     # CTC score
                     if ctc_log_probs is not None:
-                        ctc_scores, ctc_states = ctc_prefix_score(
-                            beam['hyp'], tensor2np(topk_ids[0]), beam['ctc_state'])
-                        total_scores_ctc = torch.from_numpy(ctc_scores)
-                        if self.device_id >= 0:
-                            total_scores_ctc = total_scores_ctc.cuda(self.device_id)
-                        total_scores_topk += total_scores_ctc * ctc_weight
-                        # Sort again
-                        total_scores_topk, joint_ids_topk = torch.topk(
-                            total_scores_topk, k=beam_width, dim=1, largest=True, sorted=True)
-                        topk_ids = topk_ids[:, joint_ids_topk[0]]
-
+                        new_ctc_states, total_scores_ctc, total_scores_topk = helper.add_ctc_score(
+                            beam['hyp'], topk_ids, beam['ctc_state'],
+                            total_scores_topk, ctc_prefix_scorer)
                         if self.sync_bidir_attn:
-                            ctc_scores_bwd, ctc_states_bwd = ctc_prefix_score(
-                                beam['hyp_bwd'], tensor2np(topk_ids_bwd[0]), beam['ctc_state_bwd'])
-                            total_scores_ctc_bwd = torch.from_numpy(ctc_scores_bwd)
-                            if self.device_id >= 0:
-                                total_scores_ctc_bwd = total_scores_ctc_bwd.cuda(self.device_id)
-                            total_scores_topk_bwd += total_scores_ctc_bwd * ctc_weight
-                            # Sort again
-                            total_scores_topk_bwd, joint_ids_topk_bwd = torch.topk(
-                                total_scores_topk_bwd, k=beam_width, dim=1, largest=True, sorted=True)
-                            topk_ids_bwd = topk_ids_bwd[:, joint_ids_topk_bwd[0]]
+                            new_ctc_states_bwd, total_scores_ctc_bwd, total_scores_topk_bwd = helper.add_ctc_score(
+                                beam['hyp_bwd'], topk_ids_bwd, beam['ctc_state_bwd'],
+                                total_scores_topk_bwd, ctc_prefix_scorer_bwd)
+                        else:
+                            total_scores_ctc_bwd = eouts.new_zeros(beam_width)
                     else:
                         total_scores_ctc = eouts.new_zeros(beam_width)
                         total_scores_ctc_bwd = eouts.new_zeros(beam_width)
@@ -804,8 +794,8 @@ class TransformerDecoder(DecoderBase):
                              # 'score_lm_bwd': total_scores_lm_bwd[k].item(),
                              # 'aws': beam['aws'] + [aw[j:j + 1]],
                              'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
-                             'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
-                             'ctc_state_bwd': ctc_states_bwd[joint_ids_topk_bwd[0, k]] if ctc_log_probs is not None and self.sync_bidir_attn else None,
+                             'ctc_state': new_ctc_states[k] if ctc_log_probs is not None else None,
+                             'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_log_probs is not None and self.sync_bidir_attn else None,
                              'ensmbl_cache': ensmbl_new_cache,
                              'backward': False})
                         if self.sync_bidir_attn:
@@ -825,8 +815,8 @@ class TransformerDecoder(DecoderBase):
                                  # 'score_lm_bwd': total_scores_lm_bwd[k].item(),
                                  # 'aws': beam['aws'] + [aw[j:j + 1]],
                                  'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
-                                 'ctc_state': ctc_states[joint_ids_topk[0, k]] if ctc_log_probs is not None else None,
-                                 'ctc_state_bwd': ctc_states_bwd[joint_ids_topk_bwd[0, k]] if ctc_log_probs is not None and self.sync_bidir_attn else None,
+                                 'ctc_state': new_ctc_states[k] if ctc_log_probs is not None else None,
+                                 'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_log_probs is not None and self.sync_bidir_attn else None,
                                  'ensmbl_cache': ensmbl_new_cache,
                                  'backward': True})
 
@@ -838,12 +828,12 @@ class TransformerDecoder(DecoderBase):
                     new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
                 # Remove complete hypotheses
-                new_hyps, end_hyps, is_finish = remove_complete_hyp(
-                    new_hyps_sorted, end_hyps, beam_width, self.eos, prune=False)
+                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
+                    new_hyps_sorted, end_hyps, prune=False)
                 hyps = new_hyps[:]
                 if self.sync_bidir_attn:
-                    new_hyps_bwd, end_hyps, is_finish = remove_complete_hyp(
-                        new_hyps_bwd_sorted, end_hyps, beam_width, self.eos)
+                    new_hyps_bwd, end_hyps, is_finish = helper.remove_complete_hyp(
+                        new_hyps_bwd_sorted, end_hyps)
                     hyps_bwd = new_hyps_bwd[:]
                 if is_finish:
                     break
