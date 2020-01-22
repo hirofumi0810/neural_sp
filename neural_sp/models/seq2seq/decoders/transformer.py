@@ -751,13 +751,11 @@ class TransformerDecoder(DecoderBase):
 
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
-                        length_norm_factor = 1.
-                        if length_norm:
-                            length_norm_factor = len(beam['hyp'][1:]) + 1
-                        total_score = total_scores_topk[0, k].item() / length_norm_factor
+                        length_norm_factor = len(beam['hyp'][1:]) + 1 if length_norm else 1
+                        total_scores_topk /= length_norm_factor
                         if self.sync_bidir_attn:
                             idx_bwd = topk_ids_bwd[0, k].item()
-                            total_score_bwd = total_scores_topk_bwd[0, k].item() / length_norm_factor
+                            total_scores_topk_bwd /= length_norm_factor
 
                         if idx == self.eos:
                             # Exclude short hypotheses
@@ -781,7 +779,7 @@ class TransformerDecoder(DecoderBase):
                              'y_seq_bwd': y_seq_bwd if self.sync_bidir_attn else None,
                              'cache': [new_cache_l[j:j + 1] for new_cache_l in new_cache] if cache_states else cache,
                              'cache_bwd': [new_cache_l[j:j + 1] for new_cache_l in new_cache_bwd] if cache_states else cache_bwd,
-                             'score': total_score,
+                             'score': total_scores_topk[0, k].item(),
                              'score_attn': total_scores_attn[0, idx].item(),
                              'score_attn_bwd': total_scores_attn_bwd[0, idx_bwd].item() if self.sync_bidir_attn else None,
                              'score_ctc': total_scores_ctc[k].item(),
@@ -802,7 +800,7 @@ class TransformerDecoder(DecoderBase):
                                  'y_seq_bwd': y_seq_bwd if self.sync_bidir_attn else None,
                                  'cache': [new_cache_l[j:j + 1] for new_cache_l in new_cache] if cache_states else cache,
                                  'cache_bwd': [new_cache_l[j:j + 1] for new_cache_l in new_cache_bwd] if cache_states else cache_bwd,
-                                 'score': total_score_bwd,
+                                 'score': total_scores_topk_bwd[0, k].item(),
                                  'score_attn': total_scores_attn[0, idx].item(),
                                  'score_attn_bwd': total_scores_attn_bwd[0, idx_bwd].item() if self.sync_bidir_attn else None,
                                  'score_ctc': total_scores_ctc[k].item(),
