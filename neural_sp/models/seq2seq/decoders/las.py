@@ -705,8 +705,7 @@ class RNNDecoder(DecoderBase):
             plt.close()
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
-               exclude_eos=False, oracle=False,
-               refs_id=None, utt_ids=None, speakers=None):
+               exclude_eos=False, refs_id=None, utt_ids=None, speakers=None):
         """Greedy decoding.
 
         Args:
@@ -715,7 +714,6 @@ class RNNDecoder(DecoderBase):
             max_len_ratio (int): maximum sequence length of tokens
             idx2token (): converter from index to token
             exclude_eos (bool): exclude <eos> from hypothesis
-            oracle (bool): teacher-forcing mode
             refs_id (list): reference list
             utt_ids (list): utterance id list
             speakers (list): speaker list
