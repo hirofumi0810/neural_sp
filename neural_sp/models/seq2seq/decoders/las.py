@@ -739,11 +739,7 @@ class RNNDecoder(DecoderBase):
         hyps_batch, aws_batch = [], []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
-        if oracle:
-            assert refs_id is not None
-            ytime = max([len(refs_id[b]) for b in range(bs)]) + 1
-        else:
-            ytime = int(math.floor(xtime * max_len_ratio)) + 1
+        ytime = int(math.floor(xtime * max_len_ratio)) + 1
         for t in range(ytime):
             # Update LM states for LM fusion
             if self.lm is not None:
@@ -770,11 +766,6 @@ class RNNDecoder(DecoderBase):
                 break
             if t == ytime - 1:
                 break
-
-            if oracle:
-                y = eouts.new_zeros(bs, 1).long()
-                for b in range(bs):
-                    y[b] = refs_id[b][t]
 
         # LM state carry over
         self.lmstate_final = lmstate
@@ -851,7 +842,6 @@ class RNNDecoder(DecoderBase):
         bs, xmax, _ = eouts.size()
         n_models = len(ensmbl_decs) + 1
 
-        oracle = params['recog_oracle']
         beam_width = params['recog_beam_width']
         assert 1 <= nbest <= beam_width
         ctc_weight = params['recog_ctc_weight']
@@ -929,11 +919,7 @@ class RNNDecoder(DecoderBase):
                      'ensmbl_cv': ensmbl_cv,
                      'ensmbl_aws':[[None]] * (n_models - 1),
                      'ctc_state': ctc_prefix_score.initial_state() if ctc_log_probs is not None else None}]
-            if oracle:
-                assert refs_id is not None
-                ytime = len(refs_id[b]) + 1
-            else:
-                ytime = int(math.floor(elens[b] * max_len_ratio)) + 1
+            ytime = int(math.floor(elens[b] * max_len_ratio)) + 1
             for t in range(ytime):
                 # preprocess for batch decoding
                 y = eouts.new_zeros(len(hyps), 1).long()
@@ -941,7 +927,7 @@ class RNNDecoder(DecoderBase):
                     if self.replace_sos and t == 0:
                         prev_idx = refs_id[0][0]
                     else:
-                        prev_idx = ([self.eos] + refs_id[b])[t] if oracle else beam['hyp'][-1]
+                        prev_idx = beam['hyp'][-1]
                     y[j, 0] = prev_idx
                 cv = torch.cat([beam['cv'] for beam in hyps], dim=0)
                 aw = torch.cat([beam['aws'][-1] for beam in hyps], dim=0) if t > 0 else None
@@ -1092,16 +1078,10 @@ class RNNDecoder(DecoderBase):
                 # Remove complete hypotheses
                 new_hyps = []
                 for hyp in new_hyps_sorted:
-                    if oracle:
-                        if t == len(refs_id[b]):
-                            end_hyps += [hyp]
-                        else:
-                            new_hyps += [hyp]
+                    if len(hyp['hyp']) > 1 and hyp['hyp'][-1] == self.eos:
+                        end_hyps += [hyp]
                     else:
-                        if len(hyp['hyp']) > 1 and hyp['hyp'][-1] == self.eos:
-                            end_hyps += [hyp]
-                        else:
-                            new_hyps += [hyp]
+                        new_hyps += [hyp]
                 if len(end_hyps) >= beam_width:
                     end_hyps = end_hyps[:beam_width]
                     break
