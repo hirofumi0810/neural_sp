@@ -714,10 +714,10 @@ class TransformerDecoder(DecoderBase):
                     if self.sync_bidir_attn:
                         total_scores_attn_bwd = beam['score_attn_bwd'] + scores_attn_bwd[j:j + 1]
                         total_scores_bwd = total_scores_attn_bwd * (1 - ctc_weight)
-
-                    # Add LM score <after> top-K selection
                     total_scores_topk, topk_ids = torch.topk(
                         total_scores, k=beam_width, dim=1, largest=True, sorted=True)
+
+                    # Add LM score <after> top-K selection
                     if lm is not None:
                         total_scores_lm = beam['score_lm'] + scores_lm[j, -1, topk_ids[0]]
                         total_scores_topk += total_scores_lm * lm_weight
@@ -739,18 +739,14 @@ class TransformerDecoder(DecoderBase):
                             total_scores_topk_bwd += (len(beam['hyp_bwd'][1:]) + 1) * lp_weight
 
                     # CTC score
-                    if ctc_log_probs is not None:
-                        new_ctc_states, total_scores_ctc, total_scores_topk = helper.add_ctc_score(
-                            beam['hyp'], topk_ids, beam['ctc_state'],
-                            total_scores_topk, ctc_prefix_scorer)
-                        if self.sync_bidir_attn:
-                            new_ctc_states_bwd, total_scores_ctc_bwd, total_scores_topk_bwd = helper.add_ctc_score(
-                                beam['hyp_bwd'], topk_ids_bwd, beam['ctc_state_bwd'],
-                                total_scores_topk_bwd, ctc_prefix_scorer_bwd)
-                        else:
-                            total_scores_ctc_bwd = eouts.new_zeros(beam_width)
+                    new_ctc_states, total_scores_ctc, total_scores_topk = helper.add_ctc_score(
+                        beam['hyp'], topk_ids, beam['ctc_state'],
+                        total_scores_topk, ctc_prefix_scorer)
+                    if self.sync_bidir_attn:
+                        new_ctc_states_bwd, total_scores_ctc_bwd, total_scores_topk_bwd = helper.add_ctc_score(
+                            beam['hyp_bwd'], topk_ids_bwd, beam['ctc_state_bwd'],
+                            total_scores_topk_bwd, ctc_prefix_scorer_bwd)
                     else:
-                        total_scores_ctc = eouts.new_zeros(beam_width)
                         total_scores_ctc_bwd = eouts.new_zeros(beam_width)
 
                     for k in range(beam_width):

@@ -49,6 +49,9 @@ class BeamSearch(object):
         return new_hyps, end_hyps, is_finish
 
     def add_ctc_score(self, hyp, topk_ids, ctc_state, total_scores_topk, ctc_prefix_scorer):
+        if ctc_prefix_scorer is None:
+            return None, topk_ids.new_zeros(self.beam_width), total_scores_topk
+
         ctc_scores, new_ctc_states = ctc_prefix_scorer(hyp, tensor2np(topk_ids[0]), ctc_state)
         total_scores_ctc = torch.from_numpy(ctc_scores)
         if self.device_id >= 0:
