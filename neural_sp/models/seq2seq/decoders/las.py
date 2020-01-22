@@ -27,6 +27,7 @@ from neural_sp.models.modules.gmm_attention import GMMAttention
 from neural_sp.models.modules.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.modules.singlehead_attention import AttentionMechanism
+from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
@@ -905,6 +906,8 @@ class RNNDecoder(DecoderBase):
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
 
+            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id)
+
             end_hyps = []
             hyps = [{'hyp': [self.eos],
                      'score': 0.,
@@ -1076,16 +1079,11 @@ class RNNDecoder(DecoderBase):
                 new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
                 # Remove complete hypotheses
-                new_hyps = []
-                for hyp in new_hyps_sorted:
-                    if len(hyp['hyp']) > 1 and hyp['hyp'][-1] == self.eos:
-                        end_hyps += [hyp]
-                    else:
-                        new_hyps += [hyp]
-                if len(end_hyps) >= beam_width:
-                    end_hyps = end_hyps[:beam_width]
-                    break
+                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
+                    new_hyps_sorted, end_hyps)
                 hyps = new_hyps[:]
+                if is_finish:
+                    break
 
             # Global pruning
             if len(end_hyps) == 0:
