@@ -31,5 +31,5 @@ dropout_hidden: 0.5
 dropout_out: 0.0
 weight_decay: 1e-6
 lsm_prob: 0.1  ###
-backward: false
+backward: true  ###
 adaptive_softmax: false
