@@ -393,7 +393,7 @@ class CTCForcedAligner(object):
         log_prob += y[batch_index, path]
         return log_prob
 
-    def align(self, logits, xlens, ys, ylens, left2right=True):
+    def align(self, logits, xlens, ys, ylens):
         bs, xmax, vocab = logits.size()
 
         # zero padding
@@ -435,77 +435,45 @@ class CTCForcedAligner(object):
 
         # pick up the best CTC path
         best_lattices = log_probs.new_zeros((bs, xmax), dtype=torch.int64)
-        if left2right:
-            # forward algorithm
-            fwd_bwd_log_probs = _flip_path_probability(fwd_bwd_log_probs, xlens.long(), path_lens)
-            for t in range(xmax):
-                gamma = self._computes_transition(
-                    gamma, path, path_lens, fwd_bwd_log_probs[t], log_probs[t],
-                    skip_accum=True)
 
-                # select paths where gamma is valid
-                fwd_bwd_log_probs[t] = fwd_bwd_log_probs[t].masked_fill_(gamma == self.log0, self.log0)
+        # forward algorithm
+        fwd_bwd_log_probs = _flip_path_probability(fwd_bwd_log_probs, xlens.long(), path_lens)
+        for t in range(xmax):
+            gamma = self._computes_transition(
+                gamma, path, path_lens, fwd_bwd_log_probs[t], log_probs[t], skip_accum=True)
 
-                # pick up the best lattice
-                offsets = fwd_bwd_log_probs[t].argmax(1)
-                for b in range(bs):
-                    if t <= xlens[b] - 1:
-                        token_id = path[b, offsets[b]]
-                        best_lattices[b, t] = token_id
+            # select paths where gamma is valid
+            fwd_bwd_log_probs[t] = fwd_bwd_log_probs[t].masked_fill_(gamma == self.log0, self.log0)
 
-                # remove the rest of paths
-                gamma = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
-                for b in range(bs):
-                    gamma[b, offsets[b]] = LOG_1
-        else:
-            # backward algorithm
-            for t in range(xmax):
-                gamma = self._computes_transition(
-                    gamma, r_path, path_lens, fwd_bwd_log_probs[t], log_probs_inv[t],
-                    skip_accum=True)
+            # pick up the best lattice
+            offsets = fwd_bwd_log_probs[t].argmax(1)
+            for b in range(bs):
+                if t <= xlens[b] - 1:
+                    token_id = path[b, offsets[b]]
+                    best_lattices[b, t] = token_id
 
-                # select paths where gamma is valid
-                fwd_bwd_log_probs[t] = fwd_bwd_log_probs[t].masked_fill_(gamma == self.log0, self.log0)
-
-                # pick up the best lattice
-                offsets = fwd_bwd_log_probs[t].argmax(1)
-                for b in range(bs):
-                    if t <= xlens[b] - 1:
-                        token_id = r_path[b, offsets[b]]
-                        best_lattices[b, (xmax - 1) - t] = token_id
-
-                # remove the rest of paths
-                gamma = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
-                for b in range(bs):
-                    gamma[b, offsets[b]] = LOG_1
+            # remove the rest of paths
+            gamma = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
+            for b in range(bs):
+                gamma[b, offsets[b]] = LOG_1
 
         # pick up trigger points
         trigger_lattices = torch.zeros((bs, xmax), dtype=torch.int64)
         trigger_points = log_probs.new_zeros((bs, ymax + 1), dtype=torch.int32)  # +1 for <eos>
         for b in range(bs):
-            trigger_points[b, :] = xlens[b] - 1
+            # trigger_points[b, :] = xlens[b] - 1
             n_triggers = 0
             for t in range(xlens[b]):
                 token_id = best_lattices[b, t]
                 if token_id == self.blank:
                     continue
-                elif left2right:
+                else:
                     # NOTE: select the most left trigger points
                     if t == 0:
                         trigger_lattices[b, t] = token_id
                         trigger_points[b, n_triggers] = t
                         n_triggers += 1
                     elif token_id != best_lattices[b, t - 1]:
-                        trigger_lattices[b, t] = token_id
-                        trigger_points[b, n_triggers] = t
-                        n_triggers += 1
-                else:
-                    # NOTE: select the most right trigger points
-                    if t == xlens[b] - 1:
-                        trigger_lattices[b, t] = token_id
-                        trigger_points[b, n_triggers] = t
-                        n_triggers += 1
-                    elif token_id != best_lattices[b, t + 1]:
                         trigger_lattices[b, t] = token_id
                         trigger_points[b, n_triggers] = t
                         n_triggers += 1
