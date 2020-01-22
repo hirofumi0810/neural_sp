@@ -461,7 +461,7 @@ class CTCForcedAligner(object):
         trigger_lattices = torch.zeros((bs, xmax), dtype=torch.int64)
         trigger_points = log_probs.new_zeros((bs, ymax + 1), dtype=torch.int32)  # +1 for <eos>
         for b in range(bs):
-            # trigger_points[b, :] = xlens[b] - 1
+            trigger_points[b, ylens[b]] = xlens[b] - 1  # for <eos>
             n_triggers = 0
             for t in range(xlens[b]):
                 token_id = best_lattices[b, t]
