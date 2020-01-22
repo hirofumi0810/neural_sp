@@ -550,7 +550,6 @@ class TransformerDecoder(DecoderBase):
         # - visualization
         # - cache
         # shallow fusion for bwd
-        # ctc_state for bwd
 
         if lm is not None:
             assert lm_weight > 0
@@ -738,7 +737,7 @@ class TransformerDecoder(DecoderBase):
                         if self.sync_bidir_attn:
                             total_scores_topk_bwd += (len(beam['hyp_bwd'][1:]) + 1) * lp_weight
 
-                    # CTC score
+                    # Add CTC score
                     new_ctc_states, total_scores_ctc, total_scores_topk = helper.add_ctc_score(
                         beam['hyp'], topk_ids, beam['ctc_state'],
                         total_scores_topk, ctc_prefix_scorer)
@@ -788,8 +787,8 @@ class TransformerDecoder(DecoderBase):
                              # 'score_lm_bwd': total_scores_lm_bwd[k].item(),
                              # 'aws': beam['aws'] + [aw[j:j + 1]],
                              'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
-                             'ctc_state': new_ctc_states[k] if ctc_log_probs is not None else None,
-                             'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_log_probs is not None and self.sync_bidir_attn else None,
+                             'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
+                             'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_prefix_scorer is not None and self.sync_bidir_attn else None,
                              'ensmbl_cache': ensmbl_new_cache,
                              'backward': False})
                         if self.sync_bidir_attn:
@@ -809,8 +808,8 @@ class TransformerDecoder(DecoderBase):
                                  # 'score_lm_bwd': total_scores_lm_bwd[k].item(),
                                  # 'aws': beam['aws'] + [aw[j:j + 1]],
                                  'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
-                                 'ctc_state': new_ctc_states[k] if ctc_log_probs is not None else None,
-                                 'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_log_probs is not None and self.sync_bidir_attn else None,
+                                 'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
+                                 'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_prefix_scorer is not None and self.sync_bidir_attn else None,
                                  'ensmbl_cache': ensmbl_new_cache,
                                  'backward': True})
 
@@ -823,7 +822,7 @@ class TransformerDecoder(DecoderBase):
 
                 # Remove complete hypotheses
                 new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
-                    new_hyps_sorted, end_hyps, prune=False)
+                    new_hyps_sorted, end_hyps, prune=not self.sync_bidir_attn)
                 hyps = new_hyps[:]
                 if self.sync_bidir_attn:
                     new_hyps_bwd, end_hyps, is_finish = helper.remove_complete_hyp(
@@ -867,7 +866,7 @@ class TransformerDecoder(DecoderBase):
                         logger.info('Hyp (bwd): %s' % idx2token(end_hyps[k]['hyp_bwd'][1:][::-1]))
                     logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
                     logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
-                    if ctc_log_probs is not None:
+                    if ctc_prefix_scorer is not None:
                         logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                         if self.sync_bidir_attn:
                             logger.info('log prob (hyp, ctc, bwd): %.7f' % (end_hyps[k]['score_ctc_bwd'] * ctc_weight))
