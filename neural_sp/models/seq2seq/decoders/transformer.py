@@ -577,6 +577,7 @@ class TransformerDecoder(DecoderBase):
 
             # For joint CTC-Attention decoding
             ctc_prefix_scorer = None
+            ctc_prefix_scorer_bwd = None
             if ctc_log_probs is not None:
                 if self.bwd:
                     ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[b][::-1], self.blank, self.eos)

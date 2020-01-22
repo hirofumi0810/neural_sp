@@ -1169,7 +1169,6 @@ class RNNDecoder(DecoderBase):
         lmstate = None
 
         # For joint CTC-Attention decoding
-        self.ctc_prefix_scorer = None
         if ctc_log_probs is not None:
             assert ctc_weight > 0
             ctc_log_probs = tensor2np(ctc_log_probs)
@@ -1178,6 +1177,8 @@ class RNNDecoder(DecoderBase):
                 self.ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[0], self.blank, self.eos)
             else:
                 self.ctc_prefix_scorer.register_new_chunk(ctc_log_probs[0])
+        else:
+            self.ctc_prefix_scorer = None
 
         if state_carry_over:
             dstates = self.dstates_final
