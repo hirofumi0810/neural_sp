@@ -358,7 +358,7 @@ def main():
     start_time_step = time.time()
     pbar_epoch = tqdm(total=len(train_set))
     accum_n_steps = 0
-    n_steps = 0
+    n_steps = optimizer.n_steps
     while True:
         # Compute loss in the training set
         batch_train, is_new_epoch = train_set.next()
