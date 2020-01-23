@@ -53,15 +53,6 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ]; then
-    conf2=conf/speed_perturb.yaml
-    if [ ${specaug} = true ]; then
-        conf2=conf/spec_augment_speed_perturb.yaml
-    fi
-elif [ ${specaug} = true ]; then
-    conf2=conf/spec_augment.yaml
-fi
-
 if [ -z ${gpu} ]; then
     echo "Error: set GPU number." 1>&2
     echo "Usage: ./run.sh --gpu 0" 1>&2
@@ -198,10 +189,14 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
 fi
 
 mkdir -p ${model}
-if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]; then
+if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo ============================================================================
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
+
+    if [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab}_sptrue ]; then
+        echo "Run ./run.sh --speed_perturb false first."
+    fi
 
     # Extend dictionary for the external text data
     if [ ! -e ${data}/.done_stage_3_${unit}${wp_type}${vocab} ]; then
@@ -211,12 +206,12 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
         gunzip -c ${db}/TEDLIUM_release2/LM/*.en.gz | sed 's/ <\/s>//g' | local/join_suffix.py | uniq | awk '{print "unpaired-text-"NR, $0}' > ${data}/dataset_lm/text
         # NOTE: remove exactly the same lines
         update_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-            ${data}/dataset_lm/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-            > ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-        cp ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
-            ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-        cp ${data}/dataset/${test_set}_${unit}${wp_type}${vocab}.tsv \
-            ${data}/dataset_lm/${test_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+            ${data}/dataset_lm/text ${dict} ${data}/dataset/train_${unit}${wp_type}${vocab}.tsv \
+            > ${data}/dataset_lm/train_${unit}${wp_type}${vocab}.tsv || exit 1;
+        cp ${data}/dataset/dev_${unit}${wp_type}${vocab}.tsv \
+            ${data}/dataset_lm/dev_${unit}${wp_type}${vocab}.tsv || exit 1;
+        cp ${data}/dataset/test_${unit}${wp_type}${vocab}.tsv \
+            ${data}/dataset_lm/test_${unit}${wp_type}${vocab}.tsv || exit 1;
 
         touch ${data}/.done_stage_3_${unit}${wp_type}${vocab} && echo "Finish creating dataset for LM (stage: 3)."
     fi
@@ -225,9 +220,9 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
         --corpus tedlium2 \
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
-        --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab}.tsv \
-        --eval_sets ${data}/dataset_lm/${test_set}_${unit}${wp_type}${vocab}.tsv \
+        --train_set ${data}/dataset_lm/train_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/dev_${unit}${wp_type}${vocab}.tsv \
+        --eval_sets ${data}/dataset_lm/test_${unit}${wp_type}${vocab}.tsv \
         --unit ${unit} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
