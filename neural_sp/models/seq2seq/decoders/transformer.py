@@ -643,8 +643,8 @@ class TransformerDecoder(DecoderBase):
                         y_seq_bwd[j, :] = beam['y_seq_bwd']
 
                 # Update LM states for shallow fusion
-                lmout, lmstate, scores_lm = None, None, None
-                lmout_bwd, lmstate_bwd, scores_lm_bwd = None, None, None
+                lmstate, scores_lm = None, None
+                lmstate_bwd, scores_lm_bwd = None, None
                 if lm is not None:
                     if beam['lmstate'] is not None:
                         lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in hyps_merge], dim=1)
@@ -653,7 +653,7 @@ class TransformerDecoder(DecoderBase):
                     y = y_seq[:, -1:]
                     if self.sync_bidir_attn and t == 0:
                         y[:, 0] = self.eos
-                    lmout, lmstate, scores_lm = lm.predict(y, lmstate)
+                    _, lmstate, scores_lm = lm.predict(y, lmstate)
                 if self.sync_bidir_attn and lm_second_bwd is not None:
                     if beam['lmstate_bwd'] is not None:
                         lm_hxs_bwd = torch.cat([beam['lmstate_bwd']['hxs'] for beam in hyps_merge], dim=1)
@@ -662,7 +662,7 @@ class TransformerDecoder(DecoderBase):
                     y_bwd = y_seq_bwd[:, -1:]
                     if t == 0:
                         y_bwd[:, 0] = self.eos
-                    lmout_bwd, lmstate_bwd, scores_lm_bwd = lm_second_bwd.predict(y_bwd, lmstate_bwd)
+                    _, lmstate_bwd, scores_lm_bwd = lm_second_bwd.predict(y_bwd, lmstate_bwd)
 
                 # for the main model
                 subsequent_mask = eouts.new_ones(t + 1, t + 1).byte()
