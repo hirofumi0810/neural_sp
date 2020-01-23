@@ -274,15 +274,19 @@ def parse():
                         help='probability of label smoothing for CTC')
     # SpecAugment
     parser.add_argument('--freq_width', type=int, default=27,
-                        help='')
+                        help='width of frequency mask for SpecAugment')
     parser.add_argument('--n_freq_masks', type=int, default=0,
-                        help='')
+                        help='number of frequency masks for SpecAugment')
     parser.add_argument('--time_width', type=int, default=70,
-                        help='')
+                        help='width of time mask for SpecAugment')
     parser.add_argument('--n_time_masks', type=int, default=0,
-                        help='')
+                        help='number of time masks for SpecAugment')
     parser.add_argument('--time_width_upper', type=float, default=0.2,
                         help='')
+    parser.add_argument('--flip_freq_prob', type=float, default=0.0,
+                        help='probability to flip input spectrogram on the frequency axis')
+    parser.add_argument('--flip_time_prob', type=float, default=0.0,
+                        help='probability to flip input spectrogram on the time axis')
     # MTL
     parser.add_argument('--ctc_weight', type=float, default=0.0,
                         help='CTC loss weight for the main task')
@@ -341,6 +345,10 @@ def parse():
     parser.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                         choices=['xavier_uniform', 'pytorch'],
                         help='parameter initializatin for Transformer')
+    parser.add_argument('--sync_bidir_attention', type=strtobool, default=False,
+                        help='synchronous bidirectional attention')
+    parser.add_argument('--half_pred', type=strtobool, default=False,
+                        help='predict tokens until the middle for synchronous bidirectional attention')
     # contextualization
     parser.add_argument('--discourse_aware', type=str, default=False, nargs='?',
                         choices=['state_carry_over', 'hierarchical', ''],
@@ -388,7 +396,7 @@ def parse():
                         help='weight of fisrt-path LM score')
     parser.add_argument('--recog_lm_second_weight', type=float, default=0.0,
                         help='weight of second-path LM score')
-    parser.add_argument('--recog_lm_rev_weight', type=float, default=0.0,
+    parser.add_argument('--recog_lm_bwd_weight', type=float, default=0.0,
                         help='weight of second-path bakward LM score')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
                         help='weight of CTC score')

@@ -487,7 +487,7 @@ class TransformerDecoder(DecoderBase):
         return hyps, aws
 
     def beam_search(self, eouts, elens, params, idx2token=None,
-                    lm=None, lm_2nd=None, lm_2nd_rev=None, ctc_log_probs=None,
+                    lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
                     ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[], cache_states=False):
@@ -506,8 +506,8 @@ class TransformerDecoder(DecoderBase):
                 recog_lm_weight (float): weight of LM score
             idx2token (): converter from index to token
             lm: firsh path LM
-            lm_2nd: second path LM
-            lm_2nd_rev: secoding path backward LM
+            lm_second: second path LM
+            lm_second_bwd: first/secoding path backward LM
             ctc_log_probs (FloatTensor):
             nbest (int):
             exclude_eos (bool): exclude <eos> from hypothesis
@@ -534,14 +534,14 @@ class TransformerDecoder(DecoderBase):
         lp_weight = params['recog_length_penalty']
         length_norm = params['recog_length_norm']
         lm_weight = params['recog_lm_weight']
-        lm_weight_2nd = params['recog_lm_second_weight']
-        lm_weight_2nd_rev = params['recog_lm_rev_weight']
+        lm_weight_second = params['recog_lm_second_weight']
+        lm_weight_second_bwd = params['recog_lm_bwd_weight']
         eos_threshold = params['recog_eos_threshold']
         lm_state_carry_over = params['recog_lm_state_carry_over']
         softmax_smoothing = params['recog_softmax_smoothing']
 
-        if self.sync_bidir_attn:
-            beam_width //= 2
+        # if self.sync_bidir_attn:
+        #     beam_width //= 2
 
         # TODO:
         # - aws
@@ -552,12 +552,12 @@ class TransformerDecoder(DecoderBase):
         if lm is not None:
             assert lm_weight > 0
             lm.eval()
-        if lm_2nd is not None:
-            assert lm_weight_2nd > 0
-            lm_2nd.eval()
-        if lm_2nd_rev is not None:
-            assert lm_weight_2nd_rev > 0
-            lm_2nd_rev.eval()
+        if lm_second is not None:
+            assert lm_weight_second > 0
+            lm_second.eval()
+        if lm_second_bwd is not None:
+            assert lm_weight_second_bwd > 0
+            lm_second_bwd.eval()
 
         if ctc_log_probs is not None:
             assert ctc_weight > 0
@@ -609,19 +609,20 @@ class TransformerDecoder(DecoderBase):
                      'score_lm_bwd': 0.,
                      'aws': [None],
                      'lmstate': lmstate,
-                     #  'lmstate_bwd': lmstate_bwd,
+                     'lmstate_bwd': None,
                      'ensmbl_aws':[[None]] * (n_models - 1),
                      'ctc_state': ctc_prefix_scorer.initial_state() if ctc_prefix_scorer is not None else None,
                      'ctc_state_bwd': ctc_prefix_scorer_bwd.initial_state() if ctc_prefix_scorer is not None and self.sync_bidir_attn else None}]
-            if self.sync_bidir_attn:
-                hyps_bwd = hyps[:]
+            # if self.sync_bidir_attn:
+            #     hyps_bwd = hyps[:]
             ytime = int(math.floor(elens[b] * max_len_ratio)) + 1
             for t in range(ytime):
                 # merge fwd and bwd hypotheses
-                if self.sync_bidir_attn:
-                    hyps_merge = hyps + hyps_bwd
-                else:
-                    hyps_merge = hyps
+                # if self.sync_bidir_attn:
+                #     hyps_merge = hyps + hyps_bwd
+                # else:
+                #     hyps_merge = hyps
+                hyps_merge = hyps[:]
 
                 # preprocess for batch decoding
                 cache = [None] * self.n_layers
@@ -643,12 +644,25 @@ class TransformerDecoder(DecoderBase):
 
                 # Update LM states for shallow fusion
                 lmout, lmstate, scores_lm = None, None, None
+                lmout_bwd, lmstate_bwd, scores_lm_bwd = None, None, None
                 if lm is not None:
                     if beam['lmstate'] is not None:
                         lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in hyps_merge], dim=1)
                         lm_cxs = torch.cat([beam['lmstate']['cxs'] for beam in hyps_merge], dim=1)
                         lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
-                    lmout, lmstate, scores_lm = lm.predict(y_seq[:, -1:], lmstate)
+                    y = y_seq[:, -1:]
+                    if self.sync_bidir_attn and t == 0:
+                        y[:, 0] = self.eos
+                    lmout, lmstate, scores_lm = lm.predict(y, lmstate)
+                if self.sync_bidir_attn and lm_second_bwd is not None:
+                    if beam['lmstate_bwd'] is not None:
+                        lm_hxs_bwd = torch.cat([beam['lmstate_bwd']['hxs'] for beam in hyps_merge], dim=1)
+                        lm_cxs_bwd = torch.cat([beam['lmstate_bwd']['cxs'] for beam in hyps_merge], dim=1)
+                        lmstate_bwd = {'hxs': lm_hxs_bwd, 'cxs': lm_cxs_bwd}
+                    y_bwd = y_seq_bwd[:, -1:]
+                    if t == 0:
+                        y_bwd[:, 0] = self.eos
+                    lmout_bwd, lmstate_bwd, scores_lm_bwd = lm_second_bwd.predict(y_bwd, lmstate_bwd)
 
                 # for the main model
                 subsequent_mask = eouts.new_ones(t + 1, t + 1).byte()
@@ -709,11 +723,13 @@ class TransformerDecoder(DecoderBase):
                     # Attention scores
                     total_scores_attn = beam['score_attn'] + scores_attn[j:j + 1]
                     total_scores = total_scores_attn * (1 - ctc_weight)
+                    total_scores_topk, topk_ids = torch.topk(
+                        total_scores, k=beam_width, dim=1, largest=True, sorted=True)
                     if self.sync_bidir_attn:
                         total_scores_attn_bwd = beam['score_attn_bwd'] + scores_attn_bwd[j:j + 1]
                         total_scores_bwd = total_scores_attn_bwd * (1 - ctc_weight)
-                    total_scores_topk, topk_ids = torch.topk(
-                        total_scores, k=beam_width, dim=1, largest=True, sorted=True)
+                        total_scores_topk_bwd, topk_ids_bwd = torch.topk(
+                            total_scores_bwd, k=beam_width, dim=1, largest=True, sorted=True)
 
                     # Add LM score <after> top-K selection
                     if lm is not None:
@@ -721,14 +737,11 @@ class TransformerDecoder(DecoderBase):
                         total_scores_topk += total_scores_lm * lm_weight
                     else:
                         total_scores_lm = eouts.new_zeros(beam_width)
-                    if self.sync_bidir_attn:
-                        total_scores_topk_bwd, topk_ids_bwd = torch.topk(
-                            total_scores_bwd, k=beam_width, dim=1, largest=True, sorted=True)
-                        # if lm_bwd is not None:
-                        #     total_scores_lm_bwd = beam['score_lm_bwd'] + scores_lm_bwd[j, -1, topk_ids_bwd[0]]
-                        #     total_scores_topk_bwd += total_scores_lm_bwd * lm_weight
-                        # else:
-                        #     total_scores_lm_bwd = eouts.new_zeros(beam_width)
+                    if self.sync_bidir_attn and lm_second_bwd is not None:
+                        total_scores_lm_bwd = beam['score_lm_bwd'] + scores_lm_bwd[j, -1, topk_ids_bwd[0]]
+                        total_scores_topk_bwd += total_scores_lm_bwd * lm_weight
+                    else:
+                        total_scores_lm_bwd = eouts.new_zeros(beam_width)
 
                     # Add length penalty
                     if lp_weight > 0:
@@ -783,50 +796,56 @@ class TransformerDecoder(DecoderBase):
                              'score_ctc': total_scores_ctc[k].item(),
                              'score_ctc_bwd': total_scores_ctc_bwd[k].item(),
                              'score_lm': total_scores_lm[k].item(),
-                             # 'score_lm_bwd': total_scores_lm_bwd[k].item(),
+                             'score_lm_bwd': total_scores_lm_bwd[k].item(),
                              # 'aws': beam['aws'] + [aw[j:j + 1]],
                              'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
+                             'lmstate_bwd': {'hxs': lmstate_bwd['hxs'][:, j:j + 1], 'cxs': lmstate_bwd['cxs'][:, j:j + 1]} if lmstate_bwd is not None else None,
                              'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
                              'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_prefix_scorer is not None and self.sync_bidir_attn else None,
                              'ensmbl_cache': ensmbl_new_cache,
                              'backward': False})
-                        if self.sync_bidir_attn:
-                            new_hyps_bwd.append(
-                                {'hyp': beam['hyp'] + [idx],
-                                 'hyp_bwd': beam['hyp_bwd'] + [idx_bwd] if self.sync_bidir_attn else None,
-                                 'y_seq': y_seq,
-                                 'y_seq_bwd': y_seq_bwd if self.sync_bidir_attn else None,
-                                 'cache': [new_cache_l[j:j + 1] for new_cache_l in new_cache] if cache_states else cache,
-                                 'cache_bwd': [new_cache_l[j:j + 1] for new_cache_l in new_cache_bwd] if cache_states else cache_bwd,
-                                 'score': total_scores_topk_bwd[0, k].item(),
-                                 'score_attn': total_scores_attn[0, idx].item(),
-                                 'score_attn_bwd': total_scores_attn_bwd[0, idx_bwd].item() if self.sync_bidir_attn else None,
-                                 'score_ctc': total_scores_ctc[k].item(),
-                                 'score_ctc_bwd': total_scores_ctc_bwd[k].item(),
-                                 'score_lm': total_scores_lm[k].item(),
-                                 # 'score_lm_bwd': total_scores_lm_bwd[k].item(),
-                                 # 'aws': beam['aws'] + [aw[j:j + 1]],
-                                 'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
-                                 'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
-                                 'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_prefix_scorer is not None and self.sync_bidir_attn else None,
-                                 'ensmbl_cache': ensmbl_new_cache,
-                                 'backward': True})
+                        # if self.sync_bidir_attn:
+                        #     new_hyps_bwd.append(
+                        #         {'hyp': beam['hyp'] + [idx],
+                        #          'hyp_bwd': beam['hyp_bwd'] + [idx_bwd] if self.sync_bidir_attn else None,
+                        #          'y_seq': y_seq,
+                        #          'y_seq_bwd': y_seq_bwd if self.sync_bidir_attn else None,
+                        #          'cache': [new_cache_l[j:j + 1] for new_cache_l in new_cache] if cache_states else cache,
+                        #          'cache_bwd': [new_cache_l[j:j + 1] for new_cache_l in new_cache_bwd] if cache_states else cache_bwd,
+                        #          'score': total_scores_topk_bwd[0, k].item(),
+                        #          'score_attn': total_scores_attn[0, idx].item(),
+                        #          'score_attn_bwd': total_scores_attn_bwd[0, idx_bwd].item() if self.sync_bidir_attn else None,
+                        #          'score_ctc': total_scores_ctc[k].item(),
+                        #          'score_ctc_bwd': total_scores_ctc_bwd[k].item(),
+                        #          'score_lm': total_scores_lm[k].item(),
+                        #          'score_lm_bwd': total_scores_lm_bwd[k].item(),
+                        #          # 'aws': beam['aws'] + [aw[j:j + 1]],
+                        #          'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
+                        #          'lmstate_bwd': {'hxs': lmstate_bwd['hxs'][:, j:j + 1], 'cxs': lmstate_bwd['cxs'][:, j:j + 1]} if lmstate_bwd is not None else None,
+                        #          'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
+                        #          'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_prefix_scorer is not None and self.sync_bidir_attn else None,
+                        #          'ensmbl_cache': ensmbl_new_cache,
+                        #          'backward': True})
 
                 # Local pruning
                 if self.sync_bidir_attn:
                     new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
-                    new_hyps_bwd_sorted = sorted(new_hyps_bwd, key=lambda x: x['score'], reverse=True)[:beam_width]
+                    # new_hyps_bwd_sorted = sorted(new_hyps_bwd, key=lambda x: x['score'], reverse=True)[:beam_width]
                 else:
                     new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
                 # Remove complete hypotheses
-                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
-                    new_hyps_sorted, end_hyps, prune=not self.sync_bidir_attn)
+                # new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
+                #     new_hyps_sorted, end_hyps, prune=not self.sync_bidir_attn)
+                # hyps = new_hyps[:]
+                # if self.sync_bidir_attn:
+                #     new_hyps_bwd, end_hyps, is_finish = helper.remove_complete_hyp(
+                #         new_hyps_bwd_sorted, end_hyps)
+                #     hyps_bwd = new_hyps_bwd[:]
+                # if is_finish:
+                #     break
+                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted, end_hyps)
                 hyps = new_hyps[:]
-                if self.sync_bidir_attn:
-                    new_hyps_bwd, end_hyps, is_finish = helper.remove_complete_hyp(
-                        new_hyps_bwd_sorted, end_hyps)
-                    hyps_bwd = new_hyps_bwd[:]
                 if is_finish:
                     break
 
@@ -843,12 +862,12 @@ class TransformerDecoder(DecoderBase):
                     hyp['hyp'] = hyp_first + hyp_second
 
             # forward second path LM rescoring
-            if lm_2nd is not None:
-                self.lm_rescoring(end_hyps, lm_2nd, lm_weight_2nd, tag='2nd')
+            if lm_second is not None:
+                self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
 
             # backward secodn path LM rescoring
-            if lm_2nd_rev is not None:
-                self.lm_rescoring(end_hyps, lm_2nd_rev, lm_weight_2nd_rev, tag='2nd_rev')
+            if lm_second_bwd is not None:
+                self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_rev')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -865,18 +884,24 @@ class TransformerDecoder(DecoderBase):
                         logger.info('Hyp (bwd): %s' % idx2token(end_hyps[k]['hyp_bwd'][1:][::-1]))
                     logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
                     logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
+                    if self.sync_bidir_attn:
+                        logger.info('log prob (hyp, att-bwd): %.7f' %
+                                    (end_hyps[k]['score_attn_bwd'] * (1 - ctc_weight)))
                     if ctc_prefix_scorer is not None:
                         logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                         if self.sync_bidir_attn:
-                            logger.info('log prob (hyp, ctc, bwd): %.7f' % (end_hyps[k]['score_ctc_bwd'] * ctc_weight))
+                            logger.info('log prob (hyp, ctc-bwd): %.7f' % (end_hyps[k]['score_ctc_bwd'] * ctc_weight))
                     if lm is not None:
                         logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
-                    if lm_2nd is not None:
+                    if self.sync_bidir_attn and lm_second_bwd is not None:
+                        logger.info('log prob (hyp, first-path lm-bwd): %.7f' %
+                                    (end_hyps[k]['score_lm_bwd'] * lm_weight))
+                    if lm_second is not None:
                         logger.info('log prob (hyp, second-path lm): %.7f' %
-                                    (end_hyps[k]['score_lm_2nd'] * lm_weight))
-                    if lm_2nd_rev is not None:
+                                    (end_hyps[k]['score_lm_second'] * lm_weight_second))
+                    if lm_second_bwd is not None:
                         logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
+                                    (end_hyps[k]['score_lm_second_rev'] * lm_weight_second_bwd))
 
             # N-best list
             if self.bwd:

@@ -802,7 +802,7 @@ class RNNDecoder(DecoderBase):
         return hyps, aws
 
     def beam_search(self, eouts, elens, params, idx2token=None,
-                    lm=None, lm_2nd=None, lm_2nd_rev=None, ctc_log_probs=None,
+                    lm=None, lm_second=None, lm_second_rev=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
                     ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[]):
@@ -821,8 +821,8 @@ class RNNDecoder(DecoderBase):
                 recog_lm_weight (float): weight of LM score
             idx2token (): converter from index to token
             lm: firsh path LM
-            lm_2nd: second path LM
-            lm_2nd_rev: secoding path backward LM
+            lm_second: second path LM
+            lm_second_rev: secoding path backward LM
             ctc_log_probs (FloatTensor):
             nbest (int):
             exclude_eos (bool): exclude <eos> from hypothesis
@@ -851,8 +851,8 @@ class RNNDecoder(DecoderBase):
         cp_threshold = params['recog_coverage_threshold']
         length_norm = params['recog_length_norm']
         lm_weight = params['recog_lm_weight']
-        lm_weight_2nd = params['recog_lm_second_weight']
-        lm_weight_2nd_rev = params['recog_lm_rev_weight']
+        lm_weight_second = params['recog_lm_second_weight']
+        lm_weight_second_bwd = params['recog_lm_bwd_weight']
         gnmt_decoding = params['recog_gnmt_decoding']
         eos_threshold = params['recog_eos_threshold']
         asr_state_carry_over = params['recog_asr_state_carry_over']
@@ -862,12 +862,12 @@ class RNNDecoder(DecoderBase):
         if lm is not None:
             assert lm_weight > 0
             lm.eval()
-        if lm_2nd is not None:
-            assert lm_weight_2nd > 0
-            lm_2nd.eval()
-        if lm_2nd_rev is not None:
-            assert lm_weight_2nd_rev > 0
-            lm_2nd_rev.eval()
+        if lm_second is not None:
+            assert lm_weight_second > 0
+            lm_second.eval()
+        if lm_second_rev is not None:
+            assert lm_weight_second_bwd > 0
+            lm_second_rev.eval()
 
         if ctc_log_probs is not None:
             assert ctc_weight > 0
@@ -1080,12 +1080,12 @@ class RNNDecoder(DecoderBase):
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
             # forward second path LM rescoring
-            if lm_2nd is not None:
-                self.lm_rescoring(end_hyps, lm_2nd, lm_weight_2nd, tag='2nd')
+            if lm_second is not None:
+                self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
 
             # backward secodn path LM rescoring
-            if lm_2nd_rev is not None:
-                self.lm_rescoring(end_hyps, lm_2nd_rev, lm_weight_2nd_rev, tag='2nd_rev')
+            if lm_second_rev is not None:
+                self.lm_rescoring(end_hyps, lm_second_rev, lm_weight_second_bwd, tag='second_rev')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -1105,12 +1105,12 @@ class RNNDecoder(DecoderBase):
                         logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                     if lm is not None:
                         logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
-                    if lm_2nd is not None:
+                    if lm_second is not None:
                         logger.info('log prob (hyp, second-path lm): %.7f' %
-                                    (end_hyps[k]['score_lm_2nd'] * lm_weight))
-                    if lm_2nd_rev is not None:
+                                    (end_hyps[k]['score_lm_second'] * lm_weight_second))
+                    if lm_second_rev is not None:
                         logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_2nd_rev'] * lm_weight))
+                                    (end_hyps[k]['score_lm_second_rev'] * lm_weight_second_bwd))
 
             # N-best list
             if self.bwd:
@@ -1141,7 +1141,7 @@ class RNNDecoder(DecoderBase):
         return nbest_hyps_idx, aws, scores
 
     def beam_search_chunk_sync(self, eouts_chunk, params, idx2token,
-                               lm=None, lm_2nd=None, ctc_log_probs=None,
+                               lm=None, lm_second=None, ctc_log_probs=None,
                                hyps=False, state_carry_over=False, ignore_eos=False):
         bs, chunk_size, enc_dim = eouts_chunk.size()
         assert bs == 1
@@ -1152,16 +1152,16 @@ class RNNDecoder(DecoderBase):
         max_len_ratio = params['recog_max_len_ratio']
         lp_weight = params['recog_length_penalty']
         lm_weight = params['recog_lm_weight']
-        lm_weight_2nd = params['recog_lm_second_weight']
+        lm_weight_second = params['recog_lm_second_weight']
         eos_threshold = params['recog_eos_threshold']
         # ctc_spike_forced_decoding = params['recog_ctc_spike_forced_decoding']
 
         if lm is not None:
             assert lm_weight > 0
             lm.eval()
-        if lm_2nd is not None:
-            assert lm_weight_2nd > 0
-            lm_2nd.eval()
+        if lm_second is not None:
+            assert lm_weight_second > 0
+            lm_second.eval()
 
         # Initialization per utterance
         self.score.reset()
@@ -1327,8 +1327,8 @@ class RNNDecoder(DecoderBase):
                 break
 
         # forward second path LM rescoring
-        if lm_2nd is not None:
-            self.lm_rescoring(end_hyps, lm_2nd, lm_weight_2nd, tag='2nd')
+        if lm_second is not None:
+            self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
             # TODO: fix bug for empty hypotheses
 
         # Sort by score
@@ -1344,9 +1344,9 @@ class RNNDecoder(DecoderBase):
                 logger.info('log prob (hyp, ctc): %.7f' % (merged_hyps[k]['score_ctc'] * ctc_weight))
             if lm is not None:
                 logger.info('log prob (hyp, first-path lm): %.7f' % (merged_hyps[k]['score_lm'] * lm_weight))
-            if lm_2nd is not None:
+            if lm_second is not None:
                 logger.info('log prob (hyp, second-path lm): %.7f' %
-                            (merged_hyps[k]['score_lm_2nd'] * lm_weight))
+                            (merged_hyps[k]['score_lm_second'] * lm_weight_second))
 
         aws = None
         # if len(end_hyps) > 0 and len(end_hyps[0]['aws'][1:]) > 0:

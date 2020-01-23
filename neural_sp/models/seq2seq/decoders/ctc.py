@@ -157,7 +157,7 @@ class CTC(DecoderBase):
         return np.array(hyps)
 
     def beam_search(self, eouts, elens, params, idx2token,
-                    lm=None, lm_2nd=None, lm_2nd_rev=None,
+                    lm=None, lm_second=None, lm_second_rev=None,
                     nbest=1, refs_id=None, utt_ids=None, speakers=None):
         """Beam search decoding.
 
@@ -172,8 +172,8 @@ class CTC(DecoderBase):
                 recog_lm_rev_weight (float): weight of second path backward LM score
             idx2token (): converter from index to token
             lm: firsh path LM
-            lm_2nd: second path LM
-            lm_2nd_rev: secoding path backward LM
+            lm_second: second path LM
+            lm_second_rev: secoding path backward LM
             nbest (int):
             refs_id (list): reference list
             utt_ids (list): utterance id list
@@ -187,15 +187,15 @@ class CTC(DecoderBase):
         beam_width = params['recog_beam_width']
         lp_weight = params['recog_length_penalty']
         lm_weight = params['recog_lm_weight']
-        lm_weight_2nd = params['recog_lm_second_weight']
-        lm_weight_2nd_rev = params['recog_lm_rev_weight']
+        lm_weight_second = params['recog_lm_second_weight']
+        lm_weight_second_rev = params['recog_lm_rev_weight']
 
         if lm is not None:
             assert lm_weight > 0
             lm.eval()
-        if lm_2nd is not None:
-            assert lm_weight_2nd > 0
-            lm_2nd.eval()
+        if lm_second is not None:
+            assert lm_weight_second > 0
+            lm_second.eval()
 
         best_hyps = []
         log_probs = torch.log_softmax(self.output(eouts), dim=-1)
@@ -284,14 +284,14 @@ class CTC(DecoderBase):
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
 
             # Rescoing lattice
-            if lm_2nd is not None:
+            if lm_second is not None:
                 new_beam = []
                 for i_beam in range(len(beam)):
                     ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), self.device_id)]
-                    ys_pad = pad_list(ys, lm_2nd.pad)
-                    _, _, lm_log_probs = lm_2nd.predict(ys_pad, None)
+                    ys_pad = pad_list(ys, lm_second.pad)
+                    _, _, lm_log_probs = lm_second.predict(ys_pad, None)
                     score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
-                    score_lm = lm_log_probs.sum() * lm_weight_2nd
+                    score_lm = lm_log_probs.sum() * lm_weight_second
                     score_lp = len(beam[i_beam]['hyp'][1:]) * lp_weight
                     new_beam.append({'hyp': beam[i_beam]['hyp'],
                                      'score': score_ctc + score_lm + score_lp,

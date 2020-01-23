@@ -127,7 +127,7 @@ def main():
                     model.lm_2nd = lm_2nd
 
                 # second path (bakward)
-                if args.recog_lm_bwd is not None and args.recog_lm_rev_weight > 0:
+                if args.recog_lm_bwd is not None and args.recog_lm_bwd_weight > 0:
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm_bwd), 'conf.yml'))
                     args_lm_bwd = argparse.Namespace()
                     for k, v in conf_lm.items():
@@ -155,7 +155,9 @@ def main():
             logger.info('fist LM path: %s' % args.recog_lm)
             logger.info('second LM path: %s' % args.recog_lm_second)
             logger.info('backward LM path: %s' % args.recog_lm_bwd)
-            logger.info('LM weight: %.3f' % args.recog_lm_weight)
+            logger.info('LM weight (first-pass): %.3f' % args.recog_lm_weight)
+            logger.info('LM weight (second-pass): %.3f' % args.recog_lm_second_weight)
+            logger.info('LM weight (backward): %.3f' % args.recog_lm_bwd_weight)
             logger.info('GNMT: %s' % args.recog_gnmt_decoding)
             logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
