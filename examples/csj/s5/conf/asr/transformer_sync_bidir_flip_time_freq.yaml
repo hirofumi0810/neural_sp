@@ -21,12 +21,15 @@ transformer_d_ff: 2048
 transformer_ffn_activation: relu
 transformer_n_heads: 4
 transformer_param_init: xavier_uniform
+sync_bidir_attention: true  ###
+flip_time_prob: 0.5
+flip_freq_prob: 0.5  ###
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
 batch_size: 32
 optimizer: noam
-n_epochs: 40
+n_epochs: 50
 convert_to_sgd_epoch: 100
 print_step: 400
 metric: edit_distance

@@ -71,15 +71,6 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ]; then
-    conf2=conf/speed_perturb.yaml
-    if [ ${specaug} = true ]; then
-        conf2=conf/spec_augment_speed_perturb.yaml
-    fi
-elif [ ${specaug} = true ]; then
-    conf2=conf/spec_augment.yaml
-fi
-
 if [ -z ${gpu} ]; then
     echo "Error: set GPU number." 1>&2
     echo "Usage: ./run.sh --gpu 0" 1>&2
