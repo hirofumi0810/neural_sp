@@ -17,9 +17,12 @@ enc_n_layers: 5
 subsample_type: drop
 lc_chunk_size_left: -1  ### offline
 lc_chunk_size_right: 40
-attn_type: location
-attn_conv_n_channels: 10
-attn_conv_width: 201
+attn_type: mocha
+mocha_chunk_size: 4
+mocha_adaptive: false
+mocha_1dconv: false
+mocha_quantity_loss_weight: 2.0  ### this is important
+attn_sharpening_factor: 1.0
 attn_dim: 512
 attn_n_heads: 1
 dec_type: lstm
@@ -57,8 +60,6 @@ dropout_dec: 0.4
 dropout_emb: 0.4
 dropout_att: 0.0
 weight_decay: 1e-6
-ss_prob: 0.2
-ss_type: constant
 lsm_prob: 0.1
 ### MTL
 ctc_weight: 0.3
