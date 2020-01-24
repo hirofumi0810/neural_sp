@@ -61,14 +61,15 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ]; then
-    conf2=conf/speed_perturb.yaml
-elif [ ${specaug} = true ]; then
-    conf2=conf/spec_augment.yaml
-fi
-
 if [ ${datasize} = fisher_swbd ]; then
     conf=conf/asr/blstm_las_fisher_swbd.yaml
+fi
+
+if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
+  if [ -z ${conf2} ]; then
+    echo "Error: Set --conf2." 1>&2
+    exit 1
+  fi
 fi
 
 if [ -z ${gpu} ]; then
@@ -157,9 +158,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1
     fi
 
     if [ ${speed_perturb} = true ]; then
-        # speed-perturbed
         speed_perturb_3way.sh ${data} train_nodev_${datasize} ${train_set}
-
         cp -rf ${data}/dev ${data}/${dev_set}
         cp -rf ${data}/eval2000 ${data}/eval2000_sp
     fi

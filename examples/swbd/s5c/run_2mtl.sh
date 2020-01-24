@@ -55,10 +55,11 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ]; then
-    conf2=conf/speed_perturb.yaml
-elif [ ${specaug} = true ]; then
-    conf2=conf/spec_augment.yaml
+if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
+  if [ -z ${conf2} ]; then
+    echo "Error: Set --conf2." 1>&2
+    exit 1
+  fi
 fi
 
 if [ -z ${gpu} ]; then
@@ -120,11 +121,6 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     local/eval2000_data_prep.sh ${EVAL2000_AUDIOPATH} ${EVAL2000_TRANSPATH} || exit 1;
     [ ! -z ${RT03_PATH} ] && local/rt03_data_prep.sh ${RT03_PATH}
 
-    # upsample audio from 8k to 16k
-    # for x in train_swbd train_fisher eval2000 rt03; do
-    #     sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" ${data}/${x}/wav.scp
-    # done
-
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
@@ -155,9 +151,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
     fi
 
     if [ ${speed_perturb} = true ]; then
-        # speed-perturbed
         speed_perturb_3way.sh ${data} train_nodev_${datasize} ${train_set}
-
         cp -rf ${data}/dev ${data}/${dev_set}
         cp -rf ${data}/eval2000 ${data}/eval2000_sp
     fi

@@ -71,6 +71,13 @@ set -e
 set -u
 set -o pipefail
 
+if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
+  if [ -z ${conf2} ]; then
+    echo "Error: Set --conf2." 1>&2
+    exit 1
+  fi
+fi
+
 if [ -z ${gpu} ]; then
     echo "Error: set GPU number." 1>&2
     echo "Usage: ./run.sh --gpu 0" 1>&2
