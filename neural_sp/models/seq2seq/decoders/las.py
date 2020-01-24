@@ -490,10 +490,11 @@ class RNNDecoder(DecoderBase):
         # Compute XE sequence loss (+ label smoothing)
         loss, ppl = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
 
+        # Attention padding
         if self.quantity_loss_weight > 0 or (trigger_points is not None and self.mocha_ctc_sync in ['decot', 'minlt']):
             assert self.score.n_heads == 1
             aws = aws.squeeze(1)  # `[B, L, T]`
-            tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(2)  # `[B, L, 1]`
+            tgt_mask = (ys_out != self.pad).unsqueeze(2)  # `[B, L, 1]`
             aws = aws.masked_fill_(src_mask == 0, 0)
             aws = aws.masked_fill_(tgt_mask == 0, 0)
 
@@ -501,10 +502,10 @@ class RNNDecoder(DecoderBase):
         loss_qua = 0.
         if self.quantity_loss_weight > 0:
             assert self.attn_type in ['mocha', 'gmm']
-            n_tokens_pred = aws.sum(2).sum(1)
-            n_tokens_ref = (ys_out != self.pad).sum(1).float()
+            n_tokens_pred = aws.sum(2).sum(1)  # `[B]`
+            n_tokens_ref = (ys_out != self.pad).sum(1).float()  # `[B]`
+            # NOTE: count <eos> tokens
             loss_qua = torch.mean(torch.abs(n_tokens_pred - n_tokens_ref))
-            # NOTE: this setting counts <eos> tokens
 
         # Latency loss
         loss_lat = 0.
@@ -512,9 +513,10 @@ class RNNDecoder(DecoderBase):
             time_indices = torch.arange(xtime).repeat([bs, ys_in.size(1), 1]).float().cuda(self.device_id)
             exp_trigger_points = (time_indices * aws).sum(2)  # `[B, L]`
             trigger_points = trigger_points.float().cuda(self.device_id)  # `[B, L]`
-            # minimize the difference
-            loss_lat = torch.mean(torch.abs(exp_trigger_points - trigger_points))
+            loss_lat = torch.abs(exp_trigger_points - trigger_points)  # `[B, L]`
             # NOTE: trigger_points are padded with 0
+            n_tokens = ylens.sum().item()
+            loss_lat = loss_lat.sum() / n_tokens
 
         # Knowledge distillation
         if teacher_logits is not None:
