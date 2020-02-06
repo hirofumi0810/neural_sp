@@ -37,19 +37,20 @@ class PositionalEncoding(nn.Module):
     """
 
     def __init__(self, d_model, dropout, pe_type, max_len=5000,
-                 conv_kernel_size=3, conv_nlayers=3, layer_norm_eps=1e-12):
+                 conv_kernel_size=3, layer_norm_eps=1e-12):
         super(PositionalEncoding, self).__init__()
 
         self.d_model = d_model
         self.pe_type = pe_type
         self.scale = math.sqrt(self.d_model)
 
-        if pe_type == '1dconv':
+        if '1dconv' in pe_type:
             causal_conv1d = CausalConv1d(in_channels=d_model,
                                          out_channels=d_model,
                                          kernel_size=conv_kernel_size,
                                          stride=1)
             layers = []
+            conv_nlayers = int(pe_type.replace('1dconv', '')[0])
             for l in range(conv_nlayers):
                 layers.append(copy.deepcopy(causal_conv1d))
                 layers.append(nn.LayerNorm(d_model, eps=layer_norm_eps))
@@ -88,7 +89,7 @@ class PositionalEncoding(nn.Module):
             xs = xs + self.pe[:, :xs.size(1)]
         elif self.pe_type == 'concat':
             xs = torch.cat([xs, self.pe[:, :xs.size(1)]], dim=-1)
-        elif self.pe_type == '1dconv':
+        elif '1dconv' in self.pe_type:
             xs = self.pe(xs)
         else:
             raise NotImplementedError(self.pe_type)
