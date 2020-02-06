@@ -1,7 +1,7 @@
 ### topology
 n_stacks: 1
 n_skips: 1
-max_n_frames: 4000  ### this is important
+max_n_frames: 1600
 conv_in_channel: 1
 conv_channels: "32_32"
 conv_kernel_sizes: "(3,3)_(3,3)"
@@ -14,7 +14,7 @@ dec_type: transformer
 enc_n_layers: 12
 dec_n_layers: 6
 transformer_attn_type: scaled_dot
-transformer_enc_pe_type: none  ###
+transformer_enc_pe_type: add
 transformer_dec_pe_type: 1dconv3L  ### this is effective
 transformer_d_model: 256
 transformer_d_ff: 2048
@@ -24,11 +24,11 @@ transformer_param_init: xavier_uniform
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 24  ###
+batch_size: 32
 optimizer: noam
-n_epochs: 50
+n_epochs: 50  ###
 convert_to_sgd_epoch: 100
-print_step: 200
+print_step: 1000
 metric: edit_distance
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5
@@ -49,5 +49,6 @@ lsm_prob: 0.1
 ### MTL
 ctc_weight: 0.3
 ctc_lsm_prob: 0.1
+bwd_weight: 0.0
 mtl_per_batch: false
 task_specific_layer: false
