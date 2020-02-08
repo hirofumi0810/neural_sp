@@ -10,7 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
-speed_perturb=false
+speed_perturb=true
 specaug=false
 stdout=false
 
@@ -60,10 +60,6 @@ lm_datasize=fisher_swbd
 set -e
 set -u
 set -o pipefail
-
-if [ ${datasize} = fisher_swbd ]; then
-    conf=conf/asr/blstm_las_fisher_swbd.yaml
-fi
 
 if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
   if [ -z ${conf2} ]; then
@@ -136,25 +132,27 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in train_swbd eval2000; do
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-        utils/fix_data_dir.sh ${data}/${x}
-    done
+    if [ ! -e ${data}/.done_stage_1_${datasize}_spfalse ]; then
+        for x in train_swbd eval2000; do
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+            utils/fix_data_dir.sh ${data}/${x}
+        done
 
-    # Use the first 4k sentences as dev set.
-    utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/${dev_set} || exit 1;  # 5hr 6min
-    n=$[$(cat ${data}/train_swbd/segments | wc -l) - 4000]
-    utils/subset_data_dir.sh --last ${data}/train_swbd ${n} ${data}/${train_set}.tmp || exit 1;
+        # Use the first 4k sentences as dev set.
+        utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/${dev_set} || exit 1;  # 5hr 6min
+        n=$[$(cat ${data}/train_swbd/segments | wc -l) - 4000]
+        utils/subset_data_dir.sh --last ${data}/train_swbd ${n} ${data}/${train_set}.tmp || exit 1;
 
-    # Finally, the full training set:
-    utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/train_nodev_swbd || exit 1;  # 286hr
-    rm -rf ${data}/*.tmp
+        # Finally, the full training set:
+        utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/train_nodev_swbd || exit 1;  # 286hr
+        rm -rf ${data}/*.tmp
 
-    if [ ${datasize} = fisher_swbd ]; then
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/train_fisher ${data}/log/make_fbank/train_fisher ${data}/fbank || exit 1;
-        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_nodev_swbd ${data}/train_fisher || exit 1;
+        if [ ${datasize} = fisher_swbd ]; then
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/train_fisher ${data}/log/make_fbank/train_fisher ${data}/fbank || exit 1;
+            utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_nodev_swbd ${data}/train_fisher || exit 1;
+        fi
     fi
 
     if [ ${speed_perturb} = true ]; then
@@ -292,7 +290,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
     if [ ! -e ${data}/.done_stage_3_${datasize}${lm_datasize}_${unit}${wp_type}${vocab} ]; then
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
-        if [ ${lm_datasize} = fisher_swbd ]; then
+        if [ ${datasize} = swbd ] && [ ${lm_datasize} = fisher_swbd ]; then
             update_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
                 ${data}/train_fisher/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
                     > ${data}/dataset_lm/train_nodev_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
