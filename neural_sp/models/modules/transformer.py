@@ -235,11 +235,14 @@ class TransformerDecoderBlock(nn.Module):
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
             param_init (str):
             src_tgt_attention (bool): if False, ignore source-target attention
+            mocha_chunk_size (int):
+            mocha_skip_monotonic_attn (bool):
 
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads, dropout, dropout_att,
-                 layer_norm_eps, ffn_activation, param_init, src_tgt_attention=True):
+                 layer_norm_eps, ffn_activation, param_init, src_tgt_attention=True,
+                 mocha_chunk_size=16, mocha_skip_monotonic_attn=False):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
@@ -263,9 +266,14 @@ class TransformerDecoderBlock(nn.Module):
         if src_tgt_attention:
             self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if atype == 'mocha':
-                self.src_attn = MoChA(d_model, d_model, d_model, 'scaled_dot',
-                                      chunk_size=4, n_heads=n_heads)
-                # TODO: make chunk_size hyper-parameter
+                self.src_attn = MoChA(kdim=d_model,
+                                      qdim=d_model,
+                                      adim=d_model,
+                                      atype='scaled_dot',
+                                      chunk_size=mocha_chunk_size,
+                                      n_heads=n_heads,
+                                      param_init=param_init,
+                                      skip_monotonic_attn=mocha_skip_monotonic_attn)
             else:
                 self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
                                                             qdim=d_model,
@@ -282,7 +290,8 @@ class TransformerDecoderBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None, mode='hard'):
+    def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
+                mode='hard', xy_aws_lower=None):
         """Transformer decoder layer definition.
 
         Args:
@@ -291,10 +300,12 @@ class TransformerDecoderBlock(nn.Module):
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
             xy_mask (ByteTensor): `[B, L, T]`
             cache (FloatTensor): `[B, L-1, d_model]`
+            mode (str):
+            xy_aws_lower (FloatTensor): `[B, n_heads, L, T]`
         Returns:
             out (FloatTensor): `[B, L, d_model]`
-            yy_aw (FloatTensor)`[B, L, L]`
-            xy_aw (FloatTensor): `[B, L, T]`
+            yy_aws (FloatTensor)`[B, n_heads, L, L]`
+            xy_aws (FloatTensor): `[B, n_heads, L, T]`
 
         """
         residual = ys
@@ -311,15 +322,16 @@ class TransformerDecoderBlock(nn.Module):
         if self.atype == "average":
             raise NotImplementedError
         else:
-            out, yy_aw = self.self_attn(ys, ys, ys_q, mask=yy_mask, cache=False)  # k/v/q
+            out, yy_aws = self.self_attn(ys, ys, ys_q, mask=yy_mask, cache=False)  # k/v/q
             out = self.dropout(out) + residual
 
         # attention over encoder stacks
-        xy_aw = None
+        xy_aws = None
         if self.src_tgt_attention:
             residual = out
             out = self.norm2(out)
-            out, xy_aw = self.src_attn(xs, xs, out, mask=xy_mask, cache=False, mode=mode)  # k/v/q
+            out, xy_aws = self.src_attn(xs, xs, out, mask=xy_mask, cache=False,  # k/v/q
+                                        mode=mode, aw_lower=xy_aws_lower)
             out = self.dropout(out) + residual
 
         # position-wise feed-forward
@@ -331,7 +343,7 @@ class TransformerDecoderBlock(nn.Module):
         if cache is not None:
             out = torch.cat([cache, out], dim=1)
 
-        return out, yy_aw, xy_aw
+        return out, yy_aws, xy_aws
 
 
 class SyncBidirTransformerDecoderBlock(nn.Module):
@@ -382,79 +394,79 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, ys_fwd, ys_bwd, yy_mask, identity_mask, xs, xy_mask,
-                cache_fwd=None, cache_bwd=None):
+    def forward(self, ys, ys_bwd, yy_mask, identity_mask, xs, xy_mask,
+                cache=None, cache_bwd=None):
         """Transformer decoder layer definition.
 
         Args:
-            ys_fwd (FloatTensor): `[B, L, d_model]`
+            ys (FloatTensor): `[B, L, d_model]`
             ys_bwd (FloatTensor): `[B, L, d_model]`
             yy_mask (ByteTensor): `[B, L, L]`
             identity_mask (ByteTensor): `[B, L, L]`
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
             xy_mask (ByteTensor): `[B, L, T]`
-            cache_fwd (FloatTensor): `[B, L-1, d_model]`
+            cache (FloatTensor): `[B, L-1, d_model]`
             cache_bwd (FloatTensor): `[B, L-1, d_model]`
         Returns:
             out (FloatTensor): `[B, L, d_model]`
-            yy_aw_fwd_h (FloatTensor)`[B, L, L]`
-            yy_aw_fwd_f (FloatTensor)`[B, L, L]`
-            yy_aw_bwd_h (FloatTensor)`[B, L, L]`
-            yy_aw_bwd_f (FloatTensor)`[B, L, L]`
-            xy_aw_fwd (FloatTensor): `[B, L, T]`
-            xy_aw_bwd (FloatTensor): `[B, L, T]`
+            yy_aws_h (FloatTensor)`[B, L, L]`
+            yy_aws_f (FloatTensor)`[B, L, L]`
+            yy_aws_bwd_h (FloatTensor)`[B, L, L]`
+            yy_aws_bwd_f (FloatTensor)`[B, L, L]`
+            xy_aws (FloatTensor): `[B, L, T]`
+            xy_aws_bwd (FloatTensor): `[B, L, T]`
 
         """
-        residual_fwd = ys_fwd
+        residual = ys
         residual_bwd = ys_bwd
-        ys_fwd = self.norm1(ys_fwd)
+        ys = self.norm1(ys)
         ys_bwd = self.norm1(ys_bwd)
 
-        if cache_fwd is not None:
+        if cache is not None:
             assert cache_bwd is not None
-            ys_fwd_q = ys_fwd[:, -1:]
+            ys_q = ys[:, -1:]
             ys_bwd_q = ys_bwd[:, -1:]
-            residual_fwd = residual_fwd[:, -1:]
+            residual = residual[:, -1:]
             residual_bwd = residual_bwd[:, -1:]
             yy_mask = yy_mask[:, -1:]
         else:
-            ys_fwd_q = ys_fwd
+            ys_q = ys
             ys_bwd_q = ys_bwd
 
         # synchronous bidirectional attention
-        out_fwd, out_bwd, yy_aw_fwd_h, yy_aw_fwd_f, yy_aw_bwd_h, yy_aw_bwd_f = self.self_attn(
-            ys_fwd, ys_fwd, ys_fwd_q,  # k/v/q
+        out, out_bwd, yy_aws_h, yy_aws_f, yy_aws_bwd_h, yy_aws_bwd_f = self.self_attn(
+            ys, ys, ys_q,  # k/v/q
             ys_bwd, ys_bwd, ys_bwd_q,  # k/v/q
             tgt_mask=yy_mask, identity_mask=identity_mask, cache=False)
-        out_fwd = self.dropout(out_fwd) + residual_fwd
+        out = self.dropout(out) + residual
         out_bwd = self.dropout(out_bwd) + residual_bwd
 
         # attention over encoder stacks
         # fwd
-        residual_fwd = out_fwd
-        out_fwd = self.norm2(out_fwd)
-        out_fwd, xy_aw_fwd = self.src_attn(xs, xs, out_fwd, mask=xy_mask, cache=False)  # k/v/q
-        out_fwd = self.dropout(out_fwd) + residual_fwd
+        residual = out
+        out = self.norm2(out)
+        out, xy_aws = self.src_attn(xs, xs, out, mask=xy_mask, cache=False)  # k/v/q
+        out = self.dropout(out) + residual
         # bwd
         residual_bwd = out_bwd
         out_bwd = self.norm2(out_bwd)
-        out_bwd, xy_aw_bwd = self.src_attn(xs, xs, out_bwd, mask=xy_mask, cache=False)  # k/v/q
+        out_bwd, xy_aws_bwd = self.src_attn(xs, xs, out_bwd, mask=xy_mask, cache=False)  # k/v/q
         out_bwd = self.dropout(out_bwd) + residual_bwd
 
         # position-wise feed-forward
         # fwd
-        residual_fwd = out_fwd
-        out_fwd = self.norm3(out_fwd)
-        out_fwd = self.feed_forward(out_fwd)
-        out_fwd = self.dropout(out_fwd) + residual_fwd
+        residual = out
+        out = self.norm3(out)
+        out = self.feed_forward(out)
+        out = self.dropout(out) + residual
         # bwd
         residual_bwd = out_bwd
         out_bwd = self.norm3(out_bwd)
         out_bwd = self.feed_forward(out_bwd)
         out_bwd = self.dropout(out_bwd) + residual_bwd
 
-        if cache_fwd is not None:
-            out_fwd = torch.cat([cache_fwd, out_fwd], dim=1)
+        if cache is not None:
+            out = torch.cat([cache, out], dim=1)
             out_bwd = torch.cat([cache_bwd, out_bwd], dim=1)
 
-        return out_fwd, out_bwd, yy_aw_fwd_h, yy_aw_fwd_f, yy_aw_bwd_h, yy_aw_bwd_f, xy_aw_fwd, xy_aw_bwd
+        return out, out_bwd, yy_aws_h, yy_aws_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws, xy_aws_bwd

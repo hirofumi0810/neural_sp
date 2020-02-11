@@ -222,7 +222,7 @@ class ChunkEnergy(nn.Module):
 class MoChA(nn.Module):
     def __init__(self, kdim, qdim, adim, atype, chunk_size, n_heads=1,
                  conv1d=False, init_r=-4, noise_std=1.0, eps=1e-6,
-                 sharpening_factor=1.0, param_init=''):
+                 sharpening_factor=1.0, param_init='', skip_monotonic_attn=False):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -245,19 +245,26 @@ class MoChA(nn.Module):
             eps (float):
             sharpening_factor (float): sharping factor for beta calculation
             param_init (str):
+            skip_monotonic_attn (bool):
 
         """
         super(MoChA, self).__init__()
 
         self.atype = atype
+        assert adim % n_heads == 0
+        self.d_k = adim // n_heads
+
         self.chunk_size = chunk_size
         self.n_heads = n_heads
         self.noise_std = noise_std
         self.eps = eps
         self.sharpening_factor = sharpening_factor
 
-        self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype, init_r, conv1d,
-                                                param_init=param_init)
+        if skip_monotonic_attn:
+            self.monotonic_energy = None
+        else:
+            self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype, init_r, conv1d,
+                                                    param_init=param_init)
         self.chunk_energy = ChunkEnergy(kdim, qdim, adim, atype,
                                         n_heads, param_init) if chunk_size > 1 else None
         if n_heads > 1:
@@ -280,12 +287,13 @@ class MoChA(nn.Module):
             nn.init.constant_(self.w_out.bias, 0.)
 
     def reset(self):
-        self.monotonic_energy.reset()
+        if self.monotonic_energy is not None:
+            self.monotonic_energy.reset()
         if self.chunk_size > 1:
             self.chunk_energy.reset()
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                mode='hard', cache=True, trigger_point=None):
+                mode='hard', cache=True, trigger_point=None, aw_lower=None):
         """Soft monotonic attention during training.
 
         Args:
@@ -297,6 +305,8 @@ class MoChA(nn.Module):
             mode (str): recursive/parallel/hard
             cache (bool): cache key and mask
             trigger_point (IntTensor): `[B]`
+            aw_lower (FloatTensor): `[B, klen, qlen]`
+                monotonic attention weights from the first layer of the Transformer decoder
         Return:
             cv (FloatTensor): `[B, qlen, vdim]`
             alpha (FloatTensor): `[B, klen, qlen]`
@@ -310,59 +320,63 @@ class MoChA(nn.Module):
             aw_prev[:, 0:1] = key.new_ones(bs, 1, 1)
 
         # Compute monotonic energy
-        e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B, qlen, klen]`
+        if self.monotonic_energy is not None:
+            e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B, qlen, klen]`
 
-        if mode == 'recursive':  # training
-            e_mono = e_mono.squeeze(1)
-            p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, klen]`
-            # Compute [1, 1 - p_choose_i[0], 1 - p_choose_i[1], ..., 1 - p_choose_i[-2]]
-            shifted_1mp_choose_i = torch.cat([key.new_ones(bs, 1),
-                                              1 - p_choose_i[:, :-1]], dim=1)
-            # Compute attention distribution recursively as
-            # q[j] = (1 - p_choose_i[j]) * q[j - 1] + aw_prev[j]
-            # alpha[j] = p_choose_i[j] * q[j]
-            q = key.new_zeros(bs, klen + 1)
-            for j in range(klen):
-                q[:, j + 1] = shifted_1mp_choose_i[:, j].clone() * q[:, j].clone() + aw_prev[:, j, 0].clone()
-            alpha = p_choose_i * q[:, 1:]  # `[B, klen]`
-            alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
-
-        elif mode == 'parallel':  # training
-            p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, qlen, klen]`
-            # safe_cumprod computes cumprod in logspace with numeric checks
-            cumprod_1mp_choose_i = safe_cumprod(1 - p_choose_i, eps=self.eps)
-            # Compute recurrence relation solution
-            if self.atype == 'add':
-                p_choose_i = p_choose_i.squeeze(1)
-                cumprod_1mp_choose_i = cumprod_1mp_choose_i.squeeze(1)
-                alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(
-                    aw_prev.squeeze(2) / torch.clamp(cumprod_1mp_choose_i, min=self.eps, max=1.0), dim=1)  # `[B, klen]`
+            if mode == 'recursive':  # training
+                e_mono = e_mono.squeeze(1)
+                p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, klen]`
+                # Compute [1, 1 - p_choose_i[0], 1 - p_choose_i[1], ..., 1 - p_choose_i[-2]]
+                shifted_1mp_choose_i = torch.cat([key.new_ones(bs, 1),
+                                                  1 - p_choose_i[:, :-1]], dim=1)
+                # Compute attention distribution recursively as
+                # q[j] = (1 - p_choose_i[j]) * q[j - 1] + aw_prev[j]
+                # alpha[j] = p_choose_i[j] * q[j]
+                q = key.new_zeros(bs, klen + 1)
+                for j in range(klen):
+                    q[:, j + 1] = shifted_1mp_choose_i[:, j].clone() * q[:, j].clone() + aw_prev[:, j, 0].clone()
+                alpha = p_choose_i * q[:, 1:]  # `[B, klen]`
                 alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
 
-                # Mask the right part from the trigger point
-                if trigger_point is not None:
-                    for b in range(bs):
-                        alpha[b, trigger_point[b] + 1:] = 0
-                        # TODO(hirofumi): add tolerance parameter
-            elif self.atype == 'scaled_dot':
-                alpha = p_choose_i * cumprod_1mp_choose_i   # `[B, qlen, klen]`
+            elif mode == 'parallel':  # training
+                p_choose_i = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, qlen, klen]`
+                # safe_cumprod computes cumprod in logspace with numeric checks
+                cumprod_1mp_choose_i = safe_cumprod(1 - p_choose_i, eps=self.eps)
+                # Compute recurrence relation solution
+                if self.atype == 'add':
+                    p_choose_i = p_choose_i.squeeze(1)
+                    cumprod_1mp_choose_i = cumprod_1mp_choose_i.squeeze(1)
+                    alpha = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(
+                        aw_prev.squeeze(2) / torch.clamp(cumprod_1mp_choose_i, min=self.eps, max=1.0), dim=1)  # `[B, klen]`
+                    alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
 
-        elif mode == 'hard':  # inference
-            # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
-            emit_probs = torch.sigmoid(e_mono.squeeze(1))  # `[B, klen]`
-            p_choose_i = (emit_probs >= 0.5).float()
-            # Remove any probabilities before the index chosen at the last time step
-            p_choose_i *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, klen]`
-            # Now, use exclusive cumprod to remove probabilities after the first
-            # chosen index, like so:
-            # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
-            # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
-            # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
-            # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
-            alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, klen]`
-            alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
+                    # Mask the right part from the trigger point
+                    if trigger_point is not None:
+                        for b in range(bs):
+                            alpha[b, trigger_point[b] + 1:] = 0
+                            # TODO(hirofumi): add tolerance parameter
+                elif self.atype == 'scaled_dot':
+                    alpha = p_choose_i * cumprod_1mp_choose_i   # `[B, qlen, klen]`
+
+            elif mode == 'hard':  # inference
+                # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
+                emit_probs = torch.sigmoid(e_mono.squeeze(1))  # `[B, klen]`
+                p_choose_i = (emit_probs >= 0.5).float()
+                # Remove any probabilities before the index chosen at the last time step
+                p_choose_i *= torch.cumsum(aw_prev.squeeze(2), dim=1)  # `[B, klen]`
+                # Now, use exclusive cumprod to remove probabilities after the first
+                # chosen index, like so:
+                # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
+                # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
+                # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
+                # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
+                alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, klen]`
+                alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
+            else:
+                raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
         else:
-            raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
+            assert aw_lower is not None
+            alpha = aw_lower.transpose(2, 1)
 
         # Compute chunk energy
         beta = None

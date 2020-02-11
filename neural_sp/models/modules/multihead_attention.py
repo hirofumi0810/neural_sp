@@ -92,7 +92,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask, aw_prev=None,
-                mode='', cache=True, trigger_point=None):
+                mode='', cache=True, trigger_point=None, aw_lower=None):
         """Forward computation.
 
         Args:
@@ -100,10 +100,11 @@ class MultiheadAttentionMechanism(nn.Module):
             value (FloatTensor): `[B, klen, vdim]`
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
-            aw_prev: dummy interface for single-head attention
+            aw_prev: dummy interface
             mode: dummy interface for MoChA
             cache (bool): cache key, value, and mask
-            trigger_point (IntTensor): dummy
+            trigger_point: dummy interface for MoChA
+            aw_lower: dummy interface for MoChA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, n_heads, qlen, klen]`

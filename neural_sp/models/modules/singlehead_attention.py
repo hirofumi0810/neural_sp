@@ -110,7 +110,7 @@ class AttentionMechanism(nn.Module):
             aw_prev (FloatTensor): `[B, klen, 1 (n_heads)]`
             mode: dummy interface for MoChA
             cache (bool): cache key and mask
-            trigger_point (IntTensor): dummy
+            trigger_point (IntTensor): dummy interface for MoChA
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, klen, 1 (n_heads)]`
