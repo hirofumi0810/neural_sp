@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -122,6 +122,7 @@ class DecoderBase(ModelBase):
             ys = hyps[i]['hyp']  # include <sos>
             if reverse:
                 ys = ys[::-1]
+
             ys = [np2tensor(np.fromiter(ys, dtype=np.int64), self.device_id)]
             ys_in = pad_list([y[:-1] for y in ys], -1)  # `[1, L-1]`
             ys_out = pad_list([y[1:] for y in ys], -1)  # `[1, L-1]`

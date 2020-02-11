@@ -42,12 +42,9 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
                 backward=(dir == 'bwd'),
                 global_weight=global_weight,
                 mtl_per_batch=args.mtl_per_batch,
-                param_init=args.transformer_param_init,
-                sync_bidir_attention=args.sync_bidir_attention,
-                half_pred=args.half_pred)
+                param_init=args.transformer_param_init)
 
     elif args.dec_type == 'transformer_transducer':
-        raise NotImplementedError
         from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
         decoder = TrasformerTransducer(
             special_symbols=special_symbols,
@@ -136,10 +133,10 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             mtl_per_batch=args.mtl_per_batch,
             param_init=args.param_init,
             mocha_chunk_size=args.mocha_chunk_size,
-            mocha_adaptive=args.mocha_adaptive,
             mocha_1dconv=args.mocha_1dconv,
             mocha_quantity_loss_weight=args.mocha_quantity_loss_weight,
             mocha_ctc_sync=args.mocha_ctc_sync,
+            mocha_minlt_loss_weight=args.mocha_minlt_loss_weight,
             gmm_attn_n_mixtures=args.gmm_attn_n_mixtures,
             replace_sos=args.replace_sos,
             soft_label_weight=args.soft_label_weight,
