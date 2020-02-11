@@ -19,6 +19,7 @@ import torch.nn as nn
 from neural_sp.models.modules.causal_conv import CausalConv1d
 from neural_sp.models.modules.gelu import gelu, gelu_accurate
 from neural_sp.models.modules.glu import LinearGLUBlock
+from neural_sp.models.modules.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.modules.sync_bidir_multihead_attention import SyncBidirMultiheadAttentionMechanism
 
@@ -162,7 +163,7 @@ class TransformerEncoderBlock(nn.Module):
     Args:
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimention of PositionwiseFeedForward
-        atype (str): type of attention
+        atype (str): type of attention mechanism
         n_heads (int): number of heads for multi-head attention
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
@@ -183,7 +184,7 @@ class TransformerEncoderBlock(nn.Module):
         self.self_attn = MultiheadAttentionMechanism(kdim=d_model,
                                                      qdim=d_model,
                                                      adim=d_model,
-                                                     atype=atype,
+                                                     atype='scaled_dot',
                                                      n_heads=n_heads,
                                                      dropout=dropout_att,
                                                      param_init=param_init)
@@ -226,7 +227,7 @@ class TransformerDecoderBlock(nn.Module):
         Args:
             d_model (int): dimension of MultiheadAttentionMechanism
             d_ff (int): dimention of PositionwiseFeedForward
-            atype (str): type of attention
+            atype (str): type of attention mechanism
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
@@ -246,14 +247,14 @@ class TransformerDecoderBlock(nn.Module):
         self.src_tgt_attention = src_tgt_attention
 
         # self-attention
-        if atype == "average":
+        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        if atype == 'average':
             raise NotImplementedError
         else:
-            self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.self_attn = MultiheadAttentionMechanism(kdim=d_model,
                                                          qdim=d_model,
                                                          adim=d_model,
-                                                         atype=atype,
+                                                         atype='scaled_dot',
                                                          n_heads=n_heads,
                                                          dropout=dropout_att,
                                                          param_init=param_init)
@@ -261,13 +262,18 @@ class TransformerDecoderBlock(nn.Module):
         # attention over encoder stacks
         if src_tgt_attention:
             self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-            self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
-                                                        qdim=d_model,
-                                                        adim=d_model,
-                                                        atype=atype,
-                                                        n_heads=n_heads,
-                                                        dropout=dropout_att,
-                                                        param_init=param_init)
+            if atype == 'mocha':
+                self.src_attn = MoChA(d_model, d_model, d_model, 'scaled_dot',
+                                      chunk_size=4, n_heads=n_heads)
+                # TODO: make chunk_size hyper-parameter
+            else:
+                self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
+                                                            qdim=d_model,
+                                                            adim=d_model,
+                                                            atype='scaled_dot',
+                                                            n_heads=n_heads,
+                                                            dropout=dropout_att,
+                                                            param_init=param_init)
 
         # feed-forward
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -276,7 +282,7 @@ class TransformerDecoderBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None):
+    def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None, mode='hard'):
         """Transformer decoder layer definition.
 
         Args:
@@ -313,7 +319,7 @@ class TransformerDecoderBlock(nn.Module):
         if self.src_tgt_attention:
             residual = out
             out = self.norm2(out)
-            out, xy_aw = self.src_attn(xs, xs, out, mask=xy_mask, cache=False)  # k/v/q
+            out, xy_aw = self.src_attn(xs, xs, out, mask=xy_mask, cache=False, mode=mode)  # k/v/q
             out = self.dropout(out) + residual
 
         # position-wise feed-forward
@@ -334,7 +340,6 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         Args:
             d_model (int): dimension of MultiheadAttentionMechanism
             d_ff (int): dimention of PositionwiseFeedForward
-            atype (str): type of attention
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
@@ -344,11 +349,10 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
     """
 
-    def __init__(self, d_model, d_ff, atype, n_heads, dropout, dropout_att,
+    def __init__(self, d_model, d_ff, n_heads, dropout, dropout_att,
                  layer_norm_eps, ffn_activation, param_init):
         super(SyncBidirTransformerDecoderBlock, self).__init__()
 
-        self.atype = atype
         self.n_heads = n_heads
 
         # synchronous bidirectional attention
@@ -356,7 +360,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         self.self_attn = SyncBidirMultiheadAttentionMechanism(kdim=d_model,
                                                               qdim=d_model,
                                                               adim=d_model,
-                                                              atype=atype,
+                                                              atype='scaled_dot',
                                                               n_heads=n_heads,
                                                               dropout=dropout_att,
                                                               param_init=param_init)
@@ -366,7 +370,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
                                                     qdim=d_model,
                                                     adim=d_model,
-                                                    atype=atype,
+                                                    atype='scaled_dot',
                                                     n_heads=n_heads,
                                                     dropout=dropout_att,
                                                     param_init=param_init)

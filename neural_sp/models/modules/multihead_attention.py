@@ -28,7 +28,7 @@ class MultiheadAttentionMechanism(nn.Module):
         kdim (int): dimension of key
         qdim (int): dimension of query
         adim: (int) dimension of the attention space
-        atype (str): type of attention mechanisms
+        atype (str): type of attention mechanism
         n_heads (int): number of heads
         dropout (float): dropout probability
         bias (bool): use bias term in linear layers
