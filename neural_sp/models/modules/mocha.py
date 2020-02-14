@@ -118,7 +118,7 @@ class MonotonicEnergy(nn.Module):
             self.mask = mask
 
         if self.atype == 'add':
-            energy = torch.relu(self.key.squeeze(1) + self.w_query(query))
+            energy = torch.relu(self.key + self.w_query(query))
             energy = self.v(energy).transpose(2, 1)  # `[B, qlen, klen]`
         elif self.atype == 'scaled_dot':
             energy = torch.matmul(self.w_query(query), self.key.transpose(2, 1)) / self.scale
