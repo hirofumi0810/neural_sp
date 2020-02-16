@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import logging
 import math
 import numpy as np
@@ -74,8 +75,8 @@ class TransformerDecoder(DecoderBase):
         global_weight (float):
         mtl_per_batch (bool):
         param_init (str):
-        sync_bidir_attention (bool): synchronous bidirectional attention
-        half_pred (bool):
+        mocha_chunk_size (int):
+        mocha_quantity_loss_weight (float):
 
     """
 
@@ -85,8 +86,8 @@ class TransformerDecoder(DecoderBase):
                  vocab, tie_embedding,
                  dropout, dropout_emb, dropout_att, lsm_prob,
                  ctc_weight, ctc_lsm_prob, ctc_fc_list,
-                 backward, global_weight, mtl_per_batch,
-                 param_init, sync_bidir_attention, half_pred):
+                 backward, global_weight, mtl_per_batch, param_init,
+                 mocha_chunk_size, mocha_quantity_loss_weight):
 
         super(TransformerDecoder, self).__init__()
 
@@ -112,15 +113,23 @@ class TransformerDecoder(DecoderBase):
         # for attention plot
         self.aws_dict = {}
 
-        self.sync_bidir_attn = sync_bidir_attention
-        self.half_pred = half_pred
-        if sync_bidir_attention:
-            self.vocab += 2  # add <l2r> and <r2l>
-            self.l2r = self.vocab - 2
-            self.r2l = self.vocab - 1
-            if half_pred:
+        # for synchronous bidirectional decoding
+        self.sync_bidir = ('sync_bidir' in attn_type)
+        self.sync_bidir_half = (attn_type == 'sync_bidir_half')
+        if self.sync_bidir:
+            # expand vocabulary
+            if self.sync_bidir_half:
+                self.null = self.vocab
+                self.l2r = self.vocab + 1
+                self.r2l = self.vocab + 2
                 self.vocab += 1
-                self.null = self.vocab - 1
+            else:
+                self.l2r = self.vocab
+                self.r2l = self.vocab + 1
+
+        # for mocha
+        self.attn_type = attn_type
+        self.quantity_loss_weight = mocha_quantity_loss_weight
 
         if ctc_weight > 0:
             self.ctc = CTC(eos=self.eos,
@@ -133,21 +142,36 @@ class TransformerDecoder(DecoderBase):
                            param_init=0.1)
 
         if ctc_weight < global_weight:
-            self.embed = nn.Embedding(self.vocab, d_model, padding_idx=self.pad)
-            self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
-            if sync_bidir_attention:
-                self.layers = repeat(SyncBidirTransformerDecoderBlock(
-                    d_model, d_ff, attn_type, n_heads,
-                    dropout, dropout_att,
-                    layer_norm_eps, ffn_activation, param_init), n_layers)
+            if self.sync_bidir:
+                self.embed = nn.Embedding(self.vocab + 2, d_model, padding_idx=self.pad)
             else:
+                self.embed = nn.Embedding(self.vocab, d_model, padding_idx=self.pad)
+            self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type)
+            if self.sync_bidir:
+                self.layers = repeat(SyncBidirTransformerDecoderBlock(
+                    d_model, d_ff, n_heads, dropout, dropout_att,
+                    layer_norm_eps, ffn_activation, param_init), n_layers)
+            elif attn_type == 'mocha':
+                # self.layers = [TransformerDecoderBlock(
+                #     d_model, d_ff, 'mocha', n_heads, dropout, dropout_att,
+                #     layer_norm_eps, ffn_activation, param_init,
+                #     mocha_chunk_size=mocha_chunk_size)]
+                self.layers = [TransformerDecoderBlock(
+                    d_model, d_ff, 'mocha', n_heads, dropout, dropout_att,
+                    layer_norm_eps, ffn_activation, param_init,
+                    mocha_chunk_size=mocha_chunk_size,
+                    mocha_skip_monotonic_attn=False)
+                    for l in range(n_layers)]
+                self.layers = torch.nn.ModuleList(self.layers)
+            else:
+                assert attn_type == 'scaled_dot'
                 self.layers = repeat(TransformerDecoderBlock(
-                    d_model, d_ff, attn_type, n_heads,
-                    dropout, dropout_att,
+                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
                     layer_norm_eps, ffn_activation, param_init), n_layers)
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, self.vocab)
             if tie_embedding:
+                assert not self.sync_bidir
                 self.output.weight = self.embed.weight
 
             if param_init == 'xavier_uniform':
@@ -196,13 +220,16 @@ class TransformerDecoder(DecoderBase):
 
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and (task == 'all' or 'ctc' not in task):
-            if self.sync_bidir_attn:
+            if self.sync_bidir:
                 loss_att, acc_att, ppl_att = self.forward_sync_bidir_att(eouts, elens, ys)
             else:
-                loss_att, acc_att, ppl_att = self.forward_att(eouts, elens, ys)
+                loss_att, acc_att, ppl_att, loss_qua = self.forward_att(eouts, elens, ys)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
+            if self.quantity_loss_weight > 0:
+                loss_att += loss_qua * self.quantity_loss_weight
+                observation['loss_quantity'] = loss_qua.item()
             if self.mtl_per_batch:
                 loss += loss_att
             else:
@@ -224,6 +251,7 @@ class TransformerDecoder(DecoderBase):
             loss (FloatTensor): `[1]`
             acc (float): accuracy for token prediction
             ppl (float): perplexity
+            loss_qua (FloatTensor): `[1]`
 
         """
         # Append <sos> and <eos>
@@ -231,20 +259,31 @@ class TransformerDecoder(DecoderBase):
 
         # Create target self-attention mask
         bs, ytime = ys_in.size()[:2]
-        tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
-        subsequent_mask = tgt_mask.new_ones(ytime, ytime).byte()
-        subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
-        tgt_mask = tgt_mask & subsequent_mask
+        tgt_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ytime, 1])
+        causal_mask = tgt_mask.new_ones(ytime, ytime).byte()
+        causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
+        tgt_mask = tgt_mask & causal_mask  # `[B, L, L]`
 
         # Create source-target mask
-        src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
+        src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])  # `[B, L, T]`
 
         out = self.pos_enc(self.embed(ys_in))
+        xy_aws_lower = None
+        xy_aws_layers = []
         for l in range(self.n_layers):
-            out, yy_aws, xy_aws = self.layers[l](out, tgt_mask, eouts, src_mask)
+            out, yy_aws, xy_aws, xy_aws_beta = self.layers[l](
+                out, tgt_mask, eouts, src_mask, mode='parallel')
+            xy_aws_layers.append(xy_aws.clone())
+            # xy_aws_lower=xy_aws_lower
+            # if self.attn_type == 'mocha':
+            #     if l == 0:
+            #         xy_aws_first = xy_aws.clone()
+            #     xy_aws_lower = xy_aws.detach()
             if not self.training:
                 self.aws_dict['yy_aws_layer%d' % l] = tensor2np(yy_aws)
                 self.aws_dict['xy_aws_layer%d' % l] = tensor2np(xy_aws)
+                if self.attn_type == 'mocha':
+                    self.aws_dict['xy_aws_beta_layer%d' % l] = tensor2np(xy_aws_beta)
         logits = self.output(self.norm_out(out))
 
         # for knowledge distillation
@@ -254,10 +293,26 @@ class TransformerDecoder(DecoderBase):
         # Compute XE sequence loss (+ label smoothing)
         loss, ppl = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
 
+        # Quantity loss
+        loss_qua = 0.
+        if self.quantity_loss_weight > 0:
+            n_tokens_ref = tgt_mask[:, -1, :].sum(1).float()  # `[B]`
+            print(n_tokens_ref)
+            for xy_aws_l in xy_aws_layers:
+                aws_qua = xy_aws_l.squeeze(1)  # `[B, L, T]`
+                aws_qua = aws_qua.masked_fill_(src_mask.transpose(2, 1) == 0, 0)
+                aws_qua = aws_qua.masked_fill_(tgt_mask[:, -1:, :] == 0, 0)
+                # NOTE: attention padding is quite effective for quantity loss
+
+                n_tokens_pred = aws_qua.sum(2).sum(1)  # `[B]`
+                print(n_tokens_pred)
+                # NOTE: count <eos> tokens
+                loss_qua += torch.mean(torch.abs(n_tokens_pred - n_tokens_ref))
+
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out, self.pad)
 
-        return loss, acc, ppl
+        return loss, acc, ppl, loss_qua
 
     def forward_sync_bidir_att(self, eouts, elens, ys, return_logits=False, teacher_logits=None):
         """Compute XE loss for the synchronous bidirectional Transformer decoder.
@@ -266,7 +321,6 @@ class TransformerDecoder(DecoderBase):
             eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
-            half_pred (bool): predict tokens until the middle in both directions
             return_logits (bool): return logits for knowledge distillation
             teacher_logits (FloatTensor): `[B, L, vocab]`
         Returns:
@@ -276,7 +330,7 @@ class TransformerDecoder(DecoderBase):
 
         """
         # Append <sos> and <eos>
-        if self.half_pred:
+        if self.sync_bidir_half:
             # Add randomness
             if random.random() < 0.5:
                 null_first = True
@@ -311,27 +365,27 @@ class TransformerDecoder(DecoderBase):
 
         # Create target self-attention mask
         bs, ytime = ys_in.size()[:2]
-        ylens_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
-        subsequent_mask = ylens_mask.new_ones(ytime, ytime).byte()
-        subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
-        tgt_mask = ylens_mask & subsequent_mask
+        ylens_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ytime, 1])
+        causal_mask = ylens_mask.new_ones(ytime, ytime).byte()
+        causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
+        tgt_mask = ylens_mask & causal_mask
 
         # Create source-target mask
         src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])
 
         # Create idendity token mask for synchronous bidirectional attention
-        idendity_mask = tgt_mask.clone()
-        if not self.half_pred:
-            for b in range(bs):
-                for i in range(ylens[b] - 1):
-                    idendity_mask[b, i, (ylens[b] - 1) - i] = 0
-                    # NOTE: ylens counts <eos>
+        identity_mask = tgt_mask.clone()
+        # if not self.sync_bidir_half:
+        #     for b in range(bs):
+        #         for i in range(ylens[b] - 1):
+        #             identity_mask[b, i, (ylens[b] - 1) - i] = 0
+        #             # NOTE: ylens counts <eos>
 
         out = self.pos_enc(self.embed(ys_in))
         out_bwd = self.pos_enc(self.embed(ys_bwd_in))
         for l in range(self.n_layers):
             out, out_bwd, yy_aws_h, yy_aws_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws, xy_aws_bwd = self.layers[l](
-                out, out_bwd, tgt_mask, idendity_mask, eouts, src_mask)
+                out, out_bwd, tgt_mask, identity_mask, eouts, src_mask)
             if not self.training:
                 self.aws_dict['yy_aws_fwd_history_layer%d' % l] = tensor2np(yy_aws_h)
                 self.aws_dict['yy_aws_fwd_future_layer%d' % l] = tensor2np(yy_aws_f)
@@ -371,10 +425,14 @@ class TransformerDecoder(DecoderBase):
 
         for k, aw in self.aws_dict.items():
             plt.clf()
-            fig, axes = plt.subplots(max(1, self.n_heads // n_cols), n_cols,
+            if len(aw.shape) == 3:
+                aw = aw[:, None, :, :]  # add head dimension
+            n_heads = aw.shape[1]
+            n_cols_tmp = 1 if n_heads == 1 else n_cols
+            fig, axes = plt.subplots(max(1, n_heads // n_cols_tmp), n_cols_tmp,
                                      figsize=(20, 8), squeeze=False)
-            for h in range(self.n_heads):
-                ax = axes[h // n_cols, h % n_cols]
+            for h in range(n_heads):
+                ax = axes[h // n_cols_tmp, h % n_cols_tmp]
                 ax.imshow(aw[-1, h, :, :], aspect="auto")
                 ax.grid(False)
                 ax.set_xlabel("Input (head%d)" % h)
@@ -406,32 +464,32 @@ class TransformerDecoder(DecoderBase):
         """
         bs, xtime = eouts.size()[:2]
 
-        if self.sync_bidir_attn:
-            y_seq = eouts.new_zeros(bs, 1).fill_(self.l2r).long()
-            y_seq_bwd = eouts.new_zeros(bs, 1).fill_(self.r2l).long()
+        if self.sync_bidir:
+            ys = eouts.new_zeros(bs, 1).fill_(self.l2r).long()
+            ys_bwd = eouts.new_zeros(bs, 1).fill_(self.r2l).long()
         else:
-            y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
+            ys = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
         hyps_batch = []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
         ytime = int(math.floor(xtime * max_len_ratio)) + 1
         for t in range(ytime):
-            subsequent_mask = eouts.new_ones(t + 1, t + 1).byte()
-            subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
+            causal_mask = eouts.new_ones(t + 1, t + 1).byte()
+            causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
 
-            dout = self.pos_enc(self.embed(y_seq))
-            if self.sync_bidir_attn:
-                dout_bwd = self.pos_enc(self.embed(y_seq_bwd))
+            dout = self.pos_enc(self.embed(ys))
+            if self.sync_bidir:
+                dout_bwd = self.pos_enc(self.embed(ys_bwd))
                 for l in range(self.n_layers):
                     dout, dout_bwd, _, _, _, _, xy_aws, xy_aws_bwd = self.layers[l](
-                        dout, dout_bwd, subsequent_mask, None, eouts, None)
+                        dout, dout_bwd, causal_mask, None, eouts, None)
 
                 # Pick up 1-best
                 y_bwd = self.output(self.norm_out(dout_bwd))[:, -1:].argmax(-1)
             else:
                 for l in range(self.n_layers):
-                    dout, _, xy_aws = self.layers[l](dout, subsequent_mask, eouts, None)
+                    dout, _, xy_aws, _ = self.layers[l](dout, causal_mask, eouts, None)
 
             # Pick up 1-best
             y = self.output(self.norm_out(dout))[:, -1:].argmax(-1)
@@ -450,9 +508,9 @@ class TransformerDecoder(DecoderBase):
             if t == ytime - 1:
                 break
 
-            y_seq = torch.cat([y_seq, y], dim=-1)
-            if self.sync_bidir_attn:
-                y_seq_bwd = torch.cat([y_seq_bwd, y_bwd], dim=-1)
+            ys = torch.cat([ys, y], dim=-1)
+            if self.sync_bidir:
+                ys_bwd = torch.cat([ys_bwd, y_bwd], dim=-1)
 
         # Concatenate in L dimension
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
@@ -527,6 +585,9 @@ class TransformerDecoder(DecoderBase):
         n_models = len(ensmbl_decs) + 1
 
         beam_width = params['recog_beam_width']
+        if self.sync_bidir:
+            beam_width //= 2
+        beam_width_bwd = params['recog_beam_width'] // 2 if self.sync_bidir else 0
         assert 1 <= nbest <= beam_width
         ctc_weight = params['recog_ctc_weight']
         max_len_ratio = params['recog_max_len_ratio']
@@ -534,14 +595,12 @@ class TransformerDecoder(DecoderBase):
         lp_weight = params['recog_length_penalty']
         length_norm = params['recog_length_norm']
         lm_weight = params['recog_lm_weight']
+        lm_weight_bwd = 0.1
         lm_weight_second = params['recog_lm_second_weight']
         lm_weight_second_bwd = params['recog_lm_bwd_weight']
         eos_threshold = params['recog_eos_threshold']
         lm_state_carry_over = params['recog_lm_state_carry_over']
         softmax_smoothing = params['recog_softmax_smoothing']
-
-        # if self.sync_bidir_attn:
-        #     beam_width //= 2
 
         # TODO:
         # - aws
@@ -568,12 +627,12 @@ class TransformerDecoder(DecoderBase):
         for b in range(bs):
             # Initialization per utterance
             lmstate = None
-            if self.sync_bidir_attn:
-                y_seq = eouts.new_zeros(bs, 1).fill_(self.l2r).long()
-                y_seq_bwd = eouts.new_zeros(bs, 1).fill_(self.r2l).long()
+            if self.sync_bidir:
+                ys = eouts.new_zeros(1, 1).fill_(self.l2r).long()
+                ys_bwd = eouts.new_zeros(1, 1).fill_(self.r2l).long()
             else:
-                y_seq = eouts.new_zeros(bs, 1).fill_(self.eos).long()
-                y_seq_bwd = None
+                ys = eouts.new_zeros(1, 1).fill_(self.eos).long()
+                ys_bwd = None
 
             # For joint CTC-Attention decoding
             ctc_prefix_scorer = None
@@ -583,7 +642,7 @@ class TransformerDecoder(DecoderBase):
                     ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[b][::-1], self.blank, self.eos)
                 else:
                     ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[b], self.blank, self.eos)
-                    if self.sync_bidir_attn:
+                    if self.sync_bidir:
                         ctc_prefix_scorer_bwd = CTCPrefixScore(ctc_log_probs[b][::-1], self.blank, self.eos)
 
             if speakers is not None:
@@ -592,13 +651,13 @@ class TransformerDecoder(DecoderBase):
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
 
-            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id)
+            helper = BeamSearch(beam_width + beam_width_bwd, self.eos, ctc_weight, self.device_id)
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
                      'hyp_bwd': [self.eos],
-                     'y_seq': y_seq,
-                     'y_seq_bwd': y_seq_bwd,
+                     'ys': ys,
+                     'ys_bwd': ys_bwd,
                      'cache': None,
                      'cache_bwd': None,
                      'score': 0.,
@@ -612,35 +671,35 @@ class TransformerDecoder(DecoderBase):
                      'lmstate_bwd': None,
                      'ensmbl_aws':[[None]] * (n_models - 1),
                      'ctc_state': ctc_prefix_scorer.initial_state() if ctc_prefix_scorer is not None else None,
-                     'ctc_state_bwd': ctc_prefix_scorer_bwd.initial_state() if ctc_prefix_scorer is not None and self.sync_bidir_attn else None}]
-            # if self.sync_bidir_attn:
-            #     hyps_bwd = hyps[:]
+                     'ctc_state_bwd': ctc_prefix_scorer_bwd.initial_state() if ctc_prefix_scorer is not None and self.sync_bidir else None,
+                     'bwd': False}]
+            if self.sync_bidir:
+                hyps_bwd = copy.deepcopy(hyps)
+                hyps_bwd[0]['bwd'] = True
             ytime = int(math.floor(elens[b] * max_len_ratio)) + 1
             for t in range(ytime):
-                # merge fwd and bwd hypotheses
-                # if self.sync_bidir_attn:
-                #     hyps_merge = hyps + hyps_bwd
-                # else:
-                #     hyps_merge = hyps
-                hyps_merge = hyps[:]
+                # merge fwd and bwd hypotheses for batch decoding
+                hyps_merge = hyps + hyps_bwd if self.sync_bidir else hyps[:]
+                if len(hyps_merge) == 0:
+                    break
 
                 # preprocess for batch decoding
                 cache = [None] * self.n_layers
                 if cache_states and t > 0:
                     for l in range(self.n_layers):
                         cache[l] = torch.cat([beam['cache'][l] for beam in hyps_merge], dim=0)
-                y_seq = eouts.new_zeros(len(hyps_merge), t + 1).long()
+                ys = eouts.new_zeros(len(hyps_merge), t + 1).long()
                 for j, beam in enumerate(hyps_merge):
-                    y_seq[j, :] = beam['y_seq']
+                    ys[j, :] = beam['ys']
 
                 cache_bwd = [None] * self.n_layers
-                if self.sync_bidir_attn:
+                if self.sync_bidir:
                     if cache_states and t > 0:
                         for l in range(self.n_layers):
                             cache_bwd[l] = torch.cat([beam['cache_bwd'][l] for beam in hyps_merge], dim=0)
-                    y_seq_bwd = eouts.new_zeros(len(hyps_merge), t + 1).long()
+                    ys_bwd = eouts.new_zeros(len(hyps_merge), t + 1).long()
                     for j, beam in enumerate(hyps_merge):
-                        y_seq_bwd[j, :] = beam['y_seq_bwd']
+                        ys_bwd[j, :] = beam['ys_bwd']
 
                 # Update LM states for shallow fusion
                 lmstate, scores_lm = None, None
@@ -650,43 +709,43 @@ class TransformerDecoder(DecoderBase):
                         lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in hyps_merge], dim=1)
                         lm_cxs = torch.cat([beam['lmstate']['cxs'] for beam in hyps_merge], dim=1)
                         lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
-                    y = y_seq[:, -1:]
-                    if self.sync_bidir_attn and t == 0:
+                    y = ys[:, -1:]
+                    if self.sync_bidir and t == 0:
                         y[:, 0] = self.eos
                     _, lmstate, scores_lm = lm.predict(y, lmstate)
-                if self.sync_bidir_attn and lm_second_bwd is not None:
+                if self.sync_bidir and lm_second_bwd is not None:
                     if beam['lmstate_bwd'] is not None:
                         lm_hxs_bwd = torch.cat([beam['lmstate_bwd']['hxs'] for beam in hyps_merge], dim=1)
                         lm_cxs_bwd = torch.cat([beam['lmstate_bwd']['cxs'] for beam in hyps_merge], dim=1)
                         lmstate_bwd = {'hxs': lm_hxs_bwd, 'cxs': lm_cxs_bwd}
-                    y_bwd = y_seq_bwd[:, -1:]
+                    y_bwd = ys_bwd[:, -1:]
                     if t == 0:
                         y_bwd[:, 0] = self.eos
                     _, lmstate_bwd, scores_lm_bwd = lm_second_bwd.predict(y_bwd, lmstate_bwd)
 
                 # for the main model
-                subsequent_mask = eouts.new_ones(t + 1, t + 1).byte()
-                subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(
-                    0).repeat([y_seq.size(0), 1, 1])
+                causal_mask = eouts.new_ones(t + 1, t + 1).byte()
+                causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(
+                    0).repeat([ys.size(0), 1, 1])
 
-                eouts_b = eouts[b:b + 1, :elens[b]].repeat([y_seq.size(0), 1, 1])
+                eouts_b = eouts[b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
                 new_cache = [None] * self.n_layers
                 new_cache_bwd = [None] * self.n_layers
-                dout = self.pos_enc(self.embed(y_seq))
-                if self.sync_bidir_attn:
-                    dout_bwd = self.pos_enc(self.embed(y_seq_bwd))
+                dout = self.pos_enc(self.embed(ys))
+                if self.sync_bidir:
+                    dout_bwd = self.pos_enc(self.embed(ys_bwd))
                     for l in range(self.n_layers):
                         dout, dout_bwd, _, _, _, _, xy_aws, xy_aws_bwd = self.layers[l](
-                            dout, dout_bwd, subsequent_mask, None, eouts_b, None,
-                            cache_fwd=cache[l], cache_bwd=cache_bwd[l])
+                            dout, dout_bwd, causal_mask, None, eouts_b, None,
+                            cache=cache[l], cache_bwd=cache_bwd[l])
                         new_cache[l] = dout
                         new_cache_bwd[l] = dout_bwd
                     logits_bwd = self.output(self.norm_out(dout_bwd))
                     probs_bwd = torch.softmax(logits_bwd[:, -1] * softmax_smoothing, dim=1)
                 else:
                     for l in range(self.n_layers):
-                        dout, _, xy_aws = self.layers[l](dout, subsequent_mask, eouts_b, None,
-                                                         cache=cache[l])
+                        dout, _, xy_aws, _ = self.layers[l](dout, causal_mask, eouts_b, None,
+                                                            cache=cache[l])
                         new_cache[l] = dout
                 logits = self.output(self.norm_out(dout))
                 probs = torch.softmax(logits[:, -1] * softmax_smoothing, dim=1)
@@ -701,12 +760,12 @@ class TransformerDecoder(DecoderBase):
                     #     for l in range(self.n_layers):
                     #         cache_e[l] = torch.cat([beam['ensmbl_cache'][l] for beam in hyps_merge], dim=0)
                     for i_e, dec in enumerate(ensmbl_decs):
-                        dout_e = dec.pos_enc(dec.embed(y_seq))
-                        eouts_e = ensmbl_eouts[i_e][b:b + 1, :elens[b]].repeat([y_seq.size(0), 1, 1])
+                        dout_e = dec.pos_enc(dec.embed(ys))
+                        eouts_e = ensmbl_eouts[i_e][b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
                         new_cache_e = [None] * dec.n_layers
                         for l in range(dec.n_layers):
-                            dout_e, _, xy_aws = dec.layers[l](dout_e, subsequent_mask, eouts_e, None,
-                                                              cache=cache[l])
+                            dout_e, _, xy_aws_e, _ = dec.layers[l](dout_e, causal_mask, eouts_e, None,
+                                                                   cache=cache[l])
                             new_cache_e[l] = dout_e
                         ensmbl_new_cache.append(new_cache_e)
                         logits_e = dec.output(dec.norm_out(dout_e))
@@ -715,7 +774,7 @@ class TransformerDecoder(DecoderBase):
 
                 # Ensemble in log-scale
                 scores_attn = torch.log(probs) / n_models
-                if self.sync_bidir_attn:
+                if self.sync_bidir:
                     scores_attn_bwd = torch.log(probs_bwd)
 
                 new_hyps, new_hyps_bwd = [], []
@@ -725,7 +784,7 @@ class TransformerDecoder(DecoderBase):
                     total_scores = total_scores_attn * (1 - ctc_weight)
                     total_scores_topk, topk_ids = torch.topk(
                         total_scores, k=beam_width, dim=1, largest=True, sorted=True)
-                    if self.sync_bidir_attn:
+                    if self.sync_bidir:
                         total_scores_attn_bwd = beam['score_attn_bwd'] + scores_attn_bwd[j:j + 1]
                         total_scores_bwd = total_scores_attn_bwd * (1 - ctc_weight)
                         total_scores_topk_bwd, topk_ids_bwd = torch.topk(
@@ -737,35 +796,39 @@ class TransformerDecoder(DecoderBase):
                         total_scores_topk += total_scores_lm * lm_weight
                     else:
                         total_scores_lm = eouts.new_zeros(beam_width)
-                    if self.sync_bidir_attn and lm_second_bwd is not None:
+                    if self.sync_bidir and lm_second_bwd is not None:
                         total_scores_lm_bwd = beam['score_lm_bwd'] + scores_lm_bwd[j, -1, topk_ids_bwd[0]]
-                        total_scores_topk_bwd += total_scores_lm_bwd * lm_weight
+                        total_scores_topk_bwd += total_scores_lm_bwd * lm_weight_bwd
                     else:
                         total_scores_lm_bwd = eouts.new_zeros(beam_width)
 
                     # Add length penalty
                     if lp_weight > 0:
                         total_scores_topk += (len(beam['hyp'][1:]) + 1) * lp_weight
-                        if self.sync_bidir_attn:
+                        if self.sync_bidir:
                             total_scores_topk_bwd += (len(beam['hyp_bwd'][1:]) + 1) * lp_weight
 
                     # Add CTC score
                     new_ctc_states, total_scores_ctc, total_scores_topk = helper.add_ctc_score(
                         beam['hyp'], topk_ids, beam['ctc_state'],
                         total_scores_topk, ctc_prefix_scorer)
-                    if self.sync_bidir_attn:
+                    if self.sync_bidir:
                         new_ctc_states_bwd, total_scores_ctc_bwd, total_scores_topk_bwd = helper.add_ctc_score(
                             beam['hyp_bwd'], topk_ids_bwd, beam['ctc_state_bwd'],
                             total_scores_topk_bwd, ctc_prefix_scorer_bwd)
                     else:
                         total_scores_ctc_bwd = eouts.new_zeros(beam_width)
 
+                    # forward direction
+                    k_bwd = 0  # choose the best hyp from backward direction
                     for k in range(beam_width):
+                        if beam['bwd']:
+                            continue
+
                         idx = topk_ids[0, k].item()
                         length_norm_factor = len(beam['hyp'][1:]) + 1 if length_norm else 1
                         total_scores_topk /= length_norm_factor
-                        if self.sync_bidir_attn:
-                            idx_bwd = topk_ids_bwd[0, k].item()
+                        if self.sync_bidir:
                             total_scores_topk_bwd /= length_norm_factor
 
                         if idx == self.eos:
@@ -778,74 +841,106 @@ class TransformerDecoder(DecoderBase):
                             if scores_attn[j, idx].item() <= eos_threshold * max_score_no_eos:
                                 continue
 
-                        y_seq = torch.cat([beam['y_seq'], eouts.new_zeros(1, 1).fill_(idx).long()], dim=-1)
-                        if self.sync_bidir_attn:
-                            y_seq_bwd = torch.cat(
-                                [beam['y_seq_bwd'], eouts.new_zeros(1, 1).fill_(idx_bwd).long()], dim=-1)
+                        ys = torch.cat([beam['ys'], eouts.new_zeros(1, 1).fill_(idx).long()], dim=-1)
+                        if self.sync_bidir:
+                            if t > 0 and beam['hyp_bwd'][-1] == self.eos:
+                                idx_bwd = self.eos  # pad with <eos>
+                            else:
+                                idx_bwd = topk_ids_bwd[0, k_bwd].item()
+                            ys_bwd = torch.cat(
+                                [beam['ys_bwd'], eouts.new_zeros(1, 1).fill_(idx_bwd).long()], dim=-1)
 
                         new_hyps.append(
                             {'hyp': beam['hyp'] + [idx],
-                             'hyp_bwd': beam['hyp_bwd'] + [idx_bwd] if self.sync_bidir_attn else None,
-                             'y_seq': y_seq,
-                             'y_seq_bwd': y_seq_bwd if self.sync_bidir_attn else None,
+                             'hyp_bwd': beam['hyp_bwd'] + [idx_bwd] if self.sync_bidir else None,
+                             'ys': ys,
+                             'ys_bwd': ys_bwd if self.sync_bidir else None,
                              'cache': [new_cache_l[j:j + 1] for new_cache_l in new_cache] if cache_states else cache,
                              'cache_bwd': [new_cache_l[j:j + 1] for new_cache_l in new_cache_bwd] if cache_states else cache_bwd,
                              'score': total_scores_topk[0, k].item(),
                              'score_attn': total_scores_attn[0, idx].item(),
-                             'score_attn_bwd': total_scores_attn_bwd[0, idx_bwd].item() if self.sync_bidir_attn else None,
+                             'score_attn_bwd': total_scores_attn_bwd[0, idx_bwd].item() if self.sync_bidir else None,
                              'score_ctc': total_scores_ctc[k].item(),
-                             'score_ctc_bwd': total_scores_ctc_bwd[k].item(),
+                             'score_ctc_bwd': total_scores_ctc_bwd[k_bwd].item(),
                              'score_lm': total_scores_lm[k].item(),
-                             'score_lm_bwd': total_scores_lm_bwd[k].item(),
+                             'score_lm_bwd': total_scores_lm_bwd[k_bwd].item(),
                              # 'aws': beam['aws'] + [aw[j:j + 1]],
                              'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                              'lmstate_bwd': {'hxs': lmstate_bwd['hxs'][:, j:j + 1], 'cxs': lmstate_bwd['cxs'][:, j:j + 1]} if lmstate_bwd is not None else None,
                              'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
-                             'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_prefix_scorer is not None and self.sync_bidir_attn else None,
+                             'ctc_state_bwd': new_ctc_states_bwd[k_bwd] if ctc_prefix_scorer is not None and self.sync_bidir else None,
                              'ensmbl_cache': ensmbl_new_cache,
-                             'backward': False})
-                        # if self.sync_bidir_attn:
-                        #     new_hyps_bwd.append(
-                        #         {'hyp': beam['hyp'] + [idx],
-                        #          'hyp_bwd': beam['hyp_bwd'] + [idx_bwd] if self.sync_bidir_attn else None,
-                        #          'y_seq': y_seq,
-                        #          'y_seq_bwd': y_seq_bwd if self.sync_bidir_attn else None,
-                        #          'cache': [new_cache_l[j:j + 1] for new_cache_l in new_cache] if cache_states else cache,
-                        #          'cache_bwd': [new_cache_l[j:j + 1] for new_cache_l in new_cache_bwd] if cache_states else cache_bwd,
-                        #          'score': total_scores_topk_bwd[0, k].item(),
-                        #          'score_attn': total_scores_attn[0, idx].item(),
-                        #          'score_attn_bwd': total_scores_attn_bwd[0, idx_bwd].item() if self.sync_bidir_attn else None,
-                        #          'score_ctc': total_scores_ctc[k].item(),
-                        #          'score_ctc_bwd': total_scores_ctc_bwd[k].item(),
-                        #          'score_lm': total_scores_lm[k].item(),
-                        #          'score_lm_bwd': total_scores_lm_bwd[k].item(),
-                        #          # 'aws': beam['aws'] + [aw[j:j + 1]],
-                        #          'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
-                        #          'lmstate_bwd': {'hxs': lmstate_bwd['hxs'][:, j:j + 1], 'cxs': lmstate_bwd['cxs'][:, j:j + 1]} if lmstate_bwd is not None else None,
-                        #          'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
-                        #          'ctc_state_bwd': new_ctc_states_bwd[k] if ctc_prefix_scorer is not None and self.sync_bidir_attn else None,
-                        #          'ensmbl_cache': ensmbl_new_cache,
-                        #          'backward': True})
+                             'bwd': False})
+
+                    # backward direction
+                    if self.sync_bidir:
+                        k = 0  # choose the best hyp from forward direction
+                        for k_bwd in range(beam_width_bwd):
+                            if not beam['bwd']:
+                                continue
+
+                            idx_bwd = topk_ids_bwd[0, k_bwd].item()
+                            length_norm_factor = len(beam['hyp_bwd'][1:]) + 1 if length_norm else 1
+                            total_scores_topk /= length_norm_factor
+                            total_scores_topk_bwd /= length_norm_factor
+
+                            if idx_bwd == self.eos:
+                                # Exclude short hypotheses
+                                if len(beam['hyp_bwd']) - 1 < elens[b] * min_len_ratio:
+                                    continue
+                                # EOS threshold
+                                max_score_no_eos = scores_attn_bwd[j, :idx_bwd].max(0)[0].item()
+                                max_score_no_eos = max(
+                                    max_score_no_eos, scores_attn_bwd[j, idx_bwd + 1:].max(0)[0].item())
+                                if scores_attn_bwd[j, idx_bwd].item() <= eos_threshold * max_score_no_eos:
+                                    continue
+
+                            if t > 0 and beam['hyp'][-1] == self.eos:
+                                idx = self.eos
+                            else:
+                                idx = topk_ids[0, k].item()
+                            ys = torch.cat([beam['ys'], eouts.new_zeros(1, 1).fill_(idx).long()], dim=-1)
+                            ys_bwd = torch.cat(
+                                [beam['ys_bwd'], eouts.new_zeros(1, 1).fill_(idx_bwd).long()], dim=-1)
+
+                            new_hyps_bwd.append(
+                                {'hyp': beam['hyp'] + [idx],
+                                 'hyp_bwd': beam['hyp_bwd'] + [idx_bwd],
+                                 'ys': ys,
+                                 'ys_bwd': ys_bwd,
+                                 'cache': [new_cache_l[j:j + 1] for new_cache_l in new_cache] if cache_states else cache,
+                                 'cache_bwd': [new_cache_l[j:j + 1] for new_cache_l in new_cache_bwd] if cache_states else cache_bwd,
+                                 'score': total_scores_topk_bwd[0, k_bwd].item(),
+                                 'score_attn': total_scores_attn[0, idx].item(),
+                                 'score_attn_bwd': total_scores_attn_bwd[0, idx_bwd].item(),
+                                 'score_ctc': total_scores_ctc[k].item(),
+                                 'score_ctc_bwd': total_scores_ctc_bwd[k_bwd].item(),
+                                 'score_lm': total_scores_lm[k].item(),
+                                 'score_lm_bwd': total_scores_lm_bwd[k_bwd].item(),
+                                 # 'aws': beam['aws'] + [aw[j:j + 1]],
+                                 'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
+                                 'lmstate_bwd': {'hxs': lmstate_bwd['hxs'][:, j:j + 1], 'cxs': lmstate_bwd['cxs'][:, j:j + 1]} if lmstate_bwd is not None else None,
+                                 'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
+                                 'ctc_state_bwd': new_ctc_states_bwd[k_bwd] if ctc_prefix_scorer is not None else None,
+                                 'ensmbl_cache': ensmbl_new_cache,
+                                 'bwd': True})
 
                 # Local pruning
-                if self.sync_bidir_attn:
-                    new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
-                    # new_hyps_bwd_sorted = sorted(new_hyps_bwd, key=lambda x: x['score'], reverse=True)[:beam_width]
-                else:
-                    new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+                new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+                if self.sync_bidir:
+                    new_hyps_bwd_sorted = sorted(new_hyps_bwd, key=lambda x: x['score'], reverse=True)[:beam_width_bwd]
 
                 # Remove complete hypotheses
                 # new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
-                #     new_hyps_sorted, end_hyps, prune=not self.sync_bidir_attn)
-                # hyps = new_hyps[:]
-                # if self.sync_bidir_attn:
-                #     new_hyps_bwd, end_hyps, is_finish = helper.remove_complete_hyp(
-                #         new_hyps_bwd_sorted, end_hyps)
-                #     hyps_bwd = new_hyps_bwd[:]
-                # if is_finish:
-                #     break
-                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted, end_hyps)
+                #     new_hyps_sorted, end_hyps, prune=not self.sync_bidir)
+                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
+                    new_hyps_sorted, end_hyps, prune=True)
                 hyps = new_hyps[:]
+                if self.sync_bidir:
+                    # new_hyps_bwd, end_hyps, is_finish = helper.remove_complete_hyp(
+                    #     new_hyps_bwd_sorted, end_hyps, backward=True)
+                    # hyps_bwd = new_hyps_bwd[:]
+                    hyps_bwd = new_hyps_bwd_sorted[:]
                 if is_finish:
                     break
 
@@ -855,7 +950,7 @@ class TransformerDecoder(DecoderBase):
             elif len(end_hyps) < nbest and nbest > 1:
                 end_hyps.extend(hyps_merge[:nbest - len(end_hyps)])
 
-            if self.sync_bidir_attn and self.half_pred:
+            if self.sync_bidir_half:
                 for hyp in end_hyps:
                     hyp_first = [idx for idx in hyp['hyp'] if idx not in [self.eos, self.null]]
                     hyp_second = [idx for idx in hyp['hyp_bwd'][1:][::-1] if idx not in [self.eos, self.null]]
@@ -866,42 +961,47 @@ class TransformerDecoder(DecoderBase):
                 self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
 
             # backward secodn path LM rescoring
-            if lm_second_bwd is not None:
-                self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_rev')
+            if lm_second_bwd is not None and lm_weight_second_bwd > 0:
+                self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
 
             if utt_ids is not None:
                 logger.info('Utt-id: %s' % utt_ids[b])
-            if refs_id is not None and idx2token is not None and self.vocab == idx2token.vocab:
-                logger.info('Ref: %s' % idx2token(refs_id[b]))
             if idx2token is not None:
+                logger.info('=' * 200)
                 for k in range(len(end_hyps)):
-                    logger.info('Hyp: %s' % idx2token(
+                    if refs_id is not None:
+                        logger.info('Ref: %s' % idx2token(refs_id[b]))
+                    logger.info('Hyp (fwd): %s' % idx2token(
                         end_hyps[k]['hyp'][1:][::-1] if self.bwd else end_hyps[k]['hyp'][1:]))
-                    if self.sync_bidir_attn:
+                    if self.sync_bidir:
+                        if end_hyps[k]['bwd']:
+                            logger.info('■■■ backward hypothesis ■■■')
                         logger.info('Hyp (bwd): %s' % idx2token(end_hyps[k]['hyp_bwd'][1:][::-1]))
                     logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
-                    logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
-                    if self.sync_bidir_attn:
+                    logger.info('log prob (hyp, att-fwd): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
+                    if self.sync_bidir:
                         logger.info('log prob (hyp, att-bwd): %.7f' %
                                     (end_hyps[k]['score_attn_bwd'] * (1 - ctc_weight)))
                     if ctc_prefix_scorer is not None:
-                        logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
-                        if self.sync_bidir_attn:
+                        logger.info('log prob (hyp, ctc-fwd): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
+                        if self.sync_bidir:
                             logger.info('log prob (hyp, ctc-bwd): %.7f' % (end_hyps[k]['score_ctc_bwd'] * ctc_weight))
                     if lm is not None:
-                        logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
-                    if self.sync_bidir_attn and lm_second_bwd is not None:
-                        logger.info('log prob (hyp, first-path lm-bwd): %.7f' %
-                                    (end_hyps[k]['score_lm_bwd'] * lm_weight))
+                        logger.info('log prob (hyp, first-path lm-fwd): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_second is not None:
-                        logger.info('log prob (hyp, second-path lm): %.7f' %
+                        logger.info('log prob (hyp, second-path lm-fwd): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
                     if lm_second_bwd is not None:
-                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_second_rev'] * lm_weight_second_bwd))
+                        if self.sync_bidir:
+                            logger.info('log prob (hyp, first-path lm-bwd): %.7f' %
+                                        (end_hyps[k]['score_lm_bwd'] * lm_weight_bwd))
+                        else:
+                            logger.info('log prob (hyp, second-path lm-bwd): %.7f' %
+                                        (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
+                    logger.info('-' * 50)
 
             # N-best list
             if self.bwd:
