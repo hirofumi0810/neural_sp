@@ -313,6 +313,7 @@ class MoChA(nn.Module):
 
         """
         bs, klen = key.size()[:2]
+        qlen = query.size(1)
 
         if aw_prev is None:
             # aw_prev = [1, 0, 0 ... 0]
@@ -326,8 +327,9 @@ class MoChA(nn.Module):
             e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B, qlen, klen]`
 
             if mode == 'recursive':  # training
-                e_mono = e_mono.squeeze(1)
-                p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, klen]`
+                assert qlen == 1
+                p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, qlen, klen]`
+                p_choose = p_choose.view(bs * qlen, klen)  # `[B * qlen, klen]`
                 # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
                 shifted_1mp_choose = torch.cat([key.new_ones(bs, 1), 1 - p_choose[:, :-1]], dim=1)
                 # Compute attention distribution recursively as
@@ -341,12 +343,12 @@ class MoChA(nn.Module):
 
             elif mode == 'parallel':  # training
                 p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, qlen, klen]`
+                p_choose = p_choose.view(bs * qlen, klen)
                 # safe_cumprod computes cumprod in logspace with numeric checks
-                cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, qlen, klen]`
+                cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B * qlen, klen]`
                 # Compute recurrence relation solution
                 if self.atype == 'add':
-                    p_choose = p_choose.squeeze(1)
-                    cumprod_1mp_choose = cumprod_1mp_choose.squeeze(1)
+                    assert qlen == 1
                     alpha = p_choose * cumprod_1mp_choose * torch.cumsum(
                         aw_prev / torch.clamp(cumprod_1mp_choose, min=self.eps, max=1.0), dim=1)  # `[B, klen]`
                     alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
@@ -422,9 +424,9 @@ def add_gaussian_noise(xs, std):
 def safe_cumprod(x, eps):
     """Numerically stable cumulative product by cumulative sum in log-space.
         Args:
-            x (FloatTensor): `[B, qlen, klen]`
+            x (FloatTensor): `[B, klen]`
         Returns:
-            x (FloatTensor): `[B, qlen, klen]`
+            x (FloatTensor): `[B, klen]`
 
     """
     return torch.exp(exclusive_cumsum(torch.log(torch.clamp(x, min=eps, max=1.0))))
@@ -434,12 +436,12 @@ def exclusive_cumsum(x):
     """Exclusive cumulative summation [a, b, c] => [0, a, a + b].
 
         Args:
-            x (FloatTensor): `[B, qlen, klen]`
+            x (FloatTensor): `[B, klen]`
         Returns:
-            x (FloatTensor): `[B, qlen, klen]`
+            x (FloatTensor): `[B, klen]`
 
     """
-    return torch.cumsum(torch.cat([x.new_zeros(x.size(0), x.size(1), 1), x[:, :, :-1]], dim=2), dim=2)
+    return torch.cumsum(torch.cat([x.new_zeros(x.size(0), 1), x[:, :-1]], dim=1), dim=1)
 
 
 def exclusive_cumprod(x):
