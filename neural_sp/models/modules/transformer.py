@@ -292,7 +292,7 @@ class TransformerDecoderBlock(nn.Module):
 
     def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
                 mode='hard', xy_aws_lower=None):
-        """Transformer decoder layer definition.
+        """Transformer decoder forward pass.
 
         Args:
             ys (FloatTensor): `[B, L, d_model]`
@@ -397,7 +397,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
     def forward(self, ys, ys_bwd, yy_mask, identity_mask, xs, xy_mask,
                 cache=None, cache_bwd=None):
-        """Transformer decoder layer definition.
+        """Synchronous bidirectional transformer decoder forward pass.
 
         Args:
             ys (FloatTensor): `[B, L, d_model]`

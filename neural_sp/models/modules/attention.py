@@ -137,14 +137,13 @@ class AttentionMechanism(nn.Module):
             # return cv, None
 
         elif self.atype == 'add':
-            query = query.repeat([1, klen, 1])
             e = self.v(torch.tanh(self.key + self.w_query(query)))
 
         elif self.atype == 'location':
-            query = query.repeat([1, klen, 1])
             conv_feat = self.conv(aw_prev.unsqueeze(3).transpose(3, 1)).squeeze(2)  # `[B, ch, klen]`
             conv_feat = conv_feat.transpose(2, 1).contiguous()  # `[B, klen, ch]`
-            e = self.v(torch.tanh(self.key + self.w_query(query) + self.w_conv(conv_feat)))
+            tmp = self.key + self.w_query(query)
+            e = self.v(torch.tanh(tmp + self.w_conv(conv_feat)))
 
         elif self.atype == 'dot':
             e = torch.bmm(self.key, self.w_query(query).transpose(-2, -1))

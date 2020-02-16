@@ -158,6 +158,7 @@ class ChunkEnergy(nn.Module):
 
         self.w_key = nn.Linear(kdim, adim)
         if atype == 'add':
+            assert self.n_heads == 1
             self.w_query = nn.Linear(qdim, adim, bias=False)
             self.v = nn.Linear(adim, 1, bias=False)
         elif atype == 'scaled_dot':
@@ -195,7 +196,6 @@ class ChunkEnergy(nn.Module):
 
         """
         bs, klen, kdim = key.size()
-        qlen = query.size(1)
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
@@ -204,10 +204,10 @@ class ChunkEnergy(nn.Module):
             if self.mask is not None:
                 if self.n_heads > 1:
                     self.mask = self.mask.repeat([self.n_heads, 1])
-                assert self.mask.size() == (bs * qlen * self.n_heads, klen)
+                # qlen = query.size(1)
+                # assert self.mask.size() == (bs * qlen * self.n_heads, klen)
 
         if self.atype == 'add':
-            assert self.n_heads == 1
             energy = torch.relu(self.key + self.w_query(query))  # `[B, klen, adim]`
             energy = self.v(energy).squeeze(2)  # `[B, klen]`
         elif self.atype == 'scaled_dot':
@@ -332,7 +332,7 @@ class MoChA(nn.Module):
             e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B * qlen, klen]`
 
             if mode == 'recursive':  # training
-                assert qlen == 1
+                # assert qlen == 1
                 p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B * qlen, klen]`
                 # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
                 shifted_1mp_choose = torch.cat([key.new_ones(bs, 1), 1 - p_choose[:, :-1]], dim=1)
@@ -351,7 +351,7 @@ class MoChA(nn.Module):
                 cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B * qlen, klen]`
                 # Compute recurrence relation solution
                 if self.atype == 'add':
-                    assert qlen == 1
+                    # assert qlen == 1
                     alpha = p_choose * cumprod_1mp_choose * torch.cumsum(
                         aw_prev / torch.clamp(cumprod_1mp_choose, min=self.eps, max=1.0), dim=1)  # `[B, klen]`
                     alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
@@ -359,7 +359,7 @@ class MoChA(nn.Module):
                     # Mask the right part from the trigger point
                     if trigger_point is not None:
                         for b in range(bs):
-                            alpha[b, trigger_point[b] + 1:] = 0
+                            alpha[b, :, trigger_point[b] + 1:] = 0
                             # TODO(hirofumi): add tolerance parameter
                 elif self.atype == 'scaled_dot':
                     p_choose = p_choose.view(bs, qlen, klen)
@@ -394,7 +394,7 @@ class MoChA(nn.Module):
             else:
                 raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
         else:
-            assert aw_lower is not None
+            # assert aw_lower is not None
             alpha = aw_lower.transpose(2, 1)  # `[B, qlen, klen]`
 
         # Compute chunk energy

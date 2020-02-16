@@ -121,8 +121,8 @@ class MultiheadAttentionMechanism(nn.Module):
             self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
             self.mask = mask.unsqueeze(1).repeat(
                 [1, self.n_heads, 1, 1]) if mask is not None else None  # `[B, n_heads, qlen, klen]`
-            if self.mask is not None:
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen)
+            # if self.mask is not None:
+            #     assert self.mask.size() == (bs, self.n_heads, qlen, klen)
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`

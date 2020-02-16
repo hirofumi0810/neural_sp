@@ -135,10 +135,10 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
                 [1, self.n_heads, 1, 1]) if tgt_mask is not None else None  # `[B, n_heads, qlen, klen]`
             self.identity_mask = identity_mask.unsqueeze(1).repeat(
                 [1, self.n_heads, 1, 1]) if identity_mask is not None else None  # `[B, n_heads, qlen, klen]`
-            if self.tgt_mask is not None:
-                assert self.tgt_mask.size() == (bs, self.n_heads, qlen, klen)
-            if self.identity_mask is not None:
-                assert self.identity_mask.size() == (bs, self.n_heads, qlen, klen)
+            # if self.tgt_mask is not None:
+            #     assert self.tgt_mask.size() == (bs, self.n_heads, qlen, klen)
+            # if self.identity_mask is not None:
+            #     assert self.identity_mask.size() == (bs, self.n_heads, qlen, klen)
         if self.key_bwd is None or not cache:
             key_bwd = self.w_key(key_bwd).view(bs, -1, self.n_heads, self.d_k)
             self.key_bwd = key_bwd.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
