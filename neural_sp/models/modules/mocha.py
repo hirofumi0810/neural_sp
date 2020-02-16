@@ -104,7 +104,7 @@ class MonotonicEnergy(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
         Return:
-            energy (FloatTensor): `[B, qlen, klen]`
+            energy (FloatTensor): `[B * qlen, klen]`
 
         """
         bs, klen, kdim = key.size()
@@ -115,14 +115,15 @@ class MonotonicEnergy(nn.Module):
             if self.conv1d is not None:
                 key = torch.relu(self.conv1d(key))
             self.key = self.w_key(key)  # `[B, klen, adim]`
-            self.mask = mask
+            self.mask = mask.view(-1, klen) if mask is not None else None  # `[B * qlen, klen]`
 
         if self.atype == 'add':
             energy = torch.relu(self.key + self.w_query(query))
-            energy = self.v(energy).transpose(2, 1)  # `[B, qlen, klen]`
+            energy = self.v(energy).squeeze(2)  # `[B, klen]`
         elif self.atype == 'scaled_dot':
             energy = torch.matmul(self.w_query(query),
                                   self.key.transpose(2, 1)) / self.scale
+            energy = energy.view(-1, klen)  # `[B * qlen, klen]`
 
         if self.r is not None:
             energy = energy + self.r
@@ -328,12 +329,11 @@ class MoChA(nn.Module):
 
         # Compute monotonic energy
         if self.monotonic_energy is not None:
-            e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B, qlen, klen]`
+            e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B * qlen, klen]`
 
             if mode == 'recursive':  # training
                 assert qlen == 1
-                p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, qlen, klen]`
-                p_choose = p_choose.view(bs * qlen, klen)  # `[B * qlen, klen]`
+                p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B * qlen, klen]`
                 # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
                 shifted_1mp_choose = torch.cat([key.new_ones(bs, 1), 1 - p_choose[:, :-1]], dim=1)
                 # Compute attention distribution recursively as
@@ -346,8 +346,7 @@ class MoChA(nn.Module):
                 alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
 
             elif mode == 'parallel':  # training
-                p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, qlen, klen]`
-                p_choose = p_choose.view(bs * qlen, klen)
+                p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B * qlen, klen]`
                 # safe_cumprod computes cumprod in logspace with numeric checks
                 cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B * qlen, klen]`
                 # Compute recurrence relation solution
@@ -380,7 +379,7 @@ class MoChA(nn.Module):
 
             elif mode == 'hard':  # inference
                 # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
-                emit_probs = torch.sigmoid(e_mono.squeeze(1))  # `[B, klen]`
+                emit_probs = torch.sigmoid(e_mono)  # `[B, klen]`
                 p_choose = (emit_probs >= 0.5).float()
                 # Remove any probabilities before the index chosen at the last time step
                 p_choose *= torch.cumsum(aw_prev, dim=1)  # `[B, klen]`
@@ -410,12 +409,12 @@ class MoChA(nn.Module):
             cv = torch.bmm(alpha, value)
         else:
             if self.n_heads > 1:
-                value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1).contiguous()
-                value = value.view(bs * self.n_heads, -1, self.d_k)  # `[B * n_heads, klen, d_k]`
-                beta = beta.view(bs, qlen, self.n_heads, klen).transpose(2, 1)  # `[B * n_heads, qlen, klen]`
-                cv = torch.matmul(beta.contiguous().view(-1, qlen, klen), value)  # `[B * n_heads, qlen, d_k]`
-                cv = cv.view(bs, self.n_heads, -1, self.d_k)
-                cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
+                value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
+                value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
+                beta = beta.view(bs, qlen, self.n_heads, klen)
+                beta = beta.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, klen]`
+                cv = torch.matmul(beta, value)  # `[B, n_heads, qlen, d_k]`
+                cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads * self.d_k)
                 cv = self.w_out(cv)
             else:
                 beta = beta.unsqueeze(1)  # `[B, 1, klen]`
