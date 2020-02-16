@@ -42,7 +42,9 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
                 backward=(dir == 'bwd'),
                 global_weight=global_weight,
                 mtl_per_batch=args.mtl_per_batch,
-                param_init=args.transformer_param_init)
+                param_init=args.transformer_param_init,
+                mocha_chunk_size=args.mocha_chunk_size,
+                mocha_quantity_loss_weight=args.mocha_quantity_loss_weight)
 
     elif args.dec_type == 'transformer_transducer':
         from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
