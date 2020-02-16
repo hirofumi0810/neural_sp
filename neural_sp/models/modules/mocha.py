@@ -190,7 +190,7 @@ class ChunkEnergy(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
         Return:
-            energy (FloatTensor): `[B * n_heads, qlen, klen]`
+            energy (FloatTensor): `[B * qlen * n_heads, klen]`
 
         """
         bs, klen, kdim = key.size()
@@ -198,20 +198,24 @@ class ChunkEnergy(nn.Module):
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
-            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1).contiguous()
-            self.key = key.view(bs * self.n_heads, -1, self.d_k)  # `[B * n_heads, klen, d_k]`
-            self.mask = mask.repeat([self.n_heads, 1, 1]) if mask is not None else None  # `[B * n_heads, qlen, klen]`
+            self.key = self.w_key(key)  # `[B, klen, adim]`
+            self.mask = mask.view(-1, klen) if mask is not None else None  # `[B * qlen * n_heads, klen]`
             if self.mask is not None:
-                assert self.mask.size() == (bs * self.n_heads, qlen, klen)
+                if self.n_heads > 1:
+                    self.mask = self.mask.repeat([self.n_heads, 1])
+                assert self.mask.size() == (bs * qlen * self.n_heads, klen)
 
         if self.atype == 'add':
             assert self.n_heads == 1
-            energy = torch.relu(self.key + self.w_query(query))
-            energy = self.v(energy).transpose(2, 1)  # `[B, qlen, klen]`
+            energy = torch.relu(self.key + self.w_query(query))  # `[B, klen, adim]`
+            energy = self.v(energy).squeeze(2)  # `[B, klen]`
         elif self.atype == 'scaled_dot':
-            query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1).contiguous()
-            query = query.view(bs * self.n_heads, -1, self.d_k)  # `[B * n_heads, qlen, d_k]`
-            energy = torch.matmul(query, self.key.transpose(2, 1)) / self.scale
+            key = self.key.view(bs, -1, self.n_heads, self.d_k)
+            key = key.transpose(2, 1).transpose(3, 2).contiguous()  # `[B, n_heads, d_k, klen]`
+            query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
+            query = query.transpose(2, 1)  # `[B, n_heads, qlen, d_k]`
+            energy = torch.matmul(query, key) / self.scale  # `[B, n_heads, qlen, klen]`
+            energy = energy.transpose(2, 1).contiguous().view(-1, klen)
 
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
@@ -397,9 +401,9 @@ class MoChA(nn.Module):
         # Compute chunk energy
         beta = None
         if self.chunk_size > 1:
-            e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B * n_heads, qlen, klen]`
+            e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B * qlen * n_heads, klen]`
             beta = efficient_chunkwise_attention(
-                alpha.view(-1, klen), e_chunk, self.chunk_size, self.n_heads, self.sharpening_factor)  # `[B * n_heads * qlen, klen]`
+                alpha.view(-1, klen), e_chunk, self.chunk_size, self.n_heads, self.sharpening_factor)  # [B * qlen * n_heads, klen]`
 
         # Compute context vector
         if self.chunk_size == 1:
@@ -408,14 +412,15 @@ class MoChA(nn.Module):
             if self.n_heads > 1:
                 value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1).contiguous()
                 value = value.view(bs * self.n_heads, -1, self.d_k)  # `[B * n_heads, klen, d_k]`
-                cv = torch.matmul(beta.view(-1, qlen, klen), value)  # `[B * n_heads, qlen, d_k]`
+                beta = beta.view(bs, qlen, self.n_heads, klen).transpose(2, 1)  # `[B * n_heads, qlen, klen]`
+                cv = torch.matmul(beta.contiguous().view(-1, qlen, klen), value)  # `[B * n_heads, qlen, d_k]`
                 cv = cv.view(bs, self.n_heads, -1, self.d_k)
                 cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
                 cv = self.w_out(cv)
-                beta = beta.view(bs, self.n_heads, qlen, klen)
             else:
-                cv = torch.bmm(beta.unsqueeze(1), value)
-                beta = beta.unsqueeze(1).unsqueeze(3)  # `[B, 1, klen, 1]`
+                beta = beta.unsqueeze(1)  # `[B, 1, klen]`
+                cv = torch.bmm(beta, value)  # `[B, 1, d_k]`
+                beta = beta.unsqueeze(3)  # `[B, 1, klen, 1]`
 
         return cv, alpha.transpose(2, 1), beta
 
@@ -485,20 +490,15 @@ def efficient_chunkwise_attention(alpha, e, chunk_size, n_heads, sharpening_fact
     """Compute chunkwise attention distribution efficiently by clipping logits.
 
     Args:
-        alpha (FloatTensor): `[B * n_heads * qlen, klen]`
-        e (FloatTensor): `[B * n_heads, qlen, klen]`
+        alpha (FloatTensor): `[B * qlen, klen]`
+        e (FloatTensor): `[B * qlen * n_heads, klen]`
         chunk_size (int): size of chunk
     Return
-        beta (FloatTensor): `[B * n_heads * qlen, klen]`
+        beta (FloatTensor): `[B * qlen * n_heads, klen]`
 
     """
-    _, qlen, klen = e.size()
-    bs = e.size(0) // n_heads
-    e = e.view(-1, klen)
     if n_heads > 1:
-        alpha = alpha.view(bs, 1, qlen, klen)
-        alpha = alpha.repeat([1, n_heads, 1, 1])
-        alpha = alpha.view(-1, klen)
+        alpha = alpha.repeat([n_heads, 1])
     # Shift logits to avoid overflow
     e -= torch.max(e, dim=1, keepdim=True)[0]
     # Limit the range for numerical stability
