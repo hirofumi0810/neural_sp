@@ -108,6 +108,7 @@ class MultiheadAttentionMechanism(nn.Module):
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, n_heads, qlen, klen]`
+            beta: dummy interface for MoChA
 
         """
         bs, klen = key.size()[: 2]
@@ -142,4 +143,4 @@ class MultiheadAttentionMechanism(nn.Module):
         cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
         cv = self.w_out(cv)
 
-        return cv, aw
+        return cv, aw, None

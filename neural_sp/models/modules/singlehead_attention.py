@@ -114,6 +114,7 @@ class AttentionMechanism(nn.Module):
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, klen, 1 (n_heads)]`
+            beta: dummy interface for MoChA
 
         """
         bs, klen = key.size()[:2]
@@ -169,4 +170,4 @@ class AttentionMechanism(nn.Module):
         aw = self.attn_dropout(aw)
         cv = torch.bmm(aw.unsqueeze(1), value)
 
-        return cv, aw.unsqueeze(2)
+        return cv, aw.unsqueeze(2), None

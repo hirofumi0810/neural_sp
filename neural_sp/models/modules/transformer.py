@@ -210,7 +210,7 @@ class TransformerEncoderBlock(nn.Module):
         # self-attention
         residual = xs
         xs = self.norm1(xs)
-        xs, xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask, cache=False)
+        xs, xx_aws, _ = self.self_attn(xs, xs, xs, mask=xx_mask, cache=False)
         xs = self.dropout(xs) + residual
 
         # position-wise feed-forward
@@ -242,7 +242,7 @@ class TransformerDecoderBlock(nn.Module):
 
     def __init__(self, d_model, d_ff, atype, n_heads, dropout, dropout_att,
                  layer_norm_eps, ffn_activation, param_init, src_tgt_attention=True,
-                 mocha_chunk_size=16, mocha_skip_monotonic_attn=False):
+                 mocha_chunk_size=-1, mocha_skip_monotonic_attn=False):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
@@ -306,6 +306,7 @@ class TransformerDecoderBlock(nn.Module):
             out (FloatTensor): `[B, L, d_model]`
             yy_aws (FloatTensor)`[B, n_heads, L, L]`
             xy_aws (FloatTensor): `[B, n_heads, L, T]`
+            xy_aws_beta (FloatTensor): `[B, n_heads, L, T]`
 
         """
         residual = ys
@@ -322,7 +323,7 @@ class TransformerDecoderBlock(nn.Module):
         if self.atype == "average":
             raise NotImplementedError
         else:
-            out, yy_aws = self.self_attn(ys, ys, ys_q, mask=yy_mask, cache=False)  # k/v/q
+            out, yy_aws, _ = self.self_attn(ys, ys, ys_q, mask=yy_mask, cache=False)  # k/v/q
             out = self.dropout(out) + residual
 
         # attention over encoder stacks
@@ -330,8 +331,8 @@ class TransformerDecoderBlock(nn.Module):
         if self.src_tgt_attention:
             residual = out
             out = self.norm2(out)
-            out, xy_aws = self.src_attn(xs, xs, out, mask=xy_mask, cache=False,  # k/v/q
-                                        mode=mode, aw_lower=xy_aws_lower)
+            out, xy_aws, xy_aws_beta = self.src_attn(xs, xs, out, mask=xy_mask, cache=False,  # k/v/q
+                                                     mode=mode, aw_lower=xy_aws_lower)
             out = self.dropout(out) + residual
 
         # position-wise feed-forward
@@ -343,7 +344,7 @@ class TransformerDecoderBlock(nn.Module):
         if cache is not None:
             out = torch.cat([cache, out], dim=1)
 
-        return out, yy_aws, xy_aws
+        return out, yy_aws, xy_aws, xy_aws_beta
 
 
 class SyncBidirTransformerDecoderBlock(nn.Module):
@@ -445,12 +446,12 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         # fwd
         residual = out
         out = self.norm2(out)
-        out, xy_aws = self.src_attn(xs, xs, out, mask=xy_mask, cache=False)  # k/v/q
+        out, xy_aws, _ = self.src_attn(xs, xs, out, mask=xy_mask, cache=False)  # k/v/q
         out = self.dropout(out) + residual
         # bwd
         residual_bwd = out_bwd
         out_bwd = self.norm2(out_bwd)
-        out_bwd, xy_aws_bwd = self.src_attn(xs, xs, out_bwd, mask=xy_mask, cache=False)  # k/v/q
+        out_bwd, xy_aws_bwd, _ = self.src_attn(xs, xs, out_bwd, mask=xy_mask, cache=False)  # k/v/q
         out_bwd = self.dropout(out_bwd) + residual_bwd
 
         # position-wise feed-forward
