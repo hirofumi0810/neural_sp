@@ -34,11 +34,13 @@ class BeamSearch(object):
         self.ctc_weight = ctc_weight
         # self.lm_weight = lm_weight
 
-    def remove_complete_hyp(self, hyps_sorted, end_hyps, prune=True):
+    def remove_complete_hyp(self, hyps_sorted, end_hyps, prune=True, backward=False):
         new_hyps = []
         is_finish = False
         for hyp in hyps_sorted:
-            if len(hyp['hyp']) > 1 and hyp['hyp'][-1] == self.eos:
+            if not backward and len(hyp['hyp']) > 1 and hyp['hyp'][-1] == self.eos:
+                end_hyps += [hyp]
+            elif backward and len(hyp['hyp_bwd']) > 1 and hyp['hyp_bwd'][-1] == self.eos:
                 end_hyps += [hyp]
             else:
                 new_hyps += [hyp]
