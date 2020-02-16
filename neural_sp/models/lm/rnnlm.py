@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -17,7 +17,6 @@ import torch.nn as nn
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.torch_utils import repeat
-
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ class RNNLM(LMBase):
 
         rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
         self.rnn = nn.ModuleList()
-        self.dropout = repeat(nn.Dropout(p=args.dropout_hidden), args.n_layers)
+        self.dropout = nn.Dropout(p=args.dropout_hidden)
         if args.n_projs > 0:
             self.proj = repeat(nn.Linear(args.n_units, args.n_projs), args.n_layers)
         rnn_idim = args.emb_dim + args.n_units_null_context
@@ -73,20 +72,25 @@ class RNNLM(LMBase):
         if args.use_glu:
             self.glu = LinearGLUBlock(rnn_idim)
 
+        self.adaptive_softmax = None
+        self.output_proj = None
+        self.output = None
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
                 rnn_idim, self.vocab,
                 # cutoffs=[self.vocab // 10, 3 * self.vocab // 10],
                 cutoffs=[self.vocab // 25, self.vocab // 5],
                 div_value=4.0)
-            self.output = None
         else:
             self.adaptive_softmax = None
-            self.output = nn.Linear(rnn_idim, self.vocab)
             if args.tie_embedding:
-                if args.n_units != args.emb_dim:
-                    raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
+                if rnn_idim != args.emb_dim:
+                    self.output_proj = nn.Linear(rnn_idim, args.emb_dim)
+                    rnn_idim = args.emb_dim
+                self.output = nn.Linear(rnn_idim, self.vocab)
                 self.output.weight = self.embed.weight
+            else:
+                self.output = nn.Linear(rnn_idim, self.vocab)
 
         self.reset_parameters(args.param_init)
 
@@ -151,7 +155,7 @@ class RNNLM(LMBase):
             elif self.rnn_type == 'gru':
                 ys_emb, h = self.rnn[l](ys_emb, hx=state['hxs'][l:l + 1])
             new_hxs.append(h)
-            ys_emb = self.dropout[l](ys_emb)
+            ys_emb = self.dropout(ys_emb)
             if self.n_projs > 0:
                 ys_emb = torch.tanh(self.proj[l](ys_emb))
 
@@ -174,6 +178,8 @@ class RNNLM(LMBase):
                 ys_emb = ys_emb + residual
 
         if self.adaptive_softmax is None:
+            if self.output_proj is not None:
+                ys_emb = self.output_proj(ys_emb)
             logits = self.output(ys_emb)
         else:
             logits = ys_emb

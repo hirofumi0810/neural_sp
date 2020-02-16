@@ -71,15 +71,15 @@ class TransformerLM(LMBase):
             src_tgt_attention=False), self.n_layers)
         self.norm_out = nn.LayerNorm(self.d_model, eps=args.transformer_layer_norm_eps)
 
+        self.adaptive_softmax = None
+        self.output = None
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
                 self.d_model, self.vocab,
                 cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
                 # cutoffs=[self.vocab // 25, 3 * self.vocab // 5],
                 div_value=4.0)
-            self.output = None
         else:
-            self.adaptive_softmax = None
             self.output = nn.Linear(self.d_model, self.vocab)
             if args.tie_embedding:
                 self.output.weight = self.embed.weight
@@ -125,7 +125,7 @@ class TransformerLM(LMBase):
 
         out = self.pos_enc(self.embed(ys.long()))
         for l in range(self.n_layers):
-            out, yy_aws, _ = self.layers[l](out, tgt_mask)
+            out, yy_aws, _, _ = self.layers[l](out, tgt_mask)
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
         out = self.norm_out(out)
