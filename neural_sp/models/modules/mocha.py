@@ -206,7 +206,7 @@ class ChunkEnergy(nn.Module):
 
         if self.atype == 'add':
             assert self.n_heads == 1
-            energy = torch.relu(self.key.squeeze(1) + self.w_query(query))
+            energy = torch.relu(self.key + self.w_query(query))
             energy = self.v(energy).transpose(2, 1)  # `[B, qlen, klen]`
         elif self.atype == 'scaled_dot':
             query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1).contiguous()
