@@ -119,9 +119,9 @@ class TransformerLM(LMBase):
         bs, ymax = ys.size()[:2]
         ylens = torch.IntTensor([ymax] * bs)
         tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ymax, 1])
-        subsequent_mask = tgt_mask.new_ones(ymax, ymax).byte()
-        subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
-        tgt_mask = tgt_mask & subsequent_mask
+        causal_mask = tgt_mask.new_ones(ymax, ymax).byte()
+        causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
+        tgt_mask = tgt_mask & causal_mask
 
         out = self.pos_enc(self.embed(ys.long()))
         for l in range(self.n_layers):
