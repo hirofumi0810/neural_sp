@@ -121,7 +121,7 @@ class MonotonicEnergy(nn.Module):
             energy = torch.relu(self.key + self.w_query(query))
             energy = self.v(energy).squeeze(2)  # `[B, klen]`
         elif self.atype == 'scaled_dot':
-            energy = torch.matmul(self.w_query(query),
+            energy = torch.matmul(self.w_query(query.clone()),
                                   self.key.transpose(2, 1)) / self.scale
             energy = energy.view(-1, klen)  # `[B * qlen, klen]`
 
@@ -204,8 +204,7 @@ class ChunkEnergy(nn.Module):
             if self.mask is not None:
                 if self.n_heads > 1:
                     self.mask = self.mask.repeat([self.n_heads, 1])
-                # qlen = query.size(1)
-                # assert self.mask.size() == (bs * qlen * self.n_heads, klen)
+                assert self.mask.size() == (bs * query.size(1) * self.n_heads, klen)
 
         if self.atype == 'add':
             energy = torch.relu(self.key + self.w_query(query))  # `[B, klen, adim]`
@@ -332,7 +331,7 @@ class MoChA(nn.Module):
             e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B * qlen, klen]`
 
             if mode == 'recursive':  # training
-                # assert qlen == 1
+                assert qlen == 1
                 p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B * qlen, klen]`
                 # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
                 shifted_1mp_choose = torch.cat([key.new_ones(bs, 1), 1 - p_choose[:, :-1]], dim=1)
@@ -351,7 +350,7 @@ class MoChA(nn.Module):
                 cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B * qlen, klen]`
                 # Compute recurrence relation solution
                 if self.atype == 'add':
-                    # assert qlen == 1
+                    assert qlen == 1
                     alpha = p_choose * cumprod_1mp_choose * torch.cumsum(
                         aw_prev / torch.clamp(cumprod_1mp_choose, min=self.eps, max=1.0), dim=1)  # `[B, klen]`
                     alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
@@ -394,7 +393,7 @@ class MoChA(nn.Module):
             else:
                 raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
         else:
-            # assert aw_lower is not None
+            assert aw_lower is not None
             alpha = aw_lower.transpose(2, 1)  # `[B, qlen, klen]`
 
         # Compute chunk energy
