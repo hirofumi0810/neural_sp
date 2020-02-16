@@ -309,7 +309,7 @@ class MoChA(nn.Module):
         Return:
             cv (FloatTensor): `[B, qlen, vdim]`
             alpha (FloatTensor): `[B, klen, qlen]`
-            beta (FloatTensor): `[B * n_heads, klen, qlen]`
+            beta (FloatTensor): `[B, n_heads, klen, qlen]`
 
         """
         bs, klen = key.size()[:2]
@@ -359,6 +359,9 @@ class MoChA(nn.Module):
                             alpha[b, trigger_point[b] + 1:] = 0
                             # TODO(hirofumi): add tolerance parameter
                 elif self.atype == 'scaled_dot':
+                    p_choose = p_choose.view(bs, qlen, klen)
+                    cumprod_1mp_choose = cumprod_1mp_choose.view(bs, qlen, klen)
+
                     # parallel version
                     # alpha = p_choose * cumprod_1mp_choose   # `[B, qlen, klen]`
 
@@ -389,14 +392,14 @@ class MoChA(nn.Module):
                 raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
         else:
             assert aw_lower is not None
-            alpha = aw_lower.transpose(2, 1)
+            alpha = aw_lower.transpose(2, 1)  # `[B, qlen, klen]`
 
         # Compute chunk energy
         beta = None
         if self.chunk_size > 1:
-            e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B * n_heads, qlen, ken]`
+            e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B * n_heads, qlen, klen]`
             beta = efficient_chunkwise_attention(
-                alpha, e_chunk, self.chunk_size, self.sharpening_factor)  # `[B * n_heads, qlen, klen]`
+                alpha.view(-1, klen), e_chunk, self.chunk_size, self.n_heads, self.sharpening_factor)  # `[B * n_heads * qlen, klen]`
 
         # Compute context vector
         if self.chunk_size == 1:
@@ -405,12 +408,14 @@ class MoChA(nn.Module):
             if self.n_heads > 1:
                 value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1).contiguous()
                 value = value.view(bs * self.n_heads, -1, self.d_k)  # `[B * n_heads, klen, d_k]`
-                cv = torch.matmul(beta, value)  # `[B * n_heads, qlen, d_k]`
+                cv = torch.matmul(beta.view(-1, qlen, klen), value)  # `[B * n_heads, qlen, d_k]`
                 cv = cv.view(bs, self.n_heads, -1, self.d_k)
                 cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
                 cv = self.w_out(cv)
+                beta = beta.view(bs, self.n_heads, qlen, klen)
             else:
-                cv = torch.bmm(beta, value)
+                cv = torch.bmm(beta.unsqueeze(1), value)
+                beta = beta.unsqueeze(1).unsqueeze(3)  # `[B, 1, klen, 1]`
 
         return cv, alpha.transpose(2, 1), beta
 
@@ -460,37 +465,42 @@ def moving_sum(x, back, forward):
     """Compute the moving sum of x over a chunk_size with the provided bounds.
 
     Args:
-        x (FloatTensor): `[B * n_heads, qlen, klen]`
+        x (FloatTensor): `[B, klen]`
         back (int):
         forward (int):
 
     Returns:
-        x_sum (FloatTensor): `[B * n_heads, qlen, klen]`
+        x_sum (FloatTensor): `[B, klen]`
 
     """
     # Moving sum is computed as a carefully-padded 1D convolution with ones
-    x_padded = F.pad(x, pad=[back, forward])  # `[B * n_heads, qlen, back + T + forward]`
+    x_padded = F.pad(x, pad=[back, forward]).unsqueeze(1)  # `[B, 1, back + T + forward]`
     # Construct filters
     filters = x.new_ones(1, 1, back + forward + 1)
     x_sum = F.conv1d(x_padded, filters)
-    return x_sum
+    return x_sum.squeeze(1)
 
 
-def efficient_chunkwise_attention(alpha, e, chunk_size, sharpening_factor=1.):
+def efficient_chunkwise_attention(alpha, e, chunk_size, n_heads, sharpening_factor):
     """Compute chunkwise attention distribution efficiently by clipping logits.
 
     Args:
-        alpha (FloatTensor): `[B, qlen, klen]`
+        alpha (FloatTensor): `[B * n_heads * qlen, klen]`
         e (FloatTensor): `[B * n_heads, qlen, klen]`
         chunk_size (int): size of chunk
     Return
-        beta (FloatTensor): `[B * n_heads, qlen, klen]`
+        beta (FloatTensor): `[B * n_heads * qlen, klen]`
 
     """
-    n_heads = e.size(0) // alpha.size(0)
-    alpha = alpha.repeat([n_heads, 1, 1])
+    _, qlen, klen = e.size()
+    bs = e.size(0) // n_heads
+    e = e.view(-1, klen)
+    if n_heads > 1:
+        alpha = alpha.view(bs, 1, qlen, klen)
+        alpha = alpha.repeat([1, n_heads, 1, 1])
+        alpha = alpha.view(-1, klen)
     # Shift logits to avoid overflow
-    e -= torch.max(e, dim=2, keepdim=True)[0]
+    e -= torch.max(e, dim=1, keepdim=True)[0]
     # Limit the range for numerical stability
     softmax_exp = torch.clamp(torch.exp(e), min=1e-5)
     # Compute chunkwise softmax denominators
