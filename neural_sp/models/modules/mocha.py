@@ -114,14 +114,15 @@ class MonotonicEnergy(nn.Module):
             # 1d conv
             if self.conv1d is not None:
                 key = torch.relu(self.conv1d(key))
-            self.key = self.w_key(key)
+            self.key = self.w_key(key)  # `[B, klen, adim]`
             self.mask = mask
 
         if self.atype == 'add':
             energy = torch.relu(self.key + self.w_query(query))
             energy = self.v(energy).transpose(2, 1)  # `[B, qlen, klen]`
         elif self.atype == 'scaled_dot':
-            energy = torch.matmul(self.w_query(query), self.key.transpose(2, 1)) / self.scale
+            energy = torch.matmul(self.w_query(query),
+                                  self.key.transpose(2, 1)) / self.scale
 
         if self.r is not None:
             energy = energy + self.r
@@ -189,7 +190,7 @@ class ChunkEnergy(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
         Return:
-            energy (FloatTensor): `[B, n_heads, qlen, klen]`
+            energy (FloatTensor): `[B * n_heads, qlen, klen]`
 
         """
         bs, klen, kdim = key.size()
@@ -197,22 +198,20 @@ class ChunkEnergy(nn.Module):
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
-            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-            self.key = key.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
-            self.mask = mask.unsqueeze(1).repeat(
-                [1, self.n_heads, 1, 1]) if mask is not None else None  # `[B, n_heads, qlen, klen]`
+            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1).contiguous()
+            self.key = key.view(bs * self.n_heads, -1, self.d_k)  # `[B * n_heads, klen, d_k]`
+            self.mask = mask.repeat([self.n_heads, 1, 1]) if mask is not None else None  # `[B * n_heads, qlen, klen]`
             if self.mask is not None:
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen)
+                assert self.mask.size() == (bs * self.n_heads, qlen, klen)
 
         if self.atype == 'add':
             assert self.n_heads == 1
             energy = torch.relu(self.key.squeeze(1) + self.w_query(query))
             energy = self.v(energy).transpose(2, 1)  # `[B, qlen, klen]`
-            energy = energy.unsqueeze(1)  # `[B, 1, qlen, klen]`
         elif self.atype == 'scaled_dot':
-            query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-            query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
-            energy = torch.matmul(query, self.key.transpose(3, 2)) / self.scale
+            query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1).contiguous()
+            query = query.view(bs * self.n_heads, -1, self.d_k)  # `[B * n_heads, qlen, d_k]`
+            energy = torch.matmul(query, self.key.transpose(2, 1)) / self.scale
 
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
@@ -310,6 +309,7 @@ class MoChA(nn.Module):
         Return:
             cv (FloatTensor): `[B, qlen, vdim]`
             alpha (FloatTensor): `[B, klen, qlen]`
+            beta (FloatTensor): `[B * n_heads, klen, qlen]`
 
         """
         bs, klen = key.size()[:2]
@@ -380,7 +380,7 @@ class MoChA(nn.Module):
                 # p_choose                        = [0, 0, 0, 1, 1, 0, 1, 1]
                 # 1 - p_choose                    = [1, 1, 1, 0, 0, 1, 0, 0]
                 # exclusive_cumprod(1 - p_choose) = [1, 1, 1, 1, 0, 0, 0, 0]
-                # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
+                # alpha: product of above         = [0, 0, 0, 1, 0, 0, 0, 0]
                 alpha = p_choose * exclusive_cumprod(1 - p_choose)  # `[B, klen]`
                 alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
             else:
@@ -392,24 +392,25 @@ class MoChA(nn.Module):
         # Compute chunk energy
         beta = None
         if self.chunk_size > 1:
-            e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B, n_heads, qlen, ken]`
+            e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B * n_heads, qlen, ken]`
             beta = efficient_chunkwise_attention(
-                alpha, e_chunk, self.chunk_size, self.sharpening_factor)  # `[B, n_heads, qlen, klen]`
+                alpha, e_chunk, self.chunk_size, self.sharpening_factor)  # `[B * n_heads, qlen, klen]`
 
         # Compute context vector
         if self.chunk_size == 1:
             cv = torch.bmm(alpha, value)
         else:
             if self.n_heads > 1:
-                value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
-                value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
-                cv = torch.matmul(beta, value)  # `[B, n_heads, qlen, d_k]`
+                value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k).transpose(2, 1).contiguous()
+                value = value.view(bs * self.n_heads, -1, self.d_k)  # `[B * n_heads, klen, d_k]`
+                cv = torch.matmul(beta, value)  # `[B * n_heads, qlen, d_k]`
+                cv = cv.view(bs, self.n_heads, -1, self.d_k)
                 cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
                 cv = self.w_out(cv)
             else:
-                cv = torch.bmm(beta.squeeze(1), value)
+                cv = torch.bmm(beta, value)
 
-        return cv, alpha.transpose(2, 1)
+        return cv, alpha.transpose(2, 1), beta
 
 
 def add_gaussian_noise(xs, std):
@@ -457,18 +458,18 @@ def moving_sum(x, back, forward):
     """Compute the moving sum of x over a chunk_size with the provided bounds.
 
     Args:
-        x (FloatTensor): `[B, n_heads, qlen, klen]`
+        x (FloatTensor): `[B * n_heads, qlen, klen]`
         back (int):
         forward (int):
 
     Returns:
-        x_sum (FloatTensor): `[B, n_heads, qlen, klen]`
+        x_sum (FloatTensor): `[B * n_heads, qlen, klen]`
 
     """
     # Moving sum is computed as a carefully-padded 1D convolution with ones
-    x_padded = F.pad(x, pad=[back, forward])  # `[B, n_heads, qlen, back + T + forward]`
+    x_padded = F.pad(x, pad=[back, forward])  # `[B * n_heads, qlen, back + T + forward]`
     # Construct filters
-    filters = x.new_ones(1, x_padded.size(1), x_padded.size(2), back + forward + 1)
+    filters = x.new_ones(1, 1, back + forward + 1)
     x_sum = F.conv1d(x_padded, filters)
     return x_sum
 
@@ -478,20 +479,22 @@ def efficient_chunkwise_attention(alpha, e, chunk_size, sharpening_factor=1.):
 
     Args:
         alpha (FloatTensor): `[B, qlen, klen]`
-        e (FloatTensor): `[B, n_heads, qlen, klen]`
+        e (FloatTensor): `[B * n_heads, qlen, klen]`
         chunk_size (int): size of chunk
     Return
-        beta (FloatTensor): `[B, n_heads, qlen, klen]`
+        beta (FloatTensor): `[B * n_heads, qlen, klen]`
 
     """
+    n_heads = e.size(0) // alpha.size(0)
+    alpha = alpha.repeat([n_heads, 1, 1])
     # Shift logits to avoid overflow
-    e -= torch.max(e, dim=3, keepdim=True)[0]
+    e -= torch.max(e, dim=2, keepdim=True)[0]
     # Limit the range for numerical stability
     softmax_exp = torch.clamp(torch.exp(e), min=1e-5)
     # Compute chunkwise softmax denominators
     softmax_denominators = moving_sum(softmax_exp,
                                       back=chunk_size - 1, forward=0)
     # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
-    beta = softmax_exp * moving_sum(alpha.unsqueeze(1) * sharpening_factor / softmax_denominators,
+    beta = softmax_exp * moving_sum(alpha * sharpening_factor / softmax_denominators,
                                     back=0, forward=chunk_size - 1)
     return beta
