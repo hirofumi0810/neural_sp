@@ -159,8 +159,7 @@ class TransformerDecoder(DecoderBase):
                 self.layers = [TransformerDecoderBlock(
                     d_model, d_ff, 'mocha', n_heads, dropout, dropout_att,
                     layer_norm_eps, ffn_activation, param_init,
-                    mocha_chunk_size=mocha_chunk_size,
-                    mocha_skip_monotonic_attn=False)
+                    mocha_chunk_size=mocha_chunk_size)
                     for l in range(n_layers)]
                 self.layers = torch.nn.ModuleList(self.layers)
             else:
@@ -268,17 +267,11 @@ class TransformerDecoder(DecoderBase):
         src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ytime, 1])  # `[B, L, T]`
 
         out = self.pos_enc(self.embed(ys_in))
-        xy_aws_lower = None
         xy_aws_layers = []
         for l in range(self.n_layers):
             out, yy_aws, xy_aws, xy_aws_beta = self.layers[l](
                 out, tgt_mask, eouts, src_mask, mode='parallel')
             xy_aws_layers.append(xy_aws.clone())
-            # xy_aws_lower=xy_aws_lower
-            # if self.attn_type == 'mocha':
-            #     if l == 0:
-            #         xy_aws_first = xy_aws.clone()
-            #     xy_aws_lower = xy_aws.detach()
             if not self.training:
                 self.aws_dict['yy_aws_layer%d' % l] = tensor2np(yy_aws)
                 self.aws_dict['xy_aws_layer%d' % l] = tensor2np(xy_aws)
@@ -297,7 +290,6 @@ class TransformerDecoder(DecoderBase):
         loss_qua = 0.
         if self.quantity_loss_weight > 0:
             n_tokens_ref = tgt_mask[:, -1, :].sum(1).float()  # `[B]`
-            print(n_tokens_ref)
             for xy_aws_l in xy_aws_layers:
                 aws_qua = xy_aws_l.squeeze(1)  # `[B, L, T]`
                 aws_qua = aws_qua.masked_fill_(src_mask.transpose(2, 1) == 0, 0)
@@ -305,7 +297,6 @@ class TransformerDecoder(DecoderBase):
                 # NOTE: attention padding is quite effective for quantity loss
 
                 n_tokens_pred = aws_qua.sum(2).sum(1)  # `[B]`
-                print(n_tokens_pred)
                 # NOTE: count <eos> tokens
                 loss_qua += torch.mean(torch.abs(n_tokens_pred - n_tokens_ref))
 

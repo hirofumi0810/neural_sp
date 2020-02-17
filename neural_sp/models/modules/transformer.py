@@ -236,13 +236,12 @@ class TransformerDecoderBlock(nn.Module):
             param_init (str):
             src_tgt_attention (bool): if False, ignore source-target attention
             mocha_chunk_size (int):
-            mocha_skip_monotonic_attn (bool):
 
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads, dropout, dropout_att,
                  layer_norm_eps, ffn_activation, param_init, src_tgt_attention=True,
-                 mocha_chunk_size=-1, mocha_skip_monotonic_attn=False):
+                 mocha_chunk_size=-1):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
@@ -272,8 +271,7 @@ class TransformerDecoderBlock(nn.Module):
                                       atype='scaled_dot',
                                       chunk_size=mocha_chunk_size,
                                       n_heads=n_heads,
-                                      param_init=param_init,
-                                      skip_monotonic_attn=mocha_skip_monotonic_attn)
+                                      param_init=param_init)
             else:
                 self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
                                                             qdim=d_model,
@@ -290,8 +288,7 @@ class TransformerDecoderBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
-                mode='hard', xy_aws_lower=None):
+    def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None, mode='hard'):
         """Transformer decoder forward pass.
 
         Args:
@@ -301,7 +298,6 @@ class TransformerDecoderBlock(nn.Module):
             xy_mask (ByteTensor): `[B, L, T]`
             cache (FloatTensor): `[B, L-1, d_model]`
             mode (str):
-            xy_aws_lower (FloatTensor): `[B, n_heads, L, T]`
         Returns:
             out (FloatTensor): `[B, L, d_model]`
             yy_aws (FloatTensor)`[B, n_heads, L, L]`
@@ -332,7 +328,7 @@ class TransformerDecoderBlock(nn.Module):
             residual = out
             out = self.norm2(out)
             out, xy_aws, xy_aws_beta = self.src_attn(xs, xs, out, mask=xy_mask, cache=False,  # k/v/q
-                                                     mode=mode, aw_lower=xy_aws_lower)
+                                                     mode=mode)
             out = self.dropout(out) + residual
 
         # position-wise feed-forward
