@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 class MonotonicEnergy(nn.Module):
-    def __init__(self, kdim, qdim, adim, atype,
-                 init_r, conv1d=False, conv_kernel_size=5, param_init=''):
+    def __init__(self, kdim, qdim, adim, atype, n_heads, init_r,
+                 conv1d=False, conv_kernel_size=5, param_init=''):
         """Energy function for the monotonic attenion.
 
         Args:
@@ -47,6 +47,9 @@ class MonotonicEnergy(nn.Module):
         self.mask = None
 
         self.atype = atype
+        assert adim % n_heads == 0
+        self.d_k = adim // n_heads
+        self.n_heads = n_heads
         self.scale = math.sqrt(adim)
 
         self.w_key = nn.Linear(kdim, adim)
@@ -192,7 +195,7 @@ class ChunkEnergy(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
         Return:
-            energy (FloatTensor): `[B * qlen * n_heads, klen]`
+            energy (FloatTensor): `[B * qlen * H, klen]`
 
         """
         bs, klen, kdim = key.size()
@@ -200,7 +203,7 @@ class ChunkEnergy(nn.Module):
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
             self.key = self.w_key(key)  # `[B, klen, adim]`
-            self.mask = mask.view(-1, klen) if mask is not None else None  # `[B * qlen * n_heads, klen]`
+            self.mask = mask.view(-1, klen) if mask is not None else None  # `[B * qlen * H, klen]`
             if self.mask is not None:
                 if self.n_heads > 1:
                     self.mask = self.mask.repeat([self.n_heads, 1])
@@ -211,11 +214,11 @@ class ChunkEnergy(nn.Module):
             energy = self.v(energy).squeeze(2)  # `[B * 1 * 1, klen]`
         elif self.atype == 'scaled_dot':
             key = self.key.view(bs, -1, self.n_heads, self.d_k)
-            key = key.transpose(2, 1).transpose(3, 2).contiguous()  # `[B, n_heads, d_k, klen]`
+            key = key.transpose(2, 1).transpose(3, 2).contiguous()  # `[B, H, d_k, klen]`
             query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-            query = query.transpose(2, 1)  # `[B, n_heads, qlen, d_k]`
-            energy = torch.matmul(query, key) / self.scale  # `[B, n_heads, qlen, klen]`
-            energy = energy.transpose(2, 1).contiguous().view(-1, klen)  # `[B * qlen * n_heads, klen]`
+            query = query.transpose(2, 1)  # `[B, H, qlen, d_k]`
+            energy = torch.matmul(query, key) / self.scale  # `[B, H, qlen, klen]`
+            energy = energy.transpose(2, 1).contiguous().view(-1, klen)  # `[B * qlen * H, klen]`
 
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
@@ -223,7 +226,8 @@ class ChunkEnergy(nn.Module):
 
 
 class MoChA(nn.Module):
-    def __init__(self, kdim, qdim, adim, atype, chunk_size, n_heads=1,
+    def __init__(self, kdim, qdim, adim, atype, chunk_size,
+                 n_heads_mono=1, n_heads_chunk=1,
                  conv1d=False, init_r=-4, noise_std=1.0, eps=1e-6,
                  sharpening_factor=1.0, param_init=''):
         """Monotonic chunk-wise attention.
@@ -241,7 +245,8 @@ class MoChA(nn.Module):
             adim: (int) dimension of the attention layer
             atype (str): type of attention mechanism
             chunk_size (int): size of chunk
-            n_heads (int): number of heads
+            n_heads_mono (int): number of heads for monotonic attention
+            n_heads_chunk (int): number of heads for chunkwise attention
             conv1d (bool): apply 1d convolution for energy calculation
             init_r (int): initial value for parameter 'r' used for monotonic attention
             noise_std (float): standard deviation for input noise
@@ -253,20 +258,22 @@ class MoChA(nn.Module):
         super(MoChA, self).__init__()
 
         self.atype = atype
-        assert adim % n_heads == 0
-        self.d_k = adim // n_heads
+        assert adim % n_heads_chunk == 0
+        self.d_k = adim // n_heads_chunk
 
         self.chunk_size = chunk_size
-        self.n_heads = n_heads
+        self.n_heads_mono = n_heads_mono
+        self.n_heads_chunk = n_heads_chunk
         self.noise_std = noise_std
         self.eps = eps
         self.sharpening_factor = sharpening_factor
 
-        self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype, init_r, conv1d,
+        self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype,
+                                                n_heads_mono, init_r, conv1d,
                                                 param_init=param_init)
         self.chunk_energy = ChunkEnergy(kdim, qdim, adim, atype,
-                                        n_heads, param_init) if chunk_size > 1 else None
-        if n_heads > 1:
+                                        n_heads_chunk, param_init) if chunk_size > 1 else None
+        if n_heads_chunk > 1:
             self.w_value = nn.Linear(kdim, adim)
             self.w_out = nn.Linear(adim, kdim)
             if param_init == 'xavier_uniform':
@@ -306,7 +313,7 @@ class MoChA(nn.Module):
         Return:
             cv (FloatTensor): `[B, qlen, vdim]`
             alpha (FloatTensor): `[B, klen, qlen]`
-            beta (FloatTensor): `[B, n_heads, klen, qlen]`
+            beta (FloatTensor): `[B, H, klen, qlen]`
 
         """
         bs, klen = key.size()[:2]
@@ -388,21 +395,22 @@ class MoChA(nn.Module):
         # Compute chunk energy
         beta = None
         if self.chunk_size > 1:
-            e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B * qlen * n_heads, klen]`
-            beta = efficient_chunkwise_attention(alpha.view(-1, klen), e_chunk, self.chunk_size,
-                                                 self.n_heads, self.sharpening_factor)  # [B * qlen * n_heads, klen]`
+            e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B * qlen * H, klen]`
+            beta = efficient_chunkwise_attention(
+                alpha.view(-1, klen), e_chunk, self.chunk_size,
+                self.n_heads_chunk, self.sharpening_factor)  # [B * qlen * H, klen]`
 
         # Compute context vector
         if self.chunk_size == 1:
             cv = torch.bmm(alpha, value)
         else:
-            if self.n_heads > 1:
-                value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
-                value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
-                beta = beta.view(bs, qlen, self.n_heads, klen)
-                beta = beta.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, klen]`
-                cv = torch.matmul(beta, value)  # `[B, n_heads, qlen, d_k]`
-                cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads * self.d_k)
+            if self.n_heads_chunk > 1:
+                value = self.w_value(value).view(bs, -1, self.n_heads_chunk, self.d_k)
+                value = value.transpose(2, 1).contiguous()  # `[B, H, klen, d_k]`
+                beta = beta.view(bs, qlen, self.n_heads_chunk, klen)
+                beta = beta.transpose(2, 1).contiguous()  # `[B, H, qlen, klen]`
+                cv = torch.matmul(beta, value)  # `[B, H, qlen, d_k]`
+                cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads_chunk * self.d_k)
                 cv = self.w_out(cv)
             else:
                 beta = beta.unsqueeze(1)  # `[B, 1, klen]`
@@ -478,10 +486,10 @@ def efficient_chunkwise_attention(alpha, e, chunk_size, n_heads, sharpening_fact
 
     Args:
         alpha (FloatTensor): `[B * qlen, klen]`
-        e (FloatTensor): `[B * qlen * n_heads, klen]`
+        e (FloatTensor): `[B * qlen * H, klen]`
         chunk_size (int): size of chunk
     Return
-        beta (FloatTensor): `[B * qlen * n_heads, klen]`
+        beta (FloatTensor): `[B * qlen * H, klen]`
 
     """
     if n_heads > 1:
