@@ -107,10 +107,11 @@ class MonotonicEnergy(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
         Return:
-            energy (FloatTensor): `[B * qlen, klen]`
+            energy (FloatTensor): `[B, qlen, klen]`
 
         """
         bs, klen, kdim = key.size()
+        qlen = query.size(1)
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
@@ -118,20 +119,22 @@ class MonotonicEnergy(nn.Module):
             if self.conv1d is not None:
                 key = torch.relu(self.conv1d(key))
             self.key = self.w_key(key)  # `[B, klen, adim]`
-            self.mask = mask.view(-1, klen) if mask is not None else None  # `[B * qlen, klen]`
+            self.mask = mask
 
         if self.atype == 'add':
-            energy = torch.relu(self.key + self.w_query(query))
-            energy = self.v(energy).squeeze(2)  # `[B * 1, klen]`
+            key = self.key.unsqueeze(1)  # `[B, 1, klen, d_k]`
+            query = self.w_query(query).unsqueeze(2)  # `[B, qlen, 1, d_k]`
+            energy = torch.relu(key + query)
+            energy = self.v(energy).squeeze(3)  # `[B, 1, klen]`
         elif self.atype == 'scaled_dot':
-            energy = torch.matmul(self.w_query(query.clone()),
+            energy = torch.matmul(self.w_query(query),
                                   self.key.transpose(2, 1)) / self.scale
-            energy = energy.view(-1, klen)  # `[B * qlen, klen]`
 
         if self.r is not None:
             energy = energy + self.r
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
+        assert energy.size() == (bs, qlen, klen)
         return energy
 
 
@@ -195,33 +198,35 @@ class ChunkEnergy(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
         Return:
-            energy (FloatTensor): `[B * qlen * H, klen]`
+            energy (FloatTensor): `[B, H, qlen, klen]`
 
         """
         bs, klen, kdim = key.size()
+        qlen = query.size(1)
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
-            self.key = self.w_key(key)  # `[B, klen, adim]`
-            self.mask = mask.view(-1, klen) if mask is not None else None  # `[B * qlen * H, klen]`
+            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
+            self.key = key.transpose(2, 1).contiguous()  # `[B, H, klen, d_k]`
+            self.mask = mask
             if self.mask is not None:
-                if self.n_heads > 1:
-                    self.mask = self.mask.repeat([self.n_heads, 1])
-                assert self.mask.size() == (bs * query.size(1) * self.n_heads, klen)
+                self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
+                assert self.mask.size() == (bs, self.n_heads, qlen, klen)
 
         if self.atype == 'add':
-            energy = torch.relu(self.key + self.w_query(query))  # `[B, klen, adim]`
-            energy = self.v(energy).squeeze(2)  # `[B * 1 * 1, klen]`
+            assert self.n_heads == 1
+            key = self.key.unsqueeze(2)  # `[B, 1, 1, klen, d_k]`
+            query = self.w_query(query).unsqueeze(1).unsqueeze(3)  # `[B, 1, qlen, 1, d_k]`
+            energy = torch.relu(key + query)  # `[B, 1, klen, qlen, d_k]`
+            energy = self.v(energy).squeeze(4)  # `[B, 1, qlen, klen]`
         elif self.atype == 'scaled_dot':
-            key = self.key.view(bs, -1, self.n_heads, self.d_k)
-            key = key.transpose(2, 1).transpose(3, 2).contiguous()  # `[B, H, d_k, klen]`
             query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-            query = query.transpose(2, 1)  # `[B, H, qlen, d_k]`
-            energy = torch.matmul(query, key) / self.scale  # `[B, H, qlen, klen]`
-            energy = energy.transpose(2, 1).contiguous().view(-1, klen)  # `[B * qlen * H, klen]`
+            query = query.transpose(2, 1).contiguous()  # `[B, H, qlen, d_k]`
+            energy = torch.matmul(query, self.key.transpose(3, 2)) / self.scale
 
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
+        assert energy.size() == (bs, self.n_heads, qlen, klen)
         return energy
 
 
@@ -321,17 +326,19 @@ class MoChA(nn.Module):
 
         if aw_prev is None:
             # aw_prev = [1, 0, 0 ... 0]
-            aw_prev = key.new_zeros(bs, klen)
-            aw_prev[:, 0:1] = key.new_ones(bs, 1)
+            aw_prev = key.new_zeros(bs, 1, klen)
+            aw_prev[:, :, 0:1] = key.new_ones(bs, 1, 1)
         else:
-            aw_prev = aw_prev.squeeze(2)
+            aw_prev = aw_prev.transpose(2, 1)
 
         # Compute monotonic energy
-        e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B * qlen, klen]`
+        e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B, qlen, klen]`
 
         if mode == 'recursive':  # training
             assert qlen == 1
-            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B * qlen, klen]`
+            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, 1, klen]`
+            p_choose = p_choose.squeeze(1)
+            aw_prev = aw_prev.squeeze(1)
             # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
             shifted_1mp_choose = torch.cat([key.new_ones(bs, 1), 1 - p_choose[:, :-1]], dim=1)
             # Compute attention distribution recursively as
@@ -344,15 +351,14 @@ class MoChA(nn.Module):
             alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
 
         elif mode == 'parallel':  # training
-            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B * qlen, klen]`
+            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, qlen, klen]`
             # safe_cumprod computes cumprod in logspace with numeric checks
-            cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B * qlen, klen]`
+            cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, qlen, klen]`
             # Compute recurrence relation solution
             if self.atype == 'add':
                 assert qlen == 1
                 alpha = p_choose * cumprod_1mp_choose * torch.cumsum(
-                    aw_prev / torch.clamp(cumprod_1mp_choose, min=self.eps, max=1.0), dim=1)  # `[B, klen]`
-                alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
+                    aw_prev / torch.clamp(cumprod_1mp_choose, min=self.eps, max=1.0), dim=1)  # `[B, 1, klen]`
 
                 # Mask the right part from the trigger point
                 if trigger_point is not None:
@@ -360,45 +366,41 @@ class MoChA(nn.Module):
                         alpha[b, :, trigger_point[b] + 1:] = 0
                         # TODO(hirofumi): add tolerance parameter
             elif self.atype == 'scaled_dot':
-                p_choose = p_choose.view(bs, qlen, klen)
-                cumprod_1mp_choose = cumprod_1mp_choose.view(bs, qlen, klen)
-
                 # parallel version
                 # alpha = p_choose * cumprod_1mp_choose   # `[B, qlen, klen]`
 
                 alpha = []
                 for i in range(query.size(1)):
-                    p_choose_i = p_choose[:, i]
-                    cumprod_1mp_choose_i = cumprod_1mp_choose[:, i]
+                    p_choose_i = p_choose[:, i:i + 1]
+                    cumprod_1mp_choose_i = cumprod_1mp_choose[:, i:i + 1]
                     aw_prev = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(
                         aw_prev / torch.clamp(cumprod_1mp_choose_i, min=self.eps, max=1.0), dim=1)  # `[B, klen]`
-                    alpha.append(aw_prev.unsqueeze(1))
+                    alpha.append(aw_prev)
                 alpha = torch.cat(alpha, dim=1)  # `[B, qlen, klen]`
 
         elif mode == 'hard':  # inference
             # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
-            emit_probs = torch.sigmoid(e_mono)  # `[B, klen]`
+            emit_probs = torch.sigmoid(e_mono)  # `[B, 1, klen]`
             p_choose = (emit_probs >= 0.5).float()
             # Remove any probabilities before the index chosen at the last time step
-            p_choose *= torch.cumsum(aw_prev, dim=1)  # `[B, klen]`
+            p_choose *= torch.cumsum(aw_prev, dim=2)  # `[B, 1, klen]`
             # Now, use exclusive cumprod to remove probabilities after the first
             # chosen index, like so:
             # p_choose                        = [0, 0, 0, 1, 1, 0, 1, 1]
             # 1 - p_choose                    = [1, 1, 1, 0, 0, 1, 0, 0]
             # exclusive_cumprod(1 - p_choose) = [1, 1, 1, 1, 0, 0, 0, 0]
             # alpha: product of above         = [0, 0, 0, 1, 0, 0, 0, 0]
-            alpha = p_choose * exclusive_cumprod(1 - p_choose)  # `[B, klen]`
-            alpha = alpha.unsqueeze(1)  # `[B, 1, klen]`
+            alpha = p_choose * exclusive_cumprod(1 - p_choose)  # `[B, 1, klen]`
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
 
         # Compute chunk energy
         beta = None
         if self.chunk_size > 1:
-            e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B * qlen * H, klen]`
+            e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B, H, qlen, ken]`
             beta = efficient_chunkwise_attention(
-                alpha.view(-1, klen), e_chunk, self.chunk_size,
-                self.n_heads_chunk, self.sharpening_factor)  # [B * qlen * H, klen]`
+                alpha, e_chunk, self.chunk_size,
+                self.n_heads_chunk, self.sharpening_factor)  # `[B, H, qlen, klen]`
 
         # Compute context vector
         if self.chunk_size == 1:
@@ -413,9 +415,7 @@ class MoChA(nn.Module):
                 cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads_chunk * self.d_k)
                 cv = self.w_out(cv)
             else:
-                beta = beta.unsqueeze(1)  # `[B, 1, klen]`
-                cv = torch.bmm(beta, value)  # `[B, 1, d_k]`
-                beta = beta.unsqueeze(3)  # `[B, 1, klen, 1]`
+                cv = torch.bmm(beta.squeeze(1), value)  # `[B, 1, adim]`
 
         return cv, alpha.transpose(2, 1), beta
 
@@ -429,9 +429,9 @@ def add_gaussian_noise(xs, std):
 def safe_cumprod(x, eps):
     """Numerically stable cumulative product by cumulative sum in log-space.
         Args:
-            x (FloatTensor): `[B, klen]`
+            x (FloatTensor): `[B, qlen, klen]`
         Returns:
-            x (FloatTensor): `[B, klen]`
+            x (FloatTensor): `[B, qlen, klen]`
 
     """
     return torch.exp(exclusive_cumsum(torch.log(torch.clamp(x, min=eps, max=1.0))))
@@ -441,61 +441,67 @@ def exclusive_cumsum(x):
     """Exclusive cumulative summation [a, b, c] => [0, a, a + b].
 
         Args:
-            x (FloatTensor): `[B, klen]`
+            x (FloatTensor): `[B, qlen, klen]`
         Returns:
-            x (FloatTensor): `[B, klen]`
+            x (FloatTensor): `[B, qlen, klen]`
 
     """
-    return torch.cumsum(torch.cat([x.new_zeros(x.size(0), 1), x[:, :-1]], dim=1), dim=1)
+    return torch.cumsum(torch.cat([x.new_zeros(x.size(0), x.size(1), 1), x[:, :, :-1]], dim=2), dim=2)
 
 
 def exclusive_cumprod(x):
     """Exclusive cumulative product [a, b, c] => [1, a, a * b].
 
         Args:
-            x (FloatTensor): `[B, klen]`
+            x (FloatTensor): `[B, qlen, klen]`
         Returns:
-            x (FloatTensor): `[B, klen]`
+            x (FloatTensor): `[B, qlen, klen]`
 
     """
-    return torch.cumprod(torch.cat([x.new_ones(x.size(0), 1), x[:, :-1]], dim=1), dim=1)
+    return torch.cumprod(torch.cat([x.new_ones(x.size(0), x.size(1), 1), x[:, :, :-1]], dim=2), dim=2)
 
 
 def moving_sum(x, back, forward):
     """Compute the moving sum of x over a chunk_size with the provided bounds.
 
     Args:
-        x (FloatTensor): `[B, klen]`
+        x (FloatTensor): `[B, H, qlen, klen]`
         back (int):
         forward (int):
 
     Returns:
-        x_sum (FloatTensor): `[B, klen]`
+        x_sum (FloatTensor): `[B, H, qlen, klen]`
 
     """
+    bs, n_heads, qlen, klen = x.size()
+    x = x.view(-1, klen)
     # Moving sum is computed as a carefully-padded 1D convolution with ones
-    x_padded = F.pad(x, pad=[back, forward]).unsqueeze(1)  # `[B, 1, back + T + forward]`
+    x_padded = F.pad(x, pad=[back, forward])  # `[B * H * qlen, back + klen + forward]`
+    # Add a "channel" dimension
+    x_padded = x_padded.unsqueeze(1)
     # Construct filters
     filters = x.new_ones(1, 1, back + forward + 1)
     x_sum = F.conv1d(x_padded, filters)
-    return x_sum.squeeze(1)
+    x_sum = x_sum.squeeze(1).view(bs, n_heads, qlen, -1)
+    return x_sum
 
 
 def efficient_chunkwise_attention(alpha, e, chunk_size, n_heads, sharpening_factor):
     """Compute chunkwise attention distribution efficiently by clipping logits.
 
     Args:
-        alpha (FloatTensor): `[B * qlen, klen]`
-        e (FloatTensor): `[B * qlen * H, klen]`
+        alpha (FloatTensor): `[B, qlen, klen]`
+        e (FloatTensor): `[B, H, qlen, klen]`
         chunk_size (int): size of chunk
     Return
-        beta (FloatTensor): `[B * qlen * H, klen]`
+        beta (FloatTensor): `[B, H, qlen, klen]`
 
     """
+    alpha = alpha.unsqueeze(1)
     if n_heads > 1:
-        alpha = alpha.repeat([n_heads, 1])
+        alpha = alpha.repeat([1, n_heads, 1, 1])
     # Shift logits to avoid overflow
-    e -= torch.max(e, dim=1, keepdim=True)[0]
+    e -= torch.max(e, dim=3, keepdim=True)[0]
     # Limit the range for numerical stability
     softmax_exp = torch.clamp(torch.exp(e), min=1e-5)
     # Compute chunkwise softmax denominators
