@@ -107,7 +107,7 @@ class MultiheadAttentionMechanism(nn.Module):
             aw_lower: dummy interface for MoChA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
-            aw (FloatTensor): `[B, n_heads, qlen, klen]`
+            aw (FloatTensor): `[B, H, qlen, klen]`
             beta: dummy interface for MoChA
 
         """
@@ -116,16 +116,16 @@ class MultiheadAttentionMechanism(nn.Module):
 
         if self.key is None or not cache:
             key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-            self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
+            self.key = key.transpose(2, 1).contiguous()      # `[B, H, klen, d_k]`
             value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
-            self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
+            self.value = value.transpose(2, 1).contiguous()  # `[B, H, klen, d_k]`
             self.mask = mask.unsqueeze(1).repeat(
-                [1, self.n_heads, 1, 1]) if mask is not None else None  # `[B, n_heads, qlen, klen]`
+                [1, self.n_heads, 1, 1]) if mask is not None else None  # `[B, H, qlen, klen]`
             # if self.mask is not None:
             #     assert self.mask.size() == (bs, self.n_heads, qlen, klen)
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-        query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
+        query = query.transpose(2, 1).contiguous()  # `[B, H, qlen, d_k]`
 
         if self.atype == 'scaled_dot':
             e = torch.matmul(query, self.key.transpose(3, 2)) / self.scale
@@ -136,10 +136,10 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # Compute attention weights
         if self.mask is not None:
-            e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
+            e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, H, qlen, klen]`
         aw = torch.softmax(e, dim=-1)
         aw = self.attn_dropout(aw)
-        cv = torch.matmul(aw, self.value)  # `[B, n_heads, qlen, d_k]`
+        cv = torch.matmul(aw, self.value)  # `[B, H, qlen, d_k]`
         cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
         cv = self.w_out(cv)
 
