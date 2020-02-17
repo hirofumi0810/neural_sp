@@ -267,6 +267,7 @@ class MoChA(nn.Module):
         self.d_k = adim // n_heads_chunk
 
         self.chunk_size = chunk_size
+        self.n_heads = 1  # dummy for RNN decoder
         self.n_heads_mono = n_heads_mono
         self.n_heads_chunk = n_heads_chunk
         self.noise_std = noise_std
