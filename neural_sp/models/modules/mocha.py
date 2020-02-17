@@ -119,7 +119,7 @@ class MonotonicEnergy(nn.Module):
 
         if self.atype == 'add':
             energy = torch.relu(self.key + self.w_query(query))
-            energy = self.v(energy).squeeze(2)  # `[B, klen]`
+            energy = self.v(energy).squeeze(2)  # `[B * 1, klen]`
         elif self.atype == 'scaled_dot':
             energy = torch.matmul(self.w_query(query.clone()),
                                   self.key.transpose(2, 1)) / self.scale
@@ -208,14 +208,14 @@ class ChunkEnergy(nn.Module):
 
         if self.atype == 'add':
             energy = torch.relu(self.key + self.w_query(query))  # `[B, klen, adim]`
-            energy = self.v(energy).squeeze(2)  # `[B, klen]`
+            energy = self.v(energy).squeeze(2)  # `[B * 1 * 1, klen]`
         elif self.atype == 'scaled_dot':
             key = self.key.view(bs, -1, self.n_heads, self.d_k)
             key = key.transpose(2, 1).transpose(3, 2).contiguous()  # `[B, n_heads, d_k, klen]`
             query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
             query = query.transpose(2, 1)  # `[B, n_heads, qlen, d_k]`
             energy = torch.matmul(query, key) / self.scale  # `[B, n_heads, qlen, klen]`
-            energy = energy.transpose(2, 1).contiguous().view(-1, klen)
+            energy = energy.transpose(2, 1).contiguous().view(-1, klen)  # `[B * qlen * n_heads, klen]`
 
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
@@ -400,8 +400,8 @@ class MoChA(nn.Module):
         beta = None
         if self.chunk_size > 1:
             e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B * qlen * n_heads, klen]`
-            beta = efficient_chunkwise_attention(
-                alpha.view(-1, klen), e_chunk, self.chunk_size, self.n_heads, self.sharpening_factor)  # [B * qlen * n_heads, klen]`
+            beta = efficient_chunkwise_attention(alpha.view(-1, klen), e_chunk, self.chunk_size,
+                                                 self.n_heads, self.sharpening_factor)  # [B * qlen * n_heads, klen]`
 
         # Compute context vector
         if self.chunk_size == 1:
