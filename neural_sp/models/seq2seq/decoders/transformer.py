@@ -299,6 +299,7 @@ class TransformerDecoder(DecoderBase):
                 n_tokens_pred = aws_qua.sum(2).sum(1)  # `[B]`
                 # NOTE: count <eos> tokens
                 loss_qua += torch.mean(torch.abs(n_tokens_pred - n_tokens_ref))
+            loss_qua /= len(xy_aws_layers)  # average over layers
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out, self.pad)
