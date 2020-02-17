@@ -537,7 +537,7 @@ class TransformerDecoder(DecoderBase):
         return hyps, aws
 
     def beam_search(self, eouts, elens, params, idx2token=None,
-                    lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
+                    lm=None, lm_second=None, lm_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
                     ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[], cache_states=False):
@@ -557,7 +557,7 @@ class TransformerDecoder(DecoderBase):
             idx2token (): converter from index to token
             lm: firsh path LM
             lm_second: second path LM
-            lm_second_bwd: first/secoding path backward LM
+            lm_bwd: first/secoding path backward LM
             ctc_log_probs (FloatTensor):
             nbest (int):
             exclude_eos (bool): exclude <eos> from hypothesis
@@ -589,7 +589,7 @@ class TransformerDecoder(DecoderBase):
         lm_weight = params['recog_lm_weight']
         lm_weight_bwd = 0.1
         lm_weight_second = params['recog_lm_second_weight']
-        lm_weight_second_bwd = params['recog_lm_bwd_weight']
+        lm_weight_bwd = params['recog_lm_bwd_weight']
         eos_threshold = params['recog_eos_threshold']
         lm_state_carry_over = params['recog_lm_state_carry_over']
         softmax_smoothing = params['recog_softmax_smoothing']
@@ -606,9 +606,9 @@ class TransformerDecoder(DecoderBase):
         if lm_second is not None:
             assert lm_weight_second > 0
             lm_second.eval()
-        if lm_second_bwd is not None:
-            assert lm_weight_second_bwd > 0
-            lm_second_bwd.eval()
+        if lm_bwd is not None:
+            assert lm_weight_bwd > 0
+            lm_bwd.eval()
 
         if ctc_log_probs is not None:
             assert ctc_weight > 0
@@ -701,19 +701,19 @@ class TransformerDecoder(DecoderBase):
                         lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in hyps_merge], dim=1)
                         lm_cxs = torch.cat([beam['lmstate']['cxs'] for beam in hyps_merge], dim=1)
                         lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
-                    y = ys[:, -1:]
+                    y = ys[:, -1:].clone()  # NOTE: this is important
                     if self.sync_bidir and t == 0:
                         y[:, 0] = self.eos
                     _, lmstate, scores_lm = lm.predict(y, lmstate)
-                if self.sync_bidir and lm_second_bwd is not None:
+                if self.sync_bidir and lm_bwd is not None:
                     if beam['lmstate_bwd'] is not None:
                         lm_hxs_bwd = torch.cat([beam['lmstate_bwd']['hxs'] for beam in hyps_merge], dim=1)
                         lm_cxs_bwd = torch.cat([beam['lmstate_bwd']['cxs'] for beam in hyps_merge], dim=1)
                         lmstate_bwd = {'hxs': lm_hxs_bwd, 'cxs': lm_cxs_bwd}
-                    y_bwd = ys_bwd[:, -1:]
+                    y_bwd = ys_bwd[:, -1:].clone()  # NOTE: this is important
                     if t == 0:
                         y_bwd[:, 0] = self.eos
-                    _, lmstate_bwd, scores_lm_bwd = lm_second_bwd.predict(y_bwd, lmstate_bwd)
+                    _, lmstate_bwd, scores_lm_bwd = lm_bwd.predict(y_bwd, lmstate_bwd)
 
                 # for the main model
                 causal_mask = eouts.new_ones(t + 1, t + 1).byte()
@@ -788,7 +788,7 @@ class TransformerDecoder(DecoderBase):
                         total_scores_topk += total_scores_lm * lm_weight
                     else:
                         total_scores_lm = eouts.new_zeros(beam_width)
-                    if self.sync_bidir and lm_second_bwd is not None:
+                    if self.sync_bidir and lm_bwd is not None:
                         total_scores_lm_bwd = beam['score_lm_bwd'] + scores_lm_bwd[j, -1, topk_ids_bwd[0]]
                         total_scores_topk_bwd += total_scores_lm_bwd * lm_weight_bwd
                     else:
@@ -953,8 +953,8 @@ class TransformerDecoder(DecoderBase):
                 self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
 
             # backward secodn path LM rescoring
-            if lm_second_bwd is not None and lm_weight_second_bwd > 0:
-                self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
+            if lm_bwd is not None and lm_weight_bwd > 0:
+                self.lm_rescoring(end_hyps, lm_bwd, lm_weight_bwd, tag='second_bwd')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -986,13 +986,13 @@ class TransformerDecoder(DecoderBase):
                     if lm_second is not None:
                         logger.info('log prob (hyp, second-path lm-fwd): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
-                    if lm_second_bwd is not None:
+                    if lm_bwd is not None:
                         if self.sync_bidir:
                             logger.info('log prob (hyp, first-path lm-bwd): %.7f' %
                                         (end_hyps[k]['score_lm_bwd'] * lm_weight_bwd))
                         else:
                             logger.info('log prob (hyp, second-path lm-bwd): %.7f' %
-                                        (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
+                                        (end_hyps[k]['score_lm_second_bwd'] * lm_weight_bwd))
                     logger.info('-' * 50)
 
             # N-best list
