@@ -151,22 +151,11 @@ class TransformerDecoder(DecoderBase):
                 self.layers = repeat(SyncBidirTransformerDecoderBlock(
                     d_model, d_ff, n_heads, dropout, dropout_att,
                     layer_norm_eps, ffn_activation, param_init), n_layers)
-            elif attn_type == 'mocha':
-                # self.layers = [TransformerDecoderBlock(
-                #     d_model, d_ff, 'mocha', n_heads, dropout, dropout_att,
-                #     layer_norm_eps, ffn_activation, param_init,
-                #     mocha_chunk_size=mocha_chunk_size)]
-                self.layers = [TransformerDecoderBlock(
-                    d_model, d_ff, 'mocha', n_heads, dropout, dropout_att,
-                    layer_norm_eps, ffn_activation, param_init,
-                    mocha_chunk_size=mocha_chunk_size)
-                    for l in range(n_layers)]
-                self.layers = torch.nn.ModuleList(self.layers)
             else:
-                assert attn_type == 'scaled_dot'
                 self.layers = repeat(TransformerDecoderBlock(
                     d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
-                    layer_norm_eps, ffn_activation, param_init), n_layers)
+                    layer_norm_eps, ffn_activation, param_init,
+                    mocha_chunk_size=mocha_chunk_size), n_layers)
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, self.vocab)
             if tie_embedding:
@@ -643,7 +632,8 @@ class TransformerDecoder(DecoderBase):
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
 
-            helper = BeamSearch(beam_width + beam_width_bwd, self.eos, ctc_weight, self.device_id)
+            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id,
+                                beam_width_bwd=beam_width_bwd)
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
