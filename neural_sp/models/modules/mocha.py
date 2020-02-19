@@ -255,7 +255,7 @@ class MoChA(nn.Module):
             qdim (int): dimension of query
             adim: (int) dimension of the attention layer
             atype (str): type of attention mechanism
-            chunk_size (int): size of chunk
+            chunk_size (int): window size for chunkwise attention
             n_heads_mono (int): number of heads for monotonic attention
             n_heads_chunk (int): number of heads for chunkwise attention
             conv1d (bool): apply 1d convolution for energy calculation
@@ -269,8 +269,8 @@ class MoChA(nn.Module):
         super(MoChA, self).__init__()
 
         self.atype = atype
-        assert adim % n_heads_chunk == 0
-        self.d_k = adim // n_heads_mono
+        assert adim % (n_heads_mono * n_heads_chunk) == 0
+        self.d_k = adim // (n_heads_mono * n_heads_chunk)
 
         self.chunk_size = chunk_size
         self.n_heads = 1  # dummy for RNN decoder
@@ -285,7 +285,7 @@ class MoChA(nn.Module):
                                                 param_init=param_init)
         self.chunk_energy = ChunkEnergy(kdim, qdim, adim, atype,
                                         n_heads_chunk, param_init) if chunk_size > 1 else None
-        if n_heads_mono > 1:
+        if n_heads_mono * n_heads_chunk > 1:
             self.w_value = nn.Linear(kdim, adim)
             self.w_out = nn.Linear(adim, kdim)
             if param_init == 'xavier_uniform':
@@ -406,24 +406,24 @@ class MoChA(nn.Module):
             e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B, H_chunk, qlen, ken]`
             beta = efficient_chunkwise_attention(
                 alpha, e_chunk, self.chunk_size,
-                self.n_heads_chunk, self.sharpening_factor)  # `[B, H_mono, qlen, klen]`
+                self.n_heads_chunk, self.sharpening_factor)  # `[B, H_mono * H_chunk, qlen, klen]`
 
         # Compute context vector
         if self.chunk_size == 1:
             cv = torch.bmm(alpha, value)
         else:
             if self.n_heads_mono > 1:
-                value = self.w_value(value).view(bs, -1, self.n_heads_mono, self.d_k)
-                value = value.transpose(2, 1).contiguous()  # `[B, H_mono, klen, d_k]`
-                cv = torch.matmul(beta, value)  # `[B, H_mono, qlen, d_k]`
-                cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads_mono * self.d_k)
+                value = self.w_value(value).view(bs, -1, self.n_heads_mono * self.n_heads_chunk, self.d_k)
+                value = value.transpose(2, 1).contiguous()  # `[B, H_mono * H_chunk, klen, d_k]`
+                cv = torch.matmul(beta, value)  # `[B, H_mono * H_chunk, qlen, d_k]`
+                cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads_mono * self.n_heads_chunk * self.d_k)
                 cv = self.w_out(cv)  # `[B, qlen, adim]`
             else:
                 cv = torch.bmm(beta.squeeze(1), value)  # `[B, 1, adim]`
 
         assert alpha.size() == (bs, self.n_heads_mono, qlen, klen)
         if self.chunk_size > 1:
-            assert beta.size() == (bs, self.n_heads_mono, qlen, klen)
+            assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen)
         return cv, alpha, beta
 
 
@@ -472,24 +472,24 @@ def moving_sum(x, back, forward):
     """Compute the moving sum of x over a chunk_size with the provided bounds.
 
     Args:
-        x (FloatTensor): `[B, H, qlen, klen]`
+        x (FloatTensor): `[B, H_mono, H_chunk, qlen, klen]`
         back (int):
         forward (int):
 
     Returns:
-        x_sum (FloatTensor): `[B, H, qlen, klen]`
+        x_sum (FloatTensor): `[B, H_mono, H_chunk, qlen, klen]`
 
     """
-    bs, n_heads, qlen, klen = x.size()
+    bs, n_heads_mono, n_heads_chunk, qlen, klen = x.size()
     x = x.view(-1, klen)
     # Moving sum is computed as a carefully-padded 1D convolution with ones
-    x_padded = F.pad(x, pad=[back, forward])  # `[B * H * qlen, back + klen + forward]`
+    x_padded = F.pad(x, pad=[back, forward])  # `[B * H_mono * H_chunk * qlen, back + klen + forward]`
     # Add a "channel" dimension
     x_padded = x_padded.unsqueeze(1)
     # Construct filters
     filters = x.new_ones(1, 1, back + forward + 1)
     x_sum = F.conv1d(x_padded, filters)
-    x_sum = x_sum.squeeze(1).view(bs, n_heads, qlen, -1)
+    x_sum = x_sum.squeeze(1).view(bs, n_heads_mono, n_heads_chunk, qlen, -1)
     return x_sum
 
 
@@ -499,17 +499,20 @@ def efficient_chunkwise_attention(alpha, e, chunk_size, n_heads, sharpening_fact
     Args:
         alpha (FloatTensor): `[B, H_mono, qlen, klen]`
         e (FloatTensor): `[B, H_chunk, qlen, klen]`
-        chunk_size (int): size of chunk
+        chunk_size (int): window size for chunkwise attention
         n_heads (int): number of heads for chunkwise attention
         sharpening_factor (float):
     Return
         beta (FloatTensor): `[B, H_mono * H_chunk, qlen, klen]`
 
     """
+    bs, _, qlen, klen = alpha.size()
+    alpha = alpha.unsqueeze(2)
+    e = e.unsqueeze(1)
     if n_heads > 1:
-        alpha = alpha.repeat([1, n_heads, 1, 1])
+        alpha = alpha.repeat([1, 1, n_heads, 1, 1])
     # Shift logits to avoid overflow
-    e -= torch.max(e, dim=3, keepdim=True)[0]
+    e -= torch.max(e, dim=-1, keepdim=True)[0]
     # Limit the range for numerical stability
     softmax_exp = torch.clamp(torch.exp(e), min=1e-5)
     # Compute chunkwise softmax denominators
@@ -518,4 +521,4 @@ def efficient_chunkwise_attention(alpha, e, chunk_size, n_heads, sharpening_fact
     # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
     beta = softmax_exp * moving_sum(alpha * sharpening_factor / softmax_denominators,
                                     back=0, forward=chunk_size - 1)
-    return beta
+    return beta.view(bs, -1, qlen, klen)
