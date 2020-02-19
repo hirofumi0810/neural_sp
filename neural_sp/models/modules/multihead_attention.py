@@ -120,7 +120,7 @@ class MultiheadAttentionMechanism(nn.Module):
             value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
             self.value = value.transpose(2, 1).contiguous()  # `[B, H, klen, d_k]`
             self.mask = mask
-            if self.mask is not None:
+            if mask is not None:
                 self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
                 assert self.mask.size() == (bs, self.n_heads, qlen, klen)
 

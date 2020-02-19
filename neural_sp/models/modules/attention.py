@@ -132,7 +132,7 @@ class AttentionMechanism(nn.Module):
             else:
                 self.key = key
             self.mask = mask
-            if self.mask is not None:
+            if mask is not None:
                 assert self.mask.size() == (bs, 1, klen)
 
         # for batch beam search decoding
