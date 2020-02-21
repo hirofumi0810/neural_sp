@@ -34,7 +34,7 @@ ctc_fc_list: "512"
 batch_size: 30
 optimizer: adam
 n_epochs: 25
-convert_to_sgd_epoch: 20
+convert_to_sgd_epoch: 100
 print_step: 200
 metric: edit_distance
 lr: 1e-3

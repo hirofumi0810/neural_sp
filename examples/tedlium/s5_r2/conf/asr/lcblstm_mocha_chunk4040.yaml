@@ -19,7 +19,6 @@ lc_chunk_size_left: 40
 lc_chunk_size_right: 40
 attn_type: mocha
 mocha_chunk_size: 4
-mocha_adaptive: false
 mocha_1dconv: false
 mocha_quantity_loss_weight: 2.0  ### this is important
 attn_sharpening_factor: 1.0
@@ -37,7 +36,7 @@ ctc_fc_list: "512"
 batch_size: 20
 optimizer: adam
 n_epochs: 25
-convert_to_sgd_epoch: 20
+convert_to_sgd_epoch: 100
 print_step: 400
 metric: edit_distance
 lr: 1e-3

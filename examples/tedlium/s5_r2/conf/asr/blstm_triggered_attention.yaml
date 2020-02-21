@@ -17,16 +17,21 @@ enc_n_layers: 5
 subsample_type: drop
 lc_chunk_size_left: -1  ### offline
 lc_chunk_size_right: 40
-dec_type: lstm_transducer
+attn_type: triggered_attention
+attn_conv_n_channels: 10
+attn_conv_width: 201
+attn_dim: 512
+attn_n_heads: 1
+dec_type: lstm
 dec_n_units: 1024
 dec_n_projs: 0
-dec_n_layers: 2
-dec_bottleneck_dim: 512
+dec_n_layers: 1
+dec_bottleneck_dim: 1024  ### this is effective
 emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 15
+batch_size: 30
 optimizer: adam
 n_epochs: 25
 convert_to_sgd_epoch: 100
@@ -50,7 +55,10 @@ dropout_in: 0.0
 dropout_enc: 0.4
 dropout_dec: 0.4
 dropout_emb: 0.4
+dropout_att: 0.0
 weight_decay: 1e-6
+ss_prob: 0.2
+ss_type: constant
 lsm_prob: 0.1
 ### MTL
 ctc_weight: 0.3

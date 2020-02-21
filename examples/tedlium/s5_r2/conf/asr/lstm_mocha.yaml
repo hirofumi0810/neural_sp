@@ -9,26 +9,30 @@ conv_strides: "(1,1)_(1,1)"
 conv_poolings: "(2,2)_(2,2)"
 conv_batch_norm: false
 subsample: "1_1_1_1_1"
-enc_type: conv_blstm
-bidirectional_sum_fwd_bwd: true
-enc_n_units: 512
+enc_type: conv_lstm
+enc_n_units: 1024
 enc_n_projs: 0
 enc_n_layers: 5
 subsample_type: drop
-lc_chunk_size_left: -1  ### offline
-lc_chunk_size_right: 40
-dec_type: lstm_transducer
+attn_type: mocha
+mocha_chunk_size: 4
+mocha_1dconv: false
+mocha_quantity_loss_weight: 2.0  ### this is important
+attn_sharpening_factor: 1.0
+attn_dim: 512
+attn_n_heads: 1
+dec_type: lstm
 dec_n_units: 1024
 dec_n_projs: 0
-dec_n_layers: 2
-dec_bottleneck_dim: 512
+dec_n_layers: 1
+dec_bottleneck_dim: 1024  ### this is effective
 emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 15
+batch_size: 30
 optimizer: adam
-n_epochs: 25
+n_epochs: 30  # for uni
 convert_to_sgd_epoch: 100
 print_step: 200
 metric: edit_distance
@@ -50,6 +54,7 @@ dropout_in: 0.0
 dropout_enc: 0.4
 dropout_dec: 0.4
 dropout_emb: 0.4
+dropout_att: 0.0
 weight_decay: 1e-6
 lsm_prob: 0.1
 ### MTL

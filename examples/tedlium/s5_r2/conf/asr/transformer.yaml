@@ -1,7 +1,7 @@
 ### topology
 n_stacks: 1
 n_skips: 1
-max_n_frames: 4000  ### this is important
+max_n_frames: 1600
 conv_in_channel: 1
 conv_channels: "32_32"
 conv_kernel_sizes: "(3,3)_(3,3)"
@@ -24,7 +24,7 @@ transformer_param_init: xavier_uniform
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 24  ###
+batch_size: 32
 optimizer: noam
 n_epochs: 50
 convert_to_sgd_epoch: 100

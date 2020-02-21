@@ -1,9 +1,8 @@
 # optimization
-n_epochs: 40
-convert_to_sgd_epoch: 40
+n_epochs: 40  # 20->40
 print_step: 1200
-lr_decay_start_epoch: 7
-lr_decay_rate: 0.875
+lr_decay_start_epoch: 5
+lr_decay_rate: 0.9
 
 # mask
 freq_width: 27
