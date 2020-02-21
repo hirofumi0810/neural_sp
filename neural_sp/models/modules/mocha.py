@@ -121,7 +121,7 @@ class MonotonicEnergy(nn.Module):
             key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
             self.key = key.transpose(2, 1).contiguous()  # `[B, H, klen, d_k]`
             self.mask = mask
-            if self.mask is not None:
+            if mask is not None:
                 self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
                 assert self.mask.size() == (bs, self.n_heads, qlen, klen)
 
@@ -215,7 +215,7 @@ class ChunkEnergy(nn.Module):
             key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
             self.key = key.transpose(2, 1).contiguous()  # `[B, H, klen, d_k]`
             self.mask = mask
-            if self.mask is not None:
+            if mask is not None:
                 self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
                 assert self.mask.size() == (bs, self.n_heads, qlen, klen)
 
@@ -240,7 +240,7 @@ class MoChA(nn.Module):
     def __init__(self, kdim, qdim, adim, atype, chunk_size,
                  n_heads_mono=1, n_heads_chunk=1,
                  conv1d=False, init_r=-4, noise_std=1.0, eps=1e-6,
-                 sharpening_factor=1.0, param_init=''):
+                 sharpening_factor=1.0, param_init='', decot=False, lookahead=2):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -264,6 +264,8 @@ class MoChA(nn.Module):
             eps (float):
             sharpening_factor (float): sharping factor for beta calculation
             param_init (str):
+            decot (bool): delay constrainted training (DeCoT)
+            lookahead (int): lookahead frames for DeCoT
 
         """
         super(MoChA, self).__init__()
@@ -279,6 +281,9 @@ class MoChA(nn.Module):
         self.noise_std = noise_std
         self.eps = eps
         self.sharpening_factor = sharpening_factor
+
+        self.decot = decot
+        self.lookahead = lookahead
 
         self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype,
                                                 n_heads_mono, init_r, conv1d,
@@ -308,6 +313,7 @@ class MoChA(nn.Module):
         self.monotonic_energy.reset()
         if self.chunk_size > 1:
             self.chunk_energy.reset()
+        self.mask_beta = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
                 mode='hard', cache=True, trigger_point=None):
@@ -367,10 +373,10 @@ class MoChA(nn.Module):
                     aw_prev / torch.clamp(cumprod_1mp_choose, min=self.eps, max=1.0), dim=-1)  # `[B, H_mono, 1, klen]`
 
                 # Mask the right part from the trigger point
-                if trigger_point is not None:
+                if self.decot and trigger_point is not None:
                     for b in range(bs):
-                        alpha[b, :, :, trigger_point[b] + 1:] = 0
-                        # TODO(hirofumi): add tolerance parameter
+                        alpha[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
+
             elif self.atype == 'scaled_dot':
                 # parallel version
                 # alpha = p_choose * cumprod_1mp_choose   # `[B, H_mono, qlen, klen]`

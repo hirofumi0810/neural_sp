@@ -34,12 +34,14 @@ class AttentionMechanism(nn.Module):
         conv_kernel_size (int): size of kernel.
             This must be the odd number.
         dropout (float): attention dropout probability
+        lookahead (int): lookahead frames for triggered attention
 
     """
 
     def __init__(self, kdim, qdim, adim, atype,
                  sharpening_factor=1, sigmoid_smoothing=False,
-                 conv_out_channels=10, conv_kernel_size=201, dropout=0.):
+                 conv_out_channels=10, conv_kernel_size=201, dropout=0.,
+                 lookahead=2):
 
         super(AttentionMechanism, self).__init__()
 
@@ -49,6 +51,7 @@ class AttentionMechanism(nn.Module):
         self.sharpening_factor = sharpening_factor
         self.sigmoid_smoothing = sigmoid_smoothing
         self.n_heads = 1
+        self.lookahead = lookahead
         self.reset()
 
         # attention dropout applied after the softmax layer
@@ -58,13 +61,13 @@ class AttentionMechanism(nn.Module):
             raise NotImplementedError
             # NOTE: sequence-to-sequence without attetnion (use the last state as a context vector)
 
-        elif atype == 'add':
-            self.w_key = nn.Linear(kdim, adim, bias=True)
+        elif atype in ['add', 'triggered_attention']:
+            self.w_key = nn.Linear(kdim, adim)
             self.w_query = nn.Linear(qdim, adim, bias=False)
             self.v = nn.Linear(adim, 1, bias=False)
 
         elif atype == 'location':
-            self.w_key = nn.Linear(kdim, adim, bias=True)
+            self.w_key = nn.Linear(kdim, adim)
             self.w_query = nn.Linear(qdim, adim, bias=False)
             self.w_conv = nn.Linear(conv_out_channels, adim, bias=False)
             self.conv = nn.Conv2d(in_channels=1,
@@ -110,7 +113,7 @@ class AttentionMechanism(nn.Module):
             aw_prev (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
             mode: dummy interface for MoChA
             cache (bool): cache key and mask
-            trigger_point (IntTensor): dummy interface for MoChA
+            trigger_point (IntTensor): `[B]`
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
@@ -127,7 +130,8 @@ class AttentionMechanism(nn.Module):
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
-            if self.atype in ['add', 'location', 'dot', 'luong_general']:
+            if self.atype in ['add', 'trigerred_attention',
+                              'location', 'dot', 'luong_general']:
                 self.key = self.w_key(key)
             else:
                 self.key = key
@@ -145,7 +149,7 @@ class AttentionMechanism(nn.Module):
             # cv = torch.stack(last_state, dim=0).unsqueeze(1)
             # return cv, None
 
-        elif self.atype == 'add':
+        elif self.atype in ['add', 'triggered_attention']:
             tmp = self.key.unsqueeze(1) + self.w_query(query).unsqueeze(2)
             e = self.v(torch.tanh(tmp)).squeeze(3)
 
@@ -165,6 +169,12 @@ class AttentionMechanism(nn.Module):
             query = query.repeat([1, klen, 1])
             e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1)))).transpose(2, 1)
         assert e.size() == (bs, qlen, klen)
+
+        # Mask the right part from the trigger point
+        if self.atype == 'triggered_attention':
+            assert trigger_point is not None
+            for b in range(bs):
+                e[b, :, trigger_point[b] + self.lookahead + 1:] = NEG_INF
 
         # Compute attention weights, context vector
         if self.mask is not None:
