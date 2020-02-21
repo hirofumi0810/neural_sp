@@ -54,7 +54,7 @@ class MonotonicEnergy(nn.Module):
 
         self.w_key = nn.Linear(kdim, adim)
         if atype == 'add':
-            self.v = nn.Linear(adim, 1, bias=False)
+            self.v = nn.Linear(adim, n_heads, bias=False)
             self.w_query = nn.Linear(qdim, adim, bias=False)
         elif atype == 'scaled_dot':
             self.w_query = nn.Linear(qdim, adim)
@@ -107,7 +107,7 @@ class MonotonicEnergy(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
         Return:
-            energy (FloatTensor): `[B, H, qlen, klen]`
+            e (FloatTensor): `[B, H, qlen, klen]`
 
         """
         bs, klen, kdim = key.size()
@@ -125,23 +125,24 @@ class MonotonicEnergy(nn.Module):
                 self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
                 assert self.mask.size() == (bs, self.n_heads, qlen, klen)
 
+        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
+        query = query.transpose(2, 1).contiguous()  # `[B, H, qlen, d_k]`
+
         if self.atype == 'add':
-            assert self.n_heads == 1
-            key = self.key.unsqueeze(2)  # `[B, 1, 1, klen, d_k]`
-            query = self.w_query(query).unsqueeze(1).unsqueeze(3)  # `[B, 1, qlen, 1, d_k]`
-            energy = torch.relu(key + query)  # `[B, 1, klen, qlen, d_k]`
-            energy = self.v(energy).squeeze(4)  # `[B, 1, qlen, klen]`
+            key = self.key.unsqueeze(2)  # `[B, H, 1, klen, d_k]`
+            query = query.unsqueeze(3)  # `[B, H, qlen, 1, d_k]`
+            e = torch.relu(key + query)  # `[B, H, qlen, klen, d_k]`
+            e = e.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
+            e = self.v(e).permute(0, 3, 1, 2)  # `[B, qlen, klen, H]`
         elif self.atype == 'scaled_dot':
-            query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-            query = query.transpose(2, 1).contiguous()  # `[B, H, qlen, d_k]`
-            energy = torch.matmul(query, self.key.transpose(3, 2)) / self.scale
+            e = torch.matmul(query, self.key.transpose(3, 2)) / self.scale
 
         if self.r is not None:
-            energy = energy + self.r
+            e = e + self.r
         if self.mask is not None:
-            energy = energy.masked_fill_(self.mask == 0, NEG_INF)
-        assert energy.size() == (bs, self.n_heads, qlen, klen)
-        return energy
+            e = e.masked_fill_(self.mask == 0, NEG_INF)
+        assert e.size() == (bs, self.n_heads, qlen, klen)
+        return e
 
 
 class ChunkEnergy(nn.Module):
@@ -220,7 +221,6 @@ class ChunkEnergy(nn.Module):
                 assert self.mask.size() == (bs, self.n_heads, qlen, klen)
 
         if self.atype == 'add':
-            assert self.n_heads == 1
             key = self.key.unsqueeze(2)  # `[B, 1, 1, klen, d_k]`
             query = self.w_query(query).unsqueeze(1).unsqueeze(3)  # `[B, 1, qlen, 1, d_k]`
             energy = torch.relu(key + query)  # `[B, 1, klen, qlen, d_k]`

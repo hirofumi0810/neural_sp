@@ -130,9 +130,11 @@ class MultiheadAttentionMechanism(nn.Module):
         if self.atype == 'scaled_dot':
             e = torch.matmul(query, self.key.transpose(3, 2)) / self.scale
         elif self.atype == 'add':
-            e = torch.tanh(self.key.unsqueeze(2) + query.unsqueeze(3))
+            key = self.key.unsqueeze(2)  # `[B, H, 1, klen, d_k]`
+            query = query.unsqueeze(3)  # `[B, H, qlen, 1, d_k]`
+            e = torch.tanh(key + query)
             e = e.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
-            e = self.v(e).permute(0, 3, 1, 2)
+            e = self.v(e).permute(0, 3, 1, 2)  # `[B, qlen, klen, H]`
 
         # Compute attention weights
         if self.mask is not None:
