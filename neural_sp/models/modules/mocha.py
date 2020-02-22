@@ -246,6 +246,8 @@ class MoChA(nn.Module):
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
             https://openreview.net/forum?id=Hko85plCW
+            "Monotonic Multihead Attention" (ICLR 2020)
+            https://openreview.net/forum?id=Hyg96gBKPS
 
             if chunk_size == 1, this is equivalent to Hard monotonic attention
                 "Online and Linear-Time Attention by Enforcing Monotonic Alignment" (ICML 2017)
@@ -277,6 +279,7 @@ class MoChA(nn.Module):
         self.d_k = adim // (n_heads_mono * n_heads_chunk)
 
         self.chunk_size = chunk_size
+        self.milk = (chunk_size == -1)
         self.n_heads = n_heads_mono
         self.n_heads_mono = n_heads_mono
         self.n_heads_chunk = n_heads_chunk
@@ -291,7 +294,7 @@ class MoChA(nn.Module):
                                                 n_heads_mono, init_r, conv1d,
                                                 param_init=param_init)
         self.chunk_energy = ChunkEnergy(kdim, qdim, adim, atype,
-                                        n_heads_chunk, param_init) if chunk_size > 1 else None
+                                        n_heads_chunk, param_init) if chunk_size > 1 or self.milk else None
         if n_heads_mono * n_heads_chunk > 1:
             self.w_value = nn.Linear(kdim, adim)
             self.w_out = nn.Linear(adim, kdim)
@@ -316,9 +319,8 @@ class MoChA(nn.Module):
 
     def reset(self):
         self.monotonic_energy.reset()
-        if self.chunk_size > 1:
+        if self.chunk_energy is not None:
             self.chunk_energy.reset()
-        self.mask_beta = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
                 mode='hard', cache=True, trigger_point=None):
@@ -412,27 +414,30 @@ class MoChA(nn.Module):
 
         # Compute chunk energy
         beta = None
-        if self.chunk_size > 1:
+        if self.chunk_size > 1 or self.milk:
             e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B, H_chunk, qlen, ken]`
             beta = efficient_chunkwise_attention(
                 alpha, e_chunk, self.chunk_size,
                 self.n_heads_chunk, self.sharpening_factor)  # `[B, H_mono * H_chunk, qlen, klen]`
 
         # Compute context vector
-        if self.chunk_size == 1:
-            cv = torch.bmm(alpha, value)
-        else:
-            if self.n_heads_mono > 1:
-                value = self.w_value(value).view(bs, -1, self.n_heads_mono * self.n_heads_chunk, self.d_k)
-                value = value.transpose(2, 1).contiguous()  # `[B, H_mono * H_chunk, klen, d_k]`
+        if self.n_heads_mono * self.n_heads_chunk > 1:
+            value = self.w_value(value).view(bs, -1, self.n_heads_mono * self.n_heads_chunk, self.d_k)
+            value = value.transpose(2, 1).contiguous()  # `[B, H_mono * H_chunk, klen, d_k]`
+            if self.chunk_size == 1:
+                cv = torch.matmul(alpha, value)  # `[B, H_mono, qlen, d_k]`
+            else:
                 cv = torch.matmul(beta, value)  # `[B, H_mono * H_chunk, qlen, d_k]`
-                cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads_mono * self.n_heads_chunk * self.d_k)
-                cv = self.w_out(cv)  # `[B, qlen, adim]`
+            cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads_mono * self.n_heads_chunk * self.d_k)
+            cv = self.w_out(cv)  # `[B, qlen, adim]`
+        else:
+            if self.chunk_size == 1:
+                cv = torch.bmm(alpha.squeeze(1), value)  # `[B, 1, adim]`
             else:
                 cv = torch.bmm(beta.squeeze(1), value)  # `[B, 1, adim]`
 
         assert alpha.size() == (bs, self.n_heads_mono, qlen, klen)
-        if self.chunk_size > 1:
+        if self.chunk_size > 1 or self.milk:
             assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen)
         return cv, alpha, beta
 
@@ -522,13 +527,18 @@ def efficient_chunkwise_attention(alpha, e, chunk_size, n_heads, sharpening_fact
     if n_heads > 1:
         alpha = alpha.repeat([1, 1, n_heads, 1, 1])
     # Shift logits to avoid overflow
-    e -= torch.max(e, dim=-1, keepdim=True)[0]
+    e -= torch.max(e, dim=-1, keepdim=True)[0]  # `[B, H_mono, H_chunk, qlen, klen]`
     # Limit the range for numerical stability
     softmax_exp = torch.clamp(torch.exp(e), min=1e-5)
     # Compute chunkwise softmax denominators
-    softmax_denominators = moving_sum(softmax_exp,
-                                      back=chunk_size - 1, forward=0)
-    # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
-    beta = softmax_exp * moving_sum(alpha * sharpening_factor / softmax_denominators,
-                                    back=0, forward=chunk_size - 1)
+    if chunk_size == -1:
+        # infinite lookback
+        inner_items = alpha / (torch.cumsum(softmax_exp, dim=2))
+        beta = softmax_exp * torch.cumsum(inner_items.flip(dims=[2]), dim=2).flip(dims=[2])
+    else:
+        softmax_denominators = moving_sum(softmax_exp,
+                                          back=chunk_size - 1, forward=0)
+        # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
+        beta = softmax_exp * moving_sum(alpha * sharpening_factor / softmax_denominators,
+                                        back=0, forward=chunk_size - 1)
     return beta.view(bs, -1, qlen, klen)
