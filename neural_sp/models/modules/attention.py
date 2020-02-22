@@ -55,7 +55,7 @@ class AttentionMechanism(nn.Module):
         self.reset()
 
         # attention dropout applied after the softmax layer
-        self.attn_dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=dropout)
 
         if atype == 'no':
             raise NotImplementedError
@@ -183,7 +183,7 @@ class AttentionMechanism(nn.Module):
             aw = torch.sigmoid(e) / torch.sigmoid(e).sum(-1).unsqueeze(-1)
         else:
             aw = torch.softmax(e * self.sharpening_factor, dim=-1)
-        aw = self.attn_dropout(aw)
+        aw = self.dropout(aw)
         cv = torch.bmm(aw, value)
 
         return cv, aw.unsqueeze(1), None

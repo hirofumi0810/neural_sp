@@ -48,7 +48,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.reset()
 
         # attention dropout applied AFTER the softmax layer
-        self.attn_dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=dropout)
 
         if atype == 'scaled_dot':
             # for Transformer
@@ -140,7 +140,7 @@ class MultiheadAttentionMechanism(nn.Module):
         if self.mask is not None:
             e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, H, qlen, klen]`
         aw = torch.softmax(e, dim=-1)
-        aw = self.attn_dropout(aw)
+        aw = self.dropout(aw)
         cv = torch.matmul(aw, self.value)  # `[B, H, qlen, d_k]`
         cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
         cv = self.w_out(cv)
