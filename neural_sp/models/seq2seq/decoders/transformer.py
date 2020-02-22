@@ -75,8 +75,14 @@ class TransformerDecoder(DecoderBase):
         global_weight (float):
         mtl_per_batch (bool):
         param_init (str):
+        mocha_n_heads_mono (int):
+        mocha_tie_mono_attn (bool):
+        mocha_n_heads_chunk (int):
         mocha_chunk_size (int):
         mocha_quantity_loss_weight (float):
+        mocha_head_divergence_loss_weight (float):
+        mocha_ctc_sync (str):
+        mocha_minlt_loss_weight (float):
 
     """
 
@@ -87,7 +93,10 @@ class TransformerDecoder(DecoderBase):
                  dropout, dropout_emb, dropout_att, lsm_prob,
                  ctc_weight, ctc_lsm_prob, ctc_fc_list,
                  backward, global_weight, mtl_per_batch, param_init,
-                 mocha_chunk_size, mocha_quantity_loss_weight):
+                 mocha_n_heads_mono, mocha_tie_mono_attn,
+                 mocha_n_heads_chunk, mocha_chunk_size,
+                 mocha_quantity_loss_weight, mocha_head_divergence_loss_weight,
+                 mocha_ctc_sync, mocha_minlt_loss_weight):
 
         super(TransformerDecoder, self).__init__()
 
@@ -112,6 +121,7 @@ class TransformerDecoder(DecoderBase):
 
         # for attention plot
         self.aws_dict = {}
+        self.data_dict = {}
 
         # for synchronous bidirectional decoding
         self.sync_bidir = ('sync_bidir' in attn_type)
@@ -130,6 +140,9 @@ class TransformerDecoder(DecoderBase):
         # for mocha
         self.attn_type = attn_type
         self.quantity_loss_weight = mocha_quantity_loss_weight
+        self.headdiv_loss_weight = mocha_head_divergence_loss_weight
+        self.ctc_sync = mocha_ctc_sync
+        self.minlt_loss_weight = mocha_minlt_loss_weight
 
         if ctc_weight > 0:
             self.ctc = CTC(eos=self.eos,
@@ -155,12 +168,22 @@ class TransformerDecoder(DecoderBase):
                 self.layers = repeat(TransformerDecoderBlock(
                     d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
                     layer_norm_eps, ffn_activation, param_init,
-                    mocha_chunk_size=mocha_chunk_size), n_layers)
+                    mocha_chunk_size=mocha_chunk_size,
+                    mocha_n_heads_mono=mocha_n_heads_mono,
+                    mocha_n_heads_chunk=mocha_n_heads_chunk), n_layers)
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, self.vocab)
             if tie_embedding:
                 assert not self.sync_bidir
                 self.output.weight = self.embed.weight
+
+            if mocha_tie_mono_attn and attn_type == 'mocha':
+                for l in range(1, self.n_layers):
+                    self.layers[l].src_attn.monotonic_energy.w_key.weight = self.layers[0].src_attn.monotonic_energy.w_key.weight
+                    self.layers[l].src_attn.monotonic_energy.w_key.bias = self.layers[0].src_attn.monotonic_energy.w_key.bias
+                    self.layers[l].src_attn.monotonic_energy.w_query.weight = self.layers[0].src_attn.monotonic_energy.w_query.weight
+                    self.layers[l].src_attn.monotonic_energy.w_query.bias = self.layers[0].src_attn.monotonic_energy.w_query.bias
+                    self.layers[l].src_attn.monotonic_energy.r = self.layers[0].src_attn.monotonic_energy.r
 
             if param_init == 'xavier_uniform':
                 self.reset_parameters()
@@ -199,25 +222,36 @@ class TransformerDecoder(DecoderBase):
 
         # CTC loss
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
-            loss_ctc, _ = self.ctc(eouts, elens, ys)
+            loss_ctc, trigger_points = self.ctc(eouts, elens, ys,
+                                                forced_align=self.ctc_sync and self.training)
             observation['loss_ctc'] = loss_ctc.item()
             if self.mtl_per_batch:
                 loss += loss_ctc
             else:
                 loss += loss_ctc * self.ctc_weight
+        else:
+            trigger_points = None
 
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and (task == 'all' or 'ctc' not in task):
             if self.sync_bidir:
                 loss_att, acc_att, ppl_att = self.forward_sync_bidir_att(eouts, elens, ys)
             else:
-                loss_att, acc_att, ppl_att, loss_qua = self.forward_att(eouts, elens, ys)
+                loss_att, acc_att, ppl_att, loss_quantity, loss_headdiv, loss_latency = self.forward_att(
+                    eouts, elens, ys, trigger_points=trigger_points)
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
             if self.quantity_loss_weight > 0:
-                loss_att += loss_qua * self.quantity_loss_weight
-                observation['loss_quantity'] = loss_qua.item()
+                loss_att += loss_quantity * self.quantity_loss_weight
+                observation['loss_quantity'] = loss_quantity.item()
+            if self.headdiv_loss_weight > 0:
+                loss_att += loss_headdiv * self.headdiv_loss_weight
+                observation['loss_headdiv'] = loss_headdiv.item()
+            if self.ctc_sync in ['decot', 'minlt']:
+                observation['loss_latency'] = loss_latency.item() if self.training else 0
+                if self.ctc_sync == 'minlt' and self.minlt_loss_weight > 0:
+                    loss_att += loss_latency * self.minlt_loss_weight
             if self.mtl_per_batch:
                 loss += loss_att
             else:
@@ -226,7 +260,8 @@ class TransformerDecoder(DecoderBase):
         observation['loss'] = loss.item()
         return loss, observation
 
-    def forward_att(self, eouts, elens, ys, return_logits=False, teacher_logits=None):
+    def forward_att(self, eouts, elens, ys,
+                    return_logits=False, teacher_logits=None, trigger_points=None):
         """Compute XE loss for the Transformer decoder.
 
         Args:
@@ -235,17 +270,25 @@ class TransformerDecoder(DecoderBase):
             ys (list): A list of length `[B]`, which contains a list of size `[L]`
             return_logits (bool): return logits for knowledge distillation
             teacher_logits (FloatTensor): `[B, L, vocab]`
+            trigger_points (IntTensor): `[B, T]`
         Returns:
             loss (FloatTensor): `[1]`
             acc (float): accuracy for token prediction
             ppl (float): perplexity
-            loss_qua (FloatTensor): `[1]`
+            loss_quantity (FloatTensor): `[1]`
+            loss_headdiv (FloatTensor): `[1]`
+            loss_latency (FloatTensor): `[1]`
 
         """
         # Append <sos> and <eos>
         ys_in, ys_out, ylens = append_sos_eos(eouts, ys, self.eos, self.eos, self.pad, self.bwd)
+        if not self.training:
+            self.data_dict['elens'] = tensor2np(elens)
+            self.data_dict['ylens'] = tensor2np(ylens)
+            self.data_dict['ys'] = tensor2np(ys_out)
 
         # Create target self-attention mask
+        xtime = eouts.size(1)
         bs, ytime = ys_in.size()[:2]
         tgt_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ytime, 1])
         causal_mask = tgt_mask.new_ones(ytime, ytime).byte()
@@ -275,25 +318,60 @@ class TransformerDecoder(DecoderBase):
         # Compute XE sequence loss (+ label smoothing)
         loss, ppl = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
 
-        # Quantity loss
-        loss_qua = 0.
-        if self.quantity_loss_weight > 0:
-            n_tokens_ref = tgt_mask[:, -1, :].sum(1).float()  # `[B]`
-            for xy_aws_l in xy_aws_layers:
-                aws_qua = xy_aws_l.squeeze(1)  # `[B, L, T]`
-                aws_qua = aws_qua.masked_fill_(src_mask.transpose(2, 1) == 0, 0)
-                aws_qua = aws_qua.masked_fill_(tgt_mask[:, -1:, :] == 0, 0)
+        # Attention padding
+        if self.quantity_loss_weight > 0 or self.headdiv_loss_weight > 0 or self.minlt_loss_weight > 0:
+            for l in range(self.n_layers):
+                n_heads = xy_aws_layers[l].size(1)
+                xy_aws_layers[l] = xy_aws_layers[l].masked_fill_(
+                    src_mask.unsqueeze(1).repeat([1, n_heads, 1, 1]) == 0, 0)
+                xy_aws_layers[l] = xy_aws_layers[l].masked_fill_(
+                    tgt_mask[:, :, -1:].unsqueeze(1).repeat([1, n_heads, 1, xtime]) == 0, 0)
                 # NOTE: attention padding is quite effective for quantity loss
+        n_heads = xy_aws_layers[0].size(1)  # mono
+        # NOTE: debug for multihead mono + multihead chunk
 
-                n_tokens_pred = aws_qua.sum(2).sum(1)  # `[B]`
-                # NOTE: count <eos> tokens
-                loss_qua += torch.mean(torch.abs(n_tokens_pred - n_tokens_ref))
-            loss_qua /= len(xy_aws_layers)  # average over layers
+        # Quantity loss
+        loss_quantity = 0.
+        if self.quantity_loss_weight > 0:
+            # Average over all heads across all layers
+            n_tokens_ref = tgt_mask[:, -1, :].sum(1).float()  # `[B]`
+            # NOTE: count <eos> tokens
+            loss_quantity = sum([torch.mean(torch.abs(aws.sum(3).sum(2).sum(1) / n_heads - n_tokens_ref))
+                                 for aws in xy_aws_layers])  # `[B]`
+            loss_quantity = loss_quantity.sum() / self.n_layers
+
+        # Head divergence loss
+        loss_headdiv = 0.
+        if self.headdiv_loss_weight > 0.:
+            # Calculate variance over all heads across all layers
+            js = torch.arange(xtime).float().cuda(self.device_id)
+            js = js.repeat([bs, n_heads, ytime, 1])
+            avg_head_pos = sum([(js * aws).sum(3).sum(1)
+                                for aws in xy_aws_layers]) / (n_heads * self.n_layers)  # `[B, L]`
+            loss_headdiv = sum([((js * aws).sum(3).sum(1) - avg_head_pos) ** 2
+                                for aws in xy_aws_layers]) / (n_heads * self.n_layers)  # `[B, L]`
+            loss_headdiv = loss_headdiv.sum() / ylens.sum()
+
+        # Latency loss
+        loss_latency = 0.
+        if trigger_points is not None and self.ctc_sync == 'minlt':
+            assert self.minlt_loss_weight > 0
+            # Calculate weight average latency
+            js = torch.arange(xtime).float().cuda(self.device_id)
+            js = js.repeat([bs, n_heads, ytime, 1])
+            weighted_avg_head_pos = torch.cat(
+                [(js * aws).sum(3) for aws in xy_aws_layers], dim=1)  # `[B, H_mono * n_layers, L]`
+            weighted_avg_head_pos *= torch.softmax(weighted_avg_head_pos.clone(), dim=1)
+            trigger_points = trigger_points.float().cuda(self.device_id)  # `[B, L]`
+            trigger_points = trigger_points.unsqueeze(1)
+            loss_latency = torch.abs(weighted_avg_head_pos - trigger_points)  # `[B, H_mono * n_layers, L]`
+            # NOTE: trigger_points are padded with 0
+            loss_latency = loss_latency.sum() / ylens.sum()
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out, self.pad)
 
-        return loss, acc, ppl, loss_qua
+        return loss, acc, ppl, loss_quantity, loss_headdiv, loss_latency
 
     def forward_sync_bidir_att(self, eouts, elens, ys, return_logits=False, teacher_logits=None):
         """Compute XE loss for the synchronous bidirectional Transformer decoder.
@@ -343,6 +421,11 @@ class TransformerDecoder(DecoderBase):
                 eouts, ys, self.l2r, self.eos, self.pad)
             ys_bwd_in, ys_bwd_out, _ = append_sos_eos(
                 eouts, ys, self.r2l, self.eos, self.pad, bwd=True)
+        if not self.training:
+            self.data_dict['elens'] = tensor2np(elens)
+            self.data_dict['ylens'] = tensor2np(ylens)
+            self.data_dict['ys'] = tensor2np(ys_out)
+            self.data_dict['ys_bwd'] = tensor2np(ys_bwd_out)
 
         # Create target self-attention mask
         bs, ytime = ys_in.size()[:2]
@@ -405,21 +488,29 @@ class TransformerDecoder(DecoderBase):
             os.mkdir(_save_path)
 
         for k, aw in self.aws_dict.items():
+            elens = self.data_dict['elens']
+            ylens = self.data_dict['ylens']
+            # ys = self.data_dict['ys']
+
             plt.clf()
-            if len(aw.shape) == 3:
-                aw = aw[:, None, :, :]  # add head dimension
             n_heads = aw.shape[1]
             n_cols_tmp = 1 if n_heads == 1 else n_cols
             fig, axes = plt.subplots(max(1, n_heads // n_cols_tmp), n_cols_tmp,
                                      figsize=(20, 8), squeeze=False)
             for h in range(n_heads):
                 ax = axes[h // n_cols_tmp, h % n_cols_tmp]
-                ax.imshow(aw[-1, h, :, :], aspect="auto")
+                if 'xy' in k:
+                    ax.imshow(aw[-1, h, :ylens[-1], :elens[-1]], aspect="auto")
+                else:
+                    ax.imshow(aw[-1, h, :ylens[-1], :ylens[-1]], aspect="auto")
                 ax.grid(False)
                 ax.set_xlabel("Input (head%d)" % h)
                 ax.set_ylabel("Output (head%d)" % h)
                 ax.xaxis.set_major_locator(MaxNLocator(integer=True))
                 ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+                # ax.set_yticks(np.linspace(0, ylens[-1] - 1, ylens[-1]))
+                # ax.set_yticks(np.linspace(0, ylens[-1] - 1, 1), minor=True)
+                # ax.set_yticklabels(ys + [''])
 
             fig.tight_layout()
             fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
@@ -529,7 +620,8 @@ class TransformerDecoder(DecoderBase):
                     lm=None, lm_second=None, lm_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
-                    ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[], cache_states=False):
+                    ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[],
+                    cache_states=False):
         """Beam search decoding.
 
         Args:
@@ -558,7 +650,7 @@ class TransformerDecoder(DecoderBase):
             ensmbl_decs (list): list of torch.nn.Module
         Returns:
             nbest_hyps_idx (list): A list of length `[B]`, which contains list of N hypotheses
-            aws (list): A list of length `[B]`, which contains arrays of size `[L, T]`
+            aws (list): A list of length `[B]`, which contains arrays of size `[H, L, T]`
             scores (list):
 
         """
@@ -714,6 +806,7 @@ class TransformerDecoder(DecoderBase):
                 new_cache = [None] * self.n_layers
                 new_cache_bwd = [None] * self.n_layers
                 dout = self.pos_enc(self.embed(ys))
+                xy_aws_all_layers = []
                 if self.sync_bidir:
                     dout_bwd = self.pos_enc(self.embed(ys_bwd))
                     for l in range(self.n_layers):
@@ -722,15 +815,20 @@ class TransformerDecoder(DecoderBase):
                             cache=cache[l], cache_bwd=cache_bwd[l])
                         new_cache[l] = dout
                         new_cache_bwd[l] = dout_bwd
+                        xy_aws_all_layers.append(xy_aws)
                     logits_bwd = self.output(self.norm_out(dout_bwd))
                     probs_bwd = torch.softmax(logits_bwd[:, -1] * softmax_smoothing, dim=1)
                 else:
                     for l in range(self.n_layers):
-                        dout, _, xy_aws, _ = self.layers[l](dout, causal_mask, eouts_b, None,
-                                                            cache=cache[l])
+                        dout, _, xy_aws, xy_aws_beta = self.layers[l](dout, causal_mask, eouts_b, None,
+                                                                      cache=cache[l])
                         new_cache[l] = dout
+                        xy_aws_all_layers.append(xy_aws)
                 logits = self.output(self.norm_out(dout))
                 probs = torch.softmax(logits[:, -1] * softmax_smoothing, dim=1)
+                xy_aws_all_layers = torch.stack(xy_aws_all_layers, dim=2)  # `[B, H, n_layers, L, T]`
+                xy_aws_all_layers = xy_aws_all_layers.view(
+                    xy_aws_all_layers.size(0), -1, xy_aws_all_layers.size(3), xmax)
 
                 # for the ensemble
                 ensmbl_new_cache = []
@@ -838,7 +936,7 @@ class TransformerDecoder(DecoderBase):
                              'ys': ys,
                              'ys_bwd': ys_bwd if self.sync_bidir else None,
                              'cache': [new_cache_l[j:j + 1] for new_cache_l in new_cache] if cache_states else cache,
-                             'cache_bwd': [new_cache_l[j:j + 1] for new_cache_l in new_cache_bwd] if cache_states else cache_bwd,
+                             'cache_bwd': [new_cache_l[j:j + 1] for new_cache_l in new_cache_bwd] if self.sync_bidir and cache_states else cache_bwd,
                              'score': total_scores_topk[0, k].item(),
                              'score_attn': total_scores_attn[0, idx].item(),
                              'score_attn_bwd': total_scores_attn_bwd[0, idx_bwd].item() if self.sync_bidir else None,
@@ -846,7 +944,7 @@ class TransformerDecoder(DecoderBase):
                              'score_ctc_bwd': total_scores_ctc_bwd[k_bwd].item(),
                              'score_lm': total_scores_lm[k].item(),
                              'score_lm_bwd': total_scores_lm_bwd[k_bwd].item(),
-                             # 'aws': beam['aws'] + [aw[j:j + 1]],
+                             'aws': beam['aws'] + [xy_aws_all_layers[j:j + 1]],
                              'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                              'lmstate_bwd': {'hxs': lmstate_bwd['hxs'][:, j:j + 1], 'cxs': lmstate_bwd['cxs'][:, j:j + 1]} if lmstate_bwd is not None else None,
                              'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
@@ -899,7 +997,7 @@ class TransformerDecoder(DecoderBase):
                                  'score_ctc_bwd': total_scores_ctc_bwd[k_bwd].item(),
                                  'score_lm': total_scores_lm[k].item(),
                                  'score_lm_bwd': total_scores_lm_bwd[k_bwd].item(),
-                                 # 'aws': beam['aws'] + [aw[j:j + 1]],
+                                 'aws': beam['aws'] + [xy_aws_all_layers[j:j + 1]],
                                  'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                                  'lmstate_bwd': {'hxs': lmstate_bwd['hxs'][:, j:j + 1], 'cxs': lmstate_bwd['cxs'][:, j:j + 1]} if lmstate_bwd is not None else None,
                                  'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
@@ -989,10 +1087,10 @@ class TransformerDecoder(DecoderBase):
             if self.bwd:
                 # Reverse the order
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:][::-1]) for n in range(nbest)]]
-                # aws += [tensor2np(torch.stack(end_hyps[0]['aws'][1:][::-1], dim=1).squeeze(0))]
+                aws += [tensor2np(torch.cat(end_hyps[0]['aws'][1:][::-1], dim=2).squeeze(0))]
             else:
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
-                # aws += [tensor2np(torch.stack(end_hyps[0]['aws'][1:], dim=1).squeeze(0))]
+                aws += [tensor2np(torch.cat(end_hyps[0]['aws'][1:], dim=2).squeeze(0))]
             scores += [[end_hyps[n]['score_attn'] for n in range(nbest)]]
 
             # Check <eos>
