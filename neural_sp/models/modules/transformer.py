@@ -236,12 +236,15 @@ class TransformerDecoderBlock(nn.Module):
             param_init (str):
             src_tgt_attention (bool): if False, ignore source-target attention
             mocha_chunk_size (int): chunk size for MoChA. -1 means infinite lookback.
+            mocha_n_heads_mono (int):
+            mocha_n_heads_chunk (int):
 
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads, dropout, dropout_att,
                  layer_norm_eps, ffn_activation, param_init,
-                 src_tgt_attention=True, mocha_chunk_size=0):
+                 src_tgt_attention=True, mocha_chunk_size=0,
+                 mocha_n_heads_mono=1, mocha_n_heads_chunk=1):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
@@ -270,8 +273,9 @@ class TransformerDecoderBlock(nn.Module):
                                       adim=d_model,
                                       atype='scaled_dot',
                                       chunk_size=mocha_chunk_size,
-                                      n_heads_mono=n_heads,
-                                      n_heads_chunk=1,
+                                      n_heads_mono=mocha_n_heads_mono,
+                                      n_heads_chunk=mocha_n_heads_chunk,
+                                      #   dropout=dropout_att,
                                       param_init=param_init)
             else:
                 self.src_attn = MultiheadAttentionMechanism(kdim=d_model,

@@ -240,7 +240,8 @@ class MoChA(nn.Module):
     def __init__(self, kdim, qdim, adim, atype, chunk_size,
                  n_heads_mono=1, n_heads_chunk=1,
                  conv1d=False, init_r=-4, noise_std=1.0, eps=1e-6,
-                 sharpening_factor=1.0, param_init='', decot=False, lookahead=2):
+                 sharpening_factor=1.0, dropout=0., param_init='',
+                 decot=False, lookahead=2):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -261,8 +262,9 @@ class MoChA(nn.Module):
             conv1d (bool): apply 1d convolution for energy calculation
             init_r (int): initial value for parameter 'r' used for monotonic attention
             noise_std (float): standard deviation for input noise
-            eps (float):
+            eps (float): epsilon parameter to avoid zero division
             sharpening_factor (float): sharping factor for beta calculation
+            dropout (float): dropout probability
             param_init (str):
             decot (bool): delay constrainted training (DeCoT)
             lookahead (int): lookahead frames for DeCoT
@@ -275,7 +277,7 @@ class MoChA(nn.Module):
         self.d_k = adim // (n_heads_mono * n_heads_chunk)
 
         self.chunk_size = chunk_size
-        self.n_heads = 1  # dummy for RNN decoder
+        self.n_heads = n_heads_mono
         self.n_heads_mono = n_heads_mono
         self.n_heads_chunk = n_heads_chunk
         self.noise_std = noise_std
@@ -295,6 +297,9 @@ class MoChA(nn.Module):
             self.w_out = nn.Linear(adim, kdim)
             if param_init == 'xavier_uniform':
                 self.reset_parameters(True)
+
+        # attention dropout
+        self.dropout = nn.Dropout(p=dropout)
 
     def reset_parameters(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
@@ -346,21 +351,20 @@ class MoChA(nn.Module):
         e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B, H_mono, qlen, klen]`
 
         if mode == 'recursive':  # training
-            assert qlen == 1
-            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, 1, 1, klen]`
-            p_choose = p_choose.squeeze(1).squeeze(2)  # TODO: fix later
-            aw_prev = aw_prev.squeeze(1).squeeze(2)  # TODO: fix later
+            assert qlen == 1  # TODO: fix for scaled_dot
+            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_mono, qlen, klen]`
             # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
-            shifted_1mp_choose = torch.cat([key.new_ones(bs, 1), 1 - p_choose[:, :-1]], dim=1)
+            shifted_1mp_choose = torch.cat([key.new_ones(bs, self.n_heads_mono, qlen, 1),
+                                            1 - p_choose[:, :, :, :-1]], dim=-1)
             # Compute attention distribution recursively as
             # q_j = (1 - p_choose_j) * q_(j-1) + aw_prev_j
             # alpha_j = p_choose_j * q_j
-            q = key.new_zeros(bs, klen + 1)
+            q = key.new_zeros(bs, self.n_heads_mono, qlen, klen + 1)
             for j in range(klen):
-                q[:, j + 1] = shifted_1mp_choose[:, j].clone() * q[:, j].clone() + aw_prev[:, j].clone()
-            alpha = p_choose * q[:, 1:]  # `[B, klen]`
-            # TODO: fix later
-            alpha = alpha.unsqueeze(1).unsqueeze(2)  # `[B, 1, 1, klen]`
+                q[:, :, :, j + 1] = shifted_1mp_choose[:, :, :, j].clone() * q[:, :, :, j].clone() + \
+                    aw_prev[:, :, :, j].clone()
+            alpha = p_choose * q[:, :, :, 1:]  # `[B, H_mono, qlen, klen]`
+            alpha = self.dropout(alpha)
 
         elif mode == 'parallel':  # training
             p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_mono, qlen, klen]`
@@ -376,33 +380,33 @@ class MoChA(nn.Module):
                 if self.decot and trigger_point is not None:
                     for b in range(bs):
                         alpha[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
-
             elif self.atype == 'scaled_dot':
                 # parallel version
                 # alpha = p_choose * cumprod_1mp_choose   # `[B, H_mono, qlen, klen]`
 
                 alpha = []
-                for i in range(query.size(1)):
+                for i in range(qlen):
                     p_choose_i = p_choose[:, :, i:i + 1]
                     cumprod_1mp_choose_i = cumprod_1mp_choose[:, :, i:i + 1]
                     aw_prev = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(
                         aw_prev / torch.clamp(cumprod_1mp_choose_i, min=self.eps, max=1.0), dim=-1)  # `[B, H_mono, 1, klen]`
                     alpha.append(aw_prev)
                 alpha = torch.cat(alpha, dim=2)  # `[B, H_mono, qlen, klen]`
+            alpha = self.dropout(alpha)
 
         elif mode == 'hard':  # inference
             # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
-            emit_probs = torch.sigmoid(e_mono)  # `[B, H_mono, 1, klen]`
+            emit_probs = torch.sigmoid(e_mono)  # `[B, H_mono, qlen, klen]`
             p_choose = (emit_probs >= 0.5).float()
             # Remove any probabilities before the index chosen at the last time step
-            p_choose *= torch.cumsum(aw_prev, dim=-1)  # `[B, H_mono, 1, klen]`
+            p_choose *= torch.cumsum(aw_prev, dim=-1)  # `[B, H_mono, qlen, klen]`
             # Now, use exclusive cumprod to remove probabilities after the first
             # chosen index, like so:
             # p_choose                        = [0, 0, 0, 1, 1, 0, 1, 1]
             # 1 - p_choose                    = [1, 1, 1, 0, 0, 1, 0, 0]
             # exclusive_cumprod(1 - p_choose) = [1, 1, 1, 1, 0, 0, 0, 0]
             # alpha: product of above         = [0, 0, 0, 1, 0, 0, 0, 0]
-            alpha = p_choose * exclusive_cumprod(1 - p_choose)  # `[B, H_mono, 1, klen]`
+            alpha = p_choose * exclusive_cumprod(1 - p_choose)  # `[B, H_mono, qlen, klen]`
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
 
