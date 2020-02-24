@@ -353,19 +353,22 @@ class MoChA(nn.Module):
         e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B, H_mono, qlen, klen]`
 
         if mode == 'recursive':  # training
-            assert qlen == 1  # TODO: fix for scaled_dot
             p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_mono, qlen, klen]`
-            # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
-            shifted_1mp_choose = torch.cat([key.new_ones(bs, self.n_heads_mono, qlen, 1),
-                                            1 - p_choose[:, :, :, :-1]], dim=-1)
-            # Compute attention distribution recursively as
-            # q_j = (1 - p_choose_j) * q_(j-1) + aw_prev_j
-            # alpha_j = p_choose_j * q_j
-            q = key.new_zeros(bs, self.n_heads_mono, qlen, klen + 1)
-            for j in range(klen):
-                q[:, :, :, j + 1] = shifted_1mp_choose[:, :, :, j].clone() * q[:, :, :, j].clone() + \
-                    aw_prev[:, :, :, j].clone()
-            alpha = p_choose * q[:, :, :, 1:]  # `[B, H_mono, qlen, klen]`
+            alpha = []
+            for i in range(qlen):
+                # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
+                shifted_1mp_choose = torch.cat([key.new_ones(bs, self.n_heads_mono, 1, 1),
+                                                1 - p_choose[:, :, i:i + 1, :-1]], dim=-1)
+                # Compute attention distribution recursively as
+                # q_j = (1 - p_choose_j) * q_(j-1) + aw_prev_j
+                # alpha_j = p_choose_j * q_j
+                q = key.new_zeros(bs, self.n_heads_mono, 1, klen + 1)
+                for j in range(klen):
+                    q[:, :, i:i + 1, j + 1] = shifted_1mp_choose[:, :, i:i + 1, j].clone() * q[:, :, i:i + 1, j].clone() + \
+                        aw_prev[:, :, :, j].clone()
+                aw_prev = p_choose[:, :, i:i + 1] * q[:, :, i:i + 1, 1:]  # `[B, H_mono, 1, klen]`
+                alpha.append(aw_prev)
+            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
             alpha = self.dropout(alpha)
 
         elif mode == 'parallel':  # training
@@ -373,27 +376,20 @@ class MoChA(nn.Module):
             # safe_cumprod computes cumprod in logspace with numeric checks
             cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, H_mono, qlen, klen]`
             # Compute recurrence relation solution
-            if self.atype == 'add':
-                assert qlen == 1
-                alpha = p_choose * cumprod_1mp_choose * torch.cumsum(
-                    aw_prev / torch.clamp(cumprod_1mp_choose, min=self.eps, max=1.0), dim=-1)  # `[B, H_mono, 1, klen]`
+            # alpha = p_choose * cumprod_1mp_choose   # `[B, H_mono, qlen, klen]`
+
+            alpha = []
+            for i in range(qlen):
+                aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
+                    aw_prev / torch.clamp(cumprod_1mp_choose[:, :, i:i + 1], min=self.eps, max=1.0), dim=-1)  # `[B, H_mono, 1, klen]`
 
                 # Mask the right part from the trigger point
                 if self.decot and trigger_point is not None:
                     for b in range(bs):
-                        alpha[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
-            elif self.atype == 'scaled_dot':
-                # parallel version
-                # alpha = p_choose * cumprod_1mp_choose   # `[B, H_mono, qlen, klen]`
+                        aw_prev[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
 
-                alpha = []
-                for i in range(qlen):
-                    p_choose_i = p_choose[:, :, i:i + 1]
-                    cumprod_1mp_choose_i = cumprod_1mp_choose[:, :, i:i + 1]
-                    aw_prev = p_choose_i * cumprod_1mp_choose_i * torch.cumsum(
-                        aw_prev / torch.clamp(cumprod_1mp_choose_i, min=self.eps, max=1.0), dim=-1)  # `[B, H_mono, 1, klen]`
-                    alpha.append(aw_prev)
-                alpha = torch.cat(alpha, dim=2)  # `[B, H_mono, qlen, klen]`
+                alpha.append(aw_prev)
+            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
             alpha = self.dropout(alpha)
 
         elif mode == 'hard':  # inference
