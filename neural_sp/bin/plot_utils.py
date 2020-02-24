@@ -51,6 +51,7 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
 
     plt.clf()
     plt.figure(figsize=figsize)
+    # Plot attention weights
     for h in range(1, n_heads + 1):
         plt.subplot(n_col, 1, h)
         sns.heatmap(aw[h - 1, :, :], cmap='viridis',
@@ -61,7 +62,7 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
         plt.ylabel(u'Output labels (←)', fontsize=12 if n_heads == 1 else 8)
         plt.yticks(rotation=0, fontsize=6)
 
-    # CTC propabilities for joint CTC-attention
+    # Plot CTC propabilities for joint CTC-attention
     if ctc_probs is not None:
         plt.subplot(n_col, 1, n_heads + 1)
         times_probs = np.arange(ctc_probs.shape[0])

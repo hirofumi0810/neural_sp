@@ -307,7 +307,7 @@ class TransformerDecoder(DecoderBase):
             if not self.training:
                 self.aws_dict['yy_aws_layer%d' % l] = tensor2np(yy_aws)
                 self.aws_dict['xy_aws_layer%d' % l] = tensor2np(xy_aws)
-                if self.attn_type == 'mocha':
+                if xy_aws_beta is not None:
                     self.aws_dict['xy_aws_beta_layer%d' % l] = tensor2np(xy_aws_beta)
         logits = self.output(self.norm_out(out))
 
@@ -765,6 +765,12 @@ class TransformerDecoder(DecoderBase):
                 ys = eouts.new_zeros(len(hyps_merge), t + 1).long()
                 for j, beam in enumerate(hyps_merge):
                     ys[j, :] = beam['ys']
+                if t > 0:
+                    xy_aws_prev = torch.cat([beam['aws'][-1] for beam in hyps_merge], dim=0)
+                    xy_aws_prev = xy_aws_prev.view(len(hyps_merge), self.n_layers, -1, 1, xmax)
+                    # `[B, n_layers * H_mono, qlen, klen]`
+                else:
+                    xy_aws_prev = None
 
                 cache_bwd = [None] * self.n_layers
                 if self.sync_bidir:
@@ -821,7 +827,8 @@ class TransformerDecoder(DecoderBase):
                 else:
                     for l in range(self.n_layers):
                         dout, _, xy_aws, xy_aws_beta = self.layers[l](dout, causal_mask, eouts_b, None,
-                                                                      cache=cache[l])
+                                                                      cache=cache[l],
+                                                                      xy_aws_prev=xy_aws_prev[:, l] if t > 0 else None)
                         new_cache[l] = dout
                         xy_aws_all_layers.append(xy_aws)
                 logits = self.output(self.norm_out(dout))
@@ -944,7 +951,7 @@ class TransformerDecoder(DecoderBase):
                              'score_ctc_bwd': total_scores_ctc_bwd[k_bwd].item(),
                              'score_lm': total_scores_lm[k].item(),
                              'score_lm_bwd': total_scores_lm_bwd[k_bwd].item(),
-                             'aws': beam['aws'] + [xy_aws_all_layers[j:j + 1]],
+                             'aws': beam['aws'] + [xy_aws_all_layers[j:j + 1, :, -1:]],
                              'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                              'lmstate_bwd': {'hxs': lmstate_bwd['hxs'][:, j:j + 1], 'cxs': lmstate_bwd['cxs'][:, j:j + 1]} if lmstate_bwd is not None else None,
                              'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
@@ -997,7 +1004,7 @@ class TransformerDecoder(DecoderBase):
                                  'score_ctc_bwd': total_scores_ctc_bwd[k_bwd].item(),
                                  'score_lm': total_scores_lm[k].item(),
                                  'score_lm_bwd': total_scores_lm_bwd[k_bwd].item(),
-                                 'aws': beam['aws'] + [xy_aws_all_layers[j:j + 1]],
+                                 'aws': beam['aws'] + [xy_aws_all_layers[j:j + 1, :, -1:]],
                                  'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                                  'lmstate_bwd': {'hxs': lmstate_bwd['hxs'][:, j:j + 1], 'cxs': lmstate_bwd['cxs'][:, j:j + 1]} if lmstate_bwd is not None else None,
                                  'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,

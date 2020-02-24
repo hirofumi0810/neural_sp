@@ -293,7 +293,8 @@ class TransformerDecoderBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None, mode='hard'):
+    def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
+                xy_aws_prev=None, mode='hard'):
         """Transformer decoder forward pass.
 
         Args:
@@ -302,6 +303,7 @@ class TransformerDecoderBlock(nn.Module):
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
             xy_mask (ByteTensor): `[B, L, T]`
             cache (FloatTensor): `[B, L-1, d_model]`
+            xy_aws_prev (FloatTensor): `[B, n_heads, L, T]`
             mode (str):
         Returns:
             out (FloatTensor): `[B, L, d_model]`
@@ -333,7 +335,7 @@ class TransformerDecoderBlock(nn.Module):
             residual = out
             out = self.norm2(out)
             out, xy_aws, xy_aws_beta = self.src_attn(xs, xs, out, mask=xy_mask, cache=False,  # k/v/q
-                                                     mode=mode)
+                                                     aw_prev=xy_aws_prev, mode=mode)
             out = self.dropout(out) + residual
 
         # position-wise feed-forward

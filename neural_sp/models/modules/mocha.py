@@ -468,7 +468,8 @@ def exclusive_cumsum(x):
             x (FloatTensor): `[B, H, qlen, klen]`
 
     """
-    return torch.cumsum(torch.cat([x.new_zeros(x.size(0), x.size(1), x.size(2), 1), x[:, :, :, :-1]], dim=-1), dim=-1)
+    return torch.cumsum(torch.cat([x.new_zeros(x.size(0), x.size(1), x.size(2), 1),
+                                   x[:, :, :, :-1]], dim=-1), dim=-1)
 
 
 def exclusive_cumprod(x):
@@ -480,7 +481,8 @@ def exclusive_cumprod(x):
             x (FloatTensor): `[B, H, qlen, klen]`
 
     """
-    return torch.cumprod(torch.cat([x.new_ones(x.size(0), x.size(1), x.size(2), 1), x[:, :, :, :-1]], dim=-1), dim=-1)
+    return torch.cumprod(torch.cat([x.new_ones(x.size(0), x.size(1), x.size(2), 1),
+                                    x[:, :, :, :-1]], dim=-1), dim=-1)
 
 
 def moving_sum(x, back, forward):
