@@ -30,9 +30,9 @@ class MultiheadAttentionMechanism(nn.Module):
         adim: (int) dimension of the attention space
         atype (str): type of attention mechanism
         n_heads (int): number of heads
-        dropout (float): dropout probability
+        dropout (float): dropout probability for attenion weights
         bias (bool): use bias term in linear layers
-        param_init (str):
+        param_init (str): parameter initialization method
 
     """
 
@@ -92,7 +92,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask, aw_prev=None,
-                mode='', cache=True, trigger_point=None, aw_lower=None):
+                mode='', cache=True, trigger_point=None):
         """Forward computation.
 
         Args:
@@ -104,7 +104,6 @@ class MultiheadAttentionMechanism(nn.Module):
             mode: dummy interface for MoChA
             cache (bool): cache key, value, and mask
             trigger_point: dummy interface for MoChA
-            aw_lower: dummy interface for MoChA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, H, qlen, klen]`

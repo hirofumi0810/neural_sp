@@ -33,7 +33,7 @@ class AttentionMechanism(nn.Module):
             This is used for location-based attention.
         conv_kernel_size (int): size of kernel.
             This must be the odd number.
-        dropout (float): attention dropout probability
+        dropout (float): dropout probability for attention weights
         lookahead (int): lookahead frames for triggered attention
 
     """
