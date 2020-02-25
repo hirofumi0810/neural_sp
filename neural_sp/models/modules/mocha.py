@@ -12,11 +12,14 @@
 import logging
 import math
 import numpy as np
+import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.causal_conv import CausalConv1d
+
+random.seed(1)
 
 NEG_INF = float(np.finfo(np.float32).min)
 
@@ -37,7 +40,7 @@ class MonotonicEnergy(nn.Module):
             init_r (int): initial value for offset r
             conv1d (bool): use 1D causal convolution for energy calculation
             conv_kernel_size (int): kernel size for 1D convolution
-            param_init (str):
+            param_init (str): parameter initialization method
 
         """
         super().__init__()
@@ -155,7 +158,7 @@ class ChunkEnergy(nn.Module):
             adim (int): dimension of attention space
             atype (str): type of attention mechanism
             n_heads (int): number of heads
-            param_init (str):
+            param_init (str): parameter initialization method
 
         """
         super().__init__()
@@ -240,8 +243,8 @@ class MoChA(nn.Module):
     def __init__(self, kdim, qdim, adim, atype, chunk_size,
                  n_heads_mono=1, n_heads_chunk=1,
                  conv1d=False, init_r=-4, noise_std=1.0, eps=1e-6,
-                 sharpening_factor=1.0, dropout=0., param_init='',
-                 decot=False, lookahead=2):
+                 sharpening_factor=1.0, dropout=0., dropout_head=0., param_init='',
+                 decot=False, lookahead=2, simple=False):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -266,10 +269,12 @@ class MoChA(nn.Module):
             noise_std (float): standard deviation for input noise
             eps (float): epsilon parameter to avoid zero division
             sharpening_factor (float): sharping factor for beta calculation
-            dropout (float): dropout probability
-            param_init (str):
+            dropout (float): dropout probability for attention weights
+            dropout_head (float): dropout probability for heads
+            param_init (str): parameter initialization method
             decot (bool): delay constrainted training (DeCoT)
             lookahead (int): lookahead frames for DeCoT
+            simple (bool):
 
         """
         super(MoChA, self).__init__()
@@ -289,6 +294,7 @@ class MoChA(nn.Module):
 
         self.decot = decot
         self.lookahead = lookahead
+        self.simple = simple
 
         self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype,
                                                 n_heads_mono, init_r, conv1d,
@@ -303,6 +309,8 @@ class MoChA(nn.Module):
 
         # attention dropout
         self.dropout = nn.Dropout(p=dropout)
+        # head dropout
+        self.dropout_head = dropout_head
 
     def reset_parameters(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
@@ -344,10 +352,13 @@ class MoChA(nn.Module):
         bs, klen = key.size()[:2]
         qlen = query.size(1)
 
+        aw_prev_bwd = None
         if aw_prev is None:
             # aw_prev = [1, 0, 0 ... 0]
             aw_prev = key.new_zeros(bs, self.n_heads_mono, 1, klen)
             aw_prev[:, :, :, 0:1] = key.new_ones(bs, self.n_heads_mono, 1, 1)
+        if self.fwd_bwd and aw_prev_bwd is None:
+            aw_prev_bwd = aw_prev.clone()
 
         # Compute monotonic energy
         e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B, H_mono, qlen, klen]`
@@ -376,20 +387,21 @@ class MoChA(nn.Module):
             # safe_cumprod computes cumprod in logspace with numeric checks
             cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, H_mono, qlen, klen]`
             # Compute recurrence relation solution
-            # alpha = p_choose * cumprod_1mp_choose   # `[B, H_mono, qlen, klen]`
+            if self.simple:
+                alpha = p_choose * cumprod_1mp_choose   # `[B, H_mono, qlen, klen]`
+            else:
+                alpha = []
+                for i in range(qlen):
+                    aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
+                        aw_prev / torch.clamp(cumprod_1mp_choose[:, :, i:i + 1], min=self.eps, max=1.0), dim=-1)  # `[B, H_mono, 1, klen]`
 
-            alpha = []
-            for i in range(qlen):
-                aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
-                    aw_prev / torch.clamp(cumprod_1mp_choose[:, :, i:i + 1], min=self.eps, max=1.0), dim=-1)  # `[B, H_mono, 1, klen]`
+                    # Mask the right part from the trigger point
+                    if self.decot and trigger_point is not None:
+                        for b in range(bs):
+                            aw_prev[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
 
-                # Mask the right part from the trigger point
-                if self.decot and trigger_point is not None:
-                    for b in range(bs):
-                        aw_prev[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
-
-                alpha.append(aw_prev)
-            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
+                    alpha.append(aw_prev)
+                alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
             alpha = self.dropout(alpha)
 
         elif mode == 'hard':  # inference
@@ -407,6 +419,12 @@ class MoChA(nn.Module):
             alpha = p_choose * exclusive_cumprod(1 - p_choose)  # `[B, H_mono, qlen, klen]`
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
+
+        if self.dropout_head > 0 and self.training and random.random() < self.dropout_head:
+            head_idx = random.randint(0, self.n_heads_mono - 1)
+            head_mask = alpha.new_ones(alpha.size()).byte()
+            head_mask[:, head_idx] = 0
+            alpha = alpha.masked_fill_(head_mask == 0, 0)
 
         # Compute chunk energy
         beta = None
