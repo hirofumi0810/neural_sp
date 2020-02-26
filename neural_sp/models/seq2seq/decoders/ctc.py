@@ -131,21 +131,15 @@ class CTC(DecoderBase):
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (np.ndarray): `[B]`
         Returns:
-            hyps (np.ndarray): Best path hypothesis. `[B, labels_max_seq_len]`
+            hyps (np.ndarray): Best path hypothesis. `[B, L]`
 
         """
-        bs = eouts.size(0)
-        hyps = []
-
         log_probs = torch.log_softmax(self.output(eouts), dim=-1)
+        best_paths = log_probs.argmax(-1)  # `[B, L]`
 
-        # Pickup argmax class
-        for b in range(bs):
-            indices = []
-            time = elens[b]
-            for t in range(time):
-                argmax = log_probs[b, t].argmax(0).item()
-                indices.append(argmax)
+        hyps = []
+        for b in range(eouts.size(0)):
+            indices = [best_paths[b, t].item() for t in range(elens[b])]
 
             # Step 1. Collapse repeated labels
             collapsed_indices = [x[0] for x in groupby(indices)]
@@ -169,7 +163,7 @@ class CTC(DecoderBase):
                 recog_length_penalty (float): length penalty
                 recog_lm_weight (float): weight of first path LM score
                 recog_lm_second_weight (float): weight of second path LM score
-                recog_lm_rev_weight (float): weight of second path backward LM score
+                recog_lm_bwd_weight (float): weight of second path backward LM score
             idx2token (): converter from index to token
             lm: firsh path LM
             lm_second: second path LM
@@ -188,7 +182,7 @@ class CTC(DecoderBase):
         lp_weight = params['recog_length_penalty']
         lm_weight = params['recog_lm_weight']
         lm_weight_second = params['recog_lm_second_weight']
-        lm_weight_second_rev = params['recog_lm_rev_weight']
+        lm_weight_second_bwd = params['recog_lm_bwd_weight']
 
         if lm is not None:
             assert lm_weight > 0
@@ -345,6 +339,13 @@ def _flip_label_probability(log_probs, xlens):
     input in ``b``-th batch.
     The rotated matrix ``r`` is defined as
     ``r[i, b, l] = log_probs[i + xlens[b], b, l]``
+
+    Args:
+        cum_log_prob (FloatTensor): `[T, B, vocab]`
+        xlens (LongTensor): `[B]`
+    Returns:
+        FloatTensor: `[T, B, vocab]`
+
     """
     xmax, bs, vocab = log_probs.size()
     rotate = (torch.arange(xmax, dtype=torch.int64)[:, None] + xlens) % xmax
@@ -360,6 +361,14 @@ def _flip_path_probability(cum_log_prob, xlens, path_lens):
     at time ``t`` in a output sequence in ``b``-th batch.
     The rotated matrix ``r`` is defined as
     ``r[i, j, k] = cum_log_prob[i + xlens[j], j, k + path_lens[j]]``
+
+    Args:
+        cum_log_prob (FloatTensor): `[T, B, 2 * L + 1]`
+        xlens (LongTensor): `[B]`
+        path_lens (LongTensor): `[B]`
+    Returns:
+        FloatTensor: `[T, B, 2 * L + 1]`
+
     """
     xmax, bs, max_path_len = cum_log_prob.size()
     rotate_input = ((torch.arange(xmax, dtype=torch.int64)[:, None] + xlens) % xmax)
@@ -478,9 +487,6 @@ class CTCForcedAligner(object):
                         trigger_points[b, n_triggers] = t
                         n_triggers += 1
 
-        # print(best_lattices[-1])
-        # print(trigger_lattices[-1])
-        # print(trigger_points[-1])
         assert ylens.sum() == (trigger_lattices != 0).sum()
         return trigger_points
 
