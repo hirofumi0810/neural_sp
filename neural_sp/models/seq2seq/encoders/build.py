@@ -52,6 +52,7 @@ def build_encoder(args):
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
             dropout_att=args.dropout_att,
+            dropout_residual=args.dropout_enc_residual,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
             conv_in_channel=args.conv_in_channel,

@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import logging
 import os
 import shutil
@@ -21,7 +22,6 @@ from neural_sp.models.modules.transformer import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.torch_utils import make_pad_mask
-from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -48,6 +48,7 @@ class TransformerEncoder(EncoderBase):
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
+        dropout_residual (float): dropout probability for stochastic residual connections
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
@@ -62,14 +63,14 @@ class TransformerEncoder(EncoderBase):
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
         chunk_size_current (int): current chunk size for time-restricted Transformer encoder
         chunk_size_right (int): right chunk size for time-restricted Transformer encoder
-        param_init (str):
+        param_init (str): parameter initialization method
 
     """
 
     def __init__(self, input_dim,
                  attn_type, n_heads, n_layers, d_model, d_ff, last_proj_dim,
                  pe_type, layer_norm_eps, ffn_activation,
-                 dropout_in, dropout, dropout_att,
+                 dropout_in, dropout, dropout_att, dropout_residual,
                  n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
@@ -88,6 +89,7 @@ class TransformerEncoder(EncoderBase):
 
         # for attention plot
         self.aws_dict = {}
+        self.data_dict = {}
 
         # Setting for CNNs before RNNs
         if conv_channels:
@@ -112,10 +114,11 @@ class TransformerEncoder(EncoderBase):
             self.embed = nn.Linear(self._odim, d_model)
 
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
-        self.layers = repeat(TransformerEncoderBlock(
-            d_model, d_ff, attn_type, n_heads,
-            dropout, dropout_att,
-            layer_norm_eps, ffn_activation, param_init), n_layers)
+        self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
+            d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
+            dropout_residual * (l + 1) / n_layers,
+            layer_norm_eps, ffn_activation, param_init))
+            for l in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if last_proj_dim != self.output_dim:
@@ -167,6 +170,8 @@ class TransformerEncoder(EncoderBase):
         else:
             # Path through CNN blocks before RNN layers
             xs, xlens = self.conv(xs, xlens)
+        if not self.training:
+            self.data_dict['elens'] = tensor2np(xlens)
 
         bs, xmax, idim = xs.size()
         xs = self.pos_enc(xs)
@@ -223,12 +228,16 @@ class TransformerEncoder(EncoderBase):
             os.mkdir(_save_path)
 
         for k, aw in self.aws_dict.items():
+            elens = self.data_dict['elens']
+
             plt.clf()
-            fig, axes = plt.subplots(max(1, self.n_heads // n_cols), n_cols,
+            n_heads = aw.shape[1]
+            n_cols_tmp = 1 if n_heads == 1 else n_cols
+            fig, axes = plt.subplots(max(1, n_heads // n_cols_tmp), n_cols_tmp,
                                      figsize=(20, 8), squeeze=False)
-            for h in range(self.n_heads):
-                ax = axes[h // n_cols, h % n_cols]
-                ax.imshow(aw[-1, h, :, :], aspect="auto")
+            for h in range(n_heads):
+                ax = axes[h // n_cols_tmp, h % n_cols_tmp]
+                ax.imshow(aw[-1, h, :elens[-1], :elens[-1]], aspect="auto")
                 ax.grid(False)
                 ax.set_xlabel("Input (head%d)" % h)
                 ax.set_ylabel("Output (head%d)" % h)
