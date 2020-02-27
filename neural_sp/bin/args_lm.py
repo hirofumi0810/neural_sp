@@ -86,7 +86,7 @@ def parse():
                         help='type of optimizer')
     parser.add_argument('--n_epochs', type=int, default=50,
                         help='number of epochs to train the model')
-    parser.add_argument('--convert_to_sgd_epoch', type=int, default=20,
+    parser.add_argument('--convert_to_sgd_epoch', type=int, default=100,
                         help='epoch to converto to SGD fine-tuning')
     parser.add_argument('--print_step', type=int, default=100,
                         help='print log per this value')
@@ -135,6 +135,10 @@ def parse():
                         help='dropout probability for the output layer')
     parser.add_argument('--dropout_att', type=float, default=0.1,
                         help='dropout probability for the attention weights (for Transformer)')
+    parser.add_argument('--dropout_residual', type=float, default=0.0,
+                        help='dropout probability for the stochasitc residual connections (for Transformer)')
+    parser.add_argument('--dropout_head', type=float, default=0.0,
+                        help='dropout probability for MHA in the decoder (for Transformer)')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help='')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
@@ -156,7 +160,7 @@ def parse():
     parser.add_argument('--transformer_n_heads', type=int, default=4,
                         help='number of heads in the attention layer for Transformer')
     parser.add_argument('--transformer_pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'learned_add', 'learned_concat', 'none'],
+                        choices=['add', 'concat', 'none', '1dconv3L'],
                         help='type of positional encoding')
     parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                         help='epsilon value for layer narmalization')

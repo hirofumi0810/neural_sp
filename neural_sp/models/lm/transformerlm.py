@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import logging
 import os
 import random
@@ -21,7 +22,6 @@ from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.torch_utils import make_pad_mask
-from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -62,13 +62,11 @@ class TransformerLM(LMBase):
 
         self.embed = nn.Embedding(self.vocab, self.d_model, padding_idx=self.pad)
         self.pos_enc = PositionalEncoding(self.d_model, args.dropout_in, args.transformer_pe_type)
-        self.layers = repeat(TransformerDecoderBlock(
-            self.d_model, args.transformer_d_ff,
-            args.transformer_attn_type, self.n_heads,
-            args.dropout_hidden, args.dropout_att,
-            args.transformer_layer_norm_eps, args.transformer_ffn_activation,
-            args.transformer_param_init,
-            src_tgt_attention=False), self.n_layers)
+        self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
+            self.d_model, args.transformer_d_ff, args.transformer_attn_type, self.n_heads, args.dropout_hidden, args.dropout_att,
+            args.dropout_residual * (l + 1) / self.n_layers, args.dropout_head,
+            args.transformer_layer_norm_eps, args.transformer_ffn_activation, args.transformer_param_init,
+            src_tgt_attention=False))for l in range(self.n_layers)])
         self.norm_out = nn.LayerNorm(self.d_model, eps=args.transformer_layer_norm_eps)
 
         self.adaptive_softmax = None
