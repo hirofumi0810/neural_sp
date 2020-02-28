@@ -46,7 +46,7 @@ class LRScheduler(object):
     def __init__(self, optimizer, base_lr, decay_type, decay_start_epoch, decay_rate,
                  decay_patient_n_epochs=0, early_stop_patient_n_epochs=-1, lower_better=True,
                  warmup_start_lr=0, warmup_n_steps=0,
-                 model_size=1, factor=1, noam=False):
+                 model_size=1, factor=1, noam=False, topk_best=1):
 
         self.optimizer = optimizer
         self.noam = noam
@@ -72,10 +72,9 @@ class LRScheduler(object):
         self.decay_rate = decay_rate
         self.decay_patient_n_epochs = decay_patient_n_epochs
         self.metric_best = 1e10 if lower_better else -1e10
-        self._is_best = False
         self.not_improved_n_epochs = 0
         self.early_stop_patient_n_epochs = early_stop_patient_n_epochs
-        self._is_early_stop = False
+        self._is_best = False
 
     @property
     def n_steps(self):
@@ -91,7 +90,7 @@ class LRScheduler(object):
 
     @property
     def is_early_stop(self):
-        return self._is_early_stop
+        return self.not_improved_n_epochs >= self.early_stop_patient_n_epochs
 
     def step(self):
         self._step += 1
