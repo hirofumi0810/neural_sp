@@ -22,7 +22,6 @@ from tqdm import tqdm
 from neural_sp.bin.args_lm import parse
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import save_checkpoint
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import set_save_path
@@ -132,7 +131,8 @@ def main():
                                 warmup_n_steps=conf['warmup_n_steps'],
                                 model_size=conf['transformer_d_model'],
                                 factor=conf['lr_factor'],
-                                noam=transformer)
+                                noam=transformer,
+                                save_checkpoints_topk=10 if transformer else 1)
 
         # Restore the last saved model
         load_checkpoint(model, args.resume, optimizer)
@@ -176,7 +176,8 @@ def main():
                                 warmup_n_steps=args.warmup_n_steps,
                                 model_size=args.transformer_d_model,
                                 factor=args.lr_factor,
-                                noam=transformer)
+                                noam=transformer,
+                                save_checkpoints_topk=10 if transformer else 1)
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -258,8 +259,7 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                save_checkpoint(model, optimizer, save_path,
-                                remove_old_checkpoints=not transformer)
+                optimizer.save_checkpoint(model, save_path)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -272,8 +272,7 @@ def main():
 
                 if optimizer.is_best:
                     # Save the model
-                    save_checkpoint(model, optimizer, save_path,
-                                    remove_old_checkpoints=not transformer)
+                    optimizer.save_checkpoint(model, save_path)
 
                     # test
                     ppl_test_avg = 0.

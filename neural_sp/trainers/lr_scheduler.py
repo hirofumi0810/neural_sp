@@ -10,7 +10,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from glob import glob
 import logging
+import os
 import torch
 
 from neural_sp.trainers.optimizer import set_optimizer
@@ -40,13 +42,14 @@ class LRScheduler(object):
         model_size (int): d_model
         factor (float): factor of learning rate for Transformer
         noam (bool): schedule for Transformer
+        save_checkpoints_topk (int): save top-k checkpoints
 
     """
 
     def __init__(self, optimizer, base_lr, decay_type, decay_start_epoch, decay_rate,
                  decay_patient_n_epochs=0, early_stop_patient_n_epochs=-1, lower_better=True,
                  warmup_start_lr=0, warmup_n_steps=0,
-                 model_size=1, factor=1, noam=False, topk_best=1):
+                 model_size=1, factor=1, noam=False, save_checkpoints_topk=1):
 
         self.optimizer = optimizer
         self.noam = noam
@@ -71,10 +74,14 @@ class LRScheduler(object):
         self.decay_start_epoch = decay_start_epoch
         self.decay_rate = decay_rate
         self.decay_patient_n_epochs = decay_patient_n_epochs
-        self.metric_best = 1e10 if lower_better else -1e10
         self.not_improved_n_epochs = 0
         self.early_stop_patient_n_epochs = early_stop_patient_n_epochs
-        self._is_best = False
+
+        # for performance monotoring
+        self._is_topk = False
+        self.topk = save_checkpoints_topk
+        assert save_checkpoints_topk >= 1
+        self.topk_list = []
 
     @property
     def n_steps(self):
@@ -85,8 +92,8 @@ class LRScheduler(object):
         return self._epoch
 
     @property
-    def is_best(self):
-        return self._is_best
+    def is_topk(self):
+        return self._is_topk
 
     @property
     def is_early_stop(self):
@@ -124,19 +131,26 @@ class LRScheduler(object):
 
         """
         self._epoch += 1
-        self._is_best = False
+        self._is_topk = False
+        is_best = False
 
         if not self.lower_better:
             metric *= -1
 
-        if metric is not None and metric < self.metric_best:
-            self.metric_best = metric
-            self._is_best = True
-            logger.info('||||| Best Score |||||')
+        if metric is not None:
+            if len(self.topk_list) < self.topk or metric < self.topk_list[-1][1]:
+                topk = sum([v < metric for (ep, v) in self.topk_list]) + 1
+                logger.info('||||| Top-%d Score |||||' % topk)
+                self.topk_list.append((self.n_epochs, metric))
+                self.topk_list = sorted(self.topk_list, key=lambda x: x[1])[:self.topk]
+                self._is_topk = True
+                is_best = topk == 1
+                for k, (ep, _) in enumerate(self.topk_list):
+                    logger.info('----- Top-%d: %d' % (k + 1, ep))
 
         if not self.noam and self._epoch >= self.decay_start_epoch:
             if self.decay_type == 'metric':
-                if self._is_best:
+                if is_best:
                     # Improved
                     self.not_improved_n_epochs = 0
                 elif self.not_improved_n_epochs < self.decay_patient_n_epochs:
@@ -162,6 +176,35 @@ class LRScheduler(object):
                 param_group['eps'] = self.lr
             else:
                 param_group['lr'] = self.lr
+
+    def save_checkpoint(self, model, save_path, remove_old_checkpoints=True):
+        """Save checkpoint.
+
+        Args:
+            model (torch.nn.Module):
+            save_path (str): path to the directory to save a model
+            optimizer (LRScheduler): optimizer wrapped by LRScheduler class
+            remove_old_checkpoints (bool): if True, all checkpoints
+                worse than the top-k ones are deleted
+
+        """
+        model_path = os.path.join(save_path, 'model.epoch-' + str(self.n_epochs))
+
+        # Remove old checkpoints
+        if remove_old_checkpoints:
+            for path in glob(os.path.join(save_path, 'model.epoch-*')):
+                epoch = int(path.split('-')[-1])
+                if epoch not in [ep for (ep, v) in self.topk_list]:
+                    os.remove(path)
+
+        # Save parameters, optimizer, step index etc.
+        checkpoint = {
+            "model_state_dict": model.module.state_dict(),
+            "optimizer_state_dict": self.state_dict(),  # LRScheduler class
+        }
+        torch.save(checkpoint, model_path)
+
+        logger.info("=> Saved checkpoint (epoch:%d): %s" % (self.n_epochs, model_path))
 
     def state_dict(self):
         """Returns the state of the scheduler as a :class:`dict`.

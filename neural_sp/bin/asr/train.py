@@ -13,7 +13,6 @@ from __future__ import print_function
 import argparse
 import copy
 import cProfile
-import editdistance
 import logging
 import numpy as np
 import os
@@ -26,7 +25,6 @@ from tqdm import tqdm
 from neural_sp.bin.args_asr import parse
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import save_checkpoint
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import set_save_path
@@ -220,7 +218,8 @@ def main():
                                 warmup_n_steps=conf['warmup_n_steps'],
                                 model_size=conf['transformer_d_model'],
                                 factor=conf['lr_factor'],
-                                noam=transformer)
+                                noam=transformer,
+                                save_checkpoints_topk=10 if transformer else 1)
 
         # Restore the last saved model
         load_checkpoint(model, args.resume, optimizer)
@@ -289,7 +288,8 @@ def main():
                                 warmup_n_steps=args.warmup_n_steps,
                                 model_size=args.transformer_d_model,
                                 factor=args.lr_factor,
-                                noam=transformer)
+                                noam=transformer,
+                                save_checkpoints_topk=10 if transformer else 1)
 
     # Load the teacher ASR model
     teacher = None
@@ -398,24 +398,6 @@ def main():
                 reporter.add(observation, is_eval=True)
                 loss_dev = loss.item()
                 del loss
-            # NOTE: this makes training slow
-            # Compute WER/CER regardless of the output unit (greedy decoding)
-            # best_hyps_id, _, _ = model.module.decode(
-            #     batch_dev['xs'], recog_params, dev_set.idx2token[0], exclude_eos=True)
-            # cer = 0.
-            # ref_n_words, ref_n_chars = 0, 0
-            # for b in range(len(batch_dev['xs'])):
-            #     ref = batch_dev['text'][b]
-            #     hyp = dev_set.idx2token[0](best_hyps_id[b])
-            #     cer += editdistance.eval(hyp, ref)
-            #     ref_n_words += len(ref.split())
-            #     ref_n_chars += len(ref)
-            # wer = cer / ref_n_words
-            # cer /= ref_n_chars
-            # reporter.add_tensorboard_scalar('dev/WER', wer)
-            # reporter.add_tensorboard_scalar('dev/CER', cer)
-            # logger.info('WER (dev)', wer)
-            # logger.info('CER (dev)', cer)
             reporter.step(is_eval=True)
 
             duration_step = time.time() - start_time_step
@@ -448,8 +430,7 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                save_checkpoint(model, optimizer, save_path,
-                                remove_old_checkpoints=not transformer)
+                optimizer.save_checkpoint(model, save_path)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -458,10 +439,9 @@ def main():
                 optimizer.epoch(metric_dev)  # lr decay
                 reporter.epoch(metric_dev)  # plot
 
-                if optimizer.is_best:
+                if optimizer.is_topk:
                     # Save the model
-                    save_checkpoint(model, optimizer, save_path,
-                                    remove_old_checkpoints=not transformer)
+                    optimizer.save_checkpoint(model, save_path)
 
                     # test
                     for eval_set in eval_sets:
@@ -519,10 +499,10 @@ def eval_epoch(models, dataset, recog_params, args, epoch, logger):
             logger.info('PER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
     elif args.metric == 'ppl':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[0]
-        logger.info('PPL (%s, ep:%d): %.2f' % (dataset.set, epoch, metric))
+        logger.info('PPL (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
     elif args.metric == 'loss':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
-        logger.info('Loss (%s, ep:%d): %.2f' % (dataset.set, epoch, metric))
+        logger.info('Loss (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
     else:
         raise NotImplementedError(args.metric)
     return metric

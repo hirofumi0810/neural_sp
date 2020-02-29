@@ -136,31 +136,3 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
             optimizer.optimizer.param_groups[0]['params'].append(param_group)
     else:
         logger.warning('Optimizer is not loaded.')
-
-
-def save_checkpoint(model, optimizer, save_path, remove_old_checkpoints=True):
-    """Save checkpoint.
-
-    Args:
-        model (torch.nn.Module):
-        save_path (str): path to the directory to save a model
-        optimizer (LRScheduler): optimizer wrapped by LRScheduler class
-        remove_old_checkpoints (bool): if True, all checkpoints
-            other than the best one will be deleted
-
-    """
-    model_path = os.path.join(save_path, 'model.epoch-' + str(optimizer.n_epochs))
-
-    # Remove old checkpoints
-    if remove_old_checkpoints:
-        for path in glob(os.path.join(save_path, 'model.epoch-*')):
-            os.remove(path)
-
-    # Save parameters, optimizer, step index etc.
-    checkpoint = {
-        "model_state_dict": model.module.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),  # LRScheduler class
-    }
-    torch.save(checkpoint, model_path)
-
-    logger.info("=> Saved checkpoint (epoch:%d): %s" % (optimizer.n_epochs, model_path))
