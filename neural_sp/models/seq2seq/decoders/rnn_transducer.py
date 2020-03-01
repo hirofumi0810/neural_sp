@@ -17,11 +17,15 @@ import random
 import torch
 import torch.nn as nn
 
+from neural_sp.models.lm.rnnlm import RNNLM
+from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.ctc import CTC
+from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import repeat
+from neural_sp.models.torch_utils import tensor2np
 
 random.seed(1)
 
@@ -431,18 +435,31 @@ class RNNTransducer(DecoderBase):
             assert lm_weight_second_bwd > 0
             lm_second_bwd.eval()
 
+        if ctc_log_probs is not None:
+            assert ctc_weight > 0
+            ctc_log_probs = tensor2np(ctc_log_probs)
+
         nbest_hyps_idx = []
         eos_flags = []
         for b in range(bs):
-            # Initialization
+            # Initialization per utterance
             y = eouts.new_zeros(bs, 1).fill_(self.eos).long()
             y_emb = self.dropout_emb(self.embed(y))
             dout, dstate = self.recurrency(y_emb, None)
             lmstate = None
 
-            if lm_state_carry_over:
-                lmstate = self.lmstate_final
-            self.prev_spk = speakers[b]
+            # For joint CTC-Attention decoding
+            ctc_prefix_scorer = None
+            if ctc_log_probs is not None:
+                ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[b], self.blank, self.eos)
+
+            if speakers is not None:
+                if speakers[b] == self.prev_spk:
+                    if lm_state_carry_over and isinstance(lm, RNNLM):
+                        lmstate = self.lmstate_final
+                self.prev_spk = speakers[b]
+
+            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id)
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
@@ -453,38 +470,62 @@ class RNNTransducer(DecoderBase):
                      'score_ctc': 0.,
                      'dout': dout,
                      'dstate': dstate,
-                     'lmstate': lmstate}]
+                     'lmstate': lmstate,
+                     'ctc_state': ctc_prefix_scorer.initial_state() if ctc_prefix_scorer is not None else None}]
             for t in range(elens[b]):
                 # preprocess for batch decoding
                 douts = torch.cat([beam['dout'] for beam in hyps], dim=0)
                 outs = self.joint(eouts[b:b + 1, t:t + 1].repeat([douts.size(0), 1, 1]), douts)
-                log_probs = torch.log_softmax(outs.squeeze(2).squeeze(1), dim=-1)
+                scores_rnnt = torch.log_softmax(outs.squeeze(2).squeeze(1), dim=-1)
+
+                # Update LM states for shallow fusion
+                y = eouts.new_zeros(len(hyps), 1).long()
+                for j, beam in enumerate(hyps):
+                    y[j, 0] = beam['hyp'][-1]
+                lmstate, scores_lm = None, None
+                if lm is not None:
+                    if hyps[0]['lmstate'] is not None:
+                        lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in hyps], dim=1)
+                        lm_cxs = torch.cat([beam['lmstate']['cxs'] for beam in hyps], dim=1)
+                        lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
+                    lmout, lmstate, scores_lm = lm.predict(y, lmstate)
 
                 new_hyps = []
                 for j, beam in enumerate(hyps):
-                    prev_idx = beam['hyp'][-1]
                     dout = douts[j:j + 1]
                     dstate = beam['dstate']
                     lmstate = beam['lmstate']
 
-                    # Pick up the top-k scores
-                    log_probs_topk, topk_ids = torch.topk(log_probs[j], k=beam_width, dim=-1, largest=True, sorted=True)
+                    # Attention scores
+                    total_scores_rnnt = beam['score_rnnt'] + scores_rnnt[j:j + 1]
+                    total_scores = total_scores_rnnt * (1 - ctc_weight)
+
+                    # Add LM score <after> top-K selection
+                    total_scores_topk, topk_ids = torch.topk(
+                        total_scores, k=beam_width, dim=-1, largest=True, sorted=True)
+                    if lm is not None:
+                        total_scores_lm = beam['score_lm'] + scores_lm[j, -1, topk_ids[0]]
+                        total_scores_topk += total_scores_lm * lm_weight
+                    else:
+                        total_scores_lm = eouts.new_zeros(beam_width)
+
+                    # Add CTC score
+                    new_ctc_states, total_scores_ctc, total_scores_topk = helper.add_ctc_score(
+                        beam['hyp'], topk_ids, beam['ctc_state'],
+                        total_scores_topk, ctc_prefix_scorer)
 
                     for k in range(beam_width):
-                        idx = topk_ids[k].item()
+                        idx = topk_ids[0, k].item()
 
                         if idx == self.blank:
-                            beam['score'] += log_probs_topk[k].item()
-                            beam['score_rnnt'] += log_probs_topk[k].item()
+                            beam['score'] = total_scores_topk[0, k].item()
+                            beam['score_rnnt'] = total_scores_topk[0, k].item()
                             new_hyps.append(beam.copy())
                             continue
 
                         # skip blank-dominant frames
-                        # if log_probs_topk[self.blank].item() > 0.7:
+                        # if total_scores_topk[0, self.blank].item() > 0.7:
                         #     continue
-
-                        beam['score_rnnt'] += log_probs_topk[k].item()
-                        score = beam['score_rnnt']
 
                         # Update prediction network only when predicting non-blank labels
                         hyp_id = beam['hyp'] + [idx]
@@ -499,30 +540,22 @@ class RNNTransducer(DecoderBase):
                         y_emb = self.dropout_emb(self.embed(y))
                         dout, new_dstate = self.recurrency(y_emb, dstate)
 
-                        # Update LM states for shallow fusion
-                        if lm is not None:
-                            _, lmstate, scores_lm = lm.predict(
-                                eouts.new_zeros(1, 1).fill_(prev_idx), lmstate)
-                            beam['score_lm'] += scores_lm[0, -1, idx].item()
-                            score += scores_lm[0, -1, idx].item() * lm_weight
-
-                        # TODO: add CTC score
-
                         # store in cache
                         self.state_cache[hyp_str] = {
                             'dout': dout,
                             'dstate': new_dstate,
-                            'lmstate': lmstate,
+                            'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                         }
 
                         new_hyps.append({'hyp': hyp_id,
-                                         'score': score,
-                                         'score_rnnt': beam['score_rnnt'],
-                                         'score_lm': beam['score_lm'],
-                                         'score_ctc': beam['score_ctc'],
+                                         'score':  total_scores_topk[0, k].item(),
+                                         'score_rnnt': total_scores_rnnt[0, idx].item(),
+                                         'score_ctc': total_scores_ctc[k].item(),
+                                         'score_lm': total_scores_lm[k].item(),
                                          'dout': dout,
                                          'dstate': new_dstate,
-                                         'lmstate': lmstate})
+                                         'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
+                                         'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None})
 
                 # Merge hypotheses having the same token sequences
                 new_hyps_merged = {}
