@@ -193,6 +193,8 @@ class LRScheduler(object):
         # Remove old checkpoints
         if remove_old_checkpoints:
             for path in glob(os.path.join(save_path, 'model.epoch-*')):
+                if 'model.epoch-avg' in path:
+                    continue
                 epoch = int(path.split('-')[-1])
                 if epoch not in [ep for (ep, v) in self.topk_list]:
                     os.remove(path)
