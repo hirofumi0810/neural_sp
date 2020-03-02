@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import functools
-from glob import glob
 import logging
 import os
 import time
@@ -103,6 +102,8 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
         model (torch.nn.Module):
         checkpoint_path (str): path to the saved model (model..epoch-*)
         optimizer (LRScheduler): optimizer wrapped by LRScheduler class
+    Returns:
+        topk_list (list): list of (epoch, metric)
 
     """
     if not os.path.isfile(checkpoint_path):
@@ -136,3 +137,9 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
             optimizer.optimizer.param_groups[0]['params'].append(param_group)
     else:
         logger.warning('Optimizer is not loaded.')
+
+    if 'topk_list' in checkpoint['optimizer_state_dict'].keys():
+        topk_list = checkpoint['optimizer_state_dict']['topk_list']
+    else:
+        topk_list = []
+    return topk_list

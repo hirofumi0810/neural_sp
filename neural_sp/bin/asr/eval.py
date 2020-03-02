@@ -76,13 +76,14 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            load_checkpoint(model, args.recog_model[0])
+            topk_list = load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
 
             # Model averaging for Transformer
             if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
-                model = average_checkpoints(model, args.recog_model[0], epoch,
-                                            n_average=args.recog_n_average)
+                model = average_checkpoints(model, args.recog_model[0],
+                                            n_average=args.recog_n_average,
+                                            topk_list=topk_list)
 
             # Ensemble (different models)
             ensemble_models = [model]
@@ -118,13 +119,13 @@ def main():
 
                 # second path (forward)
                 if args.recog_lm_second is not None and args.recog_lm_second_weight > 0:
-                    conf_lm_2nd = load_config(os.path.join(os.path.dirname(args.recog_lm_second), 'conf.yml'))
-                    args_lm_2nd = argparse.Namespace()
-                    for k, v in conf_lm_2nd.items():
-                        setattr(args_lm_2nd, k, v)
-                    lm_2nd = build_lm(args_lm_2nd)
-                    load_checkpoint(lm_2nd, args.recog_lm_second)
-                    model.lm_2nd = lm_2nd
+                    conf_lm_second = load_config(os.path.join(os.path.dirname(args.recog_lm_second), 'conf.yml'))
+                    args_lm_second = argparse.Namespace()
+                    for k, v in conf_lm_second.items():
+                        setattr(args_lm_second, k, v)
+                    lm_second = build_lm(args_lm_second)
+                    load_checkpoint(lm_second, args.recog_lm_second)
+                    model.lm_second = lm_second
 
                 # second path (bakward)
                 if args.recog_lm_bwd is not None and args.recog_lm_bwd_weight > 0:
@@ -208,15 +209,16 @@ def main():
         elif args.recog_metric == 'acc':
             raise NotImplementedError
         elif args.recog_metric in ['ppl', 'loss']:
-            ppl, loss = eval_ppl(ensemble_models, dataset,
-                                 progressbar=True)
+            ppl, loss = eval_ppl(ensemble_models, dataset, progressbar=True)
             ppl_avg += ppl
             loss_avg += loss
         elif args.recog_metric == 'bleu':
-            raise NotImplementedError
+            raise NotImplementedError(args.recog_metric)
         else:
-            raise NotImplementedError
-        logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
+            raise NotImplementedError(args.recog_metric)
+        elasped_time = time.time() - start_time
+        logger.info('Elasped time: %.3f [sec]' % elasped_time)
+        logger.info('RTF: %.3f' % (elasped_time / (dataset.n_frames * 0.01)))
 
     if args.recog_metric == 'edit_distance':
         if 'phone' in args.recog_unit:
@@ -226,9 +228,9 @@ def main():
                         (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
     elif args.recog_metric in ['ppl', 'loss']:
         logger.info('PPL (avg.): %.2f\n' % (ppl_avg / len(args.recog_sets)))
-        print('PPL (avg.): %.2f' % (ppl_avg / len(args.recog_sets)))
+        print('PPL (avg.): %.3f' % (ppl_avg / len(args.recog_sets)))
         logger.info('Loss (avg.): %.2f\n' % (loss_avg / len(args.recog_sets)))
-        print('Loss (avg.): %.2f' % (loss_avg / len(args.recog_sets)))
+        print('Loss (avg.): %.3f' % (loss_avg / len(args.recog_sets)))
 
 
 if __name__ == '__main__':
