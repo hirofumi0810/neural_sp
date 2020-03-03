@@ -259,7 +259,8 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                optimizer.save_checkpoint(model, save_path)
+                optimizer.save_checkpoint(model, save_path,
+                                          remove_old_checkpoints=not transformer)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -272,7 +273,8 @@ def main():
 
                 if optimizer.is_topk:
                     # Save the model
-                    optimizer.save_checkpoint(model, save_path)
+                    optimizer.save_checkpoint(model, save_path,
+                                              remove_old_checkpoints=not transformer)
 
                     # test
                     ppl_test_avg = 0.
