@@ -270,7 +270,7 @@ def main():
                 logger.info('PPL (%s, ep:%d): %.2f' %
                             (dev_set.set, optimizer.n_epochs, ppl_dev))
 
-                if optimizer.is_best:
+                if optimizer.is_topk:
                     # Save the model
                     optimizer.save_checkpoint(model, save_path)
 
