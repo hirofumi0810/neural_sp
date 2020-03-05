@@ -91,13 +91,15 @@ class PositionalEncoding(nn.Module):
 
         if self.pe_type == 'add':
             xs = xs + self.pe[:, :xs.size(1)]
+            xs = self.dropout(xs)
         elif self.pe_type == 'concat':
             xs = torch.cat([xs, self.pe[:, :xs.size(1)]], dim=-1)
+            xs = self.dropout(xs)
         elif '1dconv' in self.pe_type:
             xs = self.pe(xs)
         else:
             raise NotImplementedError(self.pe_type)
-        return self.dropout(xs)
+        return xs
 
 
 class PositionwiseFeedForward(nn.Module):
@@ -261,7 +263,8 @@ class TransformerDecoderBlock(nn.Module):
                  dropout, dropout_att, dropout_residual, dropout_head,
                  layer_norm_eps, ffn_activation, param_init,
                  src_tgt_attention=True, mocha_chunk_size=0,
-                 mocha_n_heads_mono=1, mocha_n_heads_chunk=1):
+                 mocha_n_heads_mono=1, mocha_n_heads_chunk=1,
+                 lm_fusion=False):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
@@ -279,7 +282,6 @@ class TransformerDecoderBlock(nn.Module):
                                                          atype='scaled_dot',
                                                          n_heads=n_heads,
                                                          dropout=dropout_att,
-                                                         dropout_head=dropout_head if not src_tgt_attention else 0,
                                                          param_init=param_init)
 
         # attention over encoder stacks
@@ -306,7 +308,6 @@ class TransformerDecoderBlock(nn.Module):
                                                             atype='scaled_dot',
                                                             n_heads=n_heads,
                                                             dropout=dropout_att,
-                                                            dropout_head=dropout_head if not src_tgt_attention else 0,
                                                             param_init=param_init)
 
         # feed-forward
@@ -317,8 +318,24 @@ class TransformerDecoderBlock(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         self.death_rate = dropout_residual
 
+        self.lm_fusion = lm_fusion
+        if lm_fusion:
+            self.norm_lm = nn.LayerNorm(d_model, eps=layer_norm_eps)
+            # NOTE: LM should be projected to d_model in advance
+            self.linear_lm_feat = nn.Linear(d_model, d_model)
+            self.linear_lm_gate = nn.Linear(d_model * 2, d_model)
+            self.linear_lm_fusion = nn.Linear(d_model * 2, d_model)
+            if 'attention' in lm_fusion:
+                self.lm_attn = MultiheadAttentionMechanism(kdim=d_model,
+                                                           qdim=d_model,
+                                                           adim=d_model,
+                                                           atype='scaled_dot',
+                                                           n_heads=n_heads,
+                                                           dropout=dropout_att,
+                                                           param_init=param_init)
+
     def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
-                xy_aws_prev=None, mode='hard'):
+                xy_aws_prev=None, mode='hard', lmout=None):
         """Transformer decoder forward pass.
 
         Args:
@@ -329,6 +346,7 @@ class TransformerDecoderBlock(nn.Module):
             cache (FloatTensor): `[B, L-1, d_model]`
             xy_aws_prev (FloatTensor): `[B, H, L, T]`
             mode (str):
+            lmout (FloatTensor): `[B, L, d_model]`
         Returns:
             out (FloatTensor): `[B, L, d_model]`
             yy_aws (FloatTensor)`[B, H, L, L]`
@@ -357,7 +375,8 @@ class TransformerDecoderBlock(nn.Module):
         if self.atype == "average":
             raise NotImplementedError
         else:
-            out, yy_aws, _ = self.self_attn(ys, ys, ys_q, mask=yy_mask, cache=False)  # k/v/q
+            out, yy_aws, _ = self.self_attn(
+                ys, ys, ys_q, mask=yy_mask, cache=False)  # k/v/q
             if self.death_rate > 0 and self.training:
                 out = out / (1 - self.death_rate)
             out = self.dropout(out) + residual
@@ -367,8 +386,30 @@ class TransformerDecoderBlock(nn.Module):
         if self.src_tgt_attention:
             residual = out
             out = self.norm2(out)
-            out, xy_aws, xy_aws_beta = self.src_attn(xs, xs, out, mask=xy_mask, cache=False,  # k/v/q
-                                                     aw_prev=xy_aws_prev, mode=mode)
+            out, xy_aws, xy_aws_beta = self.src_attn(
+                xs, xs, out, mask=xy_mask, cache=False,  # k/v/q
+                aw_prev=xy_aws_prev, mode=mode,
+                n_tokens=yy_mask[:, -1, :].sum(1).float() if yy_mask is not None else None)
+            if self.death_rate > 0 and self.training:
+                out = out / (1 - self.death_rate)
+            out = self.dropout(out) + residual
+
+        # LM integration
+        yy_aws_lm = None
+        if self.lm_fusion:
+            residual = out
+            out = self.norm_lm(out)
+            lmout = self.linear_lm_feat(lmout)
+
+            # attention over LM outputs
+            if 'attention' in self.lm_fusion:
+                out, yy_aws_lm, _ = self.lm_attn(
+                    lmout, lmout, out, mask=yy_mask, cache=False)  # k/v/q
+
+            gate = torch.sigmoid(self.linear_lm_gate(torch.cat([out, lmout], dim=-1)))
+            gated_lmout = gate * lmout
+            out = self.linear_lm_fusion(torch.cat([out, gated_lmout], dim=-1))
+
             if self.death_rate > 0 and self.training:
                 out = out / (1 - self.death_rate)
             out = self.dropout(out) + residual
@@ -384,7 +425,7 @@ class TransformerDecoderBlock(nn.Module):
         if cache is not None:
             out = torch.cat([cache, out], dim=1)
 
-        return out, yy_aws, xy_aws, xy_aws_beta
+        return out, yy_aws, xy_aws, xy_aws_beta, yy_aws_lm
 
 
 class SyncBidirTransformerDecoderBlock(nn.Module):
