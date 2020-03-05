@@ -61,7 +61,6 @@ class PositionalEncoding(nn.Module):
                 layers.append(nn.ReLU())
                 layers.append(nn.Dropout(p=dropout))
             self.pe = nn.Sequential(*layers)
-            self.dropout = nn.Dropout(p=dropout)  # for the last layer
         elif pe_type != 'none':
             # Compute the positional encodings once in log space.
             pe = torch.zeros(max_len, d_model, dtype=torch.float32)
