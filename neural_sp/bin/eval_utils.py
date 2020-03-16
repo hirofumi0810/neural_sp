@@ -17,12 +17,15 @@ import torch
 logger = logging.getLogger(__name__)
 
 
-def average_checkpoints(model, best_model_path, n_average, topk_list):
+def average_checkpoints(model, best_model_path, n_average, topk_list=[]):
     if n_average == 1:
         return model
 
-    n_models = 1
-    checkpoint_avg = {'model_state_dict': model.state_dict()}
+    n_models = 0
+    checkpoint_avg = {'model_state_dict': None}
+    if len(topk_list) == 0:
+        epoch = int(best_model_path.split('model.epoch-')[1])
+        topk_list = [(i, 0) for i in range(epoch, epoch - n_average - 1, -1)]
     for ep, _ in topk_list:
         if n_models == n_average:
             break
@@ -30,6 +33,11 @@ def average_checkpoints(model, best_model_path, n_average, topk_list):
         if os.path.isfile(checkpoint_path):
             logger.info("=> Loading checkpoint (epoch:%d): %s" % (ep, checkpoint_path))
             checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
+            if checkpoint_avg['model_state_dict'] is None:
+                # first checkpoint
+                checkpoint_avg['model_state_dict'] = model.state_dict()
+                n_models += 1
+                continue
             for k, v in checkpoint['model_state_dict'].items():
                 checkpoint_avg['model_state_dict'][k] += v
             n_models += 1
