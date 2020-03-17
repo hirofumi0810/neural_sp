@@ -234,7 +234,7 @@ def main():
         print('PPL (avg.): %.3f' % (ppl_avg / len(args.recog_sets)))
         logger.info('Loss (avg.): %.2f\n' % (loss_avg / len(args.recog_sets)))
         print('Loss (avg.): %.3f' % (loss_avg / len(args.recog_sets)))
-    elif args.recog_metric == 'accuracy':
+    elif args.recog_metric == 'acc':
         logger.info('Accuracy (avg.): %.2f\n' % (acc_avg / len(args.recog_sets)))
         print('Accuracy (avg.): %.3f' % (acc_avg / len(args.recog_sets)))
 

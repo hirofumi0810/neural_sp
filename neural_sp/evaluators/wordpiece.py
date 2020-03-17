@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 def eval_wordpiece(models, dataset, recog_params, epoch,
-                   recog_dir=None, streaming=False, progressbar=False):
+                   recog_dir=None, streaming=False, progressbar=False,
+                   fine_grained=False):
     """Evaluate the wordpiece-level model by WER.
 
     Args:
@@ -31,6 +32,7 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
         recog_dir (str):
         streaming (bool): streaming decoding for the session-level evaluation
         progressbar (bool): visualize the progressbar
+        fine_grained (bool): calculate fine-grained WER distributions based on input lengths
     Returns:
         wer (float): Word error rate
         cer (float): Character error rate
@@ -58,6 +60,9 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     n_word, n_char = 0, 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
+
+    # calculate WER distribution based on input lengths
+    wer_dist = {}
 
     with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
         while True:
@@ -105,6 +110,13 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
                     n_del_w += del_b
                     n_word += len(ref.split(' '))
 
+                    if fine_grained:
+                        xlen_bin = (batch['xlens'][b] // 200 + 1) * 200
+                        if xlen_bin in wer_dist.keys():
+                            wer_dist[xlen_bin] += [wer_b / 100]
+                        else:
+                            wer_dist[xlen_bin] = [wer_b / 100]
+
                     # Compute CER
                     if dataset.corpus == 'csj':
                         ref = ref.replace(' ', '')
@@ -140,6 +152,10 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
         n_sub_c /= n_char
         n_ins_c /= n_char
         n_del_c /= n_char
+
+        if fine_grained:
+            for len_bin, wers in sorted(wer_dist.items(), key=lambda x: x[0]):
+                logger.info('  WER (%s): %.2f %% (%d)' % (dataset.set, sum(wers) / len(wers), len_bin))
 
     logger.debug('WER (%s): %.2f %%' % (dataset.set, wer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))

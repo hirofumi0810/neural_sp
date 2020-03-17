@@ -29,6 +29,7 @@ from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import set_save_path
 from neural_sp.datasets.asr import Dataset
+from neural_sp.evaluators.accuracy import eval_accuracy
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
@@ -184,11 +185,8 @@ def main():
     args.input_dim = train_set.input_dim
 
     # Load a LM conf file for LM fusion & LM initialization
-    if not args.resume and (args.lm_fusion or args.lm_init):
-        if args.lm_fusion:
-            lm_conf = load_config(os.path.join(os.path.dirname(args.lm_fusion), 'conf.yml'))
-        elif args.lm_init:
-            lm_conf = load_config(os.path.join(os.path.dirname(args.lm_init), 'conf.yml'))
+    if not args.resume and args.external_lm:
+        lm_conf = load_config(os.path.join(os.path.dirname(args.external_lm), 'conf.yml'))
         args.lm_conf = argparse.Namespace()
         for k, v in lm_conf.items():
             setattr(args.lm_conf, k, v)
@@ -231,7 +229,7 @@ def main():
     else:
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
-        if args.lm_fusion:
+        if args.external_lm:
             save_config(args.lm_conf, os.path.join(save_path, 'conf_lm.yml'))
 
         # Save the nlsyms, dictionar, and wp_model
@@ -438,21 +436,22 @@ def main():
                 metric_dev = eval_epoch([model.module], dev_set, recog_params, args,
                                         optimizer.n_epochs + 1, logger)
                 optimizer.epoch(metric_dev)  # lr decay
-                reporter.epoch(metric_dev)  # plot
+                reporter.epoch(metric_dev, name=args.metric)  # plot
 
-                if optimizer.is_topk:
+                if optimizer.is_topk or transformer:
                     # Save the model
                     optimizer.save_checkpoint(model, save_path,
                                               remove_old_checkpoints=not transformer)
 
                     # test
-                    for eval_set in eval_sets:
-                        eval_epoch([model.module], eval_set, recog_params, args,
-                                   optimizer.n_epochs, logger)
+                    if optimizer.is_topk:
+                        for eval_set in eval_sets:
+                            eval_epoch([model.module], eval_set, recog_params, args,
+                                       optimizer.n_epochs, logger)
 
-                    # start scheduled sampling
-                    if args.ss_prob > 0:
-                        model.module.scheduled_sampling_trigger()
+                        # start scheduled sampling
+                        if args.ss_prob > 0:
+                            model.module.scheduled_sampling_trigger()
 
                 duration_eval = time.time() - start_time_eval
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
@@ -505,6 +504,9 @@ def eval_epoch(models, dataset, recog_params, args, epoch, logger):
     elif args.metric == 'loss':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
         logger.info('Loss (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+    elif args.metric == 'acc':
+        metric = eval_accuracy(models, dataset, batch_size=args.batch_size)[1]
+        logger.info('Accuracy (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
     else:
         raise NotImplementedError(args.metric)
     return metric
