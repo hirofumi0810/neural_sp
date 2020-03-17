@@ -22,6 +22,7 @@ from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.asr import Dataset
+from neural_sp.evaluators.accuracy import eval_accuracy
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
@@ -54,6 +55,7 @@ def main():
 
     wer_avg, cer_avg, per_avg = 0, 0, 0
     ppl_avg, loss_avg = 0, 0
+    acc_avg = 0
     for i, s in enumerate(args.recog_sets):
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
@@ -82,8 +84,8 @@ def main():
             # Model averaging for Transformer
             if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
                 model = average_checkpoints(model, args.recog_model[0],
-                                            n_average=args.recog_n_average,
-                                            topk_list=topk_list)
+                                            # topk_list=topk_list,
+                                            n_average=args.recog_n_average)
 
             # Ensemble (different models)
             ensemble_models = [model]
@@ -186,7 +188,8 @@ def main():
                                           epoch=epoch - 1,
                                           recog_dir=args.recog_dir,
                                           streaming=args.recog_streaming,
-                                          progressbar=True)
+                                          progressbar=True,
+                                          fine_grained=True)
                 wer_avg += wer
                 cer_avg += cer
             elif 'char' in args.recog_unit:
@@ -206,12 +209,12 @@ def main():
                 per_avg += per
             else:
                 raise ValueError(args.recog_unit)
-        elif args.recog_metric == 'acc':
-            raise NotImplementedError
         elif args.recog_metric in ['ppl', 'loss']:
             ppl, loss = eval_ppl(ensemble_models, dataset, progressbar=True)
             ppl_avg += ppl
             loss_avg += loss
+        elif args.recog_metric == 'acc':
+            acc_avg += eval_accuracy(ensemble_models, dataset, progressbar=True)
         elif args.recog_metric == 'bleu':
             raise NotImplementedError(args.recog_metric)
         else:
@@ -231,6 +234,9 @@ def main():
         print('PPL (avg.): %.3f' % (ppl_avg / len(args.recog_sets)))
         logger.info('Loss (avg.): %.2f\n' % (loss_avg / len(args.recog_sets)))
         print('Loss (avg.): %.3f' % (loss_avg / len(args.recog_sets)))
+    elif args.recog_metric == 'accuracy':
+        logger.info('Accuracy (avg.): %.2f\n' % (acc_avg / len(args.recog_sets)))
+        print('Accuracy (avg.): %.3f' % (acc_avg / len(args.recog_sets)))
 
 
 if __name__ == '__main__':
