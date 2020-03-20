@@ -78,14 +78,15 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            topk_list = load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
-
-            # Model averaging for Transformer
             if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
+                # Model averaging for Transformer
+                # topk_list = load_checkpoint(model, args.recog_model[0])
                 model = average_checkpoints(model, args.recog_model[0],
                                             # topk_list=topk_list,
                                             n_average=args.recog_n_average)
+            else:
+                load_checkpoint(model, args.recog_model[0])
 
             # Ensemble (different models)
             ensemble_models = [model]
@@ -213,7 +214,7 @@ def main():
             ppl, loss = eval_ppl(ensemble_models, dataset, progressbar=True)
             ppl_avg += ppl
             loss_avg += loss
-        elif args.recog_metric == 'acc':
+        elif args.recog_metric == 'accuracy':
             acc_avg += eval_accuracy(ensemble_models, dataset, progressbar=True)
         elif args.recog_metric == 'bleu':
             raise NotImplementedError(args.recog_metric)
@@ -234,7 +235,7 @@ def main():
         print('PPL (avg.): %.3f' % (ppl_avg / len(args.recog_sets)))
         logger.info('Loss (avg.): %.2f\n' % (loss_avg / len(args.recog_sets)))
         print('Loss (avg.): %.3f' % (loss_avg / len(args.recog_sets)))
-    elif args.recog_metric == 'acc':
+    elif args.recog_metric == 'accuracy':
         logger.info('Accuracy (avg.): %.2f\n' % (acc_avg / len(args.recog_sets)))
         print('Accuracy (avg.): %.3f' % (acc_avg / len(args.recog_sets)))
 

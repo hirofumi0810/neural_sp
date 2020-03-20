@@ -212,6 +212,7 @@ def main():
                                 decay_rate=conf['lr_decay_rate'],
                                 decay_patient_n_epochs=conf['lr_decay_patient_n_epochs'],
                                 early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
+                                lower_better=conf['metric'] != 'accuracy',
                                 warmup_start_lr=conf['warmup_start_lr'],
                                 warmup_n_steps=conf['warmup_n_steps'],
                                 model_size=conf['transformer_d_model'],
@@ -282,6 +283,7 @@ def main():
                                 decay_rate=args.lr_decay_rate,
                                 decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
                                 early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
+                                lower_better=args.metric != 'accuracy',
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
                                 model_size=args.transformer_d_model,
@@ -504,8 +506,8 @@ def eval_epoch(models, dataset, recog_params, args, epoch, logger):
     elif args.metric == 'loss':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
         logger.info('Loss (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
-    elif args.metric == 'acc':
-        metric = eval_accuracy(models, dataset, batch_size=args.batch_size)[1]
+    elif args.metric == 'accuracy':
+        metric = eval_accuracy(models, dataset, batch_size=args.batch_size)
         logger.info('Accuracy (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
     else:
         raise NotImplementedError(args.metric)
