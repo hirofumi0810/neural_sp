@@ -52,28 +52,6 @@ def main():
             if k != 'resume':
                 setattr(args, k, v)
 
-    # Set save path
-    if args.resume:
-        save_path = os.path.dirname(args.resume)
-        dir_name = os.path.basename(save_path)
-    else:
-        dir_name = set_lm_name(args)
-        save_path = mkdir_join(args.model_save_dir, '_'.join(
-            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
-        save_path = set_save_path(save_path)  # avoid overwriting
-
-    # Set logger
-    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
-
-    if args.resume:
-        transformer = 'transformer' == conf['lm_type']
-        if transformer and conf['optimizer'] != 'noam':
-            logger.warning('Noam Optimizer is not set for Transformer.')
-    else:
-        transformer = 'transformer' == args.lm_type
-        if transformer and args.optimizer != 'noam':
-            logger.warning('Noam Optimizer is not set for Transformer.')
-
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
@@ -111,8 +89,26 @@ def main():
 
     args.vocab = train_set.vocab
 
+    # Set save path
+    if args.resume:
+        save_path = os.path.dirname(args.resume)
+        dir_name = os.path.basename(save_path)
+    else:
+        dir_name = set_lm_name(args)
+        save_path = mkdir_join(args.model_save_dir, '_'.join(
+            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        save_path = set_save_path(save_path)  # avoid overwriting
+
+    # Set logger
+    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
+
     # Model setting
     model = build_lm(args, save_path)
+
+    if args.resume:
+        transformer = conf['lm_type'] == 'transformer'
+    else:
+        transformer = args.lm_type == 'transformer'
 
     if args.resume:
         # Set optimizer

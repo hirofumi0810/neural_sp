@@ -66,53 +66,25 @@ def main():
     recog_params = vars(args)
 
     # Compute subsampling factor
-    subsample_factor = 1
-    subsample_factor_sub1 = 1
-    subsample_factor_sub2 = 1
+    args.subsample_factor = 1
+    args.subsample_factor_sub1 = 1
+    args.subsample_factor_sub2 = 1
     subsample = [int(s) for s in args.subsample.split('_')]
     if args.conv_poolings and 'conv' in args.enc_type:
         for p in args.conv_poolings.split('_'):
-            subsample_factor *= int(p.split(',')[0].replace('(', ''))
+            args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
     else:
-        subsample_factor = np.prod(subsample)
+        args.subsample_factor = np.prod(subsample)
     if args.train_set_sub1:
         if args.conv_poolings and 'conv' in args.enc_type:
-            subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
+            args.subsample_factor_sub1 = args.subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
         else:
-            subsample_factor_sub1 = subsample_factor
+            args.subsample_factor_sub1 = args.subsample_factor
     if args.train_set_sub2:
         if args.conv_poolings and 'conv' in args.enc_type:
-            subsample_factor_sub2 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub2 - 1])
+            args.subsample_factor_sub2 = args.subsample_factor * np.prod(subsample[:args.enc_n_layers_sub2 - 1])
         else:
-            subsample_factor_sub2 = subsample_factor
-
-    # Set save path
-    if args.resume:
-        save_path = os.path.dirname(args.resume)
-        dir_name = os.path.basename(save_path)
-    else:
-        dir_name = set_asr_model_name(args, subsample_factor)
-        save_path = mkdir_join(args.model_save_dir, '_'.join(
-            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
-        save_path = set_save_path(save_path)  # avoid overwriting
-
-    # Set logger
-    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
-
-    # for multi-GPUs
-    if args.n_gpus > 1:
-        logger.info("Batch size is automatically reduced from %d to %d" %
-                    (args.batch_size, args.batch_size // 2))
-        args.batch_size //= 2
-
-    if args.resume:
-        transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
-        if transformer and conf['optimizer'] != 'noam':
-            logger.warning('Noam Optimizer is not set for Transformer.')
-    else:
-        transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
-        if transformer and args.optimizer != 'noam':
-            logger.warning('Noam Optimizer is not set for Transformer.')
+            args.subsample_factor_sub2 = args.subsample_factor
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
@@ -141,9 +113,9 @@ def main():
                         ctc=args.ctc_weight > 0,
                         ctc_sub1=args.ctc_weight_sub1 > 0,
                         ctc_sub2=args.ctc_weight_sub2 > 0,
-                        subsample_factor=subsample_factor,
-                        subsample_factor_sub1=subsample_factor_sub1,
-                        subsample_factor_sub2=subsample_factor_sub2,
+                        subsample_factor=args.subsample_factor,
+                        subsample_factor_sub1=args.subsample_factor_sub1,
+                        subsample_factor_sub2=args.subsample_factor_sub2,
                         discourse_aware=args.discourse_aware)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
@@ -165,9 +137,9 @@ def main():
                       ctc=args.ctc_weight > 0,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
                       ctc_sub2=args.ctc_weight_sub2 > 0,
-                      subsample_factor=subsample_factor,
-                      subsample_factor_sub1=subsample_factor_sub1,
-                      subsample_factor_sub2=subsample_factor_sub2,
+                      subsample_factor=args.subsample_factor,
+                      subsample_factor_sub1=args.subsample_factor_sub1,
+                      subsample_factor_sub2=args.subsample_factor_sub2,
                       discourse_aware=args.discourse_aware)
     eval_sets = [Dataset(corpus=args.corpus,
                          tsv_path=s,
@@ -184,6 +156,21 @@ def main():
     args.vocab_sub2 = train_set.vocab_sub2
     args.input_dim = train_set.input_dim
 
+    # Set save path
+    if args.resume:
+        transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
+        save_path = os.path.dirname(args.resume)
+        dir_name = os.path.basename(save_path)
+    else:
+        transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
+        dir_name = set_asr_model_name(args)
+        save_path = mkdir_join(args.model_save_dir, '_'.join(
+            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        save_path = set_save_path(save_path)  # avoid overwriting
+
+    # Set logger
+    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
+
     # Load a LM conf file for LM fusion & LM initialization
     if not args.resume and args.external_lm:
         lm_conf = load_config(os.path.join(os.path.dirname(args.external_lm), 'conf.yml'))
@@ -198,6 +185,11 @@ def main():
         model = AcousticModel(args, save_path)
     else:
         model = Speech2Text(args, save_path)
+
+    if args.resume:
+        transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
+    else:
+        transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
 
     if args.resume:
         # Set optimizer
