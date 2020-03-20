@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -145,8 +145,8 @@ class LRScheduler(object):
                 self.topk_list = sorted(self.topk_list, key=lambda x: x[1])[:self.topk]
                 self._is_topk = True
                 is_best = topk == 1
-                for k, (ep, _) in enumerate(self.topk_list):
-                    logger.info('----- Top-%d: %d' % (k + 1, ep))
+                for k, (ep, v) in enumerate(self.topk_list):
+                    logger.info('----- Top-%d: epoch%d (%.3f)' % (k + 1, ep, v))
 
         if not self.noam and self._epoch >= self.decay_start_epoch:
             if self.decay_type == 'metric':
