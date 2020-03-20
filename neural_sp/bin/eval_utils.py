@@ -35,7 +35,7 @@ def average_checkpoints(model, best_model_path, n_average, topk_list=[]):
             checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
             if checkpoint_avg['model_state_dict'] is None:
                 # first checkpoint
-                checkpoint_avg['model_state_dict'] = model.state_dict()
+                checkpoint_avg['model_state_dict'] = checkpoint['model_state_dict']
                 n_models += 1
                 continue
             for k, v in checkpoint['model_state_dict'].items():
