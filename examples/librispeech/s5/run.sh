@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
+speed_perturb=false
 specaug=false
 stdout=false
 
@@ -24,7 +25,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
-lm_init=
+external_lm=
 
 #########################
 # LM configuration
@@ -57,7 +58,7 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${specaug} = true ]; then
+if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
   if [ -z ${conf2} ]; then
     echo "Error: Set --conf2." 1>&2
     exit 1
@@ -78,6 +79,11 @@ lm_url=www.openslr.org/resources/11
 train_set=train_${datasize}
 dev_set=dev_other
 test_set="dev_clean dev_other test_clean test_other"
+if [ ${speed_perturb} = true ]; then
+    train_set=train_sp_${datasize}
+    dev_set=dev_other_sp
+    test_set="dev_clean_sp dev_other_sp test_clean_sp test_other_sp"
+fi
 
 if [ ${unit} = char ]; then
     vocab=
@@ -116,33 +122,43 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1_${datasize} ]; then
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in dev_clean test_clean dev_other test_other train_clean_100; do
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-    done
+    if [ ! -e ${data}/.done_stage_1_${datasize}_spfalse ]; then
+        for x in dev_clean test_clean dev_other test_other train_clean_100; do
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+        done
 
-    if [ ${datasize} == '100' ]; then
-        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-            ${data}/train_clean_100 || exit 1;
-    elif [ ${datasize} == '460' ]; then
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/train_clean_360 ${data}/log/make_fbank/train_clean_360 ${data}/fbank || exit 1;
-        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-            ${data}/train_clean_100 ${data}/train_clean_360 || exit 1;
-    elif [ ${datasize} == '960' ]; then
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/train_clean_360 ${data}/log/make_fbank/train_clean_360 ${data}/fbank || exit 1;
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/train_other_500 ${data}/log/make_fbank/train_other_500 ${data}/fbank || exit 1;
-        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} \
-            ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
-    else
-        echo "datasize is 100 or 460 or 960." && exit 1;
+        if [ ${datasize} == '100' ]; then
+            utils/combine_data.sh --extra_files "utt2num_frames" ${data}/train_${datasize} \
+                ${data}/train_clean_100 || exit 1;
+        elif [ ${datasize} == '460' ]; then
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/train_clean_360 ${data}/log/make_fbank/train_clean_360 ${data}/fbank || exit 1;
+            utils/combine_data.sh --extra_files "utt2num_frames" ${data}/train_${datasize} \
+                ${data}/train_clean_100 ${data}/train_clean_360 || exit 1;
+        elif [ ${datasize} == '960' ]; then
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/train_clean_360 ${data}/log/make_fbank/train_clean_360 ${data}/fbank || exit 1;
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/train_other_500 ${data}/log/make_fbank/train_other_500 ${data}/fbank || exit 1;
+            utils/combine_data.sh --extra_files "utt2num_frames" ${data}/train_${datasize} \
+                ${data}/train_clean_100 ${data}/train_clean_360 ${data}/train_other_500 || exit 1;
+        else
+            echo "datasize is 100 or 460 or 960." && exit 1;
+        fi
+    fi
+
+    if [ ${speed_perturb} = true ]; then
+        speed_perturb_3way.sh ${data} train_${datasize} ${train_set}
+        cp -rf ${data}/dev_clean ${data}/dev_clean_sp
+        cp -rf ${data}/dev_other ${data}/dev_other_sp
+        cp -rf ${data}/test_clean ${data}/test_clean_sp
+        cp -rf ${data}/test_other ${data}/test_other_sp
     fi
 
     # Compute global CMVN
@@ -157,43 +173,29 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1
             ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${datasize} ${dump_dir} || exit 1;
     done
 
-    touch ${data}/.done_stage_1_${datasize} && echo "Finish feature extranction (stage: 1)."
+    touch ${data}/.done_stage_1_${datasize}_sp${speed_perturb} && echo "Finish feature extranction (stage: 1)."
 fi
 
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab}.txt; mkdir -p ${data}/dict
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab}
-if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab} ]; then
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict}
-    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
-    offset=$(cat ${dict} | wc -l)
-    if [ ${unit} = wp ]; then
-        cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        spm_train --input=${data}/dict/input.txt --vocab_size=${vocab} \
-            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
-    else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab ${vocab} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
-    fi
-    echo "vocab size:" $(cat ${dict} | wc -l)
+    make_vocab.sh --unit ${unit} --wp_type ${wp_type} --wp_model ${wp_model} --character_coverage 1.0 --speed_perturb ${speed_perturb} \
+        ${data} ${dict} ${vocab} ${data}/${train_set}/text
 
     # Compute OOV rate
     if [ ${unit} = word ]; then
         mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
         echo "OOV rate:" > ${data}/dict/oov_rate/word${vocab}_${datasize}.txt
         for x in ${train_set} ${test_set}; do
-            cut -f 2- -d " " ${data}/${x}/text.org | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+            cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
                 > ${data}/dict/word_count/${x}_${datasize}.txt || exit 1;
             compute_oov_rate.py ${data}/dict/word_count/${x}_${datasize}.txt ${dict} ${x} \
                 >> ${data}/dict/oov_rate/word${vocab}_${datasize}.txt || exit 1;
+            # NOTE: speed perturbation is not considered
         done
         cat ${data}/dict/oov_rate/word${vocab}_${datasize}.txt
     fi
@@ -208,7 +210,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
     done
 
-    touch ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab} && echo "Finish creating dataset for ASR (stage: 2)."
+    touch ${data}/.done_stage_2_${datasize}_${unit}${wp_type}${vocab}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}
@@ -218,7 +220,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo ============================================================================
 
     if [ ! -e ${data}/.done_stage_3_${datasize}${lm_datasize}_${unit}${wp_type}${vocab}_${use_external_text} ]; then
-        [ ! -e ${data}/.done_stage_1_${datasize} ] && echo "run ./run.sh --datasize ${lm_datasize} first" && exit 1
+        [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ] && echo "run ./run.sh --datasize ${lm_datasize} first" && exit 1;
 
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
@@ -290,7 +292,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/asr \
         --asr_init ${asr_init} \
-        --lm_init ${lm_init} \
+        --external_lm ${external_lm} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 

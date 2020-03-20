@@ -10,7 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
-speed_perturb=false
+speed_perturb=true  # default
 specaug=false
 stdout=false
 
@@ -19,25 +19,8 @@ unit=wp      # word/wp/char/word_char
 vocab=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
 
-#########################
-# ASR configuration
-#########################
-conf=conf/asr/blstm_las.yaml
-conf2=
-asr_init=
-lm_init=
-
-#########################
-# LM configuration
-#########################
-lm_conf=conf/lm/rnnlm.yaml
-
 ### path to save the model
 model=/n/work1/inaguma/results/csj
-
-### path to the model directory to resume training
-resume=
-lm_resume=
 
 ### path to save preproecssed data
 export data=/n/work1/inaguma/corpus/csj
@@ -70,13 +53,6 @@ lm_datasize=all  # default is the same data as ASR
 set -e
 set -u
 set -o pipefail
-
-if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: ./run.sh --gpu 0" 1>&2
-    exit 1
-fi
-n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 
 train_set=train_nodev_${datasize}
 test_set="eval1_streaming eval2_streaming eval3_streaming"
@@ -121,10 +97,19 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_streami
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in eval1_streaming eval2_streaming eval3_streaming; do
-        steps/make_fbank.sh --nj 4 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-    done
+    if [ ! -e ${data}/.done_streaming_stage_1_${datasize}_spfalse ]; then
+        for x in eval1_streaming eval2_streaming eval3_streaming; do
+            steps/make_fbank.sh --nj 4 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+        done
+    fi
+
+    if [ ${speed_perturb} = true ]; then
+        cp -rf ${data}/dev_streaming_${datasize} ${data}/${dev_set}
+        cp -rf ${data}/eval1_streaming ${data}/eval1_streaming_sp
+        cp -rf ${data}/eval2_streaming ${data}/eval2_streaming_sp
+        cp -rf ${data}/eval3_streaming ${data}/eval3_streaming_sp
+    fi
 
     # Apply global CMVN & dump features
     for x in ${test_set}; do

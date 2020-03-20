@@ -10,7 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
-speed_perturb=true
+speed_perturb=true  # default
 specaug=false
 stdout=false
 
@@ -25,7 +25,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
-lm_init=
+external_lm=
 
 #########################
 # LM configuration
@@ -192,34 +192,20 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     fi
     cat ${nlsyms}
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict}
-    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
-    offset=$(cat ${dict} | wc -l)
-    if [ ${unit} = wp ]; then
-        if [ ${speed_perturb} = true ]; then
-            grep sp1.0 ${data}/${train_set}/text > ${data}/${train_set}/text.org
-            cp ${data}/${dev_set}/text ${data}/${dev_set}/text.org
-            cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
-        else
-            cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        fi
-        spm_train --user_defined_symbols=$(cat ${nlsyms} | tr "\n" ",") --input=${data}/dict/input.txt --vocab_size=${vocab} \
-            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
-    elif [ ${unit} = phone ]; then
+    if [ ${unit} = phone ]; then
+        echo "Making a dictionary..."
+        echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
+        echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
+        echo "<pad> 3" >> ${dict}
         map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt > ${data}/${train_set}/text.phone
         map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt > ${data}/${dev_set}/text.phone
         text2dict.py ${data}/${train_set}/text.phone --unit ${unit} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+        echo "vocab size:" $(cat ${dict} | wc -l)
     else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab ${vocab} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+        make_vocab.sh --unit ${unit} --nlsyms ${nlsyms} --wp_type ${wp_type} --wp_model ${wp_model} --character_coverage 1.0 --speed_perturb ${speed_perturb} \
+            ${data} ${dict} ${vocab} ${data}/${train_set}/text
     fi
-    echo "vocab size:" $(cat ${dict} | wc -l)
 
     # normalize eval2000
     # 1) convert upper to lower
@@ -349,7 +335,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/asr \
         --asr_init ${asr_init} \
-        --lm_init ${lm_init} \
+        --external_lm ${external_lm} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 

@@ -95,7 +95,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0
     done
     local/prepare_dict.sh
     # utils/prepare_lang.sh ${data}/local/dict_nosp "<unk>" ${data}/local/lang_nosp ${data}/lang_nosp
-    local/ted_download_lm.sh
+    # local/ted_download_lm.sh
     # local/ted_train_lm.sh
     # local/format_lms.sh
 
@@ -142,44 +142,19 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict}
-    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
-    offset=$(cat ${dict} | wc -l)
-    if [ ${unit} = wp ]; then
-        if [ ${speed_perturb} = true ]; then
-            grep sp1.0 ${data}/${train_set}/text > ${data}/${train_set}/text.org
-            cp ${data}/${dev_set}/text ${data}/${dev_set}/text.org
-            cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
-        else
-            cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        fi
-        spm_train --input=${data}/dict/input.txt --vocab_size=${vocab} \
-            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
-    else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab ${vocab} --speed_perturb ${speed_perturb} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
-    fi
-    echo "vocab size:" $(cat ${dict} | wc -l)
+    make_vocab.sh --unit ${unit} --wp_type ${wp_type} --wp_model ${wp_model} --character_coverage 1.0 --speed_perturb ${speed_perturb} \
+        ${data} ${dict} ${vocab} ${data}/${train_set}/text
 
     # Compute OOV rate
     if [ ${unit} = word ]; then
         mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
         echo "OOV rate:" > ${data}/dict/oov_rate/word${vocab}.txt
         for x in ${train_set} ${dev_set} ${test_set}; do
-            if [ ${speed_perturb} = true ]; then
-                cut -f 2- -d " " ${data}/${x}/text.org | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-                    > ${data}/dict/word_count/${x}.txt || exit 1;
-            else
-                cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-                    > ${data}/dict/word_count/${x}.txt || exit 1;
-            fi
+            cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+                > ${data}/dict/word_count/${x}.txt || exit 1;
             compute_oov_rate.py ${data}/dict/word_count/${x}.txt ${dict} ${x} \
                 >> ${data}/dict/oov_rate/word${vocab}.txt || exit 1;
+            # NOTE: speed perturbation is not considered
         done
         cat ${data}/dict/oov_rate/word${vocab}.txt
     fi
