@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -12,19 +12,20 @@ from setuptools import setup
 
 requirements = {
     'install': [
-        'kaldiio',
-        'pandas',
+        'configargparse>=1.0',
+        'editdistance>=0.5.3',
+        'kaldiio>=2.15.1',
+        'matplotlib>=3.1.2',
+        'nltk>=3.4.5'
+        'pandas>=1.0.0',
         'pyyaml',
-        'seaborn',
-        'sentencepiece',
-        'setproctitle',
-        'tensorboardX>=1.6',
-        'tqdm',
+        'seaborn>=0.10.0',
+        'sentencepiece>= 0.1.85',
+        'setproctitle>=1.1.10',
+        'tensorboardX>=2.0',
+        'tqdm>=4.42.0',
         'torch==1.0.0',
-        'warp_rnnt',
-        'configargparse',
-        'editdistance',
-        'tensorboard',
+        'warp_rnnt>=0.3.0',
     ],
     'setup': [
 
