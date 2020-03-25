@@ -28,6 +28,7 @@ from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
+from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 
@@ -56,6 +57,7 @@ def main():
     wer_avg, cer_avg, per_avg = 0, 0, 0
     ppl_avg, loss_avg = 0, 0
     acc_avg = 0
+    bleu_avg = 0
     for i, s in enumerate(args.recog_sets):
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
@@ -217,7 +219,13 @@ def main():
         elif args.recog_metric == 'accuracy':
             acc_avg += eval_accuracy(ensemble_models, dataset, progressbar=True)
         elif args.recog_metric == 'bleu':
-            raise NotImplementedError(args.recog_metric)
+            bleu = eval_wordpiece_bleu(ensemble_models, dataset, recog_params,
+                                       epoch=epoch - 1,
+                                       recog_dir=args.recog_dir,
+                                       streaming=args.recog_streaming,
+                                       progressbar=True,
+                                       fine_grained=True)
+            bleu_avg += bleu
         else:
             raise NotImplementedError(args.recog_metric)
         elasped_time = time.time() - start_time
@@ -238,6 +246,9 @@ def main():
     elif args.recog_metric == 'accuracy':
         logger.info('Accuracy (avg.): %.2f\n' % (acc_avg / len(args.recog_sets)))
         print('Accuracy (avg.): %.3f' % (acc_avg / len(args.recog_sets)))
+    elif args.recog_metric == 'bleu':
+        logger.info('BLEU (avg.): %.2f\n' % (bleu / len(args.recog_sets)))
+        print('BLEU (avg.): %.3f' % (bleu / len(args.recog_sets)))
 
 
 if __name__ == '__main__':
