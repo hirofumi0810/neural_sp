@@ -61,13 +61,14 @@ def main():
         if i == 0:
             # Load the LM
             model = build_lm(args)
-            load_checkpoint(model, args.recog_model[0])
+            topk_list = load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
 
             # Model averaging for Transformer
             if conf['lm_type'] == 'transformer':
-                model = average_checkpoints(model, args.recog_model[0], epoch,
-                                            n_average=args.recog_n_average)
+                model = average_checkpoints(model, args.recog_model[0],
+                                            n_average=args.recog_n_average,
+                                            topk_list=topk_list)
 
             logger.info('epoch: %d' % epoch)
             logger.info('batch size: %d' % args.recog_batch_size)

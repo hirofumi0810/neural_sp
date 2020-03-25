@@ -68,10 +68,11 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ]; then
-    conf2=conf/speed_perturb.yaml
-elif [ ${specaug} = true ]; then
-    conf2=conf/spec_augment.yaml
+if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
+  if [ -z ${conf2} ]; then
+    echo "Error: Set --conf2." 1>&2
+    exit 1
+  fi
 fi
 
 if [ -z ${gpu} ]; then

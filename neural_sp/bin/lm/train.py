@@ -22,7 +22,6 @@ from tqdm import tqdm
 from neural_sp.bin.args_lm import parse
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import save_checkpoint
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import set_save_path
@@ -52,28 +51,6 @@ def main():
         for k, v in conf.items():
             if k != 'resume':
                 setattr(args, k, v)
-
-    # Set save path
-    if args.resume:
-        save_path = os.path.dirname(args.resume)
-        dir_name = os.path.basename(save_path)
-    else:
-        dir_name = set_lm_name(args)
-        save_path = mkdir_join(args.model_save_dir, '_'.join(
-            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
-        save_path = set_save_path(save_path)  # avoid overwriting
-
-    # Set logger
-    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
-
-    if args.resume:
-        transformer = 'transformer' == conf['lm_type']
-        if transformer and conf['optimizer'] != 'noam':
-            logger.warning('Noam Optimizer is not set for Transformer.')
-    else:
-        transformer = 'transformer' == args.lm_type
-        if transformer and args.optimizer != 'noam':
-            logger.warning('Noam Optimizer is not set for Transformer.')
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
@@ -112,8 +89,26 @@ def main():
 
     args.vocab = train_set.vocab
 
+    # Set save path
+    if args.resume:
+        save_path = os.path.dirname(args.resume)
+        dir_name = os.path.basename(save_path)
+    else:
+        dir_name = set_lm_name(args)
+        save_path = mkdir_join(args.model_save_dir, '_'.join(
+            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        save_path = set_save_path(save_path)  # avoid overwriting
+
+    # Set logger
+    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
+
     # Model setting
     model = build_lm(args, save_path)
+
+    if args.resume:
+        transformer = conf['lm_type'] == 'transformer'
+    else:
+        transformer = args.lm_type == 'transformer'
 
     if args.resume:
         # Set optimizer
@@ -132,7 +127,8 @@ def main():
                                 warmup_n_steps=conf['warmup_n_steps'],
                                 model_size=conf['transformer_d_model'],
                                 factor=conf['lr_factor'],
-                                noam=transformer)
+                                noam=transformer,
+                                save_checkpoints_topk=10 if transformer else 1)
 
         # Restore the last saved model
         load_checkpoint(model, args.resume, optimizer)
@@ -176,7 +172,8 @@ def main():
                                 warmup_n_steps=args.warmup_n_steps,
                                 model_size=args.transformer_d_model,
                                 factor=args.lr_factor,
-                                noam=transformer)
+                                noam=transformer,
+                                save_checkpoints_topk=10 if transformer else 1)
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -198,7 +195,7 @@ def main():
     start_time_step = time.time()
     pbar_epoch = tqdm(total=len(train_set))
     accum_n_steps = 0
-    n_steps = 0
+    n_steps = optimizer.n_steps * args.accum_grad_n_steps
     while True:
         # Compute loss in the training set
         ys_train, is_new_epoch = train_set.next()
@@ -258,8 +255,8 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                save_checkpoint(model, optimizer, save_path,
-                                remove_old_checkpoints=not transformer)
+                optimizer.save_checkpoint(model, save_path,
+                                          remove_old_checkpoints=not transformer)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -270,10 +267,10 @@ def main():
                 logger.info('PPL (%s, ep:%d): %.2f' %
                             (dev_set.set, optimizer.n_epochs, ppl_dev))
 
-                if optimizer.is_best:
+                if optimizer.is_topk:
                     # Save the model
-                    save_checkpoint(model, optimizer, save_path,
-                                    remove_old_checkpoints=not transformer)
+                    optimizer.save_checkpoint(model, save_path,
+                                              remove_old_checkpoints=not transformer)
 
                     # test
                     ppl_test_avg = 0.

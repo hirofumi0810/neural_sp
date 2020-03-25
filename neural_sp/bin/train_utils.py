@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import functools
-from glob import glob
 import logging
 import os
 import time
@@ -103,6 +102,8 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
         model (torch.nn.Module):
         checkpoint_path (str): path to the saved model (model..epoch-*)
         optimizer (LRScheduler): optimizer wrapped by LRScheduler class
+    Returns:
+        topk_list (list): list of (epoch, metric)
 
     """
     if not os.path.isfile(checkpoint_path):
@@ -137,30 +138,8 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
     else:
         logger.warning('Optimizer is not loaded.')
 
-
-def save_checkpoint(model, optimizer, save_path, remove_old_checkpoints=True):
-    """Save checkpoint.
-
-    Args:
-        model (torch.nn.Module):
-        save_path (str): path to the directory to save a model
-        optimizer (LRScheduler): optimizer wrapped by LRScheduler class
-        remove_old_checkpoints (bool): if True, all checkpoints
-            other than the best one will be deleted
-
-    """
-    model_path = os.path.join(save_path, 'model.epoch-' + str(optimizer.n_epochs))
-
-    # Remove old checkpoints
-    if remove_old_checkpoints:
-        for path in glob(os.path.join(save_path, 'model.epoch-*')):
-            os.remove(path)
-
-    # Save parameters, optimizer, step index etc.
-    checkpoint = {
-        "model_state_dict": model.module.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),  # LRScheduler class
-    }
-    torch.save(checkpoint, model_path)
-
-    logger.info("=> Saved checkpoint (epoch:%d): %s" % (optimizer.n_epochs, model_path))
+    if 'topk_list' in checkpoint['optimizer_state_dict'].keys():
+        topk_list = checkpoint['optimizer_state_dict']['topk_list']
+    else:
+        topk_list = []
+    return topk_list

@@ -16,6 +16,7 @@ import os
 import shutil
 
 from neural_sp.bin.args_lm import parse
+from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_cache_weights
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
@@ -61,8 +62,14 @@ def main():
         if i == 0:
             # Load the LM
             model = build_lm(args, dir_name)
-            load_checkpoint(model, args.recog_model[0])
+            topk_list = load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
+
+            # Model averaging for Transformer
+            if conf['lm_type'] == 'transformer':
+                model = average_checkpoints(model, args.recog_model[0],
+                                            n_average=args.recog_n_average,
+                                            topk_list=topk_list)
 
             logger.info('epoch: %d' % (epoch - 1))
             logger.info('batch size: %d' % args.recog_batch_size)

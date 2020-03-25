@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -91,7 +91,7 @@ class TDSEncoder(EncoderBase):
 
     def reset_parameters(self):
         """Initialize parameters with uniform distribution."""
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with uniform distribution =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if p.dim() == 1:
                 nn.init.constant_(p, 0.)  # bias

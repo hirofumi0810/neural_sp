@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -10,14 +10,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorboardX import SummaryWriter
+import seaborn as sns
+import os
+import numpy as np
+from matplotlib import pyplot as plt
 import logging
 import matplotlib
 matplotlib.use('Agg')
-from matplotlib import pyplot as plt
-import numpy as np
-import os
-import seaborn as sns
-from tensorboardX import SummaryWriter
 
 plt.style.use('ggplot')
 grey = '#878f99'
@@ -122,7 +122,7 @@ class Reporter(object):
         plt.plot(self.epochs, self.obsv_eval, orange,
                  label='dev', linestyle='-')
         plt.xlabel('epoch', fontsize=12)
-        plt.ylabel(name.upper(), fontsize=12)
+        plt.ylabel(name, fontsize=12)
         plt.ylim([0, min(100, max(self.obsv_eval) + 1)])
         plt.legend(loc="upper right", fontsize=12)
         if os.path.isfile(os.path.join(self.save_path, name + ".png")):

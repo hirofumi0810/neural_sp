@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -29,8 +29,8 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
         scores_bwd (list):
         flip (bool):
         eos (int):
-        gnmt_decoding ():
-        lp_weight ():
+        gnmt_decoding (float):
+        lp_weight (float):
         idx2token (): converter from index to token
         refs_id ():
     Returns:

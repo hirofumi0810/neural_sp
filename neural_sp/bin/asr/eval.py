@@ -22,11 +22,13 @@ from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.asr import Dataset
+from neural_sp.evaluators.accuracy import eval_accuracy
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
+from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 
@@ -54,6 +56,8 @@ def main():
 
     wer_avg, cer_avg, per_avg = 0, 0, 0
     ppl_avg, loss_avg = 0, 0
+    acc_avg = 0
+    bleu_avg = 0
     for i, s in enumerate(args.recog_sets):
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
@@ -76,13 +80,15 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
-
-            # Model averaging for Transformer
             if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
-                model = average_checkpoints(model, args.recog_model[0], epoch,
+                # Model averaging for Transformer
+                # topk_list = load_checkpoint(model, args.recog_model[0])
+                model = average_checkpoints(model, args.recog_model[0],
+                                            # topk_list=topk_list,
                                             n_average=args.recog_n_average)
+            else:
+                load_checkpoint(model, args.recog_model[0])
 
             # Ensemble (different models)
             ensemble_models = [model]
@@ -118,16 +124,16 @@ def main():
 
                 # second path (forward)
                 if args.recog_lm_second is not None and args.recog_lm_second_weight > 0:
-                    conf_lm_2nd = load_config(os.path.join(os.path.dirname(args.recog_lm_second), 'conf.yml'))
-                    args_lm_2nd = argparse.Namespace()
-                    for k, v in conf_lm_2nd.items():
-                        setattr(args_lm_2nd, k, v)
-                    lm_2nd = build_lm(args_lm_2nd)
-                    load_checkpoint(lm_2nd, args.recog_lm_second)
-                    model.lm_2nd = lm_2nd
+                    conf_lm_second = load_config(os.path.join(os.path.dirname(args.recog_lm_second), 'conf.yml'))
+                    args_lm_second = argparse.Namespace()
+                    for k, v in conf_lm_second.items():
+                        setattr(args_lm_second, k, v)
+                    lm_second = build_lm(args_lm_second)
+                    load_checkpoint(lm_second, args.recog_lm_second)
+                    model.lm_second = lm_second
 
                 # second path (bakward)
-                if args.recog_lm_bwd is not None and args.recog_lm_rev_weight > 0:
+                if args.recog_lm_bwd is not None and args.recog_lm_bwd_weight > 0:
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm_bwd), 'conf.yml'))
                     args_lm_bwd = argparse.Namespace()
                     for k, v in conf_lm.items():
@@ -155,7 +161,9 @@ def main():
             logger.info('fist LM path: %s' % args.recog_lm)
             logger.info('second LM path: %s' % args.recog_lm_second)
             logger.info('backward LM path: %s' % args.recog_lm_bwd)
-            logger.info('LM weight: %.3f' % args.recog_lm_weight)
+            logger.info('LM weight (first-pass): %.3f' % args.recog_lm_weight)
+            logger.info('LM weight (second-pass): %.3f' % args.recog_lm_second_weight)
+            logger.info('LM weight (backward): %.3f' % args.recog_lm_bwd_weight)
             logger.info('GNMT: %s' % args.recog_gnmt_decoding)
             logger.info('forward-backward attention: %s' % args.recog_fwd_bwd_attention)
             logger.info('resolving UNK: %s' % args.recog_resolving_unk)
@@ -183,7 +191,8 @@ def main():
                                           epoch=epoch - 1,
                                           recog_dir=args.recog_dir,
                                           streaming=args.recog_streaming,
-                                          progressbar=True)
+                                          progressbar=True,
+                                          fine_grained=True)
                 wer_avg += wer
                 cer_avg += cer
             elif 'char' in args.recog_unit:
@@ -203,18 +212,25 @@ def main():
                 per_avg += per
             else:
                 raise ValueError(args.recog_unit)
-        elif args.recog_metric == 'acc':
-            raise NotImplementedError
         elif args.recog_metric in ['ppl', 'loss']:
-            ppl, loss = eval_ppl(ensemble_models, dataset,
-                                 progressbar=True)
+            ppl, loss = eval_ppl(ensemble_models, dataset, progressbar=True)
             ppl_avg += ppl
             loss_avg += loss
+        elif args.recog_metric == 'accuracy':
+            acc_avg += eval_accuracy(ensemble_models, dataset, progressbar=True)
         elif args.recog_metric == 'bleu':
-            raise NotImplementedError
+            bleu = eval_wordpiece_bleu(ensemble_models, dataset, recog_params,
+                                       epoch=epoch - 1,
+                                       recog_dir=args.recog_dir,
+                                       streaming=args.recog_streaming,
+                                       progressbar=True,
+                                       fine_grained=True)
+            bleu_avg += bleu
         else:
-            raise NotImplementedError
-        logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
+            raise NotImplementedError(args.recog_metric)
+        elasped_time = time.time() - start_time
+        logger.info('Elasped time: %.3f [sec]' % elasped_time)
+        logger.info('RTF: %.3f' % (elasped_time / (dataset.n_frames * 0.01)))
 
     if args.recog_metric == 'edit_distance':
         if 'phone' in args.recog_unit:
@@ -224,9 +240,15 @@ def main():
                         (wer_avg / len(args.recog_sets), cer_avg / len(args.recog_sets)))
     elif args.recog_metric in ['ppl', 'loss']:
         logger.info('PPL (avg.): %.2f\n' % (ppl_avg / len(args.recog_sets)))
-        print('PPL (avg.): %.2f' % (ppl_avg / len(args.recog_sets)))
+        print('PPL (avg.): %.3f' % (ppl_avg / len(args.recog_sets)))
         logger.info('Loss (avg.): %.2f\n' % (loss_avg / len(args.recog_sets)))
-        print('Loss (avg.): %.2f' % (loss_avg / len(args.recog_sets)))
+        print('Loss (avg.): %.3f' % (loss_avg / len(args.recog_sets)))
+    elif args.recog_metric == 'accuracy':
+        logger.info('Accuracy (avg.): %.2f\n' % (acc_avg / len(args.recog_sets)))
+        print('Accuracy (avg.): %.3f' % (acc_avg / len(args.recog_sets)))
+    elif args.recog_metric == 'bleu':
+        logger.info('BLEU (avg.): %.2f\n' % (bleu / len(args.recog_sets)))
+        print('BLEU (avg.): %.3f' % (bleu / len(args.recog_sets)))
 
 
 if __name__ == '__main__':

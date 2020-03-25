@@ -1,10 +1,9 @@
 # If a Python interpreter is specified, then creates a virtualenv from it
-# PYTHON := /usr/bin/python2.7
+# PYTHON := /usr/bin/python3.7
 PYTHON :=
 # The python version installed in the conda setup
 PYTHON_VERSION := 3.7
-# PyTorch version: 0.4.1 or 1.0.0
-# PYTORCH_VERSION := 0.4.1
+CUDA_VERSION := 10.1
 PYTORCH_VERSION := 1.0.0
 # Use a prebuild Kaldi to omit the installation
 KALDI :=
@@ -13,6 +12,9 @@ KALDI :=
 CONDA_URL := https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
 # PyTorch>=1.0.0 requires gcc>=4.9 when buliding the extensions
 GCC_VERSION := $(shell gcc -dumpversion)
+
+CONDA_PYTORCH := pytorch=$(PYTORCH_VERSION) cudatoolkit=$(CUDA_VERSION)
+CUDA_DEPS := cupy.done
 
 # Path to save tools (default: current directory)
 TOOL :=
@@ -23,16 +25,18 @@ CONDA=$(TOOL)/miniconda
 
 .PHONY: all clean
 
-all: miniconda.done kaldi.done python extra
-python: neural_sp.done warp-ctc.done warp-rnnt.done
-extra: sentencepiece.done nkf.done moses.done
+all: miniconda.done kaldi.done python check_install extra
+python: neural_sp.done warp-ctc.done
+extra: sentencepiece.done nkf.done moses.done mwerSegmenter.done
 
 # miniconda
 miniconda.done:
 	mkdir -p $(TOOL)
-	if [ -e $(TOOL)/miniconda ]; then rm -rf $(TOOL)/miniconda; fi
+	if [ -e $(CONDA) ]; then rm -rf $(CONDA); fi
 	test -f miniconda.sh || wget $(CONDA_URL) -O $(TOOL)/miniconda.sh
-	bash $(TOOL)/miniconda.sh -b -p $(CONDA)
+	test -d $(CONDA) || bash $(TOOL)/miniconda.sh -b -p $(CONDA)
+	. $(CONDA)/bin/activate && conda install -y setuptools -c anaconda
+	. $(CONDA)/bin/activate && conda install -y pip -c anaconda
 	. $(CONDA)/bin/activate && conda update -y conda
 	. $(CONDA)/bin/activate && conda install -y python=$(PYTHON_VERSION)
 	. $(CONDA)/bin/activate && conda info -a
@@ -56,37 +60,17 @@ neural_sp.done:
 	. $(CONDA)/bin/activate; pip list
 	. $(CONDA)/bin/activate; pip install pip --upgrade
 	. $(CONDA)/bin/activate; pip install -e ..  # setup.py
-	. $(CONDA)/bin/activate; pip install torch==$(PYTORCH_VERSION) matplotlib
+	. $(CONDA)/bin/activate; pip install torch==$(PYTORCH_VERSION)
+	. $(CONDA)/bin/activate && conda install -y $(CONDA_PYTORCH) -c pytorch
 	touch neural_sp.done
 
 # warp-ctc
 warp-ctc.done:
-	if [ -e $(TOOL)/warp-ctc ]; then rm -rf $(TOOL)/warp-ctc; fi
-	git clone https://github.com/jnishi/warp-ctc.git $(TOOL)/warp-ctc
-	# NOTE: Requires gcc>=4.9 to build extensions with pytorch>=1.0
-	if . $(TOOL)/miniconda/bin/activate && python -c 'import torch as t;assert t.__version__[0] == "1"' &> /dev/null; then \
-		. $(TOOL)/miniconda/bin/activate && python -c "from distutils.version import LooseVersion as V;assert V('$(GCC_VERSION)') >= V('4.9'), 'Requires gcc>=4.9'"; \
-	fi
-	if . $(TOOL)/miniconda/bin/activate && python -c 'import torch as t;assert t.__version__[0] == "1"' &> /dev/null; then \
-		cd $(TOOL)/warp-ctc; git checkout -b pytorch-1.0.0 remotes/origin/pytorch-1.0.0; \
-	fi
-	. $(TOOL)/miniconda/bin/activate; cd $(TOOL)/warp-ctc && mkdir build && cd build && cmake .. && make -j4 ; true
-	# . $(TOOL)/miniconda/bin/activate; pip install cffi # ??
-	. $(TOOL)/miniconda/bin/activate; cd $(TOOL)/warp-ctc/pytorch_binding && python setup.py install # maybe need to: apt-get install python-dev
+	. $(CONDA)/bin/activate && pip install warpctc-pytorch10-cuda$(strip $(subst .,,$(CUDA_VERSION))); \
 	touch warp-ctc.done
 
-# warp-rnnt
-warp-rnnt.done:
-	if [ -e $(TOOL)/warp-rnnt ]; then rm -rf $(TOOL)/warp-rnnt; fi
-	git clone https://github.com/HawkAaron/warp-transducer $(TOOL)/warp-rnnt
-	# NOTE: Requires gcc>=4.9 to build extensions with pytorch>=1.0
-	. $(TOOL)/miniconda/bin/activate; cd $(TOOL)/warp-rnnt && mkdir build && cd build && cmake .. && make -j4 ; true
-	# . $(TOOL)/miniconda/bin/activate; pip install cffi # ??
-	. $(TOOL)/miniconda/bin/activate; cd $(TOOL)/warp-rnnt/pytorch_binding && python setup.py install # maybe need to: apt-get install python-dev
-	touch warp-rnnt.done
-
-# check_install:
-# 	. $(TOOL)/miniconda/bin/activate; python check_install.py
+check_install:
+	. $(CONDA)/bin/activate; python check_install.py
 
 sentencepiece.done:
 	if [ -e $(TOOL)/sentencepiece ]; then rm -rf $(TOOL)/sentencepiece; fi
@@ -106,3 +90,9 @@ moses.done:
 	if [ -e $(TOOL)/moses ]; then rm -rf $(TOOL)/moses; fi
 	cd $(TOOL)/moses; git clone https://github.com/moses-smt/mosesdecoder.git $(TOOL)/moses
 	touch moses.done
+
+mwerSegmenter.done:
+	wget https://www-i6.informatik.rwth-aachen.de/web/Software/mwerSegmenter.tar.gz
+	tar zxvf mwerSegmenter.tar.gz
+	rm mwerSegmenter.tar.gz
+	touch mwerSegmenter.done

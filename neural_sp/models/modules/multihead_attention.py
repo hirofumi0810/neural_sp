@@ -28,15 +28,15 @@ class MultiheadAttentionMechanism(nn.Module):
         kdim (int): dimension of key
         qdim (int): dimension of query
         adim: (int) dimension of the attention space
-        atype (str): type of attention mechanisms
-        dropout (float): dropout probability
+        atype (str): type of attention mechanism
         n_heads (int): number of heads
+        dropout (float): dropout probability for attenion weights
         bias (bool): use bias term in linear layers
-        param_init (str):
+        param_init (str): parameter initialization method
 
     """
 
-    def __init__(self, kdim, qdim, adim, atype, dropout=0., n_heads=4, bias=True,
+    def __init__(self, kdim, qdim, adim, atype, n_heads, dropout, bias=True,
                  param_init=''):
         super(MultiheadAttentionMechanism, self).__init__()
 
@@ -44,12 +44,11 @@ class MultiheadAttentionMechanism(nn.Module):
         assert adim % n_heads == 0
         self.d_k = adim // n_heads
         self.n_heads = n_heads
-        self.key = None
-        self.value = None
-        self.mask = None
+        self.scale = math.sqrt(self.d_k)
+        self.reset()
 
         # attention dropout applied AFTER the softmax layer
-        self.attn_dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=dropout)
 
         if atype == 'scaled_dot':
             # for Transformer
@@ -77,9 +76,6 @@ class MultiheadAttentionMechanism(nn.Module):
         nn.init.xavier_uniform_(self.w_key.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_value.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_query.weight, gain=1 / math.sqrt(2))
-        # nn.init.xavier_uniform_(self.w_key.weight)
-        # nn.init.xavier_uniform_(self.w_value.weight)
-        # nn.init.xavier_uniform_(self.w_query.weight)
         if bias:
             # newly introduced
             nn.init.constant_(self.w_key.bias, 0.)
@@ -101,17 +97,17 @@ class MultiheadAttentionMechanism(nn.Module):
 
         Args:
             key (FloatTensor): `[B, klen, kdim]`
-            klens (IntTensor): `[B]`
             value (FloatTensor): `[B, klen, vdim]`
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
-            aw_prev: dummy interface for single-head attention
+            aw_prev: dummy interface
             mode: dummy interface for MoChA
-            cache (bool): cache key and mask
-            trigger_point (IntTensor): dummy
+            cache (bool): cache key, value, and mask
+            trigger_point: dummy interface for MoChA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
-            aw (FloatTensor): `[B, n_heads, qlen, klen]`
+            aw (FloatTensor): `[B, H, qlen, klen]`
+            beta: dummy interface for MoChA
 
         """
         bs, klen = key.size()[: 2]
@@ -119,31 +115,33 @@ class MultiheadAttentionMechanism(nn.Module):
 
         if self.key is None or not cache:
             key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
+            self.key = key.transpose(2, 1).contiguous()      # `[B, H, klen, d_k]`
             value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)
-            self.key = key.transpose(2, 1).contiguous()      # `[B, n_heads, klen, d_k]`
-            self.value = value.transpose(2, 1).contiguous()  # `[B, n_heads, klen, d_k]`
-            self.mask = mask.unsqueeze(1).repeat(
-                [1, self.n_heads, 1, 1]) if mask is not None else None  # `[B, n_heads, qlen, klen]`
-            if self.mask is not None:
+            self.value = value.transpose(2, 1).contiguous()  # `[B, H, klen, d_k]`
+            self.mask = mask
+            if mask is not None:
+                self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
                 assert self.mask.size() == (bs, self.n_heads, qlen, klen)
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-        query = query.transpose(2, 1).contiguous()  # `[B, n_heads, qlen, d_k]`
+        query = query.transpose(2, 1).contiguous()  # `[B, H, qlen, d_k]`
 
         if self.atype == 'scaled_dot':
-            e = torch.matmul(query, self.key.transpose(3, 2)) / math.sqrt(self.d_k)
+            e = torch.matmul(query, self.key.transpose(3, 2)) / self.scale
         elif self.atype == 'add':
-            e = torch.tanh(self.key.unsqueeze(2) + query.unsqueeze(3))
+            key = self.key.unsqueeze(2)  # `[B, H, 1, klen, d_k]`
+            query = query.unsqueeze(3)  # `[B, H, qlen, 1, d_k]`
+            e = torch.tanh(key + query)
             e = e.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
-            e = self.v(e).permute(0, 3, 1, 2)
+            e = self.v(e).permute(0, 3, 1, 2)  # `[B, qlen, klen, H]`
 
         # Compute attention weights
         if self.mask is not None:
-            e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, n_heads, qlen, klen]`
+            e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, H, qlen, klen]`
         aw = torch.softmax(e, dim=-1)
-        aw = self.attn_dropout(aw)
-        cv = torch.matmul(aw, self.value)  # `[B, n_heads, qlen, d_k]`
+        aw = self.dropout(aw)
+        cv = torch.matmul(aw, self.value)  # `[B, H, qlen, d_k]`
         cv = cv.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
         cv = self.w_out(cv)
 
-        return cv, aw
+        return cv, aw, None

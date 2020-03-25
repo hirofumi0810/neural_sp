@@ -15,8 +15,6 @@ stdout=false
 # ASR configuration
 #########################
 conf=conf/ctc.yaml
-conf2=
-
 
 ### path to save the model
 model=/n/work1/inaguma/results/timit

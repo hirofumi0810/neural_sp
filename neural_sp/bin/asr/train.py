@@ -13,9 +13,8 @@ from __future__ import print_function
 import argparse
 import copy
 import cProfile
-import editdistance
 import logging
-import numpy as np
+import math
 import os
 from setproctitle import setproctitle
 import shutil
@@ -26,16 +25,17 @@ from tqdm import tqdm
 from neural_sp.bin.args_asr import parse
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import save_checkpoint
 from neural_sp.bin.train_utils import save_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.bin.train_utils import set_save_path
 from neural_sp.datasets.asr import Dataset
+from neural_sp.evaluators.accuracy import eval_accuracy
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
+from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.acoustic_model import AcousticModel
@@ -67,53 +67,26 @@ def main():
     recog_params = vars(args)
 
     # Compute subsampling factor
-    subsample_factor = 1
-    subsample_factor_sub1 = 1
-    subsample_factor_sub2 = 1
-    subsample = [int(s) for s in args.subsample.split('_')]
-    if args.conv_poolings and 'conv' in args.enc_type:
-        for p in args.conv_poolings.split('_'):
-            subsample_factor *= int(p.split(',')[0].replace('(', ''))
-    else:
-        subsample_factor = np.prod(subsample)
-    if args.train_set_sub1:
+    if not args.resume:
+        args.subsample_factor = 1
+        args.subsample_factor_sub1 = 1
+        args.subsample_factor_sub2 = 1
+        subsample = [int(s) for s in args.subsample.split('_')]
         if args.conv_poolings and 'conv' in args.enc_type:
-            subsample_factor_sub1 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
+            for p in args.conv_poolings.split('_'):
+                args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
         else:
-            subsample_factor_sub1 = subsample_factor
-    if args.train_set_sub2:
-        if args.conv_poolings and 'conv' in args.enc_type:
-            subsample_factor_sub2 = subsample_factor * np.prod(subsample[:args.enc_n_layers_sub2 - 1])
-        else:
-            subsample_factor_sub2 = subsample_factor
-
-    # Set save path
-    if args.resume:
-        save_path = os.path.dirname(args.resume)
-        dir_name = os.path.basename(save_path)
-    else:
-        dir_name = set_asr_model_name(args, subsample_factor)
-        save_path = mkdir_join(args.model_save_dir, '_'.join(
-            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
-        save_path = set_save_path(save_path)  # avoid overwriting
-
-    # Set logger
-    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
-
-    # for multi-GPUs
-    if args.n_gpus > 1:
-        logger.info("Batch size is automatically reduced from %d to %d" %
-                    (args.batch_size, args.batch_size // 2))
-        args.batch_size //= 2
-
-    if args.resume:
-        transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
-        if transformer and conf['optimizer'] != 'noam':
-            logger.warning('Noam Optimizer is not set for Transformer.')
-    else:
-        transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
-        if transformer and args.optimizer != 'noam':
-            logger.warning('Noam Optimizer is not set for Transformer.')
+            args.subsample_factor = math.prod(subsample)
+        if args.train_set_sub1:
+            if args.conv_poolings and 'conv' in args.enc_type:
+                args.subsample_factor_sub1 = args.subsample_factor * math.prod(subsample[:args.enc_n_layers_sub1 - 1])
+            else:
+                args.subsample_factor_sub1 = args.subsample_factor
+        if args.train_set_sub2:
+            if args.conv_poolings and 'conv' in args.enc_type:
+                args.subsample_factor_sub2 = args.subsample_factor * math.prod(subsample[:args.enc_n_layers_sub2 - 1])
+            else:
+                args.subsample_factor_sub2 = args.subsample_factor
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
@@ -142,9 +115,9 @@ def main():
                         ctc=args.ctc_weight > 0,
                         ctc_sub1=args.ctc_weight_sub1 > 0,
                         ctc_sub2=args.ctc_weight_sub2 > 0,
-                        subsample_factor=subsample_factor,
-                        subsample_factor_sub1=subsample_factor_sub1,
-                        subsample_factor_sub2=subsample_factor_sub2,
+                        subsample_factor=args.subsample_factor,
+                        subsample_factor_sub1=args.subsample_factor_sub1,
+                        subsample_factor_sub2=args.subsample_factor_sub2,
                         discourse_aware=args.discourse_aware)
     dev_set = Dataset(corpus=args.corpus,
                       tsv_path=args.dev_set,
@@ -166,9 +139,9 @@ def main():
                       ctc=args.ctc_weight > 0,
                       ctc_sub1=args.ctc_weight_sub1 > 0,
                       ctc_sub2=args.ctc_weight_sub2 > 0,
-                      subsample_factor=subsample_factor,
-                      subsample_factor_sub1=subsample_factor_sub1,
-                      subsample_factor_sub2=subsample_factor_sub2,
+                      subsample_factor=args.subsample_factor,
+                      subsample_factor_sub1=args.subsample_factor_sub1,
+                      subsample_factor_sub2=args.subsample_factor_sub2,
                       discourse_aware=args.discourse_aware)
     eval_sets = [Dataset(corpus=args.corpus,
                          tsv_path=s,
@@ -185,12 +158,24 @@ def main():
     args.vocab_sub2 = train_set.vocab_sub2
     args.input_dim = train_set.input_dim
 
+    # Set save path
+    if args.resume:
+        transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
+        save_path = os.path.dirname(args.resume)
+        dir_name = os.path.basename(save_path)
+    else:
+        transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
+        dir_name = set_asr_model_name(args)
+        save_path = mkdir_join(args.model_save_dir, '_'.join(
+            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        save_path = set_save_path(save_path)  # avoid overwriting
+
+    # Set logger
+    set_logger(os.path.join(save_path, 'train.log'), stdout=args.stdout)
+
     # Load a LM conf file for LM fusion & LM initialization
-    if not args.resume and (args.lm_fusion or args.lm_init):
-        if args.lm_fusion:
-            lm_conf = load_config(os.path.join(os.path.dirname(args.lm_fusion), 'conf.yml'))
-        elif args.lm_init:
-            lm_conf = load_config(os.path.join(os.path.dirname(args.lm_init), 'conf.yml'))
+    if not args.resume and args.external_lm:
+        lm_conf = load_config(os.path.join(os.path.dirname(args.external_lm), 'conf.yml'))
         args.lm_conf = argparse.Namespace()
         for k, v in lm_conf.items():
             setattr(args.lm_conf, k, v)
@@ -202,6 +187,11 @@ def main():
         model = AcousticModel(args, save_path)
     else:
         model = Speech2Text(args, save_path)
+
+    if args.resume:
+        transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
+    else:
+        transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
 
     if args.resume:
         # Set optimizer
@@ -216,11 +206,13 @@ def main():
                                 decay_rate=conf['lr_decay_rate'],
                                 decay_patient_n_epochs=conf['lr_decay_patient_n_epochs'],
                                 early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
+                                lower_better=conf['metric'] not in ['accuracy', 'bleu'],
                                 warmup_start_lr=conf['warmup_start_lr'],
                                 warmup_n_steps=conf['warmup_n_steps'],
                                 model_size=conf['transformer_d_model'],
                                 factor=conf['lr_factor'],
-                                noam=transformer)
+                                noam=transformer,
+                                save_checkpoints_topk=10 if transformer else 1)
 
         # Restore the last saved model
         load_checkpoint(model, args.resume, optimizer)
@@ -232,7 +224,7 @@ def main():
     else:
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
-        if args.lm_fusion:
+        if args.external_lm:
             save_config(args.lm_conf, os.path.join(save_path, 'conf_lm.yml'))
 
         # Save the nlsyms, dictionar, and wp_model
@@ -285,11 +277,13 @@ def main():
                                 decay_rate=args.lr_decay_rate,
                                 decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
                                 early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
+                                lower_better=args.metric not in ['accuracy', 'bleu'],
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
                                 model_size=args.transformer_d_model,
                                 factor=args.lr_factor,
-                                noam=transformer)
+                                noam=transformer,
+                                save_checkpoints_topk=10 if transformer else 1)
 
     # Load the teacher ASR model
     teacher = None
@@ -358,7 +352,7 @@ def main():
     start_time_step = time.time()
     pbar_epoch = tqdm(total=len(train_set))
     accum_n_steps = 0
-    n_steps = 0
+    n_steps = optimizer.n_steps * args.accum_grad_n_steps
     while True:
         # Compute loss in the training set
         batch_train, is_new_epoch = train_set.next()
@@ -398,24 +392,6 @@ def main():
                 reporter.add(observation, is_eval=True)
                 loss_dev = loss.item()
                 del loss
-            # NOTE: this makes training slow
-            # Compute WER/CER regardless of the output unit (greedy decoding)
-            # best_hyps_id, _, _ = model.module.decode(
-            #     batch_dev['xs'], recog_params, dev_set.idx2token[0], exclude_eos=True)
-            # cer = 0.
-            # ref_n_words, ref_n_chars = 0, 0
-            # for b in range(len(batch_dev['xs'])):
-            #     ref = batch_dev['text'][b]
-            #     hyp = dev_set.idx2token[0](best_hyps_id[b])
-            #     cer += editdistance.eval(hyp, ref)
-            #     ref_n_words += len(ref.split())
-            #     ref_n_chars += len(ref)
-            # wer = cer / ref_n_words
-            # cer /= ref_n_chars
-            # reporter.add_tensorboard_scalar('dev/WER', wer)
-            # reporter.add_tensorboard_scalar('dev/CER', cer)
-            # logger.info('WER (dev)', wer)
-            # logger.info('CER (dev)', cer)
             reporter.step(is_eval=True)
 
             duration_step = time.time() - start_time_step
@@ -448,29 +424,30 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                save_checkpoint(model, optimizer, save_path,
-                                remove_old_checkpoints=not transformer)
+                optimizer.save_checkpoint(model, save_path,
+                                          remove_old_checkpoints=not transformer)
             else:
                 start_time_eval = time.time()
                 # dev
                 metric_dev = eval_epoch([model.module], dev_set, recog_params, args,
                                         optimizer.n_epochs + 1, logger)
                 optimizer.epoch(metric_dev)  # lr decay
-                reporter.epoch(metric_dev)  # plot
+                reporter.epoch(metric_dev, name=args.metric)  # plot
 
-                if optimizer.is_best:
+                if optimizer.is_topk or transformer:
                     # Save the model
-                    save_checkpoint(model, optimizer, save_path,
-                                    remove_old_checkpoints=not transformer)
+                    optimizer.save_checkpoint(model, save_path,
+                                              remove_old_checkpoints=not transformer)
 
                     # test
-                    for eval_set in eval_sets:
-                        eval_epoch([model.module], eval_set, recog_params, args,
-                                   optimizer.n_epochs, logger)
+                    if optimizer.is_topk:
+                        for eval_set in eval_sets:
+                            eval_epoch([model.module], eval_set, recog_params, args,
+                                       optimizer.n_epochs, logger)
 
-                    # start scheduled sampling
-                    if args.ss_prob > 0:
-                        model.module.scheduled_sampling_trigger()
+                        # start scheduled sampling
+                        if args.ss_prob > 0:
+                            model.module.scheduled_sampling_trigger()
 
                 duration_eval = time.time() - start_time_eval
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
@@ -519,10 +496,16 @@ def eval_epoch(models, dataset, recog_params, args, epoch, logger):
             logger.info('PER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
     elif args.metric == 'ppl':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[0]
-        logger.info('PPL (%s, ep:%d): %.2f' % (dataset.set, epoch, metric))
+        logger.info('PPL (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
     elif args.metric == 'loss':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
-        logger.info('Loss (%s, ep:%d): %.2f' % (dataset.set, epoch, metric))
+        logger.info('Loss (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+    elif args.metric == 'accuracy':
+        metric = eval_accuracy(models, dataset, batch_size=args.batch_size)
+        logger.info('Accuracy (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+    elif args.metric == 'bleu':
+        metric = eval_wordpiece_bleu(models, dataset, recog_params, epoch=epoch)
+        logger.info('BLEU (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
     else:
         raise NotImplementedError(args.metric)
     return metric
