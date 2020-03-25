@@ -14,7 +14,7 @@ import argparse
 import copy
 import cProfile
 import logging
-import numpy as np
+import math
 import os
 from setproctitle import setproctitle
 import shutil
@@ -35,6 +35,7 @@ from neural_sp.evaluators.phone import eval_phone
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.evaluators.word import eval_word
 from neural_sp.evaluators.wordpiece import eval_wordpiece
+from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.acoustic_model import AcousticModel
@@ -66,25 +67,26 @@ def main():
     recog_params = vars(args)
 
     # Compute subsampling factor
-    args.subsample_factor = 1
-    args.subsample_factor_sub1 = 1
-    args.subsample_factor_sub2 = 1
-    subsample = [int(s) for s in args.subsample.split('_')]
-    if args.conv_poolings and 'conv' in args.enc_type:
-        for p in args.conv_poolings.split('_'):
-            args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
-    else:
-        args.subsample_factor = np.prod(subsample)
-    if args.train_set_sub1:
+    if not args.resume:
+        args.subsample_factor = 1
+        args.subsample_factor_sub1 = 1
+        args.subsample_factor_sub2 = 1
+        subsample = [int(s) for s in args.subsample.split('_')]
         if args.conv_poolings and 'conv' in args.enc_type:
-            args.subsample_factor_sub1 = args.subsample_factor * np.prod(subsample[:args.enc_n_layers_sub1 - 1])
+            for p in args.conv_poolings.split('_'):
+                args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
         else:
-            args.subsample_factor_sub1 = args.subsample_factor
-    if args.train_set_sub2:
-        if args.conv_poolings and 'conv' in args.enc_type:
-            args.subsample_factor_sub2 = args.subsample_factor * np.prod(subsample[:args.enc_n_layers_sub2 - 1])
-        else:
-            args.subsample_factor_sub2 = args.subsample_factor
+            args.subsample_factor = math.prod(subsample)
+        if args.train_set_sub1:
+            if args.conv_poolings and 'conv' in args.enc_type:
+                args.subsample_factor_sub1 = args.subsample_factor * math.prod(subsample[:args.enc_n_layers_sub1 - 1])
+            else:
+                args.subsample_factor_sub1 = args.subsample_factor
+        if args.train_set_sub2:
+            if args.conv_poolings and 'conv' in args.enc_type:
+                args.subsample_factor_sub2 = args.subsample_factor * math.prod(subsample[:args.enc_n_layers_sub2 - 1])
+            else:
+                args.subsample_factor_sub2 = args.subsample_factor
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
@@ -204,7 +206,7 @@ def main():
                                 decay_rate=conf['lr_decay_rate'],
                                 decay_patient_n_epochs=conf['lr_decay_patient_n_epochs'],
                                 early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
-                                lower_better=conf['metric'] != 'accuracy',
+                                lower_better=conf['metric'] not in ['accuracy', 'bleu'],
                                 warmup_start_lr=conf['warmup_start_lr'],
                                 warmup_n_steps=conf['warmup_n_steps'],
                                 model_size=conf['transformer_d_model'],
@@ -275,7 +277,7 @@ def main():
                                 decay_rate=args.lr_decay_rate,
                                 decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
                                 early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
-                                lower_better=args.metric != 'accuracy',
+                                lower_better=args.metric not in ['accuracy', 'bleu'],
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
                                 model_size=args.transformer_d_model,
@@ -501,6 +503,9 @@ def eval_epoch(models, dataset, recog_params, args, epoch, logger):
     elif args.metric == 'accuracy':
         metric = eval_accuracy(models, dataset, batch_size=args.batch_size)
         logger.info('Accuracy (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+    elif args.metric == 'bleu':
+        metric = eval_wordpiece_bleu(models, dataset, recog_params, epoch=epoch)
+        logger.info('BLEU (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
     else:
         raise NotImplementedError(args.metric)
     return metric
