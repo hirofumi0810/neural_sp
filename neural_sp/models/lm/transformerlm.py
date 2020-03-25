@@ -98,32 +98,32 @@ class TransformerLM(LMBase):
         nn.init.xavier_uniform_(self.output.weight)
         nn.init.constant_(self.output.bias, 0.)
 
-    def decode(self, ys, ys_prev=None, cache=False, memory=None):
+    def decode(self, ys, state=None, cache=False):
         """Decode function.
 
         Args:
             ys (LongTensor): `[B, L]`
-            ys_prev (LongTensor): `[B, L]`
+            state (LongTensor): `[B, L]`
             cahce (bool): concatenate previous tokens
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
-            ys_emb (FloatTensor): `[B, L, d_model]` (for ys_prev)
-            ys_prev (LongTensor): previous tokens
+            out (FloatTensor): `[B, L, d_model]`
+            new_state (LongTensor): previous tokens
 
         """
         # Concatenate previous tokens
-        if cache and ys_prev is not None:
-            ys = torch.cat([ys_prev, ys], dim=1)
+        if cache and state is not None:
+            ys = torch.cat([state, ys], dim=1)
             # NOTE: this is used for ASR decoding
 
-        # Create the self-attention mask: `[B, L, L+L_prev]`
+        # Create the self-attention mask
         bs, ylen = ys.size()[:2]
         causal_mask = ys.new_ones(ylen, ylen).byte()
         causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
 
         out = self.pos_enc(self.embed(ys.long()))
-        for l in range(self.n_layers):
-            out, yy_aws = self.layers[l](out, causal_mask)[:2]
+        for l, layer in enumerate(self.layers):
+            out, yy_aws = layer(out, causal_mask)[:2]
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
         out = self.norm_out(out)
