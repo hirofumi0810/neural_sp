@@ -27,7 +27,7 @@ class SequenceSummaryNetwork(nn.Module):
         n_units (int):
         n_layers (int):
         bottleneck_dim (int): dimension of the last bottleneck layer
-        dropout (float):
+        dropout (float): dropout probability
         param_init (float):
 
     """

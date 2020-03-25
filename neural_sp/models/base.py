@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -14,6 +14,7 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn.utils import vector_to_parameters, parameters_to_vector
 
 np.random.seed(1)
 
@@ -68,6 +69,22 @@ class ModelBase(nn.Module):
                 start, end = dim // 4, dim // 2
                 p.data[start:end].fill_(1.)
                 logger.info('Initialize %s with 1 (bias in forget gate)' % (n))
+
+    def add_weight_noise(self, std=0.075):
+        """Add variational weight noise to weight parametesr.
+
+        Args:
+            std (float): standard deviation
+
+        """
+        with torch.no_grad():
+            param_vector = parameters_to_vector(self.parameters())
+            normal_dist = torch.distributions.Normal(loc=torch.tensor([0.]), scale=torch.tensor([std]))
+            noise = normal_dist.sample(param_vector.size())
+            if self.device_id >= 0:
+                noise = noise.cuda(self.device_id)
+            param_vector.add_(noise[0])
+        vector_to_parameters(param_vector, self.parameters())
 
     def set_cuda(self, deterministic=True, benchmark=False):
         """Set model to the GPU version.
