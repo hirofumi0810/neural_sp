@@ -21,7 +21,6 @@ import torch.nn as nn
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
-from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -64,7 +63,7 @@ class TransformerLM(LMBase):
         self.pos_enc = PositionalEncoding(self.d_model, args.dropout_in, args.transformer_pe_type)
         self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
             self.d_model, args.transformer_d_ff, args.transformer_attn_type, self.n_heads, args.dropout_hidden, args.dropout_att,
-            args.dropout_residual * (l + 1) / self.n_layers, args.dropout_head,
+            args.dropout_residual * (l + 1) / self.n_layers,
             args.transformer_layer_norm_eps, args.transformer_ffn_activation, args.transformer_param_init,
             src_tgt_attention=False))for l in range(self.n_layers)])
         self.norm_out = nn.LayerNorm(self.d_model, eps=args.transformer_layer_norm_eps)
@@ -84,6 +83,10 @@ class TransformerLM(LMBase):
 
         self.reset_parameters()
 
+    @property
+    def output_dim(self):
+        return self.d_model
+
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
         logging.info('===== Initialize %s =====' % self.__class__.__name__)
@@ -95,12 +98,12 @@ class TransformerLM(LMBase):
         nn.init.xavier_uniform_(self.output.weight)
         nn.init.constant_(self.output.bias, 0.)
 
-    def decode(self, ys, ys_prev=None, cache=False):
+    def decode(self, ys, ys_prev=None, cache=False, memory=None):
         """Decode function.
 
         Args:
             ys (LongTensor): `[B, L]`
-            ys_prev (LongTensor): previous tokens
+            ys_prev (LongTensor): `[B, L]`
             cahce (bool): concatenate previous tokens
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
@@ -113,17 +116,14 @@ class TransformerLM(LMBase):
             ys = torch.cat([ys_prev, ys], dim=1)
             # NOTE: this is used for ASR decoding
 
-        # Create the self-attention mask
-        bs, ymax = ys.size()[:2]
-        ylens = torch.IntTensor([ymax] * bs)
-        tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ymax, 1])
-        causal_mask = tgt_mask.new_ones(ymax, ymax).byte()
-        causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
-        tgt_mask = tgt_mask & causal_mask
+        # Create the self-attention mask: `[B, L, L+L_prev]`
+        bs, ylen = ys.size()[:2]
+        causal_mask = ys.new_ones(ylen, ylen).byte()
+        causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
 
         out = self.pos_enc(self.embed(ys.long()))
         for l in range(self.n_layers):
-            out, yy_aws, _, _ = self.layers[l](out, tgt_mask)
+            out, yy_aws = self.layers[l](out, causal_mask)[:2]
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
         out = self.norm_out(out)
