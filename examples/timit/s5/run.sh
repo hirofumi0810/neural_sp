@@ -8,6 +8,7 @@ echo "                                  TIMIT                                   
 echo ============================================================================
 
 stage=0
+stop_stage=5
 gpu=
 stdout=false
 
@@ -47,7 +48,7 @@ train_set=train
 dev_set=dev
 test_set="test"
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
@@ -59,7 +60,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
@@ -85,7 +86,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1 ]; then
 fi
 
 dict=${data}/dict/${train_set}.txt; mkdir -p ${data}/dict
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2 ]; then
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2 ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
@@ -113,7 +114,7 @@ fi
 # NOTE: skip LM training (stage:3)
 
 mkdir -p ${model}
-if [ ${stage} -le 4 ]; then
+if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
