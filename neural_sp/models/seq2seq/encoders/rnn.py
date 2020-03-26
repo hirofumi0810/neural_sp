@@ -13,7 +13,6 @@ from __future__ import print_function
 import logging
 import math
 import numpy as np
-import random
 import torch
 import torch.nn as nn
 
@@ -25,7 +24,6 @@ from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
 from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
 
-random.seed(1)
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +61,6 @@ class RNNEncoder(EncoderBase):
         param_init (float):
         lc_chunk_size_left (int): left chunk size for latency-controlled bidirectional encoder
         lc_chunk_size_right (int): right chunk size for latency-controlled bidirectional encoder
-        lc_state_reset_prob (float): probability to reset states for latency-controlled bidirectional encoder
 
     """
 
@@ -75,7 +72,7 @@ class RNNEncoder(EncoderBase):
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim,
                  nin, bidirectional_sum_fwd_bwd,
                  task_specific_layer, param_init,
-                 lc_chunk_size_left, lc_chunk_size_right, lc_state_reset_prob):
+                 lc_chunk_size_left, lc_chunk_size_right):
 
         super(RNNEncoder, self).__init__()
 
@@ -96,7 +93,6 @@ class RNNEncoder(EncoderBase):
         self.latency_controlled = lc_chunk_size_left > 0 or lc_chunk_size_right > 0
         self.lc_chunk_size_left = lc_chunk_size_left
         self.lc_chunk_size_right = lc_chunk_size_right
-        self.lc_state_reset_prob = lc_state_reset_prob
         if self.latency_controlled:
             assert n_layers_sub1 == 0
             assert n_layers_sub2 == 0
@@ -244,7 +240,7 @@ class RNNEncoder(EncoderBase):
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
-        logger.info('===== Initialize %s =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with uniform distribution =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             if 'conv' in n or 'tds' in n or 'gated_conv' in n:
                 continue  # for CNN layers before RNN layers
@@ -402,12 +398,8 @@ class RNNEncoder(EncoderBase):
                 # fwd
                 if xs_chunk.size(1) <= cs_l:
                     xs_chunk_fwd, self.fwd_states[l] = self.rnn[l](xs_chunk, hx=self.fwd_states[l])
-                    if self.training and self.lc_state_reset_prob > 0 and random.random() < self.lc_state_reset_prob:
-                        self.fwd_states[l] = None
                 else:
                     xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :cs_l], hx=self.fwd_states[l])
-                    if self.training and self.lc_state_reset_prob > 0 and random.random() < self.lc_state_reset_prob:
-                        self.fwd_states[l] = None
                     xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, cs_l:], hx=self.fwd_states[l])
                     xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, cs_l+cs_r, n_units]`
                     # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer

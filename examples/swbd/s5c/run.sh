@@ -10,7 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
-speed_perturb=false
+speed_perturb=true  # default
 specaug=false
 stdout=false
 
@@ -25,7 +25,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
-lm_init=
+external_lm=
 
 #########################
 # LM configuration
@@ -61,14 +61,11 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ]; then
-    conf2=conf/speed_perturb.yaml
-elif [ ${specaug} = true ]; then
-    conf2=conf/spec_augment.yaml
-fi
-
-if [ ${datasize} = fisher_swbd ]; then
-    conf=conf/asr/blstm_las_fisher_swbd.yaml
+if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
+  if [ -z ${conf2} ]; then
+    echo "Error: Set --conf2." 1>&2
+    exit 1
+  fi
 fi
 
 if [ -z ${gpu} ]; then
@@ -135,31 +132,31 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in train_swbd eval2000; do
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-        utils/fix_data_dir.sh ${data}/${x}
-    done
+    if [ ! -e ${data}/.done_stage_1_${datasize}_spfalse ]; then
+        for x in train_swbd eval2000; do
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+            utils/fix_data_dir.sh ${data}/${x}
+        done
 
-    # Use the first 4k sentences as dev set.
-    utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/${dev_set} || exit 1;  # 5hr 6min
-    n=$[$(cat ${data}/train_swbd/segments | wc -l) - 4000]
-    utils/subset_data_dir.sh --last ${data}/train_swbd ${n} ${data}/${train_set}.tmp || exit 1;
+        # Use the first 4k sentences as dev set.
+        utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/${dev_set} || exit 1;  # 5hr 6min
+        n=$[$(cat ${data}/train_swbd/segments | wc -l) - 4000]
+        utils/subset_data_dir.sh --last ${data}/train_swbd ${n} ${data}/${train_set}.tmp || exit 1;
 
-    # Finally, the full training set:
-    utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/train_nodev_swbd || exit 1;  # 286hr
-    rm -rf ${data}/*.tmp
+        # Finally, the full training set:
+        utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/train_nodev_swbd || exit 1;  # 286hr
+        rm -rf ${data}/*.tmp
 
-    if [ ${datasize} = fisher_swbd ]; then
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/train_fisher ${data}/log/make_fbank/train_fisher ${data}/fbank || exit 1;
-        utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_nodev_swbd ${data}/train_fisher || exit 1;
+        if [ ${datasize} = fisher_swbd ]; then
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/train_fisher ${data}/log/make_fbank/train_fisher ${data}/fbank || exit 1;
+            utils/combine_data.sh --extra_files "utt2num_frames" ${data}/${train_set} ${data}/train_nodev_swbd ${data}/train_fisher || exit 1;
+        fi
     fi
 
     if [ ${speed_perturb} = true ]; then
-        # speed-perturbed
         speed_perturb_3way.sh ${data} train_nodev_${datasize} ${train_set}
-
         cp -rf ${data}/dev ${data}/${dev_set}
         cp -rf ${data}/eval2000 ${data}/eval2000_sp
     fi
@@ -195,34 +192,20 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     fi
     cat ${nlsyms}
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict}
-    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
-    offset=$(cat ${dict} | wc -l)
-    if [ ${unit} = wp ]; then
-        if [ ${speed_perturb} = true ]; then
-            grep sp1.0 ${data}/${train_set}/text > ${data}/${train_set}/text.org
-            cp ${data}/${dev_set}/text ${data}/${dev_set}/text.org
-            cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
-        else
-            cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        fi
-        spm_train --user_defined_symbols=$(cat ${nlsyms} | tr "\n" ",") --input=${data}/dict/input.txt --vocab_size=${vocab} \
-            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
-    elif [ ${unit} = phone ]; then
+    if [ ${unit} = phone ]; then
+        echo "Making a dictionary..."
+        echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
+        echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
+        echo "<pad> 3" >> ${dict}
         map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt > ${data}/${train_set}/text.phone
         map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt > ${data}/${dev_set}/text.phone
         text2dict.py ${data}/${train_set}/text.phone --unit ${unit} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+        echo "vocab size:" $(cat ${dict} | wc -l)
     else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab ${vocab} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+        make_vocab.sh --unit ${unit} --nlsyms ${nlsyms} --wp_type ${wp_type} --wp_model ${wp_model} --character_coverage 1.0 --speed_perturb ${speed_perturb} \
+            ${data} ${dict} ${vocab} ${data}/${train_set}/text
     fi
-    echo "vocab size:" $(cat ${dict} | wc -l)
 
     # normalize eval2000
     # 1) convert upper to lower
@@ -293,7 +276,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
     if [ ! -e ${data}/.done_stage_3_${datasize}${lm_datasize}_${unit}${wp_type}${vocab} ]; then
         echo "Making dataset tsv files for LM ..."
         mkdir -p ${data}/dataset_lm
-        if [ ${lm_datasize} = fisher_swbd ]; then
+        if [ ${datasize} = swbd ] && [ ${lm_datasize} = fisher_swbd ]; then
             update_dataset.sh --unit ${unit} --nlsyms ${nlsyms} --wp_model ${wp_model} \
                 ${data}/train_fisher/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
                     > ${data}/dataset_lm/train_nodev_${lm_datasize}_vocab${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
@@ -352,7 +335,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/asr \
         --asr_init ${asr_init} \
-        --lm_init ${lm_init} \
+        --external_lm ${external_lm} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 

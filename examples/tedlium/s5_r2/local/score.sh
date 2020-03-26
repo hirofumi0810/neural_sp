@@ -31,6 +31,7 @@ lm_second=
 lm_bwd=
 lm_weight=0.3
 lm_second_weight=0.3
+lm_bwd_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -38,8 +39,14 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
+chunk_sync=false  # for MoChA
 n_average=1  # for Transformer
 oracle=false
+
+# for streaming
+blank_threshold=40
+spike_threshold=0.1
+n_accum_frames=800
 
 . ./cmd.sh
 . ./path.sh
@@ -72,6 +79,9 @@ for set in dev test; do
     if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
     fi
+    if [ ! -z ${lm_bwd} ] && [ ${lm_bwd_weight} != 0 ]; then
+        recog_dir=${recog_dir}_bwd${lm_bwd_weight}
+    fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
     fi
@@ -93,6 +103,9 @@ for set in dev test; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
+    if [ ${chunk_sync} = true ]; then
+        recog_dir=${recog_dir}_chunksync_blank${blank_threshold}_spike${spike_threshold}_accum${n_accum_frames}
+    fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
     fi
@@ -110,6 +123,12 @@ for set in dev test; do
         recog_dir=${recog_dir}_ensemble2
     fi
     mkdir -p ${recog_dir}
+
+    if [ $(echo ${model} | grep 'train_sp_') ]; then
+        recog_set=${data}/dataset/${set}_sp_wpbpe10000.tsv
+    else
+        recog_set=${data}/dataset/${set}_wpbpe10000.tsv
+    fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
         --recog_n_gpus ${n_gpus} \
@@ -134,6 +153,7 @@ for set in dev test; do
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
+        --recog_lm_bwd_weight ${lm_bwd_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
@@ -141,15 +161,19 @@ for set in dev test; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_chunk_sync ${chunk_sync} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
+        --recog_ctc_vad_blank_threshold ${blank_threshold} \
+        --recog_ctc_vad_spike_threshold ${spike_threshold} \
+        --recog_ctc_vad_n_accum_frames ${n_accum_frames} \
         --recog_stdout ${stdout} || exit 1;
 
-    # remove <unk>
-    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
-    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
-
     if [ ${metric} = 'edit_distance' ]; then
+        # remove <unk>
+        cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
+        cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
+
         echo ${set}
         sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS

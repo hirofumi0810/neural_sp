@@ -10,11 +10,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import seaborn as sns
+import numpy as np
+from matplotlib import pyplot as plt
 import matplotlib
 matplotlib.use('Agg')
-from matplotlib import pyplot as plt
-import numpy as np
-import seaborn as sns
 
 plt.style.use('ggplot')
 sns.set_style("white")
@@ -32,7 +32,7 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
     """Plot attention weights.
 
     Args:
-        aw (np.ndarray): A tensor of size `[L, T, n_heads]
+        aw (np.ndarray): A tensor of size `[H, L, T]
         tokens (list): hypothesis tokens
         spectrogram (np.ndarray): A tensor of size `[T, feature_dim]`
         ref (str): reference text
@@ -40,57 +40,53 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
         figsize (tuple):
 
     """
-    plt.clf()
-    plt.figure(figsize=figsize)
-
-    n_heads = aw.shape[2]
+    n_heads = aw.shape[0]
     n_col = n_heads
     if spectrogram is not None:
         n_col += 1
     if ctc_probs is not None:
         n_col += 1
+    if n_heads > 1:
+        figsize = (20, 16)
 
-    if spectrogram is None:
-        sns.heatmap(aw[:, :, 0], cmap='viridis',
+    plt.clf()
+    plt.figure(figsize=figsize)
+    # Plot attention weights
+    for h in range(1, n_heads + 1):
+        plt.subplot(n_col, 1, h)
+        sns.heatmap(aw[h - 1, :, :], cmap='viridis',
                     xticklabels=False,
                     yticklabels=tokens if len(tokens) > 0 else False,
-                    annot_kws={'size': 5})
-        plt.ylabel(u'Output labels (←)', fontsize=12)
-        plt.yticks(rotation=0)
-    else:
-        for h in range(1, n_heads + 1, 1):
-            plt.subplot(n_col, 1, h)
-            sns.heatmap(aw[:, :, h - 1], cmap='viridis',
-                        xticklabels=False,
-                        yticklabels=tokens if len(tokens) > 0 else False,
-                        cbar_kws={"orientation": "horizontal"})
-            plt.ylabel(u'Output labels (←)', fontsize=12)
-            plt.yticks(rotation=0)
+                    cbar=False,
+                    cbar_kws={"orientation": "horizontal"})
+        plt.ylabel(u'Output labels (←)', fontsize=12 if n_heads == 1 else 8)
+        plt.yticks(rotation=0, fontsize=6)
 
-        # CTC propabilities for joint CTC-attention
-        if ctc_probs is not None:
-            plt.subplot(n_col, 1, n_col - 1)
-            times_probs = np.arange(ctc_probs.shape[0])
-            for idx in set(ctc_topk_ids.reshape(-1).tolist()):
-                if idx == 0:
-                    plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
-                else:
-                    plt.plot(times_probs, ctc_probs[:, idx])
-            plt.ylabel('CTC posteriors', fontsize=12)
-            plt.tick_params(labelbottom=False)
-            plt.yticks(list(range(0, 2, 1)))
-            plt.xlim(0, ctc_probs.shape[0])
+    # Plot CTC propabilities for joint CTC-attention
+    if ctc_probs is not None:
+        plt.subplot(n_col, 1, n_heads + 1)
+        times_probs = np.arange(ctc_probs.shape[0])
+        for idx in set(ctc_topk_ids.reshape(-1).tolist()):
+            if idx == 0:
+                plt.plot(times_probs, ctc_probs[:, 0], ':', label='<blank>', color='grey')
+            else:
+                plt.plot(times_probs, ctc_probs[:, idx])
+        plt.ylabel('CTC posteriors', fontsize=12 if n_heads == 1 else 8)
+        plt.tick_params(labelbottom=False)
+        plt.yticks(list(range(0, 2, 1)))
+        plt.xlim(0, ctc_probs.shape[0])
 
-        # Plot spectrogram
+    # Plot spectrogram
+    if spectrogram is not None:
         plt.subplot(n_col, 1, n_col)
         plt.imshow(spectrogram.T, cmap='viridis', aspect='auto', origin='lower')
         plt.xlabel(u'Time [msec]', fontsize=12)
-        plt.ylabel(u'Frequency bin', fontsize=12)
+        plt.ylabel(u'Frequency bin', fontsize=12 if n_heads == 1 else 8)
         # plt.colorbar()
         plt.grid('off')
 
-    if ref is not None:
-        plt.title(ref)
+    # if ref is not None:
+    #     plt.title('REF: ' + ref + '\n' + 'HYP: ' + ' '.join(tokens).replace('▁', ' '), fontsize=12)
 
     # Save as a png file
     if save_path is not None:
@@ -106,8 +102,8 @@ def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
 
     Args:
         spectrogram (np.ndarray): A tensor of size `[T, input_size]`
-        aw (np.ndarray): A tensor of size `[L, T]`
-        aw_sub (np.ndarray): A tensor of size `[L_sub, T]`
+        aw (np.ndarray): A tensor of size `[H, L, T]`
+        aw_sub (np.ndarray): A tensor of size `[H_sub, L_sub, T]`
         tokens (list):
         tokens_sub (list):
         spectrogram (np.ndarray): A tensor of size `[T, feature_dim]`
@@ -121,33 +117,33 @@ def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
 
     if spectrogram is None:
         plt.subplot(211)
-        sns.heatmap(aw, cmap='viridis',
+        sns.heatmap(aw[0], cmap='viridis',
                     xticklabels=False,
                     yticklabels=tokens if len(tokens) > 0 else False)
         plt.ylabel(u'Output labels (main) (←)', fontsize=12)
-        plt.yticks(rotation=0)
+        plt.yticks(rotation=0, fontsize=6)
 
         plt.subplot(212)
-        sns.heatmap(aw_sub, cmap='viridis',
+        sns.heatmap(aw_sub[0], cmap='viridis',
                     xticklabels=False,
                     yticklabels=tokens_sub if len(tokens_sub) > 0 else False)
         plt.xlabel(u'Time [sec]', fontsize=12)
         plt.ylabel(u'Output labels (sub) (←)', fontsize=12)
-        plt.yticks(rotation=0)
+        plt.yticks(rotation=0, fontsize=6)
     else:
         plt.subplot(311)
-        sns.heatmap(aw, cmap='viridis',
+        sns.heatmap(aw[0], cmap='viridis',
                     xticklabels=False,
                     yticklabels=tokens if len(tokens) > 0 else False)
         plt.ylabel(u'Output labels (main) (←)', fontsize=12)
-        plt.yticks(rotation=0)
+        plt.yticks(rotation=0, fontsize=6)
 
         plt.subplot(312)
-        sns.heatmap(aw_sub, cmap='viridis',
+        sns.heatmap(aw_sub[0], cmap='viridis',
                     xticklabels=False,
                     yticklabels=tokens_sub if len(tokens_sub) > 0 else False)
         plt.ylabel(u'Output labels (sub) (←)', fontsize=12)
-        plt.yticks(rotation=0)
+        plt.yticks(rotation=0, fontsize=6)
 
         # Plot spectrogram
         plt.subplot(313)

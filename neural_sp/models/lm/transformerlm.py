@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 import logging
 import os
 import random
@@ -21,7 +22,6 @@ from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.transformer import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.torch_utils import make_pad_mask
-from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
@@ -62,23 +62,22 @@ class TransformerLM(LMBase):
 
         self.embed = nn.Embedding(self.vocab, self.d_model, padding_idx=self.pad)
         self.pos_enc = PositionalEncoding(self.d_model, args.dropout_in, args.transformer_pe_type)
-        self.layers = repeat(TransformerDecoderBlock(
-            self.d_model, args.transformer_d_ff,
-            args.transformer_attn_type, self.n_heads,
-            args.dropout_hidden, args.dropout_att,
-            args.transformer_layer_norm_eps, args.transformer_ffn_activation,
-            src_tgt_attention=False), self.n_layers)
+        self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
+            self.d_model, args.transformer_d_ff, args.transformer_attn_type, self.n_heads, args.dropout_hidden, args.dropout_att,
+            args.dropout_residual * (l + 1) / self.n_layers, args.dropout_head,
+            args.transformer_layer_norm_eps, args.transformer_ffn_activation, args.transformer_param_init,
+            src_tgt_attention=False))for l in range(self.n_layers)])
         self.norm_out = nn.LayerNorm(self.d_model, eps=args.transformer_layer_norm_eps)
 
+        self.adaptive_softmax = None
+        self.output = None
         if args.adaptive_softmax:
             self.adaptive_softmax = nn.AdaptiveLogSoftmaxWithLoss(
                 self.d_model, self.vocab,
                 cutoffs=[round(self.vocab / 15), 3 * round(self.vocab / 15)],
                 # cutoffs=[self.vocab // 25, 3 * self.vocab // 5],
                 div_value=4.0)
-            self.output = None
         else:
-            self.adaptive_softmax = None
             self.output = nn.Linear(self.d_model, self.vocab)
             if args.tie_embedding:
                 self.output.weight = self.embed.weight
@@ -118,13 +117,13 @@ class TransformerLM(LMBase):
         bs, ymax = ys.size()[:2]
         ylens = torch.IntTensor([ymax] * bs)
         tgt_mask = make_pad_mask(ylens, self.device_id).unsqueeze(1).repeat([1, ymax, 1])
-        subsequent_mask = tgt_mask.new_ones(ymax, ymax).byte()
-        subsequent_mask = torch.tril(subsequent_mask, out=subsequent_mask).unsqueeze(0)
-        tgt_mask = tgt_mask & subsequent_mask
+        causal_mask = tgt_mask.new_ones(ymax, ymax).byte()
+        causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
+        tgt_mask = tgt_mask & causal_mask
 
         out = self.pos_enc(self.embed(ys.long()))
         for l in range(self.n_layers):
-            out, yy_aws, _ = self.layers[l](out, tgt_mask)
+            out, yy_aws, _, _ = self.layers[l](out, tgt_mask)
             if not self.training:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
         out = self.norm_out(out)

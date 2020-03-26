@@ -66,6 +66,10 @@ class Idx2phone(object):
                     continue
                 self.idx2token[int(idx)] = p
         self.vocab = len(self.idx2token.keys())
+        # for synchronous bidirectional attention
+        self.idx2token[self.vocab] = '<l2r>'
+        self.idx2token[self.vocab + 1] = '<r2l>'
+        self.idx2token[self.vocab + 2] = '<null>'
 
     def __call__(self, token_ids, return_list=False):
         """Convert indices to phone sequence.

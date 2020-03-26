@@ -115,12 +115,11 @@ class CTC(DecoderBase):
         if self.lsm_prob > 0:
             loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits, elens) * self.lsm_prob
 
+        trigger_points = None
         if forced_align:
             ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
             ys_in_pad = pad_list(ys, 0)  # pad by zero
             trigger_points = self.forced_aligner.align(logits.clone(), elens, ys_in_pad, ylens)
-        else:
-            trigger_points = None
 
         return loss, trigger_points
 
@@ -131,21 +130,15 @@ class CTC(DecoderBase):
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (np.ndarray): `[B]`
         Returns:
-            hyps (np.ndarray): Best path hypothesis. `[B, labels_max_seq_len]`
+            hyps (np.ndarray): Best path hypothesis. `[B, L]`
 
         """
-        bs = eouts.size(0)
-        hyps = []
-
         log_probs = torch.log_softmax(self.output(eouts), dim=-1)
+        best_paths = log_probs.argmax(-1)  # `[B, L]`
 
-        # Pickup argmax class
-        for b in range(bs):
-            indices = []
-            time = elens[b]
-            for t in range(time):
-                argmax = log_probs[b, t].argmax(0).item()
-                indices.append(argmax)
+        hyps = []
+        for b in range(eouts.size(0)):
+            indices = [best_paths[b, t].item() for t in range(elens[b])]
 
             # Step 1. Collapse repeated labels
             collapsed_indices = [x[0] for x in groupby(indices)]
@@ -157,7 +150,7 @@ class CTC(DecoderBase):
         return np.array(hyps)
 
     def beam_search(self, eouts, elens, params, idx2token,
-                    lm=None, lm_2nd=None, lm_2nd_rev=None,
+                    lm=None, lm_second=None, lm_second_rev=None,
                     nbest=1, refs_id=None, utt_ids=None, speakers=None):
         """Beam search decoding.
 
@@ -169,11 +162,11 @@ class CTC(DecoderBase):
                 recog_length_penalty (float): length penalty
                 recog_lm_weight (float): weight of first path LM score
                 recog_lm_second_weight (float): weight of second path LM score
-                recog_lm_rev_weight (float): weight of second path backward LM score
+                recog_lm_bwd_weight (float): weight of second path backward LM score
             idx2token (): converter from index to token
             lm: firsh path LM
-            lm_2nd: second path LM
-            lm_2nd_rev: secoding path backward LM
+            lm_second: second path LM
+            lm_second_rev: secoding path backward LM
             nbest (int):
             refs_id (list): reference list
             utt_ids (list): utterance id list
@@ -187,15 +180,15 @@ class CTC(DecoderBase):
         beam_width = params['recog_beam_width']
         lp_weight = params['recog_length_penalty']
         lm_weight = params['recog_lm_weight']
-        lm_weight_2nd = params['recog_lm_second_weight']
-        lm_weight_2nd_rev = params['recog_lm_rev_weight']
+        lm_weight_second = params['recog_lm_second_weight']
+        lm_weight_second_bwd = params['recog_lm_bwd_weight']
 
         if lm is not None:
             assert lm_weight > 0
             lm.eval()
-        if lm_2nd is not None:
-            assert lm_weight_2nd > 0
-            lm_2nd.eval()
+        if lm_second is not None:
+            assert lm_weight_second > 0
+            lm_second.eval()
 
         best_hyps = []
         log_probs = torch.log_softmax(self.output(eouts), dim=-1)
@@ -284,14 +277,14 @@ class CTC(DecoderBase):
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
 
             # Rescoing lattice
-            if lm_2nd is not None:
+            if lm_second is not None:
                 new_beam = []
                 for i_beam in range(len(beam)):
                     ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), self.device_id)]
-                    ys_pad = pad_list(ys, lm_2nd.pad)
-                    _, _, lm_log_probs = lm_2nd.predict(ys_pad, None)
+                    ys_pad = pad_list(ys, lm_second.pad)
+                    _, _, lm_log_probs = lm_second.predict(ys_pad, None)
                     score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
-                    score_lm = lm_log_probs.sum() * lm_weight_2nd
+                    score_lm = lm_log_probs.sum() * lm_weight_second
                     score_lp = len(beam[i_beam]['hyp'][1:]) * lp_weight
                     new_beam.append({'hyp': beam[i_beam]['hyp'],
                                      'score': score_ctc + score_lm + score_lp,
@@ -345,6 +338,13 @@ def _flip_label_probability(log_probs, xlens):
     input in ``b``-th batch.
     The rotated matrix ``r`` is defined as
     ``r[i, b, l] = log_probs[i + xlens[b], b, l]``
+
+    Args:
+        cum_log_prob (FloatTensor): `[T, B, vocab]`
+        xlens (LongTensor): `[B]`
+    Returns:
+        FloatTensor: `[T, B, vocab]`
+
     """
     xmax, bs, vocab = log_probs.size()
     rotate = (torch.arange(xmax, dtype=torch.int64)[:, None] + xlens) % xmax
@@ -360,6 +360,14 @@ def _flip_path_probability(cum_log_prob, xlens, path_lens):
     at time ``t`` in a output sequence in ``b``-th batch.
     The rotated matrix ``r`` is defined as
     ``r[i, j, k] = cum_log_prob[i + xlens[j], j, k + path_lens[j]]``
+
+    Args:
+        cum_log_prob (FloatTensor): `[T, B, 2 * L + 1]`
+        xlens (LongTensor): `[B]`
+        path_lens (LongTensor): `[B]`
+    Returns:
+        FloatTensor: `[T, B, 2 * L + 1]`
+
     """
     xmax, bs, max_path_len = cum_log_prob.size()
     rotate_input = ((torch.arange(xmax, dtype=torch.int64)[:, None] + xlens) % xmax)
@@ -393,12 +401,12 @@ class CTCForcedAligner(object):
         log_prob += y[batch_index, path]
         return log_prob
 
-    def align(self, logits, xlens, ys, ylens, left2right=True):
+    def align(self, logits, elens, ys, ylens):
         bs, xmax, vocab = logits.size()
 
         # zero padding
         device_id = torch.cuda.device_of(logits).idx
-        mask = make_pad_mask(xlens, device_id)
+        mask = make_pad_mask(elens, device_id)
         mask = mask.unsqueeze(2).repeat([1, 1, vocab])
         logits = logits.masked_fill_(mask == 0, self.log0)
         log_probs = torch.log_softmax(logits, dim=-1).transpose(0, 1)  # `[T, B, vocab]`
@@ -418,101 +426,65 @@ class CTCForcedAligner(object):
 
         batch_index = torch.arange(bs, dtype=torch.int64).unsqueeze(1)
         seq_index = torch.arange(xmax, dtype=torch.int64).unsqueeze(1).unsqueeze(2)
-        fwd_bwd_log_probs = log_probs[seq_index, batch_index, path]
+        log_probs_fwd_bwd = log_probs[seq_index, batch_index, path]
 
         # forward algorithm
         for t in range(xmax):
-            alpha = self._computes_transition(
-                alpha, path, path_lens, fwd_bwd_log_probs[t], log_probs[t])
+            alpha = self._computes_transition(alpha, path, path_lens, log_probs_fwd_bwd[t], log_probs[t])
 
         # backward algorithm
         r_path = _flip_path(path, path_lens)
-        log_probs_inv = _flip_label_probability(log_probs, xlens.long())
-        fwd_bwd_log_probs = _flip_path_probability(fwd_bwd_log_probs, xlens.long(), path_lens)
+        log_probs_inv = _flip_label_probability(log_probs, elens.long())
+        log_probs_fwd_bwd = _flip_path_probability(log_probs_fwd_bwd, elens.long(), path_lens)
         for t in range(xmax):
-            beta = self._computes_transition(
-                beta, r_path, path_lens, fwd_bwd_log_probs[t], log_probs_inv[t])
+            beta = self._computes_transition(beta, r_path, path_lens, log_probs_fwd_bwd[t], log_probs_inv[t])
 
         # pick up the best CTC path
         best_lattices = log_probs.new_zeros((bs, xmax), dtype=torch.int64)
-        if left2right:
-            # forward algorithm
-            fwd_bwd_log_probs = _flip_path_probability(fwd_bwd_log_probs, xlens.long(), path_lens)
-            for t in range(xmax):
-                gamma = self._computes_transition(
-                    gamma, path, path_lens, fwd_bwd_log_probs[t], log_probs[t],
-                    skip_accum=True)
 
-                # select paths where gamma is valid
-                fwd_bwd_log_probs[t] = fwd_bwd_log_probs[t].masked_fill_(gamma == self.log0, self.log0)
+        # forward algorithm
+        log_probs_fwd_bwd = _flip_path_probability(log_probs_fwd_bwd, elens.long(), path_lens)
+        for t in range(xmax):
+            gamma = self._computes_transition(gamma, path, path_lens, log_probs_fwd_bwd[t], log_probs[t],
+                                              skip_accum=True)
 
-                # pick up the best lattice
-                offsets = fwd_bwd_log_probs[t].argmax(1)
-                for b in range(bs):
-                    if t <= xlens[b] - 1:
-                        token_id = path[b, offsets[b]]
-                        best_lattices[b, t] = token_id
+            # select paths where gamma is valid
+            log_probs_fwd_bwd[t] = log_probs_fwd_bwd[t].masked_fill_(gamma == self.log0, self.log0)
 
-                # remove the rest of paths
-                gamma = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
-                for b in range(bs):
-                    gamma[b, offsets[b]] = LOG_1
-        else:
-            # backward algorithm
-            for t in range(xmax):
-                gamma = self._computes_transition(
-                    gamma, r_path, path_lens, fwd_bwd_log_probs[t], log_probs_inv[t],
-                    skip_accum=True)
+            # pick up the best lattice
+            offsets = log_probs_fwd_bwd[t].argmax(1)
+            for b in range(bs):
+                if t <= elens[b] - 1:
+                    token_id = path[b, offsets[b]]
+                    best_lattices[b, t] = token_id
 
-                # select paths where gamma is valid
-                fwd_bwd_log_probs[t] = fwd_bwd_log_probs[t].masked_fill_(gamma == self.log0, self.log0)
-
-                # pick up the best lattice
-                offsets = fwd_bwd_log_probs[t].argmax(1)
-                for b in range(bs):
-                    if t <= xlens[b] - 1:
-                        token_id = r_path[b, offsets[b]]
-                        best_lattices[b, (xmax - 1) - t] = token_id
-
-                # remove the rest of paths
-                gamma = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
-                for b in range(bs):
-                    gamma[b, offsets[b]] = LOG_1
+            # remove the rest of paths
+            gamma = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
+            for b in range(bs):
+                gamma[b, offsets[b]] = LOG_1
 
         # pick up trigger points
         trigger_lattices = torch.zeros((bs, xmax), dtype=torch.int64)
         trigger_points = log_probs.new_zeros((bs, ymax + 1), dtype=torch.int32)  # +1 for <eos>
         for b in range(bs):
-            trigger_points[b, :] = xlens[b] - 1
             n_triggers = 0
-            for t in range(xlens[b]):
+            # trigger_points[b, ylens[b]] = elens[b] - 1  # for <eos>
+            for t in range(elens[b]):
                 token_id = best_lattices[b, t]
                 if token_id == self.blank:
                     continue
-                elif left2right:
-                    # NOTE: select the most left trigger points
-                    if t == 0:
-                        trigger_lattices[b, t] = token_id
-                        trigger_points[b, n_triggers] = t
-                        n_triggers += 1
-                    elif token_id != best_lattices[b, t - 1]:
-                        trigger_lattices[b, t] = token_id
-                        trigger_points[b, n_triggers] = t
-                        n_triggers += 1
-                else:
-                    # NOTE: select the most right trigger points
-                    if t == xlens[b] - 1:
-                        trigger_lattices[b, t] = token_id
-                        trigger_points[b, n_triggers] = t
-                        n_triggers += 1
-                    elif token_id != best_lattices[b, t + 1]:
-                        trigger_lattices[b, t] = token_id
-                        trigger_points[b, n_triggers] = t
-                        n_triggers += 1
+                if not (t == 0 or token_id != best_lattices[b, t - 1]):
+                    continue
 
-        # print(best_lattices[-1])
-        # print(trigger_lattices[-1])
-        # print(trigger_points[-1])
+                # NOTE: select the most left trigger points
+                trigger_lattices[b, t] = token_id
+                trigger_points[b, n_triggers] = t
+                n_triggers += 1
+
+        # print(trigger_points[0])
+        # print(trigger_lattices[0])
+        # print(ys[0])
+
         assert ylens.sum() == (trigger_lattices != 0).sum()
         return trigger_points
 

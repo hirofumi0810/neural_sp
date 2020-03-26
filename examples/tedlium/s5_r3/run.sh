@@ -10,7 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
-speed_perturb=false
+speed_perturb=true  # default
 specaug=false
 stdout=false
 
@@ -25,7 +25,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
-lm_init=
+external_lm=
 
 #########################
 # LM configuration
@@ -53,13 +53,11 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ]; then
-    conf2=conf/speed_perturb.yaml
-    if [ ${specaug} = true ]; then
-        conf2=conf/spec_augment_speed_perturb.yaml
-    fi
-elif [ ${specaug} = true ]; then
-    conf2=conf/spec_augment.yaml
+if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
+  if [ -z ${conf2} ]; then
+    echo "Error: Set --conf2." 1>&2
+    exit 1
+  fi
 fi
 
 if [ -z ${gpu} ]; then
@@ -145,44 +143,19 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict}
-    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
-    offset=$(cat ${dict} | wc -l)
-    if [ ${unit} = wp ]; then
-        if [ ${speed_perturb} = true ]; then
-            grep sp1.0 ${data}/${train_set}/text > ${data}/${train_set}/text.org
-            cp ${data}/${dev_set}/text ${data}/${dev_set}/text.org
-            cut -f 2- -d " " ${data}/${train_set}/text.org | sed 's:<unk>::g' > ${data}/dict/input.txt
-        else
-            cut -f 2- -d " " ${data}/${train_set}/text | sed 's:<unk>::g' > ${data}/dict/input.txt
-        fi
-        spm_train --input=${data}/dict/input.txt --vocab_size=${vocab} \
-            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
-    else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab ${vocab} --speed_perturb ${speed_perturb} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
-    fi
-    echo "vocab size:" $(cat ${dict} | wc -l)
+    make_vocab.sh --unit ${unit} --wp_type ${wp_type} --wp_model ${wp_model} --character_coverage 1.0 --speed_perturb ${speed_perturb} \
+        ${data} ${dict} ${vocab} ${data}/${train_set}/text
 
     # Compute OOV rate
     if [ ${unit} = word ]; then
         mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
         echo "OOV rate:" > ${data}/dict/oov_rate/word${vocab}.txt
         for x in ${train_set} ${dev_set} ${test_set}; do
-            if [ ${speed_perturb} = true ]; then
-                cut -f 2- -d " " ${data}/${x}/text.org | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-                    > ${data}/dict/word_count/${x}.txt || exit 1;
-            else
-                cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-                    > ${data}/dict/word_count/${x}.txt || exit 1;
-            fi
+            cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+                > ${data}/dict/word_count/${x}.txt || exit 1;
             compute_oov_rate.py ${data}/dict/word_count/${x}.txt ${dict} ${x} \
                 >> ${data}/dict/oov_rate/word${vocab}.txt || exit 1;
+            # NOTE: speed perturbation is not considered
         done
         cat ${data}/dict/oov_rate/word${vocab}.txt
     fi
@@ -199,10 +172,14 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
 fi
 
 mkdir -p ${model}
-if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]; then
+if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo ============================================================================
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
+
+    if [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab}_sptrue ]; then
+        echo "Run ./run.sh --speed_perturb false first."
+    fi
 
     # Extend dictionary for the external text data
     if [ ! -e ${data}/.done_stage_3_${unit}${wp_type}${vocab} ]; then
@@ -212,12 +189,12 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
         gunzip -c ${db}/TEDLIUM_release-3/LM/*.en.gz | sed 's/ <\/s>//g' | local/join_suffix.py | uniq | awk '{print "unpaired-text-"NR, $0}' > ${data}/dataset_lm/text
         # NOTE: remove exactly the same lines
         update_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-            ${data}/dataset_lm/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-            > ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-        cp ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
-            ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-        cp ${data}/dataset/${test_set}_${unit}${wp_type}${vocab}.tsv \
-            ${data}/dataset_lm/${test_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
+            ${data}/dataset_lm/text ${dict} ${data}/dataset/train_${unit}${wp_type}${vocab}.tsv \
+            > ${data}/dataset_lm/train_${unit}${wp_type}${vocab}.tsv || exit 1;
+        cp ${data}/dataset/dev_${unit}${wp_type}${vocab}.tsv \
+            ${data}/dataset_lm/dev_${unit}${wp_type}${vocab}.tsv || exit 1;
+        cp ${data}/dataset/test_${unit}${wp_type}${vocab}.tsv \
+            ${data}/dataset_lm/test_${unit}${wp_type}${vocab}.tsv || exit 1;
 
         touch ${data}/.done_stage_3_${unit}${wp_type}${vocab} && echo "Finish creating dataset for LM (stage: 3)."
     fi
@@ -226,9 +203,9 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
         --corpus tedlium3 \
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
-        --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab}.tsv \
-        --eval_sets ${data}/dataset_lm/${test_set}_${unit}${wp_type}${vocab}.tsv \
+        --train_set ${data}/dataset_lm/train_${unit}${wp_type}${vocab}.tsv \
+        --dev_set ${data}/dataset_lm/dev_${unit}${wp_type}${vocab}.tsv \
+        --eval_sets ${data}/dataset_lm/test_${unit}${wp_type}${vocab}.tsv \
         --unit ${unit} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \
@@ -257,7 +234,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/asr \
         --asr_init ${asr_init} \
-        --lm_init ${lm_init} \
+        --external_lm ${external_lm} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 

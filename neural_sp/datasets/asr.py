@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -240,11 +240,6 @@ class Dataset(object):
                             setattr(self, 'df_sub' + str(j),
                                     getattr(self, 'df_sub' + str(j)).drop(getattr(self, 'df_sub' + str(j)).index.difference(df.index)))
 
-            # Re-indexing
-            for i in range(1, 3):
-                if getattr(self, 'df_sub' + str(i)) is not None:
-                    setattr(self, 'df_sub' + str(i), getattr(self, 'df_sub' + str(i)).reset_index())
-
         # Sort tsv records
         if not is_test:
             if discourse_aware:
@@ -273,13 +268,12 @@ class Dataset(object):
             elif sort_by == 'shuffle':
                 df = df.reindex(np.random.permutation(self.df.index))
 
+        # Re-indexing
+        self.df = df.reset_index()
         for i in range(1, 3):
             if getattr(self, 'df_sub' + str(i)) is not None:
                 setattr(self, 'df_sub' + str(i),
                         getattr(self, 'df_sub' + str(i)).reindex(df.index).reset_index())
-
-        # Re-indexing
-        self.df = df.reset_index()
         if shuffle_bucket:
             self.df_indices_buckets = self.backeting(batch_size)
             self.n_buckets = len(self.df_indices_buckets)
@@ -293,6 +287,10 @@ class Dataset(object):
     def epoch_detail(self):
         """Percentage of the current epoch."""
         return self.offset / len(self)
+
+    @property
+    def n_frames(self):
+        return self.df['xlen'].sum()
 
     def reset(self):
         """Reset data counter and offset."""

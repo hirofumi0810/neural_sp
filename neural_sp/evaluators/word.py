@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
@@ -72,7 +72,7 @@ def eval_word(models, dataset, recog_params, epoch,
                     batch['xs'], recog_params, dataset.idx2token[0],
                     exclude_eos=True)
             else:
-                best_hyps_id, _ = models[0].decode(
+                best_hyps_id, aws = models[0].decode(
                     batch['xs'], recog_params, dataset.idx2token[0],
                     exclude_eos=True,
                     refs_id=batch['ys'],

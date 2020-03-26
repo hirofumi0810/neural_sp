@@ -76,6 +76,10 @@ class Idx2word(object):
                 w, idx = line.strip().split(' ')
                 self.idx2token[int(idx)] = w
         self.vocab = len(self.idx2token.keys())
+        # for synchronous bidirectional attention
+        self.idx2token[self.vocab] = '<l2r>'
+        self.idx2token[self.vocab + 1] = '<r2l>'
+        self.idx2token[self.vocab + 2] = '<null>'
 
     def __call__(self, token_ids, return_list=False):
         """Convert indices into word sequence.

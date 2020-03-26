@@ -68,10 +68,11 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ]; then
-    conf2=conf/speed_perturb.yaml
-elif [ ${specaug} = true ]; then
-    conf2=conf/spec_augment.yaml
+if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
+  if [ -z ${conf2} ]; then
+    echo "Error: Set --conf2." 1>&2
+    exit 1
+  fi
 fi
 
 if [ -z ${gpu} ]; then
@@ -131,19 +132,21 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in train_${datasize} eval1 eval2 eval3; do
-        steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
-            ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
-    done
+    if [ ! -e ${data}/.done_stage_1_${datasize}_spfalse ]; then
+        for x in train_${datasize} eval1 eval2 eval3; do
+            steps/make_fbank.sh --nj 32 --cmd "$train_cmd" --write_utt2num_frames true \
+                ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
+        done
 
-    # Use the first 4k sentences from training data as dev set. (39 speakers.)
-    utils/subset_data_dir.sh --first ${data}/train_${datasize} 4000 ${data}/${dev_set} || exit 1;  # 6hr 31min
-    n=$[$(cat ${data}/train_${datasize}/segments | wc -l) - 4000]
-    utils/subset_data_dir.sh --last ${data}/train_${datasize} ${n} ${data}/${train_set}.tmp || exit 1;
+        # Use the first 4k sentences from training data as dev set. (39 speakers.)
+        utils/subset_data_dir.sh --first ${data}/train_${datasize} 4000 ${data}/${dev_set} || exit 1;  # 6hr 31min
+        n=$[$(cat ${data}/train_${datasize}/segments | wc -l) - 4000]
+        utils/subset_data_dir.sh --last ${data}/train_${datasize} ${n} ${data}/${train_set}.tmp || exit 1;
 
-    # Finally, the full training set:
-    utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/${train_set} || exit 1;  # 233hr 36min
-    rm -rf ${data}/*.tmp
+        # Finally, the full training set:
+        utils/data/remove_dup_utts.sh 300 ${data}/${train_set}.tmp ${data}/${train_set} || exit 1;  # 233hr 36min
+        rm -rf ${data}/*.tmp
+    fi
 
     if [ ${speed_perturb} = true ]; then
         speed_perturb_3way.sh ${data} train_nodev_${datasize} ${train_set}
@@ -178,44 +181,19 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     echo "                      Dataset preparation (stage:2, main)                  "
     echo ============================================================================
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict}
-    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
-    offset=$(cat ${dict} | wc -l)
-    if [ ${unit} = wp ]; then
-        if [ ${speed_perturb} = true ]; then
-            grep sp1.0 ${data}/${train_set}/text > ${data}/${train_set}/text.org
-            cp ${data}/${dev_set}/text ${data}/${dev_set}/text.org
-            cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
-        else
-            cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        fi
-        spm_train --input=${data}/dict/input.txt --vocab_size=${vocab} \
-            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=0.9995
-        spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
-    else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab ${vocab} --speed_perturb ${speed_perturb} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
-    fi
-    echo "vocab size:" $(cat ${dict} | wc -l)
+    make_vocab.sh --unit ${unit} --wp_type ${wp_type} --wp_model ${wp_model} --character_coverage 0.9995 --speed_perturb ${speed_perturb} \
+        ${data} ${dict} ${vocab} ${data}/${train_set}/text
 
     # Compute OOV rate
     if [ ${unit} = word ]; then
         mkdir -p ${data}/dict/word_count ${data}/dict/oov_rate
         echo "OOV rate:" > ${data}/dict/oov_rate/word${vocab}_${datasize}.txt
         for x in ${train_set} ${dev_set} ${test_set}; do
-            if [ ${speed_perturb} = true ]; then
-                cut -f 2- -d " " ${data}/${x}/text.org | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-                    > ${data}/dict/word_count/${x}_${datasize}.txt || exit 1;
-            else
-                cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
-                    > ${data}/dict/word_count/${x}_${datasize}.txt || exit 1;
-            fi
+            cut -f 2- -d " " ${data}/${x}/text | tr " " "\n" | sort | uniq -c | sort -n -k1 -r \
+                > ${data}/dict/word_count/${x}_${datasize}.txt || exit 1;
             compute_oov_rate.py ${data}/dict/word_count/${x}_${datasize}.txt ${dict} ${x} \
                 >> ${data}/dict/oov_rate/word${vocab}_${datasize}.txt || exit 1;
+            # NOTE: speed perturbation is not considered
         done
         cat ${data}/dict/oov_rate/word${vocab}_${datasize}.txt
     fi
@@ -243,29 +221,8 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     echo "                      Dataset preparation (stage:2, sub1)                  "
     echo ============================================================================
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict_sub1}
-    [ ${unit_sub1} = char ] && echo "<space> 4" >> ${dict_sub1}
-    offset=$(cat ${dict_sub1} | wc -l)
-    if [ ${unit_sub1} = wp ]; then
-        if [ ${speed_perturb} = true ]; then
-            grep sp1.0 ${data}/${train_set}/text > ${data}/${train_set}/text.org
-            cp ${data}/${dev_set}/text ${data}/${dev_set}/text.org
-            cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
-        else
-            cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        fi
-        spm_train --input=${data}/dict/input.txt --vocab_size=${vocab_sub1} \
-            --model_type=${wp_type_sub1} --model_prefix=${wp_model_sub1} --input_sentence_size=100000000 --character_coverage=0.9995
-        spm_encode --model=${wp_model_sub1}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict_sub1}
-    else
-        text2dict.py ${data}/${train_set}/text --unit ${unit_sub1} --vocab ${vocab_sub1} --speed_perturb ${speed_perturb} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
-    fi
-    echo "vocab size:" $(cat ${dict_sub1} | wc -l)
+    make_vocab.sh --unit ${unit_sub1} --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} --character_coverage 0.9995 --speed_perturb ${speed_perturb} \
+        ${data} ${dict_sub1} ${vocab_sub1} ${data}/${train_set}/text
 
     echo "Making dataset tsv files for ASR ..."
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \

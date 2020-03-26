@@ -75,6 +75,10 @@ class Idx2wp(object):
                 wp, idx = line.strip().split(' ')
                 self.idx2token[int(idx)] = wp
         self.vocab = len(self.idx2token.keys())
+        # for synchronous bidirectional attention
+        self.idx2token[self.vocab] = '<l2r>'
+        self.idx2token[self.vocab + 1] = '<r2l>'
+        self.idx2token[self.vocab + 2] = '<null>'
 
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(wp_model)
@@ -91,6 +95,8 @@ class Idx2wp(object):
             wordpieces (list): list of words
 
         """
+        if len(token_ids) == 0:
+            return ''
         wordpieces = list(map(lambda wp: self.idx2token[wp], token_ids))
         if return_list:
             return wordpieces

@@ -52,6 +52,7 @@ def build_encoder(args):
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
             dropout_att=args.dropout_att,
+            dropout_residual=args.dropout_enc_residual,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
             conv_in_channel=args.conv_in_channel,
@@ -80,7 +81,6 @@ def build_encoder(args):
             n_units=args.enc_n_units,
             n_projs=args.enc_n_projs,
             last_proj_dim=args.transformer_d_model if 'transformer' in args.dec_type else 0,
-            # last_proj_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units,
             n_layers=args.enc_n_layers,
             n_layers_sub1=args.enc_n_layers_sub1,
             n_layers_sub2=args.enc_n_layers_sub2,
@@ -103,8 +103,7 @@ def build_encoder(args):
             task_specific_layer=args.task_specific_layer,
             param_init=args.param_init,
             lc_chunk_size_left=args.lc_chunk_size_left,
-            lc_chunk_size_right=args.lc_chunk_size_right,
-            lc_state_reset_prob=args.lc_state_reset_prob)
+            lc_chunk_size_right=args.lc_chunk_size_right)
         # NOTE: pure Conv/TDS/GatedConv encoders are also included
 
     return encoder

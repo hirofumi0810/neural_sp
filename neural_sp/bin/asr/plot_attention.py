@@ -17,6 +17,7 @@ import os
 import shutil
 
 from neural_sp.bin.args_asr import parse
+from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_attention_weights
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
@@ -65,8 +66,14 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            load_checkpoint(model, args.recog_model[0])
+            topk_list = load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
+
+            # Model averaging for Transformer
+            if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
+                model = average_checkpoints(model, args.recog_model[0],
+                                            n_average=args.recog_n_average,
+                                            topk_list=topk_list)
 
             # ensemble (different models)
             ensemble_models = [model]
@@ -154,14 +161,14 @@ def main():
             if model.bwd_weight > 0.5:
                 # Reverse the order
                 best_hyps_id = [hyp[::-1] for hyp in best_hyps_id]
-                aws = [aw[::-1] for aw in aws]
+                aws = [aw[:, ::-1] for aw in aws]
 
             for b in range(len(batch['xs'])):
                 tokens = dataset.idx2token[0](best_hyps_id[b], return_list=True)
                 spk = batch['speakers'][b]
 
                 plot_attention_weights(
-                    aws[b][:len(tokens)], tokens,
+                    aws[b][:, :len(tokens)], tokens,
                     spectrogram=batch['xs'][b][:, :dataset.input_dim] if args.input_type == 'speech' else None,
                     ref=batch['text'][b].lower(),
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),

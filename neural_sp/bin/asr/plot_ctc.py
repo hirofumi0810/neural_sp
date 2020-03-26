@@ -16,6 +16,7 @@ import os
 import shutil
 
 from neural_sp.bin.args_asr import parse
+from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_ctc_probs
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
@@ -72,8 +73,14 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            load_checkpoint(model, args.recog_model[0])
+            topk_list = load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
+
+            # Model averaging for Transformer
+            if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
+                model = average_checkpoints(model, args.recog_model[0],
+                                            n_average=args.recog_n_average,
+                                            topk_list=topk_list)
 
             if not args.recog_unit:
                 args.recog_unit = args.unit

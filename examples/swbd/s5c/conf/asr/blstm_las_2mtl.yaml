@@ -1,7 +1,7 @@
 ### topology
 n_stacks: 1
 n_skips: 1
-max_n_frames: 2000
+max_n_frames: 1600
 conv_in_channel: 1
 conv_channels: "32_32"
 conv_kernel_sizes: "(3,3)_(3,3)"
@@ -25,7 +25,7 @@ dec_type: lstm
 dec_n_units: 1024
 dec_n_projs: 0
 dec_n_layers: 1
-dec_bottleneck_dim: 1024
+dec_bottleneck_dim: 1024  ###
 emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
@@ -64,7 +64,6 @@ lsm_prob: 0.1
 ctc_weight: 0.0
 ctc_weight_sub1: 0.2
 ctc_lsm_prob: 0.1
-bwd_weight: 0.0
 sub1_weight: 0.2
 mtl_per_batch: false
 task_specific_layer: true

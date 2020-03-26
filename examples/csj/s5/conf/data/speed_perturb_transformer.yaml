@@ -1,0 +1,3 @@
+# optimization
+n_epochs: 35
+print_step: 1200
