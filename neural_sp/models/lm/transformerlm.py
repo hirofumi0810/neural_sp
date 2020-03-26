@@ -120,6 +120,7 @@ class TransformerLM(LMBase):
         bs, ylen = ys.size()[:2]
         causal_mask = ys.new_ones(ylen, ylen).byte()
         causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
+        causal_mask = causal_mask.repeat([bs, 1, 1])
 
         out = self.pos_enc(self.embed(ys.long()))
         for l, layer in enumerate(self.layers):
