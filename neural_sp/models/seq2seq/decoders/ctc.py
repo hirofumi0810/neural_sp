@@ -45,7 +45,8 @@ class CTC(DecoderBase):
         dropout (float): dropout probability for the RNN layer
         lsm_prob (float): label smoothing probability
         fc_list (list):
-        param_init (float):
+        param_init (float): parameter initialization method
+        backward (bool): flip the output sequence
 
     """
 
@@ -57,7 +58,8 @@ class CTC(DecoderBase):
                  dropout=0.,
                  lsm_prob=0.,
                  fc_list=None,
-                 param_init=0.1):
+                 param_init=0.1,
+                 backward=False):
 
         super(CTC, self).__init__()
 
@@ -65,6 +67,7 @@ class CTC(DecoderBase):
         self.blank = blank
         self.vocab = vocab
         self.lsm_prob = lsm_prob
+        self.bwd = backward
 
         self.space = -1  # TODO(hirofumi): fix later
 
@@ -99,7 +102,8 @@ class CTC(DecoderBase):
         """
         # Concatenate all elements in ys for warpctc_pytorch
         ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
-        ys_ctc = torch.cat([np2tensor(np.fromiter(y, dtype=np.int32)) for y in ys], dim=0)
+        ys_ctc = torch.cat([np2tensor(np.fromiter(y[::-1] if self.bwd else y, dtype=np.int32))
+                            for y in ys], dim=0)
         # NOTE: do not copy to GPUs here
 
         # Compute CTC loss
@@ -122,6 +126,51 @@ class CTC(DecoderBase):
             trigger_points = self.forced_aligner.align(logits.clone(), elens, ys_in_pad, ylens)
 
         return loss, trigger_points
+
+    def trigger_points(self, eouts, elens):
+        """Extract trigger points.
+
+        Args:
+            eouts (FloatTensor): `[B, T, enc_n_units]`
+            elens (IntTensor): `[B]`
+        Returns:
+            hyps (IntTensor): `[B, L]`
+
+        """
+        bs, xmax, _ = eouts.size()
+        log_probs = torch.log_softmax(self.output(eouts), dim=-1)
+        best_paths = log_probs.argmax(-1)  # `[B, L]`
+
+        hyps = []
+        for b in range(bs):
+            indices = [best_paths[b, t].item() for t in range(elens[b])]
+
+            # Step 1. Collapse repeated labels
+            collapsed_indices = [x[0] for x in groupby(indices)]
+
+            # Step 2. Remove all blank labels
+            best_hyp = [x for x in filter(lambda x: x != self.blank, collapsed_indices)]
+            hyps.append(best_hyp)
+
+        ymax = max([len(h) for h in hyps])
+
+        # pick up trigger points
+        trigger_points = log_probs.new_zeros((bs, ymax + 1), dtype=torch.int32)  # +1 for <eos>
+        for b in range(bs):
+            n_triggers = 0
+            for t in range(elens[b]):
+                token_idx = best_paths[b, t]
+
+                if token_idx == self.blank:
+                    continue
+                if not (t == 0 or token_idx != best_paths[b, t - 1]):
+                    continue
+
+                # NOTE: select the most left trigger points
+                trigger_points[b, n_triggers] = t
+                n_triggers += 1
+
+        return trigger_points
 
     def greedy(self, eouts, elens):
         """Greedy decoding.
@@ -325,8 +374,16 @@ def _flip_path(path, path_lens):
        a b c d .     . a b c d    d c b a .
        e f . . .  -> . . . e f -> f e . . .
        g h i j k     g h i j k    k j i h g
+
+    Args:
+        path (FloatTensor): `[B, 2*L+1]`
+        path_lens (LongTensor): `[B]`
+    Returns:
+        FloatTensor: `[B, 2*L+1]`
+
     """
-    bs, max_path_len = path.size()
+    bs = path.size(0)
+    max_path_len = path.size(1)
     rotate = (torch.arange(max_path_len) + path_lens[:, None]) % max_path_len
     return torch.flip(path[torch.arange(bs, dtype=torch.int64)[:, None], rotate], dims=[1])
 
@@ -362,11 +419,11 @@ def _flip_path_probability(cum_log_prob, xlens, path_lens):
     ``r[i, j, k] = cum_log_prob[i + xlens[j], j, k + path_lens[j]]``
 
     Args:
-        cum_log_prob (FloatTensor): `[T, B, 2 * L + 1]`
+        cum_log_prob (FloatTensor): `[T, B, 2*L+1]`
         xlens (LongTensor): `[B]`
         path_lens (LongTensor): `[B]`
     Returns:
-        FloatTensor: `[T, B, 2 * L + 1]`
+        FloatTensor: `[T, B, 2*L+1]`
 
     """
     xmax, bs, max_path_len = cum_log_prob.size()
@@ -434,8 +491,8 @@ class CTCForcedAligner(object):
 
         # backward algorithm
         r_path = _flip_path(path, path_lens)
-        log_probs_inv = _flip_label_probability(log_probs, elens.long())
-        log_probs_fwd_bwd = _flip_path_probability(log_probs_fwd_bwd, elens.long(), path_lens)
+        log_probs_inv = _flip_label_probability(log_probs, elens.long())  # `[T, B, vocab]`
+        log_probs_fwd_bwd = _flip_path_probability(log_probs_fwd_bwd, elens.long(), path_lens)  # `[T, B, 2*L+1]`
         for t in range(xmax):
             beta = self._computes_transition(beta, r_path, path_lens, log_probs_fwd_bwd[t], log_probs_inv[t])
 
@@ -455,8 +512,8 @@ class CTCForcedAligner(object):
             offsets = log_probs_fwd_bwd[t].argmax(1)
             for b in range(bs):
                 if t <= elens[b] - 1:
-                    token_id = path[b, offsets[b]]
-                    best_lattices[b, t] = token_id
+                    token_idx = path[b, offsets[b]]
+                    best_lattices[b, t] = token_idx
 
             # remove the rest of paths
             gamma = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
@@ -468,16 +525,16 @@ class CTCForcedAligner(object):
         trigger_points = log_probs.new_zeros((bs, ymax + 1), dtype=torch.int32)  # +1 for <eos>
         for b in range(bs):
             n_triggers = 0
-            # trigger_points[b, ylens[b]] = elens[b] - 1  # for <eos>
+            trigger_points[b, ylens[b]] = elens[b] - 1  # for <eos>
             for t in range(elens[b]):
-                token_id = best_lattices[b, t]
-                if token_id == self.blank:
+                token_idx = best_lattices[b, t]
+                if token_idx == self.blank:
                     continue
-                if not (t == 0 or token_id != best_lattices[b, t - 1]):
+                if not (t == 0 or token_idx != best_lattices[b, t - 1]):
                     continue
 
                 # NOTE: select the most left trigger points
-                trigger_lattices[b, t] = token_id
+                trigger_lattices[b, t] = token_idx
                 trigger_points[b, n_triggers] = t
                 n_triggers += 1
 
@@ -501,12 +558,13 @@ class CTCPrefixScore(object):
         https://github.com/espnet/espnet
     """
 
-    def __init__(self, log_probs, blank, eos):
+    def __init__(self, log_probs, blank, eos, truncate=False):
         """
         Args:
             log_probs (np.ndarray):
             blank (int): index of <blank>
             eos (int): index of <eos>
+            truncate (bool): restart prefix search from the previous CTC spike
 
         """
         self.blank = blank
@@ -515,6 +573,9 @@ class CTCPrefixScore(object):
         self.xlen = len(log_probs)
         self.log_probs = log_probs
         self.log0 = LOG_0
+
+        self.truncate = truncate
+        self.offset = 0
 
     def initial_state(self):
         """Obtain an initial CTC state
