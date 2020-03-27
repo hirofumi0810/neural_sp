@@ -344,13 +344,13 @@ class RNNEncoder(EncoderBase):
             xs (FloatTensor): `[B, T, n_units]`
 
         """
-        cs_l = self.lc_chunk_size_left // self.subsampling_factor()
-        cs_r = self.lc_chunk_size_right // self.subsampling_factor()
+        N_l = self.lc_chunk_size_left // self.subsampling_factor()
+        N_r = self.lc_chunk_size_right // self.subsampling_factor()
 
         xs_sub1 = None
 
         # full context BPTT
-        if cs_l < 0:
+        if N_l < 0:
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
                 self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
@@ -390,26 +390,26 @@ class RNNEncoder(EncoderBase):
             return xs, xlens, xs_sub1
 
         bs, xmax, input_dim = xs.size()
-        n_chunks = 1 if streaming else math.ceil(xmax / cs_l)
-        xlens = torch.IntTensor(bs).fill_(cs_l if streaming else xmax)
+        n_chunks = 1 if streaming else math.ceil(xmax / N_l)
+        xlens = torch.IntTensor(bs).fill_(N_l if streaming else xmax)
 
         xs_chunks = []
-        for t in range(0, cs_l * n_chunks, cs_l):
-            xs_chunk = xs[:, t:t + (cs_l + cs_r)]
+        for t in range(0, N_l * n_chunks, N_l):
+            xs_chunk = xs[:, t:t + (N_l + N_r)]
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
                 self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
                 # bwd
                 xs_chunk_bwd = torch.flip(xs_chunk, dims=[1])
                 xs_chunk_bwd, _ = self.rnn_bwd[l](xs_chunk_bwd, hx=None)
-                xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, cs_l+cs_r, n_units]`
+                xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, N_l+N_r, n_units]`
                 # fwd
-                if xs_chunk.size(1) <= cs_l:
+                if xs_chunk.size(1) <= N_l:
                     xs_chunk_fwd, self.fwd_states[l] = self.rnn[l](xs_chunk, hx=self.fwd_states[l])
                 else:
-                    xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :cs_l], hx=self.fwd_states[l])
-                    xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, cs_l:], hx=self.fwd_states[l])
-                    xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, cs_l+cs_r, n_units]`
+                    xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :N_l], hx=self.fwd_states[l])
+                    xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, N_l:], hx=self.fwd_states[l])
+                    xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, N_l+N_r, n_units]`
                     # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer
                 if self.bidirectional_sum_fwd_bwd:
                     xs_chunk = xs_chunk_fwd + xs_chunk_bwd
@@ -420,7 +420,7 @@ class RNNEncoder(EncoderBase):
                 # Projection layer
                 if self.proj is not None and l != self.n_layers - 1:
                     xs_chunk = torch.tanh(self.proj[l](xs_chunk))
-            xs_chunks.append(xs_chunk[:, :cs_l])
+            xs_chunks.append(xs_chunk[:, :N_l])
         xs = torch.cat(xs_chunks, dim=1)
 
         return xs, xlens, xs_sub1
