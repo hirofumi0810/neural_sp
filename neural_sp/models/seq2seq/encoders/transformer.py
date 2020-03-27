@@ -145,20 +145,22 @@ class TransformerEncoder(EncoderBase):
 
         self._odim = d_model
 
-        if n_layers_sub1 > 0 and task_specific_layer:
-            self.layer_sub1 = TransformerEncoderBlock(
-                d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
-                dropout_residual * n_layers_sub1 / n_layers,
-                layer_norm_eps, ffn_activation, param_init)
+        if n_layers_sub1 > 0:
+            if task_specific_layer:
+                self.layer_sub1 = TransformerEncoderBlock(
+                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
+                    dropout_residual * n_layers_sub1 / n_layers,
+                    layer_norm_eps, ffn_activation, param_init)
             self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim != self.output_dim:
                 self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
 
-        if n_layers_sub2 > 0 and task_specific_layer:
-            self.layer_sub2 = TransformerEncoderBlock(
-                d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
-                dropout_residual * n_layers_sub2 / n_layers,
-                layer_norm_eps, ffn_activation, param_init)
+        if n_layers_sub2 > 0:
+            if task_specific_layer:
+                self.layer_sub2 = TransformerEncoderBlock(
+                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
+                    dropout_residual * n_layers_sub2 / n_layers,
+                    layer_norm_eps, ffn_activation, param_init)
             self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim != self.output_dim:
                 self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
@@ -247,6 +249,7 @@ class TransformerEncoder(EncoderBase):
                 # Pick up outputs in the sub task before the projection layer
                 if l == self.n_layers_sub1 - 1:
                     xs_sub1 = self.layer_sub1(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
+                    xs_sub1 = self.norm_out_sub1(xs_sub1)
                     if self.bridge_sub1 is not None:
                         xs_sub1 = self.bridge_sub1(xs_sub1)
                     if task == 'ys_sub1':
@@ -254,6 +257,7 @@ class TransformerEncoder(EncoderBase):
                         return eouts
                 if l == self.n_layers_sub2 - 1:
                     xs_sub2 = self.layer_sub2(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
+                    xs_sub2 = self.norm_out_sub2(xs_sub2)
                     if self.bridge_sub2 is not None:
                         xs_sub2 = self.bridge_sub2(xs_sub2)
                     if task == 'ys_sub2':
