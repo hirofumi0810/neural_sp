@@ -55,7 +55,6 @@ class RNNEncoder(EncoderBase):
         conv_batch_norm (bool): apply batch normalization only in the CNN blocks
         conv_layer_norm (bool): apply layer normalization only in the CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and RNN layers
-        nin (bool): insert 1*1 conv + batch normalization + ReLU
         bidirectional_sum_fwd_bwd (bool): sum up forward and backward outputs for demiension reduction
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (float): parameter initialization method
@@ -70,8 +69,7 @@ class RNNEncoder(EncoderBase):
                  subsample, subsample_type, n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim,
-                 nin, bidirectional_sum_fwd_bwd,
-                 task_specific_layer, param_init,
+                 bidirectional_sum_fwd_bwd, task_specific_layer, param_init,
                  lc_chunk_size_left, lc_chunk_size_right):
 
         super(RNNEncoder, self).__init__()
@@ -175,9 +173,6 @@ class RNNEncoder(EncoderBase):
                 self.subsample_layer = nn.ModuleList([Conv1dSubsampler(subsample[l], n_units * self.n_dirs)
                                                       for l in range(n_layers)])
 
-            # NiN
-            self.nin = nn.ModuleList() if nin else None
-
             for l in range(n_layers):
                 if 'lstm' in rnn_type:
                     rnn_i = nn.LSTM
@@ -214,13 +209,6 @@ class RNNEncoder(EncoderBase):
                                           bidirectional=self.bidirectional)
                     if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                         self.bridge_sub2 = nn.Linear(n_units, last_proj_dim)
-
-                # Network in network
-                if self.nin is not None:
-                    if l != n_layers - 1:
-                        self.nin += [NiN(self._odim)]
-                    # if n_layers_sub1 > 0 or n_layers_sub2 > 0:
-                    #     assert task_specific_layer
 
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge = nn.Linear(self._odim, last_proj_dim)
@@ -324,13 +312,11 @@ class RNNEncoder(EncoderBase):
 
                 # NOTE: Exclude the last layer
                 if l != self.n_layers - 1:
-                    # Projection layer -> Subsampling -> NiN
+                    # Projection layer -> Subsampling
                     if self.proj is not None:
                         xs = torch.tanh(self.proj[l](xs))
                     if self.subsample_layer is not None:
                         xs, xlens = self.subsample_layer[l](xs, xlens)
-                    if self.nin is not None:
-                        xs = self.nin[l](xs)
 
         # Bridge layer
         if self.bridge is not None:
@@ -395,13 +381,11 @@ class RNNEncoder(EncoderBase):
 
                 # NOTE: Exclude the last layer
                 if l != self.n_layers - 1:
-                    # Projection layer -> Subsampling -> NiN
+                    # Projection layer -> Subsampling
                     if self.proj is not None:
                         xs = torch.tanh(self.proj[l](xs))
                     if self.subsample_layer is not None:
                         xs, xlens = self.subsample_layer[l](xs, xlens)
-                    if self.nin is not None:
-                        xs = self.nin[l](xs)
 
             return xs, xlens, xs_sub1
 
