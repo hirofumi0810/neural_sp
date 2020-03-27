@@ -14,7 +14,7 @@ import argparse
 import copy
 import cProfile
 import logging
-import math
+import numpy as np
 import os
 from setproctitle import setproctitle
 import shutil
@@ -76,15 +76,17 @@ def main():
             for p in args.conv_poolings.split('_'):
                 args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
         else:
-            args.subsample_factor = math.prod(subsample)
+            args.subsample_factor = int(np.prod(subsample))
         if args.train_set_sub1:
             if args.conv_poolings and 'conv' in args.enc_type:
-                args.subsample_factor_sub1 = args.subsample_factor * math.prod(subsample[:args.enc_n_layers_sub1 - 1])
+                args.subsample_factor_sub1 = args.subsample_factor * \
+                    int(np.prod(subsample[:args.enc_n_layers_sub1 - 1]))
             else:
                 args.subsample_factor_sub1 = args.subsample_factor
         if args.train_set_sub2:
             if args.conv_poolings and 'conv' in args.enc_type:
-                args.subsample_factor_sub2 = args.subsample_factor * math.prod(subsample[:args.enc_n_layers_sub2 - 1])
+                args.subsample_factor_sub2 = args.subsample_factor * \
+                    int(np.prod(subsample[:args.enc_n_layers_sub2 - 1]))
             else:
                 args.subsample_factor_sub2 = args.subsample_factor
 
