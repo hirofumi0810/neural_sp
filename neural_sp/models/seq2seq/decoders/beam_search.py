@@ -23,11 +23,12 @@ from neural_sp.models.torch_utils import tensor2np
 
 
 class BeamSearch(object):
-    def __init__(self, beam_width, eos, ctc_weight, device_id):
+    def __init__(self, beam_width, eos, ctc_weight, device_id, beam_width_bwd=0):
 
         super(BeamSearch, self).__init__()
 
         self.beam_width = beam_width
+        self.beam_width_bwd = beam_width_bwd
         self.eos = eos
         self.device_id = device_id
 
@@ -44,16 +45,17 @@ class BeamSearch(object):
                 end_hyps += [hyp]
             else:
                 new_hyps += [hyp]
-        if len(end_hyps) >= self.beam_width:
+        if len(end_hyps) >= self.beam_width + self.beam_width_bwd:
             if prune:
-                end_hyps = end_hyps[:self.beam_width]
+                end_hyps = end_hyps[:self.beam_width + self.beam_width_bwd]
             is_finish = True
         return new_hyps, end_hyps, is_finish
 
     def add_ctc_score(self, hyp, topk_ids, ctc_state, total_scores_topk,
-                      ctc_prefix_scorer, new_chunk=False):
+                      ctc_prefix_scorer, new_chunk=False, backward=False):
+        beam_width = self.beam_width_bwd if backward else self.beam_width
         if ctc_prefix_scorer is None:
-            return None, topk_ids.new_zeros(self.beam_width), total_scores_topk
+            return None, topk_ids.new_zeros(beam_width), total_scores_topk
 
         ctc_scores, new_ctc_states = ctc_prefix_scorer(hyp, tensor2np(topk_ids[0]), ctc_state,
                                                        new_chunk=new_chunk)
@@ -63,7 +65,7 @@ class BeamSearch(object):
         total_scores_topk += total_scores_ctc * self.ctc_weight
         # Sort again
         total_scores_topk, joint_ids_topk = torch.topk(
-            total_scores_topk, k=self.beam_width, dim=1, largest=True, sorted=True)
+            total_scores_topk, k=beam_width, dim=1, largest=True, sorted=True)
         topk_ids = topk_ids[:, joint_ids_topk[0]]
         new_ctc_states = new_ctc_states[joint_ids_topk[0].cpu().numpy()]
         return new_ctc_states, total_scores_ctc, total_scores_topk
