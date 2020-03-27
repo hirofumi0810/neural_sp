@@ -96,7 +96,7 @@ class TransformerEncoder(EncoderBase):
 
         # for latency-controlled
         self.chunk_size_left = chunk_size_left
-        self.chunk_size_current = chunk_size_current
+        self.chunk_size_cur = chunk_size_current
         self.chunk_size_right = chunk_size_right
 
         # for hierarchical encoder
@@ -217,15 +217,14 @@ class TransformerEncoder(EncoderBase):
         if self.chunk_size_left > 0:
             # Time-restricted self-attention for streaming models
             cs_l = self.chunk_size_left
-            cs_c = self.chunk_size_current
+            cs_c = self.chunk_size_cur
             cs_r = self.chunk_size_right
-            hop_size = self.chunk_size_current
             xs_chunks = []
             xx_aws = [[] for l in range(self.n_layers)]
             xs_pad = torch.cat([xs.new_zeros(bs, cs_l, idim), xs,
                                 xs.new_zeros(bs, cs_r, idim)], dim=1)
             # TODO: remove right padding
-            for t in range(cs_l, cs_l + xmax, hop_size):
+            for t in range(cs_l, cs_l + xmax, self.chunk_size_cur):
                 xs_chunk = xs_pad[:, t - cs_l:t + cs_c + cs_r]
                 for l, layer in enumerate(self.layers):
                     xs_chunk, xx_aws_chunk = layer(xs_chunk, None)  # no mask
@@ -247,18 +246,18 @@ class TransformerEncoder(EncoderBase):
 
                 # Pick up outputs in the sub task before the projection layer
                 if l == self.n_layers_sub1 - 1:
-                    xs_sub1, xx_aws_sub1 = self.layer_sub1(xs, xx_mask)
+                    xs_sub1 = self.layer_sub1(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
                     if self.bridge_sub1 is not None:
                         xs_sub1 = self.bridge_sub1(xs_sub1)
                     if task == 'ys_sub1':
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
                         return eouts
                 if l == self.n_layers_sub2 - 1:
-                    xs_sub2, xx_aws_sub2 = self.layer_sub2(xs, xx_mask)
+                    xs_sub2 = self.layer_sub2(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
                     if self.bridge_sub2 is not None:
                         xs_sub2 = self.bridge_sub2(xs_sub2)
                     if task == 'ys_sub2':
-                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens_sub2
+                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens
                         return eouts
 
         xs = self.norm_out(xs)
@@ -270,9 +269,9 @@ class TransformerEncoder(EncoderBase):
         if task in ['all', 'ys']:
             eouts['ys']['xs'], eouts['ys']['xlens'] = xs, xlens
         if self.n_layers_sub1 >= 1 and task == 'all':
-            eouts['ys_sub1']['xs'], eouts['ys_sub1']['xlens'] = xs_sub1, xlens_sub1
+            eouts['ys_sub1']['xs'], eouts['ys_sub1']['xlens'] = xs_sub1, xlens
         if self.n_layers_sub2 >= 1 and task == 'all':
-            eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens_sub2
+            eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens
         return eouts
 
     def _plot_attention(self, save_path, n_cols=2):
