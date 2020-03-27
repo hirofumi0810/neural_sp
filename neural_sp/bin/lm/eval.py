@@ -15,7 +15,6 @@ import os
 import time
 
 from neural_sp.bin.args_lm import parse
-from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
@@ -61,19 +60,12 @@ def main():
         if i == 0:
             # Load the LM
             model = build_lm(args)
-            topk_list = load_checkpoint(model, args.recog_model[0])
+            load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
-
-            # Model averaging for Transformer
-            if conf['lm_type'] == 'transformer':
-                model = average_checkpoints(model, args.recog_model[0],
-                                            n_average=args.recog_n_average,
-                                            topk_list=topk_list)
+            # NOTE: model averaging is not helpful for LM
 
             logger.info('epoch: %d' % epoch)
             logger.info('batch size: %d' % args.recog_batch_size)
-            # logger.info('recog unit: %s' % args.recog_unit)
-            # logger.info('ensemble: %d' % (len(ensemble_models)))
             logger.info('BPTT: %d' % (args.bptt))
             logger.info('cache size: %d' % (args.recog_n_caches))
             logger.info('cache theta: %.3f' % (args.recog_cache_theta))
@@ -87,7 +79,6 @@ def main():
 
         start_time = time.time()
 
-        # TODO(hirofumi): ensemble
         ppl, _ = eval_ppl([model], dataset, batch_size=1, bptt=args.bptt,
                           n_caches=args.recog_n_caches, progressbar=True)
         ppl_avg += ppl
