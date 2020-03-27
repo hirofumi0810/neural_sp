@@ -56,9 +56,9 @@ class RNNEncoder(EncoderBase):
         conv_layer_norm (bool): apply layer normalization only in the CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and RNN layers
         nin (bool): insert 1*1 conv + batch normalization + ReLU
-        bidirectional_sum_fwd_bwd (bool):
-        task_specific_layer (bool):
-        param_init (float):
+        bidirectional_sum_fwd_bwd (bool): sum up forward and backward outputs for demiension reduction
+        task_specific_layer (bool): add a task specific layer for each sub task
+        param_init (float): parameter initialization method
         lc_chunk_size_left (int): left chunk size for latency-controlled bidirectional encoder
         lc_chunk_size_right (int): right chunk size for latency-controlled bidirectional encoder
 
@@ -94,7 +94,6 @@ class RNNEncoder(EncoderBase):
         self.lc_chunk_size_left = lc_chunk_size_left
         self.lc_chunk_size_right = lc_chunk_size_right
         if self.latency_controlled:
-            assert n_layers_sub1 == 0
             assert n_layers_sub2 == 0
 
         # for hierarchical encoder
@@ -281,9 +280,10 @@ class RNNEncoder(EncoderBase):
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
         # Sort by lenghts in the descending order for pack_padded_sequence
-        xlens, perm_ids = torch.IntTensor(xlens).sort(0, descending=True)
-        xs = xs[perm_ids]
-        _, perm_ids_unsort = perm_ids.sort()
+        if not self.latency_controlled:
+            xlens, perm_ids = torch.IntTensor(xlens).sort(0, descending=True)
+            xs = xs[perm_ids]
+            _, perm_ids_unsort = perm_ids.sort()
 
         # Dropout for inputs-hidden connection
         xs = self.dropout_in(xs)
@@ -301,7 +301,8 @@ class RNNEncoder(EncoderBase):
 
         if self.latency_controlled:
             # Flip the layer and time loop
-            xs, xlens = self._forward_streaming(xs, xlens, streaming)
+            xs, xlens, xs_sub1 = self._forward_streaming(xs, xlens, streaming)
+            xlens_sub1 = xlens.clone()
         else:
             for l in range(self.n_layers):
                 self.rnn[l].flatten_parameters()  # for multi-GPUs
@@ -336,8 +337,9 @@ class RNNEncoder(EncoderBase):
             xs = self.bridge(xs)
 
         # Unsort
-        xs = xs[perm_ids_unsort]
-        xlens = xlens[perm_ids_unsort]
+        if not self.latency_controlled:
+            xs = xs[perm_ids_unsort]
+            xlens = xlens[perm_ids_unsort]
 
         if task in ['all', 'ys']:
             eouts['ys']['xs'], eouts['ys']['xlens'] = xs, xlens
@@ -347,7 +349,7 @@ class RNNEncoder(EncoderBase):
             eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens_sub2
         return eouts
 
-    def _forward_streaming(self, xs, xlens, streaming):
+    def _forward_streaming(self, xs, xlens, streaming, task='all'):
         """Streaming encoding for the latency-controlled bidirectional encoder.
 
         Args:
@@ -358,6 +360,8 @@ class RNNEncoder(EncoderBase):
         """
         cs_l = self.lc_chunk_size_left // self.subsampling_factor()
         cs_r = self.lc_chunk_size_right // self.subsampling_factor()
+
+        xs_sub1 = None
 
         # full context BPTT
         if cs_l < 0:
@@ -376,10 +380,30 @@ class RNNEncoder(EncoderBase):
                     xs = torch.cat([xs_fwd, xs_bwd], dim=-1)
                 xs = self.dropout(xs)
 
-                # Projection layer
-                if self.proj is not None and l != self.n_layers - 1:
-                    xs = torch.tanh(self.proj[l](xs))
-            return xs, xlens
+                # Pick up outputs in the sub task before the projection layer
+                if l == self.n_layers_sub1 - 1:
+                    if self.task_specific_layer:
+                        self.rnn_sub1.flatten_parameters()  # for multi-GPUs
+                        xs_sub1, _ = self.rnn_sub1(xs, hx=None)
+                        xs_sub1 = self.dropout(xs_sub1)
+                    else:
+                        xs_sub1 = xs.clone()
+                    if self.bridge_sub1 is not None:
+                        xs_sub1 = self.bridge_sub1(xs_sub1)
+                    if task == 'ys_sub1':
+                        return None, xlens, xs_sub1
+
+                # NOTE: Exclude the last layer
+                if l != self.n_layers - 1:
+                    # Projection layer -> Subsampling -> NiN
+                    if self.proj is not None:
+                        xs = torch.tanh(self.proj[l](xs))
+                    if self.subsample_layer is not None:
+                        xs, xlens = self.subsample_layer[l](xs, xlens)
+                    if self.nin is not None:
+                        xs = self.nin[l](xs)
+
+            return xs, xlens, xs_sub1
 
         bs, xmax, input_dim = xs.size()
         n_chunks = 1 if streaming else math.ceil(xmax / cs_l)
@@ -415,7 +439,7 @@ class RNNEncoder(EncoderBase):
             xs_chunks.append(xs_chunk[:, :cs_l])
         xs = torch.cat(xs_chunks, dim=1)
 
-        return xs, xlens
+        return xs, xlens, xs_sub1
 
     def sub_module(self, xs, xlens, perm_ids_unsort, module='sub1'):
         if self.task_specific_layer:
