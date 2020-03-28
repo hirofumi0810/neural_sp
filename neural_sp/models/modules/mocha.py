@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 class MonotonicEnergy(nn.Module):
     def __init__(self, kdim, qdim, adim, atype, n_heads, init_r,
-                 conv1d=False, conv_kernel_size=5, param_init=''):
+                 conv1d=False, conv_kernel_size=5, bias=True, param_init=''):
         """Energy function for the monotonic attenion.
 
         Args:
@@ -40,6 +40,7 @@ class MonotonicEnergy(nn.Module):
             init_r (int): initial value for offset r
             conv1d (bool): use 1D causal convolution for energy calculation
             conv_kernel_size (int): kernel size for 1D convolution
+            bias (bool): use bias term in linear layers
             param_init (str): parameter initialization method
 
         """
@@ -55,12 +56,13 @@ class MonotonicEnergy(nn.Module):
         self.n_heads = n_heads
         self.scale = math.sqrt(adim)
 
-        self.w_key = nn.Linear(kdim, adim)
         if atype == 'add':
+            self.w_key = nn.Linear(kdim, adim)
             self.v = nn.Linear(adim, n_heads, bias=False)
             self.w_query = nn.Linear(qdim, adim, bias=False)
         elif atype == 'scaled_dot':
-            self.w_query = nn.Linear(qdim, adim)
+            self.w_key = nn.Linear(kdim, adim, bias=bias)
+            self.w_query = nn.Linear(qdim, adim, bias=bias)
         else:
             raise NotImplementedError(atype)
 
@@ -74,7 +76,7 @@ class MonotonicEnergy(nn.Module):
             # initialization
             # self.w_query.weight_g.data = torch.Tensor([1 / adim]).sqrt()
             if param_init == 'xavier_uniform':
-                self.reset_parameters(True)
+                self.reset_parameters(bias)
             # TODO: debug weight normalization
 
         self.conv1d = None
@@ -93,7 +95,6 @@ class MonotonicEnergy(nn.Module):
         # nn.init.xavier_uniform_(self.w_query.weight_v, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_query.weight, gain=1 / math.sqrt(2))
         if bias:
-            # newly introduced
             nn.init.constant_(self.w_key.bias, 0.)
             nn.init.constant_(self.w_query.bias, 0.)
 
@@ -149,7 +150,8 @@ class MonotonicEnergy(nn.Module):
 
 
 class ChunkEnergy(nn.Module):
-    def __init__(self, kdim, qdim, adim, atype, n_heads=1, param_init=''):
+    def __init__(self, kdim, qdim, adim, atype, n_heads=1,
+                 bias=True, param_init=''):
         """Energy function for the chunkwise attention.
 
         Args:
@@ -158,6 +160,7 @@ class ChunkEnergy(nn.Module):
             adim (int): dimension of attention space
             atype (str): type of attention mechanism
             n_heads (int): number of heads
+            bias (bool): use bias term in linear layers
             param_init (str): parameter initialization method
 
         """
@@ -172,14 +175,15 @@ class ChunkEnergy(nn.Module):
         self.n_heads = n_heads
         self.scale = math.sqrt(adim)
 
-        self.w_key = nn.Linear(kdim, adim)
         if atype == 'add':
+            self.w_key = nn.Linear(kdim, adim)
             self.w_query = nn.Linear(qdim, adim, bias=False)
             self.v = nn.Linear(adim, 1, bias=False)
         elif atype == 'scaled_dot':
-            self.w_query = nn.Linear(qdim, adim)
+            self.w_key = nn.Linear(kdim, adim, bias=bias)
+            self.w_query = nn.Linear(qdim, adim, bias=bias)
             if param_init == 'xavier_uniform':
-                self.reset_parameters(True)
+                self.reset_parameters(bias)
         else:
             raise NotImplementedError(atype)
 
@@ -190,7 +194,6 @@ class ChunkEnergy(nn.Module):
         nn.init.xavier_uniform_(self.w_key.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_query.weight, gain=1 / math.sqrt(2))
         if bias:
-            # newly introduced
             nn.init.constant_(self.w_key.bias, 0.)
             nn.init.constant_(self.w_query.bias, 0.)
 
@@ -242,7 +245,7 @@ class MoChA(nn.Module):
     def __init__(self, kdim, qdim, adim, atype, chunk_size,
                  n_heads_mono=1, n_heads_chunk=1,
                  conv1d=False, init_r=-4, noise_std=1.0, eps=1e-6, sharpening_factor=1.0,
-                 dropout=0., dropout_head=0., dropout_hard=0., param_init='',
+                 dropout=0., dropout_head=0., dropout_hard=0., bias=True, param_init='',
                  decot=False, lookahead=2):
         """Monotonic chunk-wise attention.
 
@@ -273,6 +276,7 @@ class MoChA(nn.Module):
             sharpening_factor (float): sharping factor for beta calculation
             dropout (float): dropout probability for attention weights
             dropout_head (float): dropout probability for heads
+            bias (bool): use bias term in linear layers
             param_init (str): parameter initialization method
             decot (bool): delay constrainted training (DeCoT)
             lookahead (int): lookahead frames for DeCoT
@@ -297,15 +301,16 @@ class MoChA(nn.Module):
         self.lookahead = lookahead
 
         self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype,
-                                                n_heads_mono, init_r, conv1d,
+                                                n_heads_mono, init_r, conv1d, bias=bias,
                                                 param_init=param_init)
         self.chunk_energy = ChunkEnergy(kdim, qdim, adim, atype,
-                                        n_heads_chunk, param_init) if chunk_size > 1 or self.milk else None
+                                        n_heads_chunk, bias,
+                                        param_init) if chunk_size > 1 or self.milk else None
         if n_heads_mono * n_heads_chunk > 1:
-            self.w_value = nn.Linear(kdim, adim)
-            self.w_out = nn.Linear(adim, kdim)
+            self.w_value = nn.Linear(kdim, adim, bias=bias)
+            self.w_out = nn.Linear(adim, kdim, bias=bias)
             if param_init == 'xavier_uniform':
-                self.reset_parameters(True)
+                self.reset_parameters(bias)
 
         # attention dropout
         self.dropout = nn.Dropout(p=dropout)
@@ -319,7 +324,6 @@ class MoChA(nn.Module):
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/multihead_attention.py
         nn.init.xavier_uniform_(self.w_value.weight, gain=1 / math.sqrt(2))
         if bias:
-            # newly introduced
             nn.init.constant_(self.w_value.bias, 0.)
 
         nn.init.xavier_uniform_(self.w_out.weight)
