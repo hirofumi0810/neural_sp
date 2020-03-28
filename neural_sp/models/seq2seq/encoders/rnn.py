@@ -217,7 +217,7 @@ class RNNEncoder(EncoderBase):
         # calculate subsampling factor
         self._factor = 1
         if self.conv is not None:
-            self._factor *= self.conv.subsampling_factor()
+            self._factor *= self.conv.subsampling_factor
         self._factor *= np.prod(subsample)
 
         self.reset_parameters(param_init)
@@ -344,8 +344,8 @@ class RNNEncoder(EncoderBase):
             xs (FloatTensor): `[B, T, n_units]`
 
         """
-        N_l = self.lc_chunk_size_left // self.subsampling_factor()
-        N_r = self.lc_chunk_size_right // self.subsampling_factor()
+        N_l = self.lc_chunk_size_left // self.subsampling_factor
+        N_r = self.lc_chunk_size_right // self.subsampling_factor
 
         xs_sub1 = None
 
