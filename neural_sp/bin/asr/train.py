@@ -188,7 +188,7 @@ def main():
     if args.am_pretrain_type:
         model = AcousticModel(args, save_path)
     else:
-        model = Speech2Text(args, save_path)
+        model = Speech2Text(args, save_path, train_set.idx2token[0])
 
     if args.resume:
         transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
@@ -259,13 +259,11 @@ def main():
             load_checkpoint(model_init, args.asr_init)
 
             # Overwrite parameters
-            # only_enc = (args.enc_n_layers != args_init.enc_n_layers) or (
-            #     args.unit != args_init.unit) or args_init.ctc_weight == 1
             param_dict = dict(model_init.named_parameters())
             for n, p in model.named_parameters():
                 if n in param_dict.keys() and p.size() == param_dict[n].size():
-                    # if only_enc and 'enc' not in n:
-                    #     continue
+                    if args.asr_init_enc_only and 'enc' not in n:
+                        continue
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
@@ -355,6 +353,7 @@ def main():
     pbar_epoch = tqdm(total=len(train_set))
     accum_n_steps = 0
     n_steps = optimizer.n_steps * args.accum_grad_n_steps
+    epoch_detail_prev = 0
     while True:
         # Compute loss in the training set
         batch_train, is_new_epoch = train_set.next()
@@ -415,6 +414,21 @@ def main():
             reporter.snapshot()
             model.module.plot_attention()
 
+        # Ealuate the model every 0.1 epoch during MBR training
+        if args.mbr_training:
+            if int(train_set.epoch_detail * 10) != int(epoch_detail_prev * 10):
+                # dev
+                evaluation([model.module], dev_set, recog_params, args,
+                           int(train_set.epoch_detail * 10) / 10, logger)
+                if optimizer.is_topk:
+                    # Save the model
+                    optimizer.save_checkpoint(model, save_path, remove_old=not transformer)
+                    # test
+                    for eval_set in eval_sets:
+                        evaluation([model.module], eval_set, recog_params, args,
+                                   int(train_set.epoch_detail * 10) / 10, logger)
+            epoch_detail_prev = train_set.epoch_detail
+
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
             duration_epoch = time.time() - start_time_epoch
@@ -426,25 +440,23 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                optimizer.save_checkpoint(model, save_path,
-                                          remove_old_checkpoints=not transformer)
+                optimizer.save_checkpoint(model, save_path, remove_old=not transformer)
             else:
                 start_time_eval = time.time()
                 # dev
-                metric_dev = eval_epoch([model.module], dev_set, recog_params, args,
+                metric_dev = evaluation([model.module], dev_set, recog_params, args,
                                         optimizer.n_epochs + 1, logger)
                 optimizer.epoch(metric_dev)  # lr decay
                 reporter.epoch(metric_dev, name=args.metric)  # plot
 
                 if optimizer.is_topk or transformer:
                     # Save the model
-                    optimizer.save_checkpoint(model, save_path,
-                                              remove_old_checkpoints=not transformer)
+                    optimizer.save_checkpoint(model, save_path, remove_old=not transformer)
 
                     # test
                     if optimizer.is_topk:
                         for eval_set in eval_sets:
-                            eval_epoch([model.module], eval_set, recog_params, args,
+                            evaluation([model.module], eval_set, recog_params, args,
                                        optimizer.n_epochs, logger)
 
                         # start scheduled sampling
@@ -480,7 +492,7 @@ def main():
     return save_path
 
 
-def eval_epoch(models, dataset, recog_params, args, epoch, logger):
+def evaluation(models, dataset, recog_params, args, epoch, logger):
     if args.metric == 'edit_distance':
         if args.unit in ['word', 'word_char']:
             metric = eval_word(models, dataset, recog_params, epoch=epoch)[0]
