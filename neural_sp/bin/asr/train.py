@@ -414,19 +414,19 @@ def main():
             reporter.snapshot()
             model.module.plot_attention()
 
-        # Ealuate the model every 0.1 epoch during MBR training
+        # Ealuate model every 0.1 epoch during MBR training
         if args.mbr_training:
             if int(train_set.epoch_detail * 10) != int(epoch_detail_prev * 10):
                 # dev
-                evaluation([model.module], dev_set, recog_params, args,
-                           int(train_set.epoch_detail * 10) / 10, logger)
+                evaluate([model.module], dev_set, recog_params, args,
+                         int(train_set.epoch_detail * 10) / 10, logger)
                 if optimizer.is_topk:
                     # Save the model
                     optimizer.save_checkpoint(model, save_path, remove_old=not transformer)
                     # test
                     for eval_set in eval_sets:
-                        evaluation([model.module], eval_set, recog_params, args,
-                                   int(train_set.epoch_detail * 10) / 10, logger)
+                        evaluate([model.module], eval_set, recog_params, args,
+                                 int(train_set.epoch_detail * 10) / 10, logger)
             epoch_detail_prev = train_set.epoch_detail
 
         # Save checkpoint and evaluate model per epoch
@@ -444,8 +444,8 @@ def main():
             else:
                 start_time_eval = time.time()
                 # dev
-                metric_dev = evaluation([model.module], dev_set, recog_params, args,
-                                        optimizer.n_epochs + 1, logger)
+                metric_dev = evaluate([model.module], dev_set, recog_params, args,
+                                      optimizer.n_epochs + 1, logger)
                 optimizer.epoch(metric_dev)  # lr decay
                 reporter.epoch(metric_dev, name=args.metric)  # plot
 
@@ -456,8 +456,8 @@ def main():
                     # test
                     if optimizer.is_topk:
                         for eval_set in eval_sets:
-                            evaluation([model.module], eval_set, recog_params, args,
-                                       optimizer.n_epochs, logger)
+                            evaluate([model.module], eval_set, recog_params, args,
+                                     optimizer.n_epochs, logger)
 
                         # start scheduled sampling
                         if args.ss_prob > 0:
@@ -492,7 +492,7 @@ def main():
     return save_path
 
 
-def evaluation(models, dataset, recog_params, args, epoch, logger):
+def evaluate(models, dataset, recog_params, args, epoch, logger):
     if args.metric == 'edit_distance':
         if args.unit in ['word', 'word_char']:
             metric = eval_word(models, dataset, recog_params, epoch=epoch)[0]
