@@ -67,6 +67,8 @@ class MonotonicEnergy(nn.Module):
             raise NotImplementedError(atype)
 
         self.r = nn.Parameter(torch.Tensor([init_r]))
+        logger.info('init_r is initialized with %d' % init_r)
+
         if atype == 'add':
             self.v = nn.utils.weight_norm(self.v, name='weight', dim=0)
             # initialization
