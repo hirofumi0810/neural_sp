@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 class Speech2Text(ModelBase):
     """Speech to text sequence-to-sequence model."""
 
-    def __init__(self, args, save_path=None):
+    def __init__(self, args, save_path=None, idx2token=None):
 
         super(ModelBase, self).__init__()
 
@@ -91,9 +91,9 @@ class Speech2Text(ModelBase):
         self.fwd_weight_sub2 = self.sub2_weight - self.ctc_weight_sub2
 
         # for MBR
-        self.mbr_weight = args.mbr_weight
-        self.mbr_nbest = args.mbr_nbest
+        self.mbr_training = args.mbr_training
         self.recog_params = vars(args)
+        self.idx2token = idx2token
 
         # Feature extraction
         self.gaussian_noise = args.gaussian_noise
@@ -257,7 +257,7 @@ class Speech2Text(ModelBase):
             loss = loss.cuda(self.device_id)
 
         # for the forward decoder in the main task
-        if (self.fwd_weight > 0 or (self.bwd_weight == 0 and self.ctc_weight > 0) or self.mbr_weight > 0) and task in ['all', 'ys', 'ys.ctc', 'ys.mbr']:
+        if (self.fwd_weight > 0 or (self.bwd_weight == 0 and self.ctc_weight > 0) or self.mbr_training) and task in ['all', 'ys', 'ys.ctc', 'ys.mbr']:
             teacher_logits = None
             if teacher is not None:
                 teacher.eval()
@@ -269,7 +269,7 @@ class Speech2Text(ModelBase):
 
             loss_fwd, obs_fwd = self.dec_fwd(eout_dict['ys']['xs'], eout_dict['ys']['xlens'],
                                              batch['ys'], task, batch['ys_hist'],
-                                             teacher_logits, self.recog_params)
+                                             teacher_logits, self.recog_params, self.idx2token)
             loss += loss_fwd
             if isinstance(self.dec_fwd, RNNTransducer) or isinstance(self.dec_fwd, TrasformerTransducer):
                 observation['loss.transducer'] = obs_fwd['loss_transducer']
@@ -440,7 +440,7 @@ class Speech2Text(ModelBase):
         N_r = self.enc.lc_chunk_size_right
         if N_l == 0 and N_r == 0:
             N_l = params['recog_lc_chunk_size_left']  # for unidirectional encoder
-        factor = self.enc.subsampling_factor()
+        factor = self.enc.subsampling_factor
         BLANK_THRESHOLD /= factor
         x_whole = xs[0]  # `[T, input_dim]`
         if self.enc.conv is not None:
