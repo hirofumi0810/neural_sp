@@ -571,10 +571,15 @@ def efficient_chunkwise_attention(alpha, e, mask, chunk_size, n_heads,
     else:
         if chunk_size == -1:
             # infinite lookback attention
-            inner_items = alpha * sharpening_factor / torch.cumsum(softmax_exp, dim=2)
-            beta = softmax_exp * torch.cumsum(inner_items.flip(dims=[2]), dim=2).flip(dims=[2])
-            beta = beta.masked_fill(mask.unsqueeze(1), 0)
-            beta = beta / beta.sum(dim=3, keepdim=True)
+            # inner_items = alpha * sharpening_factor / torch.cumsum(softmax_exp, dim=-1)
+            # beta = softmax_exp * torch.cumsum(inner_items.flip(dims=[-1]), dim=-1).flip(dims=[-1])
+            # beta = beta.masked_fill(mask.unsqueeze(1), 0)
+            # beta = beta / beta.sum(dim=-1, keepdim=True)
+
+            softmax_denominators = torch.cumsum(softmax_exp, dim=-1)
+            # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
+            beta = softmax_exp * moving_sum(alpha * sharpening_factor / softmax_denominators,
+                                            back=0, forward=klen - 1)
         else:
             softmax_denominators = moving_sum(softmax_exp,
                                               back=chunk_size - 1, forward=0)
