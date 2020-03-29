@@ -94,8 +94,8 @@ class CTC(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length `[B]`
-            ys (list): A list of length `[B]`, which contains a list of size `[L]`
+            elens (list): A list of length B
+            ys (list): A list of length B, which contains a list of size `[L]`
         Returns:
             loss (FloatTensor): `[B, L, vocab]`
 
@@ -205,7 +205,7 @@ class CTC(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
-            elens (list): A list of length `[B]`
+            elens (list): A list of length B
             params (dict):
                 recog_beam_width (int): size of beam
                 recog_length_penalty (float): length penalty
