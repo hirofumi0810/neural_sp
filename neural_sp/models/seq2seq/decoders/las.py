@@ -94,6 +94,9 @@ class RNNDecoder(DecoderBase):
         param_init (float):
         mocha_chunk_size (int): chunk size for MoChA
         mocha_n_heads_mono (int):
+        mocha_init_r (int):
+        mocha_eps (float):
+        mocha_std (float):
         mocha_1dconv (bool): 1dconv for MoChA
         mocha_quantity_loss_weight (float):
         mocha_ctc_sync (str):
@@ -117,6 +120,7 @@ class RNNDecoder(DecoderBase):
                  external_lm, lm_fusion, lm_init,
                  backward, global_weight, mtl_per_batch, param_init,
                  mocha_chunk_size, mocha_n_heads_mono,
+                 mocha_init_r, mocha_eps, mocha_std,
                  mocha_1dconv, mocha_quantity_loss_weight,
                  mocha_ctc_sync, mocha_minlt_loss_weight,
                  gmm_attn_n_mixtures=5,
@@ -196,6 +200,9 @@ class RNNDecoder(DecoderBase):
                                    atype='add',
                                    chunk_size=mocha_chunk_size,
                                    n_heads_mono=mocha_n_heads_mono,
+                                   init_r=mocha_init_r,
+                                   eps=mocha_eps,
+                                   noise_std=mocha_std,
                                    conv1d=mocha_1dconv,
                                    sharpening_factor=attn_sharpening_factor,
                                    decot=mocha_ctc_sync == 'decot',
@@ -323,6 +330,7 @@ class RNNDecoder(DecoderBase):
             ys_hist (list):
             teacher_logits (FloatTensor): `[B, L, vocab]`
             recog_params (dict): parameters for MBR training
+            idx2token ():
         Returns:
             loss (FloatTensor): `[1]`
             observation (dict):
@@ -428,11 +436,11 @@ class RNNDecoder(DecoderBase):
         """Compute XE loss for the attention-based decoder.
 
         Args:
-            eouts (FloatTensor): `[nbest, T, enc_n_units]`
-            elens (IntTensor): `[nbest]`
-            ys_hyp (list): A list of length `[nbest]`, which contains a list of size `[L]`
+            eouts (FloatTensor): `[N_best, T, enc_n_units]`
+            elens (IntTensor): `[N_best]`
+            ys_hyp (list): A list of length N_best, which contains a list of size `[L]`
         Returns:
-            logits (FloatTensor): `[nbest, L, vocab]`
+            logits (FloatTensor): `[N_best, L, vocab]`
 
         """
         bs, xtime = eouts.size()[:2]
