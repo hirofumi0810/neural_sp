@@ -94,7 +94,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask, aw_prev=None,
-                mode='', cache=True, trigger_point=None):
+                mode='', cache=False, trigger_point=None):
         """Forward computation.
 
         Args:
@@ -121,7 +121,7 @@ class MultiheadAttentionMechanism(nn.Module):
             self.mask = mask
             if self.mask is not None:
                 self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])
-                assert self.mask.size() == (bs, qlen, klen, self.n_heads)
+                assert self.mask.size() == (bs, qlen, klen, self.n_heads), (self.mask.size(), (bs, qlen, klen, self.n_heads))
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H, d_k]`
 

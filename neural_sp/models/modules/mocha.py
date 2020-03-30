@@ -104,7 +104,7 @@ class MonotonicEnergy(nn.Module):
         self.key = None
         self.mask = None
 
-    def forward(self, key, query, mask, cache=True):
+    def forward(self, key, query, mask, cache=False):
         """Compute monotonic energy.
 
         Args:
@@ -129,7 +129,7 @@ class MonotonicEnergy(nn.Module):
             self.mask = mask
             if mask is not None:
                 self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen)
+                assert self.mask.size() == (bs, self.n_heads, qlen, klen), (self.mask.size(), (bs, self.n_heads, qlen, klen))
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         query = query.transpose(2, 1).contiguous()  # `[B, H, qlen, d_k]`
@@ -147,7 +147,7 @@ class MonotonicEnergy(nn.Module):
             e = e + self.r
         if self.mask is not None:
             e = e.masked_fill_(self.mask == 0, NEG_INF)
-        assert e.size() == (bs, self.n_heads, qlen, klen)
+        assert e.size() == (bs, self.n_heads, qlen, klen), (e.size(), (bs, self.n_heads, qlen, klen))
         return e
 
 
@@ -203,7 +203,7 @@ class ChunkEnergy(nn.Module):
         self.key = None
         self.mask = None
 
-    def forward(self, key, query, mask, cache=True):
+    def forward(self, key, query, mask, cache=False):
         """Compute chunkwise energy.
 
         Args:
@@ -225,7 +225,7 @@ class ChunkEnergy(nn.Module):
             self.mask = mask
             if mask is not None:
                 self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen)
+                assert self.mask.size() == (bs, self.n_heads, qlen, klen), (self.mask.size(), (bs, self.n_heads, qlen, klen))
 
         if self.atype == 'add':
             key = self.key.unsqueeze(2)  # `[B, 1, 1, klen, d_k]`
@@ -239,14 +239,13 @@ class ChunkEnergy(nn.Module):
 
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
-        assert energy.size() == (bs, self.n_heads, qlen, klen)
+        assert energy.size() == (bs, self.n_heads, qlen, klen), (energy.size(), (bs, self.n_heads, qlen, klen))
         return energy
 
 
 class MoChA(nn.Module):
-    def __init__(self, kdim, qdim, adim, atype, chunk_size,
-                 n_heads_mono=1, n_heads_chunk=1,
-                 conv1d=False, init_r=-4, noise_std=1.0, eps=1e-6, sharpening_factor=1.0,
+    def __init__(self, kdim, qdim, adim, atype, chunk_size, n_heads_mono=1, n_heads_chunk=1,
+                 conv1d=False, init_r=-4, eps=1e-6, noise_std=1.0, sharpening_factor=1.0,
                  dropout=0., dropout_head=0., dropout_hard=0., bias=True, param_init='',
                  decot=False, lookahead=2):
         """Monotonic chunk-wise attention.
@@ -273,8 +272,8 @@ class MoChA(nn.Module):
             n_heads_chunk (int): number of heads for chunkwise attention
             conv1d (bool): apply 1d convolution for energy calculation
             init_r (int): initial value for parameter 'r' used for monotonic attention
-            noise_std (float): standard deviation for input noise
             eps (float): epsilon parameter to avoid zero division
+            noise_std (float): standard deviation for input noise
             sharpening_factor (float): sharping factor for beta calculation
             dropout (float): dropout probability for attention weights
             dropout_head (float): dropout probability for heads
@@ -295,8 +294,8 @@ class MoChA(nn.Module):
         self.n_heads = n_heads_mono
         self.n_heads_mono = n_heads_mono
         self.n_heads_chunk = n_heads_chunk
-        self.noise_std = noise_std
         self.eps = eps
+        self.noise_std = noise_std
         self.sharpening_factor = sharpening_factor
 
         self.decot = decot
@@ -338,7 +337,7 @@ class MoChA(nn.Module):
             self.chunk_energy.reset()
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                mode='hard', cache=True, trigger_point=None):
+                mode='hard', cache=False, trigger_point=None):
         """Soft monotonic attention during training.
 
         Args:
@@ -465,9 +464,10 @@ class MoChA(nn.Module):
             else:
                 cv = torch.bmm(beta.squeeze(1), value)  # `[B, 1, adim]`
 
-        assert alpha.size() == (bs, self.n_heads_mono, qlen, klen)
+        assert alpha.size() == (bs, self.n_heads_mono, qlen, klen), (alpha.size(), (bs, self.n_heads_mono, qlen, klen))
         if self.chunk_size > 1 or self.milk:
-            assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen)
+            assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen), (beta.size(),
+                                                                                             (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen))
         return cv, alpha, beta
 
 
