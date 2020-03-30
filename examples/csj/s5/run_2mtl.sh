@@ -25,10 +25,9 @@ vocab_sub1=
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/blstm_las.yaml
+conf=conf/asr/blstm_las_2mtl.yaml
 conf2=
 asr_init=
-lm_init=
 
 
 ### path to save the model
@@ -260,7 +259,6 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --wp_model_sub1 ${wp_model_sub1}.model \
         --model_save_dir ${model}/asr \
         --asr_init ${asr_init} \
-        --lm_init ${lm_init} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 

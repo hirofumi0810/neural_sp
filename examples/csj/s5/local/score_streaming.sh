@@ -39,7 +39,7 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-chunk_sync=false  # for MoChA
+chunk_sync=true  # for MoChA
 n_average=1  # for Transformer
 oracle=false
 
