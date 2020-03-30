@@ -168,8 +168,12 @@ def main():
     else:
         transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
         dir_name = set_asr_model_name(args)
-        save_path = mkdir_join(args.model_save_dir, '_'.join(
-            os.path.basename(args.train_set).split('.')[:-1]), dir_name)
+        if args.mbr_training:
+            assert args.asr_init
+            save_path = mkdir_join(os.path.dirname(args.asr_init), dir_name)
+        else:
+            save_path = mkdir_join(args.model_save_dir, '_'.join(
+                os.path.basename(args.train_set).split('.')[:-1]), dir_name)
         save_path = set_save_path(save_path)  # avoid overwriting
 
     # Set logger
