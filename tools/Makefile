@@ -4,6 +4,7 @@ PYTHON :=
 # The python version installed in the conda setup
 PYTHON_VERSION := 3.7
 CUDA_VERSION := 10.1
+# CUDA_VERSION := 10.0
 PYTORCH_VERSION := 1.0.0
 # Use a prebuild Kaldi to omit the installation
 KALDI :=
@@ -66,7 +67,19 @@ neural_sp.done:
 
 # warp-ctc
 warp-ctc.done:
-	. $(CONDA)/bin/activate && pip install warpctc-pytorch10-cuda$(strip $(subst .,,$(CUDA_VERSION))); \
+	if . $(CONDA)/bin/activate && python -c 'import torch as t;major=t.__version__.split(".")[0];assert major == "1"' &> /dev/null; then \
+		if [ ! -z "$(strip $(CUPY_VERSION))" ]; then \
+			. $(CONDA)/bin/activate && pip install warpctc-pytorch10-cuda$(strip $(subst .,,$(CUDA_VERSION))); \
+		else \
+			. $(CONDA)/bin/activate && pip install warpctc-pytorch10-cpu; \
+		fi \
+	else \
+		rm -rf warp-ctc; \
+		git clone https://github.com/espnet/warp-ctc.git; \
+		cd warp-ctc; git checkout -b pytorch-0.4 remotes/origin/pytorch-0.4; \
+		mkdir build && cd build && cmake .. && $(MAKE) && cd ..; \
+		. $(CONDA)/bin/activate; pip install cffi; cd pytorch_binding && python setup.py install; \
+	fi
 	touch warp-ctc.done
 
 check_install:
@@ -92,7 +105,7 @@ moses.done:
 	touch moses.done
 
 mwerSegmenter.done:
-	wget https://www-i6.informatik.rwth-aachen.de/web/Software/mwerSegmenter.tar.gz
-	tar zxvf mwerSegmenter.tar.gz
-	rm mwerSegmenter.tar.gz
+	cd $(TOOL); wget https://www-i6.informatik.rwth-aachen.de/web/Software/mwerSegmenter.tar.gz -P $(TOOL)/
+	cd $(TOOL); tar zxvf mwerSegmenter.tar.gz
+	cd $(TOOL); rm mwerSegmenter.tar.gz
 	touch mwerSegmenter.done
