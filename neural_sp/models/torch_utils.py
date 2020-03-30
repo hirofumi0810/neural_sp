@@ -98,6 +98,7 @@ def append_sos_eos(xs, ys, sos, eos, pad, bwd=False, replace_sos=False):
     """Append <sos> and <eos> and return padded sequences.
 
     Args:
+        xs (Tensor): for GPU id extraction
         ys (list): A list of length `[B]`, which contains a list of size `[L]`
         sos (int):
         eos (int):
