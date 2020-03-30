@@ -37,7 +37,7 @@ def init_with_xavier_dist(n, p):
     if p.dim() == 1:
         nn.init.constant_(p, 0.)  # bias
         logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
-    elif p.dim() == 2:
+    elif p.dim() in [2, 3]:
         nn.init.xavier_uniform_(p)  # linear layer
         logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
     else:
