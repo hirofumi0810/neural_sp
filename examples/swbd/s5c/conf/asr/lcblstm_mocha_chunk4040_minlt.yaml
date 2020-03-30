@@ -15,27 +15,34 @@ enc_n_units: 512
 enc_n_projs: 0
 enc_n_layers: 6
 subsample_type: drop
-lc_chunk_size_left: -1  ### offline
+lc_chunk_size_left: 40
 lc_chunk_size_right: 40
-attn_type: location
-attn_conv_n_channels: 10
-attn_conv_width: 201
+attn_type: mocha
+mocha_chunk_size: 4
+mocha_init_r: -4
+mocha_eps: 1e-6
+mocha_std: 1.0
+mocha_1dconv: false
+mocha_quantity_loss_weight: 0.0  ### this is important
+mocha_ctc_sync: minlt
+mocha_minlt_loss_weight: 1.0
+attn_sharpening_factor: 1.0
 attn_dim: 512
 attn_n_heads: 1
 dec_type: lstm
 dec_n_units: 1024
 dec_n_projs: 0
 dec_n_layers: 1
-dec_bottleneck_dim: 1024  ###
+dec_bottleneck_dim: 1024  ### this is effective
 emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 30
+batch_size: 15
 optimizer: adam
 n_epochs: 25
-convert_to_sgd_epoch: 20
-print_step: 200
+convert_to_sgd_epoch: 100
+print_step: 400
 metric: edit_distance
 lr: 1e-3
 lr_decay_type: always
@@ -57,8 +64,6 @@ dropout_dec: 0.4
 dropout_emb: 0.4
 dropout_att: 0.0
 weight_decay: 1e-6
-ss_prob: 0.2
-ss_type: constant
 lsm_prob: 0.1
 ### MTL
 ctc_weight: 0.3

@@ -31,6 +31,7 @@ lm_second=
 lm_bwd=
 lm_weight=0.2
 lm_second_weight=0.2
+lm_bwd_weight=0.2
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -40,6 +41,7 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=1  # for Transformer
 oracle=false
+chunk_sync=false  # for MoChA
 
 . ./cmd.sh
 . ./path.sh
@@ -72,6 +74,9 @@ for set in eval2000; do
     fi
     if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
+    fi
+    if [ ! -z ${lm_bwd} ] && [ ${lm_bwd_weight} != 0 ]; then
+        recog_dir=${recog_dir}_bwd${lm_bwd_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
@@ -116,7 +121,8 @@ for set in eval2000; do
         recog_set=${data}/dataset/${set}_sp_swbd_wpbpe10000.tsv
     else
         if [ $(echo ${model} | grep 'fisher_swbd') ]; then
-            recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe34000.tsv
+            # recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe34000.tsv
+            recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe10000.tsv
         else
             recog_set=${data}/dataset/${set}_swbd_wpbpe10000.tsv
         fi
@@ -145,6 +151,7 @@ for set in eval2000; do
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
+        --recog_lm_bwd_weight ${lm_bwd_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
