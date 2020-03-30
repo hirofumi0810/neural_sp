@@ -42,8 +42,6 @@ def set_asr_model_name(args):
         if args.enc_n_projs > 0:
             dir_name += str(args.enc_n_projs) + 'P'
         dir_name += str(args.enc_n_layers) + 'L'
-        if args.enc_nin:
-            dir_name += 'NiN'
         if args.bidirectional_sum_fwd_bwd:
             dir_name += '_sumfwdbwd'
         if args.lc_chunk_size_left > 0 or args.lc_chunk_size_right > 0:
@@ -69,10 +67,11 @@ def set_asr_model_name(args):
             dir_name += args.transformer_attn_type
             if 'mocha' in args.transformer_attn_type:
                 dir_name += '_mono' + str(args.mocha_n_heads_mono) + 'H'
-                if args.mocha_tie_mono_attn:
-                    dir_name += '_tie'
                 dir_name += '_chunk' + str(args.mocha_n_heads_chunk) + 'H'
                 dir_name += '_chunk' + str(args.mocha_chunk_size)
+                dir_name += '_bias' + str(args.mocha_init_r)
+                dir_name += '_eps' + str(args.mocha_eps)
+                dir_name += '_std' + str(args.mocha_std)
                 if args.mocha_quantity_loss_weight > 0:
                     dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
                 if args.mocha_head_divergence_loss_weight > 0:
@@ -206,8 +205,8 @@ def set_asr_model_name(args):
 
     # MBR training
     if args.mbr_training:
-        dir_name += '_MBR' + str(args.mbr_nbest) + 'best'
-        dir_name += '_ce' + str(args.mbr_ce_weight) + '_smooth' + str(args.mbr_softmax_smoothing)
+        dir_name += '_MBR' + str(args.recog_beam_width) + 'best'
+        dir_name += '_ce' + str(args.mbr_ce_weight) + '_smooth' + str(args.recog_softmax_smoothing)
 
     if args.n_gpus > 1:
         dir_name += '_' + str(args.n_gpus) + 'GPU'
