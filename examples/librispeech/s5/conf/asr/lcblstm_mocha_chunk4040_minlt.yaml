@@ -23,9 +23,10 @@ mocha_init_r: -4
 mocha_eps: 1e-6
 mocha_std: 1.0
 mocha_1dconv: false
-mocha_quantity_loss_weight: 0.0  ### this is important
+mocha_quantity_loss_weight: 0.0
 mocha_ctc_sync: minlt
 mocha_minlt_loss_weight: 1.0
+# mocha_minlt_loss_weight: 0.01
 attn_sharpening_factor: 1.0
 attn_dim: 512
 attn_n_heads: 1
@@ -40,9 +41,9 @@ ctc_fc_list: "512"
 ### optimization
 batch_size: 20
 optimizer: adam
-n_epochs: 25
+n_epochs: 30
 convert_to_sgd_epoch: 100
-print_step: 400
+print_step: 1000
 metric: edit_distance
 lr: 1e-3
 lr_decay_type: always
@@ -53,7 +54,7 @@ early_stop_patient_n_epochs: 5
 sort_stop_epoch: 100
 eval_start_epoch: 1
 warmup_start_lr: 1e-4
-warmup_n_steps: 4000
+warmup_n_steps: 0
 ### initialization
 param_init: 0.1
 ### regularization

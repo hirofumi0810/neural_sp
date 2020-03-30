@@ -9,23 +9,18 @@ conv_strides: "(1,1)_(1,1)"
 conv_poolings: "(2,2)_(2,2)"
 conv_batch_norm: false
 subsample: "1_1_1_1_1"
-enc_type: conv_blstm
-bidirectional_sum_fwd_bwd: true
-enc_n_units: 512
+enc_type: conv_lstm
+enc_n_units: 1024
 enc_n_projs: 0
 enc_n_layers: 5
 subsample_type: drop
-lc_chunk_size_left: 40
-lc_chunk_size_right: 40
 attn_type: mocha
 mocha_chunk_size: 4
 mocha_init_r: -4
 mocha_eps: 1e-6
 mocha_std: 1.0
 mocha_1dconv: false
-mocha_quantity_loss_weight: 0.0  ### this is important
-mocha_ctc_sync: minlt
-mocha_minlt_loss_weight: 1.0
+mocha_quantity_loss_weight: 1.0  ### this is important
 attn_sharpening_factor: 1.0
 attn_dim: 512
 attn_n_heads: 1
@@ -38,9 +33,9 @@ emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 20
+batch_size: 30
 optimizer: adam
-n_epochs: 25
+n_epochs: 30  # for uni
 convert_to_sgd_epoch: 100
 print_step: 400
 metric: edit_distance
@@ -53,7 +48,7 @@ early_stop_patient_n_epochs: 5
 sort_stop_epoch: 100
 eval_start_epoch: 1
 warmup_start_lr: 1e-4
-warmup_n_steps: 4000
+warmup_n_steps: 0
 ### initialization
 param_init: 0.1
 ### regularization

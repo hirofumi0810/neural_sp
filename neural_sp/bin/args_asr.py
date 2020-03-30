@@ -127,8 +127,6 @@ def parse():
                         help='number of encoder RNN layers in the 1st auxiliary task')
     parser.add_argument('--enc_n_layers_sub2', type=int, default=0,
                         help='number of encoder RNN layers in the 2nd auxiliary task')
-    parser.add_argument('--enc_nin', type=strtobool, default=False, nargs='?',
-                        help='NiN (network in network) between each encoder layer')
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
@@ -195,6 +193,12 @@ def parse():
                         help='number of heads for chunkwise attention')
     parser.add_argument('--mocha_chunk_size', type=int, default=0,
                         help='chunk size for MoChA. -1 means infinite lookback.')
+    parser.add_argument('--mocha_init_r', type=int, default=-4,
+                        help='')
+    parser.add_argument('--mocha_eps', type=float, default=1e-6,
+                        help='')
+    parser.add_argument('--mocha_std', type=float, default=1.0,
+                        help='')
     parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
                         help='1dconv for MoChA')
     parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
@@ -471,6 +475,10 @@ def parse():
                         help='Teacher LM for knowledge distillation')
     parser.add_argument('--soft_label_weight', type=float, default=0.1,
                         help='KL-div loss weight for soft labels')
+    # pre-training
+    parser.add_argument('--am_pretrain_type', type=str, default='',
+                        choices=['decoar', 'mps', 'apc'],
+                        help='')
     # special label
     parser.add_argument('--replace_sos', type=strtobool, default=False,
                         help='')
