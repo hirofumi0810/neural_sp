@@ -369,7 +369,8 @@ class RNNDecoder(DecoderBase):
             N_best = recog_params['recog_beam_width']
             loss_mbr = 0.
             loss_ce = 0.
-            for b in range(eouts.size(0)):
+            bs = eouts.size(0)
+            for b in range(bs):
                 self.eval()
                 with torch.no_grad():
                     # 1. beam search
@@ -412,6 +413,10 @@ class RNNDecoder(DecoderBase):
                 ys_out_b = ys_out_b[:, :ymax].contiguous()
                 loss_ce += cross_entropy_lsm(logits_b, ys_out_b, 0, self.pad, self.training)[0]
 
+            # normalize by batch size
+            loss_mbr /= bs
+            loss_ce /= bs
+
             loss = loss_mbr + loss_ce * self.mbr_ce_weight
             observation['loss_mbr'] = loss_mbr.item()
             observation['loss_att'] = loss_ce.item()
@@ -440,6 +445,7 @@ class RNNDecoder(DecoderBase):
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         self.score.reset()
         aw, aws = None, []
+        betas = []
         lmout, lmstate = None, None
 
         ys_emb = self.dropout_emb(self.embed(ys_in))
@@ -456,10 +462,23 @@ class RNNDecoder(DecoderBase):
             # Recurrency -> Score -> Generate
             y_emb = self.dropout_emb(self.embed(
                 self.output(logits[-1]).detach().argmax(-1))) if is_sample else ys_emb[:, t:t + 1]
-            dstates, cv, aw, attn_v, _ = self.decode_step(
+            dstates, cv, aw, attn_v, beta = self.decode_step(
                 eouts, dstates, cv, y_emb, src_mask, aw, lmout, mode='parallel')
             aws.append(aw)  # `[B, H, 1, T]`
+            if beta is not None:
+                betas.append(beta)  # `[B, H, 1, T]`
             logits.append(attn_v)
+
+        # for attention plot
+        aws = torch.cat(aws, dim=2)  # `[B, H, L, T]`
+        if not self.training:
+            self.data_dict['elens'] = tensor2np(elens)
+            self.data_dict['ylens'] = tensor2np(ylens)
+            self.data_dict['ys'] = tensor2np(ys_out)
+            self.aws_dict['xy_aws'] = tensor2np(aws)
+            if len(betas) > 0:
+                betas = torch.cat(betas, dim=2)  # `[B, H, L, T]`
+                self.aws_dict['xy_aws_beta'] = tensor2np(betas)
 
         logits = self.output(torch.cat(logits, dim=1))
         return logits
@@ -553,7 +572,7 @@ class RNNDecoder(DecoderBase):
             self.data_dict['ylens'] = tensor2np(ylens)
             self.data_dict['ys'] = tensor2np(ys_out)
             self.aws_dict['xy_aws'] = tensor2np(aws)
-            if len(beta) > 0:
+            if len(betas) > 0:
                 betas = torch.cat(betas, dim=2)  # `[B, H, L, T]`
                 self.aws_dict['xy_aws_beta'] = tensor2np(betas)
 
