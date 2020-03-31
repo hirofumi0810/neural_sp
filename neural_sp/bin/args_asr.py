@@ -22,6 +22,8 @@ def parse():
                         help='corpus name')
     parser.add_argument('--n_gpus', type=int, default=1,
                         help='number of GPUs (0 indicates CPU)')
+    parser.add_argument('--cudnn_benchmark', type=strtobool, default=True,
+                        help='use CuDNN benchmark mode')
     parser.add_argument('--model_save_dir', type=str, default=False,
                         help='directory to save a model')
     parser.add_argument('--resume', type=str, default=False, nargs='?',

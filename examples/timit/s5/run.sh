@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
+benchmark=true
 stdout=false
 
 #########################
@@ -123,6 +124,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --corpus timit \
         --config ${conf} \
         --n_gpus ${n_gpus} \
+        --cudnn_benchmark ${benchmark} \
         --train_set ${data}/dataset/${train_set}.tsv \
         --dev_set ${data}/dataset/${dev_set}.tsv \
         --eval_sets ${data}/dataset/${test_set}.tsv \

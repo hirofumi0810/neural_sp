@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
+benchmark=true
 speed_perturb=true  # default
 specaug=false
 stdout=false
@@ -329,6 +330,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
+        --cudnn_benchmark ${benchmark} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --unit ${unit} \

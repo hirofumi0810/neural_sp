@@ -315,7 +315,7 @@ def main():
 
     # GPU setting
     if args.n_gpus >= 1:
-        torch.backends.cudnn.benchmark = True
+        model.cudnn_setting(benchmark=args.cudnn_benchmark)
         model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
         model.cuda()
         if teacher is not None:
@@ -424,13 +424,6 @@ def main():
                 # dev
                 evaluate([model.module], dev_set, recog_params, args,
                          int(train_set.epoch_detail * 10) / 10, logger)
-                if optimizer.is_topk:
-                    # Save the model
-                    optimizer.save_checkpoint(model, save_path, remove_old=not transformer)
-                    # test
-                    for eval_set in eval_sets:
-                        evaluate([model.module], eval_set, recog_params, args,
-                                 int(train_set.epoch_detail * 10) / 10, logger)
             epoch_detail_prev = train_set.epoch_detail
 
         # Save checkpoint and evaluate model per epoch
