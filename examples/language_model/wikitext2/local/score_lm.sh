@@ -7,7 +7,7 @@ model=
 gpu=
 
 ### path to save preproecssed data
-data=/n/sd3/inaguma/corpus/wikitext2
+data=/n/work1/inaguma/corpus/wikitext2
 
 batch_size=1
 n_caches=0
