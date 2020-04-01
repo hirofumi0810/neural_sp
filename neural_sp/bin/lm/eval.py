@@ -75,7 +75,8 @@ def main():
             model.cache_lambda = args.recog_cache_lambda
 
             # GPU setting
-            model.cuda()
+            if args.recog_n_gpus > 0:
+                model.cuda()
 
         start_time = time.time()
 
