@@ -129,7 +129,8 @@ class MonotonicEnergy(nn.Module):
             self.mask = mask
             if mask is not None:
                 self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen), (self.mask.size(), (bs, self.n_heads, qlen, klen))
+                assert self.mask.size() == (bs, self.n_heads, qlen, klen), \
+                    (self.mask.size(), (bs, self.n_heads, qlen, klen))
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         query = query.transpose(2, 1).contiguous()  # `[B, H, qlen, d_k]`
@@ -147,7 +148,8 @@ class MonotonicEnergy(nn.Module):
             e = e + self.r
         if self.mask is not None:
             e = e.masked_fill_(self.mask == 0, NEG_INF)
-        assert e.size() == (bs, self.n_heads, qlen, klen), (e.size(), (bs, self.n_heads, qlen, klen))
+        assert e.size() == (bs, self.n_heads, qlen, klen), \
+            (e.size(), (bs, self.n_heads, qlen, klen))
         return e
 
 
@@ -225,7 +227,8 @@ class ChunkEnergy(nn.Module):
             self.mask = mask
             if mask is not None:
                 self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen), (self.mask.size(), (bs, self.n_heads, qlen, klen))
+                assert self.mask.size() == (bs, self.n_heads, qlen, klen), \
+                    (self.mask.size(), (bs, self.n_heads, qlen, klen))
 
         if self.atype == 'add':
             key = self.key.unsqueeze(2)  # `[B, 1, 1, klen, d_k]`
@@ -239,7 +242,8 @@ class ChunkEnergy(nn.Module):
 
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
-        assert energy.size() == (bs, self.n_heads, qlen, klen), (energy.size(), (bs, self.n_heads, qlen, klen))
+        assert energy.size() == (bs, self.n_heads, qlen, klen), \
+            (energy.size(), (bs, self.n_heads, qlen, klen))
         return energy
 
 
@@ -464,10 +468,11 @@ class MoChA(nn.Module):
             else:
                 cv = torch.bmm(beta.squeeze(1), value)  # `[B, 1, adim]`
 
-        assert alpha.size() == (bs, self.n_heads_mono, qlen, klen), (alpha.size(), (bs, self.n_heads_mono, qlen, klen))
+        assert alpha.size() == (bs, self.n_heads_mono, qlen, klen), \
+            (alpha.size(), (bs, self.n_heads_mono, qlen, klen))
         if self.chunk_size > 1 or self.milk:
-            assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen), (beta.size(),
-                                                                                             (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen))
+            assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen), \
+                (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen))
         return cv, alpha, beta
 
 
