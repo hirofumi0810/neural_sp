@@ -26,7 +26,8 @@ ctc_fc_list: "512"
 ### optimization
 batch_size: 32
 optimizer: noam
-n_epochs: 35
+# n_epochs: 35
+n_epochs: 40
 convert_to_sgd_epoch: 100
 print_step: 400
 metric: accuracy
