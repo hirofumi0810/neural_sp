@@ -79,7 +79,10 @@ def parse():
     # optimization
     parser.add_argument('--batch_size', type=int, default=256,
                         help='mini-batch size')
-    parser.add_argument('--bptt', type=int, default=100,
+    parser.add_argument('--bptt', type=int, default=200,
+                        help='BPTT length')
+    parser.add_argument('--adaptive_bptt', type=str, default=False,
+                        choices=[False, 'uniform'],
                         help='BPTT length')
     parser.add_argument('--optimizer', type=str, default='adam',
                         choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov', 'noam'],
@@ -193,6 +196,13 @@ def parse():
                         help='theta paramter for cache')
     parser.add_argument('--recog_cache_lambda', type=float, default=0.2,
                         help='lambda paramter for cache')
+    # TransformerXL
+    parser.add_argument('--mem_len', type=int, default=0,
+                        help='number of tokens for memory in TransformerXL during training')
+    parser.add_argument('--recog_mem_len', type=int, default=0,
+                        help='number of tokens for memory in TransformerXL during evaluation')
+    parser.add_argument('--zero_center_offset', type=strtobool, default=False,
+                        help='set the offset right after memory to zero (accept negaitve indices)')
 
     args = parser.parse_args()
     # args, _ = parser.parse_known_args(parser)

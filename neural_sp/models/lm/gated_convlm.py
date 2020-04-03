@@ -28,6 +28,7 @@ class GatedConvLM(LMBase):
         super(LMBase, self).__init__()
         logger.info(self.__class__.__name__)
 
+        self.lm_type = args.lm_type
         self.save_path = save_path
 
         self.emb_dim = args.emb_dim
@@ -167,17 +168,19 @@ class GatedConvLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def decode(self, ys, state=None, cache=False):
+    def decode(self, ys, state=None, mems=None, incremental=False):
         """Decode function.
 
         Args:
             ys (LongTensor): `[B, L]`
-            state: dummy interfance
-            cache (bool): dummy interfance
+            state: dummy interfance for RNNLM
+            cache: dummy interfance for TransformerLM/TransformerXL
+            incremental: dummy interfance for TransformerLM/TransformerXL
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]` (for cache)
-            state: dummy interfance
+            new_cache: dummy interfance for RNNLM/TransformerLM/TransformerXL
+            new_mems: dummy interfance for TransformerXL
 
         """
         out = self.dropout_embed(self.embed(ys.long()))
@@ -193,4 +196,4 @@ class GatedConvLM(LMBase):
         else:
             logits = out
 
-        return logits, out, state
+        return logits, out, None

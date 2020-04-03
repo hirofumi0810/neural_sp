@@ -40,7 +40,7 @@ class LMBase(ModelBase):
         """Forward computation.
 
         Args:
-            ys (list): A list of length `[B]`, which contains arrays of size `[L]`
+            ys (list): length `B`, each of which contains arrays of size `[L]`
             state (tuple or list):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
@@ -67,7 +67,9 @@ class LMBase(ModelBase):
         ys = pad_list(ys, self.pad)
         ys_in, ys_out = ys[:, :-1], ys[:, 1:]
 
-        logits, out, new_state = self.decode(ys_in, state)
+        logits, out, new_state = self.decode(ys_in, state=state, mems=state)
+        # NOTE: state=state is used for RNNLM while mems=state is used for TransformerXL.
+        # TransformerLM ignores both of them.
 
         if predict_last:
             ys_out = ys_out[:, -1].unsqueeze(1)
@@ -133,10 +135,10 @@ class LMBase(ModelBase):
         # for TransformerXL
         self.mem_len = mem_len
 
-    def decode(self, ys_emb, state=None):
+    def decode(self, ys, state=None, mems=None, incremental=False):
         raise NotImplementedError
 
-    def predict(self, ys, state=None):
+    def predict(self, ys, state=None, mems=None, cache=None):
         """Precict function for ASR.
 
         Args:
@@ -146,21 +148,24 @@ class LMBase(ModelBase):
                     hxs (FloatTensor): `[n_layers, B, n_units]`
                     cxs (FloatTensor): `[n_layers, B, n_units]`
                 - TransformerLM (LongTensor): `[B, L]`
-                - TransformerXL (list): List of `[B, L, d_model]`
+                - TransformerXL (list): length `n_layers + 1`, each of which contains a tensor`[B, L, d_model]`
+            mems (list):
+            cache (list):
         Returns:
-            out (FloatTensor): `[B, L, vocab]`
+            lmout (FloatTensor): `[B, L, vocab]`, used for LM integration such as cold fusion
             state:
                 - RNNLM: dict
                     hxs (FloatTensor): `[n_layers, B, n_units]`
                     cxs (FloatTensor): `[n_layers, B, n_units]`
                 - TransformerLM (LongTensor): `[B, L]`
-                - TransformerXL (list): List of `[B, L, d_model]`
+                - TransformerXL (list): length `n_layers + 1`, each of which contains a tensor`[B, L, d_model]`
             log_probs (FloatTensor): `[B, L, vocab]`
 
         """
-        logits, out, new_state = self.decode(ys, state, cache=True)
+        logits, lmout, new_state = self.decode(ys, state, mems=mems, cache=cache,
+                                               incremental=True)
         log_probs = torch.log_softmax(logits, dim=-1)
-        return out, new_state, log_probs
+        return lmout, new_state, log_probs
 
     def plot_attention(self):
         # raise NotImplementedError

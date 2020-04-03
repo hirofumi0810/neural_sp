@@ -29,6 +29,7 @@ class RNNLM(LMBase):
         super(LMBase, self).__init__()
         logger.info(self.__class__.__name__)
 
+        self.lm_type = args.lm_type
         self.save_path = save_path
 
         self.emb_dim = args.emb_dim
@@ -122,7 +123,7 @@ class RNNLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def decode(self, ys, state, cache=False):
+    def decode(self, ys, state, mems=None, cache=None, incremental=False):
         """Decode function.
 
         Args:
@@ -130,13 +131,15 @@ class RNNLM(LMBase):
             state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
-            cache (bool): dummy interfance
+            cache: dummy interfance for TransformerLM/TransformerXL
+            incremental: dummy interfance for TransformerLM/TransformerXL
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             ys_emb (FloatTensor): `[B, L, n_units]` (for cache)
             new_state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
+            new_mems: dummy interfance for TransformerXL
 
         """
         bs, ymax = ys.size()

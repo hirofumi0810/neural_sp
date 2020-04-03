@@ -1,10 +1,10 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright 2019 Kyoto University (Hirofumi Inaguma)
+# Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Transformer language model."""
+"""TransformerXL language model."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import copy
 import logging
+import math
 import os
 import random
 import shutil
@@ -19,7 +20,8 @@ import torch
 import torch.nn as nn
 
 from neural_sp.models.lm.lm_base import LMBase
-from neural_sp.models.modules.positinal_embedding import PositionalEncoding
+from neural_sp.models.modules.initialization import init_with_normal_dist
+from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
@@ -32,8 +34,8 @@ random.seed(1)
 logger = logging.getLogger(__name__)
 
 
-class TransformerLM(LMBase):
-    """Transformer language model."""
+class TransformerXL(LMBase):
+    """TransformerXL language model."""
 
     def __init__(self, args, save_path=None):
 
@@ -47,9 +49,14 @@ class TransformerLM(LMBase):
         self.n_layers = args.n_layers
         self.n_heads = args.transformer_n_heads
         self.lsm_prob = args.lsm_prob
+        self.bptt = args.bptt
+
         self.mem_len = args.bptt
+        if args.mem_len > 0:
+            self.mem_len = args.mem_len
         if args.recog_mem_len > 0:
             self.mem_len = args.recog_mem_len
+        self.zero_center_offset = args.zero_center_offset
 
         self.vocab = args.vocab
         self.eos = 2
@@ -63,15 +70,21 @@ class TransformerLM(LMBase):
         self.cache_keys = []
         self.cache_attn = []
 
+        # TransformerXL specific
+        self.scale = math.sqrt(self.d_model)  # for token embedding
+        self.pos_emb = XLPositionalEmbedding(self.d_model)
+        self.dropout_emb = nn.Dropout(p=args.dropout_in)
+        self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+        self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+        # NOTE: u and v are global parameters
+
         self.embed = nn.Embedding(self.vocab, self.d_model, padding_idx=self.pad)
-        self.pos_enc = PositionalEncoding(self.d_model, args.dropout_in, args.transformer_pe_type,
-                                          args.transformer_param_init)
         self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
             self.d_model, args.transformer_d_ff, args.transformer_attn_type,
             self.n_heads, args.dropout_hidden, args.dropout_att,
             args.dropout_residual * (l + 1) / self.n_layers,
             args.transformer_layer_norm_eps, args.transformer_ffn_activation, args.transformer_param_init,
-            src_tgt_attention=False)) for l in range(self.n_layers)])
+            src_tgt_attention=False, memory_transformer=True)) for l in range(self.n_layers)])
         self.norm_out = nn.LayerNorm(self.d_model, eps=args.transformer_layer_norm_eps)
 
         self.adaptive_softmax = None
@@ -94,15 +107,53 @@ class TransformerLM(LMBase):
         return self.d_model
 
     def reset_parameters(self):
-        """Initialize parameters with Xavier uniform distribution."""
-        logging.info('===== Initialize %s =====' % self.__class__.__name__)
-        # see https://github.com/pytorch/fairseq/blob/master/fairseq/models/transformer.py
+        """Initialize parameters with normal distribution."""
+        logging.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
         # embedding
-        nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
-        nn.init.constant_(self.embed.weight[self.pad], 0)
-        # output layer
-        nn.init.xavier_uniform_(self.output.weight)
-        nn.init.constant_(self.output.bias, 0.)
+        # nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
+        # nn.init.constant_(self.embed.weight[self.pad], 0)
+        for n, p in self.named_parameters():
+            init_with_normal_dist(n, p, std=0.02)
+
+    def init_memory(self):
+        """Initialize memory."""
+        if self.device_id >= 0:
+            return [torch.empty(0, dtype=torch.float).cuda(self.device_id)
+                    for _ in range(self.n_layers)]
+        else:
+            return [torch.empty(0, dtype=torch.float)
+                    for _ in range(self.n_layers)]
+
+    def update_memory(self, memory_prev, hidden_states):
+        """Update memory.
+
+        Args:
+            memory_prev (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
+            hidden_states (list): length `n_layers`, each of which contains `[B, L, d_model]`
+        Returns:
+            new_mems (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
+
+        """
+        if memory_prev is None:
+            memory_prev = self.init_memory()  # 0-th to L-1-th layer
+        assert len(hidden_states) == len(memory_prev)
+        mlen = memory_prev[0].size(1) if memory_prev[0].dim() > 1 else 0
+        qlen = hidden_states[0].size(1)
+
+        # There are `mlen + qlen` steps that can be cached into mems
+        # For the next step, the last `ext_len` of the `qlen` tokens
+        # will be used as the extended context. Hence, we only cache
+        # the tokens from `mlen + qlen - self.ext_len - self.mem_len`
+        # to `mlen + qlen - self.ext_len`.
+        with torch.no_grad():
+            new_mems = []
+            end_idx = mlen + qlen
+            start_idx = max(0, end_idx - self.mem_len)
+            for m, h in zip(memory_prev, hidden_states):
+                cat = torch.cat([m, h], dim=1)  # `[B, mlen + qlen, d_model]`
+                new_mems.append(cat[:, start_idx:end_idx].detach())  # `[B, self.mem_len, d_model]`
+
+        return new_mems
 
     def decode(self, ys, state=None, mems=None, cache=None, incremental=False):
         """Decode function.
@@ -110,34 +161,58 @@ class TransformerLM(LMBase):
         Args:
             ys (LongTensor): `[B, L]`
             state (list): dummy interfance for RNNLM
-            mems (list): dummy interface for TransformerXL
+            mems (list): length `n_layers`, each of which contains a FloatTensor `[B, mlen, d_model]`
             cache (list): length `L`, each of which contains a FloatTensor `[B, L-1, d_model]`
             incremental (bool): ASR decoding mode
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]`
             new_cache (list): length `n_layers`, each of which contains a FloatTensor `[B, L, d_model]`
-            new_mems: dummy interfance for TransformerXL
 
         """
         # for ASR decoding
         if cache is None:
-            cache = [None] * self.n_layers
+            cache = [None] * self.n_layers  # 1-th to L-th layer
 
-        # Create the self-attention mask
+        if mems is None:
+            mems = self.init_memory()
+            mlen = 0
+        else:
+            mlen = mems[0].size(1)
+
         bs, ylen = ys.size()[:2]
         if incremental and cache[0] is not None:
             ylen = cache[0].size(1) + 1
-        causal_mask = ys.new_ones(ylen, ylen).byte()
-        causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
+
+        # Create the self-attention mask: `[B, L, L+mlen]`
+        causal_mask = ys.new_ones(ylen, ylen + mlen).byte()
+        causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
         causal_mask = causal_mask.repeat([bs, 1, 1])
 
+        out = self.dropout_emb(self.embed(ys.long()) * self.scale)
+        # NOTE: TransformerXL does not use positional encoding in the token embedding
+        if self.zero_center_offset:
+            pos_idxs = torch.arange(mlen - 1, -ylen - 1, -1.0, dtype=torch.float)
+        else:
+            pos_idxs = torch.arange(ylen + mlen - 1, -1, -1.0, dtype=torch.float)
+        if self.device_id >= 0:
+            pos_idxs = pos_idxs.cuda(self.device_id)
+        pos_embs = self.dropout_emb(self.pos_emb(pos_idxs))
+
+        new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
-        out = self.pos_enc(self.embed(ys.long()))
-        for l, layer in enumerate(self.layers):
-            out, yy_aws = layer(out, causal_mask, cache=cache[l])[:2]
+        hidden_states = [out]
+        for l, (mem, layer) in enumerate(zip(mems, self.layers)):
+            if incremental and mlen > 0 and mem.size(0) != bs:
+                mem = mem.repeat([bs, 1, 1])
+            out, yy_aws = layer(out, causal_mask, cache=cache[l],
+                                pos_embs=pos_embs, memory=mem,
+                                u=self.u, v=self.v)[:2]
             if incremental:
                 new_cache[l] = out
+            elif l < self.n_layers - 1:
+                hidden_states.append(out)
+                # NOTE: outputs from the last layer is not used for momory
             if not self.training and yy_aws is not None:
                 setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
         out = self.norm_out(out)
@@ -146,7 +221,13 @@ class TransformerLM(LMBase):
         else:
             logits = out
 
-        return logits, out, new_cache
+        if incremental:
+            return logits, out, new_cache
+        else:
+            # Update memory
+            new_mems = self.update_memory(mems, hidden_states)
+            # NOTE: do not update memory here during ASR decoding
+            return logits, out, new_mems
 
     def plot_attention(self, n_cols=4):
         """Plot attention for each head in all layers."""
