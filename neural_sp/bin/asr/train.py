@@ -143,8 +143,7 @@ def main():
                       ctc_sub2=args.ctc_weight_sub2 > 0,
                       subsample_factor=args.subsample_factor,
                       subsample_factor_sub1=args.subsample_factor_sub1,
-                      subsample_factor_sub2=args.subsample_factor_sub2,
-                      discourse_aware=args.discourse_aware)
+                      subsample_factor_sub2=args.subsample_factor_sub2)
     eval_sets = [Dataset(corpus=args.corpus,
                          tsv_path=s,
                          dict_path=args.dict,
@@ -152,7 +151,6 @@ def main():
                          unit=args.unit,
                          wp_model=args.wp_model,
                          batch_size=1,
-                         discourse_aware=args.discourse_aware,
                          is_test=True) for s in args.eval_sets]
 
     args.vocab = train_set.vocab
@@ -315,7 +313,7 @@ def main():
 
     # GPU setting
     if args.n_gpus >= 1:
-        model.cudnn_setting(benchmark=args.cudnn_benchmark)
+        model.cudnn_setting(deterministic=False, benchmark=args.cudnn_benchmark)
         model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
         model.cuda()
         if teacher is not None:
@@ -358,9 +356,13 @@ def main():
     accum_n_steps = 0
     n_steps = optimizer.n_steps * args.accum_grad_n_steps
     epoch_detail_prev = 0
+    session_prev = None
     while True:
         # Compute loss in the training set
         batch_train, is_new_epoch = train_set.next()
+        if args.discourse_aware and batch_train['sessions'][0] != session_prev:
+            model.module.reset_session()
+        session_prev = batch_train['sessions'][0]
         accum_n_steps += 1
 
         # Change mini-batch depending on task
@@ -473,6 +475,7 @@ def main():
                                              decay_type='always', decay_rate=0.5)
 
             pbar_epoch = tqdm(total=len(train_set))
+            session_prev = None
 
             if optimizer.n_epochs == args.n_epochs:
                 break
