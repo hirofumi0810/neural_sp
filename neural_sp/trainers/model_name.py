@@ -76,18 +76,15 @@ def set_asr_model_name(args):
                     dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
                 if args.mocha_head_divergence_loss_weight > 0:
                     dir_name += '_headdiv' + str(args.mocha_head_divergence_loss_weight)
-                if args.mocha_ctc_sync:
-                    dir_name += '_' + args.mocha_ctc_sync
-                    dir_name += str(args.mocha_minlt_loss_weight)
+                if args.mocha_latency_metric:
+                    dir_name += '_' + args.mocha_latency_metric
+                    dir_name += str(args.mocha_latency_loss_weight)
                 if args.mocha_first_layer > 1:
                     dir_name += '_from' + str(args.mocha_first_layer) + 'L'
             if args.dropout_dec_residual > 0:
                 dir_name += 'dropres' + str(args.dropout_dec_residual)
             if args.dropout_head > 0:
                 dir_name += 'drophead' + str(args.dropout_head)
-            if args.dropout_hard > 0:
-                dir_name += 'drophard' + str(args.dropout_hard)
-
         else:
             dir_name += str(args.dec_n_units) + 'H'
             if args.dec_n_projs > 0:
@@ -107,11 +104,11 @@ def set_asr_model_name(args):
                         dir_name += '_temp' + str(args.attn_sharpening_factor)
                     if args.mocha_quantity_loss_weight > 0:
                         dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
-                    if args.mocha_ctc_sync:
-                        dir_name += '_' + args.mocha_ctc_sync
-                        dir_name += str(args.mocha_minlt_loss_weight)
                 elif args.attn_type == 'gmm':
                     dir_name += '_mix' + str(args.gmm_attn_n_mixtures)
+                if args.mocha_latency_metric:
+                    dir_name += '_' + args.mocha_latency_metric
+                    dir_name += str(args.mocha_latency_loss_weight)
                 if args.attn_n_heads > 1:
                     dir_name += '_head' + str(args.attn_n_heads)
         if args.tie_embedding:
@@ -187,6 +184,8 @@ def set_asr_model_name(args):
     # contextualization
     if args.discourse_aware:
         dir_name += '_' + str(args.discourse_aware)
+    if args.mem_len > 0:
+        dir_name += '_mem' + str(args.mem_len)
 
     # Pre-training
     if args.asr_init and os.path.isfile(args.asr_init):
@@ -215,7 +214,7 @@ def set_asr_model_name(args):
 
 def set_lm_name(args):
     dir_name = args.lm_type
-    if args.lm_type == 'transformer':
+    if 'transformer' in args.lm_type:
         dir_name += str(args.transformer_d_model) + 'dmodel'
         dir_name += str(args.transformer_d_ff) + 'dff'
         dir_name += str(args.n_layers) + 'L'
@@ -225,7 +224,7 @@ def set_lm_name(args):
         dir_name += str(args.n_units) + 'H'
         dir_name += str(args.n_projs) + 'P'
         dir_name += str(args.n_layers) + 'L'
-    if args.lm_type != 'transformer':
+    if 'transformer' not in args.lm_type:
         dir_name += '_emb' + str(args.emb_dim)
     dir_name += '_' + args.optimizer
     if args.optimizer == 'noam':
@@ -234,9 +233,15 @@ def set_lm_name(args):
         dir_name += '_lr' + str(args.lr)
     dir_name += '_bs' + str(args.batch_size)
     dir_name += '_bptt' + str(args.bptt)
+    if args.adaptive_bptt:
+        dir_name += '_' + args.adaptive_bptt
+    if args.mem_len > 0:
+        dir_name += '_mem' + str(args.mem_len)
+    if args.lm_type == 'transformer_xl' and args.zero_center_offset:
+        dir_name += '_zero_center'
     if args.tie_embedding:
         dir_name += '_tie'
-    if 'gated_conv' not in args.lm_type and args.lm_type != 'transformer':
+    if 'gated_conv' not in args.lm_type and 'transformer' not in args.lm_type:
         if args.residual:
             dir_name += '_residual'
         if args.use_glu:
