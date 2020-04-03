@@ -34,17 +34,18 @@ def set_asr_model_name(args):
         dir_name += 'pe' + str(args.transformer_enc_pe_type)
         if args.dropout_enc_residual > 0:
             dir_name += 'dropres' + str(args.dropout_enc_residual)
+        if args.lc_chunk_size_left > 0 or args.lc_chunk_size_current > 0 or args.lc_chunk_size_right > 0:
+            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
+                str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
     else:
         dir_name += str(args.enc_n_units) + 'H'
         if args.enc_n_projs > 0:
             dir_name += str(args.enc_n_projs) + 'P'
         dir_name += str(args.enc_n_layers) + 'L'
-        if args.enc_nin:
-            dir_name += 'NiN'
         if args.bidirectional_sum_fwd_bwd:
             dir_name += '_sumfwdbwd'
-    if args.lc_chunk_size_left > 0 or args.lc_chunk_size_right > 0:
-        dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
+        if args.lc_chunk_size_left > 0 or args.lc_chunk_size_right > 0:
+            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
     if args.n_stacks > 1:
         dir_name += '_stack' + str(args.n_stacks)
     else:
@@ -66,10 +67,11 @@ def set_asr_model_name(args):
             dir_name += args.transformer_attn_type
             if 'mocha' in args.transformer_attn_type:
                 dir_name += '_mono' + str(args.mocha_n_heads_mono) + 'H'
-                if args.mocha_tie_mono_attn:
-                    dir_name += '_tie'
                 dir_name += '_chunk' + str(args.mocha_n_heads_chunk) + 'H'
                 dir_name += '_chunk' + str(args.mocha_chunk_size)
+                dir_name += '_bias' + str(args.mocha_init_r)
+                dir_name += '_eps' + str(args.mocha_eps)
+                dir_name += '_std' + str(args.mocha_std)
                 if args.mocha_quantity_loss_weight > 0:
                     dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
                 if args.mocha_head_divergence_loss_weight > 0:
@@ -171,8 +173,6 @@ def set_asr_model_name(args):
         dir_name += '_tsl'
 
     # SpecAugment
-    if args.gaussian_noise:
-        dir_name += '_noise'
     if args.n_freq_masks > 0:
         dir_name += '_' + str(args.freq_width) + 'FM' + str(args.n_freq_masks)
     if args.n_time_masks > 0:
@@ -181,6 +181,8 @@ def set_asr_model_name(args):
         dir_name += '_flipT' + str(args.flip_time_prob)
     if args.flip_freq_prob > 0:
         dir_name += '_flipF' + str(args.flip_freq_prob)
+    if args.weight_noise:
+        dir_name += '_weightnoise'
 
     # contextualization
     if args.discourse_aware:
@@ -202,8 +204,9 @@ def set_asr_model_name(args):
         dir_name += '_lmKD' + str(args.soft_label_weight)
 
     # MBR training
-    if args.mbr_weight > 0:
-        dir_name += '_mbr' + str(args.mbr_nbest) + 'best' + str(args.mbr_softmax_smoothing) + 'smooth'
+    if args.mbr_training:
+        dir_name += '_MBR' + str(args.recog_beam_width) + 'best'
+        dir_name += '_ce' + str(args.mbr_ce_weight) + '_smooth' + str(args.recog_softmax_smoothing)
 
     if args.n_gpus > 1:
         dir_name += '_' + str(args.n_gpus) + 'GPU'

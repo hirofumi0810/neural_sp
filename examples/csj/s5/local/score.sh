@@ -31,6 +31,7 @@ lm_second=
 lm_bwd=
 lm_weight=0.3
 lm_second_weight=0.3
+lm_bwd_weight=0.3
 wordlm=false
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
@@ -39,9 +40,9 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-chunk_sync=false  # for MoChA
 n_average=1  # for Transformer
 oracle=false
+chunk_sync=false  # for MoChA
 
 . ./cmd.sh
 . ./path.sh
@@ -76,6 +77,9 @@ for set in eval1 eval2 eval3; do
     fi
     if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
+    fi
+    if [ ! -z ${lm_bwd} ] && [ ${lm_bwd_weight} != 0 ]; then
+        recog_dir=${recog_dir}_bwd${lm_bwd_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
@@ -160,6 +164,7 @@ for set in eval1 eval2 eval3; do
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
+        --recog_lm_bwd_weight ${lm_bwd_weight} \
         --recog_wordlm ${wordlm} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
@@ -173,11 +178,11 @@ for set in eval1 eval2 eval3; do
         --recog_oracle ${oracle} \
         --recog_stdout ${stdout} || exit 1;
 
-    # remove <unk>
-    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
-    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
-
     if [ ${metric} = 'edit_distance' ]; then
+        # remove <unk>
+        cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
+        cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
+
         echo ${set}
         # WER
         echo 'WER' > ${recog_dir}/RESULTS

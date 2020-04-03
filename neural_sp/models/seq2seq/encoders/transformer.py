@@ -36,9 +36,12 @@ class TransformerEncoder(EncoderBase):
 
     Args:
         input_dim (int): dimension of input features (freq * channel)
+        enc_type (str): type of encoder
         attn_type (str): type of attention
         n_heads (int): number of heads for multi-head attention
         n_layers (int): number of blocks
+        n_layers_sub1 (int): number of layers in the 1st auxiliary task
+        n_layers_sub2 (int): number of layers in the 2nd auxiliary task
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
         last_proj_dim (int): dimension of the last projection layer
@@ -63,29 +66,48 @@ class TransformerEncoder(EncoderBase):
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
         chunk_size_current (int): current chunk size for time-restricted Transformer encoder
         chunk_size_right (int): right chunk size for time-restricted Transformer encoder
+        task_specific_layer (bool): add a task specific layer for each sub task
         param_init (str): parameter initialization method
 
     """
 
-    def __init__(self, input_dim,
-                 attn_type, n_heads, n_layers, d_model, d_ff, last_proj_dim,
+    def __init__(self, input_dim, enc_type, attn_type, n_heads,
+                 n_layers, n_layers_sub1, n_layers_sub2,
+                 d_model, d_ff, last_proj_dim,
                  pe_type, layer_norm_eps, ffn_activation,
                  dropout_in, dropout, dropout_att, dropout_residual,
                  n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
-                 param_init,
+                 task_specific_layer, param_init,
                  chunk_size_left, chunk_size_current, chunk_size_right):
 
         super(TransformerEncoder, self).__init__()
+
+        if n_layers_sub1 < 0 or (n_layers_sub1 > 1 and n_layers < n_layers_sub1):
+            raise ValueError('Set n_layers_sub1 between 1 to n_layers.')
+        if n_layers_sub2 < 0 or (n_layers_sub2 > 1 and n_layers_sub1 < n_layers_sub2):
+            raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1.')
 
         self.d_model = d_model
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.pe_type = pe_type
+
+        # for latency-controlled
         self.chunk_size_left = chunk_size_left
-        self.chunk_size_current = chunk_size_current
+        self.chunk_size_cur = chunk_size_current
         self.chunk_size_right = chunk_size_right
+
+        # for hierarchical encoder
+        self.n_layers_sub1 = n_layers_sub1
+        self.n_layers_sub2 = n_layers_sub2
+        self.task_specific_layer = task_specific_layer
+
+        # for bridge layers
+        self.bridge = None
+        self.bridge_sub1 = None
+        self.bridge_sub2 = None
 
         # for attention plot
         self.aws_dict = {}
@@ -121,12 +143,31 @@ class TransformerEncoder(EncoderBase):
             for l in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
+        self._odim = d_model
+
+        if n_layers_sub1 > 0:
+            if task_specific_layer:
+                self.layer_sub1 = TransformerEncoderBlock(
+                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
+                    dropout_residual * n_layers_sub1 / n_layers,
+                    layer_norm_eps, ffn_activation, param_init)
+            self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+            if last_proj_dim != self.output_dim:
+                self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
+
+        if n_layers_sub2 > 0:
+            if task_specific_layer:
+                self.layer_sub2 = TransformerEncoderBlock(
+                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
+                    dropout_residual * n_layers_sub2 / n_layers,
+                    layer_norm_eps, ffn_activation, param_init)
+            self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+            if last_proj_dim != self.output_dim:
+                self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
+
         if last_proj_dim != self.output_dim:
             self.bridge = nn.Linear(self._odim, last_proj_dim)
             self._odim = last_proj_dim
-        else:
-            self.bridge = None
-            self._odim = d_model
 
         # calculate subsampling factor
         self._factor = 1
@@ -178,18 +219,17 @@ class TransformerEncoder(EncoderBase):
         if self.chunk_size_left > 0:
             # Time-restricted self-attention for streaming models
             cs_l = self.chunk_size_left
-            cs_c = self.chunk_size_current
+            cs_c = self.chunk_size_cur
             cs_r = self.chunk_size_right
-            hop_size = self.chunk_size_current
             xs_chunks = []
             xx_aws = [[] for l in range(self.n_layers)]
             xs_pad = torch.cat([xs.new_zeros(bs, cs_l, idim), xs,
                                 xs.new_zeros(bs, cs_r, idim)], dim=1)
             # TODO: remove right padding
-            for t in range(cs_l, cs_l + xmax, hop_size):
+            for t in range(cs_l, cs_l + xmax, self.chunk_size_cur):
                 xs_chunk = xs_pad[:, t - cs_l:t + cs_c + cs_r]
-                for l in range(self.n_layers):
-                    xs_chunk, xx_aws_chunk = self.layers[l](xs_chunk, None)  # no mask
+                for l, layer in enumerate(self.layers):
+                    xs_chunk, xx_aws_chunk = layer(xs_chunk, None)  # no mask
                     xx_aws[l].append(xx_aws_chunk[:, :, cs_l:cs_l + cs_c,
                                                   cs_l:cs_l + cs_c])
                 xs_chunks.append(xs_chunk[:, cs_l:cs_l + cs_c])
@@ -201,18 +241,41 @@ class TransformerEncoder(EncoderBase):
             # Create the self-attention mask
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
 
-            for l in range(self.n_layers):
-                xs, xx_aws = self.layers[l](xs, xx_mask)
+            for l, layer in enumerate(self.layers):
+                xs, xx_aws = layer(xs, xx_mask)
                 if not self.training:
                     self.aws_dict['xx_aws_layer%d' % l] = tensor2np(xx_aws)
+
+                # Pick up outputs in the sub task before the projection layer
+                if l == self.n_layers_sub1 - 1:
+                    xs_sub1 = self.layer_sub1(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
+                    xs_sub1 = self.norm_out_sub1(xs_sub1)
+                    if self.bridge_sub1 is not None:
+                        xs_sub1 = self.bridge_sub1(xs_sub1)
+                    if task == 'ys_sub1':
+                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
+                        return eouts
+                if l == self.n_layers_sub2 - 1:
+                    xs_sub2 = self.layer_sub2(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
+                    xs_sub2 = self.norm_out_sub2(xs_sub2)
+                    if self.bridge_sub2 is not None:
+                        xs_sub2 = self.bridge_sub2(xs_sub2)
+                    if task == 'ys_sub2':
+                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens
+                        return eouts
+
         xs = self.norm_out(xs)
 
         # Bridge layer
         if self.bridge is not None:
             xs = self.bridge(xs)
 
-        eouts['ys']['xs'] = xs
-        eouts['ys']['xlens'] = xlens
+        if task in ['all', 'ys']:
+            eouts['ys']['xs'], eouts['ys']['xlens'] = xs, xlens
+        if self.n_layers_sub1 >= 1 and task == 'all':
+            eouts['ys_sub1']['xs'], eouts['ys_sub1']['xlens'] = xs_sub1, xlens
+        if self.n_layers_sub2 >= 1 and task == 'all':
+            eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens
         return eouts
 
     def _plot_attention(self, save_path, n_cols=2):

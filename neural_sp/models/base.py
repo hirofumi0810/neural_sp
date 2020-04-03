@@ -86,24 +86,19 @@ class ModelBase(nn.Module):
             param_vector.add_(noise[0])
         vector_to_parameters(param_vector, self.parameters())
 
-    def set_cuda(self, deterministic=True, benchmark=False):
-        """Set model to the GPU version.
+    def cudnn_setting(self, deterministic=True, benchmark=False):
+        """CuDNN setting.
 
         Args:
             deterministic (bool):
             benchmark (bool):
 
         """
-        if self.use_cuda:
-            if benchmark:
-                torch.backends.cudnn.benchmark = True
-                logger.info('GPU mode (benchmark)')
-            elif deterministic:
-                logger.info('GPU deterministic mode (no cudnn)')
-                torch.backends.cudnn.enabled = False
-                # NOTE: this is slower than GPU mode.
-            else:
-                logger.info('GPU mode')
-            self = self.cuda(self.device_id)
-        else:
-            logger.warning('CPU mode')
+        assert self.use_cuda
+        if benchmark:
+            torch.backends.cudnn.benchmark = True
+        elif deterministic:
+            torch.backends.cudnn.enabled = False
+            # NOTE: this is slower than GPU mode.
+        logger.info("torch.backends.cudnn.benchmark: %s" % torch.backends.cudnn.benchmark)
+        logger.info("torch.backends.cudnn.enabled: %s" % torch.backends.cudnn.enabled)

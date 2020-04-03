@@ -106,9 +106,9 @@ def main():
     model = build_lm(args, save_path)
 
     if args.resume:
-        transformer = conf['lm_type'] == 'transformer'
+        transformer = conf['lm_type'] in ['transformer', 'transformer_xl']
     else:
-        transformer = args.lm_type == 'transformer'
+        transformer = args.lm_type in ['transformer', 'transformer_xl']
 
     if args.resume:
         # Set optimizer
@@ -128,7 +128,7 @@ def main():
                                 model_size=conf['transformer_d_model'],
                                 factor=conf['lr_factor'],
                                 noam=transformer,
-                                save_checkpoints_topk=10 if transformer else 1)
+                                save_checkpoints_topk=1)
 
         # Restore the last saved model
         load_checkpoint(model, args.resume, optimizer)
@@ -173,7 +173,7 @@ def main():
                                 model_size=args.transformer_d_model,
                                 factor=args.lr_factor,
                                 noam=transformer,
-                                save_checkpoints_topk=10 if transformer else 1)
+                                save_checkpoints_topk=1)
 
     # GPU setting
     if args.n_gpus >= 1:
@@ -241,8 +241,7 @@ def main():
         # Save fugures of loss and accuracy
         if n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
-            if args.lm_type == 'transformer':
-                model.module.plot_attention()
+            model.module.plot_attention()
 
         # Save checkpoint and evaluate model per epoch
         if is_new_epoch:
@@ -255,13 +254,14 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                optimizer.save_checkpoint(model, save_path,
-                                          remove_old_checkpoints=not transformer)
+                optimizer.save_checkpoint(model, save_path, remove_old=True)
             else:
                 start_time_eval = time.time()
                 # dev
+                model.module.reset_length(args.bptt)
                 ppl_dev, _ = eval_ppl([model.module], dev_set,
                                       batch_size=1, bptt=args.bptt)
+                model.module.reset_length(args.bptt)
                 optimizer.epoch(ppl_dev)  # lr decay
                 reporter.epoch(ppl_dev, name='perplexity')  # plot
                 logger.info('PPL (%s, ep:%d): %.2f' %
@@ -269,14 +269,15 @@ def main():
 
                 if optimizer.is_topk:
                     # Save the model
-                    optimizer.save_checkpoint(model, save_path,
-                                              remove_old_checkpoints=not transformer)
+                    optimizer.save_checkpoint(model, save_path, remove_old=True)
 
                     # test
                     ppl_test_avg = 0.
                     for eval_set in eval_sets:
+                        model.module.reset_length(args.bptt)
                         ppl_test, _ = eval_ppl([model.module], eval_set,
                                                batch_size=1, bptt=args.bptt)
+                        model.module.reset_length(args.bptt)
                         logger.info('PPL (%s, ep:%d): %.2f' %
                                     (eval_set.set, optimizer.n_epochs, ppl_test))
                         ppl_test_avg += ppl_test

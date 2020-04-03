@@ -72,6 +72,8 @@ class RNNLM(LMBase):
         if args.use_glu:
             self.glu = LinearGLUBlock(rnn_idim)
 
+        self._odim = rnn_idim
+
         self.adaptive_softmax = None
         self.output_proj = None
         self.output = None
@@ -87,6 +89,7 @@ class RNNLM(LMBase):
                 if rnn_idim != args.emb_dim:
                     self.output_proj = nn.Linear(rnn_idim, args.emb_dim)
                     rnn_idim = args.emb_dim
+                    self._odim = rnn_idim
                 self.output = nn.Linear(rnn_idim, self.vocab)
                 self.output.weight = self.embed.weight
             else:
@@ -101,6 +104,10 @@ class RNNLM(LMBase):
 
         # Initialize bias in forget gate with 1
         # self.init_forget_gate_bias_with_one()
+
+    @property
+    def output_dim(self):
+        return self._odim
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
@@ -147,6 +154,8 @@ class RNNLM(LMBase):
         residual = None
         new_hxs, new_cxs = [], []
         for l in range(self.n_layers):
+            self.rnn[l].flatten_parameters()  # for multi-GPUs
+
             # Path through RNN
             if self.rnn_type == 'lstm':
                 ys_emb, (h, c) = self.rnn[l](ys_emb, hx=(state['hxs'][l:l + 1],

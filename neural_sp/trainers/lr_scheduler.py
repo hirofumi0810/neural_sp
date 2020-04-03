@@ -177,21 +177,21 @@ class LRScheduler(object):
             else:
                 param_group['lr'] = self.lr
 
-    def save_checkpoint(self, model, save_path, remove_old_checkpoints=True):
+    def save_checkpoint(self, model, save_path, remove_old=True):
         """Save checkpoint.
 
         Args:
             model (torch.nn.Module):
             save_path (str): path to the directory to save a model
             optimizer (LRScheduler): optimizer wrapped by LRScheduler class
-            remove_old_checkpoints (bool): if True, all checkpoints
+            remove_old (bool): if True, all checkpoints
                 worse than the top-k ones are deleted
 
         """
         model_path = os.path.join(save_path, 'model.epoch-' + str(self.n_epochs))
 
         # Remove old checkpoints
-        if remove_old_checkpoints:
+        if remove_old:
             for path in glob(os.path.join(save_path, 'model.epoch-*')):
                 if 'model.epoch-avg' in path:
                     continue

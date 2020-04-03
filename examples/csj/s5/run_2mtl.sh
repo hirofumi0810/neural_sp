@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
+benchmark=true
 speed_perturb=false
 specaug=false
 stdout=false
@@ -25,10 +26,9 @@ vocab_sub1=
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/blstm_las.yaml
+conf=conf/asr/blstm_las_2mtl.yaml
 conf2=
 asr_init=
-lm_init=
 
 
 ### path to save the model
@@ -247,6 +247,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
+        --cudnn_benchmark ${benchmark} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
@@ -260,7 +261,6 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --wp_model_sub1 ${wp_model_sub1}.model \
         --model_save_dir ${model}/asr \
         --asr_init ${asr_init} \
-        --lm_init ${lm_init} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 

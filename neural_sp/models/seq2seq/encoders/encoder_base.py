@@ -34,6 +34,7 @@ class EncoderBase(ModelBase):
     def output_dim(self):
         return self._odim
 
+    @property
     def subsampling_factor(self):
         return self._factor
 

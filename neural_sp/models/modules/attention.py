@@ -101,7 +101,7 @@ class AttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                mode='', cache=True, trigger_point=None):
+                mode='', cache=False, trigger_point=None):
         """Forward computation.
 
         Args:
@@ -137,7 +137,7 @@ class AttentionMechanism(nn.Module):
                 self.key = key
             self.mask = mask
             if mask is not None:
-                assert self.mask.size() == (bs, 1, klen)
+                assert self.mask.size() == (bs, 1, klen), (self.mask.size(), (bs, 1, klen))
 
         # for batch beam search decoding
         if self.key.size(0) != query.size(0):
@@ -168,7 +168,7 @@ class AttentionMechanism(nn.Module):
         elif self.atype == 'luong_concat':
             query = query.repeat([1, klen, 1])
             e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1)))).transpose(2, 1)
-        assert e.size() == (bs, qlen, klen)
+        assert e.size() == (bs, qlen, klen), (e.size(), (bs, qlen, klen))
 
         # Mask the right part from the trigger point
         if self.atype == 'triggered_attention':

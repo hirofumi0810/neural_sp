@@ -73,7 +73,8 @@ def eval_word(models, dataset, recog_params, epoch,
                     exclude_eos=True)
             else:
                 best_hyps_id, aws = models[0].decode(
-                    batch['xs'], recog_params, dataset.idx2token[0],
+                    batch['xs'], recog_params,
+                    idx2token=dataset.idx2token[0] if progressbar else None,
                     exclude_eos=True,
                     refs_id=batch['ys'],
                     utt_ids=batch['utt_ids'],
@@ -93,7 +94,7 @@ def eval_word(models, dataset, recog_params, epoch,
                     recog_params_char['recog_beam_width'] = 1
                     best_hyps_id_char, aw_char = models[0].decode(
                         batch['xs'][b:b + 1], recog_params_char,
-                        dataset.idx2token[1],
+                        idx2token=dataset.idx2token[1] if progressbar else None,
                         exclude_eos=True,
                         refs_id=batch['ys_sub1'],
                         utt_ids=batch['utt_ids'],

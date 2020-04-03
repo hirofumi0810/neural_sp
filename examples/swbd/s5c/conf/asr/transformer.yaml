@@ -29,12 +29,12 @@ optimizer: noam
 n_epochs: 50  ###
 convert_to_sgd_epoch: 100
 print_step: 200
-metric: edit_distance
+metric: accuracy
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5
 shuffle_bucket: true  ### this is important
 sort_stop_epoch: 100
-eval_start_epoch: 100
+eval_start_epoch: 1
 warmup_n_steps: 25000
 accum_grad_n_steps: 8
 ### regularization
@@ -49,6 +49,5 @@ lsm_prob: 0.1
 ### MTL
 ctc_weight: 0.3
 ctc_lsm_prob: 0.1
-bwd_weight: 0.0
 mtl_per_batch: false
 task_specific_layer: false

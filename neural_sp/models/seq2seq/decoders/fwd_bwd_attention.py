@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                       nbest_hyps_bwd, aws_bwd, scores_bwd,
-                      flip, eos, gnmt_decoding, lp_weight, idx2token, refs_id=None):
+                      eos, gnmt_decoding, lp_weight, idx2token, refs_id, flip=False):
     """Decoding with the forward and backward attention-based decoders.
 
     Args:
@@ -27,12 +27,12 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
         nbest_hyps_bwd (list):
         aws_bwd (list):
         scores_bwd (list):
-        flip (bool):
         eos (int):
         gnmt_decoding (float):
         lp_weight (float):
         idx2token (): converter from index to token
         refs_id ():
+        flip (bool): flip the encoder indices
     Returns:
 
     """
@@ -76,6 +76,7 @@ def fwd_bwd_attention(nbest_hyps_fwd, aws_fwd, scores_fwd,
                 for i_f in range(len(aws_fwd[b][n_f]) - 1):
                     for i_b in range(len(aws_bwd[b][n_b]) - 1):
                         if flip:
+                            # the encoder is not shared between forward and backward decoders
                             t_prev = max_time - aws_bwd[b][n_b][i_b + 1].argmax(-2)
                             t_curr = aws_fwd[b][n_f][i_f].argmax(-2)
                             t_next = max_time - aws_bwd[b][n_b][i_b - 1].argmax(-2)

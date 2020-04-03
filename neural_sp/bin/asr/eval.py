@@ -81,7 +81,7 @@ def main():
             # Load the ASR model
             model = Speech2Text(args, dir_name)
             epoch = int(args.recog_model[0].split('-')[-1])
-            if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
+            if args.recog_n_average > 1:
                 # Model averaging for Transformer
                 # topk_list = load_checkpoint(model, args.recog_model[0])
                 model = average_checkpoints(model, args.recog_model[0],

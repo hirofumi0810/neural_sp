@@ -19,6 +19,7 @@ coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
+n_average=1  # for Transformer
 
 . ./cmd.sh
 . ./path.sh
@@ -58,6 +59,7 @@ for set in dev test; do
         --recog_coverage_threshold ${coverage_threshold} \
         --recog_gnmt_decoding ${gnmt_decoding} \
         --recog_ctc_weight ${ctc_weight} \
+        --recog_n_average ${n_average} \
         --recog_stdout ${stdout} || exit 1;
 
     echo ${set}
