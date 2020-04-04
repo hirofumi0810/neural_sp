@@ -96,19 +96,18 @@ class PositionalEncoding(nn.Module):
             xs (FloatTensor): `[B, T, d_model]`
 
         """
-        xs = xs * self.scale  # after embedding
+        # NOTE: xs is an embedding without been scaled
 
         if self.pe_type == 'none':
-            return xs
-
-        if self.pe_type == 'add':
-            xs = xs + self.pe[:, :xs.size(1)]
+            return xs * self.scale
+        elif self.pe_type == 'add':
+            xs = xs * self.scale + self.pe[:, :xs.size(1)]
             xs = self.dropout(xs)
         elif self.pe_type == 'concat':
-            xs = torch.cat([xs, self.pe[:, :xs.size(1)]], dim=-1)
+            xs = torch.cat([xs * self.scale, self.pe[:, :xs.size(1)]], dim=-1)
             xs = self.dropout(xs)
         elif '1dconv' in self.pe_type:
-            xs = self.pe(xs)
+            xs = self.pe(xs * self.scale)
         else:
             raise NotImplementedError(self.pe_type)
         return xs
