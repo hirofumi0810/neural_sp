@@ -20,7 +20,6 @@ import torch.nn as nn
 
 from neural_sp.models.modules.causal_conv import CausalConv1d
 from neural_sp.models.modules.initialization import init_with_xavier_dist
-from neural_sp.models.modules.initialization import init_with_lecun
 
 random.seed(1)
 
@@ -87,7 +86,6 @@ class PositionalEncoding(nn.Module):
             if isinstance(layer, CausalConv1d):
                 for n, p in layer.named_parameters():
                     init_with_xavier_dist(n, p)
-                    # init_with_lecun(n, p, param_init=0.1)
 
     def forward(self, xs):
         """Forward computation.
