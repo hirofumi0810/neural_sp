@@ -63,6 +63,7 @@ def main():
                         n_epochs=args.n_epochs,
                         min_n_tokens=args.min_n_tokens,
                         bptt=args.bptt,
+                        adaptive_bptt=args.adaptive_bptt,
                         shuffle=args.shuffle,
                         backward=args.backward,
                         serialize=args.serialize)
@@ -177,7 +178,7 @@ def main():
 
     # GPU setting
     if args.n_gpus >= 1:
-        torch.backends.cudnn.benchmark = True
+        model.cudnn_setting(deterministic=False, benchmark=args.cudnn_benchmark)
         model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
         model.cuda()
 
@@ -224,7 +225,7 @@ def main():
 
         if n_steps % args.print_step == 0:
             # Compute loss in the dev set
-            ys_dev = dev_set.next()[0]
+            ys_dev = dev_set.next(bptt=args.bptt)[0]
             loss, _, observation = model(ys_dev, None, is_eval=True)
             reporter.add(observation, is_eval=True)
             loss_dev = loss.item()
