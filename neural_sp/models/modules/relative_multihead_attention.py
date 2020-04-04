@@ -117,8 +117,8 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         if mlen > 0:
             key = torch.cat([memory, key], dim=1)
 
-        value = self.w_value(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
-        key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
+        value = self.w_value(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen+mlen, H, d_k]`
+        key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen+mlen, H, d_k]`
         if mask is not None:
             mask = mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])
             assert mask.size() == (bs, qlen, mlen + klen, self.n_heads), \
@@ -129,10 +129,10 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         pos_embs = pos_embs.view(-1, self.n_heads, self.d_k)  # `[qlen, H, d_k]`
 
         # content-based attention term: (a) + (c)
-        AC = torch.einsum("bihd,bjhd->bijh", ((query + u[None, None]), key))  # `[B, qlen, klen, H]`
+        AC = torch.einsum("bihd,bjhd->bijh", ((query + u[None, None]), key))  # `[B, qlen, klen+mlen, H]`
 
         # position-based attention term: (b) + (d)
-        BD = torch.einsum("bihd,jhd->bijh", ((query + v[None, None]), pos_embs))  # `[B, qlen, klen, H]`
+        BD = torch.einsum("bihd,jhd->bijh", ((query + v[None, None]), pos_embs))  # `[B, qlen, klen+mlen, H]`
 
         # Compute positional attention efficiently
         BD = self._rel_shift(BD)
