@@ -185,9 +185,8 @@ class TransformerEncoder(EncoderBase):
             self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
             self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
             # NOTE: u and v are global parameters
-        else:
-            self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
-            # TODO: replace dropout_in with dropout
+        self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
+        # TODO: replace dropout_in with dropout
 
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
             d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
@@ -335,13 +334,8 @@ class TransformerEncoder(EncoderBase):
             self.data_dict['elens'] = tensor2np(xlens)
 
         bs, xmax, idim = xs.size()
-        if self.memory_transformer:
-            # streaming TransformerXL encoder
-            if self.hybrid_rnn:
-                raise NotImplementedError
-
-            xs = xs * self.scale
-
+        if self.memory_transformer or self.latency_controlled:
+            # streaming Transformer(XL) encoder
             N_l = max(0, self.chunk_size_left // self.subsampling_factor)
             N_c = self.chunk_size_cur // self.subsampling_factor
             N_r = max(0, self.chunk_size_right // self.subsampling_factor)
@@ -351,6 +345,11 @@ class TransformerEncoder(EncoderBase):
             mems = self.init_memory()
 
             for t in range(0, xmax, N_c):
+                if self.hybrid_rnn:
+                    raise NotImplementedError
+
+                xs = self.pos_enc(xs, scale=True)  # for scale
+
                 mlen = 0 if t == 0 else N_l
                 clen = min(N_c, xmax - 1 - t + 1)
                 rlen = 0
@@ -359,57 +358,19 @@ class TransformerEncoder(EncoderBase):
 
                 xs_chunk = xs[:, t:t + (clen + rlen)]
 
-                # adopt zero-centered offset
-                pos_idxs = torch.arange(mlen - 1, -xs_chunk.size(1) - 1, -1.0, dtype=torch.float)
-                pos_embs = self.pos_emb(pos_idxs, self.device_id)
+                if self.memory_transformer:
+                    # adopt zero-centered offset
+                    pos_idxs = torch.arange(mlen - 1, -xs_chunk.size(1) - 1, -1.0, dtype=torch.float)
+                    pos_embs = self.pos_emb(pos_idxs, self.device_id)
 
                 hidden_states = [xs_chunk[:, :clen][:, -N_l:]]
                 for l, (mem, layer) in enumerate(zip(mems, self.layers)):
-                    xs_chunk, xx_aws_chunk = layer(xs_chunk, None, pos_embs=pos_embs, memory=mem,
-                                                   u=self.u, v=self.v)  # no mask
-                    if l < self.n_layers - 1:
-                        hidden_states.append(xs_chunk[:, :clen][:, -N_l:])
-                    # NOTE: xx_aws_chunk: `[B, H, clen+rlen (query), mlen+clen+rlen (key)]`
-                    xx_aws_chunk = xx_aws_chunk[:, :, :clen, mlen:mlen + clen]
-                    assert xx_aws_chunk.size(2) == xx_aws_chunk.size(3)
-                    xx_aws_chunk_pad = xs.new_zeros((bs, xx_aws_chunk.size(1), N_c, N_c))
-                    xx_aws_chunk_pad[:, :, :xx_aws_chunk.size(2), :xx_aws_chunk.size(3)] = xx_aws_chunk
-                    xx_aws[l].append(xx_aws_chunk_pad)
-                mems = self.update_memory(mems, hidden_states)
-                xs_chunks.append(xs_chunk[:, :clen])
-            xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
+                    if self.memory_transformer:
+                        xs_chunk, xx_aws_chunk = layer(xs_chunk, None, pos_embs=pos_embs, memory=mem,
+                                                       u=self.u, v=self.v)  # no mask
+                    else:
+                        xs_chunk, xx_aws_chunk = layer(xs_chunk, None, memory=mem)  # no mask
 
-            if not self.training:
-                for l in range(self.n_layers):
-                    self.aws_dict['xx_aws_layer%d' % l] = tensor2np(torch.cat(xx_aws[l], dim=3)[:, :, :xmax, :xmax])
-
-        elif self.latency_controlled:
-            # streaming Transformer encoder
-            if self.hybrid_rnn:
-                raise NotImplementedError
-
-            xs = self.pos_enc(xs, scale=True)
-
-            N_l = max(0, self.chunk_size_left // self.subsampling_factor)
-            N_c = self.chunk_size_cur // self.subsampling_factor
-            N_r = max(0, self.chunk_size_right // self.subsampling_factor)
-
-            xs_chunks = []
-            xx_aws = [[] for l in range(self.n_layers)]
-            mems = self.init_memory()
-
-            for t in range(0, xmax, N_c):
-                mlen = 0 if t == 0 else N_l
-                clen = min(N_c, xmax - 1 - t + 1)
-                rlen = 0
-                if xmax - 1 - (t + clen) + 1 > 0:
-                    rlen = min(N_r,  xmax - 1 - (t + clen) + 1)
-
-                xs_chunk = xs[:, t:t + (clen + rlen)]
-
-                hidden_states = [xs_chunk[:, :clen][:, -N_l:]]
-                for l, (mem, layer) in enumerate(zip(mems, self.layers)):
-                    xs_chunk, xx_aws_chunk = layer(xs_chunk, None, memory=mem)  # no mask
                     if l < self.n_layers - 1:
                         hidden_states.append(xs_chunk[:, :clen][:, -N_l:])
                     # NOTE: xx_aws_chunk: `[B, H, clen+rlen (query), mlen+clen+rlen (key)]`
