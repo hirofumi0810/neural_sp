@@ -180,7 +180,7 @@ class RNNEncoder(EncoderBase):
                 elif 'gru' in rnn_type:
                     rnn_i = nn.GRU
                 else:
-                    raise ValueError('rnn_type must be "(conv_)(b/lcb)lstm" or "(conv_)(b/lcb)gru".')
+                    raise ValueError('rnn_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
 
                 if self.latency_controlled:
                     self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=True)]
