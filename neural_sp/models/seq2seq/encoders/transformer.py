@@ -18,9 +18,6 @@ import shutil
 import torch
 import torch.nn as nn
 
-from torch.nn.utils.rnn import pack_padded_sequence
-from torch.nn.utils.rnn import pad_packed_sequence
-
 from neural_sp.models.modules.initialization import init_with_normal_dist
 from neural_sp.models.modules.positinal_embedding import PositionalEncoding
 from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
@@ -105,6 +102,7 @@ class TransformerEncoder(EncoderBase):
         self.chunk_size_left = chunk_size_left
         self.chunk_size_cur = chunk_size_current
         self.chunk_size_right = chunk_size_right
+        self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
         self.memory_transformer = ('transformer_xl' in enc_type)
         self.mem_len = chunk_size_left
         self.scale = math.sqrt(d_model)
@@ -112,11 +110,12 @@ class TransformerEncoder(EncoderBase):
             assert pe_type == 'none'
             assert chunk_size_left > 0
             assert chunk_size_current > 0
+        if self.latency_controlled:
+            assert pe_type == 'none'
 
         # for hybrid RNN-Transformer encoder
         self.hybrid_rnn = n_layers_rnn > 0
         self.n_layers_rnn = n_layers_rnn
-        self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
         self.proj = None
 
         # for hierarchical encoder
@@ -182,6 +181,7 @@ class TransformerEncoder(EncoderBase):
                 self._odim = d_model if self.bidir_sum else d_model * self.n_dirs
             if self._odim != d_model:
                 self.proj = nn.Linear(self._odim, d_model)
+            self.norm_rnn_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if self.memory_transformer:
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
@@ -339,9 +339,12 @@ class TransformerEncoder(EncoderBase):
 
         bs, xmax, idim = xs.size()
         if self.memory_transformer:
+            # streaming TransformerXL encoder
+            if self.hybrid_rnn:
+                raise NotImplementedError
+
             xs = xs * self.scale
 
-            # streaming TransformerXL encoder
             N_l = max(0, self.chunk_size_left // self.subsampling_factor)
             N_c = self.chunk_size_cur // self.subsampling_factor
             N_r = max(0, self.chunk_size_right // self.subsampling_factor)
@@ -371,7 +374,12 @@ class TransformerEncoder(EncoderBase):
                                                    u=self.u, v=self.v)  # no mask
                     if l < self.n_layers - 1:
                         hidden_states.append(xs_chunk[:, :clen][:, -N_l:])
-                    xx_aws[l].append(xx_aws_chunk[:, :, mlen:mlen + clen, mlen:mlen + clen])
+                    # NOTE: xx_aws_chunk: `[B, H, clen+rlen (query), mlen+clen+rlen (key)]`
+                    xx_aws_chunk = xx_aws_chunk[:, :, :clen, mlen:mlen + clen]
+                    assert xx_aws_chunk.size(2) == xx_aws_chunk.size(3)
+                    xx_aws_chunk_pad = xs.new_zeros((bs, xx_aws_chunk.size(1), N_c, N_c))
+                    xx_aws_chunk_pad[:, :, :xx_aws_chunk.size(2), :xx_aws_chunk.size(3)] = xx_aws_chunk
+                    xx_aws[l].append(xx_aws_chunk_pad)
                 mems = self.update_memory(mems, hidden_states)
                 xs_chunks.append(xs_chunk[:, :clen])
             xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
@@ -380,18 +388,55 @@ class TransformerEncoder(EncoderBase):
                 for l in range(self.n_layers):
                     self.aws_dict['xx_aws_layer%d' % l] = tensor2np(torch.cat(xx_aws[l], dim=3)[:, :, :xmax, :xmax])
 
-        elif self.chunk_size_cur > 0:
+        elif self.latency_controlled:
             # streaming Transformer encoder
-            raise NotImplementedError
+            if self.hybrid_rnn:
+                raise NotImplementedError
+
+            xs = self.pos_enc(xs, scale=True)
+
+            N_l = max(0, self.chunk_size_left // self.subsampling_factor)
+            N_c = self.chunk_size_cur // self.subsampling_factor
+            N_r = max(0, self.chunk_size_right // self.subsampling_factor)
+
+            xs_chunks = []
+            xx_aws = [[] for l in range(self.n_layers)]
+            mems = self.init_memory()
+
+            for t in range(0, xmax, N_c):
+                mlen = 0 if t == 0 else N_l
+                clen = min(N_c, xmax - 1 - t + 1)
+                rlen = 0
+                if xmax - 1 - (t + clen) + 1 > 0:
+                    rlen = min(N_r,  xmax - 1 - (t + clen) + 1)
+
+                xs_chunk = xs[:, t:t + (clen + rlen)]
+
+                hidden_states = [xs_chunk[:, :clen][:, -N_l:]]
+                for l, (mem, layer) in enumerate(zip(mems, self.layers)):
+                    xs_chunk, xx_aws_chunk = layer(xs_chunk, None, memory=mem)  # no mask
+                    if l < self.n_layers - 1:
+                        hidden_states.append(xs_chunk[:, :clen][:, -N_l:])
+                    # NOTE: xx_aws_chunk: `[B, H, clen+rlen (query), mlen+clen+rlen (key)]`
+                    xx_aws_chunk = xx_aws_chunk[:, :, :clen, mlen:mlen + clen]
+                    assert xx_aws_chunk.size(2) == xx_aws_chunk.size(3)
+                    xx_aws_chunk_pad = xs.new_zeros((bs, xx_aws_chunk.size(1), N_c, N_c))
+                    xx_aws_chunk_pad[:, :, :xx_aws_chunk.size(2), :xx_aws_chunk.size(3)] = xx_aws_chunk
+                    xx_aws[l].append(xx_aws_chunk_pad)
+                mems = self.update_memory(mems, hidden_states)
+                xs_chunks.append(xs_chunk[:, :clen])
+            xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
+
+            if not self.training:
+                for l in range(self.n_layers):
+                    self.aws_dict['xx_aws_layer%d' % l] = tensor2np(torch.cat(xx_aws[l], dim=3)[:, :, :xmax, :xmax])
 
         else:
             # Hybrid RNN-Transformer
             if self.hybrid_rnn:
                 for l in range(self.n_layers_rnn):
                     self.rnn[l].flatten_parameters()  # for multi-GPUs
-                    # xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
                     xs, _ = self.rnn[l](xs, hx=None)
-                    # xs = pad_packed_sequence(xs, batch_first=True)[0]
                     # NOTE: no padding because inputs are not sorted
                     if self.bidir_sum:
                         assert self.rnn[l].bidirectional
@@ -400,9 +445,13 @@ class TransformerEncoder(EncoderBase):
                     xs = self.dropout_rnn(xs)
                 if self.proj is not None:
                     xs = self.proj(xs)
-
-            # xs = self.pos_enc(xs, scale=False)
-            xs = self.pos_enc(xs, scale=True)
+                # v1
+                # xs = self.pos_enc(xs, scale=True)
+                # v2
+                xs = self.norm_rnn_out(xs)
+            else:
+                # xs = self.pos_enc(xs, scale=False)
+                xs = self.pos_enc(xs, scale=True)
 
             # Create the self-attention mask
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
