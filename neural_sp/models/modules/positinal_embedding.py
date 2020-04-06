@@ -87,7 +87,7 @@ class PositionalEncoding(nn.Module):
                 for n, p in layer.named_parameters():
                     init_with_xavier_dist(n, p)
 
-    def forward(self, xs):
+    def forward(self, xs, scale=True):
         """Forward computation.
 
         Args:
@@ -96,7 +96,8 @@ class PositionalEncoding(nn.Module):
             xs (FloatTensor): `[B, T, d_model]`
 
         """
-        xs = xs * self.scale
+        if scale:
+            xs = xs * self.scale
         # NOTE: xs is an embedding without been scaled
 
         if self.pe_type == 'none':
@@ -115,12 +116,14 @@ class PositionalEncoding(nn.Module):
 
 
 class XLPositionalEmbedding(nn.Module):
-    def __init__(self, d_model):
+    def __init__(self, d_model, dropout):
         """Positional embedding for TransformerXL."""
         super().__init__()
         self.d_model = d_model
         inv_freq = 1 / (10000 ** (torch.arange(0.0, d_model, 2.0) / d_model))
         self.register_buffer("inv_freq", inv_freq)
+
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, positions):
         """Forward computation.
@@ -134,4 +137,5 @@ class XLPositionalEmbedding(nn.Module):
         # outer product
         sinusoid_inp = torch.einsum("i,j->ij", positions.float(), self.inv_freq)
         pos_emb = torch.cat([sinusoid_inp.sin(), sinusoid_inp.cos()], dim=-1)
+        pos_emb = self.dropout(pos_emb)
         return pos_emb.unsqueeze(1)

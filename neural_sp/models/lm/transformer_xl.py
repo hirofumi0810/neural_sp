@@ -70,15 +70,15 @@ class TransformerXL(LMBase):
         self.cache_keys = []
         self.cache_attn = []
 
-        # TransformerXL specific
-        self.scale = math.sqrt(self.d_model)  # for token embedding
-        self.pos_emb = XLPositionalEmbedding(self.d_model)
-        self.dropout_emb = nn.Dropout(p=args.dropout_in)
+        # positional embedding
+        self.pos_emb = XLPositionalEmbedding(self.d_model, args.dropout_in)
         self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
         self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
         # NOTE: u and v are global parameters
 
         self.embed = nn.Embedding(self.vocab, self.d_model, padding_idx=self.pad)
+        self.scale = math.sqrt(self.d_model)  # for token embedding
+        self.dropout_emb = nn.Dropout(p=args.dropout_in)  # for token embedding
         self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
             self.d_model, args.transformer_d_ff, args.transformer_attn_type,
             self.n_heads, args.dropout_hidden, args.dropout_att,
@@ -197,7 +197,7 @@ class TransformerXL(LMBase):
             pos_idxs = torch.arange(ylen + mlen - 1, -1, -1.0, dtype=torch.float)
         if self.device_id >= 0:
             pos_idxs = pos_idxs.cuda(self.device_id)
-        pos_embs = self.dropout_emb(self.pos_emb(pos_idxs))
+        pos_embs = self.pos_emb(pos_idxs)
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
