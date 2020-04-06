@@ -58,8 +58,8 @@ class RNNEncoder(EncoderBase):
         bidirectional_sum_fwd_bwd (bool): sum up forward and backward outputs for demiension reduction
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (float): parameter initialization method
-        lc_chunk_size_left (int): left chunk size for latency-controlled bidirectional encoder
-        lc_chunk_size_right (int): right chunk size for latency-controlled bidirectional encoder
+        chunk_size_left (int): left chunk size for latency-controlled bidirectional encoder
+        chunk_size_right (int): right chunk size for latency-controlled bidirectional encoder
 
     """
 
@@ -70,7 +70,7 @@ class RNNEncoder(EncoderBase):
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim,
                  bidirectional_sum_fwd_bwd, task_specific_layer, param_init,
-                 lc_chunk_size_left, lc_chunk_size_right):
+                 chunk_size_left, chunk_size_right):
 
         super(RNNEncoder, self).__init__()
 
@@ -86,11 +86,12 @@ class RNNEncoder(EncoderBase):
         self.n_units = n_units
         self.n_dirs = 2 if self.bidirectional else 1
         self.n_layers = n_layers
+        self.bidir_sum = bidirectional_sum_fwd_bwd
 
         # for latency-controlled
-        self.latency_controlled = lc_chunk_size_left > 0 or lc_chunk_size_right > 0
-        self.lc_chunk_size_left = lc_chunk_size_left
-        self.lc_chunk_size_right = lc_chunk_size_right
+        self.latency_controlled = chunk_size_left > 0 or chunk_size_right > 0
+        self.chunk_size_left = chunk_size_left
+        self.chunk_size_right = chunk_size_right
         if self.latency_controlled:
             assert n_layers_sub2 == 0
 
@@ -188,7 +189,6 @@ class RNNEncoder(EncoderBase):
                     self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=True,
                                        bidirectional=self.bidirectional)]
                 self._odim = n_units if bidirectional_sum_fwd_bwd else n_units * self.n_dirs
-                self.bidirectional_sum_fwd_bwd = bidirectional_sum_fwd_bwd
 
                 # Projection layer
                 if self.proj is not None:
@@ -198,12 +198,14 @@ class RNNEncoder(EncoderBase):
 
                 # Task specific layer
                 if l == n_layers_sub1 - 1 and task_specific_layer:
+                    assert not self.latency_controlled
                     self.rnn_sub1 = rnn_i(self._odim, n_units, 1,
                                           batch_first=True,
                                           bidirectional=self.bidirectional)
                     if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                         self.bridge_sub1 = nn.Linear(n_units, last_proj_dim)
                 if l == n_layers_sub2 - 1 and task_specific_layer:
+                    assert not self.latency_controlled
                     self.rnn_sub2 = rnn_i(self._odim, n_units, 1,
                                           batch_first=True,
                                           bidirectional=self.bidirectional)
@@ -344,8 +346,8 @@ class RNNEncoder(EncoderBase):
             xs (FloatTensor): `[B, T, n_units]`
 
         """
-        N_l = self.lc_chunk_size_left // self.subsampling_factor
-        N_r = self.lc_chunk_size_right // self.subsampling_factor
+        N_l = self.chunk_size_left // self.subsampling_factor
+        N_r = self.chunk_size_right // self.subsampling_factor
 
         xs_sub1 = None
 
@@ -360,7 +362,7 @@ class RNNEncoder(EncoderBase):
                 xs_bwd = torch.flip(xs_bwd, dims=[1])
                 # fwd
                 xs_fwd, _ = self.rnn[l](xs, hx=None)
-                if self.bidirectional_sum_fwd_bwd:
+                if self.bidir_sum:
                     xs = xs_fwd + xs_bwd
                 else:
                     xs = torch.cat([xs_fwd, xs_bwd], dim=-1)
@@ -368,12 +370,7 @@ class RNNEncoder(EncoderBase):
 
                 # Pick up outputs in the sub task before the projection layer
                 if l == self.n_layers_sub1 - 1:
-                    if self.task_specific_layer:
-                        self.rnn_sub1.flatten_parameters()  # for multi-GPUs
-                        xs_sub1, _ = self.rnn_sub1(xs, hx=None)
-                        xs_sub1 = self.dropout(xs_sub1)
-                    else:
-                        xs_sub1 = xs.clone()
+                    xs_sub1 = xs.clone()
                     if self.bridge_sub1 is not None:
                         xs_sub1 = self.bridge_sub1(xs_sub1)
                     if task == 'ys_sub1':
@@ -394,6 +391,7 @@ class RNNEncoder(EncoderBase):
         xlens = torch.IntTensor(bs).fill_(N_l if streaming else xmax)
 
         xs_chunks = []
+        xs_chunks_sub1 = []
         for t in range(0, N_l * n_chunks, N_l):
             xs_chunk = xs[:, t:t + (N_l + N_r)]
             for l in range(self.n_layers):
@@ -411,17 +409,34 @@ class RNNEncoder(EncoderBase):
                     xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, N_l:], hx=self.fwd_states[l])
                     xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, N_l+N_r, n_units]`
                     # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer
-                if self.bidirectional_sum_fwd_bwd:
+                if self.bidir_sum:
                     xs_chunk = xs_chunk_fwd + xs_chunk_bwd
                 else:
                     xs_chunk = torch.cat([xs_chunk_fwd, xs_chunk_bwd], dim=-1)
                 xs_chunk = self.dropout(xs_chunk)
 
-                # Projection layer
-                if self.proj is not None and l != self.n_layers - 1:
-                    xs_chunk = torch.tanh(self.proj[l](xs_chunk))
+                # Pick up outputs in the sub task before the projection layer
+                if l == self.n_layers_sub1 - 1:
+                    xs_chunk_sub1 = xs_chunk.clone()
+                    if self.bridge_sub1 is not None:
+                        xs_chunk_sub1 = self.bridge_sub1(xs_chunk_sub1)
+                    if task == 'ys_sub1':
+                        return None, xlens, xs_chunk_sub1
+
+                # NOTE: Exclude the last layer
+                if l != self.n_layers - 1:
+                    # Projection layer -> Subsampling
+                    if self.proj is not None:
+                        xs_chunk = torch.tanh(self.proj[l](xs_chunk))
+                    if self.subsample_layer is not None:
+                        xs_chunk, xlens = self.subsample_layer[l](xs_chunk, xlens)
+
             xs_chunks.append(xs_chunk[:, :N_l])
+            if self.n_layers_sub1 > 0:
+                xs_chunks_sub1.append(xs_chunk_sub1[:, :N_l])
         xs = torch.cat(xs_chunks, dim=1)
+        if self.n_layers_sub1 > 0:
+            xs_sub1 = torch.cat(xs_chunks_sub1, dim=1)
 
         return xs, xlens, xs_sub1
 
@@ -443,13 +458,13 @@ class Padding(nn.Module):
 
     def __init__(self, bidirectional_sum_fwd_bwd):
         super(Padding, self).__init__()
-        self.bidirectional_sum_fwd_bwd = bidirectional_sum_fwd_bwd
+        self.bidir_sum = bidirectional_sum_fwd_bwd
 
     def forward(self, xs, xlens, rnn, prev_state=None):
         xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
         xs, state = rnn(xs, hx=prev_state)
         xs = pad_packed_sequence(xs, batch_first=True)[0]
-        if self.bidirectional_sum_fwd_bwd:
+        if self.bidir_sum:
             assert rnn.bidirectional
             half = xs.size(-1) // 2
             xs = xs[:, :, :half] + xs[:, :, half:]
