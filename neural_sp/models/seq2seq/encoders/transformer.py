@@ -158,27 +158,25 @@ class TransformerEncoder(EncoderBase):
         if self.hybrid_rnn:
             assert pe_type == 'none'
             self.rnn = nn.ModuleList()
-            if self.latency_controlled:
-                self.rnn_bwd = nn.ModuleList()
+            self.rnn_bwd = nn.ModuleList()
             self.dropout_rnn = nn.Dropout(p=dropout)
-            self.bidirectional = True if ('blstm' in enc_type or 'bgru' in enc_type) else False
+            assert ('blstm' in enc_type or 'bgru' in enc_type)
+            # NOTE: support bidirectional only
             self.bidir_sum = True
 
             for l in range(n_layers_rnn):
-                if 'lstm' in enc_type:
+                if 'blstm' in enc_type:
                     rnn_i = nn.LSTM
-                elif 'gru' in enc_type:
+                elif 'bgru' in enc_type:
                     rnn_i = nn.GRU
                 else:
-                    raise ValueError('enc_type must be "(conv_)(b/lcb)lstm" or "(conv_)(b/lcb)gru".')
+                    raise ValueError(
+                        'rnn_type must be "(conv_)blstm_transformer(_xl)" or "(conv_)bgru_transformer(_xl)".')
 
-                if self.latency_controlled:
-                    self.rnn += [rnn_i(self._odim, d_model, 1, batch_first=True)]
-                    self.rnn_bwd += [rnn_i(self._odim, d_model, 1, batch_first=True)]
-                else:
-                    self.rnn += [rnn_i(self._odim, d_model, 1, batch_first=True,
-                                       bidirectional=self.bidirectional)]
+                self.rnn += [rnn_i(self._odim, d_model, 1, batch_first=True)]
+                self.rnn_bwd += [rnn_i(self._odim, d_model, 1, batch_first=True)]
                 self._odim = d_model if self.bidir_sum else d_model * self.n_dirs
+
             if self._odim != d_model:
                 self.proj = nn.Linear(self._odim, d_model)
 
@@ -433,13 +431,20 @@ class TransformerEncoder(EncoderBase):
             if self.hybrid_rnn:
                 for l in range(self.n_layers_rnn):
                     self.rnn[l].flatten_parameters()  # for multi-GPUs
-                    xs, _ = self.rnn[l](xs, hx=None)
+                    self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
+                    # bwd
+                    xs_bwd = torch.flip(xs, dims=[1])
+                    xs_bwd, _ = self.rnn_bwd[l](xs_bwd, hx=None)
+                    xs_bwd = torch.flip(xs_bwd, dims=[1])
+                    # fwd
+                    xs_fwd, _ = self.rnn[l](xs, hx=None)
                     # NOTE: no padding because inputs are not sorted
                     if self.bidir_sum:
-                        assert self.rnn[l].bidirectional
-                        half = xs.size(-1) // 2
-                        xs = xs[:, :, :half] + xs[:, :, half:]
+                        xs = xs_fwd + xs_bwd
+                    else:
+                        xs = torch.cat([xs_fwd, xs_bwd], dim=-1)
                     xs = self.dropout_rnn(xs)
+
                 if self.proj is not None:
                     xs = self.proj(xs)
 
