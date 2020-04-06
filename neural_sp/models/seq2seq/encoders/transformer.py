@@ -268,6 +268,11 @@ class TransformerEncoder(EncoderBase):
                 else:
                     raise ValueError(n)
 
+    def reset_cache(self):
+        """Reset RNN state."""
+        self.fwd_states = [None] * self.n_layers
+        logger.debug('Reset cache.')
+
     def init_memory(self):
         """Initialize memory."""
         if self.device_id >= 0:
@@ -343,13 +348,9 @@ class TransformerEncoder(EncoderBase):
             xs_chunks = []
             xx_aws = [[] for l in range(self.n_layers)]
             mems = self.init_memory()
+            self.reset_cache()
 
             for t in range(0, xmax, N_c):
-                if self.hybrid_rnn:
-                    raise NotImplementedError
-
-                xs = self.pos_enc(xs, scale=True)  # for scale
-
                 mlen = 0 if t == 0 else N_l
                 clen = min(N_c, xmax - 1 - t + 1)
                 rlen = 0
@@ -357,6 +358,32 @@ class TransformerEncoder(EncoderBase):
                     rlen = min(N_r,  xmax - 1 - (t + clen) + 1)
 
                 xs_chunk = xs[:, t:t + (clen + rlen)]
+
+                if self.hybrid_rnn:
+                    for l in range(self.n_layers_rnn):
+                        self.rnn[l].flatten_parameters()  # for multi-GPUs
+                        self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
+                        # bwd
+                        xs_chunk_bwd = torch.flip(xs_chunk, dims=[1])
+                        xs_chunk_bwd, _ = self.rnn_bwd[l](xs_chunk_bwd, hx=None)
+                        xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, clen+rlen, d_model]`
+                        # fwd
+                        if xs_chunk.size(1) <= clen:
+                            xs_chunk_fwd, self.fwd_states[l] = self.rnn[l](xs_chunk, hx=self.fwd_states[l])
+                        else:
+                            xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :clen], hx=self.fwd_states[l])
+                            xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, clen:], hx=self.fwd_states[l])
+                            xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, clen+rlen, d_model]`
+                            # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer
+                        if self.bidir_sum:
+                            xs_chunk = xs_chunk_fwd + xs_chunk_bwd
+                        else:
+                            xs_chunk = torch.cat([xs_chunk_fwd, xs_chunk_bwd], dim=-1)
+                    xs_chunk = self.dropout_rnn(xs_chunk)
+                    if self.proj is not None:
+                        xs_chunk = self.proj(xs_chunk)
+
+                xs_chunk = self.pos_enc(xs_chunk, scale=True)  # for scale
 
                 if self.memory_transformer:
                     # adopt zero-centered offset
@@ -405,7 +432,6 @@ class TransformerEncoder(EncoderBase):
                     else:
                         xs = torch.cat([xs_fwd, xs_bwd], dim=-1)
                     xs = self.dropout_rnn(xs)
-
                 if self.proj is not None:
                     xs = self.proj(xs)
 
