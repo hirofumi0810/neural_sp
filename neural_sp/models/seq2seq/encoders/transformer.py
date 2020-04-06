@@ -18,6 +18,9 @@ import shutil
 import torch
 import torch.nn as nn
 
+from torch.nn.utils.rnn import pack_padded_sequence
+from torch.nn.utils.rnn import pad_packed_sequence
+
 from neural_sp.models.modules.initialization import init_with_normal_dist
 from neural_sp.models.modules.positinal_embedding import PositionalEncoding
 from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
@@ -71,6 +74,7 @@ class TransformerEncoder(EncoderBase):
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
         chunk_size_current (int): current chunk size for time-restricted Transformer encoder
         chunk_size_right (int): right chunk size for time-restricted Transformer encoder
+        n_layers_rnn (int):
 
     """
 
@@ -83,7 +87,7 @@ class TransformerEncoder(EncoderBase):
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init,
-                 chunk_size_left, chunk_size_current, chunk_size_right):
+                 chunk_size_left, chunk_size_current, chunk_size_right, n_layers_rnn):
 
         super(TransformerEncoder, self).__init__()
 
@@ -108,6 +112,12 @@ class TransformerEncoder(EncoderBase):
             assert pe_type == 'none'
             assert chunk_size_left > 0
             assert chunk_size_current > 0
+
+        # for hybrid RNN-Transformer encoder
+        self.hybrid_rnn = n_layers_rnn > 0
+        self.n_layers_rnn = n_layers_rnn
+        self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
+        self.proj = None
 
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -144,6 +154,34 @@ class TransformerEncoder(EncoderBase):
             self.conv = None
             self._odim = input_dim * n_splices * n_stacks
             self.embed = nn.Linear(self._odim, d_model)
+
+        # Hybrid RNN-Transformer
+        if self.hybrid_rnn:
+            assert pe_type == 'none'
+            self.rnn = nn.ModuleList()
+            if self.latency_controlled:
+                self.rnn_bwd = nn.ModuleList()
+            self.dropout_rnn = nn.Dropout(p=dropout)
+            self.bidirectional = True if ('blstm' in enc_type or 'bgru' in enc_type) else False
+            self.bidir_sum = True
+
+            for l in range(n_layers_rnn):
+                if 'lstm' in enc_type:
+                    rnn_i = nn.LSTM
+                elif 'gru' in enc_type:
+                    rnn_i = nn.GRU
+                else:
+                    raise ValueError('enc_type must be "(conv_)(b/lcb)lstm" or "(conv_)(b/lcb)gru".')
+
+                if self.latency_controlled:
+                    self.rnn += [rnn_i(self._odim, d_model, 1, batch_first=True)]
+                    self.rnn_bwd += [rnn_i(self._odim, d_model, 1, batch_first=True)]
+                else:
+                    self.rnn += [rnn_i(self._odim, d_model, 1, batch_first=True,
+                                       bidirectional=self.bidirectional)]
+                self._odim = d_model if self.bidir_sum else d_model * self.n_dirs
+            if self._odim != d_model:
+                self.proj = nn.Linear(self._odim, d_model)
 
         if self.memory_transformer:
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
@@ -219,6 +257,21 @@ class TransformerEncoder(EncoderBase):
                 nn.init.xavier_uniform_(self.bridge_sub2.weight)
                 nn.init.constant_(self.bridge_sub2.bias, 0.)
 
+        if self.hybrid_rnn:
+            logger.info('===== Initialize RNN in %s with uniform distribution =====' % self.__class__.__name__)
+            param_init_rnn = 0.1
+            for n, p in self.named_parameters():
+                if 'rnn' not in n:
+                    continue
+                if p.dim() == 1:
+                    nn.init.constant_(p, 0.)  # bias
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
+                elif p.dim() in [2, 4]:
+                    nn.init.uniform_(p, a=-param_init_rnn, b=param_init_rnn)
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init_rnn))
+                else:
+                    raise ValueError(n)
+
     def init_memory(self):
         """Initialize memory."""
         if self.device_id >= 0:
@@ -284,14 +337,10 @@ class TransformerEncoder(EncoderBase):
         if not self.training:
             self.data_dict['elens'] = tensor2np(xlens)
 
-        if self.memory_transformer:
-            xs = xs * self.scale
-        else:
-            # xs = self.pos_enc(xs, scale=False)
-            xs = self.pos_enc(xs, scale=True)
-
         bs, xmax, idim = xs.size()
         if self.memory_transformer:
+            xs = xs * self.scale
+
             # streaming TransformerXL encoder
             N_l = max(0, self.chunk_size_left // self.subsampling_factor)
             N_c = self.chunk_size_cur // self.subsampling_factor
@@ -335,10 +384,31 @@ class TransformerEncoder(EncoderBase):
             if not self.training:
                 for l in range(self.n_layers):
                     self.aws_dict['xx_aws_layer%d' % l] = tensor2np(torch.cat(xx_aws[l], dim=3)[:, :, :xmax, :xmax])
+
         elif self.chunk_size_cur > 0:
             # streaming Transformer encoder
             raise NotImplementedError
+
         else:
+            # Hybrid RNN-Transformer
+            if self.hybrid_rnn:
+                for l in range(self.n_layers_rnn):
+                    self.rnn[l].flatten_parameters()  # for multi-GPUs
+                    # xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
+                    xs, _ = self.rnn[l](xs, hx=None)
+                    # xs = pad_packed_sequence(xs, batch_first=True)[0]
+                    # NOTE: no padding because inputs are not sorted
+                    if self.bidir_sum:
+                        assert self.rnn[l].bidirectional
+                        half = xs.size(-1) // 2
+                        xs = xs[:, :, :half] + xs[:, :, half:]
+                    xs = self.dropout_rnn(xs)
+                if self.proj is not None:
+                    xs = self.proj(xs)
+
+            # xs = self.pos_enc(xs, scale=False)
+            xs = self.pos_enc(xs, scale=True)
+
             # Create the self-attention mask
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
 
