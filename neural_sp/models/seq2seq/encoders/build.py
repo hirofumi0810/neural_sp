@@ -70,7 +70,7 @@ def build_encoder(args):
             task_specific_layer=args.task_specific_layer,
             param_init=args.transformer_param_init,
             chunk_size_left=args.lc_chunk_size_left,
-            chunk_size_current=args.lc_chunk_size_left,
+            chunk_size_current=args.lc_chunk_size_current,
             chunk_size_right=args.lc_chunk_size_right)
 
     else:

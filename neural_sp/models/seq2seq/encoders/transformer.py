@@ -17,7 +17,9 @@ import shutil
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.transformer import PositionalEncoding
+from neural_sp.models.modules.initialization import init_with_normal_dist
+from neural_sp.models.modules.positinal_embedding import PositionalEncoding
+from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.transformer import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
@@ -63,11 +65,11 @@ class TransformerEncoder(EncoderBase):
         conv_layer_norm (bool): apply layer normalization only in the CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
         conv_param_init (float): only for CNN layers before Transformer layers
+        task_specific_layer (bool): add a task specific layer for each sub task
+        param_init (str): parameter initialization method
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
         chunk_size_current (int): current chunk size for time-restricted Transformer encoder
         chunk_size_right (int): right chunk size for time-restricted Transformer encoder
-        task_specific_layer (bool): add a task specific layer for each sub task
-        param_init (str): parameter initialization method
 
     """
 
@@ -94,10 +96,16 @@ class TransformerEncoder(EncoderBase):
         self.n_heads = n_heads
         self.pe_type = pe_type
 
-        # for latency-controlled
+        # for streaming TransformerXL encoder
         self.chunk_size_left = chunk_size_left
         self.chunk_size_cur = chunk_size_current
         self.chunk_size_right = chunk_size_right
+        self.memory_transformer = ('transformer_xl' in enc_type)
+        self.mem_len = chunk_size_left
+        if self.memory_transformer:
+            assert pe_type == 'none'
+            assert chunk_size_left > 0
+            assert chunk_size_current > 0
 
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -135,11 +143,20 @@ class TransformerEncoder(EncoderBase):
             self._odim = input_dim * n_splices * n_stacks
             self.embed = nn.Linear(self._odim, d_model)
 
-        self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
+        if self.memory_transformer:
+            self.pos_emb = XLPositionalEmbedding(d_model, dropout)
+            self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+            self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+            # NOTE: u and v are global parameters
+        else:
+            self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
+            # TODO: replace dropout_in with dropout
+
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
             d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
             dropout_residual * (l + 1) / n_layers,
-            layer_norm_eps, ffn_activation, param_init))
+            layer_norm_eps, ffn_activation, param_init,
+            memory_transformer=self.memory_transformer))
             for l in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
@@ -172,20 +189,71 @@ class TransformerEncoder(EncoderBase):
         # calculate subsampling factor
         self._factor = 1
         if self.conv is not None:
-            self._factor *= self.conv.subsampling_factor()
+            self._factor *= self.conv.subsampling_factor
 
-        if param_init == 'xavier_uniform':
-            self.reset_parameters()
+        self.reset_parameters(param_init)
 
-    def reset_parameters(self):
-        """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
-        if self.conv is None:
-            nn.init.xavier_uniform_(self.embed.weight)
-            nn.init.constant_(self.embed.bias, 0.)
-        if self.bridge is not None:
-            nn.init.xavier_uniform_(self.bridge.weight)
-            nn.init.constant_(self.bridge.bias, 0.)
+    def reset_parameters(self, param_init):
+        """Initialize parameters."""
+        if self.memory_transformer:
+            logger.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
+            for n, p in self.named_parameters():
+                if 'conv' in n:
+                    continue
+                init_with_normal_dist(n, p, std=0.02)
+
+        elif param_init == 'xavier_uniform':
+            logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+            if self.conv is None:
+                nn.init.xavier_uniform_(self.embed.weight)
+                nn.init.constant_(self.embed.bias, 0.)
+            if self.bridge is not None:
+                nn.init.xavier_uniform_(self.bridge.weight)
+                nn.init.constant_(self.bridge.bias, 0.)
+            if self.bridge_sub1 is not None:
+                nn.init.xavier_uniform_(self.bridge_sub1.weight)
+                nn.init.constant_(self.bridge_sub1.bias, 0.)
+            if self.bridge_sub2 is not None:
+                nn.init.xavier_uniform_(self.bridge_sub2.weight)
+                nn.init.constant_(self.bridge_sub2.bias, 0.)
+
+    def init_memory(self):
+        """Initialize memory."""
+        if self.device_id >= 0:
+            return [torch.empty(0, dtype=torch.float).cuda(self.device_id)
+                    for _ in range(self.n_layers)]
+        else:
+            return [torch.empty(0, dtype=torch.float)
+                    for _ in range(self.n_layers)]
+
+    def update_memory(self, memory_prev, hidden_states):
+        """Update memory.
+
+        Args:
+            memory_prev (list): length `n_layers`, each of which contains [B, L_prev, d_model]`
+            hidden_states (list): length `n_layers`, each of which contains [B, L, d_model]`
+        Returns:
+            new_mems (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
+
+        """
+        assert len(hidden_states) == len(memory_prev)
+        mlen = memory_prev[0].size(1) if memory_prev[0].dim() > 1 else 0
+        qlen = hidden_states[0].size(1)
+
+        # There are `mlen + qlen` steps that can be cached into mems
+        # For the next step, the last `ext_len` of the `qlen` tokens
+        # will be used as the extended context. Hence, we only cache
+        # the tokens from `mlen + qlen - self.ext_len - self.mem_len`
+        # to `mlen + qlen - self.ext_len`.
+        with torch.no_grad():
+            new_mems = []
+            end_idx = mlen + qlen
+            start_idx = max(0, end_idx - (self.mem_len // self.subsampling_factor))
+            for m, h in zip(memory_prev, hidden_states):
+                cat = torch.cat([m, h], dim=1)  # `[B, mlen + qlen, d_model]`
+                new_mems.append(cat[:, start_idx:end_idx].detach())  # `[B, self.mem_len, d_model]`
+
+        return new_mems
 
     def forward(self, xs, xlens, task, use_cache=False, streaming=False):
         """Forward computation.
@@ -215,32 +283,59 @@ class TransformerEncoder(EncoderBase):
             self.data_dict['elens'] = tensor2np(xlens)
 
         bs, xmax, idim = xs.size()
-        xs = self.pos_enc(xs)
-        if self.chunk_size_left > 0:
-            # Time-restricted self-attention for streaming models
-            cs_l = self.chunk_size_left
-            cs_c = self.chunk_size_cur
-            cs_r = self.chunk_size_right
+        if self.memory_transformer:
+            # streaming TransformerXL encoder
+            N_l = max(0, self.chunk_size_left // self.subsampling_factor)
+            N_c = self.chunk_size_cur // self.subsampling_factor
+            N_r = max(0, self.chunk_size_right // self.subsampling_factor)
+
             xs_chunks = []
             xx_aws = [[] for l in range(self.n_layers)]
-            xs_pad = torch.cat([xs.new_zeros(bs, cs_l, idim), xs,
-                                xs.new_zeros(bs, cs_r, idim)], dim=1)
-            # TODO: remove right padding
-            for t in range(cs_l, cs_l + xmax, self.chunk_size_cur):
-                xs_chunk = xs_pad[:, t - cs_l:t + cs_c + cs_r]
-                for l, layer in enumerate(self.layers):
-                    xs_chunk, xx_aws_chunk = layer(xs_chunk, None)  # no mask
-                    xx_aws[l].append(xx_aws_chunk[:, :, cs_l:cs_l + cs_c,
-                                                  cs_l:cs_l + cs_c])
-                xs_chunks.append(xs_chunk[:, cs_l:cs_l + cs_c])
+            if self.chunk_size_cur > 0:
+                xs_pad = torch.cat([xs, xs.new_zeros(bs, N_r + (N_c - (xmax % N_c)), idim)], dim=1)
+            else:
+                xs_pad = xs
+            mems = self.init_memory()
+
+            for t in range(0, xmax, N_c):
+                mlen = 0 if t == 0 else N_l
+                clen = min(N_c, xmax - 1 - t + 1)
+                rlen = 0
+                if xmax - 1 - (t + clen) + 1 > 0:
+                    rlen = min(N_r,  xmax - 1 - (t + clen) + 1)
+                # print('mlen: %d, clen: %d, rlen: %d' % (mlen, clen, rlen))
+
+                xs_chunk = xs_pad[:, t:t + (clen + rlen)]
+
+                # adopt zero-centered offset
+                pos_idxs = torch.arange(mlen - 1, -xs_chunk.size(1) - 1, -1.0, dtype=torch.float)
+                if self.device_id >= 0:
+                    pos_idxs = pos_idxs.cuda(self.device_id)
+                pos_embs = self.pos_emb(pos_idxs)
+
+                hidden_states = [xs_chunk[:, :clen][:, -N_l:]]
+                for l, (mem, layer) in enumerate(zip(mems, self.layers)):
+                    xs_chunk, xx_aws_chunk = layer(xs_chunk, None, pos_embs=pos_embs, memory=mem,
+                                                   u=self.u, v=self.v)  # no mask
+                    if l < self.n_layers - 1:
+                        hidden_states.append(xs_chunk[:, :clen][:, -N_l:])
+                    xx_aws[l].append(xx_aws_chunk[:, :, mlen:mlen + clen, mlen:mlen + clen])
+                mems = self.update_memory(mems, hidden_states)
+                xs_chunks.append(xs_chunk[:, :clen])
             xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
+
             if not self.training:
                 for l in range(self.n_layers):
                     self.aws_dict['xx_aws_layer%d' % l] = tensor2np(torch.cat(xx_aws[l], dim=3)[:, :, :xmax, :xmax])
+        elif self.chunk_size_cur > 0:
+            # streaming Transformer encoder
+            raise NotImplementedError
         else:
             # Create the self-attention mask
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
 
+            # xs = self.pos_enc(xs, scale=False)
+            xs = self.pos_enc(xs, scale=True)
             for l, layer in enumerate(self.layers):
                 xs, xx_aws = layer(xs, xx_mask)
                 if not self.training:
