@@ -71,7 +71,8 @@ def build_encoder(args):
             param_init=args.transformer_param_init,
             chunk_size_left=args.lc_chunk_size_left,
             chunk_size_current=args.lc_chunk_size_current,
-            chunk_size_right=args.lc_chunk_size_right)
+            chunk_size_right=args.lc_chunk_size_right,
+            n_layers_rnn=args.enc_n_layers_rnn)
 
     else:
         subsample = [1] * args.enc_n_layers

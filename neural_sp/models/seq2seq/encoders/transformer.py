@@ -181,7 +181,6 @@ class TransformerEncoder(EncoderBase):
                 self._odim = d_model if self.bidir_sum else d_model * self.n_dirs
             if self._odim != d_model:
                 self.proj = nn.Linear(self._odim, d_model)
-            self.norm_rnn_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         if self.memory_transformer:
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
@@ -364,9 +363,7 @@ class TransformerEncoder(EncoderBase):
 
                 # adopt zero-centered offset
                 pos_idxs = torch.arange(mlen - 1, -xs_chunk.size(1) - 1, -1.0, dtype=torch.float)
-                if self.device_id >= 0:
-                    pos_idxs = pos_idxs.cuda(self.device_id)
-                pos_embs = self.pos_emb(pos_idxs)
+                pos_embs = self.pos_emb(pos_idxs, self.device_id)
 
                 hidden_states = [xs_chunk[:, :clen][:, -N_l:]]
                 for l, (mem, layer) in enumerate(zip(mems, self.layers)):
@@ -445,13 +442,9 @@ class TransformerEncoder(EncoderBase):
                     xs = self.dropout_rnn(xs)
                 if self.proj is not None:
                     xs = self.proj(xs)
-                # v1
-                # xs = self.pos_enc(xs, scale=True)
-                # v2
-                xs = self.norm_rnn_out(xs)
-            else:
-                # xs = self.pos_enc(xs, scale=False)
-                xs = self.pos_enc(xs, scale=True)
+
+            # xs = self.pos_enc(xs, scale=False)
+            xs = self.pos_enc(xs, scale=True)
 
             # Create the self-attention mask
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
