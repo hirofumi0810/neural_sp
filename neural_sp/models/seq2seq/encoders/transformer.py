@@ -348,10 +348,6 @@ class TransformerEncoder(EncoderBase):
 
             xs_chunks = []
             xx_aws = [[] for l in range(self.n_layers)]
-            if self.chunk_size_cur > 0:
-                xs_pad = torch.cat([xs, xs.new_zeros(bs, N_r + (N_c - (xmax % N_c)), idim)], dim=1)
-            else:
-                xs_pad = xs
             mems = self.init_memory()
 
             for t in range(0, xmax, N_c):
@@ -360,9 +356,8 @@ class TransformerEncoder(EncoderBase):
                 rlen = 0
                 if xmax - 1 - (t + clen) + 1 > 0:
                     rlen = min(N_r,  xmax - 1 - (t + clen) + 1)
-                # print('mlen: %d, clen: %d, rlen: %d' % (mlen, clen, rlen))
 
-                xs_chunk = xs_pad[:, t:t + (clen + rlen)]
+                xs_chunk = xs[:, t:t + (clen + rlen)]
 
                 # adopt zero-centered offset
                 pos_idxs = torch.arange(mlen - 1, -xs_chunk.size(1) - 1, -1.0, dtype=torch.float)
