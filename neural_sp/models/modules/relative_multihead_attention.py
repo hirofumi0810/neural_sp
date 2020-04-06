@@ -108,7 +108,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
             v (nn.Parameter): `[H, d_k]`
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
-            aw (FloatTensor): `[B, H, qlen, klen]`
+            aw (FloatTensor): `[B, H, qlen, klen+mlen]`
 
         """
         bs, qlen = query.size()[: 2]
@@ -138,16 +138,16 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         BD = self._rel_shift(BD)
 
         # the attention is the sum of content-based and position-based attention
-        e = (AC + BD) / self.scale  # `[B, qlen, klen, H]`
+        e = (AC + BD) / self.scale  # `[B, qlen, klen+mlen, H]`
 
         # Compute attention weights
         if mask is not None:
-            e = e.masked_fill_(mask == 0, NEG_INF)  # `[B, qlen, klen, H]`
+            e = e.masked_fill_(mask == 0, NEG_INF)  # `[B, qlen, klen+mlen, H]`
         aw = torch.softmax(e, dim=2)
         aw = self.dropout(aw)
         cv = torch.einsum("bijh,bjhd->bihd", (aw, value))  # `[B, qlen, H, d_k]`
         cv = cv.contiguous().view(bs, -1, self.n_heads * self.d_k)  # `[B, qlen, H * d_k]`
         cv = self.w_out(cv)
-        aw = aw.permute(0, 3, 1, 2)  # `[B, H, qlen, klen]`
+        aw = aw.permute(0, 3, 1, 2)  # `[B, H, qlen, klen+mlen]`
 
         return cv, aw
