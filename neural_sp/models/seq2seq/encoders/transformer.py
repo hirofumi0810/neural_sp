@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import copy
 import logging
+import math
 import os
 import shutil
 import torch
@@ -102,6 +103,7 @@ class TransformerEncoder(EncoderBase):
         self.chunk_size_right = chunk_size_right
         self.memory_transformer = ('transformer_xl' in enc_type)
         self.mem_len = chunk_size_left
+        self.scale = math.sqrt(d_model)
         if self.memory_transformer:
             assert pe_type == 'none'
             assert chunk_size_left > 0
@@ -282,6 +284,12 @@ class TransformerEncoder(EncoderBase):
         if not self.training:
             self.data_dict['elens'] = tensor2np(xlens)
 
+        if self.memory_transformer:
+            xs = xs * self.scale
+        else:
+            # xs = self.pos_enc(xs, scale=False)
+            xs = self.pos_enc(xs, scale=True)
+
         bs, xmax, idim = xs.size()
         if self.memory_transformer:
             # streaming TransformerXL encoder
@@ -334,8 +342,6 @@ class TransformerEncoder(EncoderBase):
             # Create the self-attention mask
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
 
-            # xs = self.pos_enc(xs, scale=False)
-            xs = self.pos_enc(xs, scale=True)
             for l, layer in enumerate(self.layers):
                 xs, xx_aws = layer(xs, xx_mask)
                 if not self.training:
