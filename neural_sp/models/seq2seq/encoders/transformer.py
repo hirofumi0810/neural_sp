@@ -348,10 +348,10 @@ class TransformerEncoder(EncoderBase):
             xs_chunks = []
             xx_aws = [[] for l in range(self.n_layers)]
             mems = self.init_memory()
-            self.reset_cache()
+            self.reset_cache()  # for LC-BLSTM
 
+            mlen = 0
             for t in range(0, xmax, N_c):
-                mlen = 0 if t == 0 else N_l
                 clen = min(N_c, xmax - 1 - t + 1)
                 rlen = 0
                 if xmax - 1 - (t + clen) + 1 > 0:
@@ -407,6 +407,7 @@ class TransformerEncoder(EncoderBase):
                     xx_aws_chunk_pad[:, :, :xx_aws_chunk.size(2), :xx_aws_chunk.size(3)] = xx_aws_chunk
                     xx_aws[l].append(xx_aws_chunk_pad)
                 mems = self.update_memory(mems, hidden_states)
+                mlen = mems[0].size(1) if mems[0].dim() > 1 else 0
                 xs_chunks.append(xs_chunk[:, :clen])
             xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
 
@@ -435,7 +436,6 @@ class TransformerEncoder(EncoderBase):
                 if self.proj is not None:
                     xs = self.proj(xs)
 
-            # xs = self.pos_enc(xs, scale=False)
             xs = self.pos_enc(xs, scale=True)
 
             # Create the self-attention mask
