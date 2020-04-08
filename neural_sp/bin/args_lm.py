@@ -56,7 +56,7 @@ def parse():
                         choices=['lstm', 'gru', 'gated_conv_custom',
                                  'gated_conv_8', 'gated_conv_8B', 'gated_conv_9',
                                  'gated_conv_13', 'gated_conv_14', 'gated_conv_14B',
-                                 'transformer'],
+                                 'transformer', 'transformer_xl'],
                         help='type of language model')
     parser.add_argument('--kernel_size', type=int, default=4,
                         help='kernel size for GatedConvLM')
@@ -137,8 +137,6 @@ def parse():
                         help='dropout probability for the attention weights (for Transformer)')
     parser.add_argument('--dropout_residual', type=float, default=0.0,
                         help='dropout probability for the stochasitc residual connections (for Transformer)')
-    parser.add_argument('--dropout_head', type=float, default=0.0,
-                        help='dropout probability for MHA in the decoder (for Transformer)')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help='')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
@@ -176,6 +174,8 @@ def parse():
     parser.add_argument('--serialize', type=strtobool, default=False, nargs='?',
                         help='serialize text according to onset in dialogue')
     # evaluation parameters
+    parser.add_argument('--recog_n_gpus', type=int, default=0,
+                        help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='tsv file paths for the evaluation sets')
     parser.add_argument('--recog_model', type=str, default=False, nargs='+',

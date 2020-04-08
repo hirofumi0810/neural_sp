@@ -14,7 +14,6 @@ from __future__ import division
 from __future__ import print_function
 
 import codecs
-import copy
 import kaldiio
 import numpy as np
 import os
@@ -105,6 +104,8 @@ class Dataset(object):
         self.dynamic_batching = dynamic_batching
         self.corpus = corpus
         self.discourse_aware = discourse_aware
+        if discourse_aware:
+            assert not is_test
 
         self.vocab = count_vocab_size(dict_path)
         self.eos = 2
@@ -167,45 +168,8 @@ class Dataset(object):
                 setattr(self, 'df_sub' + str(i), None)
         self.input_dim = kaldiio.load_mat(df['feat_path'][0]).shape[-1]
 
-        if corpus == 'swbd':
-            df['session'] = df['speaker'].apply(lambda x: str(x).split('-')[0])
-        else:
-            df['session'] = df['speaker'].apply(lambda x: str(x))
-
-        if discourse_aware:
-            max_n_frames = 10000
-            min_n_frames = 100
-
-            # Sort by onset
-            df = df.assign(prev_utt='')
-            if corpus == 'swbd':
-                df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
-            elif corpus == 'csj':
-                df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[1]))
-            elif corpus == 'wsj':
-                df['onset'] = df['utt_id'].apply(lambda x: x)
-            else:
-                raise NotImplementedError
-            df = df.sort_values(by=['session', 'onset'], ascending=True)
-
-            # Extract previous utterances
-            # df = df.assign(line_no=list(range(len(df))))
-            groups = df.groupby('session').groups
-            df['n_session_utt'] = df.apply(
-                lambda x: len([i for i in groups[x['session']]]), axis=1)
-
-            # df['prev_utt'] = df.apply(
-            #     lambda x: [df.loc[i, 'line_no']
-            #                for i in groups[x['session']] if df.loc[i, 'onset'] < x['onset']], axis=1)
-            # df['n_prev_utt'] = df.apply(lambda x: len(x['prev_utt']), axis=1)
-
-        elif is_test and corpus == 'swbd':
-            # Sort by onset
-            df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
-            df = df.sort_values(by=['session', 'onset'], ascending=True)
-
         # Remove inappropriate utterances
-        if is_test:
+        if is_test or discourse_aware:
             print('Original utterance num: %d' % len(df))
             n_utts = len(df)
             df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
@@ -240,28 +204,47 @@ class Dataset(object):
                             setattr(self, 'df_sub' + str(j),
                                     getattr(self, 'df_sub' + str(j)).drop(getattr(self, 'df_sub' + str(j)).index.difference(df.index)))
 
+        if corpus == 'swbd':
+            # 1. serialize
+            # df['session'] = df['speaker'].apply(lambda x: str(x).split('-')[0])
+            # 2. not serialize
+            df['session'] = df['speaker'].apply(lambda x: str(x))
+        else:
+            df['session'] = df['speaker'].apply(lambda x: str(x))
+
         # Sort tsv records
-        if not is_test:
-            if discourse_aware:
-                self.utt_offset = 0
-                self.n_utt_session_dict = {}
-                self.session_offset_dict = {}
-                for session_id, ids in sorted(df.groupby('session').groups.items(), key=lambda x: len(x[1])):
-                    n_utt = len(ids)
-                    # key: n_utt, value: session_id
-                    if n_utt not in self.n_utt_session_dict.keys():
-                        self.n_utt_session_dict[n_utt] = []
-                    self.n_utt_session_dict[n_utt].append(session_id)
+        if discourse_aware:
+            # Sort by onset (start time)
+            df = df.assign(prev_utt='')
+            df = df.assign(line_no=list(range(len(df))))
+            if corpus == 'swbd':
+                df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
+            elif corpus == 'csj':
+                df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[1]))
+            elif corpus == 'tedlium2':
+                df['onset'] = df['utt_id'].apply(lambda x: int(x.split('-')[-2]))
+            else:
+                raise NotImplementedError(corpus)
+            df = df.sort_values(by=['session', 'onset'], ascending=True)
 
-                    # key: session_id, value: id for the first utterance in each session
-                    self.session_offset_dict[session_id] = ids[0]
+            # Extract previous utterances
+            groups = df.groupby('session').groups
+            df['prev_utt'] = df.apply(
+                lambda x: [df.loc[i, 'line_no']
+                           for i in groups[x['session']] if df.loc[i, 'onset'] < x['onset']], axis=1)
+            df['n_prev_utt'] = df.apply(lambda x: len(x['prev_utt']), axis=1)
+            df['n_utt_in_session'] = df.apply(
+                lambda x: len([i for i in groups[x['session']]]), axis=1)
+            df = df.sort_values(by=['n_utt_in_session'], ascending=short2long)
 
-                self.n_utt_session_dict_epoch = copy.deepcopy(self.n_utt_session_dict)
-                # if discourse_aware == 'state_carry_over':
-                #     df = df.sort_values(by=['n_session_utt', 'utt_id'], ascending=short2long)
-                # else:
-                #     df = df.sort_values(by=['n_prev_utt'], ascending=short2long)
-            elif sort_by == 'input':
+            # NOTE: this is used only when LM is trained with seliarize: true
+            # if is_test and corpus == 'swbd':
+            #     # Sort by onset
+            #     df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
+            #     df = df.sort_values(by=['session', 'onset'], ascending=True)
+
+        elif not is_test:
+            if sort_by == 'input':
                 df = df.sort_values(by=['xlen'], ascending=short2long)
             elif sort_by == 'output':
                 df = df.sort_values(by=['ylen'], ascending=short2long)
@@ -269,14 +252,23 @@ class Dataset(object):
                 df = df.reindex(np.random.permutation(self.df.index))
 
         # Re-indexing
-        self.df = df.reset_index()
-        for i in range(1, 3):
-            if getattr(self, 'df_sub' + str(i)) is not None:
-                setattr(self, 'df_sub' + str(i),
-                        getattr(self, 'df_sub' + str(i)).reindex(df.index).reset_index())
-        if shuffle_bucket:
-            self.df_indices_buckets = self.backeting(batch_size)
-            self.n_buckets = len(self.df_indices_buckets)
+        if discourse_aware:
+            self.df = df
+            for i in range(1, 3):
+                if getattr(self, 'df_sub' + str(i)) is not None:
+                    setattr(self, 'df_sub' + str(i),
+                            getattr(self, 'df_sub' + str(i)).reindex(df.index))
+        else:
+            self.df = df.reset_index()
+            for i in range(1, 3):
+                if getattr(self, 'df_sub' + str(i)) is not None:
+                    setattr(self, 'df_sub' + str(i),
+                            getattr(self, 'df_sub' + str(i)).reindex(df.index).reset_index())
+
+        if discourse_aware:
+            self.df_indices_buckets = self.discourse_bucketing(batch_size)
+        elif shuffle_bucket:
+            self.df_indices_buckets = self.shuffle_bucketing(batch_size)
         else:
             self.df_indices = list(self.df.index)
 
@@ -292,11 +284,20 @@ class Dataset(object):
     def n_frames(self):
         return self.df['xlen'].sum()
 
-    def reset(self):
-        """Reset data counter and offset."""
-        if self.shuffle_bucket:
-            self.df_indices_buckets = self.backeting(self.batch_size)
-            self.n_buckets = len(self.df_indices_buckets)
+    def reset(self, batch_size=None):
+        """Reset data counter and offset.
+
+            Args:
+                batch_size (int): size of mini-batch
+
+        """
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        if self.discourse_aware:
+            self.df_indices_buckets = self.discourse_bucketing(batch_size)
+        elif self.shuffle_bucket:
+            self.df_indices_buckets = self.shuffle_bucketing(batch_size)
         else:
             self.df_indices = list(self.df.index)
         self.offset = 0
@@ -351,23 +352,9 @@ class Dataset(object):
         is_new_epoch = False
 
         if self.discourse_aware:
-            n_utt = min(self.n_utt_session_dict_epoch.keys())
-            assert self.utt_offset < n_utt
-            df_indices_mb = [self.df[self.session_offset_dict[session_id] + self.utt_offset:self.session_offset_dict[session_id] + self.utt_offset + 1].index[0]
-                             for session_id in self.n_utt_session_dict_epoch[n_utt][:batch_size]]
-
-            self.utt_offset += 1
-            if self.utt_offset == n_utt:
-                if len(self.n_utt_session_dict_epoch[n_utt][batch_size:]) > 0:
-                    self.n_utt_session_dict_epoch[n_utt] = self.n_utt_session_dict_epoch[n_utt][batch_size:]
-                else:
-                    self.n_utt_session_dict_epoch.pop(n_utt)
-                self.utt_offset = 0
-
-                # reset for the new epoch
-                if len(self.n_utt_session_dict_epoch.keys()) == 0:
-                    self.n_utt_session_dict_epoch = copy.deepcopy(self.n_utt_session_dict)
-                    is_new_epoch = True
+            df_indices_mb = self.df_indices_buckets.pop(0)
+            self.offset += len(df_indices_mb)
+            is_new_epoch = (len(self.df_indices_buckets) == 0)
 
         elif self.shuffle_bucket:
             df_indices_mb = self.df_indices_buckets.pop(0)
@@ -433,12 +420,6 @@ class Dataset(object):
         else:
             ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in df_indices_mb]
 
-        ys_hist = [[] for _ in range(len(df_indices_mb))]
-        if self.discourse_aware:
-            for j, i in enumerate(df_indices_mb):
-                for idx in self.df['prev_utt'][i]:
-                    ys_hist[j].append(list(map(int, str(self.df['token_id'][idx]).split())))
-
         ys_sub1 = []
         if self.df_sub1 is not None:
             ys_sub1 = [list(map(int, str(self.df_sub1['token_id'][i]).split())) for i in df_indices_mb]
@@ -455,7 +436,6 @@ class Dataset(object):
             'xs': xs,
             'xlens': [self.df['xlen'][i] for i in df_indices_mb],
             'ys': ys,
-            'ys_hist': ys_hist,
             'ys_sub1': ys_sub1,
             'ys_sub2': ys_sub2,
             'utt_ids': [self.df['utt_id'][i] for i in df_indices_mb],
@@ -479,7 +459,7 @@ class Dataset(object):
 
         return max(1, batch_size)
 
-    def backeting(self, batch_size):
+    def shuffle_bucketing(self, batch_size):
         df_indices_buckets = []  # list of list
         offset = 0
         while True:
@@ -494,4 +474,19 @@ class Dataset(object):
 
         # shuffle buckets
         random.shuffle(df_indices_buckets)
+        return df_indices_buckets
+
+    def discourse_bucketing(self, batch_size):
+        df_indices_buckets = []  # list of list
+        session_groups = [(k, v) for k, v in self.df.groupby('n_utt_in_session').groups.items()]
+        if self.shuffle_bucket:
+            random.shuffle(session_groups)
+        for n_utt, ids in session_groups:
+            first_utt_ids = [i for i in ids if self.df['n_prev_utt'][i] == 0]
+            for i in range(0, len(first_utt_ids), batch_size):
+                first_utt_ids_mb = first_utt_ids[i:i + batch_size]
+                for j in range(n_utt):
+                    df_indices_mb = [k + j for k in first_utt_ids_mb]
+                    df_indices_buckets.append(df_indices_mb)
+
         return df_indices_buckets

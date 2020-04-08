@@ -10,6 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
+benchmark=true
 speed_perturb=false
 specaug=false
 stdout=false
@@ -25,7 +26,7 @@ wp_type=bpe  # bpe/unigram (for wordpiece)
 conf=conf/asr/blstm_las.yaml
 conf2=
 asr_init=
-lm_init=
+external_lm=
 teacher=
 teacher_lm=
 
@@ -285,6 +286,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
+        --cudnn_benchmark ${benchmark} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --eval_sets ${data}/dataset/${test_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
@@ -294,7 +296,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/asr \
         --asr_init ${asr_init} \
-        --lm_init ${lm_init} \
+        --external_lm ${external_lm} \
         --teacher ${teacher} \
         --teacher_lm ${teacher_lm} \
         --stdout ${stdout} \

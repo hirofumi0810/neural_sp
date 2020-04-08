@@ -73,7 +73,8 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
                     exclude_eos=True)
             else:
                 best_hyps_id, _ = models[0].decode(
-                    batch['xs'], recog_params, dataset.idx2token[0],
+                    batch['xs'], recog_params,
+                    idx2token=dataset.idx2token[0] if progressbar else None,
                     exclude_eos=True,
                     refs_id=batch['ys'],
                     utt_ids=batch['utt_ids'],

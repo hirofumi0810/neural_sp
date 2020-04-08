@@ -81,7 +81,8 @@ def eval_char(models, dataset, recog_params, epoch,
                     exclude_eos=True)
             else:
                 best_hyps_id, _ = models[0].decode(
-                    batch['xs'], recog_params, dataset.idx2token[task_idx],
+                    batch['xs'], recog_params,
+                    idx2token=dataset.idx2token[task_idx] if progressbar else None,
                     exclude_eos=True,
                     refs_id=batch['ys'] if task_idx == 0 else batch['ys_sub' + str(task_idx)],
                     utt_ids=batch['utt_ids'],

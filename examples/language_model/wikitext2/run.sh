@@ -8,7 +8,9 @@ echo "                               WikiText-2                                 
 echo ============================================================================
 
 stage=0
+stop_stage=3
 gpu=
+benchmark=true
 
 ### vocabulary
 unit=word
@@ -17,47 +19,16 @@ vocab_size=33278
 #########################
 # LM configuration
 #########################
-# topology
-lm_type=lstm
-n_units=1024
-n_projs=0
-n_layers=2
-emb_dim=1024
-tie_embedding=true
-residual=true
-use_glu=true
-# optimization
-batch_size=20
-bptt=30
-optimizer=adam
-learning_rate=1e-3
-n_epochs=50
-convert_to_sgd_epoch=50
-print_step=200
-decay_start_epoch=10
-decay_rate=0.9
-decay_patient_n_epochs=0
-not_improved_patient_n_epochs=10
-eval_start_epoch=1
-# initialization
-param_init=0.05
-pretrained_model=
-# regularization
-clip_grad_norm=0.1
-dropout_hidden=0.5
-dropout_out=0.0
-dropout_emb=0.2
-weight_decay=1e-6
-adaptive_softmax=false
+conf=conf/rnnlm.yaml
 
 ### path to save the model
-model=/n/sd3/inaguma/result/wikitext2
+model=/n/work1/inaguma/results/wikitext2
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-data=/n/sd3/inaguma/corpus/wikitext2
+data=/n/work1/inaguma/corpus/wikitext2
 
 . ./cmd.sh
 . ./path.sh
@@ -78,7 +49,7 @@ train_set=train
 dev_set=valid
 test_set=test
 
-if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
+if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
     echo ============================================================================
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
@@ -98,7 +69,7 @@ if [ ${stage} -le 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
 fi
 
 dict=${data}/dict/${train_set}_${unit}${vocab_size}.txt; mkdir -p ${data}/dict
-if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2 ]; then
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2 ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
@@ -122,7 +93,7 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2 ]; then
 fi
 
 mkdir -p ${model}
-if [ ${stage} -le 3 ]; then
+if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo ============================================================================
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
@@ -130,40 +101,14 @@ if [ ${stage} -le 3 ]; then
     # NOTE: support only a single GPU for LM training
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus wikitext2 \
-        --n_gpus 1 \
+        --config ${conf} \
+        --n_gpus ${n_gpus} \
+        --cudnn_benchmark ${benchmark} \
         --train_set ${data}/dataset/${train_set}_${unit}${vocab_size}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${vocab_size}.tsv \
         --dict ${dict} \
         --model ${model}/lm \
         --unit ${unit} \
-        --lm_type ${lm_type} \
-        --n_units ${n_units} \
-        --n_projs ${n_projs} \
-        --n_layers ${n_layers} \
-        --emb_dim ${emb_dim} \
-        --tie_embedding ${tie_embedding} \
-        --residual ${residual} \
-        --use_glu ${use_glu} \
-        --batch_size ${batch_size} \
-        --bptt ${bptt} \
-        --optimizer ${optimizer} \
-        --learning_rate ${learning_rate} \
-        --n_epochs ${n_epochs} \
-        --convert_to_sgd_epoch ${convert_to_sgd_epoch} \
-        --print_step ${print_step} \
-        --decay_start_epoch ${decay_start_epoch} \
-        --decay_rate ${decay_rate} \
-        --decay_patient_n_epochs ${decay_patient_n_epochs} \
-        --not_improved_patient_n_epochs ${not_improved_patient_n_epochs} \
-        --eval_start_epoch ${eval_start_epoch} \
-        --param_init ${param_init} \
-        --pretrained_model ${pretrained_model} \
-        --clip_grad_norm ${clip_grad_norm} \
-        --dropout_hidden ${dropout_hidden} \
-        --dropout_out ${dropout_out} \
-        --dropout_emb ${dropout_emb} \
-        --weight_decay ${weight_decay} \
-        --adaptive_softmax ${adaptive_softmax} \
         --resume ${resume} || exit 1;
 
     echo "Finish LM training (stage: 3)." && exit 1;

@@ -21,8 +21,9 @@ from neural_sp.models.modules.causal_conv import CausalConv1d
 from neural_sp.models.modules.gelu import gelu, gelu_accurate
 from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.modules.mocha import MoChA
-from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
-from neural_sp.models.modules.sync_bidir_multihead_attention import SyncBidirMultiheadAttentionMechanism
+from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
+# from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
+from neural_sp.models.modules.sync_bidir_multihead_attention import SyncBidirMultiheadAttentionMechanism as SyncBidirMHA
 
 random.seed(1)
 
@@ -51,8 +52,7 @@ class PositionalEncoding(nn.Module):
         if '1dconv' in pe_type:
             causal_conv1d = CausalConv1d(in_channels=d_model,
                                          out_channels=d_model,
-                                         kernel_size=conv_kernel_size,
-                                         stride=1)
+                                         kernel_size=conv_kernel_size)
             layers = []
             conv_nlayers = int(pe_type.replace('1dconv', '')[0])
             for l in range(conv_nlayers):
@@ -162,7 +162,7 @@ class PositionwiseFeedForward(nn.Module):
 
 
 class TransformerEncoderBlock(nn.Module):
-    """A single layer of the transformer encoder.
+    """A single layer of the Transformer encoder.
 
     Args:
         d_model (int): dimension of MultiheadAttentionMechanism
@@ -187,13 +187,12 @@ class TransformerEncoderBlock(nn.Module):
 
         # self-attention
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.self_attn = MultiheadAttentionMechanism(kdim=d_model,
-                                                     qdim=d_model,
-                                                     adim=d_model,
-                                                     atype='scaled_dot',
-                                                     n_heads=n_heads,
-                                                     dropout=dropout_att,
-                                                     param_init=param_init)
+        self.self_attn = MHA(kdim=d_model,
+                             qdim=d_model,
+                             adim=d_model,
+                             n_heads=n_heads,
+                             dropout=dropout_att,
+                             param_init=param_init)
 
         # feed-forward
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -237,7 +236,7 @@ class TransformerEncoderBlock(nn.Module):
 
 
 class TransformerDecoderBlock(nn.Module):
-    """A single layer of the transformer decoder.
+    """A single layer of the Transformer decoder.
 
         Args:
             d_model (int): dimension of MultiheadAttentionMechanism
@@ -252,36 +251,42 @@ class TransformerDecoderBlock(nn.Module):
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
             param_init (str): parameter initialization method
             src_tgt_attention (bool): if False, ignore source-target attention
+            memory_transformer (bool): TransformerXL
             mocha_chunk_size (int): chunk size for MoChA. -1 means infinite lookback.
             mocha_n_heads_mono (int): number of heads for monotonic attention
             mocha_n_heads_chunk (int): number of heads for chunkwise attention
+            mocha_dropout_head (float):
+            mocha_dropout_hard (float):
+            lm_fusion (bool):
 
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads,
-                 dropout, dropout_att, dropout_residual, dropout_head,
+                 dropout, dropout_att, dropout_residual,
                  layer_norm_eps, ffn_activation, param_init,
-                 src_tgt_attention=True, mocha_chunk_size=0,
-                 mocha_n_heads_mono=1, mocha_n_heads_chunk=1,
+                 src_tgt_attention=True, memory_transformer=False,
+                 mocha_chunk_size=0, mocha_n_heads_mono=1, mocha_n_heads_chunk=1,
+                 mocha_dropout_head=0, mocha_dropout_hard=0.,
                  lm_fusion=False):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
         self.n_heads = n_heads
         self.src_tgt_attention = src_tgt_attention
+        self.memory_transformer = memory_transformer
 
         # self-attention
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         if atype == 'average':
             raise NotImplementedError(atype)
         else:
-            self.self_attn = MultiheadAttentionMechanism(kdim=d_model,
-                                                         qdim=d_model,
-                                                         adim=d_model,
-                                                         atype='scaled_dot',
-                                                         n_heads=n_heads,
-                                                         dropout=dropout_att,
-                                                         param_init=param_init)
+            mha = RelMHA if memory_transformer else MHA
+            self.self_attn = mha(kdim=d_model,
+                                 qdim=d_model,
+                                 adim=d_model,
+                                 n_heads=n_heads,
+                                 dropout=dropout_att,
+                                 param_init=param_init)
 
         # attention over encoder stacks
         if src_tgt_attention:
@@ -296,18 +301,16 @@ class TransformerDecoderBlock(nn.Module):
                                       n_heads_mono=mocha_n_heads_mono,
                                       n_heads_chunk=mocha_n_heads_chunk,
                                       dropout=dropout_att,
-                                      dropout_head=dropout_head,
-                                      param_init=param_init,
-                                      simple=atype == 'mocha_simple',
-                                      simple_v2=atype == 'mocha_simple_v2')
+                                      dropout_head=mocha_dropout_head,
+                                      dropout_hard=mocha_dropout_hard,
+                                      param_init=param_init)
             else:
-                self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
-                                                            qdim=d_model,
-                                                            adim=d_model,
-                                                            atype='scaled_dot',
-                                                            n_heads=n_heads,
-                                                            dropout=dropout_att,
-                                                            param_init=param_init)
+                self.src_attn = MHA(kdim=d_model,
+                                    qdim=d_model,
+                                    adim=d_model,
+                                    n_heads=n_heads,
+                                    dropout=dropout_att,
+                                    param_init=param_init)
 
         # feed-forward
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -317,6 +320,7 @@ class TransformerDecoderBlock(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         self.death_rate = dropout_residual
 
+        # LM fusion
         self.lm_fusion = lm_fusion
         if lm_fusion:
             self.norm_lm = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -325,21 +329,21 @@ class TransformerDecoderBlock(nn.Module):
             self.linear_lm_gate = nn.Linear(d_model * 2, d_model)
             self.linear_lm_fusion = nn.Linear(d_model * 2, d_model)
             if 'attention' in lm_fusion:
-                self.lm_attn = MultiheadAttentionMechanism(kdim=d_model,
-                                                           qdim=d_model,
-                                                           adim=d_model,
-                                                           atype='scaled_dot',
-                                                           n_heads=n_heads,
-                                                           dropout=dropout_att,
-                                                           param_init=param_init)
+                self.lm_attn = MHA(kdim=d_model,
+                                   qdim=d_model,
+                                   adim=d_model,
+                                   n_heads=n_heads,
+                                   dropout=dropout_att,
+                                   param_init=param_init)
 
     def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
-                xy_aws_prev=None, mode='hard', lmout=None):
+                xy_aws_prev=None, mode='hard', lmout=None,
+                pos_embs=None, memory=None, u=None, v=None):
         """Transformer decoder forward pass.
 
         Args:
             ys (FloatTensor): `[B, L, d_model]`
-            yy_mask (ByteTensor): `[B, L, L]`
+            yy_mask (ByteTensor): `[B, L (query), L (key)]`
             xs (FloatTensor): encoder outputs. `[B, T, d_model]`
             xy_mask (ByteTensor): `[B, L, T]`
             cache (FloatTensor): `[B, L-1, d_model]`
@@ -374,8 +378,10 @@ class TransformerDecoderBlock(nn.Module):
         if self.atype == "average":
             raise NotImplementedError
         else:
-            out, yy_aws, _ = self.self_attn(
-                ys, ys, ys_q, mask=yy_mask, cache=False)  # k/v/q
+            if self.memory_transformer:
+                out, yy_aws = self.self_attn(ys_q, memory, pos_embs, yy_mask, u, v)
+            else:
+                out, yy_aws, _ = self.self_attn(ys, ys, ys_q, mask=yy_mask, cache=False)  # k/v/q
             if self.death_rate > 0 and self.training:
                 out = out / (1 - self.death_rate)
             out = self.dropout(out) + residual
@@ -387,8 +393,7 @@ class TransformerDecoderBlock(nn.Module):
             out = self.norm2(out)
             out, xy_aws, xy_aws_beta = self.src_attn(
                 xs, xs, out, mask=xy_mask, cache=False,  # k/v/q
-                aw_prev=xy_aws_prev, mode=mode,
-                n_tokens=yy_mask[:, -1, :].sum(1).float() if yy_mask is not None else None)
+                aw_prev=xy_aws_prev, mode=mode)
             if self.death_rate > 0 and self.training:
                 out = out / (1 - self.death_rate)
             out = self.dropout(out) + residual
@@ -402,8 +407,7 @@ class TransformerDecoderBlock(nn.Module):
 
             # attention over LM outputs
             if 'attention' in self.lm_fusion:
-                out, yy_aws_lm, _ = self.lm_attn(
-                    lmout, lmout, out, mask=yy_mask, cache=False)  # k/v/q
+                out, yy_aws_lm, _ = self.lm_attn(lmout, lmout, out, mask=yy_mask, cache=False)  # k/v/q
 
             gate = torch.sigmoid(self.linear_lm_gate(torch.cat([out, lmout], dim=-1)))
             gated_lmout = gate * lmout
@@ -428,7 +432,7 @@ class TransformerDecoderBlock(nn.Module):
 
 
 class SyncBidirTransformerDecoderBlock(nn.Module):
-    """A single layer of the synchronous bidirectional transformer decoder.
+    """A single layer of the synchronous bidirectional Transformer decoder.
 
         Args:
             d_model (int): dimension of MultiheadAttentionMechanism
@@ -452,23 +456,21 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
         # synchronous bidirectional attention
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.self_attn = SyncBidirMultiheadAttentionMechanism(kdim=d_model,
-                                                              qdim=d_model,
-                                                              adim=d_model,
-                                                              atype='scaled_dot',
-                                                              n_heads=n_heads,
-                                                              dropout=dropout_att,
-                                                              param_init=param_init)
+        self.self_attn = SyncBidirMHA(kdim=d_model,
+                                      qdim=d_model,
+                                      adim=d_model,
+                                      n_heads=n_heads,
+                                      dropout=dropout_att,
+                                      param_init=param_init)
 
         # attention over encoder stacks
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.src_attn = MultiheadAttentionMechanism(kdim=d_model,
-                                                    qdim=d_model,
-                                                    adim=d_model,
-                                                    atype='scaled_dot',
-                                                    n_heads=n_heads,
-                                                    dropout=dropout_att,
-                                                    param_init=param_init)
+        self.src_attn = MHA(kdim=d_model,
+                            qdim=d_model,
+                            adim=d_model,
+                            n_heads=n_heads,
+                            dropout=dropout_att,
+                            param_init=param_init)
 
         # feed-forward
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -480,7 +482,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
     def forward(self, ys, ys_bwd, yy_mask, identity_mask, xs, xy_mask,
                 cache=None, cache_bwd=None):
-        """Synchronous bidirectional transformer decoder forward pass.
+        """Synchronous bidirectional Transformer decoder forward pass.
 
         Args:
             ys (FloatTensor): `[B, L, d_model]`

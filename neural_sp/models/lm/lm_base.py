@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
@@ -41,15 +41,15 @@ class LMBase(ModelBase):
 
         Args:
             ys (list): A list of length `[B]`, which contains arrays of size `[L]`
-            state (tuple or list): (h_n, c_n) or (hxs, cxs)
+            state (tuple or list):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
-            n_caches (int):
+            n_caches (int): number of cached states
             ylens (list): not used
             predict_last (bool): used for TransformerLM and GatedConvLM
         Returns:
             loss (FloatTensor): `[1]`
-            state (tuple or list): (h_n, c_n) or (hxs, cxs)
+            new_state (tuple or list):
             observation (dict):
 
         """
@@ -67,7 +67,7 @@ class LMBase(ModelBase):
         ys = pad_list(ys, self.pad)
         ys_in, ys_out = ys[:, :-1], ys[:, 1:]
 
-        logits, out, state = self.decode(ys_in, state)
+        logits, out, new_state = self.decode(ys_in, state)
 
         if predict_last:
             ys_out = ys_out[:, -1].unsqueeze(1)
@@ -124,10 +124,14 @@ class LMBase(ModelBase):
                 logits.view((-1, logits.size(2)))), ys_out, pad=self.pad)
 
         observation = {'loss.lm': loss.item(), 'acc.lm': acc, 'ppl.lm': ppl}
-        return loss, state, observation
+        return loss, new_state, observation
 
     def repackage_state(self, state):
         return state
+
+    def reset_length(self, mem_len):
+        # for TransformerXL
+        self.mem_len = mem_len
 
     def decode(self, ys_emb, state=None):
         raise NotImplementedError
@@ -142,6 +146,7 @@ class LMBase(ModelBase):
                     hxs (FloatTensor): `[n_layers, B, n_units]`
                     cxs (FloatTensor): `[n_layers, B, n_units]`
                 - TransformerLM (LongTensor): `[B, L]`
+                - TransformerXL (list): List of `[B, L, d_model]`
         Returns:
             out (FloatTensor): `[B, L, vocab]`
             state:
@@ -149,6 +154,7 @@ class LMBase(ModelBase):
                     hxs (FloatTensor): `[n_layers, B, n_units]`
                     cxs (FloatTensor): `[n_layers, B, n_units]`
                 - TransformerLM (LongTensor): `[B, L]`
+                - TransformerXL (list): List of `[B, L, d_model]`
             log_probs (FloatTensor): `[B, L, vocab]`
 
         """
@@ -157,4 +163,5 @@ class LMBase(ModelBase):
         return out, new_state, log_probs
 
     def plot_attention(self):
-        raise NotImplementedError
+        # raise NotImplementedError
+        pass

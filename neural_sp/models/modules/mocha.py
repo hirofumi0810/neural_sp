@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 class MonotonicEnergy(nn.Module):
     def __init__(self, kdim, qdim, adim, atype, n_heads, init_r,
-                 conv1d=False, conv_kernel_size=5, param_init=''):
+                 conv1d=False, conv_kernel_size=5, bias=True, param_init=''):
         """Energy function for the monotonic attenion.
 
         Args:
@@ -40,6 +40,7 @@ class MonotonicEnergy(nn.Module):
             init_r (int): initial value for offset r
             conv1d (bool): use 1D causal convolution for energy calculation
             conv_kernel_size (int): kernel size for 1D convolution
+            bias (bool): use bias term in linear layers
             param_init (str): parameter initialization method
 
         """
@@ -55,16 +56,19 @@ class MonotonicEnergy(nn.Module):
         self.n_heads = n_heads
         self.scale = math.sqrt(adim)
 
-        self.w_key = nn.Linear(kdim, adim)
         if atype == 'add':
+            self.w_key = nn.Linear(kdim, adim)
             self.v = nn.Linear(adim, n_heads, bias=False)
             self.w_query = nn.Linear(qdim, adim, bias=False)
         elif atype == 'scaled_dot':
-            self.w_query = nn.Linear(qdim, adim)
+            self.w_key = nn.Linear(kdim, adim, bias=bias)
+            self.w_query = nn.Linear(qdim, adim, bias=bias)
         else:
             raise NotImplementedError(atype)
 
         self.r = nn.Parameter(torch.Tensor([init_r]))
+        logger.info('init_r is initialized with %d' % init_r)
+
         if atype == 'add':
             self.v = nn.utils.weight_norm(self.v, name='weight', dim=0)
             # initialization
@@ -74,7 +78,7 @@ class MonotonicEnergy(nn.Module):
             # initialization
             # self.w_query.weight_g.data = torch.Tensor([1 / adim]).sqrt()
             if param_init == 'xavier_uniform':
-                self.reset_parameters(True)
+                self.reset_parameters(bias)
             # TODO: debug weight normalization
 
         self.conv1d = None
@@ -93,7 +97,6 @@ class MonotonicEnergy(nn.Module):
         # nn.init.xavier_uniform_(self.w_query.weight_v, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_query.weight, gain=1 / math.sqrt(2))
         if bias:
-            # newly introduced
             nn.init.constant_(self.w_key.bias, 0.)
             nn.init.constant_(self.w_query.bias, 0.)
 
@@ -101,7 +104,7 @@ class MonotonicEnergy(nn.Module):
         self.key = None
         self.mask = None
 
-    def forward(self, key, query, mask, cache=True):
+    def forward(self, key, query, mask, cache=False):
         """Compute monotonic energy.
 
         Args:
@@ -126,7 +129,8 @@ class MonotonicEnergy(nn.Module):
             self.mask = mask
             if mask is not None:
                 self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen)
+                assert self.mask.size() == (bs, self.n_heads, qlen, klen), \
+                    (self.mask.size(), (bs, self.n_heads, qlen, klen))
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         query = query.transpose(2, 1).contiguous()  # `[B, H, qlen, d_k]`
@@ -144,12 +148,14 @@ class MonotonicEnergy(nn.Module):
             e = e + self.r
         if self.mask is not None:
             e = e.masked_fill_(self.mask == 0, NEG_INF)
-        assert e.size() == (bs, self.n_heads, qlen, klen)
+        assert e.size() == (bs, self.n_heads, qlen, klen), \
+            (e.size(), (bs, self.n_heads, qlen, klen))
         return e
 
 
 class ChunkEnergy(nn.Module):
-    def __init__(self, kdim, qdim, adim, atype, n_heads=1, param_init=''):
+    def __init__(self, kdim, qdim, adim, atype, n_heads=1,
+                 bias=True, param_init=''):
         """Energy function for the chunkwise attention.
 
         Args:
@@ -158,6 +164,7 @@ class ChunkEnergy(nn.Module):
             adim (int): dimension of attention space
             atype (str): type of attention mechanism
             n_heads (int): number of heads
+            bias (bool): use bias term in linear layers
             param_init (str): parameter initialization method
 
         """
@@ -172,15 +179,15 @@ class ChunkEnergy(nn.Module):
         self.n_heads = n_heads
         self.scale = math.sqrt(adim)
 
-        self.w_key = nn.Linear(kdim, adim)
         if atype == 'add':
-            assert self.n_heads == 1
+            self.w_key = nn.Linear(kdim, adim)
             self.w_query = nn.Linear(qdim, adim, bias=False)
             self.v = nn.Linear(adim, 1, bias=False)
         elif atype == 'scaled_dot':
-            self.w_query = nn.Linear(qdim, adim)
+            self.w_key = nn.Linear(kdim, adim, bias=bias)
+            self.w_query = nn.Linear(qdim, adim, bias=bias)
             if param_init == 'xavier_uniform':
-                self.reset_parameters(True)
+                self.reset_parameters(bias)
         else:
             raise NotImplementedError(atype)
 
@@ -191,7 +198,6 @@ class ChunkEnergy(nn.Module):
         nn.init.xavier_uniform_(self.w_key.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_query.weight, gain=1 / math.sqrt(2))
         if bias:
-            # newly introduced
             nn.init.constant_(self.w_key.bias, 0.)
             nn.init.constant_(self.w_query.bias, 0.)
 
@@ -199,7 +205,7 @@ class ChunkEnergy(nn.Module):
         self.key = None
         self.mask = None
 
-    def forward(self, key, query, mask, cache=True):
+    def forward(self, key, query, mask, cache=False):
         """Compute chunkwise energy.
 
         Args:
@@ -221,7 +227,8 @@ class ChunkEnergy(nn.Module):
             self.mask = mask
             if mask is not None:
                 self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen)
+                assert self.mask.size() == (bs, self.n_heads, qlen, klen), \
+                    (self.mask.size(), (bs, self.n_heads, qlen, klen))
 
         if self.atype == 'add':
             key = self.key.unsqueeze(2)  # `[B, 1, 1, klen, d_k]`
@@ -235,16 +242,16 @@ class ChunkEnergy(nn.Module):
 
         if self.mask is not None:
             energy = energy.masked_fill_(self.mask == 0, NEG_INF)
-        assert energy.size() == (bs, self.n_heads, qlen, klen)
+        assert energy.size() == (bs, self.n_heads, qlen, klen), \
+            (energy.size(), (bs, self.n_heads, qlen, klen))
         return energy
 
 
 class MoChA(nn.Module):
-    def __init__(self, kdim, qdim, adim, atype, chunk_size,
-                 n_heads_mono=1, n_heads_chunk=1,
-                 conv1d=False, init_r=-4, noise_std=1.0, eps=1e-6,
-                 sharpening_factor=1.0, dropout=0., dropout_head=0., param_init='',
-                 decot=False, lookahead=2, simple=False):
+    def __init__(self, kdim, qdim, adim, atype, chunk_size, n_heads_mono=1, n_heads_chunk=1,
+                 conv1d=False, init_r=-4, eps=1e-6, noise_std=1.0, sharpening_factor=1.0,
+                 dropout=0., dropout_head=0., dropout_hard=0., bias=True, param_init='',
+                 decot=False, lookahead=2):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -254,7 +261,10 @@ class MoChA(nn.Module):
 
             if chunk_size == 1, this is equivalent to Hard monotonic attention
                 "Online and Linear-Time Attention by Enforcing Monotonic Alignment" (ICML 2017)
-                 http://arxiv.org/abs/1704.00784
+                 https://arxiv.org/abs/1704.00784
+            if chunk_size == -1, this is equivalent to Monotonic infinite lookback attention (Milk)
+                "Monotonic Infinite Lookback Attention for Simultaneous Machine Translation" (ACL 2019)
+                 https://arxiv.org/abs/1906.05218
 
         Args:
             kdim (int): dimension of key
@@ -266,15 +276,15 @@ class MoChA(nn.Module):
             n_heads_chunk (int): number of heads for chunkwise attention
             conv1d (bool): apply 1d convolution for energy calculation
             init_r (int): initial value for parameter 'r' used for monotonic attention
-            noise_std (float): standard deviation for input noise
             eps (float): epsilon parameter to avoid zero division
+            noise_std (float): standard deviation for input noise
             sharpening_factor (float): sharping factor for beta calculation
             dropout (float): dropout probability for attention weights
             dropout_head (float): dropout probability for heads
+            bias (bool): use bias term in linear layers
             param_init (str): parameter initialization method
             decot (bool): delay constrainted training (DeCoT)
             lookahead (int): lookahead frames for DeCoT
-            simple (bool):
 
         """
         super(MoChA, self).__init__()
@@ -288,29 +298,30 @@ class MoChA(nn.Module):
         self.n_heads = n_heads_mono
         self.n_heads_mono = n_heads_mono
         self.n_heads_chunk = n_heads_chunk
-        self.noise_std = noise_std
         self.eps = eps
+        self.noise_std = noise_std
         self.sharpening_factor = sharpening_factor
 
         self.decot = decot
         self.lookahead = lookahead
-        self.simple = simple
 
         self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype,
-                                                n_heads_mono, init_r, conv1d,
+                                                n_heads_mono, init_r, conv1d, bias=bias,
                                                 param_init=param_init)
         self.chunk_energy = ChunkEnergy(kdim, qdim, adim, atype,
-                                        n_heads_chunk, param_init) if chunk_size > 1 or self.milk else None
+                                        n_heads_chunk, bias,
+                                        param_init) if chunk_size > 1 or self.milk else None
         if n_heads_mono * n_heads_chunk > 1:
-            self.w_value = nn.Linear(kdim, adim)
-            self.w_out = nn.Linear(adim, kdim)
+            self.w_value = nn.Linear(kdim, adim, bias=bias)
+            self.w_out = nn.Linear(adim, kdim, bias=bias)
             if param_init == 'xavier_uniform':
-                self.reset_parameters(True)
+                self.reset_parameters(bias)
 
         # attention dropout
         self.dropout = nn.Dropout(p=dropout)
         # head dropout
         self.dropout_head = dropout_head
+        self.dropout_hard = dropout_hard
 
     def reset_parameters(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
@@ -318,7 +329,6 @@ class MoChA(nn.Module):
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/multihead_attention.py
         nn.init.xavier_uniform_(self.w_value.weight, gain=1 / math.sqrt(2))
         if bias:
-            # newly introduced
             nn.init.constant_(self.w_value.bias, 0.)
 
         nn.init.xavier_uniform_(self.w_out.weight)
@@ -331,7 +341,7 @@ class MoChA(nn.Module):
             self.chunk_energy.reset()
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                mode='hard', cache=True, trigger_point=None):
+                mode='hard', cache=False, trigger_point=None):
         """Soft monotonic attention during training.
 
         Args:
@@ -352,16 +362,17 @@ class MoChA(nn.Module):
         bs, klen = key.size()[:2]
         qlen = query.size(1)
 
-        aw_prev_bwd = None
         if aw_prev is None:
             # aw_prev = [1, 0, 0 ... 0]
             aw_prev = key.new_zeros(bs, self.n_heads_mono, 1, klen)
             aw_prev[:, :, :, 0:1] = key.new_ones(bs, self.n_heads_mono, 1, 1)
-        if self.fwd_bwd and aw_prev_bwd is None:
-            aw_prev_bwd = aw_prev.clone()
 
         # Compute monotonic energy
         e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B, H_mono, qlen, klen]`
+
+        # hard dropout
+        if self.n_heads_mono > 1 and self.dropout_hard > 0 and self.training and random.random() < self.dropout_hard:
+            mode = 'hard'
 
         if mode == 'recursive':  # training
             p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_mono, qlen, klen]`
@@ -380,59 +391,66 @@ class MoChA(nn.Module):
                 aw_prev = p_choose[:, :, i:i + 1] * q[:, :, i:i + 1, 1:]  # `[B, H_mono, 1, klen]`
                 alpha.append(aw_prev)
             alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
-            alpha = self.dropout(alpha)
+            alpha_masked = alpha.clone()
 
         elif mode == 'parallel':  # training
             p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_mono, qlen, klen]`
             # safe_cumprod computes cumprod in logspace with numeric checks
             cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, H_mono, qlen, klen]`
             # Compute recurrence relation solution
-            if self.simple:
-                alpha = p_choose * cumprod_1mp_choose   # `[B, H_mono, qlen, klen]`
-            else:
-                alpha = []
-                for i in range(qlen):
-                    aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
-                        aw_prev / torch.clamp(cumprod_1mp_choose[:, :, i:i + 1], min=self.eps, max=1.0), dim=-1)  # `[B, H_mono, 1, klen]`
+            alpha = []
+            for i in range(qlen):
+                denom = torch.clamp(cumprod_1mp_choose[:, :, i:i + 1], min=self.eps, max=1.0)
+                aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
+                    aw_prev / denom, dim=-1)  # `[B, H_mono, 1, klen]`
+                # Mask the right part from the trigger point
+                if self.decot and trigger_point is not None:
+                    for b in range(bs):
+                        aw_prev[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
+                alpha.append(aw_prev)
+            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
+            alpha_masked = alpha.clone()
 
-                    # Mask the right part from the trigger point
-                    if self.decot and trigger_point is not None:
-                        for b in range(bs):
-                            aw_prev[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
-
-                    alpha.append(aw_prev)
-                alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
-            alpha = self.dropout(alpha)
+            # mask out each head independently
+            if self.n_heads_mono > 1 and self.dropout_head > 0 and self.training:
+                head_mask = alpha.new_ones(alpha.size()).byte()
+                for h in range(self.n_heads_mono):
+                    if random.random() < self.dropout_head:
+                        head_mask[:, h] = 0
+                alpha_masked = alpha_masked.masked_fill_(head_mask == 0, 0)
 
         elif mode == 'hard':  # inference
-            # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
+            alpha = []
             emit_probs = torch.sigmoid(e_mono)  # `[B, H_mono, qlen, klen]`
             p_choose = (emit_probs >= 0.5).float()
-            # Remove any probabilities before the index chosen at the last time step
-            p_choose *= torch.cumsum(aw_prev, dim=-1)  # `[B, H_mono, qlen, klen]`
-            # Now, use exclusive cumprod to remove probabilities after the first
-            # chosen index, like so:
-            # p_choose                        = [0, 0, 0, 1, 1, 0, 1, 1]
-            # 1 - p_choose                    = [1, 1, 1, 0, 0, 1, 0, 0]
-            # exclusive_cumprod(1 - p_choose) = [1, 1, 1, 1, 0, 0, 0, 0]
-            # alpha: product of above         = [0, 0, 0, 1, 0, 0, 0, 0]
-            alpha = p_choose * exclusive_cumprod(1 - p_choose)  # `[B, H_mono, qlen, klen]`
+            for i in range(qlen):
+                p_choose_i = (emit_probs[:, :, i:i + 1] >= 0.5).float()
+                # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
+                # Remove any probabilities before the index chosen at the last time step
+                p_choose_i *= torch.cumsum(aw_prev[:, :, i:i + 1], dim=-1)  # `[B, H_mono, qlen, klen]`
+                # Now, use exclusive cumprod to remove probabilities after the first
+                # chosen index, like so:
+                # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
+                # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
+                # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
+                # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
+                aw_prev = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_mono, qlen, klen]`
+                alpha.append(aw_prev)
+            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
+            # NOTE: no dropout
+            alpha_masked = alpha.clone()
+
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
-
-        if self.dropout_head > 0 and self.training and random.random() < self.dropout_head:
-            head_idx = random.randint(0, self.n_heads_mono - 1)
-            head_mask = alpha.new_ones(alpha.size()).byte()
-            head_mask[:, head_idx] = 0
-            alpha = alpha.masked_fill_(head_mask == 0, 0)
 
         # Compute chunk energy
         beta = None
         if self.chunk_size > 1 or self.milk:
             e_chunk = self.chunk_energy(key, query, mask, cache=cache)  # `[B, H_chunk, qlen, ken]`
             beta = efficient_chunkwise_attention(
-                alpha, e_chunk, self.chunk_size,
+                alpha_masked, e_chunk, mask, self.chunk_size,
                 self.n_heads_chunk, self.sharpening_factor)  # `[B, H_mono * H_chunk, qlen, klen]`
+            beta = self.dropout(beta)
 
         # Compute context vector
         if self.n_heads_mono * self.n_heads_chunk > 1:
@@ -450,9 +468,11 @@ class MoChA(nn.Module):
             else:
                 cv = torch.bmm(beta.squeeze(1), value)  # `[B, 1, adim]`
 
-        assert alpha.size() == (bs, self.n_heads_mono, qlen, klen)
+        assert alpha.size() == (bs, self.n_heads_mono, qlen, klen), \
+            (alpha.size(), (bs, self.n_heads_mono, qlen, klen))
         if self.chunk_size > 1 or self.milk:
-            assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen)
+            assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen), \
+                (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, klen))
         return cv, alpha, beta
 
 
@@ -524,15 +544,18 @@ def moving_sum(x, back, forward):
     return x_sum
 
 
-def efficient_chunkwise_attention(alpha, e, chunk_size, n_heads, sharpening_factor):
+def efficient_chunkwise_attention(alpha, e, mask, chunk_size, n_heads,
+                                  sharpening_factor, chunk_len_dist=None):
     """Compute chunkwise attention distribution efficiently by clipping logits.
 
     Args:
         alpha (FloatTensor): `[B, H_mono, qlen, klen]`
         e (FloatTensor): `[B, H_chunk, qlen, klen]`
+        mask (ByteTensor): `[B, qlen, klen]`
         chunk_size (int): window size for chunkwise attention
         n_heads (int): number of heads for chunkwise attention
         sharpening_factor (float):
+        chunk_len_dist (IntTensor): `[B, H_mono, qlen]`
     Return
         beta (FloatTensor): `[B, H_mono * H_chunk, qlen, klen]`
 
@@ -547,14 +570,25 @@ def efficient_chunkwise_attention(alpha, e, chunk_size, n_heads, sharpening_fact
     # Limit the range for numerical stability
     softmax_exp = torch.clamp(torch.exp(e), min=1e-5)
     # Compute chunkwise softmax denominators
-    if chunk_size == -1:
-        # infinite lookback
-        inner_items = alpha / (torch.cumsum(softmax_exp, dim=2))
-        beta = softmax_exp * torch.cumsum(inner_items.flip(dims=[2]), dim=2).flip(dims=[2])
+    if chunk_len_dist is not None:
+        # adaptive chunkwise attention
+        raise NotImplementedError
     else:
-        softmax_denominators = moving_sum(softmax_exp,
-                                          back=chunk_size - 1, forward=0)
-        # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
-        beta = softmax_exp * moving_sum(alpha * sharpening_factor / softmax_denominators,
-                                        back=0, forward=chunk_size - 1)
+        if chunk_size == -1:
+            # infinite lookback attention
+            # inner_items = alpha * sharpening_factor / torch.cumsum(softmax_exp, dim=-1)
+            # beta = softmax_exp * torch.cumsum(inner_items.flip(dims=[-1]), dim=-1).flip(dims=[-1])
+            # beta = beta.masked_fill(mask.unsqueeze(1), 0)
+            # beta = beta / beta.sum(dim=-1, keepdim=True)
+
+            softmax_denominators = torch.cumsum(softmax_exp, dim=-1)
+            # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
+            beta = softmax_exp * moving_sum(alpha * sharpening_factor / softmax_denominators,
+                                            back=0, forward=klen - 1)
+        else:
+            softmax_denominators = moving_sum(softmax_exp,
+                                              back=chunk_size - 1, forward=0)
+            # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
+            beta = softmax_exp * moving_sum(alpha * sharpening_factor / softmax_denominators,
+                                            back=0, forward=chunk_size - 1)
     return beta.view(bs, -1, qlen, klen)

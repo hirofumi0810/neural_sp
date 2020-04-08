@@ -1,0 +1,10 @@
+# optimization
+n_epochs: 60  # 40->60
+print_step: 2000
+
+# mask
+freq_width: 27
+n_freq_masks: 2
+time_width: 70
+n_time_masks: 2
+time_width_upper: 0.2
