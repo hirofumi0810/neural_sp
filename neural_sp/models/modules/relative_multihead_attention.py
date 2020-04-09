@@ -129,10 +129,16 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         pos_embs = pos_embs.view(-1, self.n_heads, self.d_k)  # `[qlen, H, d_k]`
 
         # content-based attention term: (a) + (c)
-        AC = torch.einsum("bihd,bjhd->bijh", ((query + u[None, None]), key))  # `[B, qlen, klen+mlen, H]`
+        if u is not None:
+            AC = torch.einsum("bihd,bjhd->bijh", ((query + u[None, None]), key))  # `[B, qlen, klen+mlen, H]`
+        else:
+            AC = torch.einsum("bihd,bjhd->bijh", (query, key))  # `[B, qlen, klen+mlen, H]`
 
         # position-based attention term: (b) + (d)
-        BD = torch.einsum("bihd,jhd->bijh", ((query + v[None, None]), pos_embs))  # `[B, qlen, klen+mlen, H]`
+        if v is not None:
+            BD = torch.einsum("bihd,jhd->bijh", ((query + v[None, None]), pos_embs))  # `[B, qlen, klen+mlen, H]`
+        else:
+            BD = torch.einsum("bihd,jhd->bijh", (query, pos_embs))  # `[B, qlen, klen+mlen, H]`
 
         # Compute positional attention efficiently
         BD = self._rel_shift(BD)
@@ -144,7 +150,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         if mask is not None:
             e = e.masked_fill_(mask == 0, NEG_INF)  # `[B, qlen, klen+mlen, H]`
         aw = torch.softmax(e, dim=2)
-        aw = self.dropout(aw)
+        aw = self.dropout(aw)  # `[B, qlen, klen+mlen, H]`
         cv = torch.einsum("bijh,bjhd->bihd", (aw, value))  # `[B, qlen, H, d_k]`
         cv = cv.contiguous().view(bs, -1, self.n_heads * self.d_k)  # `[B, qlen, H * d_k]`
         cv = self.w_out(cv)
