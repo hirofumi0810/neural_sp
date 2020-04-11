@@ -164,7 +164,7 @@ class TransformerEncoder(EncoderBase):
             # NOTE: support bidirectional only
             self.bidir_sum = True
 
-            for l in range(n_layers_rnn):
+            for _ in range(n_layers_rnn):
                 if 'blstm' in enc_type:
                     rnn_i = nn.LSTM
                 elif 'bgru' in enc_type:
@@ -190,10 +190,10 @@ class TransformerEncoder(EncoderBase):
 
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
             d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
-            dropout_residual * (l + 1) / n_layers,
+            dropout_residual * (lth + 1) / n_layers,
             layer_norm_eps, ffn_activation, param_init,
             memory_transformer=self.memory_transformer))
-            for l in range(n_layers)])
+            for lth in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         self._odim = d_model
@@ -346,7 +346,7 @@ class TransformerEncoder(EncoderBase):
             N_r = max(0, self.chunk_size_right // self.subsampling_factor)
 
             xs_chunks = []
-            xx_aws = [[] for l in range(self.n_layers)]
+            xx_aws = [[] for _ in range(self.n_layers)]
             mems = self.init_memory()
             self.reset_cache()  # for LC-BLSTM
 
@@ -355,24 +355,27 @@ class TransformerEncoder(EncoderBase):
                 clen = min(N_c, xmax - 1 - t + 1)
                 rlen = 0
                 if xmax - 1 - (t + clen) + 1 > 0:
-                    rlen = min(N_r,  xmax - 1 - (t + clen) + 1)
+                    rlen = min(N_r, xmax - 1 - (t + clen) + 1)
 
                 xs_chunk = xs[:, t:t + (clen + rlen)]
 
                 if self.hybrid_rnn:
-                    for l in range(self.n_layers_rnn):
-                        self.rnn[l].flatten_parameters()  # for multi-GPUs
-                        self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
+                    for lth in range(self.n_layers_rnn):
+                        self.rnn[lth].flatten_parameters()  # for multi-GPUs
+                        self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
                         # bwd
                         xs_chunk_bwd = torch.flip(xs_chunk, dims=[1])
-                        xs_chunk_bwd, _ = self.rnn_bwd[l](xs_chunk_bwd, hx=None)
+                        xs_chunk_bwd, _ = self.rnn_bwd[lth](xs_chunk_bwd, hx=None)
                         xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, clen+rlen, d_model]`
                         # fwd
                         if xs_chunk.size(1) <= clen:
-                            xs_chunk_fwd, self.fwd_states[l] = self.rnn[l](xs_chunk, hx=self.fwd_states[l])
+                            xs_chunk_fwd, self.fwd_states[lth] = self.rnn[lth](
+                                xs_chunk, hx=self.fwd_states[lth])
                         else:
-                            xs_chunk_fwd1, self.fwd_states[l] = self.rnn[l](xs_chunk[:, :clen], hx=self.fwd_states[l])
-                            xs_chunk_fwd2, _ = self.rnn[l](xs_chunk[:, clen:], hx=self.fwd_states[l])
+                            xs_chunk_fwd1, self.fwd_states[lth] = self.rnn[lth](
+                                xs_chunk[:, :clen], hx=self.fwd_states[lth])
+                            xs_chunk_fwd2, _ = self.rnn[lth](
+                                xs_chunk[:, clen:], hx=self.fwd_states[lth])
                             xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, clen+rlen, d_model]`
                             # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer
                         if self.bidir_sum:
@@ -391,42 +394,42 @@ class TransformerEncoder(EncoderBase):
                     pos_embs = self.pos_emb(pos_idxs, self.device_id)
 
                 hidden_states = [xs_chunk[:, :clen][:, -N_l:]]
-                for l, (mem, layer) in enumerate(zip(mems, self.layers)):
+                for lth, (mem, layer) in enumerate(zip(mems, self.layers)):
                     if self.memory_transformer:
                         xs_chunk, xx_aws_chunk = layer(xs_chunk, None, pos_embs=pos_embs, memory=mem,
                                                        u=self.u, v=self.v)  # no mask
                     else:
                         xs_chunk, xx_aws_chunk = layer(xs_chunk, None, memory=mem)  # no mask
 
-                    if l < self.n_layers - 1:
+                    if lth < self.n_layers - 1:
                         hidden_states.append(xs_chunk[:, :clen][:, -N_l:])
                     # NOTE: xx_aws_chunk: `[B, H, clen+rlen (query), mlen+clen+rlen (key)]`
                     xx_aws_chunk = xx_aws_chunk[:, :, :clen, mlen:mlen + clen]
                     assert xx_aws_chunk.size(2) == xx_aws_chunk.size(3)
                     xx_aws_chunk_pad = xs.new_zeros((bs, xx_aws_chunk.size(1), N_c, N_c))
                     xx_aws_chunk_pad[:, :, :xx_aws_chunk.size(2), :xx_aws_chunk.size(3)] = xx_aws_chunk
-                    xx_aws[l].append(xx_aws_chunk_pad)
+                    xx_aws[lth].append(xx_aws_chunk_pad)
                 mems = self.update_memory(mems, hidden_states)
                 mlen = mems[0].size(1) if mems[0].dim() > 1 else 0
                 xs_chunks.append(xs_chunk[:, :clen])
             xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
 
             if not self.training:
-                for l in range(self.n_layers):
-                    self.aws_dict['xx_aws_layer%d' % l] = tensor2np(torch.cat(xx_aws[l], dim=3)[:, :, :xmax, :xmax])
+                for lth in range(self.n_layers):
+                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(torch.cat(xx_aws[lth], dim=3)[:, :, :xmax, :xmax])
 
         else:
             # Hybrid RNN-Transformer
             if self.hybrid_rnn:
-                for l in range(self.n_layers_rnn):
-                    self.rnn[l].flatten_parameters()  # for multi-GPUs
-                    self.rnn_bwd[l].flatten_parameters()  # for multi-GPUs
+                for lth in range(self.n_layers_rnn):
+                    self.rnn[lth].flatten_parameters()  # for multi-GPUs
+                    self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
                     # bwd
                     xs_bwd = torch.flip(xs, dims=[1])
-                    xs_bwd, _ = self.rnn_bwd[l](xs_bwd, hx=None)
+                    xs_bwd, _ = self.rnn_bwd[lth](xs_bwd, hx=None)
                     xs_bwd = torch.flip(xs_bwd, dims=[1])
                     # fwd
-                    xs_fwd, _ = self.rnn[l](xs, hx=None)
+                    xs_fwd, _ = self.rnn[lth](xs, hx=None)
                     # NOTE: no padding because inputs are not sorted
                     if self.bidir_sum:
                         xs = xs_fwd + xs_bwd
@@ -441,13 +444,13 @@ class TransformerEncoder(EncoderBase):
             # Create the self-attention mask
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
 
-            for l, layer in enumerate(self.layers):
+            for lth, layer in enumerate(self.layers):
                 xs, xx_aws = layer(xs, xx_mask)
                 if not self.training:
-                    self.aws_dict['xx_aws_layer%d' % l] = tensor2np(xx_aws)
+                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws)
 
                 # Pick up outputs in the sub task before the projection layer
-                if l == self.n_layers_sub1 - 1:
+                if lth == self.n_layers_sub1 - 1:
                     xs_sub1 = self.layer_sub1(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
                     xs_sub1 = self.norm_out_sub1(xs_sub1)
                     if self.bridge_sub1 is not None:
@@ -455,7 +458,7 @@ class TransformerEncoder(EncoderBase):
                     if task == 'ys_sub1':
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
                         return eouts
-                if l == self.n_layers_sub2 - 1:
+                if lth == self.n_layers_sub2 - 1:
                     xs_sub2 = self.layer_sub2(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
                     xs_sub2 = self.norm_out_sub2(xs_sub2)
                     if self.bridge_sub2 is not None:
