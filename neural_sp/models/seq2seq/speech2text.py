@@ -95,6 +95,9 @@ class Speech2Text(ModelBase):
         self.recog_params = vars(args)
         self.idx2token = idx2token
 
+        # for discourse-aware model
+        self.utt_id_prev = None
+
         # Feature extraction
         self.gaussian_noise = args.gaussian_noise
         self.n_stacks = args.n_stacks
@@ -209,6 +212,17 @@ class Speech2Text(ModelBase):
             if hasattr(self, 'dec_fwd_' + sub):
                 getattr(self, 'dec_fwd_' + sub).start_scheduled_sampling()
 
+    def reset_session(self):
+        # main task
+        for dir in ['fwd', 'bwd']:
+            if hasattr(self, 'dec_' + dir):
+                getattr(self, 'dec_' + dir).reset_session()
+
+        # sub task
+        for sub in ['sub1', 'sub2']:
+            if hasattr(self, 'dec_fwd_' + sub):
+                getattr(self, 'dec_fwd_' + sub).reset_session()
+
     def forward(self, batch, task='all', is_eval=False, teacher=None, teacher_lm=None):
         """Forward computation.
 
@@ -268,7 +282,7 @@ class Speech2Text(ModelBase):
                 teacher_logits = self.generate_lm_logits(batch['ys'], lm=teacher_lm)
 
             loss_fwd, obs_fwd = self.dec_fwd(eout_dict['ys']['xs'], eout_dict['ys']['xlens'],
-                                             batch['ys'], task, batch['ys_hist'],
+                                             batch['ys'], task,
                                              teacher_logits, self.recog_params, self.idx2token)
             loss += loss_fwd
             if isinstance(self.dec_fwd, RNNTransducer) or isinstance(self.dec_fwd, TrasformerTransducer):
@@ -651,6 +665,10 @@ class Speech2Text(ModelBase):
             dir = 'fwd_sub2'
         else:
             raise ValueError(task)
+
+        if self.utt_id_prev != utt_ids[0]:
+            self.reset_session()
+        self.utt_id_prev = utt_ids[0]
 
         self.eval()
         with torch.no_grad():

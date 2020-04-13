@@ -263,6 +263,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ] && [ ${speed_perturb} = false ]
         --corpus wsj \
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
+        --cudnn_benchmark ${benchmark} \
         --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set ${data}/dataset_lm/${dev_set}_${datasize}_${unit}${wp_type}${vocab}.tsv \
         --unit ${unit} \

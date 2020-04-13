@@ -195,7 +195,7 @@ def parse():
                         help='number of heads for chunkwise attention')
     parser.add_argument('--mocha_chunk_size', type=int, default=0,
                         help='chunk size for MoChA. -1 means infinite lookback.')
-    parser.add_argument('--mocha_init_r', type=int, default=-4,
+    parser.add_argument('--mocha_init_r', type=float, default=-4,
                         help='')
     parser.add_argument('--mocha_eps', type=float, default=1e-6,
                         help='')
@@ -207,13 +207,14 @@ def parse():
                         help='Quantity loss weight for MoChA')
     parser.add_argument('--mocha_head_divergence_loss_weight', type=float, default=0.0,
                         help='Head divergence loss weight for MoChA')
-    parser.add_argument('--mocha_ctc_sync', type=str, default=False,
-                        choices=[False, 'decot', 'minlt'],
-                        help='')
-    parser.add_argument('--mocha_minlt_loss_weight', type=float, default=0.0,
-                        help='Minimum latency loss weight for MoChA')
+    parser.add_argument('--mocha_latency_metric', type=str, default=False,
+                        choices=[False, 'decot', 'minlt', 'ctc_sync',
+                                 'interval', 'frame_dal', 'ctc_dal'],
+                        help='differentiable latency metric for MoChA')
+    parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
+                        help='latency loss weight for MoChA')
     parser.add_argument('--mocha_first_layer', type=int, default=1,
-                        help='The first layer to have a multi-head monotonic attention')
+                        help='the initial layer to have a multi-head monotonic attention')
     # optimization
     parser.add_argument('--batch_size', type=int, default=50,
                         help='mini-batch size')
@@ -377,9 +378,8 @@ def parse():
                         choices=['xavier_uniform', 'pytorch'],
                         help='parameter initializatin for Transformer')
     # contextualization
-    parser.add_argument('--discourse_aware', type=str, default=False, nargs='?',
-                        choices=['state_carry_over', 'hierarchical', ''],
-                        help='')
+    parser.add_argument('--discourse_aware', type=strtobool, default=False, nargs='?',
+                        help='carry over the last decoder state to the initial state in the next utterance')
     # decoding parameters
     parser.add_argument('--recog_n_gpus', type=int, default=0,
                         help='number of GPUs (0 indicates CPU)')
@@ -470,13 +470,18 @@ def parse():
                         help='')
     parser.add_argument('--recog_ctc_vad_n_accum_frames', type=float, default=4000,
                         help='')
+    # TransformerXL
+    parser.add_argument('--mem_len', type=int, default=0,
+                        help='number of tokens for memory in TransformerXL during training')
+    parser.add_argument('--recog_mem_len', type=int, default=0,
+                        help='number of tokens for memory in TransformerXL during evaluation')
     # distillation related
     parser.add_argument('--teacher', default=False, nargs='?',
                         help='Teacher ASR model for knowledge distillation')
     parser.add_argument('--teacher_lm', default=False, nargs='?',
                         help='Teacher LM for knowledge distillation')
-    parser.add_argument('--soft_label_weight', type=float, default=0.1,
-                        help='KL-div loss weight for soft labels')
+    parser.add_argument('--distillation_weight', type=float, default=0.1,
+                        help='soft label weight for knowledge distillation')
     # pre-training
     parser.add_argument('--am_pretrain_type', type=str, default='',
                         choices=['decoar', 'mps', 'apc'],

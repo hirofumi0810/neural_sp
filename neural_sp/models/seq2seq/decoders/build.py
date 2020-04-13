@@ -13,7 +13,7 @@ from __future__ import print_function
 
 def build_decoder(args, special_symbols, enc_n_units, vocab,
                   ctc_weight, ctc_fc_list, global_weight, external_lm=None):
-    if args.dec_type in ['transformer']:
+    if args.dec_type in ['transformer', 'transformer_xl']:
         if args.attn_type == 'cif':
             raise NotImplementedError
         else:
@@ -43,6 +43,7 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
                 global_weight=global_weight,
                 mtl_per_batch=args.mtl_per_batch,
                 param_init=args.transformer_param_init,
+                memory_transformer=args.dec_type == 'transformer_xl',
                 mocha_chunk_size=args.mocha_chunk_size,
                 mocha_n_heads_mono=args.mocha_n_heads_mono,
                 mocha_n_heads_chunk=args.mocha_n_heads_chunk,
@@ -51,13 +52,14 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
                 mocha_std=args.mocha_std,
                 mocha_quantity_loss_weight=args.mocha_quantity_loss_weight,
                 mocha_head_divergence_loss_weight=args.mocha_head_divergence_loss_weight,
-                mocha_ctc_sync=args.mocha_ctc_sync,
-                mocha_minlt_loss_weight=args.mocha_minlt_loss_weight,
+                latency_metric=args.mocha_latency_metric,
+                latency_loss_weight=args.mocha_latency_loss_weight,
                 mocha_dropout_head=args.dropout_head,
                 mocha_dropout_hard=args.dropout_hard,
                 mocha_first_layer=args.mocha_first_layer,
                 lm_fusion=args.lm_fusion,
-                external_lm=external_lm)
+                external_lm=external_lm,
+                mem_len=args.mem_len)
 
     elif args.dec_type == 'transformer_transducer':
         from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
@@ -154,11 +156,11 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             mocha_std=args.mocha_std,
             mocha_1dconv=args.mocha_1dconv,
             mocha_quantity_loss_weight=args.mocha_quantity_loss_weight,
-            mocha_ctc_sync=args.mocha_ctc_sync,
-            mocha_minlt_loss_weight=args.mocha_minlt_loss_weight,
+            latency_metric=args.mocha_latency_metric,
+            latency_loss_weight=args.mocha_latency_loss_weight,
             gmm_attn_n_mixtures=args.gmm_attn_n_mixtures,
             replace_sos=args.replace_sos,
-            soft_label_weight=args.soft_label_weight,
+            distillation_weight=args.distillation_weight,
             discourse_aware=args.discourse_aware)
 
     return decoder

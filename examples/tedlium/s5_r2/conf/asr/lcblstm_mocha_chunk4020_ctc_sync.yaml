@@ -24,8 +24,8 @@ mocha_eps: 1e-6
 mocha_std: 1.0
 mocha_1dconv: false
 mocha_quantity_loss_weight: 0.0  ### this is important
-mocha_ctc_sync: minlt
-mocha_minlt_loss_weight: 1.0
+mocha_latency_metric: ctc_sync
+mocha_latency_loss_weight: 1.0
 attn_sharpening_factor: 1.0
 attn_dim: 512
 attn_n_heads: 1
