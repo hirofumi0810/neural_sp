@@ -111,12 +111,22 @@ for set in dev_clean dev_other test_clean test_other; do
     fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep '960') ]; then
-        recog_set=${data}/dataset/${set}_960_wpbpe10000.tsv
-    elif [ $(echo ${model} | grep '460') ]; then
-        recog_set=${data}/dataset/${set}_460_wpbpe10000.tsv
-    elif [ $(echo ${model} | grep '100') ]; then
-        recog_set=${data}/dataset/${set}_100_wpbpe1000.tsv
+    if [ $(echo ${model} | grep 'train_sp_') ]; then
+        if [ $(echo ${model} | grep '960') ]; then
+            recog_set=${data}/dataset/${set}_sp_960_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '460') ]; then
+            recog_set=${data}/dataset/${set}_sp_460_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '100') ]; then
+            recog_set=${data}/dataset/${set}_sp_100_wpbpe1000.tsv
+        fi
+    else
+        if [ $(echo ${model} | grep '960') ]; then
+            recog_set=${data}/dataset/${set}_960_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '460') ]; then
+            recog_set=${data}/dataset/${set}_460_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '100') ]; then
+            recog_set=${data}/dataset/${set}_100_wpbpe1000.tsv
+        fi
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
@@ -153,11 +163,11 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_oracle ${oracle} \
         --recog_stdout ${stdout} || exit 1;
 
-    # remove <unk>
-    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
-    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
-
     if [ ${metric} = 'edit_distance' ]; then
+        # remove <unk>
+        cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
+        cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
+
         echo ${set}
         sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS
