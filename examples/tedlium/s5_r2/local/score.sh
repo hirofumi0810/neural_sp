@@ -39,14 +39,9 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-chunk_sync=false  # for MoChA
 n_average=1  # for Transformer
 oracle=false
-
-# for streaming
-blank_threshold=40
-spike_threshold=0.1
-n_accum_frames=800
+chunk_sync=false  # for MoChA
 
 . ./cmd.sh
 . ./path.sh
@@ -104,7 +99,7 @@ for set in dev test; do
         recog_dir=${recog_dir}_ASRcarryover
     fi
     if [ ${chunk_sync} = true ]; then
-        recog_dir=${recog_dir}_chunksync_blank${blank_threshold}_spike${spike_threshold}_accum${n_accum_frames}
+        recog_dir=${recog_dir}_chunksync
     fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
@@ -164,9 +159,6 @@ for set in dev test; do
         --recog_chunk_sync ${chunk_sync} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
-        --recog_ctc_vad_blank_threshold ${blank_threshold} \
-        --recog_ctc_vad_spike_threshold ${spike_threshold} \
-        --recog_ctc_vad_n_accum_frames ${n_accum_frames} \
         --recog_stdout ${stdout} || exit 1;
 
     if [ ${metric} = 'edit_distance' ]; then
