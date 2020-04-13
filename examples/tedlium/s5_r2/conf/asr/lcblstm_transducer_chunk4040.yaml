@@ -28,14 +28,14 @@ ctc_fc_list: "512"
 ### optimization
 batch_size: 10
 optimizer: adam
-n_epochs: 25
+n_epochs: 20  # 25->20
 convert_to_sgd_epoch: 100
-print_step: 400
+print_step: 600  # 200->600
 metric: edit_distance
 lr: 1e-3
 lr_decay_type: always
 lr_decay_start_epoch: 10
-lr_decay_rate: 0.85
+lr_decay_rate: 0.8  ### 0.85->0.8
 lr_decay_patient_n_epochs: 0
 early_stop_patient_n_epochs: 5
 sort_stop_epoch: 100
