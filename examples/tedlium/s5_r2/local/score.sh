@@ -119,7 +119,7 @@ for set in dev test; do
     fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep 'train_sp_') ]; then
+    if [ $(echo ${model} | grep 'train_sp') ]; then
         recog_set=${data}/dataset/${set}_sp_wpbpe10000.tsv
     else
         recog_set=${data}/dataset/${set}_wpbpe10000.tsv
@@ -127,7 +127,7 @@ for set in dev test; do
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
         --recog_n_gpus ${n_gpus} \
-        --recog_sets ${data}/dataset/${set}_wpbpe10000.tsv \
+        --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
