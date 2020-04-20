@@ -70,8 +70,9 @@ def build_encoder(args):
             task_specific_layer=args.task_specific_layer,
             param_init=args.transformer_param_init,
             chunk_size_left=args.lc_chunk_size_left,
-            chunk_size_current=args.lc_chunk_size_left,
-            chunk_size_right=args.lc_chunk_size_right)
+            chunk_size_current=args.lc_chunk_size_current,
+            chunk_size_right=args.lc_chunk_size_right,
+            n_layers_rnn=args.enc_n_layers_rnn)
 
     else:
         subsample = [1] * args.enc_n_layers
@@ -105,8 +106,8 @@ def build_encoder(args):
             bidirectional_sum_fwd_bwd=args.bidirectional_sum_fwd_bwd,
             task_specific_layer=args.task_specific_layer,
             param_init=args.param_init,
-            lc_chunk_size_left=args.lc_chunk_size_left,
-            lc_chunk_size_right=args.lc_chunk_size_right)
+            chunk_size_left=args.lc_chunk_size_left,
+            chunk_size_right=args.lc_chunk_size_right)
         # NOTE: pure Conv/TDS/GatedConv encoders are also included
 
     return encoder

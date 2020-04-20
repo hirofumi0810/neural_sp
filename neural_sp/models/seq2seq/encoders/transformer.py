@@ -12,12 +12,15 @@ from __future__ import print_function
 
 import copy
 import logging
+import math
 import os
 import shutil
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.transformer import PositionalEncoding
+from neural_sp.models.modules.initialization import init_with_normal_dist
+from neural_sp.models.modules.positinal_embedding import PositionalEncoding
+from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.transformer import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
@@ -63,11 +66,12 @@ class TransformerEncoder(EncoderBase):
         conv_layer_norm (bool): apply layer normalization only in the CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
         conv_param_init (float): only for CNN layers before Transformer layers
+        task_specific_layer (bool): add a task specific layer for each sub task
+        param_init (str): parameter initialization method
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
         chunk_size_current (int): current chunk size for time-restricted Transformer encoder
         chunk_size_right (int): right chunk size for time-restricted Transformer encoder
-        task_specific_layer (bool): add a task specific layer for each sub task
-        param_init (str): parameter initialization method
+        n_layers_rnn (int):
 
     """
 
@@ -80,7 +84,7 @@ class TransformerEncoder(EncoderBase):
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init,
-                 chunk_size_left, chunk_size_current, chunk_size_right):
+                 chunk_size_left, chunk_size_current, chunk_size_right, n_layers_rnn):
 
         super(TransformerEncoder, self).__init__()
 
@@ -94,10 +98,25 @@ class TransformerEncoder(EncoderBase):
         self.n_heads = n_heads
         self.pe_type = pe_type
 
-        # for latency-controlled
+        # for streaming TransformerXL encoder
         self.chunk_size_left = chunk_size_left
         self.chunk_size_cur = chunk_size_current
         self.chunk_size_right = chunk_size_right
+        self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
+        self.memory_transformer = ('transformer_xl' in enc_type)
+        self.mem_len = chunk_size_left
+        self.scale = math.sqrt(d_model)
+        if self.memory_transformer:
+            assert pe_type == 'none'
+            assert chunk_size_left > 0
+            assert chunk_size_current > 0
+        if self.latency_controlled:
+            assert pe_type == 'none'
+
+        # for hybrid RNN-Transformer encoder
+        self.hybrid_rnn = n_layers_rnn > 0
+        self.n_layers_rnn = n_layers_rnn
+        self.proj = None
 
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -135,12 +154,46 @@ class TransformerEncoder(EncoderBase):
             self._odim = input_dim * n_splices * n_stacks
             self.embed = nn.Linear(self._odim, d_model)
 
-        self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type)
+        # Hybrid RNN-Transformer
+        if self.hybrid_rnn:
+            assert pe_type == 'none'
+            self.rnn = nn.ModuleList()
+            self.rnn_bwd = nn.ModuleList()
+            self.dropout_rnn = nn.Dropout(p=dropout)
+            assert ('blstm' in enc_type or 'bgru' in enc_type)
+            # NOTE: support bidirectional only
+            self.bidir_sum = True
+
+            for _ in range(n_layers_rnn):
+                if 'blstm' in enc_type:
+                    rnn_i = nn.LSTM
+                elif 'bgru' in enc_type:
+                    rnn_i = nn.GRU
+                else:
+                    raise ValueError(
+                        'rnn_type must be "(conv_)blstm_transformer(_xl)" or "(conv_)bgru_transformer(_xl)".')
+
+                self.rnn += [rnn_i(self._odim, d_model, 1, batch_first=True)]
+                self.rnn_bwd += [rnn_i(self._odim, d_model, 1, batch_first=True)]
+                self._odim = d_model if self.bidir_sum else d_model * self.n_dirs
+
+            if self._odim != d_model:
+                self.proj = nn.Linear(self._odim, d_model)
+
+        if self.memory_transformer:
+            self.pos_emb = XLPositionalEmbedding(d_model, dropout)
+            self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+            self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+            # NOTE: u and v are global parameters
+        self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
+        # TODO: replace dropout_in with dropout
+
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
             d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
-            dropout_residual * (l + 1) / n_layers,
-            layer_norm_eps, ffn_activation, param_init))
-            for l in range(n_layers)])
+            dropout_residual * (lth + 1) / n_layers,
+            layer_norm_eps, ffn_activation, param_init,
+            memory_transformer=self.memory_transformer))
+            for lth in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         self._odim = d_model
@@ -172,20 +225,91 @@ class TransformerEncoder(EncoderBase):
         # calculate subsampling factor
         self._factor = 1
         if self.conv is not None:
-            self._factor *= self.conv.subsampling_factor()
+            self._factor *= self.conv.subsampling_factor
 
-        if param_init == 'xavier_uniform':
-            self.reset_parameters()
+        self.reset_parameters(param_init)
 
-    def reset_parameters(self):
-        """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
-        if self.conv is None:
-            nn.init.xavier_uniform_(self.embed.weight)
-            nn.init.constant_(self.embed.bias, 0.)
-        if self.bridge is not None:
-            nn.init.xavier_uniform_(self.bridge.weight)
-            nn.init.constant_(self.bridge.bias, 0.)
+    def reset_parameters(self, param_init):
+        """Initialize parameters."""
+        if self.memory_transformer:
+            logger.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
+            for n, p in self.named_parameters():
+                if 'conv' in n:
+                    continue
+                init_with_normal_dist(n, p, std=0.02)
+
+        elif param_init == 'xavier_uniform':
+            logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+            if self.conv is None:
+                nn.init.xavier_uniform_(self.embed.weight)
+                nn.init.constant_(self.embed.bias, 0.)
+            if self.bridge is not None:
+                nn.init.xavier_uniform_(self.bridge.weight)
+                nn.init.constant_(self.bridge.bias, 0.)
+            if self.bridge_sub1 is not None:
+                nn.init.xavier_uniform_(self.bridge_sub1.weight)
+                nn.init.constant_(self.bridge_sub1.bias, 0.)
+            if self.bridge_sub2 is not None:
+                nn.init.xavier_uniform_(self.bridge_sub2.weight)
+                nn.init.constant_(self.bridge_sub2.bias, 0.)
+
+        if self.hybrid_rnn:
+            logger.info('===== Initialize RNN in %s with uniform distribution =====' % self.__class__.__name__)
+            param_init_rnn = 0.1
+            for n, p in self.named_parameters():
+                if 'rnn' not in n:
+                    continue
+                if p.dim() == 1:
+                    nn.init.constant_(p, 0.)  # bias
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
+                elif p.dim() in [2, 4]:
+                    nn.init.uniform_(p, a=-param_init_rnn, b=param_init_rnn)
+                    logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init_rnn))
+                else:
+                    raise ValueError(n)
+
+    def reset_cache(self):
+        """Reset RNN state."""
+        self.fwd_states = [None] * self.n_layers
+        logger.debug('Reset cache.')
+
+    def init_memory(self):
+        """Initialize memory."""
+        if self.device_id >= 0:
+            return [torch.empty(0, dtype=torch.float).cuda(self.device_id)
+                    for _ in range(self.n_layers)]
+        else:
+            return [torch.empty(0, dtype=torch.float)
+                    for _ in range(self.n_layers)]
+
+    def update_memory(self, memory_prev, hidden_states):
+        """Update memory.
+
+        Args:
+            memory_prev (list): length `n_layers`, each of which contains [B, L_prev, d_model]`
+            hidden_states (list): length `n_layers`, each of which contains [B, L, d_model]`
+        Returns:
+            new_mems (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
+
+        """
+        assert len(hidden_states) == len(memory_prev)
+        mlen = memory_prev[0].size(1) if memory_prev[0].dim() > 1 else 0
+        qlen = hidden_states[0].size(1)
+
+        # There are `mlen + qlen` steps that can be cached into mems
+        # For the next step, the last `ext_len` of the `qlen` tokens
+        # will be used as the extended context. Hence, we only cache
+        # the tokens from `mlen + qlen - self.ext_len - self.mem_len`
+        # to `mlen + qlen - self.ext_len`.
+        with torch.no_grad():
+            new_mems = []
+            end_idx = mlen + qlen
+            start_idx = max(0, end_idx - (self.mem_len // self.subsampling_factor))
+            for m, h in zip(memory_prev, hidden_states):
+                cat = torch.cat([m, h], dim=1)  # `[B, mlen + qlen, d_model]`
+                new_mems.append(cat[:, start_idx:end_idx].detach())  # `[B, self.mem_len, d_model]`
+
+        return new_mems
 
     def forward(self, xs, xlens, task, use_cache=False, streaming=False):
         """Forward computation.
@@ -215,39 +339,118 @@ class TransformerEncoder(EncoderBase):
             self.data_dict['elens'] = tensor2np(xlens)
 
         bs, xmax, idim = xs.size()
-        xs = self.pos_enc(xs)
-        if self.chunk_size_left > 0:
-            # Time-restricted self-attention for streaming models
-            cs_l = self.chunk_size_left
-            cs_c = self.chunk_size_cur
-            cs_r = self.chunk_size_right
+        if self.memory_transformer or self.latency_controlled:
+            # streaming Transformer(XL) encoder
+            N_l = max(0, self.chunk_size_left // self.subsampling_factor)
+            N_c = self.chunk_size_cur // self.subsampling_factor
+            N_r = max(0, self.chunk_size_right // self.subsampling_factor)
+
             xs_chunks = []
-            xx_aws = [[] for l in range(self.n_layers)]
-            xs_pad = torch.cat([xs.new_zeros(bs, cs_l, idim), xs,
-                                xs.new_zeros(bs, cs_r, idim)], dim=1)
-            # TODO: remove right padding
-            for t in range(cs_l, cs_l + xmax, self.chunk_size_cur):
-                xs_chunk = xs_pad[:, t - cs_l:t + cs_c + cs_r]
-                for l, layer in enumerate(self.layers):
-                    xs_chunk, xx_aws_chunk = layer(xs_chunk, None)  # no mask
-                    xx_aws[l].append(xx_aws_chunk[:, :, cs_l:cs_l + cs_c,
-                                                  cs_l:cs_l + cs_c])
-                xs_chunks.append(xs_chunk[:, cs_l:cs_l + cs_c])
+            xx_aws = [[] for _ in range(self.n_layers)]
+            mems = self.init_memory()
+            self.reset_cache()  # for LC-BLSTM
+
+            mlen = 0
+            for t in range(0, xmax, N_c):
+                clen = min(N_c, xmax - 1 - t + 1)
+                rlen = 0
+                if xmax - 1 - (t + clen) + 1 > 0:
+                    rlen = min(N_r, xmax - 1 - (t + clen) + 1)
+
+                xs_chunk = xs[:, t:t + (clen + rlen)]
+
+                if self.hybrid_rnn:
+                    for lth in range(self.n_layers_rnn):
+                        self.rnn[lth].flatten_parameters()  # for multi-GPUs
+                        self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
+                        # bwd
+                        xs_chunk_bwd = torch.flip(xs_chunk, dims=[1])
+                        xs_chunk_bwd, _ = self.rnn_bwd[lth](xs_chunk_bwd, hx=None)
+                        xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, clen+rlen, d_model]`
+                        # fwd
+                        if xs_chunk.size(1) <= clen:
+                            xs_chunk_fwd, self.fwd_states[lth] = self.rnn[lth](
+                                xs_chunk, hx=self.fwd_states[lth])
+                        else:
+                            xs_chunk_fwd1, self.fwd_states[lth] = self.rnn[lth](
+                                xs_chunk[:, :clen], hx=self.fwd_states[lth])
+                            xs_chunk_fwd2, _ = self.rnn[lth](
+                                xs_chunk[:, clen:], hx=self.fwd_states[lth])
+                            xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, clen+rlen, d_model]`
+                            # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer
+                        if self.bidir_sum:
+                            xs_chunk = xs_chunk_fwd + xs_chunk_bwd
+                        else:
+                            xs_chunk = torch.cat([xs_chunk_fwd, xs_chunk_bwd], dim=-1)
+                    xs_chunk = self.dropout_rnn(xs_chunk)
+                    if self.proj is not None:
+                        xs_chunk = self.proj(xs_chunk)
+
+                xs_chunk = self.pos_enc(xs_chunk, scale=True)  # for scale
+
+                if self.memory_transformer:
+                    # adopt zero-centered offset
+                    pos_idxs = torch.arange(mlen - 1, -xs_chunk.size(1) - 1, -1.0, dtype=torch.float)
+                    pos_embs = self.pos_emb(pos_idxs, self.device_id)
+
+                hidden_states = [xs_chunk[:, :clen][:, -N_l:]]
+                for lth, (mem, layer) in enumerate(zip(mems, self.layers)):
+                    if self.memory_transformer:
+                        xs_chunk, xx_aws_chunk = layer(xs_chunk, None, pos_embs=pos_embs, memory=mem,
+                                                       u=self.u, v=self.v)  # no mask
+                    else:
+                        xs_chunk, xx_aws_chunk = layer(xs_chunk, None, memory=mem)  # no mask
+
+                    if lth < self.n_layers - 1:
+                        hidden_states.append(xs_chunk[:, :clen][:, -N_l:])
+                    # NOTE: xx_aws_chunk: `[B, H, clen+rlen (query), mlen+clen+rlen (key)]`
+                    xx_aws_chunk = xx_aws_chunk[:, :, :clen, mlen:mlen + clen]
+                    assert xx_aws_chunk.size(2) == xx_aws_chunk.size(3)
+                    xx_aws_chunk_pad = xs.new_zeros((bs, xx_aws_chunk.size(1), N_c, N_c))
+                    xx_aws_chunk_pad[:, :, :xx_aws_chunk.size(2), :xx_aws_chunk.size(3)] = xx_aws_chunk
+                    xx_aws[lth].append(xx_aws_chunk_pad)
+                mems = self.update_memory(mems, hidden_states)
+                mlen = mems[0].size(1) if mems[0].dim() > 1 else 0
+                xs_chunks.append(xs_chunk[:, :clen])
             xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
+
             if not self.training:
-                for l in range(self.n_layers):
-                    self.aws_dict['xx_aws_layer%d' % l] = tensor2np(torch.cat(xx_aws[l], dim=3)[:, :, :xmax, :xmax])
+                for lth in range(self.n_layers):
+                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(torch.cat(xx_aws[lth], dim=3)[:, :, :xmax, :xmax])
+
         else:
+            # Hybrid RNN-Transformer
+            if self.hybrid_rnn:
+                for lth in range(self.n_layers_rnn):
+                    self.rnn[lth].flatten_parameters()  # for multi-GPUs
+                    self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
+                    # bwd
+                    xs_bwd = torch.flip(xs, dims=[1])
+                    xs_bwd, _ = self.rnn_bwd[lth](xs_bwd, hx=None)
+                    xs_bwd = torch.flip(xs_bwd, dims=[1])
+                    # fwd
+                    xs_fwd, _ = self.rnn[lth](xs, hx=None)
+                    # NOTE: no padding because inputs are not sorted
+                    if self.bidir_sum:
+                        xs = xs_fwd + xs_bwd
+                    else:
+                        xs = torch.cat([xs_fwd, xs_bwd], dim=-1)
+                    xs = self.dropout_rnn(xs)
+                if self.proj is not None:
+                    xs = self.proj(xs)
+
+            xs = self.pos_enc(xs, scale=True)
+
             # Create the self-attention mask
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
 
-            for l, layer in enumerate(self.layers):
+            for lth, layer in enumerate(self.layers):
                 xs, xx_aws = layer(xs, xx_mask)
                 if not self.training:
-                    self.aws_dict['xx_aws_layer%d' % l] = tensor2np(xx_aws)
+                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws)
 
                 # Pick up outputs in the sub task before the projection layer
-                if l == self.n_layers_sub1 - 1:
+                if lth == self.n_layers_sub1 - 1:
                     xs_sub1 = self.layer_sub1(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
                     xs_sub1 = self.norm_out_sub1(xs_sub1)
                     if self.bridge_sub1 is not None:
@@ -255,7 +458,7 @@ class TransformerEncoder(EncoderBase):
                     if task == 'ys_sub1':
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
                         return eouts
-                if l == self.n_layers_sub2 - 1:
+                if lth == self.n_layers_sub2 - 1:
                     xs_sub2 = self.layer_sub2(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
                     xs_sub2 = self.norm_out_sub2(xs_sub2)
                     if self.bridge_sub2 is not None:

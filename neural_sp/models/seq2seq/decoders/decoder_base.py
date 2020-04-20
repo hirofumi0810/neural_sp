@@ -37,6 +37,9 @@ class DecoderBase(ModelBase):
     def reset_parameters(self, param_init):
         raise NotImplementedError
 
+    def reset_session(self):
+        self.new_session = True
+
     def greedy(self, eouts, elens, max_len_ratio):
         raise NotImplementedError
 
