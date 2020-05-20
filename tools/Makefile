@@ -60,6 +60,7 @@ neural_sp.done:
 	. $(CONDA)/bin/activate; pip list
 	. $(CONDA)/bin/activate; pip install pip --upgrade
 	. $(CONDA)/bin/activate; pip install torch==$(PYTORCH_VERSION)
+	. $(CONDA)/bin/activate; pip install warp_rnnt==0.3
 	. $(CONDA)/bin/activate; pip install -e ..  # setup.py
 	. $(CONDA)/bin/activate && conda install -y $(CONDA_PYTORCH) -c pytorch
 	touch neural_sp.done

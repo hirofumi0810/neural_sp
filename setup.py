@@ -25,7 +25,6 @@ requirements = {
         'tensorboardX>=2.0',
         'tqdm>=4.42.0',
         'torch==1.0.0',
-        'warp_rnnt>=0.3.0',
     ],
     'setup': [
 
