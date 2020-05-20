@@ -56,6 +56,7 @@ def make_rnn_args(**kwargs):
         ({'rnn_type': 'blstm'}),
         ({'rnn_type': 'bgru'}),
         ({'rnn_type': 'conv_blstm'}),
+        ({'rnn_type': 'conv_blstm', 'input_dim': 240, 'conv_in_channel': 3}),
         ({'rnn_type': 'conv_bgru'}),
         ({'rnn_type': 'lstm'}),
         ({'rnn_type': 'lstm', }),
@@ -166,6 +167,7 @@ def make_transformer_args(**kwargs):
         # Transformer type
         ({'enc_type': 'transformer'}),
         ({'enc_type': 'conv_transformer'}),
+        ({'enc_type': 'conv_transformer', 'input_dim': 240, 'conv_in_channel': 3}),
         # normalization
         ({'enc_type': 'conv_transformer', 'conv_batch_norm': True}),
         ({'enc_type': 'conv_transformer', 'conv_layer_norm': True}),
