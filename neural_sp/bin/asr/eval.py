@@ -113,6 +113,7 @@ def main():
                     args_lm = argparse.Namespace()
                     for k, v in conf_lm.items():
                         setattr(args_lm, k, v)
+                    args_lm.recog_mem_len = args.recog_mem_len
                     lm = build_lm(args_lm, wordlm=args.recog_wordlm,
                                   lm_dict_path=os.path.join(os.path.dirname(args.recog_lm), 'dict.txt'),
                                   asr_dict_path=os.path.join(dir_name, 'dict.txt'))
@@ -128,6 +129,7 @@ def main():
                     args_lm_second = argparse.Namespace()
                     for k, v in conf_lm_second.items():
                         setattr(args_lm_second, k, v)
+                    args_lm_second.recog_mem_len = args.recog_mem_len
                     lm_second = build_lm(args_lm_second)
                     load_checkpoint(lm_second, args.recog_lm_second)
                     model.lm_second = lm_second
@@ -138,6 +140,7 @@ def main():
                     args_lm_bwd = argparse.Namespace()
                     for k, v in conf_lm.items():
                         setattr(args_lm_bwd, k, v)
+                    args_lm_bwd.recog_mem_len = args.recog_mem_len
                     lm_bwd = build_lm(args_lm_bwd)
                     load_checkpoint(lm_bwd, args.recog_lm_bwd)
                     model.lm_bwd = lm_bwd
@@ -174,6 +177,7 @@ def main():
 
             # GPU setting
             if args.recog_n_gpus >= 1:
+                model.cudnn_setting(deterministic=True, benchmark=False)
                 model.cuda()
 
         start_time = time.time()
