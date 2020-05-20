@@ -5,4 +5,4 @@
 # source $CONDA/etc/profile.d/conda.sh && conda deactivate && conda activate
 
 # pip install pytest
-pytest ./test.test_encoder.py
+pytest ./test/test_encoder.py
