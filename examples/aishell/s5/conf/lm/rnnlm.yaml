@@ -12,8 +12,8 @@ use_glu: true
 batch_size: 64
 bptt: 200
 optimizer: adam
-n_epochs: 30
-convert_to_sgd_epoch: 30
+n_epochs: 15
+convert_to_sgd_epoch: 15
 print_step: 50
 lr: 1e-3
 lr_decay_start_epoch: 10
