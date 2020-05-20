@@ -66,16 +66,15 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            topk_list = load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
-
-            # Model averaging for Transformer
-            if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
+            if args.recog_n_average > 1:
+                # Model averaging for Transformer
                 model = average_checkpoints(model, args.recog_model[0],
-                                            n_average=args.recog_n_average,
-                                            topk_list=topk_list)
+                                            n_average=args.recog_n_average)
+            else:
+                load_checkpoint(model, args.recog_model[0])
 
-            # ensemble (different models)
+            # Ensemble (different models)
             ensemble_models = [model]
             if len(args.recog_model) > 1:
                 for recog_model_e in args.recog_model[1:]:
@@ -86,7 +85,7 @@ def main():
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
                     load_checkpoint(model_e, recog_model_e)
-                    if args.recog_n_gpus > 0:
+                    if args.recog_n_gpus >= 1:
                         model_e.cuda()
                     ensemble_models += [model_e]
 
@@ -132,7 +131,8 @@ def main():
             logger.info('model average (Transformer): %d' % (args.recog_n_average))
 
             # GPU setting
-            if args.recog_n_gpus > 0:
+            if args.recog_n_gpus >= 1:
+                model.cudnn_setting(deterministic=True, benchmark=False)
                 model.cuda()
 
         save_path = mkdir_join(args.recog_dir, 'att_weights')
