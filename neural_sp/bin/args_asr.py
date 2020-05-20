@@ -58,7 +58,7 @@ def parse():
     parser.add_argument('--dict_sub2', type=str, default=False,
                         help='dictionary file path for the 2nd auxiliary task')
     parser.add_argument('--unit', type=str, default='wp',
-                        choices=['word', 'wp', 'char', 'phone', 'word_char'],
+                        choices=['word', 'wp', 'char', 'phone', 'word_char', 'char_space'],
                         help='output unit for the main task')
     parser.add_argument('--unit_sub1', type=str, default=False,
                         choices=['wp', 'char', 'phone'],
@@ -114,7 +114,7 @@ def parse():
     parser.add_argument('--enc_type', type=str, default='blstm',
                         choices=['blstm', 'lstm', 'bgru', 'gru',
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
-                                 'transformer', 'conv_transformer', 'conv_transformer_lt',
+                                 'transformer', 'conv_transformer',
                                  'conv', 'tds', 'gated_conv'],
                         help='type of the encoder')
     parser.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
@@ -137,16 +137,16 @@ def parse():
     parser.add_argument('--freeze_encoder', type=strtobool, default=False,
                         help='freeze the encoder parameter')
     parser.add_argument('--lc_chunk_size_left', type=int, default=0,
-                        help='left chunk size for latency-controlled bidirectional encoder')
+                        help='left chunk size for latency-controlled encoder')
     parser.add_argument('--lc_chunk_size_current', type=int, default=0,
-                        help='current chunk size (and hop size) for TransformerXL encoder')
+                        help='current chunk size (and hop size) for latency-controlled Transformer encoder')
     parser.add_argument('--lc_chunk_size_right', type=int, default=0,
-                        help='right chunk size for latency-controlled bidirectional encoder')
+                        help='right chunk size for latency-controlled encoder')
     # topology (decoder)
     parser.add_argument('--attn_type', type=str, default='location',
                         choices=['no', 'location', 'add', 'dot',
                                  'luong_dot', 'luong_general', 'luong_concat',
-                                 'mocha',  'gmm', 'cif', 'triggered_attention'],
+                                 'mocha', 'gmm', 'cif', 'triggered_attention'],
                         help='type of attention mechasnism for RNN sequence-to-sequence models')
     parser.add_argument('--attn_dim', type=int, default=128,
                         help='dimension of the attention layer')
@@ -163,9 +163,10 @@ def parse():
     parser.add_argument('--bridge_layer', type=strtobool, default=False,
                         help='')
     parser.add_argument('--dec_type', type=str, default='lstm',
-                        choices=['lstm', 'gru', 'transformer',  'transformer_xl',
-                                 'lstm_transducer', 'gru_transducer', 'transformer_transducer'],
-                        help='')
+                        choices=['lstm', 'gru', 'transformer', 'transformer_xl',
+                                 'lstm_transducer', 'gru_transducer', 'transformer_transducer',
+                                 'asg'],
+                        help='type of the decoder')
     parser.add_argument('--dec_n_units', type=int, default=512,
                         help='number of units in each decoder RNN layer')
     parser.add_argument('--dec_n_projs', type=int, default=0,
@@ -201,10 +202,12 @@ def parse():
                         help='')
     parser.add_argument('--mocha_std', type=float, default=1.0,
                         help='')
+    parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
+                        help='remove denominator (set to 1) in the alpha recurrence')
     parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
                         help='1dconv for MoChA')
     parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
-                        help='Quantity loss weight for MoChA')
+                        help='quantity loss weight for MoChA')
     parser.add_argument('--mocha_head_divergence_loss_weight', type=float, default=0.0,
                         help='Head divergence loss weight for MoChA')
     parser.add_argument('--mocha_latency_metric', type=str, default=False,
@@ -283,25 +286,25 @@ def parse():
                         help='dropout probability for the embedding')
     parser.add_argument('--dropout_att', type=float, default=0.0,
                         help='dropout probability for the attention weights (for Transformer)')
-    parser.add_argument('--dropout_enc_residual', type=float, default=0.0,
-                        help='dropout probability for the stochasitc residual connections in the encoder (for Transformer)')
-    parser.add_argument('--dropout_dec_residual', type=float, default=0.0,
-                        help='dropout probability for the stochasitc residual connections in the decoder (for Transformer)')
+    parser.add_argument('--dropout_enc_layer', type=float, default=0.0,
+                        help='LayerDrop probability for Transformer encoder layers')
+    parser.add_argument('--dropout_dec_layer', type=float, default=0.0,
+                        help='LayerDrop probability for Transformer decoder layers')
     parser.add_argument('--dropout_head', type=float, default=0.0,
-                        help='dropout probability for masking out a head in the MoChA decoder (for Transformer-MoChA)')
-    parser.add_argument('--dropout_hard', type=float, default=0.0,
-                        help='probability for the inference mode in the MoChA decoder during training (for Transformer-MoChA)')
+                        help='HeadDrop probability for masking out a head in the Transformer decoder')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='weight decay parameter')
     parser.add_argument('--ss_prob', type=float, default=0.0,
                         help='probability of scheduled sampling')
     parser.add_argument('--ss_type', type=str, default='constant',
-                        choices=['constant', 'saturation'],
+                        choices=['constant', 'ramp'],
                         help='type of scheduled sampling')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
                         help='probability of label smoothing')
     parser.add_argument('--ctc_lsm_prob', type=float, default=0.0,
                         help='probability of label smoothing for CTC')
+    parser.add_argument('--l0_penalty', type=float, default=0,
+                        help='L0 regularization parameter')
     # SpecAugment
     parser.add_argument('--freq_width', type=int, default=27,
                         help='width of frequency mask for SpecAugment')
@@ -377,6 +380,8 @@ def parse():
     parser.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                         choices=['xavier_uniform', 'pytorch'],
                         help='parameter initializatin for Transformer')
+    parser.add_argument('--transformer_intermediate_layer_loss_weight', type=float, default=0.0,
+                        help='CE loss weight for the intermediate decoder layer')
     # contextualization
     parser.add_argument('--discourse_aware', type=strtobool, default=False, nargs='?',
                         help='carry over the last decoder state to the initial state in the next utterance')
@@ -392,7 +397,7 @@ def parse():
     parser.add_argument('--recog_dir', type=str, default=False,
                         help='directory to save decoding results')
     parser.add_argument('--recog_unit', type=str, default=False, nargs='?',
-                        choices=['word', 'wp', 'char', 'phone', 'word_char'],
+                        choices=['word', 'wp', 'char', 'phone', 'word_char', 'char_space'],
                         help='')
     parser.add_argument('--recog_metric', type=str, default='edit_distance',
                         choices=['edit_distance', 'loss', 'accuracy', 'ppl', 'bleu'],
@@ -458,10 +463,6 @@ def parse():
                         help='chunk-synchronous beam search decoding for MoChA')
     parser.add_argument('--recog_ctc_spike_forced_decoding', type=strtobool, default=False,
                         help='force MoChA to generate tokens corresponding to CTC spikes')
-    parser.add_argument('--recog_lc_chunk_size_left', type=int, default=10000,
-                        help='left chunk size for streaming encoder')
-    parser.add_argument('--recog_lc_chunk_size_right', type=int, default=0,
-                        help='right chunk size for streaming encoder')
     parser.add_argument('--recog_ctc_vad', type=strtobool, default=True,
                         help='')
     parser.add_argument('--recog_ctc_vad_blank_threshold', type=int, default=40,
@@ -470,11 +471,15 @@ def parse():
                         help='')
     parser.add_argument('--recog_ctc_vad_n_accum_frames', type=float, default=4000,
                         help='')
+    parser.add_argument('--recog_mma_delay_threshold', type=int, default=-1,
+                        help='delay threshold for MMA decoder')
     # TransformerXL
+    parser.add_argument('--bptt', type=int, default=0,
+                        help='number of tokens to truncate in TransformerXL decoder during training')
     parser.add_argument('--mem_len', type=int, default=0,
-                        help='number of tokens for memory in TransformerXL during training')
+                        help='number of tokens for memory in TransformerXL decoder during training')
     parser.add_argument('--recog_mem_len', type=int, default=0,
-                        help='number of tokens for memory in TransformerXL during evaluation')
+                        help='number of tokens for memory in TransformerXL decoder during evaluation')
     # distillation related
     parser.add_argument('--teacher', default=False, nargs='?',
                         help='Teacher ASR model for knowledge distillation')
