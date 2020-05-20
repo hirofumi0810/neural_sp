@@ -38,7 +38,6 @@ from neural_sp.evaluators.wordpiece import eval_wordpiece
 from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.build import build_lm
-from neural_sp.models.seq2seq.acoustic_model import AcousticModel
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.trainers.model_name import set_asr_model_name
@@ -188,6 +187,7 @@ def main():
 
     # Model setting
     if args.am_pretrain_type:
+        from neural_sp.models.seq2seq.acoustic_model import AcousticModel
         model = AcousticModel(args, save_path)
     else:
         model = Speech2Text(args, save_path, train_set.idx2token[0])
@@ -252,11 +252,12 @@ def main():
 
         # Initialize with pre-trained model's parameters
         if args.asr_init:
-            # Load the ASR model
+            # Load the ASR model (full model)
             assert os.path.isfile(args.asr_init), 'There is no checkpoint.'
             conf_init = load_config(os.path.join(os.path.dirname(args.asr_init), 'conf.yml'))
             for k, v in conf_init.items():
                 setattr(args_init, k, v)
+            args_init.l0_penalty = 0.0   # TODO: fix later
             model_init = Speech2Text(args_init)
             load_checkpoint(model_init, args.asr_init)
 
@@ -372,7 +373,7 @@ def main():
             reporter.add(observation)
             loss.backward()
             loss.detach()  # Trancate the graph
-            if args.accum_grad_n_steps == 1 or accum_n_steps >= args.accum_grad_n_steps:
+            if accum_n_steps >= args.accum_grad_n_steps:
                 if args.clip_grad_norm > 0:
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         model.module.parameters(), args.clip_grad_norm)
@@ -388,10 +389,10 @@ def main():
         reporter.step()
         pbar_epoch.update(len(batch_train['utt_ids']))
         n_steps += 1
+        # NOTE: n_steps is different from the step counter in Noam Optimizer
 
         if n_steps % args.print_step == 0:
             # Compute loss in the dev set
-            # batch_dev = dev_set.next()[0]
             batch_dev = dev_set.next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
             # Change mini-batch depending on task
             for task in tasks:
@@ -426,6 +427,9 @@ def main():
                 # dev
                 evaluate([model.module], dev_set, recog_params, args,
                          int(train_set.epoch_detail * 10) / 10, logger)
+                # Save the model
+                optimizer.save_checkpoint(model, save_path, remove_old=False,
+                                          epoch_detail=train_set.epoch_detail)
             epoch_detail_prev = train_set.epoch_detail
 
         # Save checkpoint and evaluate model per epoch
@@ -458,10 +462,6 @@ def main():
                             evaluate([model.module], eval_set, recog_params, args,
                                      optimizer.n_epochs, logger)
 
-                        # start scheduled sampling
-                        if args.ss_prob > 0:
-                            model.module.scheduled_sampling_trigger()
-
                 duration_eval = time.time() - start_time_eval
                 logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
@@ -477,8 +477,12 @@ def main():
             pbar_epoch = tqdm(total=len(train_set))
             session_prev = None
 
-            if optimizer.n_epochs == args.n_epochs:
+            if optimizer.n_epochs >= args.n_epochs:
                 break
+            # if args.ss_prob > 0:
+            #     model.module.scheduled_sampling_trigger()
+            if optimizer.n_epochs == args.mocha_quantity_loss_start_epoch and args.mocha_quantity_loss_weight > 0:
+                model.module.mocha_quantity_loss_trigger()
 
             start_time_step = time.time()
             start_time_epoch = time.time()
