@@ -186,11 +186,7 @@ def main():
         assert args.vocab == args.lm_conf.vocab
 
     # Model setting
-    if args.am_pretrain_type:
-        from neural_sp.models.seq2seq.acoustic_model import AcousticModel
-        model = AcousticModel(args, save_path)
-    else:
-        model = Speech2Text(args, save_path, train_set.idx2token[0])
+    model = Speech2Text(args, save_path, train_set.idx2token[0])
 
     if args.resume:
         transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
@@ -257,7 +253,6 @@ def main():
             conf_init = load_config(os.path.join(os.path.dirname(args.asr_init), 'conf.yml'))
             for k, v in conf_init.items():
                 setattr(args_init, k, v)
-            args_init.l0_penalty = 0.0   # TODO: fix later
             model_init = Speech2Text(args_init)
             load_checkpoint(model_init, args.asr_init)
 
@@ -481,8 +476,6 @@ def main():
                 break
             # if args.ss_prob > 0:
             #     model.module.scheduled_sampling_trigger()
-            if optimizer.n_epochs == args.mocha_quantity_loss_start_epoch and args.mocha_quantity_loss_weight > 0:
-                model.module.mocha_quantity_loss_trigger()
 
             start_time_step = time.time()
             start_time_epoch = time.time()

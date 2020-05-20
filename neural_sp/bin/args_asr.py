@@ -134,8 +134,6 @@ def parse():
     parser.add_argument('--subsample_type', type=str, default='drop',
                         choices=['drop', 'concat', 'max_pool', '1dconv'],
                         help='type of subsampling in the encoder')
-    parser.add_argument('--freeze_encoder', type=strtobool, default=False,
-                        help='freeze the encoder parameter')
     parser.add_argument('--lc_chunk_size_left', type=int, default=0,
                         help='left chunk size for latency-controlled encoder')
     parser.add_argument('--lc_chunk_size_current', type=int, default=0,
@@ -273,6 +271,8 @@ def parse():
                         help='pre-trained seq2seq model path')
     parser.add_argument('--asr_init_enc_only', type=strtobool, default=False,
                         help='Initialize the encoder only')
+    parser.add_argument('--freeze_encoder', type=strtobool, default=False,
+                        help='freeze the encoder parameter')
     # regularization
     parser.add_argument('--clip_grad_norm', type=float, default=5.0,
                         help='')
@@ -303,8 +303,6 @@ def parse():
                         help='probability of label smoothing')
     parser.add_argument('--ctc_lsm_prob', type=float, default=0.0,
                         help='probability of label smoothing for CTC')
-    parser.add_argument('--l0_penalty', type=float, default=0,
-                        help='L0 regularization parameter')
     # SpecAugment
     parser.add_argument('--freq_width', type=int, default=27,
                         help='width of frequency mask for SpecAugment')
@@ -380,8 +378,6 @@ def parse():
     parser.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                         choices=['xavier_uniform', 'pytorch'],
                         help='parameter initializatin for Transformer')
-    parser.add_argument('--transformer_intermediate_layer_loss_weight', type=float, default=0.0,
-                        help='CE loss weight for the intermediate decoder layer')
     # contextualization
     parser.add_argument('--discourse_aware', type=strtobool, default=False, nargs='?',
                         help='carry over the last decoder state to the initial state in the next utterance')
