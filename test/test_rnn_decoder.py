@@ -96,8 +96,17 @@ def make_rnn_args(**kwargs):
         #   'ctc_weight': 0.5, 'latency_metric': 'ctc_sync', 'latency_loss_weight': 1.0}),
         # ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_quantity_loss_weight': 1.0,
         #   'ctc_weight': 0.5, 'latency_metric': 'ctc_sync', 'latency_loss_weight': 1.0}),
-        # pure CTC
+        # multihead attention
+        ({'attn_type': 'add', 'attn_n_heads': 4}),
+        ({'attn_type': 'mocha', 'mocha_chunk_size': 1, 'mocha_n_heads_mono': 4}),
+        ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 4}),
+        # CTC
+        ({'ctc_weight': 0.5}),
         ({'ctc_weight': 1.0}),
+        # forward-backward decoder
+        ({'backward': True}),
+        ({'backward': True, 'ctc_weight': 0.5}),
+        ({'backward': True, 'ctc_weight': 1.0}),
     ]
 )
 def test_rnn_forward(args):

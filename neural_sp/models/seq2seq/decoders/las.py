@@ -222,7 +222,7 @@ class RNNDecoder(DecoderBase):
                         enc_n_units, qdim, attn_dim,
                         n_heads=attn_n_heads,
                         dropout=dropout_att,
-                        attn_type='add')
+                        atype='add')
                 else:
                     self.score = AttentionMechanism(
                         enc_n_units, qdim, attn_dim, attn_type,
