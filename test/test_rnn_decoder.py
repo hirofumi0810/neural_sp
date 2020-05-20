@@ -109,7 +109,7 @@ def make_rnn_args(**kwargs):
         ({'backward': True, 'ctc_weight': 0.5}),
         ({'backward': True, 'ctc_weight': 1.0}),
         # others
-        ({'tie_embedding': True}),
+        ({'tie_embedding': True, 'bottleneck_dim': 64, 'emb_dim': 64}),
         ({'lsm_prob': 0.1}),
         ({'ss_prob': 0.2}),
         # RNNLM init
