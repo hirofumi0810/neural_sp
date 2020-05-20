@@ -103,7 +103,7 @@ def test_rnn_forward(args):
     args = make_rnn_args(**args)
 
     batch_size = 4
-    xmax = 40
+    xmax = 40 if args['chunk_size_left'] == -1 else 1600
     device_id = -1
     xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
     xlens = torch.IntTensor([len(x) for x in xs])
@@ -186,7 +186,7 @@ def test_transformer_forward(args):
     args = make_transformer_args(**args)
 
     batch_size = 4
-    xmax = 40
+    xmax = 40 if args['chunk_size_left'] == -1 else 1600
     device_id = -1
     xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
     xlens = torch.IntTensor([len(x) for x in xs])
