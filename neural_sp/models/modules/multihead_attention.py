@@ -94,8 +94,9 @@ class MultiheadAttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask, aw_prev=None,
-                mode='', cache=False, trigger_point=None):
-        """Forward computation.
+                cache=False, mode='', trigger_point=None,
+                eps_wait=-1, boundary_rightmost=None):
+        """Forward pass.
 
         Args:
             key (FloatTensor): `[B, klen, kdim]`
@@ -103,9 +104,10 @@ class MultiheadAttentionMechanism(nn.Module):
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             aw_prev: dummy interface
-            mode: dummy interface for MoChA
             cache (bool): cache key, value, and mask
+            mode: dummy interface for MoChA
             trigger_point: dummy interface for MoChA
+            eps_wait: dummy interface for MMA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, H, qlen, klen]`

@@ -109,15 +109,17 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
     if not os.path.isfile(checkpoint_path):
         raise ValueError('There is no checkpoint')
 
-    epoch = int(os.path.basename(checkpoint_path).split('-')[-1]) - 1
-
     if os.path.isfile(checkpoint_path):
         checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
     else:
         raise ValueError("No checkpoint found at %s" % checkpoint_path)
 
     # Restore parameters
-    logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
+    if 'avg' not in checkpoint_path:
+        epoch = int(os.path.basename(checkpoint_path).split('-')[-1]) - 1
+        logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
+    else:
+        logger.info("=> Loading checkpoint: %s" % checkpoint_path)
     try:
         model.load_state_dict(checkpoint['model_state_dict'])
     except KeyError:
@@ -138,7 +140,7 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
     else:
         logger.warning('Optimizer is not loaded.')
 
-    if 'topk_list' in checkpoint['optimizer_state_dict'].keys():
+    if 'optimizer_state_dict' in checkpoint.keys() and 'topk_list' in checkpoint['optimizer_state_dict'].keys():
         topk_list = checkpoint['optimizer_state_dict']['topk_list']
     else:
         topk_list = []

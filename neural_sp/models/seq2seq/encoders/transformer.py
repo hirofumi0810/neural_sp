@@ -54,7 +54,7 @@ class TransformerEncoder(EncoderBase):
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
-        dropout_residual (float): dropout probability for stochastic residual connections
+        dropout_layer (float): LayerDrop probability for layers
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
@@ -71,7 +71,6 @@ class TransformerEncoder(EncoderBase):
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
         chunk_size_current (int): current chunk size for time-restricted Transformer encoder
         chunk_size_right (int): right chunk size for time-restricted Transformer encoder
-        n_layers_rnn (int):
 
     """
 
@@ -79,12 +78,12 @@ class TransformerEncoder(EncoderBase):
                  n_layers, n_layers_sub1, n_layers_sub2,
                  d_model, d_ff, last_proj_dim,
                  pe_type, layer_norm_eps, ffn_activation,
-                 dropout_in, dropout, dropout_att, dropout_residual,
+                 dropout_in, dropout, dropout_att, dropout_layer,
                  n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init,
-                 chunk_size_left, chunk_size_current, chunk_size_right, n_layers_rnn):
+                 chunk_size_left, chunk_size_current, chunk_size_right):
 
         super(TransformerEncoder, self).__init__()
 
@@ -99,9 +98,9 @@ class TransformerEncoder(EncoderBase):
         self.pe_type = pe_type
 
         # for streaming TransformerXL encoder
-        self.chunk_size_left = chunk_size_left
-        self.chunk_size_cur = chunk_size_current
-        self.chunk_size_right = chunk_size_right
+        self.N_l = chunk_size_left
+        self.N_c = chunk_size_current
+        self.N_r = chunk_size_right
         self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
         self.memory_transformer = ('transformer_xl' in enc_type)
         self.mem_len = chunk_size_left
@@ -110,13 +109,6 @@ class TransformerEncoder(EncoderBase):
             assert pe_type == 'none'
             assert chunk_size_left > 0
             assert chunk_size_current > 0
-        if self.latency_controlled:
-            assert pe_type == 'none'
-
-        # for hybrid RNN-Transformer encoder
-        self.hybrid_rnn = n_layers_rnn > 0
-        self.n_layers_rnn = n_layers_rnn
-        self.proj = None
 
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -132,7 +124,7 @@ class TransformerEncoder(EncoderBase):
         self.aws_dict = {}
         self.data_dict = {}
 
-        # Setting for CNNs before RNNs
+        # Setting for CNNs
         if conv_channels:
             assert n_stacks == 1 and n_splices == 1
             self.conv = ConvEncoder(input_dim,
@@ -154,31 +146,10 @@ class TransformerEncoder(EncoderBase):
             self._odim = input_dim * n_splices * n_stacks
             self.embed = nn.Linear(self._odim, d_model)
 
-        # Hybrid RNN-Transformer
-        if self.hybrid_rnn:
-            assert pe_type == 'none'
-            self.rnn = nn.ModuleList()
-            self.rnn_bwd = nn.ModuleList()
-            self.dropout_rnn = nn.Dropout(p=dropout)
-            assert ('blstm' in enc_type or 'bgru' in enc_type)
-            # NOTE: support bidirectional only
-            self.bidir_sum = True
-
-            for _ in range(n_layers_rnn):
-                if 'blstm' in enc_type:
-                    rnn_i = nn.LSTM
-                elif 'bgru' in enc_type:
-                    rnn_i = nn.GRU
-                else:
-                    raise ValueError(
-                        'rnn_type must be "(conv_)blstm_transformer(_xl)" or "(conv_)bgru_transformer(_xl)".')
-
-                self.rnn += [rnn_i(self._odim, d_model, 1, batch_first=True)]
-                self.rnn_bwd += [rnn_i(self._odim, d_model, 1, batch_first=True)]
-                self._odim = d_model if self.bidir_sum else d_model * self.n_dirs
-
-            if self._odim != d_model:
-                self.proj = nn.Linear(self._odim, d_model)
+        # calculate subsampling factor
+        self._factor = 1
+        if self.conv is not None:
+            self._factor *= self.conv.subsampling_factor
 
         if self.memory_transformer:
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
@@ -186,14 +157,12 @@ class TransformerEncoder(EncoderBase):
             self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
             # NOTE: u and v are global parameters
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
-        # TODO: replace dropout_in with dropout
 
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
-            d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
-            dropout_residual * (lth + 1) / n_layers,
+            d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init,
             memory_transformer=self.memory_transformer))
-            for lth in range(n_layers)])
+            for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         self._odim = d_model
@@ -201,31 +170,24 @@ class TransformerEncoder(EncoderBase):
         if n_layers_sub1 > 0:
             if task_specific_layer:
                 self.layer_sub1 = TransformerEncoderBlock(
-                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
-                    dropout_residual * n_layers_sub1 / n_layers,
+                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init)
             self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-            if last_proj_dim != self.output_dim:
+            if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
 
         if n_layers_sub2 > 0:
             if task_specific_layer:
                 self.layer_sub2 = TransformerEncoderBlock(
-                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att,
-                    dropout_residual * n_layers_sub2 / n_layers,
+                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init)
             self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-            if last_proj_dim != self.output_dim:
+            if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
 
-        if last_proj_dim != self.output_dim:
+        if last_proj_dim > 0 and last_proj_dim != self.output_dim:
             self.bridge = nn.Linear(self._odim, last_proj_dim)
             self._odim = last_proj_dim
-
-        # calculate subsampling factor
-        self._factor = 1
-        if self.conv is not None:
-            self._factor *= self.conv.subsampling_factor
 
         self.reset_parameters(param_init)
 
@@ -252,26 +214,6 @@ class TransformerEncoder(EncoderBase):
             if self.bridge_sub2 is not None:
                 nn.init.xavier_uniform_(self.bridge_sub2.weight)
                 nn.init.constant_(self.bridge_sub2.bias, 0.)
-
-        if self.hybrid_rnn:
-            logger.info('===== Initialize RNN in %s with uniform distribution =====' % self.__class__.__name__)
-            param_init_rnn = 0.1
-            for n, p in self.named_parameters():
-                if 'rnn' not in n:
-                    continue
-                if p.dim() == 1:
-                    nn.init.constant_(p, 0.)  # bias
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
-                elif p.dim() in [2, 4]:
-                    nn.init.uniform_(p, a=-param_init_rnn, b=param_init_rnn)
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init_rnn))
-                else:
-                    raise ValueError(n)
-
-    def reset_cache(self):
-        """Reset RNN state."""
-        self.fwd_states = [None] * self.n_layers
-        logger.debug('Reset cache.')
 
     def init_memory(self):
         """Initialize memory."""
@@ -330,115 +272,59 @@ class TransformerEncoder(EncoderBase):
                  'ys_sub1': {'xs': None, 'xlens': None},
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
+        if self.latency_controlled:
+            bs, xmax, idim = xs.size()
+            n_blocks = xmax // self.N_c
+            if xmax % self.N_c != 0:
+                n_blocks += 1
+            xs_tmp = xs.new_zeros(bs, n_blocks, self.N_l + self.N_c + self.N_r, idim)
+            xs_pad = torch.cat([xs.new_zeros(bs, self.N_l, idim),
+                                xs,
+                                xs.new_zeros(bs, self.N_r, idim)], dim=1)
+            for blc_id, t in enumerate(range(self.N_l, self.N_l + xmax, self.N_c)):
+                xs_chunk = xs_pad[:, t - self.N_l:t + (self.N_c + self.N_r)]
+                xs_tmp[:, blc_id, :xs_chunk.size(1), :] = xs_chunk
+            xs = xs_tmp.view(bs * n_blocks, self.N_l + self.N_c + self.N_r, idim)
+
         if self.conv is None:
             xs = self.embed(xs)
         else:
-            # Path through CNN blocks before RNN layers
+            # Path through CNN blocks
             xs, xlens = self.conv(xs, xlens)
         if not self.training:
             self.data_dict['elens'] = tensor2np(xlens)
 
-        bs, xmax, idim = xs.size()
-        if self.memory_transformer or self.latency_controlled:
-            # streaming Transformer(XL) encoder
-            N_l = max(0, self.chunk_size_left // self.subsampling_factor)
-            N_c = self.chunk_size_cur // self.subsampling_factor
-            N_r = max(0, self.chunk_size_right // self.subsampling_factor)
+        if self.latency_controlled:
+            N_l = max(0, self.N_l // self.subsampling_factor)
+            N_c = self.N_c // self.subsampling_factor
 
-            xs_chunks = []
-            xx_aws = [[] for _ in range(self.n_layers)]
-            mems = self.init_memory()
-            self.reset_cache()  # for LC-BLSTM
+            emax = xmax // self.subsampling_factor
+            if xmax % self.subsampling_factor != 0:
+                emax += 1
 
-            mlen = 0
-            for t in range(0, xmax, N_c):
-                clen = min(N_c, xmax - 1 - t + 1)
-                rlen = 0
-                if xmax - 1 - (t + clen) + 1 > 0:
-                    rlen = min(N_r, xmax - 1 - (t + clen) + 1)
+            xs = self.pos_enc(xs, scale=True)
+            xx_mask = None
+            for lth, layer in enumerate(self.layers):
+                xs, xx_aws = layer(xs, xx_mask)
+                if not self.training:
+                    n_heads = xx_aws.size(1)
+                    xx_aws = xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
+                    xx_aws = xx_aws.view(bs, n_blocks, n_heads, N_c, N_c)
+                    xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
+                    for blc_id in range(n_blocks):
+                        offset = blc_id * N_c
+                        emax_blc = xx_aws_center[:, :, offset:offset + N_c].size(2)
+                        xx_aws_chunk = xx_aws[:, blc_id, :, :emax_blc, :emax_blc]
+                        xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
+                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
 
-                xs_chunk = xs[:, t:t + (clen + rlen)]
-
-                if self.hybrid_rnn:
-                    for lth in range(self.n_layers_rnn):
-                        self.rnn[lth].flatten_parameters()  # for multi-GPUs
-                        self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
-                        # bwd
-                        xs_chunk_bwd = torch.flip(xs_chunk, dims=[1])
-                        xs_chunk_bwd, _ = self.rnn_bwd[lth](xs_chunk_bwd, hx=None)
-                        xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, clen+rlen, d_model]`
-                        # fwd
-                        if xs_chunk.size(1) <= clen:
-                            xs_chunk_fwd, self.fwd_states[lth] = self.rnn[lth](
-                                xs_chunk, hx=self.fwd_states[lth])
-                        else:
-                            xs_chunk_fwd1, self.fwd_states[lth] = self.rnn[lth](
-                                xs_chunk[:, :clen], hx=self.fwd_states[lth])
-                            xs_chunk_fwd2, _ = self.rnn[lth](
-                                xs_chunk[:, clen:], hx=self.fwd_states[lth])
-                            xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, clen+rlen, d_model]`
-                            # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer
-                        if self.bidir_sum:
-                            xs_chunk = xs_chunk_fwd + xs_chunk_bwd
-                        else:
-                            xs_chunk = torch.cat([xs_chunk_fwd, xs_chunk_bwd], dim=-1)
-                    xs_chunk = self.dropout_rnn(xs_chunk)
-                    if self.proj is not None:
-                        xs_chunk = self.proj(xs_chunk)
-
-                xs_chunk = self.pos_enc(xs_chunk, scale=True)  # for scale
-
-                if self.memory_transformer:
-                    # adopt zero-centered offset
-                    pos_idxs = torch.arange(mlen - 1, -xs_chunk.size(1) - 1, -1.0, dtype=torch.float)
-                    pos_embs = self.pos_emb(pos_idxs, self.device_id)
-
-                hidden_states = [xs_chunk[:, :clen][:, -N_l:]]
-                for lth, (mem, layer) in enumerate(zip(mems, self.layers)):
-                    if self.memory_transformer:
-                        xs_chunk, xx_aws_chunk = layer(xs_chunk, None, pos_embs=pos_embs, memory=mem,
-                                                       u=self.u, v=self.v)  # no mask
-                    else:
-                        xs_chunk, xx_aws_chunk = layer(xs_chunk, None, memory=mem)  # no mask
-
-                    if lth < self.n_layers - 1:
-                        hidden_states.append(xs_chunk[:, :clen][:, -N_l:])
-                    # NOTE: xx_aws_chunk: `[B, H, clen+rlen (query), mlen+clen+rlen (key)]`
-                    xx_aws_chunk = xx_aws_chunk[:, :, :clen, mlen:mlen + clen]
-                    assert xx_aws_chunk.size(2) == xx_aws_chunk.size(3)
-                    xx_aws_chunk_pad = xs.new_zeros((bs, xx_aws_chunk.size(1), N_c, N_c))
-                    xx_aws_chunk_pad[:, :, :xx_aws_chunk.size(2), :xx_aws_chunk.size(3)] = xx_aws_chunk
-                    xx_aws[lth].append(xx_aws_chunk_pad)
-                mems = self.update_memory(mems, hidden_states)
-                mlen = mems[0].size(1) if mems[0].dim() > 1 else 0
-                xs_chunks.append(xs_chunk[:, :clen])
-            xs = torch.cat(xs_chunks, dim=1)[:, :xmax]
-
-            if not self.training:
-                for lth in range(self.n_layers):
-                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(torch.cat(xx_aws[lth], dim=3)[:, :, :xmax, :xmax])
+            # Extract the center region
+            xs = xs[:, N_l:N_l + N_c]  # `[B * n_blocks, N_c // subsampling_factor, d_model]`
+            xs = xs.contiguous().view(bs, -1, xs.size(2))
+            xs = xs[:, :emax]
 
         else:
-            # Hybrid RNN-Transformer
-            if self.hybrid_rnn:
-                for lth in range(self.n_layers_rnn):
-                    self.rnn[lth].flatten_parameters()  # for multi-GPUs
-                    self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
-                    # bwd
-                    xs_bwd = torch.flip(xs, dims=[1])
-                    xs_bwd, _ = self.rnn_bwd[lth](xs_bwd, hx=None)
-                    xs_bwd = torch.flip(xs_bwd, dims=[1])
-                    # fwd
-                    xs_fwd, _ = self.rnn[lth](xs, hx=None)
-                    # NOTE: no padding because inputs are not sorted
-                    if self.bidir_sum:
-                        xs = xs_fwd + xs_bwd
-                    else:
-                        xs = torch.cat([xs_fwd, xs_bwd], dim=-1)
-                    xs = self.dropout_rnn(xs)
-                if self.proj is not None:
-                    xs = self.proj(xs)
-
+            bs, xmax, idim = xs.size()
             xs = self.pos_enc(xs, scale=True)
 
             # Create the self-attention mask

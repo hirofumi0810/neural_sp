@@ -4,7 +4,7 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""(Multi-head) Monotonic chunkwise atteniton (MoChA)."""
+"""Monotonic chunkwise atteniton (MoChA)."""
 
 # [reference]
 # https://github.com/j-min/MoChA-pytorch/blob/94b54a7fa13e4ac6dc255b509dd0febc8c0a0ee6/attention.py
@@ -18,6 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.causal_conv import CausalConv1d
+from neural_sp.models.modules.initialization import init_with_xavier_dist
 
 random.seed(1)
 
@@ -69,36 +70,34 @@ class MonotonicEnergy(nn.Module):
         self.r = nn.Parameter(torch.Tensor([init_r]))
         logger.info('init_r is initialized with %d' % init_r)
 
+        self.conv1d = None
+        if conv1d:
+            self.conv1d = CausalConv1d(in_channels=kdim,
+                                       out_channels=kdim,
+                                       kernel_size=conv_kernel_size)
+            # padding=(conv_kernel_size - 1) // 2
+
         if atype == 'add':
             self.v = nn.utils.weight_norm(self.v, name='weight', dim=0)
             # initialization
             self.v.weight_g.data = torch.Tensor([1 / adim]).sqrt()
         elif atype == 'scaled_dot':
-            # self.w_query = nn.utils.weight_norm(self.w_query, name='weight', dim=0)
-            # initialization
-            # self.w_query.weight_g.data = torch.Tensor([1 / adim]).sqrt()
             if param_init == 'xavier_uniform':
                 self.reset_parameters(bias)
-            # TODO: debug weight normalization
-
-        self.conv1d = None
-        if conv1d:
-            self.conv1d = CausalConv1d(in_channels=kdim,
-                                       out_channels=kdim,
-                                       kernel_size=conv_kernel_size,
-                                       stride=1)
-            # padding=(conv_kernel_size - 1) // 2
 
     def reset_parameters(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
         logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/multihead_attention.py
         nn.init.xavier_uniform_(self.w_key.weight, gain=1 / math.sqrt(2))
-        # nn.init.xavier_uniform_(self.w_query.weight_v, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_query.weight, gain=1 / math.sqrt(2))
         if bias:
             nn.init.constant_(self.w_key.bias, 0.)
             nn.init.constant_(self.w_query.bias, 0.)
+        if self.conv1d is not None:
+            logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.conv1d.__class__.__name__)
+            for n, p in self.conv1d.named_parameters():
+                init_with_xavier_dist(n, p)
 
     def reset(self):
         self.key = None
@@ -248,9 +247,11 @@ class ChunkEnergy(nn.Module):
 
 
 class MoChA(nn.Module):
-    def __init__(self, kdim, qdim, adim, atype, chunk_size, n_heads_mono=1, n_heads_chunk=1,
-                 conv1d=False, init_r=-4, eps=1e-6, noise_std=1.0, sharpening_factor=1.0,
-                 dropout=0., dropout_head=0., dropout_hard=0., bias=True, param_init='',
+    def __init__(self, kdim, qdim, adim, atype, chunk_size,
+                 n_heads_mono=1, n_heads_chunk=1,
+                 conv1d=False, init_r=-4, eps=1e-6, noise_std=1.0,
+                 no_denominator=False, sharpening_factor=1.0,
+                 dropout=0., dropout_head=0., bias=True, param_init='',
                  decot=False, lookahead=2):
         """Monotonic chunk-wise attention.
 
@@ -278,6 +279,7 @@ class MoChA(nn.Module):
             init_r (int): initial value for parameter 'r' used for monotonic attention
             eps (float): epsilon parameter to avoid zero division
             noise_std (float): standard deviation for input noise
+            no_denominator (bool): set the denominator to 1 in the alpha recurrence
             sharpening_factor (float): sharping factor for beta calculation
             dropout (float): dropout probability for attention weights
             dropout_head (float): dropout probability for heads
@@ -300,6 +302,7 @@ class MoChA(nn.Module):
         self.n_heads_chunk = n_heads_chunk
         self.eps = eps
         self.noise_std = noise_std
+        self.no_denom = no_denominator
         self.sharpening_factor = sharpening_factor
 
         self.decot = decot
@@ -321,7 +324,6 @@ class MoChA(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         # head dropout
         self.dropout_head = dropout_head
-        self.dropout_hard = dropout_hard
 
     def reset_parameters(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
@@ -341,8 +343,9 @@ class MoChA(nn.Module):
             self.chunk_energy.reset()
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                mode='hard', cache=False, trigger_point=None):
-        """Soft monotonic attention during training.
+                mode='hard', cache=False, trigger_point=None,
+                eps_wait=-1, boundary_rightmost=None):
+        """Forward pass.
 
         Args:
             key (FloatTensor): `[B, klen, kdim]`
@@ -353,6 +356,8 @@ class MoChA(nn.Module):
             mode (str): recursive/parallel/hard
             cache (bool): cache key and mask
             trigger_point (IntTensor): `[B]`
+            eps_wait (int): acceptable delay for MMA
+            boundary_rightmost (int):
         Return:
             cv (FloatTensor): `[B, qlen, vdim]`
             alpha (FloatTensor): `[B, H_mono, qlen, klen]`
@@ -369,10 +374,6 @@ class MoChA(nn.Module):
 
         # Compute monotonic energy
         e_mono = self.monotonic_energy(key, query, mask, cache=cache)  # `[B, H_mono, qlen, klen]`
-
-        # hard dropout
-        if self.n_heads_mono > 1 and self.dropout_hard > 0 and self.training and random.random() < self.dropout_hard:
-            mode = 'hard'
 
         if mode == 'recursive':  # training
             p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_mono, qlen, klen]`
@@ -400,7 +401,7 @@ class MoChA(nn.Module):
             # Compute recurrence relation solution
             alpha = []
             for i in range(qlen):
-                denom = torch.clamp(cumprod_1mp_choose[:, :, i:i + 1], min=self.eps, max=1.0)
+                denom = 1 if self.no_denom else torch.clamp(cumprod_1mp_choose[:, :, i:i + 1], min=self.eps, max=1.0)
                 aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
                     aw_prev / denom, dim=-1)  # `[B, H_mono, 1, klen]`
                 # Mask the right part from the trigger point
@@ -408,37 +409,75 @@ class MoChA(nn.Module):
                     for b in range(bs):
                         aw_prev[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
                 alpha.append(aw_prev)
+
             alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
             alpha_masked = alpha.clone()
 
             # mask out each head independently
             if self.n_heads_mono > 1 and self.dropout_head > 0 and self.training:
+                n_effective_heads = self.n_heads_mono
                 head_mask = alpha.new_ones(alpha.size()).byte()
                 for h in range(self.n_heads_mono):
                     if random.random() < self.dropout_head:
                         head_mask[:, h] = 0
+                        n_effective_heads -= 1
                 alpha_masked = alpha_masked.masked_fill_(head_mask == 0, 0)
+                # Normalization
+                if n_effective_heads > 0:
+                    alpha_masked = alpha_masked * (self.n_heads_mono / n_effective_heads)
 
         elif mode == 'hard':  # inference
-            alpha = []
-            emit_probs = torch.sigmoid(e_mono)  # `[B, H_mono, qlen, klen]`
-            p_choose = (emit_probs >= 0.5).float()
-            for i in range(qlen):
-                p_choose_i = (emit_probs[:, :, i:i + 1] >= 0.5).float()
-                # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
-                # Remove any probabilities before the index chosen at the last time step
-                p_choose_i *= torch.cumsum(aw_prev[:, :, i:i + 1], dim=-1)  # `[B, H_mono, qlen, klen]`
-                # Now, use exclusive cumprod to remove probabilities after the first
-                # chosen index, like so:
-                # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
-                # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
-                # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
-                # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
-                aw_prev = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_mono, qlen, klen]`
-                alpha.append(aw_prev)
-            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
-            # NOTE: no dropout
-            alpha_masked = alpha.clone()
+            assert qlen == 1
+            p_choose_i = (torch.sigmoid(e_mono) >= 0.5).float()[:, :, 0:1]
+            # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
+            # Remove any probabilities before the index chosen at the last time step
+            p_choose_i *= torch.cumsum(aw_prev[:, :, 0:1], dim=-1)  # `[B, H_mono, 1 (qlen), klen]`
+            # Now, use exclusive cumprod to remove probabilities after the first
+            # chosen index, like so:
+            # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
+            # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
+            # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
+            # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
+            alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_mono, 1 (qlen), klen]`
+
+            vertical_latency = False
+            if eps_wait > 0:
+                for b in range(bs):
+                    first_mma_layer = (boundary_rightmost is None)
+                    if first_mma_layer or not vertical_latency:
+                        boundary_threshold = alpha.size(-1) - 1
+                    else:
+                        boundary_threshold = min(alpha.size(-1) - 1, boundary_rightmost + eps_wait)
+
+                    # no boundary until the last frame for all heads
+                    if alpha[b].sum() == 0:
+                        if vertical_latency and boundary_threshold < alpha.size(-1) - 1:
+                            alpha[b, :, 0, boundary_threshold] = 1
+                        continue
+
+                    leftmost = alpha[b, :, 0].nonzero()[:, -1].min().item()
+                    rightmost = alpha[b, :, 0].nonzero()[:, -1].max().item()
+                    for h in range(self.n_heads_mono):
+                        # no bondary at the h-th head
+                        if alpha[b, h, 0].sum().item() == 0:
+                            if first_mma_layer or not vertical_latency:
+                                alpha[b, h, 0, min(rightmost, leftmost + eps_wait)] = 1
+                            else:
+                                if boundary_threshold < alpha.size(-1) - 1:
+                                    alpha[b, h, 0, boundary_threshold] = 1
+                            continue
+
+                        # surpass acceptable latency
+                        if first_mma_layer or not vertical_latency:
+                            if alpha[b, h, 0].nonzero()[:, -1].min().item() >= leftmost + eps_wait:
+                                alpha[b, h, 0, :] = 0  # reset
+                                alpha[b, h, 0, leftmost + eps_wait] = 1
+                        else:
+                            if alpha[b, h, 0].nonzero()[:, -1].min().item() > boundary_threshold:
+                                alpha[b, h, 0, :] = 0  # reset
+                                alpha[b, h, 0, boundary_threshold] = 1
+
+            alpha_masked = alpha.clone()  # NOTE: no dropout
 
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")

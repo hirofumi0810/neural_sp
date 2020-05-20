@@ -73,14 +73,13 @@ def main():
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            topk_list = load_checkpoint(model, args.recog_model[0])
             epoch = int(args.recog_model[0].split('-')[-1])
-
-            # Model averaging for Transformer
-            if 'transformer' in conf['enc_type'] and conf['dec_type'] == 'transformer':
+            if args.recog_n_average > 1:
+                # Model averaging for Transformer
                 model = average_checkpoints(model, args.recog_model[0],
-                                            n_average=args.recog_n_average,
-                                            topk_list=topk_list)
+                                            n_average=args.recog_n_average)
+            else:
+                load_checkpoint(model, args.recog_model[0])
 
             if not args.recog_unit:
                 args.recog_unit = args.unit
@@ -90,7 +89,8 @@ def main():
             logger.info('batch size: %d' % args.recog_batch_size)
 
             # GPU setting
-            if args.recog_n_gpus > 0:
+            if args.recog_n_gpus >= 1:
+                model.cudnn_setting(deterministic=True, benchmark=False)
                 model.cuda()
 
         save_path = mkdir_join(args.recog_dir, 'ctc_probs')
@@ -102,8 +102,7 @@ def main():
 
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
-            best_hyps_id, _, _ = model.decode(batch['xs'], recog_params,
-                                              exclude_eos=False)
+            best_hyps_id, _ = model.decode(batch['xs'], recog_params)
 
             # Get CTC probs
             ctc_probs, topk_ids, xlens = model.get_ctc_probs(
