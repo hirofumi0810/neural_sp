@@ -46,7 +46,8 @@ class GMMAttention(nn.Module):
         self.mask = None
         self.myu = None
 
-    def forward(self, key, value, query, mask=None, aw_prev=None, mode=''):
+    def forward(self, key, value, query, mask=None, aw_prev=None,
+                cache=False, mode='', trigger_point=None):
         """Soft monotonic attention during training.
 
         Args:
@@ -55,7 +56,9 @@ class GMMAttention(nn.Module):
             query (FloatTensor): `[B, 1, qdim]`
             mask (ByteTensor): `[B, qmax, klen]`
             aw_prev (FloatTensor): `[B, klen, 1]`
-            mode (str): dummy interface
+            cache (bool): cache key and mask
+            mode: dummy interface for MoChA
+            trigger_point: dummy interface for MoChA
         Return:
             cv (FloatTensor): `[B, 1, vdim]`
             alpha (FloatTensor): `[B, klen, 1]`
