@@ -3,10 +3,6 @@
 
 """Test for encoders."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import importlib
 import numpy as np
 import pytest
@@ -192,8 +188,8 @@ def test_transformer_forward(args):
     xlens = torch.IntTensor([len(x) for x in xs])
     xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
 
-    rnn = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
-    enc = rnn.TransformerEncoder(**args)
+    transformer = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
+    enc = transformer.TransformerEncoder(**args)
     enc_out_dict = enc(xs, xlens, task='all')
     assert enc_out_dict['ys']['xs'].size(0) == batch_size
     assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
