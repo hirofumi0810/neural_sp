@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Test for decoders."""
+"""Test for RNN decoder."""
 
 import importlib
 import numpy as np
@@ -38,8 +38,8 @@ def make_rnn_args(**kwargs):
         dropout=0.1,
         dropout_emb=0.1,
         dropout_att=0.1,
-        lsm_prob=0.1,
-        ss_prob=0.2,
+        lsm_prob=0.0,
+        ss_prob=0.0,
         ss_type='constant',
         ctc_weight=0.0,
         ctc_lsm_prob=0.1,
@@ -103,10 +103,17 @@ def make_rnn_args(**kwargs):
         # CTC
         ({'ctc_weight': 0.5}),
         ({'ctc_weight': 1.0}),
+        ({'ctc_weight': 1.0, 'ctc_lsm_prob': 0.0}),
         # forward-backward decoder
         ({'backward': True}),
         ({'backward': True, 'ctc_weight': 0.5}),
         ({'backward': True, 'ctc_weight': 1.0}),
+        # others
+        ({'tie_embedding': True}),
+        ({'lsm_prob': 0.1}),
+        ({'ss_prob': 0.2}),
+        # RNNLM init
+        # LM integration
     ]
 )
 def test_rnn_forward(args):
