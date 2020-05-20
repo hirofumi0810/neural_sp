@@ -13,9 +13,9 @@ pip install -U pip wheel
 # install neural_sp
 pip list
 pip install pip --upgrade
+pip install torch==$(PYTORCH_VERSION)
 pip install -e .  # setup.py
 # pip install -e ".[test]"
-pip install torch==$(PYTORCH_VERSION)
 # conda install -y $(CONDA_PYTORCH) -c pytorch
 
 # [FIXME] hacking==1.1.0 requires flake8<2.7.0,>=2.6.0, but that version has a problem around fstring

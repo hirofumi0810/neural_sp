@@ -18,7 +18,7 @@ requirements = {
         'matplotlib>=3.1.2',
         'nltk>=3.4.5'
         'pandas>=1.0.0',
-        'pyyaml',
+        'pyyaml>=5.3',
         'seaborn>=0.10.0',
         'sentencepiece>= 0.1.85',
         'setproctitle>=1.1.10',

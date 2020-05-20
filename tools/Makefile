@@ -4,7 +4,6 @@ PYTHON :=
 # The python version installed in the conda setup
 PYTHON_VERSION := 3.7
 CUDA_VERSION := 10.1
-# CUDA_VERSION := 10.0
 PYTORCH_VERSION := 1.0.0
 # Use a prebuild Kaldi to omit the installation
 KALDI :=
@@ -60,8 +59,8 @@ endif
 neural_sp.done:
 	. $(CONDA)/bin/activate; pip list
 	. $(CONDA)/bin/activate; pip install pip --upgrade
-	. $(CONDA)/bin/activate; pip install -e ..  # setup.py
 	. $(CONDA)/bin/activate; pip install torch==$(PYTORCH_VERSION)
+	. $(CONDA)/bin/activate; pip install -e ..  # setup.py
 	. $(CONDA)/bin/activate && conda install -y $(CONDA_PYTORCH) -c pytorch
 	touch neural_sp.done
 
