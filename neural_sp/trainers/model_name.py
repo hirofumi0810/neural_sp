@@ -52,9 +52,7 @@ def set_asr_model_name(args):
         dir_name += '_ssn'
 
     # decoder
-    if args.am_pretrain_type:
-        dir_name += '_' + args.am_pretrain_type
-    elif args.ctc_weight < 1:
+    if args.ctc_weight < 1:
         dir_name += '_' + args.dec_type
         if 'transformer' in args.dec_type:
             dir_name += str(args.transformer_d_model) + 'dmodel'
