@@ -16,7 +16,7 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
-def make_args(**kwargs):
+def make_rnn_args(**kwargs):
     args = dict(
         input_dim=80,
         rnn_type='blstm',
@@ -99,7 +99,7 @@ def make_args(**kwargs):
     ]
 )
 def test_rnn_forward(args):
-    args = make_args(**args)
+    args = make_rnn_args(**args)
 
     batch_size = 4
     xmax = 40
