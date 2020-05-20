@@ -9,3 +9,8 @@ script:
   - ./test/test.sh
 env:
   - NEURAL_SP_PYTHON_VERSION=3.7 PYTORCH_VERSION=1.0.0 CC=gcc-7 CXX=g++-7
+addons:
+  apt:
+    packages:
+      - cmake
+      - g++-7
