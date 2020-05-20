@@ -13,7 +13,7 @@ pip install -U pip wheel
 # install neural_sp
 pip list
 pip install pip --upgrade
-pip install torch==$(PYTORCH_VERSION)
+pip install torch==$PYTORCH_VERSION
 pip install -e .  # setup.py
 # pip install -e ".[test]"
 # conda install -y $(CONDA_PYTORCH) -c pytorch
