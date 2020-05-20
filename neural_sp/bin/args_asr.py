@@ -487,10 +487,6 @@ def parse():
                         help='Teacher LM for knowledge distillation')
     parser.add_argument('--distillation_weight', type=float, default=0.1,
                         help='soft label weight for knowledge distillation')
-    # pre-training
-    parser.add_argument('--am_pretrain_type', type=str, default='',
-                        choices=['decoar', 'mps', 'apc'],
-                        help='')
     # special label
     parser.add_argument('--replace_sos', type=strtobool, default=False,
                         help='')
