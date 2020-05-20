@@ -55,7 +55,7 @@ def build_encoder(args):
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
             dropout_att=args.dropout_att,
-            dropout_residual=args.dropout_enc_residual,
+            dropout_layer=args.dropout_enc_layer,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
             conv_in_channel=args.conv_in_channel,
@@ -71,8 +71,7 @@ def build_encoder(args):
             param_init=args.transformer_param_init,
             chunk_size_left=args.lc_chunk_size_left,
             chunk_size_current=args.lc_chunk_size_current,
-            chunk_size_right=args.lc_chunk_size_right,
-            n_layers_rnn=args.enc_n_layers_rnn)
+            chunk_size_right=args.lc_chunk_size_right)
 
     else:
         subsample = [1] * args.enc_n_layers
