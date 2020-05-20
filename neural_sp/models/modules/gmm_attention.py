@@ -72,8 +72,9 @@ class GMMAttention(nn.Module):
         else:
             myu_prev = self.myu
 
+        self.mask = mask
         if self.mask is None:
-            self.mask = mask
+            assert self.mask.size() == (bs, 1, klen), (self.mask.size(), (bs, 1, klen))
 
         w = torch.softmax(self.ffn_gamma(query), dim=-1)  # `[B, 1, n_mix]`
         v = torch.exp(self.ffn_beta(query))  # `[B, 1, n_mix]`
@@ -81,18 +82,18 @@ class GMMAttention(nn.Module):
         self.myu = myu  # register for the next step
 
         # Compute attention weights
-        js = torch.arange(klen).unsqueeze(0).unsqueeze(2).repeat([bs, 1, self.n_mix])
+        js = torch.arange(klen).unsqueeze(0).unsqueeze(2).repeat([bs, 1, self.n_mix]).float()
         device_id = torch.cuda.device_of(next(self.parameters())).idx
         if device_id >= 0:
             js = js.cuda(device_id).float()
         numerator = torch.exp(-torch.pow(js - myu, 2) / (2 * v + self.vfloor))
         denominator = torch.pow(2 * math.pi * v + self.vfloor, 0.5)
         aw = w * numerator / denominator  # `[B, klen, n_mix]`
-        aw = aw.sum(2)  # `[B, klen]`
+        aw = aw.sum(2).unsqueeze(1)  # `[B, 1, klen]`
 
         # Compute context vector
         if self.mask is not None:
             aw = aw.masked_fill_(self.mask == 0, NEG_INF)
-        cv = torch.bmm(aw.unsqueeze(1), value)
+        cv = torch.bmm(aw, value)
 
         return cv, aw.unsqueeze(2), None
