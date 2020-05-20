@@ -1,38 +1,80 @@
-# Transformer result (default transformer with initial learning rate = 1.0 and epochs = 50)
+### Transformer
+  - conf: `conf/asr/transformer.yaml`
+  - lm_conf: `conf/lm/rnnlm.yaml`
+  - n_average: 10
+  - beam width: 5
 
-  - Environments (obtained by `$ get_sys_info.sh`)
-    - date: `Mon Jun 10 12:34:41 EDT 2019`
-    - system information: `Linux b14 4.9.0-6-amd64 #1 SMP Debian 4.9.82-1+deb9u3 (2018-03-02) x86_64 GNU/Linux`
-    - python version: `Python 3.7.3`
-    - espnet version: `espnet 0.3.1`
-    - chainer version: `chainer 6.0.0`
-    - pytorch version: `pytorch 1.0.1.post2`
-    - Git hash: `82e9b7eb7ccae61e11af28981734ea1c2b315a98`
-  - Model files (archived to model.v1.tar.gz by `$ pack_model.sh`)
-    - model link: https://drive.google.com/open?id=1BIQBpLRRy3XSMT5IRxnLcgLMirGzu8dg
-    - training config file: `conf/train.yaml`
-    - decoding config file: `conf/decode.yaml`
-    - cmvn file: `data/train_sp/cmvn.ark`
-    - e2e file: `exp/train_sp_pytorch_train_pytorch_transformer_lr1.0/results/model.last10.avg.best`
-    - e2e JSON file: `exp/train_sp_pytorch_train_pytorch_transformer_lr1.0/results/model.json`
-    - lm file: `exp/train_rnnlm_pytorch_lm/rnnlm.model.best`
-    - lm JSON file: `exp/train_rnnlm_pytorch_lm/model.json`
-  - Results (paste them by yourself or obtained by `$ pack_model.sh --results <results>`)
-```
-exp/train_sp_pytorch_train_pytorch_transformer_lr1.0/decode_dev_decode_pytorch_transformer_lm/result.txt
-|   SPKR     |   # Snt      # Wrd   |   Corr        Sub        Del        Ins        Err      S.Err   |
-|   Sum/Avg  |  14326      205341   |   94.1        5.7        0.2        0.1        6.0       42.0   |
-exp/train_sp_pytorch_train_pytorch_transformer_lr1.0/decode_test_decode_pytorch_transformer_lm/result.txt
-|   SPKR     |   # Snt      # Wrd   |   Corr        Sub         Del        Ins        Err      S.Err   |
-|   Sum/Avg  |   7176      104765   |   93.4        6.4         0.2        0.1        6.7       45.1   |
-```
+| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+| -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+|dev|14326|616023|95.1|4.6|0.2|0.2|**5.1**|39.0|
+|test|7176|314295|94.7|5.0|0.3|0.2|**5.5**|41.2|
 
-# First result (no tuning, but already very good. cf. Kaldi chain best 7.43% and nnet3 8.64% while ESPnet 8.0%)
-```
-exp/train_sp_pytorch_no_patience/decode_dev_beam20_emodel.acc.best_p0.0_len0.0-0.0_ctcw0.6_rnnlm0.3_2layer_unit650_sgd_bs64/result.txt:
-|    SPKR       |     # Snt         # Wrd     |    Corr            Sub           Del           Ins            Err         S.Err     |
-|    Sum/Avg    |    14326         205341     |    93.3            6.5           0.2           0.1            6.8          45.2     |
-exp/train_sp_pytorch_no_patience/decode_test_beam20_emodel.acc.best_p0.0_len0.0-0.0_ctcw0.6_rnnlm0.3_2layer_unit650_sgd_bs64/result.txt:
-|    SPKR       |     # Snt         # Wrd     |     Corr           Sub            Del           Ins            Err         S.Err     |
-|    Sum/Avg    |     7176         104765     |     92.2           7.6            0.2           0.2            8.0          50.2     |
-```
+### Transformer + SpecAugment (no LM)
+  - conf: `conf/asr/transformer.yaml`
+  - n_average: 10
+  - beam width: 5
+
+| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+| -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+|dev|14326|616023|95.6|4.3|0.2|0.2|**4.6**|36.0|
+|test|7176|314295|95.2|4.5|0.3|0.2|**5.0**|37.6|
+
+### Transformer, subsample1/8
+  - conf: `conf/asr/transformer_subsample8.yaml`
+  - lm_conf: `conf/lm/rnnlm.yaml`
+  - n_average: 10
+  - beam width: 5
+
+| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+| -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+|dev|14326|616023|94.9|4.8|0.3|0.2|**5.3**|39.9|
+|test|7176|314295|94.3|5.3|0.4|0.2|**5.9**|42.3|
+
+### Transformer + SpecAugment (no LM), subsample1/8
+  - conf: `conf/asr/transformer.yaml`
+  - n_average: 10
+  - beam width: 5
+
+| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+| -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+|dev|14326|616023|94.8|4.8|0.4|0.2|**5.4**|38.4|
+|test|7176|314295|94.4|5.0|0.6|0.2|**5.8**|39.8|
+
+### Offline Transformer-MMA, subsample1/8
+  - conf: `conf/asr/transformer_mocha_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8.yaml`
+  - lm_conf: `conf/lm/rnnlm.yaml`
+  - n_average: 10
+  - beam width: 10
+  - length_penalty: 2.0
+  - mma_delay_threshold: 8
+
+| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+| -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+|dev|14326|616023|94.7|5.1|0.2|0.2|**5.5**|41.0|
+|test|7176|314295|94.2|5.4|0.4|0.2|**6.0**|42.6|
+
+### Streaming Transformer-MMA, subsample1/8, 96/64/32
+  - conf: `conf/asr/lc_transformer_mocha_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8_96_64_32.yaml`
+  - lm_conf: `conf/lm/rnnlm.yaml`
+  - n_average: 10
+  - beam width: 10
+  - length_penalty: 2.0
+  - mma_delay_threshold: 8
+
+| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+| -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+|dev|14326|616023|94.2|5.3|0.5|0.2|**6.0**|42.0|
+|test|7176|314295|93.3|5.6|1.1|0.2|**6.9**|45.3|
+
+### Streaming Transformer-MMA, subsample1/8, 64/128/64
+  - conf: `conf/asr/lc_transformer_mocha_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8_64_128_64.yaml`
+  - lm_conf: `conf/lm/rnnlm.yaml`
+  - n_average: 10
+  - beam width: 10
+  - length_penalty: 2.0
+  - mma_delay_threshold: 8
+
+| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+| -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+|dev|14326|616023|94.6|5.1|0.2|0.2|**5.6**|41.1|
+|test|7176|314295|94.2|5.5|0.3|0.2|**6.1**|43.2|
