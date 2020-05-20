@@ -164,6 +164,8 @@ def make_transformer_args(**kwargs):
         ({'enc_type': 'transformer'}),
         ({'enc_type': 'conv_transformer'}),
         ({'enc_type': 'conv_transformer', 'input_dim': 240, 'conv_in_channel': 3}),
+        # positional encoding
+        ({'pe_type': 'add'}),
         # normalization
         ({'enc_type': 'conv_transformer', 'conv_batch_norm': True}),
         ({'enc_type': 'conv_transformer', 'conv_layer_norm': True}),

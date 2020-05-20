@@ -16,7 +16,7 @@ ENC_N_UNITS = 64
 VOCAB = 10
 
 
-def make_rnn_args(**kwargs):
+def make_args(**kwargs):
     args = dict(
         special_symbols={'blank': 0, 'unk': 1, 'eos': 2, 'pad': 3},
         enc_n_units=ENC_N_UNITS,
@@ -116,8 +116,8 @@ def make_rnn_args(**kwargs):
         # LM integration
     ]
 )
-def test_rnn_forward(args):
-    args = make_rnn_args(**args)
+def test_forward(args):
+    args = make_args(**args)
 
     batch_size = 4
     emax = 40
