@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2018 Kyoto University (Hirofumi Inaguma)
+# Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 model=
@@ -12,25 +12,26 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/librispeech
+data=/n/work1/inaguma/corpus/tedlium2
 
 unit=
 metric=edit_distance
 batch_size=1
 beam_width=5
 min_len_ratio=0.0
-max_len_ratio=1.0
+max_len_ratio=0.4  ###
 length_penalty=0.0
-length_norm=false
+length_norm=true  ###
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
-eos_threshold=1.5
+eos_threshold=1.0
 lm=
 lm_second=
 lm_bwd=
 lm_weight=0.3
 lm_second_weight=0.3
+wordlm=false
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -38,8 +39,14 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
+chunk_sync=true  # for MoChA
 n_average=1  # for Transformer
 oracle=false
+
+# for streaming
+blank_threshold=40
+spike_threshold=0.1
+n_accum_frames=800
 
 . ./cmd.sh
 . ./path.sh
@@ -55,7 +62,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev_clean dev_other test_clean test_other; do
+for set in dev_streaming test_streaming; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -68,6 +75,9 @@ for set in dev_clean dev_other test_clean test_other; do
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
         recog_dir=${recog_dir}_lm${lm_weight}
+        if [ ${wordlm} = true ]; then
+            recog_dir=${recog_dir}_wordlm
+        fi
     fi
     if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
@@ -93,6 +103,9 @@ for set in dev_clean dev_other test_clean test_other; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
+    if [ ${chunk_sync} = true ]; then
+        recog_dir=${recog_dir}_chunksync
+    fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
     fi
@@ -109,24 +122,13 @@ for set in dev_clean dev_other test_clean test_other; do
     elif [ ! -z ${model1} ]; then
         recog_dir=${recog_dir}_ensemble2
     fi
+    recog_dir=${recog_dir}_blank${blank_threshold}_spike${spike_threshold}_accum${n_accum_frames}
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep 'train_sp_') ]; then
-        if [ $(echo ${model} | grep '960') ]; then
-            recog_set=${data}/dataset/${set}_sp_960_wpbpe10000.tsv
-        elif [ $(echo ${model} | grep '460') ]; then
-            recog_set=${data}/dataset/${set}_sp_460_wpbpe10000.tsv
-        elif [ $(echo ${model} | grep '100') ]; then
-            recog_set=${data}/dataset/${set}_sp_100_wpbpe1000.tsv
-        fi
+    if [ $(echo ${model} | grep 'train_sp') ]; then
+        recog_set=${data}/dataset/${set}_sp_wpbpe10000.tsv
     else
-        if [ $(echo ${model} | grep '960') ]; then
-            recog_set=${data}/dataset/${set}_960_wpbpe10000.tsv
-        elif [ $(echo ${model} | grep '460') ]; then
-            recog_set=${data}/dataset/${set}_460_wpbpe10000.tsv
-        elif [ $(echo ${model} | grep '100') ]; then
-            recog_set=${data}/dataset/${set}_100_wpbpe1000.tsv
-        fi
+        recog_set=${data}/dataset/${set}_wpbpe10000.tsv
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
@@ -152,6 +154,7 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
+        --recog_wordlm ${wordlm} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
@@ -161,13 +164,19 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_lm_state_carry_over ${lm_state_carry_over} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
+        --recog_streaming true \
+        --recog_chunk_sync ${chunk_sync} \
+        --recog_ctc_vad true \
+        --recog_ctc_vad_blank_threshold ${blank_threshold} \
+        --recog_ctc_vad_spike_threshold ${spike_threshold} \
+        --recog_ctc_vad_n_accum_frames ${n_accum_frames} \
         --recog_stdout ${stdout} || exit 1;
 
-    if [ ${metric} = 'edit_distance' ]; then
-        # remove <unk>
-        cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
-        cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
+    # remove <unk>
+    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' | sed 's:<eos>::g' > ${recog_dir}/ref.trn.filt
+    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' | sed 's:<eos>::g' > ${recog_dir}/hyp.trn.filt
 
+    if [ ${metric} = 'edit_distance' ]; then
         echo ${set}
         sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS

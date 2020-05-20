@@ -12,7 +12,6 @@ stop_stage=5
 gpu=
 benchmark=true
 speed_perturb=true  # default
-specaug=false
 stdout=false
 
 ### vocabulary
@@ -72,7 +71,7 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
+if [ ${speed_perturb} = true ]; then
   if [ -z ${conf2} ]; then
     echo "Error: Set --conf2." 1>&2
     exit 1
@@ -176,8 +175,14 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
 
-    make_vocab.sh --unit ${unit} --wp_type ${wp_type} --wp_model ${wp_model} --character_coverage 0.9995 --speed_perturb ${speed_perturb} \
-        ${data} ${dict} ${vocab} ${data}/${train_set}/text
+    if [ ${unit} = wp ]; then
+        make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} --character_coverage 0.9995 \
+            --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
+            ${data} ${dict} ${data}/${train_set}/text || exit 1;
+    else
+        make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} --character_coverage 0.9995 \
+            ${data} ${dict} ${data}/${train_set}/text || exit 1;
+    fi
 
     # Compute OOV rate
     if [ ${unit} = word ]; then

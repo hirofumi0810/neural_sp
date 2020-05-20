@@ -25,6 +25,7 @@ make KALDI=/path/to/kaldi
 ## Features
 ### Corpus
 #### ASR
+- AISHELL-1
 - AMI
 - CSJ
 - Librispeech
@@ -61,13 +62,19 @@ make KALDI=/path/to/kaldi
   - Deep fusion [[link](https://arxiv.org/abs/1503.03535)]
   - Forward-backward attention decoding [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
   - Ensemble decoding
-- Transformer decoder
+- Streaming RNN decoder
+  - Hard monotonic attention [[link](https://arxiv.org/abs/1704.00784)]
+  - Monotonic chunkwise attention (MoChA) [[link](https://arxiv.org/abs/1712.05382)]
+- Transformer decoder [[link](https://arxiv.org/abs/1706.03762)]
 - RNN transducer [[link](https://arxiv.org/abs/1211.3711)]
+<!-- - Transformer transducer [[link]()] -->
+<!-- - Monotonic Multihead Attention [[link]()] -->
 
 ### Language model (LM)
 - RNNLM (recurrent neural network language model)
 - Gated convolutional LM [[link](https://arxiv.org/abs/1612.08083)]
 - Transformer LM
+- Transformer-XL LM [[link](https://arxiv.org/abs/1901.02860)]
 - Adaptive softmax [[link](https://arxiv.org/abs/1609.04309)]
 
 ### Output units
@@ -88,10 +95,10 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 
 
 ## ASR Performance
-### WSJ (WER)
-| model                    | test_dev93 | test_eval92 |
-| ------------------------ | ---------- | ----------- |
-| BPE1k LAS + CTC + RNNLM  | 8.8        | 6.2         |
+### AISHELL-1 (CER)
+| model       | dev | test |
+| ----------- | --- | ---- |
+| Transformer | 5.1 | 5.3  |
 
 ### CSJ (WER)
 | model                                        | eval1   | eval2   | eval3   |
@@ -120,6 +127,10 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | ------------------- | ---- | ---- |
 | BPE10k LAS + RNNLM  | 10.9 | 11.2 |
 
+### WSJ (WER)
+| model                    | test_dev93 | test_eval92 |
+| ------------------------ | ---------- | ----------- |
+| BPE1k LAS + CTC + RNNLM  | 8.8        | 6.2         |
 
 ## LM Performance
 ### Penn Tree Bank (PPL)

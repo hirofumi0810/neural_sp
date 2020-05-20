@@ -1,11 +1,12 @@
 export NEURALSP_ROOT=$PWD/../../..
-export TOOL=/home/inaguma/tool/neural_sp
+export TOOL=/home/inaguma/tool/neural_sp_v2
 export CONDA=$TOOL/miniconda
 export KALDI_ROOT=$TOOL/kaldi
 
 # Kaldi
 [ -f $KALDI_ROOT/tools/env.sh ] && . $KALDI_ROOT/tools/env.sh
 export PATH=$NEURALSP_ROOT/utils:$PWD/utils/:$KALDI_ROOT/tools/sctk/bin/:$TOOL/sentencepiece/build/src:$PATH
+export PATH=$TOOL/mwerSegmenter/:$TOOL/moses/scripts/tokenizer/:$TOOL/moses/scripts/generic/:$PATH
 [ ! -f $KALDI_ROOT/tools/config/common_path.sh ] && echo >&2 "The standard file $KALDI_ROOT/tools/config/common_path.sh is not present -> Exit!" && exit 1
 . $KALDI_ROOT/tools/config/common_path.sh
 export LC_ALL=C
