@@ -33,5 +33,10 @@ cd warp-ctc && mkdir build && cd build && cmake .. && make -j4 && cd ..
 pip install cffi
 cd pytorch_binding && python setup.py install && cd ../..
 
+# install warp-transducer
+git clone https://github.com/HawkAaron/warp-transducer.git
+cd warp-transducer && mkdir build && cd build && cmake .. && make && cd ..
+cd pytorch_binding && python setup.py install && cd ../..
+
 # log
 pip freeze

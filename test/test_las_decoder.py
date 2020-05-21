@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Test for RNN decoder."""
+"""Test for attention-based RNN decoder."""
 
 import importlib
 import numpy as np
