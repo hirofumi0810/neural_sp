@@ -125,7 +125,7 @@ class XLPositionalEmbedding(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, positions):
+    def forward(self, positions, device_id):
         """Forward computation.
 
         Args:
@@ -134,6 +134,8 @@ class XLPositionalEmbedding(nn.Module):
             pos_emb (LongTensor): `[L, 1 d_model]`
 
         """
+        if device_id >= 0:
+            positions = positions.cuda(device_id)
         # outer product
         sinusoid_inp = torch.einsum("i,j->ij", positions.float(), self.inv_freq)
         pos_emb = torch.cat([sinusoid_inp.sin(), sinusoid_inp.cos()], dim=-1)

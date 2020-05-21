@@ -25,7 +25,6 @@ def make_args(**kwargs):
         bottleneck_dim=32,
         emb_dim=16,
         vocab=VOCAB,
-        dropout=0.1,
         dropout_in=0.1,
         dropout_hidden=0.1,
         # dropout_out=0.1,
@@ -62,7 +61,7 @@ def make_args(**kwargs):
 def test_forward(args):
     args = make_args(**args)
 
-    ylens = [4, 5, 3, 7]
+    ylens = [4, 5, 3, 7] * 200
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int64) for ylen in ylens]
 
     rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')

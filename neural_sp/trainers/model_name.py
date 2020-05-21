@@ -32,6 +32,8 @@ def set_asr_model_name(args):
         dir_name += str(args.enc_n_layers) + 'L'
         dir_name += str(args.transformer_n_heads) + 'head'
         dir_name += 'pe' + str(args.transformer_enc_pe_type)
+        if args.dropout_enc_layer > 0:
+            dir_name += 'droplayer' + str(args.dropout_enc_layer)
         if args.lc_chunk_size_left > 0 or args.lc_chunk_size_current > 0 or args.lc_chunk_size_right > 0:
             dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
                 str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
@@ -79,6 +81,8 @@ def set_asr_model_name(args):
                     dir_name += str(args.mocha_latency_loss_weight)
             if args.mocha_first_layer > 1:
                 dir_name += '_from' + str(args.mocha_first_layer) + 'L'
+            if args.dropout_dec_layer > 0:
+                dir_name += 'droplayer' + str(args.dropout_dec_layer)
             if args.dropout_head > 0:
                 dir_name += 'drophead' + str(args.dropout_head)
         elif 'asg' not in args.dec_type:
@@ -172,10 +176,6 @@ def set_asr_model_name(args):
         dir_name += '_' + str(args.freq_width) + 'FM' + str(args.n_freq_masks)
     if args.n_time_masks > 0:
         dir_name += '_' + str(args.time_width) + 'TM' + str(args.n_time_masks)
-    if args.flip_time_prob > 0:
-        dir_name += '_flipT' + str(args.flip_time_prob)
-    if args.flip_freq_prob > 0:
-        dir_name += '_flipF' + str(args.flip_freq_prob)
     if args.weight_noise:
         dir_name += '_weightnoise'
 
@@ -233,8 +233,6 @@ def set_lm_name(args):
         dir_name += '_lr' + str(args.lr)
     dir_name += '_bs' + str(args.batch_size)
     dir_name += '_bptt' + str(args.bptt)
-    if args.adaptive_bptt:
-        dir_name += '_' + args.adaptive_bptt
     if args.mem_len > 0:
         dir_name += '_mem' + str(args.mem_len)
     if args.lm_type == 'transformer_xl' and args.zero_center_offset:
@@ -251,8 +249,8 @@ def set_lm_name(args):
 
     # regularization
     dir_name += '_dropI' + str(args.dropout_in) + 'H' + str(args.dropout_hidden)
-    if args.dropout_residual > 0:
-        dir_name += 'res' + str(args.dropout_residual)
+    if args.dropout_layer > 0:
+        dir_name += 'Layer' + str(args.dropout_layer)
     if args.lsm_prob > 0:
         dir_name += '_ls' + str(args.lsm_prob)
     if args.warmup_n_steps > 0:

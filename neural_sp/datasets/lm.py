@@ -39,8 +39,8 @@ class Dataset(object):
 
     def __init__(self, tsv_path, dict_path,
                  unit, batch_size, nlsyms=False, n_epochs=1e10,
-                 is_test=False, min_n_tokens=1, bptt=2,
-                 shuffle=False, backward=False, serialize=False,
+                 is_test=False, min_n_tokens=1,
+                 bptt=2, shuffle=False, backward=False, serialize=False,
                  wp_model=None, corpus=''):
         """A class for loading dataset.
 
@@ -191,6 +191,8 @@ class Dataset(object):
 
         ys = self.concat_ids[:, self.offset:self.offset + bptt]
         self.offset += bptt - 1
+        # ys = self.concat_ids[:, self.offset:self.offset + (bptt + 1)]
+        # self.offset += (bptt + 1) - 1
         # NOTE: the last token in ys must be feeded as inputs in the next mini-batch
 
         is_new_epoch = False

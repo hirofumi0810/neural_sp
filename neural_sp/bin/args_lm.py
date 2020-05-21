@@ -83,9 +83,6 @@ def parse():
                         help='mini-batch size')
     parser.add_argument('--bptt', type=int, default=200,
                         help='BPTT length')
-    parser.add_argument('--adaptive_bptt', type=str, default=False,
-                        choices=[False, 'uniform'],
-                        help='BPTT length')
     parser.add_argument('--optimizer', type=str, default='adam',
                         choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov', 'noam'],
                         help='type of optimizer')
@@ -138,8 +135,8 @@ def parse():
                         help='dropout probability for the output layer')
     parser.add_argument('--dropout_att', type=float, default=0.1,
                         help='dropout probability for the attention weights (for Transformer)')
-    parser.add_argument('--dropout_residual', type=float, default=0.0,
-                        help='dropout probability for the stochasitc residual connections (for Transformer)')
+    parser.add_argument('--dropout_layer', type=float, default=0.0,
+                        help='LayerDrop probability for Transformer layers')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help='')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
