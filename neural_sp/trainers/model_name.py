@@ -172,10 +172,6 @@ def set_asr_model_name(args):
         dir_name += '_' + str(args.freq_width) + 'FM' + str(args.n_freq_masks)
     if args.n_time_masks > 0:
         dir_name += '_' + str(args.time_width) + 'TM' + str(args.n_time_masks)
-    if args.flip_time_prob > 0:
-        dir_name += '_flipT' + str(args.flip_time_prob)
-    if args.flip_freq_prob > 0:
-        dir_name += '_flipF' + str(args.flip_freq_prob)
     if args.weight_noise:
         dir_name += '_weightnoise'
 
@@ -251,8 +247,8 @@ def set_lm_name(args):
 
     # regularization
     dir_name += '_dropI' + str(args.dropout_in) + 'H' + str(args.dropout_hidden)
-    if args.dropout_residual > 0:
-        dir_name += 'res' + str(args.dropout_residual)
+    if args.dropout_layer > 0:
+        dir_name += 'Layer' + str(args.dropout_layer)
     if args.lsm_prob > 0:
         dir_name += '_ls' + str(args.lsm_prob)
     if args.warmup_n_steps > 0:
