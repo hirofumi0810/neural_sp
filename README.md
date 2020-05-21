@@ -18,119 +18,114 @@ cd tools
 make KALDI=/path/to/kaldi
 ```
 
-
-## Data preparation
-
-
-## Features
+## Key features
 ### Corpus
-#### ASR
-- AISHELL-1
-- AMI
-- CSJ
-- Librispeech
-- Switchboard (+ Fisher)
-- TEDLIUM2
-- TEDLIUM3
-- TIMIT
-- WSJ
+  - ASR
+    - AISHELL-1
+    - CSJ
+    - Librispeech
+    - Switchboard (+ Fisher)
+    - TEDLIUM2/TEDLIUM3
+    - TIMIT
+    - WSJ
 
-#### LM
-- Penn Tree Bank
-- WikiText2
+  - LM
+    - Penn Tree Bank
+    - WikiText2
 
 ### Front-end
-- Frame stacking
-- Sequence summary network [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1438.html)]
-- SpecAugment [[link](https://arxiv.org/abs/1904.08779)]
+  - Frame stacking
+  - Sequence summary network [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1438.html)]
+  - SpecAugment [[link](https://arxiv.org/abs/1904.08779)]
 
 ### Encoder
-- CNN encoder
-- LSTM encoder
-- CNN+LSTM encoder
-- Transformer encoder [[link](https://arxiv.org/abs/1706.03762)]
-- Time-Depth Seprarabel (TDS) convolutional encoder [[link](https://arxiv.org/abs/1904.02619)]
-- Gated CNN encoder (GLU) [[link](https://openreview.net/forum?id=Hyig0zb0Z)]
+  - CNN encoder
+  - LSTM encoder
+  - CNN+LSTM encoder
+  - Transformer encoder [[link](https://arxiv.org/abs/1706.03762)]
+  - Time-Depth Seprarabel (TDS) convolutional encoder [[link](https://arxiv.org/abs/1904.02619)]
+  - Gated CNN encoder (GLU) [[link](https://openreview.net/forum?id=Hyig0zb0Z)]
 
 ### Connectionist Temporal Classification (CTC) decoder
-- Shallow fusion
+  - Forced alignment
+  - Beam search
+  - Shallow fusion
 
 ### Attention-based decoder
-- RNN decoder
-  - Shallow fusion
-  - Cold fusion [[link](https://arxiv.org/abs/1708.06426)]
-  - Deep fusion [[link](https://arxiv.org/abs/1503.03535)]
-  - Forward-backward attention decoding [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
-  - Ensemble decoding
-- Streaming RNN decoder
-  - Hard monotonic attention [[link](https://arxiv.org/abs/1704.00784)]
-  - Monotonic chunkwise attention (MoChA) [[link](https://arxiv.org/abs/1712.05382)]
-- Transformer decoder [[link](https://arxiv.org/abs/1706.03762)]
-- RNN transducer [[link](https://arxiv.org/abs/1211.3711)]
-<!-- - Transformer transducer [[link]()] -->
-<!-- - Monotonic Multihead Attention [[link]()] -->
+  - RNN decoder
+    - Shallow fusion
+    - Cold fusion [[link](https://arxiv.org/abs/1708.06426)]
+    - Deep fusion [[link](https://arxiv.org/abs/1503.03535)]
+    - Forward-backward attention decoding [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
+    - Ensemble decoding
+  - Streaming RNN decoder
+    - Hard monotonic attention [[link](https://arxiv.org/abs/1704.00784)]
+    - Monotonic chunkwise attention (MoChA) [[link](https://arxiv.org/abs/1712.05382)]
+    - CTC-synchronous training (CTC-ST) [[link](https://arxiv.org/abs/2005.04712)]
+  - RNN transducer [[link](https://arxiv.org/abs/1211.3711)]
+  - Transformer decoder [[link](https://arxiv.org/abs/1706.03762)]
+  - Streaming Transformer decoder
+    - Monotonic Multihead Attention [[link](https://arxiv.org/abs/1909.12406)] [[link](https://arxiv.org/abs/2005.09394)]
 
 ### Language model (LM)
-- RNNLM (recurrent neural network language model)
-- Gated convolutional LM [[link](https://arxiv.org/abs/1612.08083)]
-- Transformer LM
-- Transformer-XL LM [[link](https://arxiv.org/abs/1901.02860)]
-- Adaptive softmax [[link](https://arxiv.org/abs/1609.04309)]
+  - RNNLM (recurrent neural network language model)
+  - Gated convolutional LM [[link](https://arxiv.org/abs/1612.08083)]
+  - Transformer LM
+  - Transformer-XL LM [[link](https://arxiv.org/abs/1901.02860)]
+  - Adaptive softmax [[link](https://arxiv.org/abs/1609.04309)]
 
 ### Output units
-- Phoneme
-- Grapheme
-- Wordpiece (BPE, sentencepiece)
-- Word
-- Word-char mix
+  - Phoneme
+  - Grapheme
+  - Wordpiece (BPE, sentencepiece)
+  - Word
+  - Word-char mix
 
 ### Multi-task learning (MTL)
 Multi-task learning (MTL) with different units are supported to alleviate data sparseness.
-- Hybrid CTC/attention [[link](https://www.merl.com/publications/docs/TR2017-190.pdf)]
-- Hierarchical Attention (e.g., word attention + character attention) [[link](http://sap.ist.i.kyoto-u.ac.jp/lab/bib/intl/INA-SLT18.pdf)]
-- Hierarchical CTC (e.g., word CTC + character CTC) [[link](https://arxiv.org/abs/1711.10136)]
-- Hierarchical CTC+Attention (e.g., word attention + character CTC) [[link](http://www.sap.ist.i.kyoto-u.ac.jp/lab/bib/intl/UEN-ICASSP18.pdf)]
-- Forward-backward attention [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
-- RNNLM objective [link]
+  - Hybrid CTC/attention [[link](https://www.merl.com/publications/docs/TR2017-190.pdf)]
+  - Hierarchical Attention (e.g., word attention + character attention) [[link](http://sap.ist.i.kyoto-u.ac.jp/lab/bib/intl/INA-SLT18.pdf)]
+  - Hierarchical CTC (e.g., word CTC + character CTC) [[link](https://arxiv.org/abs/1711.10136)]
+  - Hierarchical CTC+Attention (e.g., word attention + character CTC) [[link](http://www.sap.ist.i.kyoto-u.ac.jp/lab/bib/intl/UEN-ICASSP18.pdf)]
+  - Forward-backward attention [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
+  - RNNLM objective [link]
 
 
 ## ASR Performance
 ### AISHELL-1 (CER)
 | model       | dev | test |
 | ----------- | --- | ---- |
-| Transformer | 5.1 | 5.3  |
+| Transformer | 4.6 | 5.0  |
 
 ### CSJ (WER)
-| model                                        | eval1   | eval2   | eval3   |
-| -------------------------------------------- | ------- | ------- | ------- |
-| BPE10k LAS + RNNLM | 7.9 | 5.8 | 6.4 |
-|   + SpecAugment    | 6.5 | 5.1 | 5.6 |
+| model | eval1 | eval2 | eval3 |
+| ----- | ----- | ----- | ----- |
+| LAS   | 6.5   | 5.1   | 5.6   |
 
 ### Switchboard 300h (WER)
-| model               | SWB  | CH   |
-| ------------------- | ---- | ---- |
-| BPE10k LAS + RNNLM  | 10.9 | 22.6 |
-|   + SpecAugment     | 9.1  | 18.8 |
+| model | SWB  | CH   |
+| ----- | ---- | ---- |
+| LAS   | 9.1  | 18.8 |
 
 ### Switchboard+Fisher 2000h (WER)
-| model               | SWB  | CH   |
-| ------------------- | ---- | ---- |
-| BPE34k LAS          | 7.8  | 13.8 |
+| model | SWB  | CH   |
+| ----- | ---- | ---- |
+| LAS   | 7.8  | 13.8 |
 
 ### Librispeech (WER)
-| model               | dev-clean | dev-other | test-clean | test-other |
-| ------------------- | --------- | --------- | ---------- | ---------- |
-| BPE30k LAS + RNNLM  | 3.4       | 10.7      | 3.4        | 11.3       |
+| model       | dev-clean | dev-other | test-clean | test-other |
+| ----------- | --------- | --------- | ---------- | ---------- |
+| Transformer | 2.3       | 5.8       | 2.5        | 6.1        |
 
 ### TEDLIUM2 (WER)
-| model               | dev  | test |
-| ------------------- | ---- | ---- |
-| BPE10k LAS + RNNLM  | 10.9 | 11.2 |
+| model | dev  | test |
+| ----- | ---- | ---- |
+| LAS   | 10.9 | 11.2 |
 
 ### WSJ (WER)
-| model                    | test_dev93 | test_eval92 |
-| ------------------------ | ---------- | ----------- |
-| BPE1k LAS + CTC + RNNLM  | 8.8        | 6.2         |
+| model | test_dev93 | test_eval92 |
+| ----- | ---------- | ----------- |
+| LAS   | 8.8        | 6.2         |
 
 ## LM Performance
 ### Penn Tree Bank (PPL)
@@ -157,6 +152,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ## Dependency
 - https://github.com/SeanNaren/warp-ctc
 - https://github.com/HawkAaron/warp-transducer
+- https://github.com/1ytic/warp-rnnt
 
 <!-- ## TODO
 - WFST decoder
