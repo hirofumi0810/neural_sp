@@ -30,7 +30,8 @@ parser.add_argument('--dict', type=str,
                     help='dictionary file')
 parser.add_argument('--text', type=str,
                     help='text file')
-parser.add_argument('--unit', type=str, choices=['word', "wp", 'char', "phone", "word_char"],
+parser.add_argument('--unit', type=str,
+                    choices=['word', 'wp', 'char', 'phone', 'word_char'],
                     help='token units')
 parser.add_argument('--remove_space', type=strtobool, default=False,
                     help='')
@@ -175,7 +176,7 @@ def main():
                             # Replace with <unk>
                             token_ids.append(token2idx[args.unk])
 
-                # Remove whitespaces
+                # Insert <space> mark
                 if not args.remove_space:
                     if i < len(words) - 1:
                         token_ids.append(token2idx[args.space])
