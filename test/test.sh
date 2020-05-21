@@ -7,3 +7,4 @@ pytest ./test/test_transformer_decoder.py
 pytest ./test/test_rnn_transducer_decoder.py
 pytest ./test/test_rnnlm.py
 pytest ./test/test_transformerlm.py
+pytest ./test/test_transformer_xl_lm.py
