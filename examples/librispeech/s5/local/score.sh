@@ -17,7 +17,7 @@ data=/n/work1/inaguma/corpus/librispeech
 unit=
 metric=edit_distance
 batch_size=1
-beam_width=5
+beam_width=10
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
@@ -29,7 +29,7 @@ eos_threshold=1.5
 lm=
 lm_second=
 lm_bwd=
-lm_weight=0.3
+lm_weight=0.5
 lm_second_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
@@ -38,8 +38,10 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_average=1  # for Transformer
+n_average=10  # for Transformer
 oracle=false
+chunk_sync=false  # for MoChA
+mma_delay_threshold=-1
 
 . ./cmd.sh
 . ./path.sh
@@ -93,6 +95,9 @@ for set in dev_clean dev_other test_clean test_other; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
+    if [ ${chunk_sync} = true ]; then
+        recog_dir=${recog_dir}_chunksync
+    fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
     fi
@@ -101,6 +106,9 @@ for set in dev_clean dev_other test_clean test_other; do
     fi
     if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
+    fi
+    if [ ${mma_delay_threshold} != -1 ]; then
+        recog_dir=${recog_dir}_epswait${mma_delay_threshold}
     fi
     if [ ! -z ${model3} ]; then
         recog_dir=${recog_dir}_ensemble4
@@ -159,8 +167,10 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_chunk_sync ${chunk_sync} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
+        --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_stdout ${stdout} || exit 1;
 
     if [ ${metric} = 'edit_distance' ]; then
