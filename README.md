@@ -98,36 +98,34 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | Transformer | 4.6 | 5.0  |
 
 ### CSJ (WER)
-| model                                        | eval1   | eval2   | eval3   |
-| -------------------------------------------- | ------- | ------- | ------- |
-| BPE10k LAS + RNNLM | 7.9 | 5.8 | 6.4 |
-|   + SpecAugment    | 6.5 | 5.1 | 5.6 |
+| model | eval1 | eval2 | eval3 |
+| ----- | ----- | ----- | ----- |
+| LAS   | 6.5   | 5.1   | 5.6   |
 
 ### Switchboard 300h (WER)
-| model               | SWB  | CH   |
-| ------------------- | ---- | ---- |
-| BPE10k LAS + RNNLM  | 10.9 | 22.6 |
-|   + SpecAugment     | 9.1  | 18.8 |
+| model | SWB  | CH   |
+| ----- | ---- | ---- |
+| LAS   | 9.1  | 18.8 |
 
 ### Switchboard+Fisher 2000h (WER)
-| model               | SWB  | CH   |
-| ------------------- | ---- | ---- |
-| BPE34k LAS          | 7.8  | 13.8 |
+| model | SWB  | CH   |
+| ----- | ---- | ---- |
+| LAS   | 7.8  | 13.8 |
 
 ### Librispeech (WER)
-| model               | dev-clean | dev-other | test-clean | test-other |
-| ------------------- | --------- | --------- | ---------- | ---------- |
-| BPE30k LAS + RNNLM  | 3.4       | 10.7      | 3.4        | 11.3       |
+| model       | dev-clean | dev-other | test-clean | test-other |
+| ----------- | --------- | --------- | ---------- | ---------- |
+| Transformer | 2.3       | 5.8       | 2.5        | 6.1        |
 
 ### TEDLIUM2 (WER)
-| model               | dev  | test |
-| ------------------- | ---- | ---- |
-| BPE10k LAS + RNNLM  | 10.9 | 11.2 |
+| model | dev  | test |
+| ----- | ---- | ---- |
+| LAS   | 10.9 | 11.2 |
 
 ### WSJ (WER)
-| model                    | test_dev93 | test_eval92 |
-| ------------------------ | ---------- | ----------- |
-| BPE1k LAS + CTC + RNNLM  | 8.8        | 6.2         |
+| model | test_dev93 | test_eval92 |
+| ----- | ---------- | ----------- |
+| LAS   | 8.8        | 6.2         |
 
 ## LM Performance
 ### Penn Tree Bank (PPL)
@@ -154,6 +152,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ## Dependency
 - https://github.com/SeanNaren/warp-ctc
 - https://github.com/HawkAaron/warp-transducer
+- https://github.com/1ytic/warp-rnnt
 
 <!-- ## TODO
 - WFST decoder
