@@ -5,7 +5,7 @@
     - n_average: 10
     - beam width: 5
 
-| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+|Eval Set|# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
 |dev|14326|616023|95.1|4.6|0.2|0.2|**5.1**|39.0|
 |test|7176|314295|94.7|5.0|0.3|0.2|**5.5**|41.2|
@@ -16,7 +16,7 @@
     - n_average: 10
     - beam width: 5
 
-| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+|Eval Set|# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
 |dev|14326|616023|95.6|4.3|0.2|0.2|**4.6**|36.0|
 |test|7176|314295|95.2|4.5|0.3|0.2|**5.0**|37.6|
@@ -28,7 +28,7 @@
     - n_average: 10
     - beam width: 5
 
-| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+|Eval Set|# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
 |dev|14326|616023|94.9|4.8|0.3|0.2|**5.3**|39.9|
 |test|7176|314295|94.3|5.3|0.4|0.2|**5.9**|42.3|
@@ -39,7 +39,7 @@
     - n_average: 10
     - beam width: 5
 
-| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+|Eval Set|# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
 |dev|14326|616023|94.8|4.8|0.4|0.2|**5.4**|38.4|
 |test|7176|314295|94.4|5.0|0.6|0.2|**5.8**|39.8|
@@ -53,7 +53,7 @@
     - length_penalty: 2.0
     - mma_delay_threshold: 8
 
-| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+|Eval Set|# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
 |dev|14326|616023|94.7|5.1|0.2|0.2|**5.5**|41.0|
 |test|7176|314295|94.2|5.4|0.4|0.2|**6.0**|42.6|
@@ -67,7 +67,7 @@
     - length_penalty: 2.0
     - mma_delay_threshold: 8
 
-| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+|Eval Set|# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
 |dev|14326|616023|94.2|5.3|0.5|0.2|**6.0**|42.0|
 |test|7176|314295|93.3|5.6|1.1|0.2|**6.9**|45.3|
@@ -81,7 +81,7 @@
     - length_penalty: 2.0
     - mma_delay_threshold: 8
 
-| Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
+|Eval Set|# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
 |dev|14326|616023|94.6|5.1|0.2|0.2|**5.6**|41.1|
 |test|7176|314295|94.2|5.5|0.3|0.2|**6.1**|43.2|
