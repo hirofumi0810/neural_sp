@@ -75,8 +75,8 @@ warp-ctc.done:
 		fi \
 	else \
 		rm -rf warp-ctc; \
-		git clone https://github.com/espnet/warp-ctc.git; \
-		cd warp-ctc; git checkout -b pytorch-0.4 remotes/origin/pytorch-0.4; \
+		git clone https://github.com/espnet/warp-ctc.git; $(TOOL)/warp-ctc \
+		cd $(TOOL)/warp-ctc; git checkout -b pytorch-0.4 remotes/origin/pytorch-0.4; \
 		mkdir build && cd build && cmake .. && $(MAKE) && cd ..; \
 		. $(CONDA)/bin/activate; pip install cffi; cd pytorch_binding && python setup.py install; \
 	fi
@@ -84,13 +84,13 @@ warp-ctc.done:
 
 warp-transducer.done:
 	rm -rf warp-transducer
-	git clone https://github.com/HawkAaron/warp-transducer.git
+	git clone https://github.com/HawkAaron/warp-transducer.git $(TOOL)/warp-transducer
 	# Note: Requires gcc>=5.0 to build extensions with pytorch>=1.0
 	if . $(CONDA)/bin/activate && python -c 'import torch as t;assert t.__version__[0] == "1"' &> /dev/null; then \
         . $(CONDA)/bin/activate && python -c "from distutils.version import LooseVersion as V;assert V('$(GCC_VERSION)') >= V('5.0'), 'Requires gcc>=5.0'"; \
 	fi
-	. $(CONDA)/bin/activate; cd warp-transducer && mkdir build && cd build && cmake .. && $(MAKE); true
-	. $(CONDA)/bin/activate; cd warp-transducer/pytorch_binding && python setup.py install
+	. $(CONDA)/bin/activate; cd $(TOOL)/warp-transducer && mkdir build && cd build && cmake .. && $(MAKE); true
+	. $(CONDA)/bin/activate; cd $(TOOL)/warp-transducer/pytorch_binding && python setup.py install
 	touch warp-transducer.done
 
 check_install:
