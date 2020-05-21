@@ -19,13 +19,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument('text', type=str,
                     help='path to text file')
 parser.add_argument('--unit', type=str,
-                    choices=['word', "wp", 'char', "phone", "word_char"],
+                    choices=['word', 'wp', 'char', 'phone', 'word_char'],
                     help='token units')
 parser.add_argument('--vocab_size', type=int, nargs='?',
                     help='the size of vocabulary for word and wordpiece.')
 parser.add_argument('--remove_word_boundary', action='store_false',
                     help='remove all whitespaces in the transcriptions')
-parser.add_argument('--nlsyms', type=str, default=False,
+parser.add_argument('--nlsyms', type=str, default=False, nargs='?',
                     help='path to non-linguistic symbols, e.g., <NOISE> etc.')
 parser.add_argument('--speed_perturb', type=strtobool, default=False,
                     help='use speed perturbation.')
@@ -53,6 +53,7 @@ def main():
             line = line.strip()
 
             if args.speed_perturb and 'sp1.0' not in line:
+                pbar.update(1)
                 continue
 
             words = line.split()[1:]
@@ -60,16 +61,19 @@ def main():
                 words.remove('')
 
             # Remove special tokens
-            for token in nlsyms:
+            for nlsym in nlsyms:
                 # Include in the dictionary to sort by frequency
                 if args.unit in ['word', 'word_char']:
-                    if token not in word_dict.keys():
-                        word_dict[token] = words.count(token)
+                    if nlsym not in word_dict.keys():
+                        word_dict[nlsym] = words.count(nlsym)
                     else:
-                        word_dict[token] += words.count(token)
+                        word_dict[nlsym] += words.count(nlsym)
 
-                if token in words:
-                    words.remove(token)
+                while True:
+                    if nlsym in words:
+                        words.remove(nlsym)
+                    else:
+                        break
 
             text = ' '.join(words)
 
@@ -98,7 +102,7 @@ def main():
                 raise ValueError(args.unit)
             pbar.update(1)
 
-    if args.unit == 'word':
+    if args.unit in ['word']:
         token_list = sorted(list(word_dict.keys()),
                             key=lambda x: word_dict[x],
                             reverse=True)[:args.vocab_size]
@@ -111,7 +115,7 @@ def main():
         token_list = sorted(list(set(word_char_list)))
         # NOTE: nlsyms are already included in the word_dict
 
-    elif args.unit == 'char':
+    elif args.unit in ['char']:
         token_list = sorted(nlsyms) + sorted(list(token_set))
 
     elif args.unit == 'phone':

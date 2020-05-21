@@ -15,5 +15,4 @@ fi
 data=$1
 lexicon=$2
 
-map2phone.py --text ${data}/text \
-    --lexicon ${lexicon}
+map2phone.py --text ${data}/text --lexicon ${lexicon}
