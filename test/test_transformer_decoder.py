@@ -42,7 +42,7 @@ def make_args(**kwargs):
         backward=False,
         global_weight=1.0,
         mtl_per_batch=False,
-        param_init='xavier_init',
+        param_init='xavier_uniform',
         memory_transformer=False,
         mem_len=0,
         mocha_chunk_size=4,
@@ -72,6 +72,7 @@ def make_args(**kwargs):
         ({'n_heads': 1}),
         ({'n_heads': 4}),
         # positional encoding
+        ({'pe_type': 'none'}),
         ({'pe_type': '1dconv3L'}),
         # activation
         ({'ffn_activation': 'relu'}),
@@ -84,6 +85,18 @@ def make_args(**kwargs):
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 4, 'mocha_n_heads_chunk': 1}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 1, 'mocha_n_heads_chunk': 4}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 4, 'mocha_n_heads_chunk': 4}),
+        # MMA + HeadDrop
+        ({'attn_type': 'mocha', 'dropout_head': 0.1, 'mocha_chunk_size': 1, 'mocha_n_heads_mono': 1}),
+        ({'attn_type': 'mocha', 'dropout_head': 0.1, 'mocha_chunk_size': 1, 'mocha_n_heads_mono': 4}),
+        ({'attn_type': 'mocha', 'dropout_head': 0.1, 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 1, 'mocha_n_heads_chunk': 1}),
+        ({'attn_type': 'mocha', 'dropout_head': 0.1, 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 4, 'mocha_n_heads_chunk': 1}),
+        ({'attn_type': 'mocha', 'dropout_head': 0.1, 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 1, 'mocha_n_heads_chunk': 4}),
+        ({'attn_type': 'mocha', 'dropout_head': 0.1, 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 4, 'mocha_n_heads_chunk': 4}),
+        # regularization
+        ({'lsm_prob': 0.1}),
+        ({'dropout_layer': 0.1}),
+        ({'dropout_head': 0.1}),
+        ({'tie_embedding': True}),
         # CTC
         ({'ctc_weight': 0.5}),
         ({'ctc_weight': 1.0}),
@@ -92,9 +105,6 @@ def make_args(**kwargs):
         ({'backward': True}),
         ({'backward': True, 'ctc_weight': 0.5}),
         ({'backward': True, 'ctc_weight': 1.0}),
-        # others
-        ({'tie_embedding': True}),
-        ({'lsm_prob': 0.1}),
         # RNNLM init
         # LM integration
     ]
