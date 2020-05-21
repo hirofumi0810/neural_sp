@@ -95,15 +95,15 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
                       .view_as(xs))
         return xs_shifted.view(qlen, klen, bs, n_heads).permute(2, 0, 1, 3)
 
-    def forward(self, key, query, memory, pos_embs, mask, u, v):
+    def forward(self, key, query, memory, pos_embs, mask, u=None, v=None):
         """Forward computation.
 
         Args:
             key (FloatTensor): `[B, klen, kdim]`
             query (FloatTensor): `[B, qlen, qdim]`
-            pos_embs (LongTensor): `[qlen, 1, d_model]`
             memory (FloatTensor): `[B, mlen, d_model]`
-            mask (ByteTensor): `[B, qlen, klen]`
+            mask (ByteTensor): `[B, qlen, klen+mlen]`
+            pos_embs (LongTensor): `[qlen, 1, d_model]`
             u (nn.Parameter): `[H, d_k]`
             v (nn.Parameter): `[H, d_k]`
         Returns:
