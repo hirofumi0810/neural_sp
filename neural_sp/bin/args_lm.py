@@ -83,9 +83,6 @@ def parse():
                         help='mini-batch size')
     parser.add_argument('--bptt', type=int, default=200,
                         help='BPTT length')
-    parser.add_argument('--adaptive_bptt', type=str, default=False,
-                        choices=[False, 'uniform'],
-                        help='BPTT length')
     parser.add_argument('--optimizer', type=str, default='adam',
                         choices=['adam', 'adadelta', 'adagrad', 'sgd', 'momentum', 'nesterov', 'noam'],
                         help='type of optimizer')
