@@ -53,7 +53,7 @@ def make_args(**kwargs):
         ({'n_units_null_context': 32}),
         ({'use_glu': True}),
         ({'use_glu': True, 'residual': True}),
-        ({'use_glu': True, 'residual': True, 'n_units_null_context': 32s}),
+        ({'use_glu': True, 'residual': True, 'n_units_null_context': 32}),
         # embedding
         ({'adaptive_softmax': True}),
         ({'tie_embedding': True}),
@@ -68,7 +68,7 @@ def test_forward(args):
     rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
     lm = rnnlm.RNNLM(args)
     loss, state, observation = lm(ys, state=None, n_caches=0)
-    # assert loss.dim() == 1
-    # assert loss.size(0) == 1
+    # assert loss.dim() == 1, loss
+    # assert loss.size(0) == 1, loss
     assert loss.item() >= 0
     assert isinstance(observation, dict)

@@ -144,7 +144,7 @@ class RNNLM(LMBase):
 
         # for ASR decoder pre-training
         if self.n_units_cv > 0:
-            cv = ys.new_zeros(bs, ymax, self.n_units_cv)
+            cv = ys.new_zeros(bs, ymax, self.n_units_cv).float()
             ys_emb = torch.cat([ys_emb, cv], dim=-1)
 
         residual = None
