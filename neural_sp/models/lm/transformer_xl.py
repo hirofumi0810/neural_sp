@@ -49,11 +49,11 @@ class TransformerXL(LMBase):
         self.n_layers = args.n_layers
         self.n_heads = args.transformer_n_heads
         self.lsm_prob = args.lsm_prob
-        self.bptt = args.bptt
 
-        self.mem_len = args.bptt
         if args.mem_len > 0:
             self.mem_len = args.mem_len
+        else:
+            self.mem_len = args.bptt
         if args.recog_mem_len > 0:
             self.mem_len = args.recog_mem_len
         self.zero_center_offset = args.zero_center_offset
@@ -81,10 +81,9 @@ class TransformerXL(LMBase):
         self.dropout_emb = nn.Dropout(p=args.dropout_in)  # for token embedding
         self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
             self.d_model, args.transformer_d_ff, args.transformer_attn_type,
-            self.n_heads, args.dropout_hidden, args.dropout_att,
-            args.dropout_residual * (l + 1) / self.n_layers,
+            self.n_heads, args.dropout_hidden, args.dropout_att, args.dropout_layer,
             args.transformer_layer_norm_eps, args.transformer_ffn_activation, args.transformer_param_init,
-            src_tgt_attention=False, memory_transformer=True)) for l in range(self.n_layers)])
+            src_tgt_attention=False, memory_transformer=True)) for lth in range(self.n_layers)])
         self.norm_out = nn.LayerNorm(self.d_model, eps=args.transformer_layer_norm_eps)
 
         self.adaptive_softmax = None
@@ -184,10 +183,10 @@ class TransformerXL(LMBase):
         if incremental and cache[0] is not None:
             ylen = cache[0].size(1) + 1
 
-        # Create the self-attention mask: `[B, L, L+mlen]`
+        # Create the self-attention mask
         causal_mask = ys.new_ones(ylen, ylen + mlen).byte()
         causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
-        causal_mask = causal_mask.repeat([bs, 1, 1])
+        causal_mask = causal_mask.repeat([bs, 1, 1])  # `[B, L, L+mlen]`
 
         out = self.dropout_emb(self.embed(ys.long()) * self.scale)
         # NOTE: TransformerXL does not use positional encoding in the token embedding
@@ -195,26 +194,24 @@ class TransformerXL(LMBase):
             pos_idxs = torch.arange(mlen - 1, -ylen - 1, -1.0, dtype=torch.float)
         else:
             pos_idxs = torch.arange(ylen + mlen - 1, -1, -1.0, dtype=torch.float)
-        if self.device_id >= 0:
-            pos_idxs = pos_idxs.cuda(self.device_id)
-        pos_embs = self.pos_emb(pos_idxs)
+        pos_embs = self.pos_emb(pos_idxs, self.device_id)
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
         hidden_states = [out]
-        for l, (mem, layer) in enumerate(zip(mems, self.layers)):
+        for lth, (mem, layer) in enumerate(zip(mems, self.layers)):
             if incremental and mlen > 0 and mem.size(0) != bs:
                 mem = mem.repeat([bs, 1, 1])
-            out, yy_aws = layer(out, causal_mask, cache=cache[l],
+            out, yy_aws = layer(out, causal_mask, cache=cache[lth],
                                 pos_embs=pos_embs, memory=mem,
                                 u=self.u, v=self.v)[:2]
             if incremental:
-                new_cache[l] = out
-            elif l < self.n_layers - 1:
+                new_cache[lth] = out
+            elif lth < self.n_layers - 1:
                 hidden_states.append(out)
-                # NOTE: outputs from the last layer is not used for momory
+                # NOTE: outputs from the last layer is not used for memory
             if not self.training and yy_aws is not None:
-                setattr(self, 'yy_aws_layer%d' % l, tensor2np(yy_aws))
+                setattr(self, 'yy_aws_layer%d' % lth, tensor2np(yy_aws))
         out = self.norm_out(out)
         if self.adaptive_softmax is None:
             logits = self.output(out)
@@ -222,11 +219,11 @@ class TransformerXL(LMBase):
             logits = out
 
         if incremental:
+            # NOTE: do not update memory here during ASR decoding
             return logits, out, new_cache
         else:
             # Update memory
             new_mems = self.update_memory(mems, hidden_states)
-            # NOTE: do not update memory here during ASR decoding
             return logits, out, new_mems
 
     def plot_attention(self, n_cols=4):
@@ -241,11 +238,11 @@ class TransformerXL(LMBase):
             shutil.rmtree(save_path)
             os.mkdir(save_path)
 
-        for l in range(self.n_layers):
-            if not hasattr(self, 'yy_aws_layer%d' % l):
+        for lth in range(self.n_layers):
+            if not hasattr(self, 'yy_aws_layer%d' % lth):
                 continue
 
-            yy_aws = getattr(self, 'yy_aws_layer%d' % l)
+            yy_aws = getattr(self, 'yy_aws_layer%d' % lth)
 
             plt.clf()
             fig, axes = plt.subplots(self.n_heads // n_cols, n_cols, figsize=(20, 8))
@@ -262,5 +259,5 @@ class TransformerXL(LMBase):
                 ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
             fig.tight_layout()
-            fig.savefig(os.path.join(save_path, 'layer%d.png' % (l)), dvi=500)
+            fig.savefig(os.path.join(save_path, 'layer%d.png' % (lth)), dvi=500)
             plt.close()
