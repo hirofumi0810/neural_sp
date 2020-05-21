@@ -1,8 +1,9 @@
 ### Transformer
   - conf: `conf/asr/transformer.yaml`
   - lm_conf: `conf/lm/rnnlm.yaml`
-  - n_average: 10
-  - beam width: 5
+  - decoding parameters
+    - n_average: 10
+    - beam width: 5
 
 | Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
@@ -11,8 +12,9 @@
 
 ### Transformer + SpecAugment (no LM)
   - conf: `conf/asr/transformer.yaml`
-  - n_average: 10
-  - beam width: 5
+  - decoding parameters
+    - n_average: 10
+    - beam width: 5
 
 | Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
@@ -22,8 +24,9 @@
 ### Transformer, subsample1/8
   - conf: `conf/asr/transformer_subsample8.yaml`
   - lm_conf: `conf/lm/rnnlm.yaml`
-  - n_average: 10
-  - beam width: 5
+  - decoding parameters
+    - n_average: 10
+    - beam width: 5
 
 | Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
@@ -32,8 +35,9 @@
 
 ### Transformer + SpecAugment (no LM), subsample1/8
   - conf: `conf/asr/transformer.yaml`
-  - n_average: 10
-  - beam width: 5
+  - decoding parameters
+    - n_average: 10
+    - beam width: 5
 
 | Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
@@ -43,10 +47,11 @@
 ### Offline Transformer-MMA, subsample1/8
   - conf: `conf/asr/transformer_mocha_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8.yaml`
   - lm_conf: `conf/lm/rnnlm.yaml`
-  - n_average: 10
-  - beam width: 10
-  - length_penalty: 2.0
-  - mma_delay_threshold: 8
+  - decoding parameters
+    - n_average: 10
+    - beam width: 10
+    - length_penalty: 2.0
+    - mma_delay_threshold: 8
 
 | Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
@@ -56,10 +61,11 @@
 ### Streaming Transformer-MMA, subsample1/8, 96/64/32
   - conf: `conf/asr/lc_transformer_mocha_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8_96_64_32.yaml`
   - lm_conf: `conf/lm/rnnlm.yaml`
-  - n_average: 10
-  - beam width: 10
-  - length_penalty: 2.0
-  - mma_delay_threshold: 8
+  - decoding parameters
+    - n_average: 10
+    - beam width: 10
+    - length_penalty: 2.0
+    - mma_delay_threshold: 8
 
 | Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
@@ -69,10 +75,11 @@
 ### Streaming Transformer-MMA, subsample1/8, 64/128/64
   - conf: `conf/asr/lc_transformer_mocha_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8_64_128_64.yaml`
   - lm_conf: `conf/lm/rnnlm.yaml`
-  - n_average: 10
-  - beam width: 10
-  - length_penalty: 2.0
-  - mma_delay_threshold: 8
+  - decoding parameters
+    - n_average: 10
+    - beam width: 10
+    - length_penalty: 2.0
+    - mma_delay_threshold: 8
 
 | Eval Set |# Snt|# Wrd|Corr|Sub|Del|Ins|Err|S.Err|
 | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
