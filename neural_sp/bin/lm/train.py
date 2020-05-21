@@ -63,7 +63,6 @@ def main():
                         n_epochs=args.n_epochs,
                         min_n_tokens=args.min_n_tokens,
                         bptt=args.bptt,
-                        adaptive_bptt=args.adaptive_bptt,
                         shuffle=args.shuffle,
                         backward=args.backward,
                         serialize=args.serialize)
