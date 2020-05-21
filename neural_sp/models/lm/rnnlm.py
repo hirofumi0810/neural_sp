@@ -63,7 +63,7 @@ class RNNLM(LMBase):
         if args.n_projs > 0:
             self.proj = repeat(nn.Linear(args.n_units, args.n_projs), args.n_layers)
         rnn_idim = args.emb_dim + args.n_units_null_context
-        for l in range(args.n_layers):
+        for _ in range(args.n_layers):
             self.rnn += [rnn(rnn_idim, args.n_units, 1, batch_first=True)]
             rnn_idim = args.n_units
             if args.n_projs > 0:
@@ -84,24 +84,17 @@ class RNNLM(LMBase):
                 # cutoffs=[self.vocab // 10, 3 * self.vocab // 10],
                 cutoffs=[self.vocab // 25, self.vocab // 5],
                 div_value=4.0)
+        elif args.tie_embedding:
+            if rnn_idim != args.emb_dim:
+                self.output_proj = nn.Linear(rnn_idim, args.emb_dim)
+                rnn_idim = args.emb_dim
+                self._odim = rnn_idim
+            self.output = nn.Linear(rnn_idim, self.vocab)
+            self.output.weight = self.embed.weight
         else:
-            self.adaptive_softmax = None
-            if args.tie_embedding:
-                if rnn_idim != args.emb_dim:
-                    self.output_proj = nn.Linear(rnn_idim, args.emb_dim)
-                    rnn_idim = args.emb_dim
-                    self._odim = rnn_idim
-                self.output = nn.Linear(rnn_idim, self.vocab)
-                self.output.weight = self.embed.weight
-            else:
-                self.output = nn.Linear(rnn_idim, self.vocab)
+            self.output = nn.Linear(rnn_idim, self.vocab)
 
         self.reset_parameters(args.param_init)
-
-        # Recurrent weights are orthogonalized
-        if args.rec_weight_orthogonal:
-            self.reset_parameters(args.param_init, dist='orthogonal',
-                                  keys=['rnn', 'weight'])
 
         # Initialize bias in forget gate with 1
         # self.init_forget_gate_bias_with_one()
@@ -151,28 +144,28 @@ class RNNLM(LMBase):
 
         # for ASR decoder pre-training
         if self.n_units_cv > 0:
-            cv = ys.new_zeros(bs, ymax, self.n_units_cv)
+            cv = ys.new_zeros(bs, ymax, self.n_units_cv).float()
             ys_emb = torch.cat([ys_emb, cv], dim=-1)
 
         residual = None
         new_hxs, new_cxs = [], []
-        for l in range(self.n_layers):
-            self.rnn[l].flatten_parameters()  # for multi-GPUs
+        for lth in range(self.n_layers):
+            self.rnn[lth].flatten_parameters()  # for multi-GPUs
 
             # Path through RNN
             if self.rnn_type == 'lstm':
-                ys_emb, (h, c) = self.rnn[l](ys_emb, hx=(state['hxs'][l:l + 1],
-                                                         state['cxs'][l:l + 1]))
+                ys_emb, (h, c) = self.rnn[lth](ys_emb, hx=(state['hxs'][lth:lth + 1],
+                                                           state['cxs'][lth:lth + 1]))
                 new_cxs.append(c)
             elif self.rnn_type == 'gru':
-                ys_emb, h = self.rnn[l](ys_emb, hx=state['hxs'][l:l + 1])
+                ys_emb, h = self.rnn[lth](ys_emb, hx=state['hxs'][lth:lth + 1])
             new_hxs.append(h)
             ys_emb = self.dropout(ys_emb)
             if self.n_projs > 0:
-                ys_emb = torch.tanh(self.proj[l](ys_emb))
+                ys_emb = torch.tanh(self.proj[lth](ys_emb))
 
             # Residual connection
-            if self.residual and l > 0:
+            if self.residual and lth > 0:
                 ys_emb = ys_emb + residual
             residual = ys_emb
             # NOTE: Exclude residual connection from the raw inputs

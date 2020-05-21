@@ -125,8 +125,6 @@ def parse():
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
                         help='')
-    parser.add_argument('--rec_weight_orthogonal', type=strtobool, default=False,
-                        help='')
     parser.add_argument('--pretrained_model', type=str, default=False, nargs='?',
                         help='')
     # regularization
