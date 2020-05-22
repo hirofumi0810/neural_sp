@@ -17,7 +17,7 @@ data=/n/work1/inaguma/corpus/aishell1
 unit=
 metric=edit_distance
 batch_size=1
-beam_width=5
+beam_width=10
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
@@ -39,7 +39,7 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_average=1  # for Transformer
+n_average=10  # for Transformer
 oracle=false
 chunk_sync=false  # for MoChA
 mma_delay_threshold=-1
@@ -164,9 +164,11 @@ for set in dev test; do
         # remove <unk>
         cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
         cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
-
-        cat ${recog_dir}/ref.trn.filt | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/ref.trn.filt.char
-        cat ${recog_dir}/hyp.trn.filt | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/hyp.trn.filt.char
+        # add space
+        paste -d " " <(cat ${recog_dir}/ref.trn.filt | cut -f 1 -d " " | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/ref.trn.filt | cut -f 2- -d " ") \
+            > ${recog_dir}/ref.trn.filt.char
+        paste -d " " <(cat ${recog_dir}/hyp.trn.filt | cut -f 1 -d " " | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/hyp.trn.filt | cut -f 2- -d " ") \
+            > ${recog_dir}/hyp.trn.filt.char
 
         echo ${set}
         sclite -r ${recog_dir}/ref.trn.filt.char trn -h ${recog_dir}/hyp.trn.filt.char trn -i rm -o all stdout > ${recog_dir}/result.txt
