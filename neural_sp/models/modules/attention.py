@@ -101,8 +101,8 @@ class AttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                mode='', cache=False, trigger_point=None):
-        """Forward computation.
+                cache=False, mode='', trigger_point=None):
+        """Forward pass.
 
         Args:
             key (FloatTensor): `[B, klen, kdim]`
@@ -111,8 +111,8 @@ class AttentionMechanism(nn.Module):
             query (FloatTensor): `[B, 1, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             aw_prev (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
-            mode: dummy interface for MoChA
             cache (bool): cache key and mask
+            mode: dummy interface for MoChA
             trigger_point (IntTensor): `[B]`
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
@@ -145,9 +145,6 @@ class AttentionMechanism(nn.Module):
 
         if self.atype == 'no':
             raise NotImplementedError
-            # last_state = [key[b, klens[b] - 1] for b in range(bs)]
-            # cv = torch.stack(last_state, dim=0).unsqueeze(1)
-            # return cv, None
 
         elif self.atype in ['add', 'triggered_attention']:
             tmp = self.key.unsqueeze(1) + self.w_query(query).unsqueeze(2)

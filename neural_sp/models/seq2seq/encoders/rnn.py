@@ -75,11 +75,14 @@ class RNNEncoder(EncoderBase):
         super(RNNEncoder, self).__init__()
 
         if len(subsample) > 0 and len(subsample) != n_layers:
-            raise ValueError('subsample must be the same size as n_layers.')
+            raise ValueError('subsample must be the same size as n_layers. n_layers: %d, subsample: %s' %
+                             (n_layers, subsample))
         if n_layers_sub1 < 0 or (n_layers_sub1 > 1 and n_layers < n_layers_sub1):
-            raise ValueError('Set n_layers_sub1 between 1 to n_layers.')
+            raise ValueError('Set n_layers_sub1 between 1 to n_layers. n_layers: %d, n_layers_sub1: %d' %
+                             (n_layers, n_layers_sub1))
         if n_layers_sub2 < 0 or (n_layers_sub2 > 1 and n_layers_sub1 < n_layers_sub2):
-            raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1.')
+            raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1. n_layers_sub1: %d, n_layers_sub2: %d' %
+                             (n_layers_sub1, n_layers_sub2))
 
         self.rnn_type = rnn_type
         self.bidirectional = True if ('blstm' in rnn_type or 'bgru' in rnn_type) else False

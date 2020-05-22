@@ -23,6 +23,7 @@ from neural_sp.evaluators.edit_distance import compute_wer
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.criterion import distillation
 from neural_sp.models.criterion import MBR
+# from neural_sp.models.criterion import minimum_bayes_risk
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.lm.transformerlm import TransformerLM
 from neural_sp.models.lm.transformer_xl import TransformerXL
@@ -37,8 +38,8 @@ from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import append_sos_eos
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import make_pad_mask
-from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import repeat
+from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
@@ -81,7 +82,7 @@ class RNNDecoder(DecoderBase):
         dropout_att (float): dropout probability for attention distributions
         lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
-        ss_type (str): constant/saturation
+        ss_type (str): constant/ramp
         ctc_weight (float): CTC loss weight
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
@@ -99,6 +100,7 @@ class RNNDecoder(DecoderBase):
         mocha_init_r (int):
         mocha_eps (float):
         mocha_std (float):
+        mocha_no_denominator (bool):
         mocha_1dconv (bool): 1dconv for MoChA
         mocha_quantity_loss_weight (float):
         latency_metric (str): latency metric
@@ -122,7 +124,7 @@ class RNNDecoder(DecoderBase):
                  external_lm, lm_fusion, lm_init,
                  backward, global_weight, mtl_per_batch, param_init,
                  mocha_chunk_size, mocha_n_heads_mono,
-                 mocha_init_r, mocha_eps, mocha_std,
+                 mocha_init_r, mocha_eps, mocha_std, mocha_no_denominator,
                  mocha_1dconv, mocha_quantity_loss_weight,
                  latency_metric, latency_loss_weight,
                  gmm_attn_n_mixtures, replace_sos, distillation_weight, discourse_aware):
@@ -146,8 +148,8 @@ class RNNDecoder(DecoderBase):
         self.ss_type = ss_type
         if ss_type == 'constant':
             self._ss_prob = ss_prob
-        elif ss_type == 'saturation':
-            self._ss_prob = 0  # start from 0
+        elif ss_type == 'ramp':
+            self._ss_prob = 0  # for curriculum
         self.att_weight = global_weight - ctc_weight
         self.ctc_weight = ctc_weight
         self.lm_fusion = lm_fusion
@@ -158,6 +160,7 @@ class RNNDecoder(DecoderBase):
 
         # for mocha and triggered attention
         self.quantity_loss_weight = mocha_quantity_loss_weight
+        self._quantity_loss_weight = mocha_quantity_loss_weight  # for curriculum
         self.latency_metric = latency_metric
         self.latency_loss_weight = latency_loss_weight
         self.ctc_trigger = (self.latency_metric in ['ctc_sync', 'ctc_dal'] or attn_type == 'triggered_attention')
@@ -204,6 +207,7 @@ class RNNDecoder(DecoderBase):
                                    init_r=mocha_init_r,
                                    eps=mocha_eps,
                                    noise_std=mocha_std,
+                                   no_denominator=mocha_no_denominator,
                                    conv1d=mocha_1dconv,
                                    sharpening_factor=attn_sharpening_factor,
                                    decot=latency_metric == 'decot',
@@ -218,7 +222,7 @@ class RNNDecoder(DecoderBase):
                         enc_n_units, qdim, attn_dim,
                         n_heads=attn_n_heads,
                         dropout=dropout_att,
-                        attn_type='add')
+                        atype='add')
                 else:
                     self.score = AttentionMechanism(
                         enc_n_units, qdim, attn_dim, attn_type,
@@ -259,6 +263,7 @@ class RNNDecoder(DecoderBase):
 
             self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
             self.dropout_emb = nn.Dropout(p=dropout_emb)
+            assert bottleneck_dim > 0, 'bottleneck_dim must be larger than zero.'
             self.output = nn.Linear(bottleneck_dim, vocab)
             if tie_embedding:
                 if emb_dim != bottleneck_dim:
@@ -360,8 +365,8 @@ class RNNDecoder(DecoderBase):
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
             if self.attn_type == 'mocha':
-                if self.quantity_loss_weight > 0:
-                    loss_att += loss_quantity * self.quantity_loss_weight
+                if self._quantity_loss_weight > 0:
+                    loss_att += loss_quantity * self._quantity_loss_weight
                 observation['loss_quantity'] = loss_quantity.item()
             if self.latency_metric:
                 observation['loss_latency'] = loss_latency.item() if self.training else 0
@@ -375,61 +380,67 @@ class RNNDecoder(DecoderBase):
         # MBR loss
         if self.mbr is not None and (task == 'all' or 'mbr' not in task):
             N_best = recog_params['recog_beam_width']
+            alpha = 1.0
+            assert N_best >= 2
             loss_mbr = 0.
             loss_ce = 0.
             bs = eouts.size(0)
             for b in range(bs):
+                # 1. beam search
                 self.eval()
                 with torch.no_grad():
-                    # 1. beam search
-                    nbest_hyps_id, _, scores = self.beam_search(
+                    nbest_hyps_id, _, log_scores = self.beam_search(
                         eouts[b:b + 1], elens[b:b + 1], params=recog_params,
                         nbest=N_best, exclude_eos=True)
-                    nbest_hyps_id_b = [np.fromiter(y, dtype=np.int64) for y in nbest_hyps_id[0]]
-                    scores_b = np2tensor(np.array(scores[0], dtype=np.float32), self.device_id)
-                    scores_b_norm = scores_b / scores_b.sum()
+                nbest_hyps_id_b = [np.fromiter(y, dtype=np.int64) for y in nbest_hyps_id[0]]
+                log_scores_b = np2tensor(np.array(log_scores[0], dtype=np.float32), self.device_id)
+                scores_b_norm = torch.softmax(alpha * log_scores_b, dim=-1)  # `[N_best]`
+                # print((scores_b_norm * 100).int())
 
-                    # 2. calculate expected WER
-                    # print(idx2token(ys[b]))  # ref
-                    # print(idx2token(nbest_hyps_id_b[0]))  # hyp
-                    wer_b = np2tensor(np.array([
-                        compute_wer(ref=idx2token(ys[b]).split(' '),
-                                    hyp=idx2token(nbest_hyps_id_b[n]).split(' '))[0] / 100
-                        for n in range(N_best)], dtype=np.float32), self.device_id)
-
-                    exp_wer_b = (scores_b_norm * wer_b).sum()
-                    grad_b = (scores_b_norm * (wer_b - exp_wer_b)).sum()
-                    # print(scores_b_norm)
-                    # print(wer_b)
-                    # print(exp_wer_b)
-                    # print(grad_b)
+                # 2. calculate expected WER
+                wers_b = np2tensor(np.array([
+                    compute_wer(ref=idx2token(ys[b]).split(' '),
+                                hyp=idx2token(nbest_hyps_id_b[n]).split(' '))[0] / 100
+                    for n in range(N_best)], dtype=np.float32), self.device_id)
+                exp_wer_b = (scores_b_norm * wers_b).sum()
+                grad_b = (scores_b_norm * (wers_b - exp_wer_b)).sum()
+                # print(wers_b)
+                # print(exp_wer_b)
+                # print(scores_b_norm * (wers_b - exp_wer_b))
+                # print(grad_b)
 
                 # 3. forward pass (teacher-forcing with hypotheses)
                 self.train()
                 logits_b = self.forward_mbr(eouts[b:b + 1].repeat([N_best, 1, 1]),
                                             elens[b:b + 1].repeat([N_best]),
                                             nbest_hyps_id_b)
+                log_probs_b = torch.log_softmax(logits_b, dim=-1)  # `[nbest, L, vocab]`
 
                 # 4. backward pass (attach gradient)
-                log_probs_b = torch.log_softmax(logits_b, dim=-1)
-                eos = eouts.new_zeros(1).fill_(self.eos).long()
-                nbest_hyps_id_b_eos = pad_list([torch.cat([np2tensor(np.fromiter(y, dtype=np.int64), self.device_id),
-                                                           eos], dim=0) for y in nbest_hyps_id[0]], self.pad)
-                loss_mbr += self.mbr(log_probs_b, nbest_hyps_id_b_eos, exp_wer_b, grad_b)
+                _eos = eouts.new_zeros(1).fill_(self.eos).long()
+                nbest_hyps_id_b_pad = pad_list([torch.cat([np2tensor(y, self.device_id), _eos], dim=0)
+                                                for y in nbest_hyps_id_b], self.pad)
+                loss_mbr += self.mbr(log_probs_b, nbest_hyps_id_b_pad, exp_wer_b, grad_b)
 
-                # 5. CE loss for stable training
-                ys_out_b = append_sos_eos(eouts[b:b + 1], [ys[b]], self.eos, self.eos, self.pad)[1]
-                ys_out_b = ys_out_b.repeat([N_best, 1])
-                # NOTE: truncate to match the lengths
-                ymax = min(logits_b.size(1), ys_out_b.size(1))
-                logits_b = logits_b[:, :ymax].contiguous()
-                ys_out_b = ys_out_b[:, :ymax].contiguous()
-                loss_ce += cross_entropy_lsm(logits_b, ys_out_b, 0, self.pad, self.training)[0]
+                # 4. calculate MBR loss
+                # loss_mbr_b, scores_b = minimum_bayes_risk(log_probs_b, nbest_hyps_id_b, wers_b,
+                #                                           self.eos, self.pad)
+                # loss_mbr += loss_mbr_b
 
-            # normalize by batch size
-            loss_mbr /= bs
-            loss_ce /= bs
+                # 5. CE loss regularization
+                loss_ce += self.forward_att(eouts[b:b + 1], elens[b:b + 1], ys[b:b + 1])[0]
 
+                # ys_out_b = append_sos_eos(eouts[b:b + 1], [ys[b]], self.eos, self.eos, self.pad)[1]
+                # ys_out_b = ys_out_b.repeat([N_best, 1])
+                # # NOTE: truncate to match the lengths
+                # ymax = min(logits_b.size(1), ys_out_b.size(1))
+                # logits_b = logits_b[:, :ymax].contiguous()
+                # ys_out_b = ys_out_b[:, :ymax].contiguous()
+                # for k in range(N_best):
+                #     loss_ce_k = cross_entropy_lsm(logits_b, ys_out_b, 0, self.pad, self.training)[0]
+                #     loss_ce += loss_ce_k * scores_b_norm[k]
+
+            # NOTE: MBR loss is accumlated over N-best and mini-batch
             loss = loss_mbr + loss_ce * self.mbr_ce_weight
             observation['loss_mbr'] = loss_mbr.item()
             observation['loss_att'] = loss_ce.item()
@@ -451,7 +462,7 @@ class RNNDecoder(DecoderBase):
         bs, xmax = eouts.size()[:2]
 
         # Append <sos> and <eos>
-        ys_in, ys_out, ylens = append_sos_eos(eouts, ys_hyp, self.eos, self.eos, self.pad, self.bwd)
+        ys_in, ys_out, ylens = append_sos_eos(eouts, ys_hyp, self.eos, self.eos, self.pad)
 
         # Initialization
         dstates = self.zero_state(bs)
@@ -626,10 +637,14 @@ class RNNDecoder(DecoderBase):
             loss_latency = torch.pow((aws_mat * delay_mat).sum(-1), 2).sum(-1)
             loss_latency = torch.mean(loss_latency.squeeze(1))
         elif trigger_points is not None:
-            js = torch.arange(xmax).float().cuda(self.device_id)
+            js = torch.arange(xmax).float()
+            if self.device_id >= 0:
+                js = js.cuda(self.device_id)
             js = js.repeat([bs, n_heads, ymax, 1])
             exp_trigger_points = (js * aws).sum(3)  # `[B, H, L]`
-            trigger_points = trigger_points.float().cuda(self.device_id)  # `[B, L]`
+            trigger_points = trigger_points.float()  # `[B, L]`
+            if self.device_id >= 0:
+                trigger_points = trigger_points.cuda(self.device_id)
             trigger_points = trigger_points.unsqueeze(1)
             if self.latency_metric == 'ctc_sync':
                 loss_latency = torch.abs(exp_trigger_points - trigger_points)  # `[B, H, L]`
@@ -651,10 +666,10 @@ class RNNDecoder(DecoderBase):
         return loss, acc, ppl, loss_quantity, loss_latency
 
     def decode_step(self, eouts, dstates, cv, y_emb, mask, aw, lmout,
-                    mode='hard', trigger_point=None):
+                    mode='hard', trigger_point=None, cache=True):
         dstates = self.recurrency(torch.cat([y_emb, cv], dim=-1), dstates['dstate'])
         cv, aw, beta = self.score(eouts, eouts, dstates['dout_score'], mask, aw,
-                                  mode, cache=True, trigger_point=trigger_point)
+                                  cache=cache, mode=mode, trigger_point=trigger_point)
         attn_v = self.generate(cv, dstates['dout_gen'], lmout)
         return dstates, cv, aw, attn_v, beta
 
@@ -701,18 +716,18 @@ class RNNDecoder(DecoderBase):
                        'dstate': None}
 
         new_hxs, new_cxs = [], []
-        for l in range(self.n_layers):
+        for lth in range(self.n_layers):
             if self.rnn_type == 'lstm':
-                h, c = self.rnn[l](dout, (hxs[l], cxs[l]))
+                h, c = self.rnn[lth](dout, (hxs[lth], cxs[lth]))
                 new_cxs.append(c)
             elif self.rnn_type == 'gru':
-                h = self.rnn[l](dout, hxs[l])
+                h = self.rnn[lth](dout, hxs[lth])
             new_hxs.append(h)
             dout = self.dropout(h)
             if self.n_projs > 0:
-                dout = torch.tanh(self.proj[l](dout))
+                dout = torch.tanh(self.proj[lth](dout))
             # use output in the first layer for attention scoring
-            if l == 0:
+            if lth == 0:
                 new_dstates['dout_score'] = dout.unsqueeze(1)
         new_hxs = torch.stack(new_hxs, dim=0)
         if self.rnn_type == 'lstm':
@@ -756,6 +771,9 @@ class RNNDecoder(DecoderBase):
 
     def _plot_attention(self, save_path, n_cols=1):
         """Plot attention for each head."""
+        if self.att_weight == 0:
+            return 0
+
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
@@ -926,14 +944,7 @@ class RNNDecoder(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (IntTensor): `[B]`
-            params (dict):
-                recog_beam_width (int): size of beam
-                recog_max_len_ratio (int): maximum sequence length of tokens
-                recog_min_len_ratio (float): minimum sequence length of tokens
-                recog_length_penalty (float): length penalty
-                recog_coverage_penalty (float): coverage penalty
-                recog_coverage_threshold (float): threshold for coverage penalty
-                recog_lm_weight (float): weight of LM score
+            params (dict): hyperparameters for decoding
             idx2token (): converter from index to token
             lm: firsh path LM
             lm_second: second path LM
@@ -1217,7 +1228,8 @@ class RNNDecoder(DecoderBase):
                              'score_cp': cp,
                              'score_ctc': total_scores_ctc[k].item(),
                              'score_lm': total_scores_lm[k].item(),
-                             'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1], dstates['dstate'][1][:, j:j + 1])},
+                             'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1],
+                                                    dstates['dstate'][1][:, j:j + 1])},
                              'cv': cv[j:j + 1],
                              'aws': beam['aws'] + [aw[j:j + 1]],
                              'lmstate': new_lmstate,
@@ -1285,8 +1297,10 @@ class RNNDecoder(DecoderBase):
             else:
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
                 aws += [tensor2np(torch.cat(end_hyps[0]['aws'][1:], dim=2).squeeze(0))]
-            scores += [[math.exp(end_hyps[n]['score_att']) for n in range(nbest)]]
-            # NOTE: convert to probability scale for MBR training
+            if length_norm:
+                scores += [[end_hyps[n]['score_att'] / len(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
+            else:
+                scores += [[end_hyps[n]['score_att'] for n in range(nbest)]]
 
             # Check <eos>
             eos_flags.append([(end_hyps[n]['hyp'][-1] == self.eos) for n in range(nbest)])
@@ -1319,35 +1333,33 @@ class RNNDecoder(DecoderBase):
         return nbest_hyps_idx, aws, scores
 
     def beam_search_chunk_sync(self, eouts_c, params, idx2token,
-                               lm=None, lm_second=None, ctc_log_probs=None,
+                               lm=None, ctc_log_probs=None,
                                hyps=False, state_carry_over=False, ignore_eos=False):
-        bs, chunk_size, enc_dim = eouts_c.size()
+        bs, chunk_size, _ = eouts_c.size()
         assert bs == 1
         assert self.attn_type == 'mocha'
 
         beam_width = params['recog_beam_width']
-        beam_width_second = params['recog_beam_width']
+        # beam_width_second = params['recog_beam_width']
         ctc_weight = params['recog_ctc_weight']
         max_len_ratio = params['recog_max_len_ratio']
         lp_weight = params['recog_length_penalty']
         length_norm = params['recog_length_norm']
         lm_weight = params['recog_lm_weight']
-        lm_weight_second = params['recog_lm_second_weight']
         eos_threshold = params['recog_eos_threshold']
 
         if lm is not None:
             assert lm_weight > 0
             lm.eval()
-        if lm_second is not None:
-            assert lm_weight_second > 0
-            lm_second.eval()
 
         # Initialization per utterance
         self.score.reset()
         dstates = self.zero_state(1)
         lmstate = None
+        ctc_state = None
 
         # For joint CTC-Attention decoding
+        self.ctc_prefix_scorer = None
         if ctc_log_probs is not None:
             assert ctc_weight > 0
             ctc_log_probs = tensor2np(ctc_log_probs)
@@ -1356,8 +1368,7 @@ class RNNDecoder(DecoderBase):
                 self.ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[0], self.blank, self.eos)
             else:
                 self.ctc_prefix_scorer.register_new_chunk(ctc_log_probs[0])
-        else:
-            self.ctc_prefix_scorer = None
+            ctc_state = self.ctc_prefix_scorer.initial_state()
         # TODO: add truncated version
 
         if state_carry_over:
@@ -1381,7 +1392,7 @@ class RNNDecoder(DecoderBase):
                      'cv': eouts_c.new_zeros(1, 1, self.enc_n_units),
                      'aws': [None],
                      'lmstate': lmstate,
-                     'ctc_state': self.ctc_prefix_scorer.initial_state() if self.ctc_prefix_scorer is not None else None,
+                     'ctc_state': ctc_state,
                      'no_boundary': False}]
         else:
             for h in hyps:
@@ -1433,8 +1444,7 @@ class RNNDecoder(DecoderBase):
 
             dstates, cv, aw, attn_v, _ = self.decode_step(
                 eouts_c[0:1].repeat([cv.size(0), 1, 1]),
-                dstates, cv, self.dropout_emb(self.embed(y)), None, aw, lmout,
-                cache=False)
+                dstates, cv, self.dropout_emb(self.embed(y)), None, aw, lmout, cache=False)
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1), dim=1)
 
             for j, beam in enumerate(hyps):
@@ -1467,15 +1477,11 @@ class RNNDecoder(DecoderBase):
                     beam['hyp'], topk_ids, beam['ctc_state'],
                     total_scores_topk, self.ctc_prefix_scorer, new_chunk=(t == 0))
 
-                topk_ids = [topk_ids[0, k].item() for k in range(beam_width)]
-
                 for k in range(beam_width):
-                    idx = topk_ids[k]
+                    idx = topk_ids[0, k].item()
                     if no_boundary and idx != self.eos:
                         continue
-                    length_norm_factor = 1.
-                    if length_norm:
-                        length_norm_factor = len(beam['hyp'][1:]) + 1
+                    length_norm_factor = len(beam['hyp'][1:]) + 1 if length_norm else 1
                     total_score = total_scores_topk[0, k].item() / length_norm_factor
 
                     if idx == self.eos:
@@ -1501,7 +1507,8 @@ class RNNDecoder(DecoderBase):
                          'dstates': {'dstate': (dstates['dstate'][0][:, j:j + 1], dstates['dstate'][1][:, j:j + 1])},
                          'cv': cv[j:j + 1],
                          'aws': beam['aws'] + [aw[j:j + 1]],
-                         'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1], 'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
+                         'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1],
+                                     'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                          'ctc_state': new_ctc_states[k] if self.ctc_prefix_scorer is not None else None,
                          'no_boundary': no_boundary})
 
@@ -1519,11 +1526,6 @@ class RNNDecoder(DecoderBase):
         hyps_nobd_sorted = sorted(hyps_nobd, key=lambda x: x['score'], reverse=True)
         hyps = (hyps[:] + hyps_nobd_sorted)[:beam_width]
 
-        # forward second path LM rescoring
-        if lm_second is not None:
-            self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
-            # TODO: fix bug for empty hypotheses
-
         # Sort by score
         if len(end_hyps) > 0:
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -1539,9 +1541,6 @@ class RNNDecoder(DecoderBase):
                     logger.info('log prob (hyp, ctc): %.7f' % (merged_hyps[k]['score_ctc'] * ctc_weight))
                 if lm is not None:
                     logger.info('log prob (hyp, first-path lm): %.7f' % (merged_hyps[k]['score_lm'] * lm_weight))
-                if lm_second is not None:
-                    logger.info('log prob (hyp, second-path lm): %.7f' %
-                                (merged_hyps[k]['score_lm_second'] * lm_weight_second))
                 logger.info('-' * 50)
 
         aws = None

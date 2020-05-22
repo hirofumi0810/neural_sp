@@ -32,8 +32,8 @@ def set_asr_model_name(args):
         dir_name += str(args.enc_n_layers) + 'L'
         dir_name += str(args.transformer_n_heads) + 'head'
         dir_name += 'pe' + str(args.transformer_enc_pe_type)
-        if args.dropout_enc_residual > 0:
-            dir_name += 'dropres' + str(args.dropout_enc_residual)
+        if args.dropout_enc_layer > 0:
+            dir_name += 'droplayer' + str(args.dropout_enc_layer)
         if args.lc_chunk_size_left > 0 or args.lc_chunk_size_current > 0 or args.lc_chunk_size_right > 0:
             dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
                 str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
@@ -54,9 +54,7 @@ def set_asr_model_name(args):
         dir_name += '_ssn'
 
     # decoder
-    if args.am_pretrain_type:
-        dir_name += '_' + args.am_pretrain_type
-    elif args.ctc_weight < 1:
+    if args.ctc_weight < 1:
         dir_name += '_' + args.dec_type
         if 'transformer' in args.dec_type:
             dir_name += str(args.transformer_d_model) + 'dmodel'
@@ -70,8 +68,10 @@ def set_asr_model_name(args):
                 dir_name += '_chunk' + str(args.mocha_n_heads_chunk) + 'H'
                 dir_name += '_chunk' + str(args.mocha_chunk_size)
                 dir_name += '_bias' + str(args.mocha_init_r)
-                dir_name += '_eps' + str(args.mocha_eps)
-                dir_name += '_std' + str(args.mocha_std)
+                if args.mocha_no_denominator:
+                    dir_name += '_denom1'
+                if args.mocha_1dconv:
+                    dir_name += '_1dconv'
                 if args.mocha_quantity_loss_weight > 0:
                     dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
                 if args.mocha_head_divergence_loss_weight > 0:
@@ -79,13 +79,13 @@ def set_asr_model_name(args):
                 if args.mocha_latency_metric:
                     dir_name += '_' + args.mocha_latency_metric
                     dir_name += str(args.mocha_latency_loss_weight)
-                if args.mocha_first_layer > 1:
-                    dir_name += '_from' + str(args.mocha_first_layer) + 'L'
-            if args.dropout_dec_residual > 0:
-                dir_name += 'dropres' + str(args.dropout_dec_residual)
+            if args.mocha_first_layer > 1:
+                dir_name += '_from' + str(args.mocha_first_layer) + 'L'
+            if args.dropout_dec_layer > 0:
+                dir_name += 'droplayer' + str(args.dropout_dec_layer)
             if args.dropout_head > 0:
                 dir_name += 'drophead' + str(args.dropout_head)
-        else:
+        elif 'asg' not in args.dec_type:
             dir_name += str(args.dec_n_units) + 'H'
             if args.dec_n_projs > 0:
                 dir_name += str(args.dec_n_projs) + 'P'
@@ -98,6 +98,8 @@ def set_asr_model_name(args):
                     dir_name += '_chunk' + str(args.mocha_chunk_size)
                     if args.mocha_n_heads_mono > 1:
                         dir_name += '_mono' + str(args.mocha_n_heads_mono) + 'H'
+                    if args.mocha_no_denominator:
+                        dir_name += '_denom1'
                     if args.mocha_1dconv:
                         dir_name += '_1dconv'
                     if args.attn_sharpening_factor:
@@ -174,18 +176,16 @@ def set_asr_model_name(args):
         dir_name += '_' + str(args.freq_width) + 'FM' + str(args.n_freq_masks)
     if args.n_time_masks > 0:
         dir_name += '_' + str(args.time_width) + 'TM' + str(args.n_time_masks)
-    if args.flip_time_prob > 0:
-        dir_name += '_flipT' + str(args.flip_time_prob)
-    if args.flip_freq_prob > 0:
-        dir_name += '_flipF' + str(args.flip_freq_prob)
     if args.weight_noise:
         dir_name += '_weightnoise'
 
     # contextualization
     if args.discourse_aware:
-        dir_name += '_' + str(args.discourse_aware)
+        dir_name += '_discourse'
     if args.mem_len > 0:
         dir_name += '_mem' + str(args.mem_len)
+    if args.bptt > 0:
+        dir_name += '_bptt' + str(args.bptt)
 
     # Pre-training
     if args.asr_init and os.path.isfile(args.asr_init):
@@ -233,8 +233,6 @@ def set_lm_name(args):
         dir_name += '_lr' + str(args.lr)
     dir_name += '_bs' + str(args.batch_size)
     dir_name += '_bptt' + str(args.bptt)
-    if args.adaptive_bptt:
-        dir_name += '_' + args.adaptive_bptt
     if args.mem_len > 0:
         dir_name += '_mem' + str(args.mem_len)
     if args.lm_type == 'transformer_xl' and args.zero_center_offset:
@@ -251,8 +249,8 @@ def set_lm_name(args):
 
     # regularization
     dir_name += '_dropI' + str(args.dropout_in) + 'H' + str(args.dropout_hidden)
-    if args.dropout_residual > 0:
-        dir_name += 'res' + str(args.dropout_residual)
+    if args.dropout_layer > 0:
+        dir_name += 'Layer' + str(args.dropout_layer)
     if args.lsm_prob > 0:
         dir_name += '_ls' + str(args.lsm_prob)
     if args.warmup_n_steps > 0:

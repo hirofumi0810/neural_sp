@@ -86,7 +86,7 @@ class ModelBase(nn.Module):
             param_vector.add_(noise[0])
         vector_to_parameters(param_vector, self.parameters())
 
-    def cudnn_setting(self, deterministic=True, benchmark=False):
+    def cudnn_setting(self, deterministic=False, benchmark=True):
         """CuDNN setting.
 
         Args:

@@ -27,7 +27,7 @@ sns.set(font='Noto Sans CJK JP')
 
 
 def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
-                           save_path=None, figsize=(20, 8),
+                           save_path=None, figsize=(20, 6),
                            ctc_probs=None, ctc_topk_ids=None):
     """Plot attention weights.
 
@@ -53,7 +53,8 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
     plt.figure(figsize=figsize)
     # Plot attention weights
     for h in range(1, n_heads + 1):
-        plt.subplot(n_col, 1, h)
+        # plt.subplot(n_col, 1, h)
+        plt.subplot(n_col, 1, n_heads - h + 1)
         sns.heatmap(aw[h - 1, :, :], cmap='viridis',
                     xticklabels=False,
                     yticklabels=tokens if len(tokens) > 0 else False,
@@ -90,14 +91,14 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
 
     # Save as a png file
     if save_path is not None:
-        plt.savefig(save_path, dvi=500)
+        plt.savefig(save_path, dvi=100)
 
     plt.close()
 
 
 def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
                                         spectrogram=None, ref=None,
-                                        save_path=None, figsize=(20, 8)):
+                                        save_path=None, figsize=(20, 6)):
     """Plot attention weights for the hierarchical model.
 
     Args:
@@ -155,13 +156,13 @@ def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
 
     # Save as a png file
     if save_path is not None:
-        plt.savefig(save_path, dvi=500)
+        plt.savefig(save_path, dvi=100)
 
     plt.close()
 
 
 def plot_ctc_probs(ctc_probs, topk_ids, subsample_factor, space=-1, hyp='',
-                   spectrogram=None, save_path=None, figsize=(20, 8), topk=None):
+                   spectrogram=None, save_path=None, figsize=(20, 6), topk=None):
     """Plot CTC posteriors.
 
     Args:
@@ -223,14 +224,14 @@ def plot_ctc_probs(ctc_probs, topk_ids, subsample_factor, space=-1, hyp='',
 
     # Save as a png file
     if save_path is not None:
-        plt.savefig(save_path, dvi=500)
+        plt.savefig(save_path, dvi=100)
 
     plt.close()
 
 
 def plot_hierarchical_ctc_probs(ctc_probs, topk_ids, ctc_probs_sub, topk_ids_sub,
                                 subsample_factor, space=-1, space_sub=-1, hyp='', hyp_sub='',
-                                spectrogram=None, save_path=None, figsize=(20, 8)):
+                                spectrogram=None, save_path=None, figsize=(20, 6)):
     """Plot CTC posteriors for the hierarchical model.
 
     Args:
@@ -292,6 +293,6 @@ def plot_hierarchical_ctc_probs(ctc_probs, topk_ids, ctc_probs_sub, topk_ids_sub
 
     # Save as a png file
     if save_path is not None:
-        plt.savefig(save_path, dvi=500)
+        plt.savefig(save_path, dvi=100)
 
     plt.close()

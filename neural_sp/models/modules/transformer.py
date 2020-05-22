@@ -15,11 +15,9 @@ import random
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
-from neural_sp.models.modules.sync_bidir_multihead_attention import SyncBidirMultiheadAttentionMechanism as SyncBidirMHA
 
 random.seed(1)
 
@@ -36,7 +34,7 @@ class TransformerEncoderBlock(nn.Module):
         n_heads (int): number of heads for multi-head attention
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
-        dropout_residual (float): dropout probabilities for residual connections
+        dropout_layer (float): LayerDrop probabilities for layers
         layer_norm_eps (float): epsilon parameter for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
@@ -45,7 +43,7 @@ class TransformerEncoderBlock(nn.Module):
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads,
-                 dropout, dropout_att, dropout_residual,
+                 dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init,
                  memory_transformer=False):
         super(TransformerEncoderBlock, self).__init__()
@@ -68,7 +66,7 @@ class TransformerEncoderBlock(nn.Module):
         self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init)
 
         self.dropout = nn.Dropout(dropout)
-        self.death_rate = dropout_residual
+        self.dropout_layer = dropout_layer
 
     def forward(self, xs, xx_mask=None, pos_embs=None, memory=None, u=None, v=None):
         """Transformer encoder layer definition.
@@ -85,27 +83,27 @@ class TransformerEncoderBlock(nn.Module):
             xx_aws (FloatTensor): `[B, H, T, T]`
 
         """
-        if self.death_rate > 0 and self.training and random.random() >= self.death_rate:
+        if self.dropout_layer > 0 and self.training and random.random() >= self.dropout_layer:
             return xs, None
 
         # self-attention
         residual = xs
         xs = self.norm1(xs)
         if self.memory_transformer:
+            # memory Transformer w/ relative positional encoding
             xs, xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)
+        elif memory is not None:
+            # memory Transformer w/o relative positional encoding
+            xs_memory = torch.cat([memory, xs], dim=1)
+            xs, xx_aws, _ = self.self_attn(xs_memory, xs_memory, xs, mask=xx_mask)  # k/v/q
         else:
-            xs, xx_aws, _ = self.self_attn(xs, xs, xs, mask=xx_mask)
-
-        if self.death_rate > 0 and self.training:
-            xs = xs / (1 - self.death_rate)
+            xs, xx_aws, _ = self.self_attn(xs, xs, xs, mask=xx_mask)  # k/v/q
         xs = self.dropout(xs) + residual
 
         # position-wise feed-forward
         residual = xs
         xs = self.norm2(xs)
         xs = self.feed_forward(xs)
-        if self.death_rate > 0 and self.training:
-            xs = xs / (1 - self.death_rate)
         xs = self.dropout(xs) + residual
 
         return xs, xx_aws
@@ -121,8 +119,8 @@ class TransformerDecoderBlock(nn.Module):
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
-            dropout_residual (float): dropout probabilities for residual connections
-            dropout_head (float): dropout probabilities for heads
+            dropout_layer (float): LayerDrop probabilities for layers
+            dropout_head (float): HeadDrop probabilities for attention heads
             layer_norm_eps (float): epsilon parameter for layer normalization
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
             param_init (str): parameter initialization method
@@ -134,20 +132,20 @@ class TransformerDecoderBlock(nn.Module):
             mocha_init_r (int):
             mocha_eps (float):
             mocha_std (float):
-            mocha_dropout_head (float):
-            mocha_dropout_hard (float):
+            mocha_no_denominator (bool):
+            mocha_1dconv (bool):
             lm_fusion (bool):
 
     """
 
     def __init__(self, d_model, d_ff, atype, n_heads,
-                 dropout, dropout_att, dropout_residual,
+                 dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init,
                  src_tgt_attention=True, memory_transformer=False,
                  mocha_chunk_size=0, mocha_n_heads_mono=1, mocha_n_heads_chunk=1,
                  mocha_init_r=2, mocha_eps=1e-6, mocha_std=1.0,
-                 mocha_dropout_head=0, mocha_dropout_hard=0.,
-                 lm_fusion=False):
+                 mocha_no_denominator=False, mocha_1dconv=False,
+                 dropout_head=0, lm_fusion=False):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
@@ -170,6 +168,7 @@ class TransformerDecoderBlock(nn.Module):
             self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if 'mocha' in atype:
                 self.n_heads = mocha_n_heads_mono
+                from neural_sp.models.modules.mocha import MoChA
                 self.src_attn = MoChA(kdim=d_model,
                                       qdim=d_model,
                                       adim=d_model,
@@ -180,9 +179,10 @@ class TransformerDecoderBlock(nn.Module):
                                       init_r=mocha_init_r,
                                       eps=mocha_eps,
                                       noise_std=mocha_std,
+                                      no_denominator=mocha_no_denominator,
+                                      conv1d=mocha_1dconv,
                                       dropout=dropout_att,
-                                      dropout_head=mocha_dropout_head,
-                                      dropout_hard=mocha_dropout_hard,
+                                      dropout_head=dropout_head,
                                       param_init=param_init)
             else:
                 self.src_attn = MHA(kdim=d_model,
@@ -197,7 +197,7 @@ class TransformerDecoderBlock(nn.Module):
         self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init)
 
         self.dropout = nn.Dropout(p=dropout)
-        self.death_rate = dropout_residual
+        self.dropout_layer = dropout_layer
 
         # LM fusion
         self.lm_fusion = lm_fusion
@@ -217,7 +217,8 @@ class TransformerDecoderBlock(nn.Module):
 
     def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
                 xy_aws_prev=None, mode='hard', lmout=None,
-                pos_embs=None, memory=None, u=None, v=None):
+                pos_embs=None, memory=None, u=None, v=None,
+                eps_wait=-1, boundary_rightmost=None,):
         """Transformer decoder forward pass.
 
         Args:
@@ -233,6 +234,8 @@ class TransformerDecoderBlock(nn.Module):
             memory (FloatTensor): `[B, L_prev, d_model]`
             u (FloatTensor): global parameter for TransformerXL
             v (FloatTensor): global parameter for TransformerXL
+            eps_wait (int):
+            boundary_rightmost (int):
         Returns:
             out (FloatTensor): `[B, L, d_model]`
             yy_aws (FloatTensor)`[B, H, L, L]`
@@ -240,12 +243,12 @@ class TransformerDecoderBlock(nn.Module):
             xy_aws_beta (FloatTensor): `[B, H, L, T]`
 
         """
-        if self.death_rate > 0 and self.training and random.random() >= self.death_rate:
+        if self.dropout_layer > 0 and self.training and random.random() >= self.dropout_layer:
             xy_aws = None
             if self.src_tgt_attention:
                 bs, qlen, klen = xy_mask.size()
                 xy_aws = ys.new_zeros(bs, self.n_heads, qlen, klen)
-            return ys, None, xy_aws, None
+            return ys, None, xy_aws, None, None
 
         residual = ys
         ys = self.norm1(ys)
@@ -260,12 +263,11 @@ class TransformerDecoderBlock(nn.Module):
         # self-attention
         yy_aws = None
         if self.memory_transformer:
-            pos_embs = pos_embs[-ys_q.size(1):]
+            if cache is not None:
+                pos_embs = pos_embs[-ys_q.size(1):]
             out, yy_aws = self.self_attn(ys, ys_q, memory, pos_embs, yy_mask, u, v)
         else:
             out, yy_aws, _ = self.self_attn(ys, ys, ys_q, mask=yy_mask)  # k/v/q
-        if self.death_rate > 0 and self.training:
-            out = out / (1 - self.death_rate)
         out = self.dropout(out) + residual
 
         # attention over encoder stacks
@@ -275,9 +277,8 @@ class TransformerDecoderBlock(nn.Module):
             out = self.norm2(out)
             out, xy_aws, xy_aws_beta = self.src_attn(
                 xs, xs, out, mask=xy_mask,  # k/v/q
-                aw_prev=xy_aws_prev, mode=mode)
-            if self.death_rate > 0 and self.training:
-                out = out / (1 - self.death_rate)
+                aw_prev=xy_aws_prev, mode=mode,
+                eps_wait=eps_wait, boundary_rightmost=boundary_rightmost)
             out = self.dropout(out) + residual
 
         # LM integration
@@ -294,17 +295,12 @@ class TransformerDecoderBlock(nn.Module):
             gate = torch.sigmoid(self.linear_lm_gate(torch.cat([out, lmout], dim=-1)))
             gated_lmout = gate * lmout
             out = self.linear_lm_fusion(torch.cat([out, gated_lmout], dim=-1))
-
-            if self.death_rate > 0 and self.training:
-                out = out / (1 - self.death_rate)
             out = self.dropout(out) + residual
 
         # position-wise feed-forward
         residual = out
         out = self.norm3(out)
         out = self.feed_forward(out)
-        if self.death_rate > 0 and self.training:
-            out = out / (1 - self.death_rate)
         out = self.dropout(out) + residual
 
         if cache is not None:
@@ -322,7 +318,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
-            dropout_residual (float): dropout probabilities for residual connections
+            dropout_layer (float): LayerDrop probabilities for layers
             layer_norm_eps (float): epsilon parameter for layer normalization
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
             param_init (str): parameter initialization method
@@ -330,7 +326,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
     """
 
     def __init__(self, d_model, d_ff, n_heads,
-                 dropout, dropout_att, dropout_residual,
+                 dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init):
         super(SyncBidirTransformerDecoderBlock, self).__init__()
 
@@ -338,6 +334,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
         # synchronous bidirectional attention
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        from neural_sp.models.modules.sync_bidir_multihead_attention import SyncBidirMultiheadAttentionMechanism as SyncBidirMHA
         self.self_attn = SyncBidirMHA(kdim=d_model,
                                       qdim=d_model,
                                       adim=d_model,
@@ -359,7 +356,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init)
 
         self.dropout = nn.Dropout(p=dropout)
-        self.death_rate = dropout_residual
+        # self.dropout_layer = dropout_layer
 
     def forward(self, ys, ys_bwd, yy_mask, identity_mask, xs, xy_mask,
                 cache=None, cache_bwd=None):

@@ -16,7 +16,7 @@ data=/n/work1/inaguma/corpus/librispeech
 
 unit=
 batch_size=1
-beam_width=5
+beam_width=10
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
@@ -27,7 +27,7 @@ gnmt_decoding=false
 eos_threshold=1.5
 lm=
 lm_bwd=
-lm_weight=0.3
+lm_weight=0.5
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -35,8 +35,9 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_average=1  # for Transformer
+n_average=10  # for Transformer
 oracle=false
+mma_delay_threshold=-1
 
 . ./cmd.sh
 . ./path.sh
@@ -93,6 +94,9 @@ for set in dev_clean dev_other test_clean test_other; do
     if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
     fi
+    if [ ${mma_delay_threshold} != -1 ]; then
+        recog_dir=${recog_dir}_epswait${mma_delay_threshold}
+    fi
     if [ ! -z ${model3} ]; then
         recog_dir=${recog_dir}_ensemble4
     elif [ ! -z ${model2} ]; then
@@ -102,12 +106,22 @@ for set in dev_clean dev_other test_clean test_other; do
     fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep '960') ]; then
-        recog_set=${data}/dataset/${set}_960_wpbpe10000.tsv
-    elif [ $(echo ${model} | grep '460') ]; then
-        recog_set=${data}/dataset/${set}_460_wpbpe10000.tsv
-    elif [ $(echo ${model} | grep '100') ]; then
-        recog_set=${data}/dataset/${set}_100_wpbpe1000.tsv
+    if [ $(echo ${model} | grep 'train_sp_') ]; then
+        if [ $(echo ${model} | grep '960') ]; then
+            recog_set=${data}/dataset/${set}_sp_960_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '460') ]; then
+            recog_set=${data}/dataset/${set}_sp_460_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '100') ]; then
+            recog_set=${data}/dataset/${set}_sp_100_wpbpe1000.tsv
+        fi
+    else
+        if [ $(echo ${model} | grep '960') ]; then
+            recog_set=${data}/dataset/${set}_960_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '460') ]; then
+            recog_set=${data}/dataset/${set}_460_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '100') ]; then
+            recog_set=${data}/dataset/${set}_100_wpbpe1000.tsv
+        fi
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_attention.py \
@@ -139,5 +153,6 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_lm_state_carry_over ${lm_state_carry_over} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
+        --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_stdout ${stdout} || exit 1;
 done
