@@ -17,7 +17,7 @@ data=/n/work1/inaguma/corpus/csj
 unit=
 metric=edit_distance
 batch_size=1
-beam_width=5
+beam_width=10
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
@@ -40,7 +40,7 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_average=1  # for Transformer
+n_average=10  # for Transformer
 oracle=false
 chunk_sync=false  # for MoChA
 
@@ -123,7 +123,7 @@ for set in eval1 eval2 eval3; do
     fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep 'train_sp_') ]; then
+    if [ $(echo ${model} | grep 'train_sp') ]; then
         if [ $(echo ${model} | grep 'all') ]; then
             recog_set=${data}/dataset/${set}_sp_all_wpbpe10000.tsv
         elif [ $(echo ${model} | grep 'aps_other') ]; then
@@ -190,8 +190,11 @@ for set in eval1 eval2 eval3; do
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt >> ${recog_dir}/RESULTS
         # CER
         echo 'CER' >> ${recog_dir}/RESULTS
-        cat ${recog_dir}/ref.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/ref.trn.filt.char
-        cat ${recog_dir}/hyp.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/hyp.trn.filt.char
+        # add space
+        paste -d " " <(cat ${recog_dir}/ref.trn.filt | cut -f 1 -d " " | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/ref.trn.filt | cut -f 2- -d " ") \
+            > ${recog_dir}/ref.trn.filt.char
+        paste -d " " <(cat ${recog_dir}/hyp.trn.filt | cut -f 1 -d " " | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/hyp.trn.filt | cut -f 2- -d " ") \
+            > ${recog_dir}/hyp.trn.filt.char
         sclite -r ${recog_dir}/ref.trn.filt.char trn -h ${recog_dir}/hyp.trn.filt.char trn -i rm -o all stdout > ${recog_dir}/result.char.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.char.txt >> ${recog_dir}/RESULTS
         cat ${recog_dir}/RESULTS
