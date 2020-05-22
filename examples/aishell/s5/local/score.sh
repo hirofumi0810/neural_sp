@@ -165,9 +165,9 @@ for set in dev test; do
         cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
         cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
         # add space
-        paste -d " " <(cat ${recog_dir}/ref.trn.filt | cut -f 1 -d " " | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/ref.trn.filt | cut -f 2- -d " ") \
+        paste -d " " <(cat ${recog_dir}/ref.trn.filt | cut -f 1 -d "(" | LC_ALL=en_US.UTF-8 sed -e "s/ //g" | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/ref.trn.filt | sed -e 's/.*\((.*)\)/\1/g') \
             > ${recog_dir}/ref.trn.filt.char
-        paste -d " " <(cat ${recog_dir}/hyp.trn.filt | cut -f 1 -d " " | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/hyp.trn.filt | cut -f 2- -d " ") \
+        paste -d " " <(cat ${recog_dir}/hyp.trn.filt | cut -f 1 -d "(" | LC_ALL=en_US.UTF-8 sed -e "s/ //g" | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/hyp.trn.filt | sed -e 's/.*\((.*)\)/\1/g') \
             > ${recog_dir}/hyp.trn.filt.char
 
         echo ${set}

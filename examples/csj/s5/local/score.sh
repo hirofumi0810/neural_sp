@@ -191,9 +191,9 @@ for set in eval1 eval2 eval3; do
         # CER
         echo 'CER' >> ${recog_dir}/RESULTS
         # add space
-        paste -d " " <(cat ${recog_dir}/ref.trn.filt | cut -f 1 -d " " | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/ref.trn.filt | cut -f 2- -d " ") \
+        paste -d " " <(cat ${recog_dir}/ref.trn.filt | cut -f 1 -d "(" | LC_ALL=en_US.UTF-8 sed -e "s/ //g" | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/ref.trn.filt | sed -e 's/.*\((.*)\)/\1/g') \
             > ${recog_dir}/ref.trn.filt.char
-        paste -d " " <(cat ${recog_dir}/hyp.trn.filt | cut -f 1 -d " " | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/hyp.trn.filt | cut -f 2- -d " ") \
+        paste -d " " <(cat ${recog_dir}/hyp.trn.filt | cut -f 1 -d "(" | LC_ALL=en_US.UTF-8 sed -e "s/ //g" | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/hyp.trn.filt | sed -e 's/.*\((.*)\)/\1/g') \
             > ${recog_dir}/hyp.trn.filt.char
         sclite -r ${recog_dir}/ref.trn.filt.char trn -h ${recog_dir}/hyp.trn.filt.char trn -i rm -o all stdout > ${recog_dir}/result.char.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.char.txt >> ${recog_dir}/RESULTS
