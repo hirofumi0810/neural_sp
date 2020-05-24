@@ -12,7 +12,6 @@ stop_stage=5
 gpu=
 benchmark=true
 speed_perturb=false
-specaug=false
 stdout=false
 
 ### vocabulary
@@ -60,7 +59,7 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
+if [ ${speed_perturb} = true ]; then
   if [ -z ${conf2} ]; then
     echo "Error: Set --conf2." 1>&2
     exit 1
@@ -198,8 +197,9 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     cut -f 2- -d " " ${data}/${train_set}/text | tr " " "\n" | sort | uniq | grep "\[" > ${nlsyms}
     cat ${nlsyms}
 
-    make_vocab.sh --unit ${unit} --nlsyms ${nlsyms} --wp_type ${wp_type} --wp_model ${wp_model} --character_coverage 1.0 --speed_perturb ${speed_perturb} \
-        ${data} ${dict} ${vocab} ${data}/${train_set}/text
+    make_vocab.sh --unit ${unit} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} \
+        --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
+        ${data} ${dict} ${data}/${train_set}/text || exit 1;
 
     # normalize eval2000
     # 1) convert upper to lower
@@ -255,8 +255,9 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     echo "                      Dataset preparation (stage:2, sub1)                  "
     echo ============================================================================
 
-    make_vocab.sh --unit ${unit_sub1} --nlsyms ${nlsyms} --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} --character_coverage 0.9995 --speed_perturb ${speed_perturb} \
-        ${data} ${dict_sub1} ${vocab_sub1} ${data}/${train_set}/text
+    make_vocab.sh --unit ${unit_sub1} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} \
+        --vocab ${vocab_sub1} --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} \
+        ${data} ${dict_sub1} ${data}/${train_set}/text || exit 1;
 
     echo "Making dataset tsv files for ASR ..."
     make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --wp_model ${wp_model_sub1} \
@@ -289,8 +290,9 @@ if [ ${stage} -le 2 ] && [ ! -e ${data}/.done_stage_2_${datasize}_${unit_sub2}${
         text2dict.py ${data}/${train_set}/text.phone --unit ${unit_sub2} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub2} || exit 1;
     else
-        make_vocab.sh --unit ${unit_sub2} --nlsyms ${nlsyms} --wp_type ${wp_type_sub2} --wp_model ${wp_model_sub2} --character_coverage 0.9995 --speed_perturb ${speed_perturb} \
-            ${data} ${dict_sub2} ${vocab_sub2} ${data}/${train_set}/text
+        make_vocab.sh --unit ${unit_sub2} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} \
+            --vocab ${vocab_sub2} --wp_type ${wp_type_sub2} --wp_model ${wp_model_sub2} \
+            ${data} ${dict_sub2} ${data}/${train_set}/text || exit 1;
     fi
 
     echo "Making dataset tsv files for ASR ..."
