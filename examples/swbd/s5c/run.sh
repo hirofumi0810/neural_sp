@@ -200,7 +200,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
         offset=$(cat ${dict} | wc -l)
         map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt > ${data}/${train_set}/text.phone
         map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt > ${data}/${dev_set}/text.phone
-        text2dict.py ${data}/${train_set}/text.phone --unit ${unit} --speed_perturb ${speed_perturb} | \
+        text2dict.py ${data}/${train_set}/text.phone --unit ${unit} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
         echo "vocab size:" $(cat ${dict} | wc -l)
         # NOTE: nlsyms is not used
