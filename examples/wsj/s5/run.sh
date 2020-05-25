@@ -12,7 +12,6 @@ stop_stage=5
 gpu=
 benchmark=true
 speed_perturb=false
-specaug=false
 stdout=false
 
 ### vocabulary
@@ -69,7 +68,7 @@ set -e
 set -u
 set -o pipefail
 
-if [ ${speed_perturb} = true ] || [ ${specaug} = true ]; then
+if [ ${speed_perturb} = true ]; then
   if [ -z ${conf2} ]; then
     echo "Error: Set --conf2." 1>&2
     exit 1
@@ -182,29 +181,14 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     fi
     cat ${nlsyms}
 
-    echo "Making a dictionary..."
-    echo "<unk> 1" > ${dict}  # <unk> must be 1, 0 will be used for "blank" in CTC
-    echo "<eos> 2" >> ${dict}  # <sos> and <eos> share the same index
-    echo "<pad> 3" >> ${dict}
-    [ ${unit} = char ] && echo "<space> 4" >> ${dict}
-    offset=$(cat ${dict} | wc -l)
     if [ ${unit} = wp ]; then
-        if [ ${speed_perturb} = true ]; then
-            grep sp1.0 ${data}/${train_set}/text > ${data}/${train_set}/text.org
-            cp ${data}/${dev_set}/text ${data}/${dev_set}/text.org
-            cut -f 2- -d " " ${data}/${train_set}/text.org > ${data}/dict/input.txt
-        else
-            cut -f 2- -d " " ${data}/${train_set}/text > ${data}/dict/input.txt
-        fi
-        spm_train --user_defined_symbols=$(cat ${nlsyms} | tr "\n" ",") --input=${data}/dict/input.txt --vocab_size=${vocab} \
-            --model_type=${wp_type} --model_prefix=${wp_model} --input_sentence_size=100000000 --character_coverage=1.0
-        spm_encode --model=${wp_model}.model --output_format=piece < ${data}/dict/input.txt | tr ' ' '\n' | \
-            sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
+        make_vocab.sh --unit ${unit} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} \
+            --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
+            ${data} ${dict} ${data}/${train_set}/text || exit 1;
     else
-        text2dict.py ${data}/${train_set}/text --unit ${unit} --vocab ${vocab} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
+        make_vocab.sh --unit ${unit} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} \
+            ${data} ${dict} ${data}/${train_set}/text || exit 1;
     fi
-    echo "vocab size:" $(cat ${dict} | wc -l)
 
     # Compute OOV rate
     if [ ${unit} = word ]; then
