@@ -37,7 +37,7 @@ class MonotonicEnergy(nn.Module):
             qdim (int): dimension of quary
             adim (int): dimension of attention space
             atype (str): type of attention mechanism
-            n_heads (int): number of heads
+            n_heads (int): number of monotonic attention heads
             init_r (int): initial value for offset r
             conv1d (bool): use 1D causal convolution for energy calculation
             conv_kernel_size (int): kernel size for 1D convolution
@@ -112,7 +112,7 @@ class MonotonicEnergy(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
         Return:
-            e (FloatTensor): `[B, H, qlen, klen]`
+            e (FloatTensor): `[B, H_ma, qlen, klen]`
 
         """
         bs, klen, kdim = key.size()
@@ -169,7 +169,7 @@ class ChunkEnergy(nn.Module):
             qdim (int): dimension of quary
             adim (int): dimension of attention space
             atype (str): type of attention mechanism
-            n_heads (int): number of heads
+            n_heads (int): number of chunkwise attention heads
             bias (bool): use bias term in linear layers
             param_init (str): parameter initialization method
 
@@ -221,7 +221,7 @@ class ChunkEnergy(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
         Return:
-            e (FloatTensor): `[B, H, qlen, klen]`
+            e (FloatTensor): `[B, H_ca, qlen, klen]`
 
         """
         bs, klen, kdim = key.size()
@@ -643,7 +643,7 @@ def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads,
         u (FloatTensor): `[B, H_ca, qlen, klen]`
         mask (ByteTensor): `[B, qlen, klen]`
         chunk_size (int): window size for chunkwise attention
-        n_heads (int): number of heads for chunkwise attention
+        n_heads (int): number of chunkwise attention heads
         sharpening_factor (float):
     Return
         beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
@@ -655,7 +655,7 @@ def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads,
     if n_heads > 1:
         alpha = alpha.repeat([1, 1, n_heads, 1, 1])
     # Shift logits to avoid overflow
-    u -= torch.max(u, dim=-1, keepdim=True)[0]  # `[B, H_ma, H_ca, qlen, klen]`
+    u -= torch.max(u, dim=-1, keepdim=True)[0]  # `[B, H_ca, qlen, klen]`
     # Limit the range for numerical stability
     softmax_exp = torch.clamp(torch.exp(u), min=1e-5)
     # Compute chunkwise softmax denominators
