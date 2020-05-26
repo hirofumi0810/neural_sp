@@ -655,8 +655,8 @@ def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
         mask (ByteTensor): `[B, qlen, klen]`
         chunk_size (int): window size for chunkwise attention
         n_heads_chunk (int): number of chunkwise attention heads
-        sharpening_factor (float):
-        share_chunkwise_attention (bool):
+        sharpening_factor (float): sharping factor for beta calculation
+        share_chunkwise_attention (int): share CA heads among MA heads
     Returns:
         beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
 
@@ -703,8 +703,8 @@ def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
         mask (ByteTensor): `[B, qlen, klen]`
         chunk_size (int): window size for chunkwise attention
         n_heads_chunk (int): number of chunkwise attention heads
-        sharpening_factor (float):
-        share_chunkwise_attention (bool):
+        sharpening_factor (float): sharping factor for beta calculation
+        share_chunkwise_attention (int): share CA heads among MA heads
     Returns:
         beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
 
