@@ -704,6 +704,7 @@ def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
     u = u.unsqueeze(1)  # `[B, 1, H_ca, qlen, klen]`
     if n_heads_chunk > 1:
         alpha = alpha.repeat([1, 1, n_heads_chunk, 1, 1])
+        u = u.repeat([1, n_heads_mono, 1, 1, 1])
 
     mask = alpha.clone().byte()  # `[B, H_ma, H_ca, qlen, klen]`
     for b in range(bs):

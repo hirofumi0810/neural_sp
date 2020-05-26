@@ -48,49 +48,6 @@ def make_args(**kwargs):
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot'}),
         ({'n_heads_mono': 1, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot'}),
         ({'n_heads_mono': 4, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot'}),
-    ]
-)
-def test_forward_hard(args):
-    args = make_args(**args)
-
-    batch_size = 4
-    klen = 40
-    qlen = 5
-    key = torch.FloatTensor(batch_size, klen, args['kdim'])
-    value = torch.FloatTensor(batch_size, klen, args['kdim'])
-    query = torch.FloatTensor(batch_size, qlen, args['qdim'])
-
-    mocha = importlib.import_module('neural_sp.models.modules.mocha')
-    attention = mocha.MoChA(**args)
-    attention.eval()
-    alpha = None
-    for i in range(qlen):
-        out = attention(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
-                        mode='hard', cache=False, eps_wait=-1,
-                        efficient_decoding=False)
-        assert len(out) == 3
-        cv, alpha, beta = out
-        assert cv.size() == (batch_size, 1, value.size(2))
-        assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
-        if args['chunk_size'] > 1:
-            assert beta is not None
-            assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
-
-
-@pytest.mark.parametrize(
-    "args", [
-        # hard monotonic attention
-        ({'n_heads_mono': 1, 'chunk_size': 1}),
-        ({'n_heads_mono': 1, 'chunk_size': 1, 'conv1d': True}),
-        ({'n_heads_mono': 1, 'chunk_size': 1, 'no_denominator': True}),
-        ({'n_heads_mono': 1, 'chunk_size': 1, 'bias': False}),
-        # mocha
-        ({'n_heads_mono': 1, 'chunk_size': 4}),
-        # MMA
-        ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 1, 'atype': 'scaled_dot'}),
-        ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot'}),
-        ({'n_heads_mono': 1, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot'}),
-        ({'n_heads_mono': 4, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot'}),
         # HeadDrop
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 1, 'atype': 'scaled_dot',
           'dropout_head': 0.5}),
@@ -120,6 +77,49 @@ def test_forward_soft_parallel(args):
     for i in range(qlen):
         out = attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
                         mode='parallel', cache=True)
+        assert len(out) == 3
+        cv, alpha, beta = out
+        assert cv.size() == (batch_size, 1, value.size(2))
+        assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
+        if args['chunk_size'] > 1:
+            assert beta is not None
+            assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
+
+
+@pytest.mark.parametrize(
+    "args", [
+        # hard monotonic attention
+        ({'n_heads_mono': 1, 'chunk_size': 1}),
+        ({'n_heads_mono': 1, 'chunk_size': 1, 'conv1d': True}),
+        ({'n_heads_mono': 1, 'chunk_size': 1, 'no_denominator': True}),
+        ({'n_heads_mono': 1, 'chunk_size': 1, 'bias': False}),
+        # mocha
+        ({'n_heads_mono': 1, 'chunk_size': 4}),
+        # MMA
+        ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 1, 'atype': 'scaled_dot'}),
+        # ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot'}),
+        ({'n_heads_mono': 1, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot'}),
+        ({'n_heads_mono': 4, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot'}),
+    ]
+)
+def test_forward_hard(args):
+    args = make_args(**args)
+
+    batch_size = 4
+    klen = 40
+    qlen = 5
+    key = torch.FloatTensor(batch_size, klen, args['kdim'])
+    value = torch.FloatTensor(batch_size, klen, args['kdim'])
+    query = torch.FloatTensor(batch_size, qlen, args['qdim'])
+
+    mocha = importlib.import_module('neural_sp.models.modules.mocha')
+    attention = mocha.MoChA(**args)
+    attention.eval()
+    alpha = None
+    for i in range(qlen):
+        out = attention(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
+                        mode='hard', cache=False, eps_wait=-1,
+                        efficient_decoding=False)
         assert len(out) == 3
         cv, alpha, beta = out
         assert cv.size() == (batch_size, 1, value.size(2))
