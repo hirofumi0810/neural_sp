@@ -28,7 +28,8 @@ def make_args(**kwargs):
         bias=True,
         param_init='',
         decot=False,
-        lookahead=2
+        lookahead=2,
+        share_chunkwise_attention=True
     )
     args.update(kwargs)
     return args
@@ -48,6 +49,10 @@ def make_args(**kwargs):
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot'}),
         ({'n_heads_mono': 1, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot'}),
         ({'n_heads_mono': 4, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot'}),
+        ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot',
+          'share_chunkwise_attention': False}),
+        ({'n_heads_mono': 4, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot',
+          'share_chunkwise_attention': False}),
         # HeadDrop
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 1, 'atype': 'scaled_dot',
           'dropout_head': 0.5}),
@@ -97,9 +102,13 @@ def test_forward_soft_parallel(args):
         ({'n_heads_mono': 1, 'chunk_size': 4}),
         # MMA
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 1, 'atype': 'scaled_dot'}),
-        # ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot'}),
+        ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot'}),
         ({'n_heads_mono': 1, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot'}),
         ({'n_heads_mono': 4, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot'}),
+        ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot',
+          'share_chunkwise_attention': False}),
+        ({'n_heads_mono': 4, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot',
+          'share_chunkwise_attention': False}),
     ]
 )
 def test_forward_hard(args):

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 class MonotonicEnergy(nn.Module):
     def __init__(self, kdim, qdim, adim, atype, n_heads, init_r,
-                 conv1d=False, conv_kernel_size=5, bias=True, param_init=''):
+                 bias=True, param_init='', conv1d=False, conv_kernel_size=5):
         """Energy function for the monotonic attenion.
 
         Args:
@@ -39,10 +39,10 @@ class MonotonicEnergy(nn.Module):
             atype (str): type of attention mechanism
             n_heads (int): number of monotonic attention heads
             init_r (int): initial value for offset r
-            conv1d (bool): use 1D causal convolution for energy calculation
-            conv_kernel_size (int): kernel size for 1D convolution
             bias (bool): use bias term in linear layers
             param_init (str): parameter initialization method
+            conv1d (bool): use 1D causal convolution for energy calculation
+            conv_kernel_size (int): kernel size for 1D convolution
 
         """
         super().__init__()
@@ -268,7 +268,7 @@ class MoChA(nn.Module):
                  conv1d=False, init_r=-4, eps=1e-6, noise_std=1.0,
                  no_denominator=False, sharpening_factor=1.0,
                  dropout=0., dropout_head=0., bias=True, param_init='',
-                 decot=False, lookahead=2):
+                 decot=False, lookahead=2, share_chunkwise_attention=True):
         """Monotonic chunk-wise attention.
 
             "Monotonic Chunkwise Attention" (ICLR 2018)
@@ -303,6 +303,7 @@ class MoChA(nn.Module):
             param_init (str): parameter initialization method
             decot (bool): delay constrainted training (DeCoT)
             lookahead (int): lookahead frames for DeCoT
+            share_chunkwise_attention (int): share CA heads among MA heads
 
         """
         super(MoChA, self).__init__()
@@ -320,16 +321,19 @@ class MoChA(nn.Module):
         self.noise_std = noise_std
         self.no_denom = no_denominator
         self.sharpening_factor = sharpening_factor
+        self.share_chunkwise_attention = share_chunkwise_attention
+        if not share_chunkwise_attention:
+            assert n_heads_mono > 1, 'set n_heads_mono > 1 (current: %d).' % n_heads_mono
 
         self.decot = decot
         self.lookahead = lookahead
 
         self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype,
-                                                n_heads_mono, init_r, conv1d, bias=bias,
-                                                param_init=param_init)
+                                                n_heads_mono, init_r,
+                                                bias, param_init, conv1d=conv1d)
         self.chunk_energy = ChunkEnergy(kdim, qdim, adim, atype,
-                                        n_heads_chunk, bias,
-                                        param_init) if chunk_size > 1 or self.milk else None
+                                        n_heads_chunk if share_chunkwise_attention else n_heads_mono * n_heads_chunk,
+                                        bias, param_init) if chunk_size > 1 or self.milk else None
         if n_heads_mono * n_heads_chunk > 1:
             self.w_value = nn.Linear(kdim, adim, bias=bias)
             self.w_out = nn.Linear(adim, kdim, bias=bias)
@@ -514,7 +518,7 @@ class MoChA(nn.Module):
 
             e_chunk = self.chunk_energy(key, query, mask, cache=cache,
                                         boundary_leftmost=max(0, self.bd_offset + bd_leftmost - self.w + 1),
-                                        boundary_rightmost=self.bd_offset + bd_rightmost + 1)  # `[B, H_ca, qlen, ken]`
+                                        boundary_rightmost=self.bd_offset + bd_rightmost + 1)  # `[B, (H_ma*)H_ca, qlen, ken]`
 
             # padding
             additional = e_chunk.size(3) - alpha_masked.size(3)
@@ -527,11 +531,13 @@ class MoChA(nn.Module):
             # if efficient_decoding and mode == 'hard':
             if mode == 'hard':
                 beta = hard_chunkwise_attention(alpha_masked, e_chunk, mask, self.w,
-                                                self.n_heads_chunk, self.sharpening_factor)
+                                                self.n_heads_chunk, self.sharpening_factor,
+                                                self.share_chunkwise_attention)
 
             else:
                 beta = efficient_chunkwise_attention(alpha_masked, e_chunk, mask, self.w,
-                                                     self.n_heads_chunk, self.sharpening_factor)
+                                                     self.n_heads_chunk, self.sharpening_factor,
+                                                     self.share_chunkwise_attention)
             beta = self.dropout_attn(beta)  # `[B, H_ma * H_ca, qlen, klen]`
 
             if efficient_decoding and mode == 'hard':
@@ -640,27 +646,30 @@ def moving_sum(x, back, forward):
 
 
 def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
-                                  sharpening_factor):
+                                  sharpening_factor, share_chunkwise_attention):
     """Compute chunkwise attention efficiently by clipping logits at training time.
 
     Args:
         alpha (FloatTensor): `[B, H_ma, qlen, klen]`
-        u (FloatTensor): `[B, H_ca, qlen, klen]`
+        u (FloatTensor): `[B, (H_ma*)H_ca, qlen, klen]`
         mask (ByteTensor): `[B, qlen, klen]`
         chunk_size (int): window size for chunkwise attention
         n_heads_chunk (int): number of chunkwise attention heads
         sharpening_factor (float):
+        share_chunkwise_attention (bool):
     Returns:
         beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
 
     """
-    bs, _, qlen, klen = alpha.size()
-    alpha = alpha.unsqueeze(2)
-    u = u.unsqueeze(1)
+    bs, n_heads_mono, qlen, klen = alpha.size()
+    alpha = alpha.unsqueeze(2)  # `[B, H_ma, 1, qlen, klen]`
+    u = u.unsqueeze(1)  # `[B, 1, (H_ma*)H_ca, qlen, klen]`
     if n_heads_chunk > 1:
         alpha = alpha.repeat([1, 1, n_heads_chunk, 1, 1])
+    if n_heads_mono > 1 and not share_chunkwise_attention:
+        u = u.view(bs, n_heads_mono, n_heads_chunk, qlen, klen)
     # Shift logits to avoid overflow
-    u -= torch.max(u, dim=-1, keepdim=True)[0]  # `[B, H_ca, qlen, klen]`
+    u -= torch.max(u, dim=-1, keepdim=True)[0]
     # Limit the range for numerical stability
     softmax_exp = torch.clamp(torch.exp(u), min=1e-5)
     # Compute chunkwise softmax denominators
@@ -685,26 +694,31 @@ def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
 
 
 def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
-                             sharpening_factor):
+                             sharpening_factor, share_chunkwise_attention):
     """Compute chunkwise attention over hard attention at test time.
 
     Args:
         alpha (FloatTensor): `[B, H_ma, qlen, klen]`
-        u (FloatTensor): `[B, H_ca, qlen, klen]`
+        u (FloatTensor): `[B, (H_ma*)H_ca, qlen, klen]`
         mask (ByteTensor): `[B, qlen, klen]`
         chunk_size (int): window size for chunkwise attention
         n_heads_chunk (int): number of chunkwise attention heads
         sharpening_factor (float):
+        share_chunkwise_attention (bool):
     Returns:
         beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
 
     """
     bs, n_heads_mono, qlen, klen = alpha.size()
     alpha = alpha.unsqueeze(2)   # `[B, H_ma, 1, qlen, klen]`
-    u = u.unsqueeze(1)  # `[B, 1, H_ca, qlen, klen]`
+    u = u.unsqueeze(1)  # `[B, 1, (H_ma*)H_ca, qlen, klen]`
     if n_heads_chunk > 1:
         alpha = alpha.repeat([1, 1, n_heads_chunk, 1, 1])
-        u = u.repeat([1, n_heads_mono, 1, 1, 1])
+    if n_heads_mono > 1:
+        if share_chunkwise_attention:
+            u = u.repeat([1, n_heads_mono, 1, 1, 1])
+        else:
+            u = u.view(bs, n_heads_mono, n_heads_chunk, qlen, klen)
 
     mask = alpha.clone().byte()  # `[B, H_ma, H_ca, qlen, klen]`
     for b in range(bs):
