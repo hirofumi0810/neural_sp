@@ -377,8 +377,8 @@ class MoChA(nn.Module):
             eps_wait (int): acceptable delay for MMA
         Return:
             cv (FloatTensor): `[B, qlen, vdim]`
-            alpha (FloatTensor): `[B, H_mono, qlen, klen]`
-            beta (FloatTensor): `[B, H_mono * H_chunk, qlen, klen]`
+            alpha (FloatTensor): `[B, H_ma, qlen, klen]`
+            beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
 
         """
         bs, klen = key.size()[:2]
@@ -391,11 +391,11 @@ class MoChA(nn.Module):
 
         # Compute monotonic energy
         e_mono = self.monotonic_energy(key, query, mask, cache=cache,
-                                       boundary_leftmost=self.bd_offset)  # `[B, H_mono, qlen, klen]`
+                                       boundary_leftmost=self.bd_offset)  # `[B, H_ma, qlen, klen]`
         assert e_mono.size(3) + self.bd_offset == key.size(1)
 
         if mode == 'recursive':  # training
-            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_mono, qlen, klen]`
+            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_ma, qlen, klen]`
             alpha = []
             for i in range(qlen):
                 # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
@@ -408,28 +408,28 @@ class MoChA(nn.Module):
                 for j in range(klen):
                     q[:, :, i:i + 1, j + 1] = shifted_1mp_choose[:, :, i:i + 1, j].clone() * q[:, :, i:i + 1, j].clone() + \
                         aw_prev[:, :, :, j].clone()
-                aw_prev = p_choose[:, :, i:i + 1] * q[:, :, i:i + 1, 1:]  # `[B, H_mono, 1, klen]`
+                aw_prev = p_choose[:, :, i:i + 1] * q[:, :, i:i + 1, 1:]  # `[B, H_ma, 1, klen]`
                 alpha.append(aw_prev)
-            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
+            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_ma, qlen, klen]`
             alpha_masked = alpha.clone()
 
         elif mode == 'parallel':  # training
-            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_mono, qlen, klen]`
+            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_ma, qlen, klen]`
             # safe_cumprod computes cumprod in logspace with numeric checks
-            cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, H_mono, qlen, klen]`
+            cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, H_ma, qlen, klen]`
             # Compute recurrence relation solution
             alpha = []
             for i in range(qlen):
                 denom = 1 if self.no_denom else torch.clamp(cumprod_1mp_choose[:, :, i:i + 1], min=self.eps, max=1.0)
                 aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
-                    aw_prev / denom, dim=-1)  # `[B, H_mono, 1, klen]`
+                    aw_prev / denom, dim=-1)  # `[B, H_ma, 1, klen]`
                 # Mask the right part from the trigger point
                 if self.decot and trigger_point is not None:
                     for b in range(bs):
                         aw_prev[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
                 alpha.append(aw_prev)
 
-            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_mono, qlen, klen]`
+            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_ma, qlen, klen]`
             alpha_masked = alpha.clone()
 
             # mask out each head independently (HeadDrop)
@@ -454,26 +454,26 @@ class MoChA(nn.Module):
                 # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
                 # Remove any probabilities before the index chosen at the last time step
                 p_choose_i *= torch.cumsum(
-                    aw_prev[:, :, 0:1, -e_mono.size(3):], dim=-1)  # `[B, H_mono, 1 (qlen), klen]`
+                    aw_prev[:, :, 0:1, -e_mono.size(3):], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
                 # Now, use exclusive cumprod to remove probabilities after the first
                 # chosen index, like so:
                 # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
                 # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
                 # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
                 # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
-                alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_mono, 1 (qlen), klen]`
+                alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_ma, 1 (qlen), klen]`
             else:
                 p_choose_i = (torch.sigmoid(e_mono) >= 0.5).float()[:, :, 0:1]
                 # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
                 # Remove any probabilities before the index chosen at the last time step
-                p_choose_i *= torch.cumsum(aw_prev[:, :, 0:1], dim=-1)  # `[B, H_mono, 1 (qlen), klen]`
+                p_choose_i *= torch.cumsum(aw_prev[:, :, 0:1], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
                 # Now, use exclusive cumprod to remove probabilities after the first
                 # chosen index, like so:
                 # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
                 # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
                 # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
                 # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
-                alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_mono, 1 (qlen), klen]`
+                alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_ma, 1 (qlen), klen]`
 
             if eps_wait > 0:
                 for b in range(bs):
@@ -514,7 +514,7 @@ class MoChA(nn.Module):
 
             e_chunk = self.chunk_energy(key, query, mask, cache=cache,
                                         boundary_leftmost=max(0, self.bd_offset + bd_leftmost - self.w + 1),
-                                        boundary_rightmost=self.bd_offset + bd_rightmost + 1)  # `[B, H_chunk, qlen, ken]`
+                                        boundary_rightmost=self.bd_offset + bd_rightmost + 1)  # `[B, H_ca, qlen, ken]`
 
             # padding
             additional = e_chunk.size(3) - alpha_masked.size(3)
@@ -526,7 +526,7 @@ class MoChA(nn.Module):
 
             beta = efficient_chunkwise_attention(
                 alpha_masked, e_chunk, mask, self.w,
-                self.n_heads_chunk, self.sharpening_factor)  # `[B, H_mono * H_chunk, qlen, klen]`
+                self.n_heads_chunk, self.sharpening_factor)  # `[B, H_ma * H_ca, qlen, klen]`
             beta = self.dropout_attn(beta)
 
             if efficient_decoding and mode == 'hard':
@@ -540,11 +540,11 @@ class MoChA(nn.Module):
         # Compute context vector
         if self.n_heads_mono * self.n_heads_chunk > 1:
             value = self.w_value(value).view(bs, -1, self.n_heads_mono * self.n_heads_chunk, self.d_k)
-            value = value.transpose(2, 1).contiguous()  # `[B, H_mono * H_chunk, klen, d_k]`
+            value = value.transpose(2, 1).contiguous()  # `[B, H_ma * H_ca, klen, d_k]`
             if self.w == 1:
-                cv = torch.matmul(alpha, value)  # `[B, H_mono, qlen, d_k]`
+                cv = torch.matmul(alpha, value)  # `[B, H_ma, qlen, d_k]`
             else:
-                cv = torch.matmul(beta, value)  # `[B, H_mono * H_chunk, qlen, d_k]`
+                cv = torch.matmul(beta, value)  # `[B, H_ma * H_ca, qlen, d_k]`
             cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads_mono * self.n_heads_chunk * self.d_k)
             cv = self.w_out(cv)  # `[B, qlen, adim]`
         else:
@@ -613,18 +613,18 @@ def moving_sum(x, back, forward):
     """Compute the moving sum of x over a chunk_size with the provided bounds.
 
     Args:
-        x (FloatTensor): `[B, H_mono, H_chunk, qlen, klen]`
+        x (FloatTensor): `[B, H_ma, H_ca, qlen, klen]`
         back (int):
         forward (int):
 
     Returns:
-        x_sum (FloatTensor): `[B, H_mono, H_chunk, qlen, klen]`
+        x_sum (FloatTensor): `[B, H_ma, H_ca, qlen, klen]`
 
     """
     bs, n_heads_mono, n_heads_chunk, qlen, klen = x.size()
     x = x.view(-1, klen)
     # Moving sum is computed as a carefully-padded 1D convolution with ones
-    x_padded = F.pad(x, pad=[back, forward])  # `[B * H_mono * H_chunk * qlen, back + klen + forward]`
+    x_padded = F.pad(x, pad=[back, forward])  # `[B * H_ma * H_ca * qlen, back + klen + forward]`
     # Add a "channel" dimension
     x_padded = x_padded.unsqueeze(1)
     # Construct filters
@@ -639,14 +639,14 @@ def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads,
     """Compute chunkwise attention distribution efficiently by clipping logits.
 
     Args:
-        alpha (FloatTensor): `[B, H_mono, qlen, klen]`
-        u (FloatTensor): `[B, H_chunk, qlen, klen]`
+        alpha (FloatTensor): `[B, H_ma, qlen, klen]`
+        u (FloatTensor): `[B, H_ca, qlen, klen]`
         mask (ByteTensor): `[B, qlen, klen]`
         chunk_size (int): window size for chunkwise attention
         n_heads (int): number of heads for chunkwise attention
         sharpening_factor (float):
     Return
-        beta (FloatTensor): `[B, H_mono * H_chunk, qlen, klen]`
+        beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
 
     """
     bs, _, qlen, klen = alpha.size()
@@ -655,7 +655,7 @@ def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads,
     if n_heads > 1:
         alpha = alpha.repeat([1, 1, n_heads, 1, 1])
     # Shift logits to avoid overflow
-    u -= torch.max(u, dim=-1, keepdim=True)[0]  # `[B, H_mono, H_chunk, qlen, klen]`
+    u -= torch.max(u, dim=-1, keepdim=True)[0]  # `[B, H_ma, H_ca, qlen, klen]`
     # Limit the range for numerical stability
     softmax_exp = torch.clamp(torch.exp(u), min=1e-5)
     # Compute chunkwise softmax denominators
