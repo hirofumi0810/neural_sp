@@ -111,7 +111,7 @@ class MonotonicEnergy(nn.Module):
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
-        Return:
+        Returns:
             e (FloatTensor): `[B, H_ma, qlen, klen]`
 
         """
@@ -220,7 +220,7 @@ class ChunkEnergy(nn.Module):
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
-        Return:
+        Returns:
             e (FloatTensor): `[B, H_ca, qlen, klen]`
 
         """
@@ -375,7 +375,7 @@ class MoChA(nn.Module):
             cache (bool): cache key and mask
             trigger_point (IntTensor): `[B]`
             eps_wait (int): acceptable delay for MMA
-        Return:
+        Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             alpha (FloatTensor): `[B, H_ma, qlen, klen]`
             beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
@@ -641,7 +641,7 @@ def moving_sum(x, back, forward):
 
 def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
                                   sharpening_factor):
-    """Compute chunkwise attention distribution efficiently by clipping logits at training time.
+    """Compute chunkwise attention efficiently by clipping logits at training time.
 
     Args:
         alpha (FloatTensor): `[B, H_ma, qlen, klen]`
@@ -650,7 +650,7 @@ def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
         chunk_size (int): window size for chunkwise attention
         n_heads_chunk (int): number of chunkwise attention heads
         sharpening_factor (float):
-    Return
+    Returns:
         beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
 
     """
@@ -686,7 +686,7 @@ def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
 
 def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
                              sharpening_factor):
-    """Compute chunkwise attention distribution over hard attention at test time.
+    """Compute chunkwise attention over hard attention at test time.
 
     Args:
         alpha (FloatTensor): `[B, H_ma, qlen, klen]`
@@ -695,7 +695,7 @@ def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
         chunk_size (int): window size for chunkwise attention
         n_heads_chunk (int): number of chunkwise attention heads
         sharpening_factor (float):
-    Return
+    Returns:
         beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
 
     """
