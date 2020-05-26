@@ -524,10 +524,15 @@ class MoChA(nn.Module):
                     alpha_masked = torch.cat([alpha_masked.new_zeros(bs, alpha_masked.size(1), 1, additional),
                                               alpha_masked], dim=3)
 
-            beta = efficient_chunkwise_attention(
-                alpha_masked, e_chunk, mask, self.w,
-                self.n_heads_chunk, self.sharpening_factor)  # `[B, H_ma * H_ca, qlen, klen]`
-            beta = self.dropout_attn(beta)
+            # if efficient_decoding and mode == 'hard':
+            if mode == 'hard':
+                beta = hard_chunkwise_attention(alpha_masked, e_chunk, mask, self.w,
+                                                self.n_heads_chunk, self.sharpening_factor)
+
+            else:
+                beta = efficient_chunkwise_attention(alpha_masked, e_chunk, mask, self.w,
+                                                     self.n_heads_chunk, self.sharpening_factor)
+            beta = self.dropout_attn(beta)  # `[B, H_ma * H_ca, qlen, klen]`
 
             if efficient_decoding and mode == 'hard':
                 value = value[:, max(0, self.bd_offset + bd_leftmost - self.w + 1):self.bd_offset + bd_rightmost + 1]
@@ -634,16 +639,16 @@ def moving_sum(x, back, forward):
     return x_sum
 
 
-def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads,
+def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
                                   sharpening_factor):
-    """Compute chunkwise attention distribution efficiently by clipping logits.
+    """Compute chunkwise attention distribution efficiently by clipping logits at training time.
 
     Args:
         alpha (FloatTensor): `[B, H_ma, qlen, klen]`
         u (FloatTensor): `[B, H_ca, qlen, klen]`
         mask (ByteTensor): `[B, qlen, klen]`
         chunk_size (int): window size for chunkwise attention
-        n_heads (int): number of chunkwise attention heads
+        n_heads_chunk (int): number of chunkwise attention heads
         sharpening_factor (float):
     Return
         beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
@@ -652,8 +657,8 @@ def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads,
     bs, _, qlen, klen = alpha.size()
     alpha = alpha.unsqueeze(2)
     u = u.unsqueeze(1)
-    if n_heads > 1:
-        alpha = alpha.repeat([1, 1, n_heads, 1, 1])
+    if n_heads_chunk > 1:
+        alpha = alpha.repeat([1, 1, n_heads_chunk, 1, 1])
     # Shift logits to avoid overflow
     u -= torch.max(u, dim=-1, keepdim=True)[0]  # `[B, H_ca, qlen, klen]`
     # Limit the range for numerical stability
@@ -676,4 +681,41 @@ def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads,
         # Compute \beta_{i, :}. emit_probs are \alpha_{i, :}.
         beta = softmax_exp * moving_sum(alpha * sharpening_factor / softmax_denominators,
                                         back=0, forward=chunk_size - 1)
+    return beta.view(bs, -1, qlen, klen)
+
+
+def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
+                             sharpening_factor):
+    """Compute chunkwise attention distribution over hard attention at test time.
+
+    Args:
+        alpha (FloatTensor): `[B, H_ma, qlen, klen]`
+        u (FloatTensor): `[B, H_ca, qlen, klen]`
+        mask (ByteTensor): `[B, qlen, klen]`
+        chunk_size (int): window size for chunkwise attention
+        n_heads_chunk (int): number of chunkwise attention heads
+        sharpening_factor (float):
+    Return
+        beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
+
+    """
+    bs, n_heads_mono, qlen, klen = alpha.size()
+    alpha = alpha.unsqueeze(2)   # `[B, H_ma, 1, qlen, klen]`
+    u = u.unsqueeze(1)  # `[B, 1, H_ca, qlen, klen]`
+    if n_heads_chunk > 1:
+        alpha = alpha.repeat([1, 1, n_heads_chunk, 1, 1])
+
+    mask = alpha.clone().byte()  # `[B, H_ma, H_ca, qlen, klen]`
+    for b in range(bs):
+        for h in range(n_heads_mono):
+            if alpha[b, h, 0].sum() > 0:
+                boundary = alpha[b, h, 0, 0].nonzero()[:, -1].min().item()
+                if chunk_size == -1:
+                    # infinite lookback attention
+                    mask[b, h, :, 0, 0:boundary + 1] = 1
+                else:
+                    mask[b, h, :, 0, boundary - chunk_size + 1:boundary + 1] = 1
+
+    u = u.masked_fill(mask == 0, NEG_INF)
+    beta = torch.softmax(u, dim=-1)
     return beta.view(bs, -1, qlen, klen)
