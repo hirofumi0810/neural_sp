@@ -34,7 +34,7 @@ class TransformerEncoderBlock(nn.Module):
         n_heads (int): number of heads for multi-head attention
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
-        dropout_layer (float): LayerDrop probabilities
+        dropout_layer (float): LayerDrop probability
         layer_norm_eps (float): epsilon parameter for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
@@ -119,7 +119,7 @@ class TransformerDecoderBlock(nn.Module):
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
-            dropout_layer (float): LayerDrop probabilities
+            dropout_layer (float): LayerDrop probability
             dropout_head (float): HeadDrop probability
             layer_norm_eps (float): epsilon parameter for layer normalization
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
@@ -316,7 +316,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
-            dropout_layer (float): LayerDrop probabilities
+            dropout_layer (float): LayerDrop probability
             layer_norm_eps (float): epsilon parameter for layer normalization
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
             param_init (str): parameter initialization method
