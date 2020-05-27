@@ -37,7 +37,7 @@ class ConvEncoder(EncoderBase):
         layer_norm (bool): apply layer normalization
         residual (bool): add residual connections
         bottleneck_dim (int): dimension of the bridge layer after the last layer
-        param_init (float):
+        param_init (float): model initialization parameter
         layer_norm_eps (float):
 
     """
@@ -63,21 +63,21 @@ class ConvEncoder(EncoderBase):
         self.layers = nn.ModuleList()
         in_ch = in_channel
         in_freq = self.input_freq
-        for l in range(len(channels)):
+        for lth in range(len(channels)):
             block = Conv2LBlock(input_dim=in_freq,
                                 in_channel=in_ch,
-                                out_channel=channels[l],
-                                kernel_size=kernel_sizes[l],
-                                stride=strides[l],
-                                pooling=poolings[l],
+                                out_channel=channels[lth],
+                                kernel_size=kernel_sizes[lth],  # (T,F)
+                                stride=strides[lth],  # (T,F)
+                                pooling=poolings[lth],  # (T,F)
                                 dropout=dropout,
                                 batch_norm=batch_norm,
                                 layer_norm=layer_norm,
                                 layer_norm_eps=layer_norm_eps,
                                 residual=residual)
             self.layers += [block]
-            in_freq = block.input_dim
-            in_ch = channels[l]
+            in_freq = block.output_dim
+            in_ch = channels[lth]
 
         self._odim = int(in_ch * in_freq)
 
@@ -141,9 +141,9 @@ class Conv1LBlock(EncoderBase):
                               kernel_size=tuple(kernel_size),
                               stride=tuple(stride),
                               padding=(1, 1))
-        input_dim = update_lens([input_dim], self.conv, dim=1)[0]
+        self._odim = update_lens([input_dim], self.conv, dim=1)[0]
         self.batch_norm = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm = LayerNorm2D(out_channel * input_dim.item(),
+        self.layer_norm = LayerNorm2D(out_channel * self._odim.item(),
                                       eps=layer_norm_eps) if layer_norm else lambda x: x
         self.dropout = nn.Dropout2d(p=dropout)
 
@@ -155,9 +155,7 @@ class Conv1LBlock(EncoderBase):
                                      padding=(0, 0),
                                      ceil_mode=True)
             # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
-            input_dim = update_lens([input_dim], self.pool, dim=1)[0]
-
-        self.input_dim = input_dim
+            self._odim = update_lens([self._odim], self.pool, dim=1)[0].item()
 
     def forward(self, xs, xlens):
         """Forward computation.
@@ -204,9 +202,9 @@ class Conv2LBlock(EncoderBase):
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
-        input_dim = update_lens([input_dim], self.conv1, dim=1)[0]
+        self._odim = update_lens([input_dim], self.conv1, dim=1)[0]
         self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm1 = LayerNorm2D(out_channel * input_dim.item(),
+        self.layer_norm1 = LayerNorm2D(out_channel * self._odim.item(),
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # 2nd layer
@@ -215,9 +213,9 @@ class Conv2LBlock(EncoderBase):
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
-        input_dim = update_lens([input_dim], self.conv2, dim=1)[0]
+        self._odim = update_lens([self._odim], self.conv2, dim=1)[0]
         self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm2 = LayerNorm2D(out_channel * input_dim.item(),
+        self.layer_norm2 = LayerNorm2D(out_channel * self._odim.item(),
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # Max Pooling
@@ -228,9 +226,10 @@ class Conv2LBlock(EncoderBase):
                                      padding=(0, 0),
                                      ceil_mode=True)
             # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
-            input_dim = update_lens([input_dim], self.pool, dim=1)[0]
-
-        self.input_dim = input_dim
+            self._odim = update_lens([self._odim], self.pool, dim=1)[0].item()
+            if self._odim % 2 != 0:
+                self._odim = (self._odim // 2) * 2
+                # TODO(hirofumi0810): more efficient way?
 
     def forward(self, xs, xlens):
         """Forward computation.
