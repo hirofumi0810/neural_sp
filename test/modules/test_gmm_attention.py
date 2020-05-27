@@ -37,12 +37,12 @@ def test_forward(args):
     src_mask = torch.ones(batch_size, 1, klen).byte()
 
     module = importlib.import_module('neural_sp.models.modules.gmm_attention')
-    gmm_attention = module.GMMAttention(**args)
-    gmm_attention.train()
+    attention = module.GMMAttention(**args)
+    attention.train()
     aws = None
     for i in range(qlen):
-        out = gmm_attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=aws,
-                            mode='parallel', cache=True)
+        out = attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=aws,
+                        mode='parallel', cache=True)
         assert len(out) == 3
         cv, aws, _ = out
         assert cv.size() == (batch_size, 1, value.size(2))

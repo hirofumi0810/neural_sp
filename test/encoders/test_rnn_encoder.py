@@ -101,14 +101,14 @@ def test_forward(args):
     batch_size = 4
     xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [1600, 1655]
     device_id = -1
+    module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
+    enc = module.RNNEncoder(**args)
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
         xlens = torch.IntTensor([len(x) for x in xs])
         xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
-
-        rnn = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
-        enc = rnn.RNNEncoder(**args)
         enc_out_dict = enc(xs, xlens, task='all')
+
         assert enc_out_dict['ys']['xs'].size(0) == batch_size
         assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
         if args['n_layers_sub1'] > 0:

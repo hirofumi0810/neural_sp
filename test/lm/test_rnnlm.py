@@ -64,8 +64,8 @@ def test_forward(args):
     ylens = [4, 5, 3, 7] * 200
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int64) for ylen in ylens]
 
-    rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
-    lm = rnnlm.RNNLM(args)
+    module = importlib.import_module('neural_sp.models.lm.rnnlm')
+    lm = module.RNNLM(args)
     loss, state, observation = lm(ys, state=None, n_caches=0)
     # assert loss.dim() == 1, loss
     # assert loss.size(0) == 1, loss

@@ -76,12 +76,12 @@ def test_forward_soft_parallel(args):
     src_mask = torch.ones(batch_size, 1, klen).byte()
 
     module = importlib.import_module('neural_sp.models.modules.mocha')
-    mocha = module.MoChA(**args)
-    mocha.train()
+    attention = module.MoChA(**args)
+    attention.train()
     alpha = None
     for i in range(qlen):
-        out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
-                    mode='parallel', cache=True)
+        out = attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
+                        mode='parallel', cache=True)
         assert len(out) == 3
         cv, alpha, beta = out
         assert cv.size() == (batch_size, 1, value.size(2))
