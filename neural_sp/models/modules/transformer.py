@@ -34,7 +34,7 @@ class TransformerEncoderBlock(nn.Module):
         n_heads (int): number of heads for multi-head attention
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
-        dropout_layer (float): LayerDrop probabilities for layers
+        dropout_layer (float): LayerDrop probabilities
         layer_norm_eps (float): epsilon parameter for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
@@ -119,8 +119,8 @@ class TransformerDecoderBlock(nn.Module):
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
-            dropout_layer (float): LayerDrop probabilities for layers
-            dropout_head (float): HeadDrop probabilities for attention heads
+            dropout_layer (float): LayerDrop probabilities
+            dropout_head (float): HeadDrop probability
             layer_norm_eps (float): epsilon parameter for layer normalization
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
             param_init (str): parameter initialization method
@@ -134,6 +134,8 @@ class TransformerDecoderBlock(nn.Module):
             mocha_std (float):
             mocha_no_denominator (bool):
             mocha_1dconv (bool):
+            l0_penalty (float):
+            l2_penalty (float):
             lm_fusion (bool):
 
     """
@@ -218,7 +220,7 @@ class TransformerDecoderBlock(nn.Module):
     def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
                 xy_aws_prev=None, mode='hard', lmout=None,
                 pos_embs=None, memory=None, u=None, v=None,
-                eps_wait=-1, boundary_rightmost=None,):
+                eps_wait=-1):
         """Transformer decoder forward pass.
 
         Args:
@@ -235,7 +237,6 @@ class TransformerDecoderBlock(nn.Module):
             u (FloatTensor): global parameter for TransformerXL
             v (FloatTensor): global parameter for TransformerXL
             eps_wait (int):
-            boundary_rightmost (int):
         Returns:
             out (FloatTensor): `[B, L, d_model]`
             yy_aws (FloatTensor)`[B, H, L, L]`
@@ -275,10 +276,9 @@ class TransformerDecoderBlock(nn.Module):
         if self.src_tgt_attention:
             residual = out
             out = self.norm2(out)
-            out, xy_aws, xy_aws_beta = self.src_attn(
-                xs, xs, out, mask=xy_mask,  # k/v/q
-                aw_prev=xy_aws_prev, mode=mode,
-                eps_wait=eps_wait, boundary_rightmost=boundary_rightmost)
+            out, xy_aws, xy_aws_beta = self.src_attn(xs, xs, out, mask=xy_mask,  # k/v/q
+                                                     aw_prev=xy_aws_prev, mode=mode,
+                                                     eps_wait=eps_wait)
             out = self.dropout(out) + residual
 
         # LM integration
@@ -318,7 +318,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
             n_heads (int): number of heads for multi-head attention
             dropout (float): dropout probabilities for linear layers
             dropout_att (float): dropout probabilities for attention probabilities
-            dropout_layer (float): LayerDrop probabilities for layers
+            dropout_layer (float): LayerDrop probabilities
             layer_norm_eps (float): epsilon parameter for layer normalization
             ffn_activation (str): nonolinear function for PositionwiseFeedForward
             param_init (str): parameter initialization method

@@ -378,7 +378,7 @@ class MoChA(nn.Module):
             mode (str): recursive/parallel/hard
             cache (bool): cache key and mask
             trigger_point (IntTensor): `[B]`
-            eps_wait (int): acceptable delay for MMA
+            eps_wait (int): wait time delay for head-synchronous decoding in MMA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             alpha (FloatTensor): `[B, H_ma, qlen, klen]`
