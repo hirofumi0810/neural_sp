@@ -437,7 +437,7 @@ class MoChA(nn.Module):
             alpha_masked = alpha.clone()
 
             # mask out each head independently (HeadDrop)
-            if self.n_heads_mono > 1 and self.dropout_head > 0 and self.training:
+            if self.dropout_head > 0 and self.training:
                 n_effective_heads = self.n_heads_mono
                 head_mask = alpha.new_ones(alpha.size()).byte()
                 for h in range(self.n_heads_mono):
@@ -568,8 +568,6 @@ class MoChA(nn.Module):
         if self.w > 1 or self.milk:
             chunk_size_tmp = max(1, (bd_offset_old + bd_rightmost + 1) -
                                  max(0, bd_offset_old + bd_leftmost - self.w + 1))
-            # assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, e_chunk.size(3) + additional), \
-            #     (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, e_chunk.size(3) + additional))
             assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, chunk_size_tmp), \
                 (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, chunk_size_tmp))
             # TODO: padding for beta
@@ -727,10 +725,8 @@ def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
                 if chunk_size == -1:
                     # infinite lookback attention
                     mask[b, h, :, 0, 0:boundary + 1] = 1
-                elif boundary <= chunk_size - 1:
-                    mask[b, h, :, 0, 0:boundary + 1] = 1
                 else:
-                    mask[b, h, :, 0, boundary - chunk_size + 1:boundary + 1] = 1
+                    mask[b, h, :, 0, max(0, boundary - chunk_size + 1):boundary + 1] = 1
 
     u = u.masked_fill(mask == 0, NEG_INF)
     beta = torch.softmax(u, dim=-1)
