@@ -134,8 +134,6 @@ class TransformerDecoderBlock(nn.Module):
             mocha_std (float):
             mocha_no_denominator (bool):
             mocha_1dconv (bool):
-            l0_penalty (float):
-            l2_penalty (float):
             lm_fusion (bool):
 
     """
@@ -236,7 +234,7 @@ class TransformerDecoderBlock(nn.Module):
             memory (FloatTensor): `[B, L_prev, d_model]`
             u (FloatTensor): global parameter for TransformerXL
             v (FloatTensor): global parameter for TransformerXL
-            eps_wait (int):
+            eps_wait (int): wait time delay for head-synchronous decoding in MMA
         Returns:
             out (FloatTensor): `[B, L, d_model]`
             yy_aws (FloatTensor)`[B, H, L, L]`
