@@ -23,7 +23,7 @@ def make_args(**kwargs):
         noise_std=1.0,
         no_denominator=False,
         sharpening_factor=1.0,
-        dropout=0.,
+        dropout=0.1,
         dropout_head=0.,
         bias=True,
         param_init='',
