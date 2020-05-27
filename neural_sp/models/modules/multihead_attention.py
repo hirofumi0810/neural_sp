@@ -33,13 +33,14 @@ class MultiheadAttentionMechanism(nn.Module):
         adim: (int) dimension of the attention space
         n_heads (int): number of heads
         dropout (float): dropout probability for attenion weights
+        dropout_head (float): HeadDrop probability
         atype (str): type of attention mechanism
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
 
     """
 
-    def __init__(self, kdim, qdim, adim, n_heads, dropout,
+    def __init__(self, kdim, qdim, adim, n_heads, dropout, dropout_head=0.,
                  atype='scaled_dot', bias=True, param_init=''):
         super(MultiheadAttentionMechanism, self).__init__()
 
@@ -50,8 +51,8 @@ class MultiheadAttentionMechanism(nn.Module):
         self.scale = math.sqrt(self.d_k)
         self.reset()
 
-        # attention dropout applied AFTER the softmax layer
-        self.dropout = nn.Dropout(p=dropout)
+        self.dropout_attn = nn.Dropout(p=dropout)
+        self.dropout_head = dropout_head
 
         if atype == 'scaled_dot':
             # for Transformer
@@ -95,7 +96,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
     def forward(self, key, value, query, mask, aw_prev=None,
                 cache=False, mode='', trigger_point=None,
-                eps_wait=-1, boundary_rightmost=None):
+                eps_wait=-1):
         """Forward pass.
 
         Args:
@@ -133,14 +134,30 @@ class MultiheadAttentionMechanism(nn.Module):
         elif self.atype == 'add':
             key = self.key.unsqueeze(1)  # `[B, 1, klen, H, d_k]`
             query = query.unsqueeze(2)  # `[B, qlen, 1, H, d_k]`
-            e = self.v(torch.tanh(key + query)).squeeze(4)  # `[B, qlen, klen, H]`
+            tmp = torch.tanh(key + query).view(bs, qlen, klen, -1)  # `[B, qlen, klen, H, d_k]`
+            e = self.v(tmp)  # `[B, qlen, klen, H]`
 
         # Compute attention weights
         if self.mask is not None:
             e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, qlen, klen, H]`
         aw = torch.softmax(e, dim=2)
-        aw = self.dropout(aw)
-        cv = torch.einsum("bijh,bjhd->bihd", (aw, self.value))  # `[B, qlen, H, d_k]`
+        aw = self.dropout_attn(aw)
+        aw_masked = aw.clone()
+
+        # mask out each head independently (HeadDrop)
+        if self.dropout_head > 0 and self.training:
+            n_effective_heads = self.n_heads
+            head_mask = aw.new_ones(aw.size()).byte()  # `[B, qlen, klen, H]`
+            for h in range(self.n_heads):
+                if random.random() < self.dropout_head:
+                    head_mask[:, :, :, h] = 0
+                    n_effective_heads -= 1
+            aw_masked = aw_masked.masked_fill_(head_mask == 0, 0)
+            # Normalization
+            if n_effective_heads > 0:
+                aw_masked = aw_masked * (self.n_heads / n_effective_heads)
+
+        cv = torch.einsum("bijh,bjhd->bihd", (aw_masked, self.value))  # `[B, qlen, H, d_k]`
         cv = cv.contiguous().view(bs, -1, self.n_heads * self.d_k)  # `[B, qlen, H * d_k]`
         cv = self.w_out(cv)
         aw = aw.permute(0, 3, 1, 2)  # `[B, H, qlen, klen]`
