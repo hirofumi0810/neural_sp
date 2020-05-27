@@ -23,7 +23,7 @@ def make_args(**kwargs):
         noise_std=1.0,
         no_denominator=False,
         sharpening_factor=1.0,
-        dropout=0.,
+        dropout=0.1,
         dropout_head=0.,
         bias=True,
         param_init='',
@@ -75,8 +75,8 @@ def test_forward_soft_parallel(args):
     query = torch.FloatTensor(batch_size, qlen, args['qdim'])
     src_mask = torch.ones(batch_size, 1, klen).byte()
 
-    mocha = importlib.import_module('neural_sp.models.modules.mocha')
-    attention = mocha.MoChA(**args)
+    module = importlib.import_module('neural_sp.models.modules.mocha')
+    attention = module.MoChA(**args)
     attention.train()
     alpha = None
     for i in range(qlen):
@@ -121,14 +121,14 @@ def test_forward_hard(args):
     value = torch.FloatTensor(batch_size, klen, args['kdim'])
     query = torch.FloatTensor(batch_size, qlen, args['qdim'])
 
-    mocha = importlib.import_module('neural_sp.models.modules.mocha')
-    attention = mocha.MoChA(**args)
-    attention.eval()
+    module = importlib.import_module('neural_sp.models.modules.mocha')
+    mocha = module.MoChA(**args)
+    mocha.eval()
     alpha = None
     for i in range(qlen):
-        out = attention(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
-                        mode='hard', cache=False, eps_wait=-1,
-                        efficient_decoding=False)
+        out = mocha(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
+                    mode='hard', cache=False, eps_wait=-1,
+                    efficient_decoding=False)
         assert len(out) == 3
         cv, alpha, beta = out
         assert cv.size() == (batch_size, 1, value.size(2))

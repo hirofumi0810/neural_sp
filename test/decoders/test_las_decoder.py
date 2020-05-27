@@ -129,8 +129,8 @@ def test_forward(args):
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
 
-    las = importlib.import_module('neural_sp.models.seq2seq.decoders.las')
-    dec = las.RNNDecoder(**args)
+    module = importlib.import_module('neural_sp.models.seq2seq.decoders.las')
+    dec = module.RNNDecoder(**args)
     loss, observation = dec(eouts, elens, ys, task='all')
     assert loss.dim() == 1
     assert loss.size(0) == 1

@@ -60,16 +60,16 @@ def test_forward(args):
     batch_size = 4
     xmaxs = [40, 45]
     device_id = -1
+    module = importlib.import_module('neural_sp.models.seq2seq.encoders.conv')
+    channels, kernel_sizes, strides, poolings = module.parse_config(
+        args['channels'], args['kernel_sizes'],
+        args['strides'], args['poolings'])
+    enc = module.ConvEncoder(**args)
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
         xlens = torch.IntTensor([len(x) for x in xs])
         xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
-
-        cnn = importlib.import_module('neural_sp.models.seq2seq.encoders.conv')
-        channels, kernel_sizes, strides, poolings = cnn.parse_config(
-            args['channels'], args['kernel_sizes'],
-            args['strides'], args['poolings'])
-        enc = cnn.ConvEncoder(**args)
         xs, xlens = enc(xs, xlens)
+
         assert xs.size(0) == batch_size
         assert xs.size(1) == xlens[0]

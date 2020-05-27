@@ -59,7 +59,7 @@ class GMMAttention(nn.Module):
             cache (bool): cache key and mask
             mode: dummy interface for MoChA
             trigger_point: dummy interface for MoChA
-        Return:
+        Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             alpha (FloatTensor): `[B, klen, 1]`
             beta: dummy interface for MoChA

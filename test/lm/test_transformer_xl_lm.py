@@ -74,8 +74,8 @@ def test_forward(args):
     ylens = [4, 5, 3, 7] * 200
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int64) for ylen in ylens]
 
-    transformer_xl = importlib.import_module('neural_sp.models.lm.transformer_xl')
-    lm = transformer_xl.TransformerXL(args)
+    module = importlib.import_module('neural_sp.models.lm.transformer_xl')
+    lm = module.TransformerXL(args)
     loss, state, observation = lm(ys, state=None, n_caches=0)
     # assert loss.dim() == 1, loss
     # assert loss.size(0) == 1, loss
