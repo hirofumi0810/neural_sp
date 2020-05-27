@@ -528,7 +528,6 @@ class MoChA(nn.Module):
                     alpha_masked = torch.cat([alpha_masked.new_zeros(bs, alpha_masked.size(1), 1, additional),
                                               alpha_masked], dim=3)
 
-            # if efficient_decoding and mode == 'hard':
             if mode == 'hard':
                 beta = hard_chunkwise_attention(alpha_masked, e_chunk, mask, self.w,
                                                 self.n_heads_chunk, self.sharpening_factor,
@@ -723,10 +722,12 @@ def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
     mask = alpha.clone().byte()  # `[B, H_ma, H_ca, qlen, klen]`
     for b in range(bs):
         for h in range(n_heads_mono):
-            if alpha[b, h, 0].sum() > 0:
+            if alpha[b, h, 0, 0].sum() > 0:
                 boundary = alpha[b, h, 0, 0].nonzero()[:, -1].min().item()
                 if chunk_size == -1:
                     # infinite lookback attention
+                    mask[b, h, :, 0, 0:boundary + 1] = 1
+                elif boundary <= chunk_size - 1:
                     mask[b, h, :, 0, 0:boundary + 1] = 1
                 else:
                     mask[b, h, :, 0, boundary - chunk_size + 1:boundary + 1] = 1
