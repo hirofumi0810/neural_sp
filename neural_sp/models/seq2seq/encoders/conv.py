@@ -89,7 +89,7 @@ class ConvEncoder(EncoderBase):
         self._factor = 1
         if poolings:
             for p in poolings:
-                self._factor *= p[0]
+                self._factor *= p[1]
 
         self.reset_parameters(param_init)
 
@@ -155,7 +155,7 @@ class Conv1LBlock(EncoderBase):
                                      padding=(0, 0),
                                      ceil_mode=True)
             # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
-            self._odim = update_lens([self._odim], self.pool, dim=1)[0]
+            self._odim = update_lens([self._odim], self.pool, dim=1)[0].item()
 
     def forward(self, xs, xlens):
         """Forward computation.
@@ -226,7 +226,10 @@ class Conv2LBlock(EncoderBase):
                                      padding=(0, 0),
                                      ceil_mode=True)
             # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
-            self._odim = update_lens([self._odim], self.pool, dim=1)[0]
+            self._odim = update_lens([self._odim], self.pool, dim=1)[0].item()
+            if self._odim % 2 != 0:
+                self._odim = (self._odim // 2) * 2
+                # TODO(hirofumi0810): more efficient way?
 
     def forward(self, xs, xlens):
         """Forward computation.
