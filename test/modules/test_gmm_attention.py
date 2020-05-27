@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Test for multihead atteniton."""
+"""Test for GMM atteniton."""
 
 import importlib
 import pytest
@@ -13,12 +13,7 @@ def make_args(**kwargs):
         kdim=32,
         qdim=32,
         adim=16,
-        atype='scaled_dot',
-        n_heads=4,
-        dropout=0.1,
-        dropout_head=0.,
-        bias=True,
-        param_init='xavier_uniform'
+        n_mixtures=5,
     )
     args.update(kwargs)
     return args
@@ -26,12 +21,8 @@ def make_args(**kwargs):
 
 @pytest.mark.parametrize(
     "args", [
-        ({'n_heads': 1}),
-        ({'n_heads': 1, 'atype': 'add'}),
-        ({'n_heads': 4}),
-        ({'n_heads': 4, 'atype': 'add'}),
-        ({'dropout_head': 0.5}),
-        ({'bias': False}),
+        ({'n_mixtures': 1}),
+        ({'n_mixtures': 4}),
     ]
 )
 def test_forward(args):
@@ -45,14 +36,14 @@ def test_forward(args):
     query = torch.FloatTensor(batch_size, qlen, args['qdim'])
     src_mask = torch.ones(batch_size, 1, klen).byte()
 
-    module = importlib.import_module('neural_sp.models.modules.multihead_attention')
-    mha = module.MultiheadAttentionMechanism(**args)
-    mha.train()
+    module = importlib.import_module('neural_sp.models.modules.gmm_attention')
+    gmm_attention = module.GMMAttention(**args)
+    gmm_attention.train()
     aws = None
     for i in range(qlen):
-        out = mha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=aws,
-                  mode='parallel', cache=True)
+        out = gmm_attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=aws,
+                            mode='parallel', cache=True)
         assert len(out) == 3
         cv, aws, _ = out
         assert cv.size() == (batch_size, 1, value.size(2))
-        assert aws.size() == (batch_size, args['n_heads'], 1, klen)
+        assert aws.size() == (batch_size, 1, 1, klen)

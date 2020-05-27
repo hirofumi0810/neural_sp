@@ -51,13 +51,13 @@ def test_forward(args):
     query = torch.FloatTensor(batch_size, qlen, args['qdim'])
     src_mask = torch.ones(batch_size, 1, klen).byte()
 
-    sha = importlib.import_module('neural_sp.models.modules.attention')
-    attention = sha.AttentionMechanism(**args)
-    attention.train()
+    module = importlib.import_module('neural_sp.models.modules.attention')
+    sha = module.AttentionMechanism(**args)
+    sha.train()
     aws = None
     for i in range(qlen):
-        out = attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=aws,
-                        mode='parallel', cache=True)
+        out = sha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=aws,
+                  mode='parallel', cache=True)
         assert len(out) == 3
         cv, aws, _ = out
         assert cv.size() == (batch_size, 1, value.size(2))
