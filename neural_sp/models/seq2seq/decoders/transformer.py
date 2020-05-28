@@ -143,14 +143,18 @@ class TransformerDecoder(DecoderBase):
         self.aws_dict = {}
         self.data_dict = {}
 
-        # for mocha
+        # for MMA
         self.attn_type = attn_type
         self.quantity_loss_weight = mocha_quantity_loss_weight
         self._quantity_loss_weight = 0  # for curriculum
+        self.mocha_first_layer = mocha_first_layer
+
         self.headdiv_loss_weight = mocha_head_divergence_loss_weight
         self.latency_metric = latency_metric
         self.latency_loss_weight = latency_loss_weight
-        self.mocha_first_layer = mocha_first_layer
+        self.ctc_trigger = (self.latency_metric in ['ctc_sync'])
+        if self.ctc_trigger:
+            assert 0 < self.ctc_weight < 1
 
         if ctc_weight > 0:
             self.ctc = CTC(eos=self.eos,
@@ -286,16 +290,15 @@ class TransformerDecoder(DecoderBase):
         loss = eouts.new_zeros((1,))
 
         # CTC loss
+        trigger_points = None
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
-            loss_ctc, trigger_points = self.ctc(eouts, elens, ys,
-                                                forced_align=self.latency_metric and self.training)
+            forced_align = (self.ctc_trigger and self.training) or self.attn_type == 'triggered_attention'
+            loss_ctc, trigger_points = self.ctc(eouts, elens, ys, forced_align=forced_align)
             observation['loss_ctc'] = loss_ctc.item()
             if self.mtl_per_batch:
                 loss += loss_ctc
             else:
                 loss += loss_ctc * self.ctc_weight
-        else:
-            trigger_points = None
 
         # XE loss
         if self.global_weight - self.ctc_weight > 0 and (task == 'all' or 'ctc' not in task):
@@ -351,7 +354,7 @@ class TransformerDecoder(DecoderBase):
             self.data_dict['ys'] = tensor2np(ys_out)
 
         # Create target self-attention mask
-        xtime = eouts.size(1)
+        xmax = eouts.size(1)
         bs, ymax = ys_in.size()[:2]
         mlen = 0
         tgt_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ymax, 1])
@@ -390,8 +393,8 @@ class TransformerDecoder(DecoderBase):
             if lth < self.n_layers - 1:
                 hidden_states.append(out)
                 # NOTE: outputs from the last layer is not used for momory
-            xy_aws_layers.append(xy_aws.clone() if xy_aws is not None else out.new_zeros(
-                bs, yy_aws.size(1), ymax, xtime))
+            if xy_aws is not None:
+                xy_aws_layers.append(xy_aws.clone())
             if not self.training:
                 if yy_aws is not None:
                     self.aws_dict['yy_aws_layer%d' % lth] = tensor2np(yy_aws)
@@ -412,16 +415,15 @@ class TransformerDecoder(DecoderBase):
         losses_auxiliary = {}
 
         # Attention padding
-        if self._quantity_loss_weight > 0 or self.headdiv_loss_weight > 0 or self.latency_loss_weight > 0:
-            for lth in range(self.mocha_first_layer - 1, self.n_layers):
+        if 'mocha' in self.attn_type:
+            src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).unsqueeze(2)  # `[B, 1, 1, T]`
+            tgt_mask = (ys_out != self.pad).unsqueeze(1).unsqueeze(3)  # `[B, 1, L, 1]`
+            for lth in range(self.n_layers - self.mocha_first_layer + 1):
                 n_heads = xy_aws_layers[lth].size(1)
                 xy_aws_layers[lth] = xy_aws_layers[lth].masked_fill_(
-                    src_mask.unsqueeze(1).repeat([1, n_heads, 1, 1]) == 0, 0)
-                xy_aws_layers[lth] = xy_aws_layers[lth].masked_fill_(
-                    tgt_mask[:, :, -1:].unsqueeze(1).repeat([1, n_heads, 1, xtime]) == 0, 0)
+                    tgt_mask.repeat([1, n_heads, 1, xmax]) == 0, 0)
                 # NOTE: attention padding is quite effective for quantity loss
         n_heads = xy_aws_layers[-1].size(1)  # mono
-        # NOTE: debug for multihead mono + multihead chunk
 
         # Quantity loss
         losses_auxiliary['loss_quantity'] = 0.
@@ -430,42 +432,9 @@ class TransformerDecoder(DecoderBase):
             n_tokens_ref = tgt_mask[:, -1, :].sum(1).float()  # `[B]`
             # NOTE: count <eos> tokens
             n_tokens_pred = sum([torch.abs(aws.sum(3).sum(2).sum(1) / aws.size(1))
-                                 for aws in xy_aws_layers[self.mocha_first_layer - 1:]])  # `[B]`
-            n_tokens_pred /= (self.n_layers - self.mocha_first_layer + 1)
+                                 for aws in xy_aws_layers])  # `[B]`
+            n_tokens_pred /= len(xy_aws_layers)
             losses_auxiliary['loss_quantity'] = torch.mean(torch.abs(n_tokens_pred - n_tokens_ref))
-
-        # Head divergence loss
-        losses_auxiliary['loss_headdiv'] = 0.
-        if self.headdiv_loss_weight > 0.:
-            # Calculate variance over all heads across all layers
-            js = torch.arange(xtime, dtype=torch.float).cuda(self.device_id)
-            js = js.repeat([bs, n_heads, ymax, 1])
-            avg_head_pos = sum([(js * aws).sum(3).sum(1)
-                                for aws in xy_aws_layers]) / (n_heads * self.n_layers)  # `[B, L]`
-            loss_headdiv = sum([((js * aws).sum(3).sum(1) - avg_head_pos) ** 2
-                                for aws in xy_aws_layers]) / (n_heads * self.n_layers)  # `[B, L]`
-            losses_auxiliary['loss_headdiv'] = loss_headdiv.sum() / ylens.sum()
-
-        # Latency loss
-        losses_auxiliary['loss_latency'] = 0.
-        if self.latency_metric == 'interval':
-            raise NotImplementedError
-        elif trigger_points is not None:
-            assert self.latency_loss_weight > 0
-            # Calculate weight average latency
-            js = torch.arange(xtime, dtype=torch.float).cuda(self.device_id)
-            js = js.repeat([bs, n_heads, ymax, 1])
-            weighted_avg_head_pos = torch.cat(
-                [(js * aws).sum(3) for aws in xy_aws_layers], dim=1)  # `[B, H_mono * n_layers, L]`
-            weighted_avg_head_pos *= torch.softmax(weighted_avg_head_pos.clone(), dim=1)
-            trigger_points = trigger_points.float().cuda(self.device_id)  # `[B, L]`
-            trigger_points = trigger_points.unsqueeze(1)
-            if self.latency_metric == 'ctc_sync':
-                loss_latency = torch.abs(weighted_avg_head_pos - trigger_points)  # `[B, H_mono * n_layers, L]`
-            else:
-                raise NotImplementedError(self.latency_metric)
-            # NOTE: trigger_points are padded with 0
-            losses_auxiliary['loss_latency'] = loss_latency.sum() / ylens.sum()
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out, self.pad)
@@ -754,7 +723,6 @@ class TransformerDecoder(DecoderBase):
                 new_cache = [None] * self.n_layers
                 xy_aws_all_layers = []
                 xy_aws = None
-                boundary_rightmost = None
                 lth_s = self.mocha_first_layer - 1
                 for lth, layer in enumerate(self.layers):
                     if self.memory_transformer:
@@ -768,17 +736,7 @@ class TransformerDecoder(DecoderBase):
                             out, causal_mask, eouts_b, None,
                             cache=cache[lth],
                             xy_aws_prev=xy_aws_prev[:, lth - lth_s] if lth >= lth_s and t > 0 else None,
-                            boundary_rightmost=boundary_rightmost,
                             eps_wait=eps_wait)
-                        if 'mocha' in self.attn_type:
-                            if xy_aws is not None and xy_aws[b].sum() != 0:
-                                boundary_rightmost_lth = xy_aws[b, :, 0].nonzero()[:, -1].max().item()
-                                if boundary_rightmost is None:
-                                    boundary_rightmost = boundary_rightmost_lth
-                                else:
-                                    boundary_rightmost = max(boundary_rightmost_lth, boundary_rightmost)
-                        if lth >= lth_s:
-                            n_heads_total += xy_aws.size(1)
 
                     new_cache[lth] = out
                     if xy_aws is not None:
