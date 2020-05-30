@@ -88,10 +88,12 @@ class ConvGLUBlock(nn.Module):
 
     def forward(self, xs):
         """Forward computation.
+
         Args:
             xs (FloatTensor): `[B, in_ch, T, feat_dim]`
         Returns:
             out (FloatTensor): `[B, out_ch, T, feat_dim]`
+
         """
         residual = xs
         if self.conv_residual is not None:
