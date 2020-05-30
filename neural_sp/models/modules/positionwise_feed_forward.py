@@ -30,17 +30,28 @@ class PositionwiseFeedForward(nn.Module):
         d_model (int): input and output dimension
         d_ff (int): hidden dimension
         dropout (float): dropout probability
-        activation: non-linear function
+        activation (str): non-linear activation function
         param_init (str): parameter initialization method
+        bottleneck_dim (int): bottleneck dimension for low-rank FFN
 
     """
 
-    def __init__(self, d_model, d_ff, dropout, activation, param_init):
+    def __init__(self, d_model, d_ff, dropout, activation, param_init,
+                 bottleneck_dim=0):
         super(PositionwiseFeedForward, self).__init__()
 
-        self.w_1 = nn.Linear(d_model, d_ff)
-        self.w_2 = nn.Linear(d_ff, d_model)
+        self.bottleneck_dim = bottleneck_dim
+        if bottleneck_dim > 0:
+            self.w_1_e = nn.Linear(d_model, bottleneck_dim)
+            self.w_1_d = nn.Linear(bottleneck_dim, d_ff)
+            self.w_2_e = nn.Linear(d_ff, bottleneck_dim)
+            self.w_2_d = nn.Linear(bottleneck_dim, d_model)
+        else:
+            self.w_1 = nn.Linear(d_model, d_ff)
+            self.w_2 = nn.Linear(d_ff, d_model)
+
         self.dropout = nn.Dropout(p=dropout)
+
         if activation == 'relu':
             self.activation = torch.relu
         elif activation == 'gelu':
@@ -59,10 +70,13 @@ class PositionwiseFeedForward(nn.Module):
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
         logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
-        nn.init.xavier_uniform_(self.w_1.weight)
-        nn.init.xavier_uniform_(self.w_2.weight)
-        nn.init.constant_(self.w_1.bias, 0.)
-        nn.init.constant_(self.w_2.bias, 0.)
+        for n, p in self.named_parameters():
+            if p.dim() == 1:
+                nn.init.constant_(p, 0.)
+            elif p.dim() == 2:
+                nn.init.xavier_uniform_(p)
+            else:
+                raise ValueError(n)
 
     def forward(self, xs):
         """Forward computation.
@@ -73,4 +87,7 @@ class PositionwiseFeedForward(nn.Module):
             xs (FloatTensor): `[B, T, d_model]`
 
         """
-        return self.w_2(self.dropout(self.activation(self.w_1(xs))))
+        if self.bottleneck_dim > 0:
+            return self.w_2_d(self.w_2_e(self.dropout(self.activation(self.w_1_d(self.w_1_e(xs))))))
+        else:
+            return self.w_2(self.dropout(self.activation(self.w_1(xs))))
