@@ -17,6 +17,7 @@ import torch.nn as nn
 
 from neural_sp.models.modules.gelu import gelu, gelu_accurate
 from neural_sp.models.modules.glu import LinearGLUBlock
+from neural_sp.models.modules.swish import Swish
 
 random.seed(1)
 
@@ -60,6 +61,8 @@ class PositionwiseFeedForward(nn.Module):
             self.activation = lambda x: gelu_accurate(x)
         elif activation == 'glu':
             self.activation = LinearGLUBlock(d_ff)
+        elif activation == 'swish':
+            self.activation = Swish()
         else:
             raise NotImplementedError(activation)
         logger.info('FFN activation: %s' % activation)
