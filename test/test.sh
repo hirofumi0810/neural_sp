@@ -16,6 +16,7 @@ pytest ./test/lm/test_transformerlm.py
 pytest ./test/lm/test_transformer_xl_lm.py
 # modules
 pytest ./test/modules/test_attention.py
+pytest ./test/modules/test_gmm_attention.py
 pytest ./test/modules/test_multihead_attention.py
 pytest ./test/modules/test_mocha.py
-pytest ./test/modules/test_gmm_attention.py
+pytest ./test/modules/test_pointwise_feed_forward.py
