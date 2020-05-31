@@ -216,6 +216,42 @@ class TransformerEncoder(EncoderBase):
                 nn.init.xavier_uniform_(self.bridge_sub2.weight)
                 nn.init.constant_(self.bridge_sub2.bias, 0.)
 
+    @staticmethod
+    def add_args(parser, args):
+        """Add arguments."""
+        group = parser.add_argument_group("Transformer encoder")
+        if 'conv' in args.enc_type:
+            parser = ConvEncoder.add_args(parser, args)
+        # Trnasformer common
+        if not hasattr(args, 'transformer_d_model'):
+            group.add_argument('--transformer_d_model', type=int, default=256,
+                               help='number of units in the MHA layer')
+            group.add_argument('--transformer_d_ff', type=int, default=2048,
+                               help='number of units in the FFN layer')
+            group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
+                               help='bottleneck dimension in the FFN layer')
+            group.add_argument('--transformer_n_heads', type=int, default=4,
+                               help='number of heads in the MHA layer')
+            group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
+                               help='epsilon value for layer normalization')
+            group.add_argument('--transformer_ffn_activation', type=str, default='relu',
+                               choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
+                               help='nonlinear activation for the FFN layer')
+            group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
+                               choices=['xavier_uniform', 'pytorch'],
+                               help='parameter initializatin')
+        # Trnasformer encoder specific
+        group.add_argument('--transformer_enc_pe_type', type=str, default='add',
+                           choices=['add', 'concat', 'none'],
+                           help='type of positional encoding for the Transformer encoder')
+        group.add_argument('--lc_chunk_size_left', type=int, default=0,
+                           help='left chunk size for latency-controlled Transformer encoder')
+        group.add_argument('--lc_chunk_size_current', type=int, default=0,
+                           help='current chunk size (and hop size) for latency-controlled Transformer encoder')
+        group.add_argument('--lc_chunk_size_right', type=int, default=0,
+                           help='right chunk size for latency-controlled Transformer encoder')
+        return parser
+
     def init_memory(self):
         """Initialize memory."""
         if self.device_id >= 0:
