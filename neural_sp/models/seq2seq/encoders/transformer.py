@@ -192,30 +192,6 @@ class TransformerEncoder(EncoderBase):
 
         self.reset_parameters(param_init)
 
-    def reset_parameters(self, param_init):
-        """Initialize parameters."""
-        if self.memory_transformer:
-            logger.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
-            for n, p in self.named_parameters():
-                if 'conv' in n:
-                    continue
-                init_with_normal_dist(n, p, std=0.02)
-
-        elif param_init == 'xavier_uniform':
-            logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
-            if self.conv is None:
-                nn.init.xavier_uniform_(self.embed.weight)
-                nn.init.constant_(self.embed.bias, 0.)
-            if self.bridge is not None:
-                nn.init.xavier_uniform_(self.bridge.weight)
-                nn.init.constant_(self.bridge.bias, 0.)
-            if self.bridge_sub1 is not None:
-                nn.init.xavier_uniform_(self.bridge_sub1.weight)
-                nn.init.constant_(self.bridge_sub1.bias, 0.)
-            if self.bridge_sub2 is not None:
-                nn.init.xavier_uniform_(self.bridge_sub2.weight)
-                nn.init.constant_(self.bridge_sub2.bias, 0.)
-
     @staticmethod
     def add_args(parser, args):
         """Add arguments."""
@@ -253,6 +229,30 @@ class TransformerEncoder(EncoderBase):
         group.add_argument('--lc_chunk_size_right', type=int, default=0,
                            help='right chunk size for latency-controlled Transformer encoder')
         return parser
+
+    def reset_parameters(self, param_init):
+        """Initialize parameters."""
+        if self.memory_transformer:
+            logger.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
+            for n, p in self.named_parameters():
+                if 'conv' in n:
+                    continue
+                init_with_normal_dist(n, p, std=0.02)
+
+        elif param_init == 'xavier_uniform':
+            logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+            if self.conv is None:
+                nn.init.xavier_uniform_(self.embed.weight)
+                nn.init.constant_(self.embed.bias, 0.)
+            if self.bridge is not None:
+                nn.init.xavier_uniform_(self.bridge.weight)
+                nn.init.constant_(self.bridge.bias, 0.)
+            if self.bridge_sub1 is not None:
+                nn.init.xavier_uniform_(self.bridge_sub1.weight)
+                nn.init.constant_(self.bridge_sub1.bias, 0.)
+            if self.bridge_sub2 is not None:
+                nn.init.xavier_uniform_(self.bridge_sub2.weight)
+                nn.init.constant_(self.bridge_sub2.bias, 0.)
 
     def init_memory(self):
         """Initialize memory."""
