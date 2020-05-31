@@ -12,9 +12,10 @@ from __future__ import print_function
 
 import logging
 import os
+import sys
 import time
 
-from neural_sp.bin.args_lm import parse
+from neural_sp.bin.args_lm import parse_args
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 def main():
 
-    args = parse()
+    args = parse_args(sys.argv[1:])
 
     # Load a conf file
     dir_name = os.path.dirname(args.recog_model[0])

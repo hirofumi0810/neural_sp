@@ -10,7 +10,32 @@ import configargparse
 from distutils.util import strtobool
 
 
-def parse():
+def parse_args(input_args):
+    parser = build_parser()
+    user_args, _ = parser.parse_known_args(input_args)
+
+    # register module specific arguments
+    parser = register_args_lm(parser, user_args)
+
+    user_args = parser.parse_args()
+    return user_args
+
+
+def register_args_lm(parser, args):
+    if 'gated_conv' in args.lm_type:
+        from neural_sp.models.lm.gated_convlm import GatedConvLM as module
+    elif args.lm_type == 'transformer':
+        from neural_sp.models.lm.transformerlm import TransformerLM as module
+    elif args.lm_type == 'transformer_xl':
+        from neural_sp.models.lm.transformer_xl import TransformerXL as module
+    else:
+        from neural_sp.models.lm.rnnlm import RNNLM as module
+    if hasattr(module, 'add_args'):
+        parser = module.add_args(parser, args)
+    return parser
+
+
+def build_parser():
     parser = configargparse.ArgumentParser(
         config_file_parser_class=configargparse.YAMLConfigFileParser,
         formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
@@ -60,12 +85,6 @@ def parse():
                                  'gated_conv_13', 'gated_conv_14', 'gated_conv_14B',
                                  'transformer', 'transformer_xl'],
                         help='type of language model')
-    parser.add_argument('--kernel_size', type=int, default=4,
-                        help='kernel size for GatedConvLM')
-    parser.add_argument('--n_units', type=int, default=1024,
-                        help='number of units in each layer')
-    parser.add_argument('--n_projs', type=int, default=0,
-                        help='number of units in the projection layer')
     parser.add_argument('--n_layers', type=int, default=5,
                         help='number of layers')
     parser.add_argument('--emb_dim', type=int, default=1024,
@@ -74,10 +93,6 @@ def parse():
                         help='')
     parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
                         help='tie input and output embedding')
-    parser.add_argument('--residual', type=strtobool, default=False, nargs='?',
-                        help='')
-    parser.add_argument('--use_glu', type=strtobool, default=False, nargs='?',
-                        help='use Gated Linear Unit (GLU) for fully-connected layers')
     # optimization
     parser.add_argument('--batch_size', type=int, default=256,
                         help='mini-batch size')
@@ -133,10 +148,6 @@ def parse():
                         help='dropout probability for the hidden layers')
     parser.add_argument('--dropout_out', type=float, default=0.0,
                         help='dropout probability for the output layer')
-    parser.add_argument('--dropout_att', type=float, default=0.1,
-                        help='dropout probability for the attention weights (for Transformer)')
-    parser.add_argument('--dropout_layer', type=float, default=0.0,
-                        help='LayerDrop probability for Transformer layers')
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help='')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
@@ -147,27 +158,6 @@ def parse():
                         help='')
     parser.add_argument('--adaptive_softmax', type=strtobool, default=False,
                         help='use adaptive softmax')
-    # transformer
-    parser.add_argument('--transformer_d_model', type=int, default=256,
-                        help='number of units in self-attention layers in Transformer')
-    parser.add_argument('--transformer_d_ff', type=int, default=2048,
-                        help='number of units in feed-forward fully-conncected layers in Transformer')
-    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
-                        choices=['scaled_dot', 'add', 'average'],
-                        help='type of attention for Transformer')
-    parser.add_argument('--transformer_n_heads', type=int, default=4,
-                        help='number of heads in the attention layer for Transformer')
-    parser.add_argument('--transformer_pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'none', '1dconv3L'],
-                        help='type of positional encoding')
-    parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
-                        help='epsilon value for layer narmalization')
-    parser.add_argument('--transformer_ffn_activation', type=str, default='relu',
-                        choices=['relu', 'gelu', 'gelu_accurate', 'glu'],
-                        help='nonlinear activation for position wise feed-forward layer')
-    parser.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
-                        choices=['xavier_uniform', 'pytorch'],
-                        help='parameter initializatin for Transformer')
     # contextualization
     parser.add_argument('--shuffle', type=strtobool, default=False, nargs='?',
                         help='shuffle utterances per epoch')
@@ -193,14 +183,5 @@ def parse():
                         help='theta paramter for cache')
     parser.add_argument('--recog_cache_lambda', type=float, default=0.2,
                         help='lambda paramter for cache')
-    # TransformerXL
-    parser.add_argument('--mem_len', type=int, default=0,
-                        help='number of tokens for memory in TransformerXL during training')
-    parser.add_argument('--recog_mem_len', type=int, default=0,
-                        help='number of tokens for memory in TransformerXL during evaluation')
-    parser.add_argument('--zero_center_offset', type=strtobool, default=False,
-                        help='set the offset right after memory to zero (accept negaitve indices)')
 
-    args = parser.parse_args()
-    # args, _ = parser.parse_known_args(parser)
-    return args
+    return parser

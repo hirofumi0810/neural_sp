@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import copy
+from distutils.util import strtobool
 import logging
 import math
 import os
@@ -80,7 +81,7 @@ class TransformerXL(LMBase):
         self.scale = math.sqrt(self.d_model)  # for token embedding
         self.dropout_emb = nn.Dropout(p=args.dropout_in)  # for token embedding
         self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
-            self.d_model, args.transformer_d_ff, args.transformer_attn_type,
+            self.d_model, args.transformer_d_ff, 'scaled_dot',
             self.n_heads, args.dropout_hidden, args.dropout_att, args.dropout_layer,
             args.transformer_layer_norm_eps, args.transformer_ffn_activation, args.transformer_param_init,
             src_tgt_attention=False, memory_transformer=True)) for lth in range(self.n_layers)])
@@ -104,6 +105,39 @@ class TransformerXL(LMBase):
     @property
     def output_dim(self):
         return self.d_model
+
+    @staticmethod
+    def add_args(parser, args):
+        """Add arguments."""
+        group = parser.add_argument_group("Transformer-XL LM")
+        group.add_argument('--transformer_d_model', type=int, default=256,
+                           help='number of units in the MHA layer')
+        group.add_argument('--transformer_d_ff', type=int, default=2048,
+                           help='number of units in the FFN layer')
+        # group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
+        #                    help='bottleneck dimension in the FFN layer')
+        group.add_argument('--transformer_n_heads', type=int, default=4,
+                           help='number of heads in the MHA layer')
+        group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
+                           help='epsilon value for layer normalization')
+        group.add_argument('--transformer_ffn_activation', type=str, default='relu',
+                           choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
+                           help='nonlinear activation for the FFN layer')
+        group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
+                           choices=['xavier_uniform', 'pytorch'],
+                           help='parameter initializatin')
+        group.add_argument('--dropout_att', type=float, default=0.1,
+                           help='dropout probability for the attention weights')
+        group.add_argument('--dropout_layer', type=float, default=0.0,
+                           help='LayerDrop probability for Transformer layers')
+        # XL specific
+        group.add_argument('--mem_len', type=int, default=0,
+                           help='number of tokens for memory in TransformerXL during training')
+        group.add_argument('--recog_mem_len', type=int, default=0,
+                           help='number of tokens for memory in TransformerXL during evaluation')
+        group.add_argument('--zero_center_offset', type=strtobool, default=False,
+                           help='set the offset right after memory to zero (accept negaitve indices)')
+        return parser
 
     def reset_parameters(self):
         """Initialize parameters with normal distribution."""
