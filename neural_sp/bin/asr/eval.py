@@ -14,9 +14,10 @@ import argparse
 import copy
 import logging
 import os
+import sys
 import time
 
-from neural_sp.bin.args_asr import parse
+from neural_sp.bin.args_asr import parse_args
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 def main():
 
-    args = parse()
+    args = parse_args(sys.argv[1:])
 
     # Load a conf file
     dir_name = os.path.dirname(args.recog_model[0])
