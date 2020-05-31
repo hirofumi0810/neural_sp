@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from distutils.util import strtobool
 import logging
 import math
 import numpy as np
@@ -295,6 +296,51 @@ class RNNDecoder(DecoderBase):
             assert self.embed.weight.size() == lm_init.embed.weight.size()
             self.embed.weight.data = lm_init.embed.weight.data
             logger.info('Overwrite %s' % 'embed.weight')
+
+    @staticmethod
+    def add_args(parser, args):
+        """Add arguments."""
+        group = parser.add_argument_group("LAS decoder")
+        # common (LAS/RNN-T)
+        if not hasattr(args, 'dec_n_units'):
+            group.add_argument('--dec_n_units', type=int, default=512,
+                               help='number of units in each decoder RNN layer')
+            group.add_argument('--dec_n_projs', type=int, default=0,
+                               help='number of units in the projection layer after each decoder RNN layer')
+            group.add_argument('--dec_bottleneck_dim', type=int, default=1024,
+                               help='number of dimensions of the bottleneck layer before the softmax layer')
+            group.add_argument('--emb_dim', type=int, default=512,
+                               help='number of dimensions in the embedding layer')
+        # attention
+        group.add_argument('--attn_type', type=str, default='location',
+                           choices=['no', 'location', 'add', 'dot',
+                                    'luong_dot', 'luong_general', 'luong_concat',
+                                    'mocha', 'gmm', 'cif', 'triggered_attention'],
+                           help='type of attention mechasnism for RNN decoder')
+        group.add_argument('--attn_dim', type=int, default=128,
+                           help='dimension of the attention layer')
+        group.add_argument('--attn_n_heads', type=int, default=1,
+                           help='number of heads in the attention layer')
+        group.add_argument('--attn_sharpening_factor', type=float, default=1.0,
+                           help='sharpening factor')
+        group.add_argument('--attn_conv_n_channels', type=int, default=10,
+                           help='')
+        group.add_argument('--attn_conv_width', type=int, default=201,
+                           help='')
+        group.add_argument('--attn_sigmoid', type=strtobool, default=False, nargs='?',
+                           help='')
+        group.add_argument('--gmm_attn_n_mixtures', type=int, default=5,
+                           help='number of mixtures for GMM attention')
+        # MBR
+        group.add_argument('--mbr_training', type=strtobool, default=False,
+                           help='Minimum Bayes Risk (MBR) training')
+        group.add_argument('--mbr_ce_weight', type=float, default=0.01,
+                           help='MBR loss weight for the main task')
+        group.add_argument('--mbr_nbest', type=int, default=4,
+                           help='N-best for MBR training')
+        group.add_argument('--mbr_softmax_smoothing', type=float, default=0.8,
+                           help='softmax smoothing (beta) for MBR training')
+        return parser
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
@@ -610,7 +656,6 @@ class RNNDecoder(DecoderBase):
 
         # Attention padding
         if self.attn_type == 'mocha' or trigger_points is not None:
-            aws = aws.masked_fill_(src_mask.unsqueeze(1).repeat([1, n_heads, 1, 1]) == 0, 0)
             aws = aws.masked_fill_(tgt_mask.unsqueeze(1).repeat([1, n_heads, 1, 1]) == 0, 0)
             # NOTE: attention padding is quite effective for quantity loss
 
@@ -637,15 +682,14 @@ class RNNDecoder(DecoderBase):
             loss_latency = torch.pow((aws_mat * delay_mat).sum(-1), 2).sum(-1)
             loss_latency = torch.mean(loss_latency.squeeze(1))
         elif trigger_points is not None:
-            js = torch.arange(xmax).float()
+            js = torch.arange(xmax, dtype=torch.float)
             if self.device_id >= 0:
                 js = js.cuda(self.device_id)
             js = js.repeat([bs, n_heads, ymax, 1])
             exp_trigger_points = (js * aws).sum(3)  # `[B, H, L]`
-            trigger_points = trigger_points.float()  # `[B, L]`
+            trigger_points = trigger_points.float().unsqueeze(1)  # `[B, 1, L]`
             if self.device_id >= 0:
                 trigger_points = trigger_points.cuda(self.device_id)
-            trigger_points = trigger_points.unsqueeze(1)
             if self.latency_metric == 'ctc_sync':
                 loss_latency = torch.abs(exp_trigger_points - trigger_points)  # `[B, H, L]`
             elif self.latency_metric == 'ctc_dal':
