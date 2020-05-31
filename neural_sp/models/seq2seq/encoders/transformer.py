@@ -222,6 +222,7 @@ class TransformerEncoder(EncoderBase):
                            help='type of positional encoding for the Transformer encoder')
         group.add_argument('--dropout_enc_layer', type=float, default=0.0,
                            help='LayerDrop probability for Transformer encoder layers')
+        # streaming
         group.add_argument('--lc_chunk_size_left', type=int, default=0,
                            help='left chunk size for latency-controlled Transformer encoder')
         group.add_argument('--lc_chunk_size_current', type=int, default=0,

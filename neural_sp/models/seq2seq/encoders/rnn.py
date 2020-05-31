@@ -242,6 +242,7 @@ class RNNEncoder(EncoderBase):
                            help='number of units in the projection layer after each encoder RNN layer')
         group.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
                            help='sum forward and backward RNN outputs for dimension reduction')
+        # streaming
         group.add_argument('--lc_chunk_size_left', type=int, default=0,
                            help='left chunk size for latency-controlled RNN encoder')
         group.add_argument('--lc_chunk_size_right', type=int, default=0,
