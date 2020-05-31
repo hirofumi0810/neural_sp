@@ -123,8 +123,6 @@ class TransformerLM(LMBase):
         # memory
         group.add_argument('--mem_len', type=int, default=0,
                            help='number of tokens for memory in TransformerXL during training')
-        group.add_argument('--recog_mem_len', type=int, default=0,
-                           help='number of tokens for memory in TransformerXL during evaluation')
         return parser
 
     def reset_parameters(self):

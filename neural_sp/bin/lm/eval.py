@@ -15,9 +15,8 @@ import os
 import sys
 import time
 
-from neural_sp.bin.args_lm import parse_args
+from neural_sp.bin.args_lm import parse_args_eval
 from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
 from neural_sp.datasets.lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
@@ -28,16 +27,8 @@ logger = logging.getLogger(__name__)
 
 def main():
 
-    args = parse_args(sys.argv[1:])
-
-    # Load a conf file
-    dir_name = os.path.dirname(args.recog_model[0])
-    conf = load_config(os.path.join(dir_name, 'conf.yml'))
-
-    # Overwrite conf
-    for k, v in conf.items():
-        if 'recog' not in k:
-            setattr(args, k, v)
+    # Load configuration
+    args, _, dir_name = parse_args_eval(sys.argv[1:])
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):

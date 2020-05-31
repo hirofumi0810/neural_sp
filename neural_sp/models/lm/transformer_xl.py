@@ -133,8 +133,6 @@ class TransformerXL(LMBase):
         # XL specific
         group.add_argument('--mem_len', type=int, default=0,
                            help='number of tokens for memory in TransformerXL during training')
-        group.add_argument('--recog_mem_len', type=int, default=0,
-                           help='number of tokens for memory in TransformerXL during evaluation')
         group.add_argument('--zero_center_offset', type=strtobool, default=False,
                            help='set the offset right after memory to zero (accept negaitve indices)')
         return parser
