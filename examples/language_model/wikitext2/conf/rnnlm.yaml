@@ -12,7 +12,7 @@ batch_size: 20
 bptt: 30
 optimizer: adam
 n_epochs: 50
-convert_to_sgd_epoch: 50
+convert_to_sgd_epoch: 100
 print_step: 200
 lr: 1e-3
 lr_decay_start_epoch: 10
@@ -29,4 +29,5 @@ dropout_in: 0.2
 dropout_hidden: 0.5
 dropout_out: 0.0
 weight_decay: 1e-6
+lsm_prob: 0.0
 adaptive_softmax: false
