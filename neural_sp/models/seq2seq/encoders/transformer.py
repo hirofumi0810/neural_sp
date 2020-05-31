@@ -222,7 +222,7 @@ class TransformerEncoder(EncoderBase):
         group = parser.add_argument_group("Transformer encoder")
         if 'conv' in args.enc_type:
             parser = ConvEncoder.add_args(parser, args)
-        # Trnasformer common
+        # Transformer common
         if not hasattr(args, 'transformer_d_model'):
             group.add_argument('--transformer_d_model', type=int, default=256,
                                help='number of units in the MHA layer')
@@ -240,7 +240,7 @@ class TransformerEncoder(EncoderBase):
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initializatin')
-        # Trnasformer encoder specific
+        # Transformer encoder specific
         group.add_argument('--transformer_enc_pe_type', type=str, default='add',
                            choices=['add', 'concat', 'none'],
                            help='type of positional encoding for the Transformer encoder')
