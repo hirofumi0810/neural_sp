@@ -21,6 +21,7 @@ import torch
 from tqdm import tqdm
 
 from neural_sp.bin.args_lm import parse_args
+from neural_sp.bin.model_name import set_lm_name
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import save_config
@@ -31,7 +32,6 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.build import build_lm
 from neural_sp.trainers.lr_scheduler import LRScheduler
-from neural_sp.trainers.model_name import set_lm_name
 from neural_sp.trainers.optimizer import set_optimizer
 from neural_sp.trainers.reporter import Reporter
 from neural_sp.utils import mkdir_join
