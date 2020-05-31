@@ -23,7 +23,7 @@ import time
 import torch
 from tqdm import tqdm
 
-from neural_sp.bin.args_asr import parse_args
+from neural_sp.bin.args_asr import parse_args_train
 from neural_sp.bin.model_name import set_asr_model_name
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 def main():
 
-    args = parse_args(sys.argv[1:])
+    args = parse_args_train(sys.argv[1:])
     args_init = copy.deepcopy(args)
     args_teacher = copy.deepcopy(args)
 

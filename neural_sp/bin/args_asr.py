@@ -8,19 +8,46 @@
 
 import configargparse
 from distutils.util import strtobool
+import os
+
+from neural_sp.bin.train_utils import load_config
 
 
-def parse_args(input_args):
+def parse_args_train(input_args):
     parser = build_parser()
     user_args, _ = parser.parse_known_args(input_args)
 
     # register module specific arguments
     parser = register_args_encoder(parser, user_args)
-    user_args, _ = parser.parse_known_args(input_args)
+    user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
     parser = register_args_decoder(parser, user_args)
-
     user_args = parser.parse_args()
     return user_args
+
+
+def parse_args_eval(input_args):
+    parser = build_parser()
+    user_args, _ = parser.parse_known_args(input_args)
+
+    # Load a yaml config file
+    dir_name = os.path.dirname(user_args.recog_model[0])
+    conf_train = load_config(os.path.join(dir_name, 'conf.yml'))
+
+    # register module specific arguments
+    user_args.enc_type = conf_train['enc_type']
+    parser = register_args_encoder(parser, user_args)
+    user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
+    user_args.dec_type = conf_train['dec_type']  # to avoid overlap
+    parser = register_args_decoder(parser, user_args)
+    user_args = parser.parse_args()
+    # NOTE: If new args are registered after training the model, the default value will be set
+
+    # Overwrite config
+    for k, v in conf_train.items():
+        if 'recog' not in k:
+            setattr(user_args, k, v)
+
+    return user_args, vars(user_args), dir_name
 
 
 def register_args_encoder(parser, args):
@@ -75,8 +102,6 @@ def build_parser():
                         help='job name')
     parser.add_argument('--stdout', type=strtobool, default=False,
                         help='print to standard output during training')
-    parser.add_argument('--recog_stdout', type=strtobool, default=False,
-                        help='print to standard output during evaluation')
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')
@@ -328,7 +353,24 @@ def build_parser():
                         help='N-best for MBR training')
     parser.add_argument('--mbr_softmax_smoothing', type=float, default=0.8,
                         help='softmax smoothing (beta) for MBR training')
+    # TransformerXL
+    parser.add_argument('--bptt', type=int, default=0,
+                        help='number of tokens to truncate in TransformerXL decoder during training')
+    parser.add_argument('--mem_len', type=int, default=0,
+                        help='number of tokens for memory in TransformerXL decoder during training')
+    # distillation related
+    parser.add_argument('--teacher', default=False, nargs='?',
+                        help='Teacher ASR model for knowledge distillation')
+    parser.add_argument('--teacher_lm', default=False, nargs='?',
+                        help='Teacher LM for knowledge distillation')
+    parser.add_argument('--distillation_weight', type=float, default=0.1,
+                        help='soft label weight for knowledge distillation')
+    # special label
+    parser.add_argument('--replace_sos', type=strtobool, default=False,
+                        help='')
     # decoding parameters
+    parser.add_argument('--recog_stdout', type=strtobool, default=False,
+                        help='print to standard output during evaluation')
     parser.add_argument('--recog_n_gpus', type=int, default=0,
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
@@ -416,22 +458,6 @@ def build_parser():
                         help='')
     parser.add_argument('--recog_mma_delay_threshold', type=int, default=-1,
                         help='delay threshold for MMA decoder')
-    # TransformerXL
-    parser.add_argument('--bptt', type=int, default=0,
-                        help='number of tokens to truncate in TransformerXL decoder during training')
-    parser.add_argument('--mem_len', type=int, default=0,
-                        help='number of tokens for memory in TransformerXL decoder during training')
     parser.add_argument('--recog_mem_len', type=int, default=0,
                         help='number of tokens for memory in TransformerXL decoder during evaluation')
-    # distillation related
-    parser.add_argument('--teacher', default=False, nargs='?',
-                        help='Teacher ASR model for knowledge distillation')
-    parser.add_argument('--teacher_lm', default=False, nargs='?',
-                        help='Teacher LM for knowledge distillation')
-    parser.add_argument('--distillation_weight', type=float, default=0.1,
-                        help='soft label weight for knowledge distillation')
-    # special label
-    parser.add_argument('--replace_sos', type=strtobool, default=False,
-                        help='')
-
     return parser
