@@ -252,7 +252,6 @@ def main():
             conf_init = load_config(os.path.join(os.path.dirname(args.asr_init), 'conf.yml'))
             for k, v in conf_init.items():
                 setattr(args_init, k, v)
-            args_init.l0_penalty = 0.0   # TODO: fix later
             model_init = Speech2Text(args_init)
             load_checkpoint(model_init, args.asr_init)
 
