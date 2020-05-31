@@ -89,7 +89,7 @@ class ConvEncoder(EncoderBase):
         self._factor = 1
         if poolings:
             for p in poolings:
-                self._factor *= p[1]
+                self._factor *= p[0]
 
         self.reset_parameters(param_init)
 

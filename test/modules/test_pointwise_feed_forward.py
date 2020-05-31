@@ -28,6 +28,7 @@ def make_args(**kwargs):
         ({'activation': 'gelu'}),
         ({'activation': 'gelu_accurate'}),
         ({'activation': 'glu'}),
+        ({'activation': 'swish'}),
         # bottleneck
         ({'bottleneck_dim': 16}),
     ]
