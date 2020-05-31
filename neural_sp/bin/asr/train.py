@@ -208,7 +208,7 @@ def main():
                                 lower_better=conf['metric'] not in ['accuracy', 'bleu'],
                                 warmup_start_lr=conf['warmup_start_lr'],
                                 warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['transformer_d_model'],
+                                model_size=conf['transformer_d_model'] if 'transformer_d_model' in conf.keys() else 0,
                                 factor=conf['lr_factor'],
                                 noam=is_transformer,
                                 save_checkpoints_topk=10 if is_transformer else 1)
@@ -278,7 +278,7 @@ def main():
                                 lower_better=args.metric not in ['accuracy', 'bleu'],
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
-                                model_size=args.transformer_d_model,
+                                model_size=getattr(args, 'transformer_d_model', 0),
                                 factor=args.lr_factor,
                                 noam=is_transformer,
                                 save_checkpoints_topk=10 if is_transformer else 1)

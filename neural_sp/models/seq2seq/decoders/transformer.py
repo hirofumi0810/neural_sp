@@ -232,8 +232,6 @@ class TransformerDecoder(DecoderBase):
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initializatin')
-            group.add_argument('--dropout_att', type=float, default=0.0,
-                               help='dropout probability for the attention weights')
         # Transformer decoder specific
         group.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
                            choices=['scaled_dot', 'add', 'average',

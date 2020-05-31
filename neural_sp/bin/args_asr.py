@@ -247,6 +247,10 @@ def build_parser():
                         help='')
     parser.add_argument('--asr_init', type=str, default=False, nargs='?',
                         help='pre-trained seq2seq model path')
+    parser.add_argument('--enc_init', type=str, default=False, nargs='?',
+                        help='pre-trained seq2seq model path for encoder initialization')
+    parser.add_argument('--dec_init', type=str, default=False, nargs='?',
+                        help='pre-trained seq2seq model path for decoder initialization')
     parser.add_argument('--asr_init_enc_only', type=strtobool, default=False,
                         help='Initialize the encoder only')
     parser.add_argument('--freeze_encoder', type=strtobool, default=False,
@@ -262,6 +266,8 @@ def build_parser():
                         help='dropout probability for the decoder')
     parser.add_argument('--dropout_emb', type=float, default=0.0,
                         help='dropout probability for the embedding')
+    parser.add_argument('--dropout_att', type=float, default=0.0,
+                        help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='weight decay parameter')
     parser.add_argument('--ss_prob', type=float, default=0.0,
