@@ -272,10 +272,6 @@ def build_parser():
                         help='')
     parser.add_argument('--asr_init', type=str, default=False, nargs='?',
                         help='pre-trained seq2seq model path')
-    parser.add_argument('--enc_init', type=str, default=False, nargs='?',
-                        help='pre-trained seq2seq model path for encoder initialization')
-    parser.add_argument('--dec_init', type=str, default=False, nargs='?',
-                        help='pre-trained seq2seq model path for decoder initialization')
     parser.add_argument('--asr_init_enc_only', type=strtobool, default=False,
                         help='Initialize the encoder only')
     parser.add_argument('--freeze_encoder', type=strtobool, default=False,
@@ -315,6 +311,12 @@ def build_parser():
                         help='number of time masks for SpecAugment')
     parser.add_argument('--time_width_upper', type=float, default=0.2,
                         help='')
+    parser.add_argument('--adaptive_number_ratio', type=float, default=0.0,
+                        help='adaptive multiplicity ratio for time masking')
+    parser.add_argument('--adaptive_size_ratio', type=float, default=0.0,
+                        help='adaptive size ratio for time masking')
+    parser.add_argument('--max_n_time_masks', type=int, default=20,
+                        help='maximum number of time masking')
     # MTL
     parser.add_argument('--ctc_weight', type=float, default=0.0,
                         help='CTC loss weight for the main task')

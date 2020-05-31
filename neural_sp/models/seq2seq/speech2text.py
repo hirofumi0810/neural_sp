@@ -109,7 +109,10 @@ class Speech2Text(ModelBase):
                                        T=args.time_width,
                                        n_freq_masks=args.n_freq_masks,
                                        n_time_masks=args.n_time_masks,
-                                       p=args.time_width_upper)
+                                       p=args.time_width_upper,
+                                       adaptive_number_ratio=args.adaptive_number_ratio,
+                                       adaptive_size_ratio=args.adaptive_size_ratio,
+                                       max_n_time_masks=args.max_n_time_masks)
 
         # Frontend
         self.ssn = None
@@ -178,11 +181,6 @@ class Speech2Text(ModelBase):
                 self.embed = nn.Embedding(args.vocab_sub1, args.emb_dim,
                                           padding_idx=self.pad)
                 self.dropout_emb = nn.Dropout(p=args.dropout_emb)
-
-        # Recurrent weights are orthogonalized
-        if args.rec_weight_orthogonal:
-            self.reset_parameters(args.param_init, dist='orthogonal',
-                                  keys=['rnn', 'weight'])
 
         # Initialize bias in forget gate with 1
         # self.init_forget_gate_bias_with_one()
