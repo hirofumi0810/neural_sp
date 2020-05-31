@@ -313,6 +313,15 @@ def build_parser():
     # contextualization
     parser.add_argument('--discourse_aware', type=strtobool, default=False, nargs='?',
                         help='carry over the last decoder state to the initial state in the next utterance')
+    # MBR
+    parser.add_argument('--mbr_training', type=strtobool, default=False,
+                        help='Minimum Bayes Risk (MBR) training')
+    parser.add_argument('--mbr_ce_weight', type=float, default=0.01,
+                        help='MBR loss weight for the main task')
+    parser.add_argument('--mbr_nbest', type=int, default=4,
+                        help='N-best for MBR training')
+    parser.add_argument('--mbr_softmax_smoothing', type=float, default=0.8,
+                        help='softmax smoothing (beta) for MBR training')
     # decoding parameters
     parser.add_argument('--recog_n_gpus', type=int, default=0,
                         help='number of GPUs (0 indicates CPU)')

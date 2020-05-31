@@ -331,15 +331,6 @@ class RNNDecoder(DecoderBase):
                            help='')
         group.add_argument('--gmm_attn_n_mixtures', type=int, default=5,
                            help='number of mixtures for GMM attention')
-        # MBR
-        group.add_argument('--mbr_training', type=strtobool, default=False,
-                           help='Minimum Bayes Risk (MBR) training')
-        group.add_argument('--mbr_ce_weight', type=float, default=0.01,
-                           help='MBR loss weight for the main task')
-        group.add_argument('--mbr_nbest', type=int, default=4,
-                           help='N-best for MBR training')
-        group.add_argument('--mbr_softmax_smoothing', type=float, default=0.8,
-                           help='softmax smoothing (beta) for MBR training')
         return parser
 
     def reset_parameters(self, param_init):
