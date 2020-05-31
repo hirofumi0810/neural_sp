@@ -87,7 +87,14 @@ def make_args(**kwargs):
         # LC-BLSTM
         ({'rnn_type': 'blstm', 'chunk_size_left': -1, 'chunk_size_right': 40}),
         ({'rnn_type': 'blstm', 'chunk_size_left': 40, 'chunk_size_right': 40}),
+        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'chunk_size_left': -1, 'chunk_size_right': 40}),
         ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40}),
+        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
+          'conv_poolings': "(2,1)_(2,1)"}),
+        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
+          'conv_poolings': "(1,2)_(1,2)"}),
+        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
+          'conv_poolings': "(1,1)_(1,1)"}),
         # Multi-task
         ({'rnn_type': 'blstm', 'n_layers_sub1': 4}),
         ({'rnn_type': 'blstm', 'n_layers_sub1': 4, 'task_specific_layer': True}),
