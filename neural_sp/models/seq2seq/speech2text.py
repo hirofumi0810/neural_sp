@@ -51,9 +51,6 @@ class Speech2Text(ModelBase):
         self.input_type = args.input_type
         self.input_dim = args.input_dim
         self.enc_type = args.enc_type
-        self.enc_n_units = args.enc_n_units
-        if args.enc_type in ['blstm', 'bgru', 'conv_blstm', 'conv_bgru']:
-            self.enc_n_units *= 2
         self.dec_type = args.dec_type
 
         # for OOV resolution
@@ -431,7 +428,7 @@ class Speech2Text(ModelBase):
     def plot_attention(self):
         if 'transformer' in self.enc_type:
             self.enc._plot_attention(self.save_path)
-        if 'transformer' in self.dec_type or 'transducer' not in self.dec_type:
+        if 'transformer' in self.dec_type or 'las' in self.dec_type:
             self.dec_fwd._plot_attention(self.save_path)
 
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):

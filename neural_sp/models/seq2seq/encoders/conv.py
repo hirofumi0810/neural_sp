@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from distutils.util import strtobool
 import logging
 import math
 import numpy as np
@@ -92,6 +93,28 @@ class ConvEncoder(EncoderBase):
                 self._factor *= p[0]
 
         self.reset_parameters(param_init)
+
+    @staticmethod
+    def add_args(parser, args):
+        """Add arguments."""
+        group = parser.add_argument_group("CNN encoder")
+        group.add_argument('--conv_in_channel', type=int, default=1,
+                           help='input dimension of the first CNN block')
+        group.add_argument('--conv_channels', type=str, default="",
+                           help='delimited list of channles in each CNN block')
+        group.add_argument('--conv_kernel_sizes', type=str, default="",
+                           help='delimited list of kernel sizes in each CNN block')
+        group.add_argument('--conv_strides', type=str, default="",
+                           help='delimited list of strides in each CNN block')
+        group.add_argument('--conv_poolings', type=str, default="",
+                           help='delimited list of poolings in each CNN block')
+        group.add_argument('--conv_batch_norm', type=strtobool, default=False,
+                           help='apply batch normalization in each CNN block')
+        group.add_argument('--conv_layer_norm', type=strtobool, default=False,
+                           help='apply layer normalization in each CNN block')
+        group.add_argument('--conv_bottleneck_dim', type=int, default=0,
+                           help='dimension of the bottleneck layer between CNN and the subsequent RNN/Transformer layers')
+        return parser
 
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""

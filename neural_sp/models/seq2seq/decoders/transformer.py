@@ -110,7 +110,7 @@ class TransformerDecoder(DecoderBase):
                  mocha_no_denominator, mocha_1dconv,
                  mocha_quantity_loss_weight, mocha_head_divergence_loss_weight,
                  latency_metric, latency_loss_weight,
-                 mocha_first_layer, external_lm, lm_fusion):
+                 mocha_first_layer, external_lm, lm_fusion, d_ff_bottleneck_dim):
 
         super(TransformerDecoder, self).__init__()
 
@@ -197,7 +197,8 @@ class TransformerDecoder(DecoderBase):
                 mocha_no_denominator=mocha_no_denominator,
                 mocha_1dconv=mocha_1dconv,
                 dropout_head=dropout_head,
-                lm_fusion=lm_fusion)) for lth in range(n_layers)])
+                lm_fusion=lm_fusion,
+                d_ff_bottleneck_dim=d_ff_bottleneck_dim)) for lth in range(n_layers)])
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, self.vocab)
             if tie_embedding:
@@ -208,6 +209,48 @@ class TransformerDecoder(DecoderBase):
                 self.lm_output_proj = nn.Linear(external_lm.output_dim, d_model)
 
             self.reset_parameters(param_init)
+
+    @staticmethod
+    def add_args(parser, args):
+        """Add arguments."""
+        group = parser.add_argument_group("Transformer decoder")
+        # Transformer common
+        if not hasattr(args, 'transformer_d_model'):
+            group.add_argument('--transformer_d_model', type=int, default=256,
+                               help='number of units in the MHA layer')
+            group.add_argument('--transformer_d_ff', type=int, default=2048,
+                               help='number of units in the FFN layer')
+            group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
+                               help='bottleneck dimension in the FFN layer')
+            group.add_argument('--transformer_n_heads', type=int, default=4,
+                               help='number of heads in the MHA layer')
+            group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
+                               help='epsilon value for layer normalization')
+            group.add_argument('--transformer_ffn_activation', type=str, default='relu',
+                               choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
+                               help='nonlinear activation for the FFN layer')
+            group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
+                               choices=['xavier_uniform', 'pytorch'],
+                               help='parameter initializatin')
+        # Transformer decoder specific
+        group.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
+                           choices=['scaled_dot', 'add', 'average',
+                                    'mocha', 'sync_bidir', 'sync_bidir_half'],
+                           help='type of attention mechasnism for Transformer decoder')
+        group.add_argument('--transformer_dec_pe_type', type=str, default='add',
+                           choices=['add', 'concat', 'none', '1dconv3L'],
+                           help='type of positional encoding for the Transformer decoder')
+        group.add_argument('--dropout_dec_layer', type=float, default=0.0,
+                           help='LayerDrop probability for Transformer decoder layers')
+        group.add_argument('--dropout_head', type=float, default=0.0,
+                           help='HeadDrop probability for masking out a head in the Transformer decoder')
+        # streaming
+        group.add_argument('--mocha_first_layer', type=int, default=1,
+                           help='the initial layer to have a MMA function')
+        group.add_argument('--mocha_head_divergence_loss_weight', type=float, default=0.0,
+                           help='head divergence loss weight for MMA')
+
+        return parser
 
     def reset_parameters(self, param_init):
         """Initialize parameters."""
@@ -241,10 +284,10 @@ class TransformerDecoder(DecoderBase):
         """Update memory.
 
         Args:
-            memory_prev (list): List of `[B, L_prev, d_model]`
-            hidden_states (list): List of `[B, L, d_model]`
+            memory_prev (list): length `n_layers`, each of which contains [B, L_prev, d_model]`
+            hidden_states (list): length `n_layers`, each of which contains [B, L, d_model]`
         Returns:
-            new_mems (list): List of `[B, mlen, d_model]`
+            new_mems (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
 
         """
         # if memory_prev is None:
@@ -393,7 +436,11 @@ class TransformerDecoder(DecoderBase):
             if lth < self.n_layers - 1:
                 hidden_states.append(out)
                 # NOTE: outputs from the last layer is not used for momory
-            if xy_aws is not None:
+            # Attention padding
+            if xy_aws is not None and 'mocha' in self.attn_type:
+                tgt_mask_v2 = (ys_out != self.pad).unsqueeze(1).unsqueeze(3)  # `[B, 1, L, 1]`
+                xy_aws = xy_aws.masked_fill_(tgt_mask_v2.repeat([1, xy_aws.size(1), 1, xmax]) == 0, 0)
+                # NOTE: attention padding is quite effective for quantity loss
                 xy_aws_layers.append(xy_aws.clone())
             if not self.training:
                 if yy_aws is not None:
@@ -413,17 +460,6 @@ class TransformerDecoder(DecoderBase):
         # Compute XE loss (+ label smoothing)
         loss, ppl = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
         losses_auxiliary = {}
-
-        # Attention padding
-        if 'mocha' in self.attn_type:
-            src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).unsqueeze(2)  # `[B, 1, 1, T]`
-            tgt_mask = (ys_out != self.pad).unsqueeze(1).unsqueeze(3)  # `[B, 1, L, 1]`
-            for lth in range(self.n_layers - self.mocha_first_layer + 1):
-                n_heads = xy_aws_layers[lth].size(1)
-                xy_aws_layers[lth] = xy_aws_layers[lth].masked_fill_(
-                    tgt_mask.repeat([1, n_heads, 1, xmax]) == 0, 0)
-                # NOTE: attention padding is quite effective for quantity loss
-        n_heads = xy_aws_layers[-1].size(1)  # mono
 
         # Quantity loss
         losses_auxiliary['loss_quantity'] = 0.

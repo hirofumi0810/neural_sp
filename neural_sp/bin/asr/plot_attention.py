@@ -15,8 +15,9 @@ import copy
 import logging
 import os
 import shutil
+import sys
 
-from neural_sp.bin.args_asr import parse
+from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_attention_weights
 from neural_sp.bin.train_utils import load_checkpoint
@@ -32,17 +33,8 @@ logger = logging.getLogger(__name__)
 
 def main():
 
-    args = parse()
-
-    # Load a conf file
-    dir_name = os.path.dirname(args.recog_model[0])
-    conf = load_config(os.path.join(dir_name, 'conf.yml'))
-
-    # Overwrite conf
-    for k, v in conf.items():
-        if 'recog' not in k:
-            setattr(args, k, v)
-    recog_params = vars(args)
+    # Load configuration
+    args, recog_params, dir_name = parse_args_eval(sys.argv[1:])
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'plot.log')):

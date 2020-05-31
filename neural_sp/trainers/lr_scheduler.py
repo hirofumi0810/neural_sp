@@ -49,7 +49,7 @@ class LRScheduler(object):
     def __init__(self, optimizer, base_lr, decay_type, decay_start_epoch, decay_rate,
                  decay_patient_n_epochs=0, early_stop_patient_n_epochs=-1, lower_better=True,
                  warmup_start_lr=0, warmup_n_steps=0,
-                 model_size=1, factor=1, noam=False, save_checkpoints_topk=1):
+                 model_size=0, factor=1, noam=False, save_checkpoints_topk=1):
 
         self.optimizer = optimizer
         self.noam = noam

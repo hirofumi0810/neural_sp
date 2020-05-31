@@ -10,11 +10,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from neural_sp.models.lm.gated_convlm import GatedConvLM
-from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.lm.transformerlm import TransformerLM
-from neural_sp.models.lm.transformer_xl import TransformerXL
-
 
 def build_lm(args, save_path=None, wordlm=False, lm_dict_path=None, asr_dict_path=None):
     """Select LM class.
@@ -30,11 +25,15 @@ def build_lm(args, save_path=None, wordlm=False, lm_dict_path=None, asr_dict_pat
 
     """
     if 'gated_conv' in args.lm_type:
+        from neural_sp.models.lm.gated_convlm import GatedConvLM
         lm = GatedConvLM(args, save_path)
     elif args.lm_type == 'transformer':
+        from neural_sp.models.lm.transformerlm import TransformerLM
         lm = TransformerLM(args, save_path)
     elif args.lm_type == 'transformer_xl':
+        from neural_sp.models.lm.transformer_xl import TransformerXL
         lm = TransformerXL(args, save_path)
     else:
+        from neural_sp.models.lm.rnnlm import RNNLM
         lm = RNNLM(args, save_path)
     return lm

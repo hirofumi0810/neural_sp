@@ -41,6 +41,8 @@ def make_args(**kwargs):
           'strides': "(1,1)_(1,1)", 'poolings': "(2, 2)_(2, 1)"}),
         # ({'channels': "32_32", 'kernel_sizes': "(3,3)_(3,3)",
         #   'strides': "(1,1)_(1,1)", 'poolings': "(2, 2)_(1, 2)"}),
+        ({'channels': "32_32", 'kernel_sizes': "(3,3)_(3,3)",
+          'strides': "(1,1)_(1,1)", 'poolings': "(1, 1)_(1, 1)"}),
         # subsample8
         ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'poolings': "(2, 2)_(2, 2)_(2, 2)"}),
@@ -52,6 +54,8 @@ def make_args(**kwargs):
         #   'poolings': "(2, 2)_(2, 2)_(1, 2)"}),
         # ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
         #   'poolings': "(2, 2)_(1, 2)_(1, 2)"}),
+        ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
+          'poolings': "(1, 1)_(1, 1)_(1, 1)"}),
     ]
 )
 def test_forward(args):

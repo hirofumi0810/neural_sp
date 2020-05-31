@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from distutils.util import strtobool
 import logging
 import torch
 import torch.nn as nn
@@ -102,6 +103,20 @@ class RNNLM(LMBase):
     @property
     def output_dim(self):
         return self._odim
+
+    @staticmethod
+    def add_args(parser, args):
+        """Add arguments."""
+        group = parser.add_argument_group("RNNLM")
+        group.add_argument('--n_units', type=int, default=1024,
+                           help='number of units in each layer')
+        group.add_argument('--n_projs', type=int, default=0,
+                           help='number of units in the projection layer')
+        group.add_argument('--residual', type=strtobool, default=False,
+                           help='')
+        group.add_argument('--use_glu', type=strtobool, default=False,
+                           help='use Gated Linear Unit (GLU) for fully-connected layers')
+        return parser
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
