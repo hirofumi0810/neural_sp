@@ -4,7 +4,7 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Monotonic chunkwise atteniton (MoChA)."""
+"""Monotonic (multihead) chunkwise atteniton."""
 
 # [reference]
 # https://github.com/j-min/MoChA-pytorch/blob/94b54a7fa13e4ac6dc255b509dd0febc8c0a0ee6/attention.py
@@ -268,20 +268,24 @@ class MoChA(nn.Module):
                  conv1d=False, init_r=-4, eps=1e-6, noise_std=1.0,
                  no_denominator=False, sharpening_factor=1.0,
                  dropout=0., dropout_head=0., bias=True, param_init='',
-                 decot=False, lookahead=2, share_chunkwise_attention=True):
-        """Monotonic chunk-wise attention.
-
-            "Monotonic Chunkwise Attention" (ICLR 2018)
-            https://openreview.net/forum?id=Hko85plCW
-            "Monotonic Multihead Attention" (ICLR 2020)
-            https://openreview.net/forum?id=Hyg96gBKPS
+                 decot=False, lookahead=2, share_chunkwise_attention=False):
+        """Monotonic (multihead) chunkwise attention.
 
             if chunk_size == 1, this is equivalent to Hard monotonic attention
                 "Online and Linear-Time Attention by Enforcing Monotonic Alignment" (ICML 2017)
-                 https://arxiv.org/abs/1704.00784
+                    https://arxiv.org/abs/1704.00784
+            if chunk_size > 1, this is equivalent to monotonic chunkwise attention (MoChA)
+                "Monotonic Chunkwise Attention" (ICLR 2018)
+                    https://openreview.net/forum?id=Hko85plCW
             if chunk_size == -1, this is equivalent to Monotonic infinite lookback attention (Milk)
                 "Monotonic Infinite Lookback Attention for Simultaneous Machine Translation" (ACL 2019)
-                 https://arxiv.org/abs/1906.05218
+                    https://arxiv.org/abs/1906.05218
+            if chunk_size == 1 and n_heads_mono>1, this is equivalent to Monotonic Multihead Attention (MMA)-hard
+                "Monotonic Multihead Attention" (ICLR 2020)
+                    https://openreview.net/forum?id=Hyg96gBKPS
+            if chunk_size == -1 and n_heads_mono>1, this is equivalent to Monotonic Multihead Attention (MMA)-Ilk
+                "Monotonic Multihead Attention" (ICLR 2020)
+                    https://openreview.net/forum?id=Hyg96gBKPS
 
         Args:
             kdim (int): dimension of key
@@ -321,12 +325,9 @@ class MoChA(nn.Module):
         self.noise_std = noise_std
         self.no_denom = no_denominator
         self.sharpening_factor = sharpening_factor
-        self.share_chunkwise_attention = share_chunkwise_attention
-        if not share_chunkwise_attention:
-            assert n_heads_mono > 1, 'set n_heads_mono > 1 (current: %d).' % n_heads_mono
-
         self.decot = decot
         self.lookahead = lookahead
+        self.share_chunkwise_attention = share_chunkwise_attention
 
         self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype,
                                                 n_heads_mono, init_r,
@@ -568,6 +569,8 @@ class MoChA(nn.Module):
         if self.w > 1 or self.milk:
             chunk_size_tmp = max(1, (bd_offset_old + bd_rightmost + 1) -
                                  max(0, bd_offset_old + bd_leftmost - self.w + 1))
+            # assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, e_chunk.size(3) + additional), \
+            #     (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, e_chunk.size(3) + additional))
             assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, chunk_size_tmp), \
                 (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, chunk_size_tmp))
             # TODO: padding for beta
