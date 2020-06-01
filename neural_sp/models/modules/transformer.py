@@ -24,92 +24,6 @@ random.seed(1)
 logger = logging.getLogger(__name__)
 
 
-class TransformerEncoderBlock(nn.Module):
-    """A single layer of the Transformer encoder.
-
-    Args:
-        d_model (int): input dimension of MultiheadAttentionMechanism and PositionwiseFeedForward
-        d_ff (int): hidden dimension of PositionwiseFeedForward
-        n_heads (int): number of heads for multi-head attention
-        dropout (float): dropout probabilities for linear layers
-        dropout_att (float): dropout probabilities for attention distributions
-        dropout_layer (float): LayerDrop probability
-        layer_norm_eps (float): epsilon parameter for layer normalization
-        ffn_activation (str): nonolinear function for PositionwiseFeedForward
-        param_init (str): parameter initialization method
-        memory_transformer (bool): streaming TransformerXL encoder
-        d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
-
-    """
-
-    def __init__(self, d_model, d_ff, n_heads,
-                 dropout, dropout_att, dropout_layer,
-                 layer_norm_eps, ffn_activation, param_init,
-                 memory_transformer=False, d_ff_bottleneck_dim=0):
-        super(TransformerEncoderBlock, self).__init__()
-
-        self.n_heads = n_heads
-        self.memory_transformer = memory_transformer
-
-        # self-attention
-        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        mha = RelMHA if memory_transformer else MHA
-        self.self_attn = mha(kdim=d_model,
-                             qdim=d_model,
-                             adim=d_model,
-                             n_heads=n_heads,
-                             dropout=dropout_att,
-                             param_init=param_init)
-
-        # position-wise feed-forward
-        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
-                                d_ff_bottleneck_dim)
-
-        self.dropout = nn.Dropout(dropout)
-        self.dropout_layer = dropout_layer
-
-    def forward(self, xs, xx_mask=None, pos_embs=None, memory=None, u=None, v=None):
-        """Transformer encoder layer definition.
-
-        Args:
-            xs (FloatTensor): `[B, T, d_model]`
-            xx_mask (ByteTensor): `[B, T, T]`
-            pos_embs (LongTensor): `[L, 1, d_model]`
-            memory (FloatTensor): `[B, L_prev, d_model]`
-            u (FloatTensor): global parameter for relative positional embedding
-            v (FloatTensor): global parameter for relative positional embedding
-        Returns:
-            xs (FloatTensor): `[B, T, d_model]`
-            xx_aws (FloatTensor): `[B, H, T, T]`
-
-        """
-        if self.dropout_layer > 0 and self.training and random.random() >= self.dropout_layer:
-            return xs, None
-
-        # self-attention
-        residual = xs
-        xs = self.norm1(xs)
-        if self.memory_transformer:
-            # memory Transformer w/ relative positional encoding
-            xs, xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)
-        elif memory is not None:
-            # memory Transformer w/o relative positional encoding
-            xs_memory = torch.cat([memory, xs], dim=1)
-            xs, xx_aws, _ = self.self_attn(xs_memory, xs_memory, xs, mask=xx_mask)  # k/v/q
-        else:
-            xs, xx_aws, _ = self.self_attn(xs, xs, xs, mask=xx_mask)  # k/v/q
-        xs = self.dropout(xs) + residual
-
-        # position-wise feed-forward
-        residual = xs
-        xs = self.norm2(xs)
-        xs = self.feed_forward(xs)
-        xs = self.dropout(xs) + residual
-
-        return xs, xx_aws
-
-
 class TransformerDecoderBlock(nn.Module):
     """A single layer of the Transformer decoder.
 
@@ -137,6 +51,7 @@ class TransformerDecoderBlock(nn.Module):
             mocha_1dconv (bool):
             lm_fusion (bool):
             d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
+            share_chunkwise_attention (bool):
 
     """
 
@@ -147,7 +62,8 @@ class TransformerDecoderBlock(nn.Module):
                  mocha_chunk_size=0, mocha_n_heads_mono=1, mocha_n_heads_chunk=1,
                  mocha_init_r=2, mocha_eps=1e-6, mocha_std=1.0,
                  mocha_no_denominator=False, mocha_1dconv=False,
-                 dropout_head=0, lm_fusion=False, d_ff_bottleneck_dim=0):
+                 dropout_head=0, lm_fusion=False, d_ff_bottleneck_dim=0,
+                 share_chunkwise_attention=False):
         super(TransformerDecoderBlock, self).__init__()
 
         self.atype = atype
@@ -185,7 +101,8 @@ class TransformerDecoderBlock(nn.Module):
                                       conv1d=mocha_1dconv,
                                       dropout=dropout_att,
                                       dropout_head=dropout_head,
-                                      param_init=param_init)
+                                      param_init=param_init,
+                                      share_chunkwise_attention=share_chunkwise_attention)
             else:
                 self.src_attn = MHA(kdim=d_model,
                                     qdim=d_model,
