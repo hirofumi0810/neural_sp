@@ -133,14 +133,14 @@ class ConvEncoder(EncoderBase):
             xlens (list): A list of length `[B]`
 
         """
-        bs, time, input_dim = xs.size()
-        xs = xs.view(bs, time, self.in_channel, input_dim // self.in_channel).contiguous().transpose(2, 1)
-        # `[B, in_ch, T, input_dim // in_ch]`
+        B, T, F = xs.size()
+        C = self.in_channel
+        xs = xs.view(B, T, C, F // C).contiguous().transpose(2, 1)  # `[B, C, T, F // C]`
 
         for block in self.layers:
             xs, xlens = block(xs, xlens)
-        bs, out_ch, time, freq = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T', out_ch * feat_dim]`
+        B, out_ch, T, freq = xs.size()
+        xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T', out_ch * feat_dim]`
 
         # Bridge layer
         if self.bridge is not None:
@@ -184,10 +184,10 @@ class Conv1LBlock(EncoderBase):
         """Forward computation.
 
         Args:
-            xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
+            xs (FloatTensor): `[B, in_ch, T, F]`
             xlens (list): A list of length `[B]`
         Returns:
-            xs (FloatTensor): `[B, T', feat_dim]`
+            xs (FloatTensor): `[B, out_ch, T', F']`
             xlens (list): A list of length `[B]`
 
         """
@@ -258,10 +258,10 @@ class Conv2LBlock(EncoderBase):
         """Forward computation.
 
         Args:
-            xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
+            xs (FloatTensor): `[B, in_ch, T, F]`
             xlens (IntTensor): `[B]`
         Returns:
-            xs (FloatTensor): `[B, T', feat_dim]`
+            xs (FloatTensor): `[B, out_ch, T', F']`
             xlens (IntTensor): `[B]`
 
         """
@@ -303,15 +303,15 @@ class LayerNorm2D(nn.Module):
         """Forward computation.
 
         Args:
-            xs (FloatTensor): `[B, out_ch, T, feat_dim]`
+            xs (FloatTensor): `[B, C, T, F]`
         Returns:
-            xs (FloatTensor): `[B, out_ch, T, feat_dim]`
+            xs (FloatTensor): `[B, C, T, F]`
 
         """
-        bs, out_ch, xmax, feat_dim = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(bs, xmax, out_ch * feat_dim)
+        B, C, T, F = xs.size()
+        xs = xs.transpose(2, 1).contiguous().view(B, T, C * F)
         xs = self.norm(xs)
-        xs = xs.view(bs, xmax, out_ch, feat_dim).transpose(2, 1)
+        xs = xs.view(B, T, C, F).transpose(2, 1)
         return xs
 
 
