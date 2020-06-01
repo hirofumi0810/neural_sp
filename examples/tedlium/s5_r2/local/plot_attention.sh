@@ -37,6 +37,7 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=1  # for Transformer
 oracle=false
+mma_delay_threshold=-1
 
 . ./cmd.sh
 . ./path.sh
@@ -52,7 +53,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev test; do
+for set in test; do
     recog_dir=$(dirname ${model})/plot_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -92,6 +93,9 @@ for set in dev test; do
     fi
     if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
+    fi
+    if [ ${mma_delay_threshold} != -1 ]; then
+        recog_dir=${recog_dir}_epswait${mma_delay_threshold}
     fi
     if [ ! -z ${model3} ]; then
         recog_dir=${recog_dir}_ensemble4
@@ -137,5 +141,6 @@ for set in dev test; do
         --recog_lm_state_carry_over ${lm_state_carry_over} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
+        --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_stdout ${stdout} || exit 1;
 done
