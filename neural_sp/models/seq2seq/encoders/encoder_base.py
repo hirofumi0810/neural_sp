@@ -18,6 +18,9 @@ import torch
 from neural_sp.models.base import ModelBase
 from neural_sp.utils import mkdir_join
 
+import matplotlib
+matplotlib.use('Agg')
+
 logger = logging.getLogger(__name__)
 
 

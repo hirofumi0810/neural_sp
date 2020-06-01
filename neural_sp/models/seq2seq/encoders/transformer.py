@@ -11,22 +11,24 @@ from __future__ import division
 from __future__ import print_function
 
 import copy
+import random
 import logging
 import math
 import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.initialization import init_with_normal_dist
+from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
 from neural_sp.models.modules.positinal_embedding import PositionalEncoding
 from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
-from neural_sp.models.modules.transformer import TransformerEncoderBlock
+from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
+from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
 
-import matplotlib
-matplotlib.use('Agg')
+random.seed(1)
 
 logger = logging.getLogger(__name__)
 
@@ -344,7 +346,7 @@ class TransformerEncoder(EncoderBase):
                 emax += 1
 
             xs = self.pos_enc(xs, scale=True)
-            xx_mask = None
+            xx_mask = None  # NOTE: no mask
             for lth, layer in enumerate(self.layers):
                 xs, xx_aws = layer(xs, xx_mask)
                 if not self.training:
@@ -407,3 +409,89 @@ class TransformerEncoder(EncoderBase):
         if self.n_layers_sub2 >= 1 and task == 'all':
             eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens
         return eouts
+
+
+class TransformerEncoderBlock(nn.Module):
+    """A single layer of the Transformer encoder.
+
+    Args:
+        d_model (int): input dimension of MultiheadAttentionMechanism and PositionwiseFeedForward
+        d_ff (int): hidden dimension of PositionwiseFeedForward
+        n_heads (int): number of heads for multi-head attention
+        dropout (float): dropout probabilities for linear layers
+        dropout_att (float): dropout probabilities for attention distributions
+        dropout_layer (float): LayerDrop probability
+        layer_norm_eps (float): epsilon parameter for layer normalization
+        ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        param_init (str): parameter initialization method
+        memory_transformer (bool): streaming TransformerXL encoder
+        d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
+
+    """
+
+    def __init__(self, d_model, d_ff, n_heads,
+                 dropout, dropout_att, dropout_layer,
+                 layer_norm_eps, ffn_activation, param_init,
+                 memory_transformer=False, d_ff_bottleneck_dim=0):
+        super(TransformerEncoderBlock, self).__init__()
+
+        self.n_heads = n_heads
+        self.memory_transformer = memory_transformer
+
+        # self-attention
+        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        mha = RelMHA if memory_transformer else MHA
+        self.self_attn = mha(kdim=d_model,
+                             qdim=d_model,
+                             adim=d_model,
+                             n_heads=n_heads,
+                             dropout=dropout_att,
+                             param_init=param_init)
+
+        # position-wise feed-forward
+        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
+                                d_ff_bottleneck_dim)
+
+        self.dropout = nn.Dropout(dropout)
+        self.dropout_layer = dropout_layer
+
+    def forward(self, xs, xx_mask=None, pos_embs=None, memory=None, u=None, v=None):
+        """Transformer encoder layer definition.
+
+        Args:
+            xs (FloatTensor): `[B, T, d_model]`
+            xx_mask (ByteTensor): `[B, T, T]`
+            pos_embs (LongTensor): `[L, 1, d_model]`
+            memory (FloatTensor): `[B, L_prev, d_model]`
+            u (FloatTensor): global parameter for relative positional embedding
+            v (FloatTensor): global parameter for relative positional embedding
+        Returns:
+            xs (FloatTensor): `[B, T, d_model]`
+            xx_aws (FloatTensor): `[B, H, T, T]`
+
+        """
+        if self.dropout_layer > 0 and self.training and random.random() >= self.dropout_layer:
+            return xs, None
+
+        # self-attention
+        residual = xs
+        xs = self.norm1(xs)
+        if self.memory_transformer:
+            # memory Transformer w/ relative positional encoding
+            xs, xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)
+        elif memory is not None:
+            # memory Transformer w/o relative positional encoding
+            xs_memory = torch.cat([memory, xs], dim=1)
+            xs, xx_aws, _ = self.self_attn(xs_memory, xs_memory, xs, mask=xx_mask)  # k/v/q
+        else:
+            xs, xx_aws, _ = self.self_attn(xs, xs, xs, mask=xx_mask)  # k/v/q
+        xs = self.dropout(xs) + residual
+
+        # position-wise feed-forward
+        residual = xs
+        xs = self.norm2(xs)
+        xs = self.feed_forward(xs)
+        xs = self.dropout(xs) + residual
+
+        return xs, xx_aws
