@@ -41,7 +41,6 @@ def build_encoder(args):
         encoder = TransformerEncoder(
             input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
             enc_type=args.enc_type,
-            attn_type=args.transformer_attn_type,
             n_heads=args.transformer_n_heads,
             n_layers=args.enc_n_layers,
             n_layers_sub1=args.enc_n_layers_sub1,
@@ -71,7 +70,8 @@ def build_encoder(args):
             param_init=args.transformer_param_init,
             chunk_size_left=args.lc_chunk_size_left,
             chunk_size_current=args.lc_chunk_size_current,
-            chunk_size_right=args.lc_chunk_size_right)
+            chunk_size_right=args.lc_chunk_size_right,
+            d_ff_bottleneck_dim=args.transformer_d_ff_bottleneck_dim)
 
     else:
         subsample = [1] * args.enc_n_layers

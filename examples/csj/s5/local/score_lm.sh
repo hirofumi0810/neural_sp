@@ -13,6 +13,7 @@ batch_size=1
 n_caches=0
 cache_theta=0.1
 cache_lambda=0.1
+mem_len=0  # for TransformerXL
 n_average=1  # for Transformer
 
 . ./cmd.sh
@@ -24,11 +25,10 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: local/score.sh --gpu 0" 1>&2
-    exit 1
+    n_gpus=0
+else
+    n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
-gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in eval1 eval2 eval3; do
     recog_dir=$(dirname ${model})/decode_${set}
@@ -37,6 +37,9 @@ for set in eval1 eval2 eval3; do
     fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
+    fi
+    if [ ${mem_len} != 0 ]; then
+        recog_dir=${recog_dir}_mem${mem_len}
     fi
     mkdir -p ${recog_dir}
 
@@ -55,12 +58,14 @@ for set in eval1 eval2 eval3; do
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/eval.py \
+        --recog_n_gpus ${n_gpus} \
         --recog_sets ${recog_set} \
         --recog_model ${model} \
         --recog_batch_size ${batch_size} \
         --recog_n_caches ${n_caches} \
         --recog_cache_theta ${cache_theta} \
         --recog_cache_lambda ${cache_lambda} \
+        --recog_mem_len ${mem_len} \
         --recog_n_average ${n_average} \
         --recog_dir ${recog_dir} || exit 1;
 done

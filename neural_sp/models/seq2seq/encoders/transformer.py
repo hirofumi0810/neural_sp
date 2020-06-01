@@ -13,8 +13,6 @@ from __future__ import print_function
 import copy
 import logging
 import math
-import os
-import shutil
 import torch
 import torch.nn as nn
 
@@ -26,7 +24,6 @@ from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
-from neural_sp.utils import mkdir_join
 
 import matplotlib
 matplotlib.use('Agg')
@@ -40,7 +37,6 @@ class TransformerEncoder(EncoderBase):
     Args:
         input_dim (int): dimension of input features (freq * channel)
         enc_type (str): type of encoder
-        attn_type (str): type of attention
         n_heads (int): number of heads for multi-head attention
         n_layers (int): number of blocks
         n_layers_sub1 (int): number of layers in the 1st auxiliary task
@@ -71,10 +67,11 @@ class TransformerEncoder(EncoderBase):
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
         chunk_size_current (int): current chunk size for time-restricted Transformer encoder
         chunk_size_right (int): right chunk size for time-restricted Transformer encoder
+        d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
 
     """
 
-    def __init__(self, input_dim, enc_type, attn_type, n_heads,
+    def __init__(self, input_dim, enc_type, n_heads,
                  n_layers, n_layers_sub1, n_layers_sub2,
                  d_model, d_ff, last_proj_dim,
                  pe_type, layer_norm_eps, ffn_activation,
@@ -83,7 +80,8 @@ class TransformerEncoder(EncoderBase):
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init,
-                 chunk_size_left, chunk_size_current, chunk_size_right):
+                 chunk_size_left, chunk_size_current, chunk_size_right,
+                 d_ff_bottleneck_dim):
 
         super(TransformerEncoder, self).__init__()
 
@@ -159,9 +157,10 @@ class TransformerEncoder(EncoderBase):
         self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
 
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
-            d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
+            d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init,
-            memory_transformer=self.memory_transformer))
+            memory_transformer=self.memory_transformer,
+            d_ff_bottleneck_dim=d_ff_bottleneck_dim))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
@@ -170,8 +169,9 @@ class TransformerEncoder(EncoderBase):
         if n_layers_sub1 > 0:
             if task_specific_layer:
                 self.layer_sub1 = TransformerEncoderBlock(
-                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
-                    layer_norm_eps, ffn_activation, param_init)
+                    d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
+                    layer_norm_eps, ffn_activation, param_init,
+                    d_ff_bottleneck_dim=d_ff_bottleneck_dim)
             self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
@@ -179,8 +179,9 @@ class TransformerEncoder(EncoderBase):
         if n_layers_sub2 > 0:
             if task_specific_layer:
                 self.layer_sub2 = TransformerEncoderBlock(
-                    d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
-                    layer_norm_eps, ffn_activation, param_init)
+                    d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
+                    layer_norm_eps, ffn_activation, param_init,
+                    d_ff_bottleneck_dim=d_ff_bottleneck_dim)
             self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
@@ -190,6 +191,45 @@ class TransformerEncoder(EncoderBase):
             self._odim = last_proj_dim
 
         self.reset_parameters(param_init)
+
+    @staticmethod
+    def add_args(parser, args):
+        """Add arguments."""
+        group = parser.add_argument_group("Transformer encoder")
+        if 'conv' in args.enc_type:
+            parser = ConvEncoder.add_args(parser, args)
+        # Transformer common
+        if not hasattr(args, 'transformer_d_model'):
+            group.add_argument('--transformer_d_model', type=int, default=256,
+                               help='number of units in the MHA layer')
+            group.add_argument('--transformer_d_ff', type=int, default=2048,
+                               help='number of units in the FFN layer')
+            group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
+                               help='bottleneck dimension in the FFN layer')
+            group.add_argument('--transformer_n_heads', type=int, default=4,
+                               help='number of heads in the MHA layer')
+            group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
+                               help='epsilon value for layer normalization')
+            group.add_argument('--transformer_ffn_activation', type=str, default='relu',
+                               choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
+                               help='nonlinear activation for the FFN layer')
+            group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
+                               choices=['xavier_uniform', 'pytorch'],
+                               help='parameter initializatin')
+        # Transformer encoder specific
+        group.add_argument('--transformer_enc_pe_type', type=str, default='add',
+                           choices=['add', 'concat', 'none'],
+                           help='type of positional encoding for the Transformer encoder')
+        group.add_argument('--dropout_enc_layer', type=float, default=0.0,
+                           help='LayerDrop probability for Transformer encoder layers')
+        # streaming
+        group.add_argument('--lc_chunk_size_left', type=int, default=0,
+                           help='left chunk size for latency-controlled Transformer encoder')
+        group.add_argument('--lc_chunk_size_current', type=int, default=0,
+                           help='current chunk size (and hop size) for latency-controlled Transformer encoder')
+        group.add_argument('--lc_chunk_size_right', type=int, default=0,
+                           help='right chunk size for latency-controlled Transformer encoder')
+        return parser
 
     def reset_parameters(self, param_init):
         """Initialize parameters."""
@@ -291,6 +331,7 @@ class TransformerEncoder(EncoderBase):
         else:
             # Path through CNN blocks
             xs, xlens = self.conv(xs, xlens)
+
         if not self.training:
             self.data_dict['elens'] = tensor2np(xlens)
 
@@ -366,36 +407,3 @@ class TransformerEncoder(EncoderBase):
         if self.n_layers_sub2 >= 1 and task == 'all':
             eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens
         return eouts
-
-    def _plot_attention(self, save_path, n_cols=2):
-        """Plot attention for each head in all layers."""
-        from matplotlib import pyplot as plt
-        from matplotlib.ticker import MaxNLocator
-
-        _save_path = mkdir_join(save_path, 'enc_att_weights')
-
-        # Clean directory
-        if _save_path is not None and os.path.isdir(_save_path):
-            shutil.rmtree(_save_path)
-            os.mkdir(_save_path)
-
-        for k, aw in self.aws_dict.items():
-            elens = self.data_dict['elens']
-
-            plt.clf()
-            n_heads = aw.shape[1]
-            n_cols_tmp = 1 if n_heads == 1 else n_cols
-            fig, axes = plt.subplots(max(1, n_heads // n_cols_tmp), n_cols_tmp,
-                                     figsize=(20, 8), squeeze=False)
-            for h in range(n_heads):
-                ax = axes[h // n_cols_tmp, h % n_cols_tmp]
-                ax.imshow(aw[-1, h, :elens[-1], :elens[-1]], aspect="auto")
-                ax.grid(False)
-                ax.set_xlabel("Input (head%d)" % h)
-                ax.set_ylabel("Output (head%d)" % h)
-                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-
-            fig.tight_layout()
-            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
-            plt.close()

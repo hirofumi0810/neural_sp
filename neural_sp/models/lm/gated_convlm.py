@@ -154,6 +154,16 @@ class GatedConvLM(LMBase):
 
         self.reset_parameters(args.param_init)
 
+    @staticmethod
+    def add_args(parser, args):
+        """Add arguments."""
+        group = parser.add_argument_group("GatedConv LM")
+        group.add_argument('--n_units', type=int, default=1024,
+                           help='number of units in each layer')
+        group.add_argument('--kernel_size', type=int, default=4,
+                           help='kernel size for GatedConvLM')
+        return parser
+
     def reset_parameters(self, param_init):
         """Initialize parameters with kaiming_uniform style."""
         logger.info('===== Initialize %s =====' % self.__class__.__name__)

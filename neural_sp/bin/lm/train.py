@@ -15,11 +15,13 @@ import logging
 import os
 from setproctitle import setproctitle
 import shutil
+import sys
 import time
 import torch
 from tqdm import tqdm
 
-from neural_sp.bin.args_lm import parse
+from neural_sp.bin.args_lm import parse_args_train
+from neural_sp.bin.model_name import set_lm_name
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import save_config
@@ -30,7 +32,6 @@ from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.build import build_lm
 from neural_sp.trainers.lr_scheduler import LRScheduler
-from neural_sp.trainers.model_name import set_lm_name
 from neural_sp.trainers.optimizer import set_optimizer
 from neural_sp.trainers.reporter import Reporter
 from neural_sp.utils import mkdir_join
@@ -43,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 def main():
 
-    args = parse()
+    args = parse_args_train(sys.argv[1:])
 
     # Load a conf file
     if args.resume:
@@ -106,9 +107,9 @@ def main():
     model = build_lm(args, save_path)
 
     if args.resume:
-        transformer = conf['lm_type'] in ['transformer', 'transformer_xl']
+        is_transformer = conf['lm_type'] in ['transformer', 'transformer_xl']
     else:
-        transformer = args.lm_type in ['transformer', 'transformer_xl']
+        is_transformer = args.lm_type in ['transformer', 'transformer_xl']
 
     if args.resume:
         # Set optimizer
@@ -125,9 +126,9 @@ def main():
                                 early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
                                 warmup_start_lr=conf['warmup_start_lr'],
                                 warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['transformer_d_model'],
+                                model_size=conf['transformer_d_model'] if 'transformer_d_model' in conf.keys() else 0,
                                 factor=conf['lr_factor'],
-                                noam=transformer,
+                                noam=is_transformer,
                                 save_checkpoints_topk=1)
 
         # Restore the last saved model
@@ -170,14 +171,15 @@ def main():
                                 early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
-                                model_size=args.transformer_d_model,
+                                model_size=getattr(args, 'transformer_d_model', 0),
                                 factor=args.lr_factor,
-                                noam=transformer,
+                                noam=is_transformer,
                                 save_checkpoints_topk=1)
 
     # GPU setting
     if args.n_gpus >= 1:
-        model.cudnn_setting(deterministic=False, benchmark=args.cudnn_benchmark)
+        model.cudnn_setting(deterministic=not (is_transformer or args.cudnn_benchmark),
+                            benchmark=args.cudnn_benchmark)
         model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
         model.cuda()
 

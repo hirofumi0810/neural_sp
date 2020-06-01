@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/hirofumi0810/neural_sp.svg?branch=master)](https://travis-ci.org/hirofumi0810/neural_sp)
+
 # NeuralSP: Neural network based Speech Processing
 
 ## How to install

@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Test for Transformer-XL LM."""
+"""Test for TransformerLM."""
 
 import argparse
 import importlib
@@ -32,10 +32,8 @@ def make_args(**kwargs):
         # dropout_out=0.1,
         lsm_prob=0.0,
         transformer_param_init='xavier_uniform',
-        bptt=200,
-        mem_len=100,
-        recog_mem_len=1000,
-        zero_center_offset=False,
+        mem_len=0,
+        recog_mem_len=0,
         adaptive_softmax=False,
         tie_embedding=False,
     )
@@ -62,10 +60,9 @@ def make_args(**kwargs):
         # embedding
         ({'adaptive_softmax': True}),
         # memory
-        ({'mem_len': 0}),
-        ({'recog_mem_len': 0}),
-        ({'mem_len': 0, 'recog_mem_len': 0}),
-        ({'zero_center_offset': True}),
+        ({'mem_len': 5}),
+        ({'recog_mem_len': 5}),
+        ({'mem_len': 5, 'recog_mem_len': 5}),
     ]
 )
 def test_forward(args):
@@ -74,8 +71,8 @@ def test_forward(args):
     ylens = [4, 5, 3, 7] * 200
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int64) for ylen in ylens]
 
-    transformer_xl = importlib.import_module('neural_sp.models.lm.transformer_xl')
-    lm = transformer_xl.TransformerXL(args)
+    module = importlib.import_module('neural_sp.models.lm.transformerlm')
+    lm = module.TransformerLM(args)
     loss, state, observation = lm(ys, state=None, n_caches=0)
     # assert loss.dim() == 1, loss
     # assert loss.size(0) == 1, loss

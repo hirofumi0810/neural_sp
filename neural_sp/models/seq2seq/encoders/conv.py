@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from distutils.util import strtobool
 import logging
 import math
 import numpy as np
@@ -37,7 +38,7 @@ class ConvEncoder(EncoderBase):
         layer_norm (bool): apply layer normalization
         residual (bool): add residual connections
         bottleneck_dim (int): dimension of the bridge layer after the last layer
-        param_init (float):
+        param_init (float): model initialization parameter
         layer_norm_eps (float):
 
     """
@@ -63,21 +64,21 @@ class ConvEncoder(EncoderBase):
         self.layers = nn.ModuleList()
         in_ch = in_channel
         in_freq = self.input_freq
-        for l in range(len(channels)):
+        for lth in range(len(channels)):
             block = Conv2LBlock(input_dim=in_freq,
                                 in_channel=in_ch,
-                                out_channel=channels[l],
-                                kernel_size=kernel_sizes[l],
-                                stride=strides[l],
-                                pooling=poolings[l],
+                                out_channel=channels[lth],
+                                kernel_size=kernel_sizes[lth],  # (T,F)
+                                stride=strides[lth],  # (T,F)
+                                pooling=poolings[lth],  # (T,F)
                                 dropout=dropout,
                                 batch_norm=batch_norm,
                                 layer_norm=layer_norm,
                                 layer_norm_eps=layer_norm_eps,
                                 residual=residual)
             self.layers += [block]
-            in_freq = block.input_dim
-            in_ch = channels[l]
+            in_freq = block.output_dim
+            in_ch = channels[lth]
 
         self._odim = int(in_ch * in_freq)
 
@@ -89,9 +90,31 @@ class ConvEncoder(EncoderBase):
         self._factor = 1
         if poolings:
             for p in poolings:
-                self._factor *= p[1]
+                self._factor *= p[0]
 
         self.reset_parameters(param_init)
+
+    @staticmethod
+    def add_args(parser, args):
+        """Add arguments."""
+        group = parser.add_argument_group("CNN encoder")
+        group.add_argument('--conv_in_channel', type=int, default=1,
+                           help='input dimension of the first CNN block')
+        group.add_argument('--conv_channels', type=str, default="",
+                           help='delimited list of channles in each CNN block')
+        group.add_argument('--conv_kernel_sizes', type=str, default="",
+                           help='delimited list of kernel sizes in each CNN block')
+        group.add_argument('--conv_strides', type=str, default="",
+                           help='delimited list of strides in each CNN block')
+        group.add_argument('--conv_poolings', type=str, default="",
+                           help='delimited list of poolings in each CNN block')
+        group.add_argument('--conv_batch_norm', type=strtobool, default=False,
+                           help='apply batch normalization in each CNN block')
+        group.add_argument('--conv_layer_norm', type=strtobool, default=False,
+                           help='apply layer normalization in each CNN block')
+        group.add_argument('--conv_bottleneck_dim', type=int, default=0,
+                           help='dimension of the bottleneck layer between CNN and the subsequent RNN/Transformer layers')
+        return parser
 
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""
@@ -141,9 +164,9 @@ class Conv1LBlock(EncoderBase):
                               kernel_size=tuple(kernel_size),
                               stride=tuple(stride),
                               padding=(1, 1))
-        input_dim = update_lens([input_dim], self.conv, dim=1)[0]
+        self._odim = update_lens([input_dim], self.conv, dim=1)[0]
         self.batch_norm = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm = LayerNorm2D(out_channel * input_dim.item(),
+        self.layer_norm = LayerNorm2D(out_channel * self._odim.item(),
                                       eps=layer_norm_eps) if layer_norm else lambda x: x
         self.dropout = nn.Dropout2d(p=dropout)
 
@@ -155,9 +178,7 @@ class Conv1LBlock(EncoderBase):
                                      padding=(0, 0),
                                      ceil_mode=True)
             # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
-            input_dim = update_lens([input_dim], self.pool, dim=1)[0]
-
-        self.input_dim = input_dim
+            self._odim = update_lens([self._odim], self.pool, dim=1)[0].item()
 
     def forward(self, xs, xlens):
         """Forward computation.
@@ -204,9 +225,9 @@ class Conv2LBlock(EncoderBase):
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
-        input_dim = update_lens([input_dim], self.conv1, dim=1)[0]
+        self._odim = update_lens([input_dim], self.conv1, dim=1)[0]
         self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm1 = LayerNorm2D(out_channel * input_dim.item(),
+        self.layer_norm1 = LayerNorm2D(out_channel * self._odim.item(),
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # 2nd layer
@@ -215,9 +236,9 @@ class Conv2LBlock(EncoderBase):
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
-        input_dim = update_lens([input_dim], self.conv2, dim=1)[0]
+        self._odim = update_lens([self._odim], self.conv2, dim=1)[0]
         self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm2 = LayerNorm2D(out_channel * input_dim.item(),
+        self.layer_norm2 = LayerNorm2D(out_channel * self._odim.item(),
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # Max Pooling
@@ -228,9 +249,10 @@ class Conv2LBlock(EncoderBase):
                                      padding=(0, 0),
                                      ceil_mode=True)
             # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
-            input_dim = update_lens([input_dim], self.pool, dim=1)[0]
-
-        self.input_dim = input_dim
+            self._odim = update_lens([self._odim], self.pool, dim=1)[0].item()
+            if self._odim % 2 != 0:
+                self._odim = (self._odim // 2) * 2
+                # TODO(hirofumi0810): more efficient way?
 
     def forward(self, xs, xlens):
         """Forward computation.

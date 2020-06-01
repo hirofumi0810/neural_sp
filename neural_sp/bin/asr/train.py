@@ -18,11 +18,13 @@ import numpy as np
 import os
 from setproctitle import setproctitle
 import shutil
+import sys
 import time
 import torch
 from tqdm import tqdm
 
-from neural_sp.bin.args_asr import parse
+from neural_sp.bin.args_asr import parse_args_train
+from neural_sp.bin.model_name import set_asr_model_name
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import save_config
@@ -40,7 +42,6 @@ from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.trainers.lr_scheduler import LRScheduler
-from neural_sp.trainers.model_name import set_asr_model_name
 from neural_sp.trainers.optimizer import set_optimizer
 from neural_sp.trainers.reporter import Reporter
 from neural_sp.utils import mkdir_join
@@ -53,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 def main():
 
-    args = parse()
+    args = parse_args_train(sys.argv[1:])
     args_init = copy.deepcopy(args)
     args_teacher = copy.deepcopy(args)
 
@@ -159,11 +160,9 @@ def main():
 
     # Set save path
     if args.resume:
-        transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
         save_path = os.path.dirname(args.resume)
         dir_name = os.path.basename(save_path)
     else:
-        transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
         dir_name = set_asr_model_name(args)
         if args.mbr_training:
             assert args.asr_init
@@ -189,9 +188,9 @@ def main():
     model = Speech2Text(args, save_path, train_set.idx2token[0])
 
     if args.resume:
-        transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
+        is_transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
     else:
-        transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
+        is_transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
 
     if args.resume:
         # Set optimizer
@@ -209,10 +208,10 @@ def main():
                                 lower_better=conf['metric'] not in ['accuracy', 'bleu'],
                                 warmup_start_lr=conf['warmup_start_lr'],
                                 warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['transformer_d_model'],
+                                model_size=conf['transformer_d_model'] if 'transformer_d_model' in conf.keys() else 0,
                                 factor=conf['lr_factor'],
-                                noam=transformer,
-                                save_checkpoints_topk=10 if transformer else 1)
+                                noam=is_transformer,
+                                save_checkpoints_topk=10 if is_transformer else 1)
 
         # Restore the last saved model
         load_checkpoint(model, args.resume, optimizer)
@@ -278,10 +277,10 @@ def main():
                                 lower_better=args.metric not in ['accuracy', 'bleu'],
                                 warmup_start_lr=args.warmup_start_lr,
                                 warmup_n_steps=args.warmup_n_steps,
-                                model_size=args.transformer_d_model,
+                                model_size=getattr(args, 'transformer_d_model', 0),
                                 factor=args.lr_factor,
-                                noam=transformer,
-                                save_checkpoints_topk=10 if transformer else 1)
+                                noam=is_transformer,
+                                save_checkpoints_topk=10 if is_transformer else 1)
 
     # Load the teacher ASR model
     teacher = None
@@ -309,7 +308,8 @@ def main():
 
     # GPU setting
     if args.n_gpus >= 1:
-        model.cudnn_setting(deterministic=False, benchmark=args.cudnn_benchmark)
+        model.cudnn_setting(deterministic=not (is_transformer or args.cudnn_benchmark),
+                            benchmark=args.cudnn_benchmark)
         model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
         model.cuda()
         if teacher is not None:
@@ -438,7 +438,7 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                optimizer.save_checkpoint(model, save_path, remove_old=not transformer)
+                optimizer.save_checkpoint(model, save_path, remove_old=not is_transformer)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -447,9 +447,9 @@ def main():
                 optimizer.epoch(metric_dev)  # lr decay
                 reporter.epoch(metric_dev, name=args.metric)  # plot
 
-                if optimizer.is_topk or transformer:
+                if optimizer.is_topk or is_transformer:
                     # Save the model
-                    optimizer.save_checkpoint(model, save_path, remove_old=not transformer)
+                    optimizer.save_checkpoint(model, save_path, remove_old=not is_transformer)
 
                     # test
                     if optimizer.is_topk:

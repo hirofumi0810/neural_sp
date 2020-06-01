@@ -8,9 +8,79 @@
 
 import configargparse
 from distutils.util import strtobool
+import os
+
+from neural_sp.bin.train_utils import load_config
 
 
-def parse():
+def parse_args_train(input_args):
+    parser = build_parser()
+    user_args, _ = parser.parse_known_args(input_args)
+
+    # register module specific arguments
+    parser = register_args_encoder(parser, user_args)
+    user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
+    parser = register_args_decoder(parser, user_args)
+    user_args = parser.parse_args()
+    return user_args
+
+
+def parse_args_eval(input_args):
+    parser = build_parser()
+    user_args, _ = parser.parse_known_args(input_args)
+
+    # Load a yaml config file
+    dir_name = os.path.dirname(user_args.recog_model[0])
+    conf_train = load_config(os.path.join(dir_name, 'conf.yml'))
+
+    # register module specific arguments
+    user_args.enc_type = conf_train['enc_type']
+    parser = register_args_encoder(parser, user_args)
+    user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
+    user_args.dec_type = conf_train['dec_type']  # to avoid overlap
+    parser = register_args_decoder(parser, user_args)
+    user_args = parser.parse_args()
+    # NOTE: If new args are registered after training the model, the default value will be set
+
+    # Overwrite config
+    for k, v in conf_train.items():
+        if 'recog' not in k:
+            setattr(user_args, k, v)
+
+    return user_args, vars(user_args), dir_name
+
+
+def register_args_encoder(parser, args):
+    if args.enc_type == 'tds':
+        from neural_sp.models.seq2seq.encoders.tds import TDSEncoder as module
+    elif args.enc_type == 'gated_conv':
+        from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder as module
+    elif 'transformer' in args.enc_type:
+        from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder as module
+    else:
+        from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder as module
+    if hasattr(module, 'add_args'):
+        parser = module.add_args(parser, args)
+    return parser
+
+
+def register_args_decoder(parser, args):
+    if args.dec_type in ['transformer', 'transformer_xl']:
+        from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder as module
+    elif args.dec_type == 'transformer_transducer':
+        from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer as module
+    elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
+        from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer as module
+    elif args.dec_type == 'asg':
+        from neural_sp.models.seq2seq.decoders.asg import ASGDecoder as module
+    else:
+        from neural_sp.models.seq2seq.decoders.las import RNNDecoder as module
+    if hasattr(module, 'add_args'):
+        parser = module.add_args(parser, args)
+    return parser
+
+
+def build_parser():
     parser = configargparse.ArgumentParser(
         config_file_parser_class=configargparse.YAMLConfigFileParser,
         formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
@@ -32,8 +102,6 @@ def parse():
                         help='job name')
     parser.add_argument('--stdout', type=strtobool, default=False,
                         help='print to standard output during training')
-    parser.add_argument('--recog_stdout', type=strtobool, default=False,
-                        help='print to standard output during evaluation')
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')
@@ -95,34 +163,12 @@ def parse():
     parser.add_argument('--sequence_summary_network', type=strtobool, default=False,
                         help='use sequence summary network')
     # topology (encoder)
-    parser.add_argument('--conv_in_channel', type=int, default=1, nargs='?',
-                        help='input dimension of the first CNN block')
-    parser.add_argument('--conv_channels', type=str, default="", nargs='?',
-                        help='delimited list of channles in each CNN block')
-    parser.add_argument('--conv_kernel_sizes', type=str, default="", nargs='?',
-                        help='delimited list of kernel sizes in each CNN block')
-    parser.add_argument('--conv_strides', type=str, default="", nargs='?',
-                        help='delimited list of strides in each CNN block')
-    parser.add_argument('--conv_poolings', type=str, default="", nargs='?',
-                        help='delimited list of poolings in each CNN block')
-    parser.add_argument('--conv_batch_norm', type=strtobool, default=False, nargs='?',
-                        help='apply batch normalization in each CNN block')
-    parser.add_argument('--conv_layer_norm', type=strtobool, default=False, nargs='?',
-                        help='apply layer normalization in each CNN block')
-    parser.add_argument('--conv_bottleneck_dim', type=int, default=0, nargs='?',
-                        help='dimension of the bottleneck layer between CNN and the subsequent RNN layers')
     parser.add_argument('--enc_type', type=str, default='blstm',
                         choices=['blstm', 'lstm', 'bgru', 'gru',
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
                                  'transformer', 'conv_transformer',
                                  'conv', 'tds', 'gated_conv'],
                         help='type of the encoder')
-    parser.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
-                        help='sum forward and backward RNN outputs for dimension reduction')
-    parser.add_argument('--enc_n_units', type=int, default=512,
-                        help='number of units in each encoder RNN layer')
-    parser.add_argument('--enc_n_projs', type=int, default=0,
-                        help='number of units in the projection layer after each encoder RNN layer')
     parser.add_argument('--enc_n_layers', type=int, default=5,
                         help='number of encoder RNN layers')
     parser.add_argument('--enc_n_layers_sub1', type=int, default=0,
@@ -134,47 +180,14 @@ def parse():
     parser.add_argument('--subsample_type', type=str, default='drop',
                         choices=['drop', 'concat', 'max_pool', '1dconv'],
                         help='type of subsampling in the encoder')
-    parser.add_argument('--lc_chunk_size_left', type=int, default=0,
-                        help='left chunk size for latency-controlled encoder')
-    parser.add_argument('--lc_chunk_size_current', type=int, default=0,
-                        help='current chunk size (and hop size) for latency-controlled Transformer encoder')
-    parser.add_argument('--lc_chunk_size_right', type=int, default=0,
-                        help='right chunk size for latency-controlled encoder')
     # topology (decoder)
-    parser.add_argument('--attn_type', type=str, default='location',
-                        choices=['no', 'location', 'add', 'dot',
-                                 'luong_dot', 'luong_general', 'luong_concat',
-                                 'mocha', 'gmm', 'cif', 'triggered_attention'],
-                        help='type of attention mechasnism for RNN sequence-to-sequence models')
-    parser.add_argument('--attn_dim', type=int, default=128,
-                        help='dimension of the attention layer')
-    parser.add_argument('--attn_conv_n_channels', type=int, default=10,
-                        help='')
-    parser.add_argument('--attn_conv_width', type=int, default=201,
-                        help='')
-    parser.add_argument('--attn_n_heads', type=int, default=1,
-                        help='number of heads in the attention layer')
-    parser.add_argument('--attn_sharpening_factor', type=float, default=1.0,
-                        help='sharpening factor')
-    parser.add_argument('--attn_sigmoid', type=strtobool, default=False, nargs='?',
-                        help='')
-    parser.add_argument('--bridge_layer', type=strtobool, default=False,
-                        help='')
     parser.add_argument('--dec_type', type=str, default='lstm',
                         choices=['lstm', 'gru', 'transformer', 'transformer_xl',
                                  'lstm_transducer', 'gru_transducer', 'transformer_transducer',
                                  'asg'],
                         help='type of the decoder')
-    parser.add_argument('--dec_n_units', type=int, default=512,
-                        help='number of units in each decoder RNN layer')
-    parser.add_argument('--dec_n_projs', type=int, default=0,
-                        help='number of units in the projection layer after each decoder RNN layer')
     parser.add_argument('--dec_n_layers', type=int, default=1,
                         help='number of decoder RNN layers')
-    parser.add_argument('--dec_bottleneck_dim', type=int, default=1024,
-                        help='number of dimensions of the bottleneck layer before the softmax layer')
-    parser.add_argument('--emb_dim', type=int, default=512,
-                        help='number of dimensions in the embedding layer')
     parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
                         help='tie weights between an embedding matrix and a linear layer before the softmax layer')
     parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
@@ -183,17 +196,13 @@ def parse():
                         help='')
     parser.add_argument('--ctc_fc_list_sub2', type=str, default="", nargs='?',
                         help='')
-    parser.add_argument('--gmm_attn_n_mixtures', type=int, default=5,
-                        help='number of mixtures for GMM attention')
     # streaming decoder
     parser.add_argument('--mocha_n_heads_mono', type=int, default=1,
                         help='number of heads for monotonic attention')
-    parser.add_argument('--mocha_tie_mono_attn', type=strtobool, default=False,
-                        help='tie parameters of monotonic multihead attention')
     parser.add_argument('--mocha_n_heads_chunk', type=int, default=1,
                         help='number of heads for chunkwise attention')
     parser.add_argument('--mocha_chunk_size', type=int, default=0,
-                        help='chunk size for MoChA. -1 means infinite lookback.')
+                        help='chunk size for MoChA/MMA. -1 means infinite lookback.')
     parser.add_argument('--mocha_init_r', type=float, default=-4,
                         help='')
     parser.add_argument('--mocha_eps', type=float, default=1e-6,
@@ -203,19 +212,15 @@ def parse():
     parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
                         help='remove denominator (set to 1) in the alpha recurrence')
     parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
-                        help='1dconv for MoChA')
+                        help='1dconv for MoChA/MMA')
     parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
-                        help='quantity loss weight for MoChA')
-    parser.add_argument('--mocha_head_divergence_loss_weight', type=float, default=0.0,
-                        help='Head divergence loss weight for MoChA')
+                        help='quantity loss weight for MoChA/MMA')
     parser.add_argument('--mocha_latency_metric', type=str, default=False,
                         choices=[False, 'decot', 'minlt', 'ctc_sync',
                                  'interval', 'frame_dal', 'ctc_dal'],
-                        help='differentiable latency metric for MoChA')
+                        help='differentiable latency metric for MoChA/MMA')
     parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
-                        help='latency loss weight for MoChA')
-    parser.add_argument('--mocha_first_layer', type=int, default=1,
-                        help='the initial layer to have a multi-head monotonic attention')
+                        help='latency loss weight for MoChA/MMA')
     # optimization
     parser.add_argument('--batch_size', type=int, default=50,
                         help='mini-batch size')
@@ -265,8 +270,6 @@ def parse():
     # initialization
     parser.add_argument('--param_init', type=float, default=0.1,
                         help='')
-    parser.add_argument('--rec_weight_orthogonal', type=strtobool, default=False,
-                        help='')
     parser.add_argument('--asr_init', type=str, default=False, nargs='?',
                         help='pre-trained seq2seq model path')
     parser.add_argument('--asr_init_enc_only', type=strtobool, default=False,
@@ -285,13 +288,7 @@ def parse():
     parser.add_argument('--dropout_emb', type=float, default=0.0,
                         help='dropout probability for the embedding')
     parser.add_argument('--dropout_att', type=float, default=0.0,
-                        help='dropout probability for the attention weights (for Transformer)')
-    parser.add_argument('--dropout_enc_layer', type=float, default=0.0,
-                        help='LayerDrop probability for Transformer encoder layers')
-    parser.add_argument('--dropout_dec_layer', type=float, default=0.0,
-                        help='LayerDrop probability for Transformer decoder layers')
-    parser.add_argument('--dropout_head', type=float, default=0.0,
-                        help='HeadDrop probability for masking out a head in the Transformer decoder')
+                        help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='weight decay parameter')
     parser.add_argument('--ss_prob', type=float, default=0.0,
@@ -314,10 +311,12 @@ def parse():
                         help='number of time masks for SpecAugment')
     parser.add_argument('--time_width_upper', type=float, default=0.2,
                         help='')
-    parser.add_argument('--flip_freq_prob', type=float, default=0.0,
-                        help='probability to flip input spectrogram on the frequency axis')
-    parser.add_argument('--flip_time_prob', type=float, default=0.0,
-                        help='probability to flip input spectrogram on the time axis')
+    parser.add_argument('--adaptive_number_ratio', type=float, default=0.0,
+                        help='adaptive multiplicity ratio for time masking')
+    parser.add_argument('--adaptive_size_ratio', type=float, default=0.0,
+                        help='adaptive size ratio for time masking')
+    parser.add_argument('--max_n_time_masks', type=int, default=20,
+                        help='maximum number of time masking')
     # MTL
     parser.add_argument('--ctc_weight', type=float, default=0.0,
                         help='CTC loss weight for the main task')
@@ -333,15 +332,6 @@ def parse():
                         help='change mini-batch per task')
     parser.add_argument('--task_specific_layer', type=strtobool, default=False, nargs='?',
                         help='insert a task-specific encoder layer per task')
-    # MBR
-    parser.add_argument('--mbr_training', type=strtobool, default=False,
-                        help='Minimum Bayes Risk (MBR) training')
-    parser.add_argument('--mbr_ce_weight', type=float, default=0.01,
-                        help='MBR loss weight for the main task')
-    parser.add_argument('--mbr_nbest', type=int, default=4,
-                        help='N-best for MBR training')
-    parser.add_argument('--mbr_softmax_smoothing', type=float, default=0.8,
-                        help='softmax smoothing (beta) for MBR training')
     # foroward-backward
     parser.add_argument('--bwd_weight', type=float, default=0.0,
                         help='cross etnropy loss weight for the backward decoder in the main task')
@@ -353,35 +343,36 @@ def parse():
                         help='type of LM fusion')
     parser.add_argument('--lm_init', type=strtobool, default=False,
                         help='initialize the decoder with the external LM')
-    # transformer
-    parser.add_argument('--transformer_d_model', type=int, default=256,
-                        help='number of units in self-attention layers in Transformer')
-    parser.add_argument('--transformer_d_ff', type=int, default=2048,
-                        help='number of units in feed-forward fully-conncected layers in Transformer')
-    parser.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
-                        choices=['scaled_dot', 'add', 'average',
-                                 'mocha', 'sync_bidir', 'sync_bidir_half'],
-                        help='type of attention mechasnism for Transformer')
-    parser.add_argument('--transformer_n_heads', type=int, default=4,
-                        help='number of heads in the attention layer for Transformer')
-    parser.add_argument('--transformer_enc_pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'none'],
-                        help='type of positional encoding for the Transformer encoder')
-    parser.add_argument('--transformer_dec_pe_type', type=str, default='add',
-                        choices=['add', 'concat', 'none', '1dconv3L'],
-                        help='type of positional encoding for the Transformer encoder')
-    parser.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
-                        help='epsilon value for layer normalization')
-    parser.add_argument('--transformer_ffn_activation', type=str, default='relu',
-                        choices=['relu', 'gelu', 'gelu_accurate', 'glu'],
-                        help='nonlinear activation for position wise feed-forward layer')
-    parser.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
-                        choices=['xavier_uniform', 'pytorch'],
-                        help='parameter initializatin for Transformer')
     # contextualization
     parser.add_argument('--discourse_aware', type=strtobool, default=False, nargs='?',
                         help='carry over the last decoder state to the initial state in the next utterance')
+    # MBR
+    parser.add_argument('--mbr_training', type=strtobool, default=False,
+                        help='Minimum Bayes Risk (MBR) training')
+    parser.add_argument('--mbr_ce_weight', type=float, default=0.01,
+                        help='MBR loss weight for the main task')
+    parser.add_argument('--mbr_nbest', type=int, default=4,
+                        help='N-best for MBR training')
+    parser.add_argument('--mbr_softmax_smoothing', type=float, default=0.8,
+                        help='softmax smoothing (beta) for MBR training')
+    # TransformerXL
+    parser.add_argument('--bptt', type=int, default=0,
+                        help='number of tokens to truncate in TransformerXL decoder during training')
+    parser.add_argument('--mem_len', type=int, default=0,
+                        help='number of tokens for memory in TransformerXL decoder during training')
+    # distillation related
+    parser.add_argument('--teacher', default=False, nargs='?',
+                        help='Teacher ASR model for knowledge distillation')
+    parser.add_argument('--teacher_lm', default=False, nargs='?',
+                        help='Teacher LM for knowledge distillation')
+    parser.add_argument('--distillation_weight', type=float, default=0.1,
+                        help='soft label weight for knowledge distillation')
+    # special label
+    parser.add_argument('--replace_sos', type=strtobool, default=False,
+                        help='')
     # decoding parameters
+    parser.add_argument('--recog_stdout', type=strtobool, default=False,
+                        help='print to standard output during evaluation')
     parser.add_argument('--recog_n_gpus', type=int, default=0,
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
@@ -469,24 +460,6 @@ def parse():
                         help='')
     parser.add_argument('--recog_mma_delay_threshold', type=int, default=-1,
                         help='delay threshold for MMA decoder')
-    # TransformerXL
-    parser.add_argument('--bptt', type=int, default=0,
-                        help='number of tokens to truncate in TransformerXL decoder during training')
-    parser.add_argument('--mem_len', type=int, default=0,
-                        help='number of tokens for memory in TransformerXL decoder during training')
     parser.add_argument('--recog_mem_len', type=int, default=0,
                         help='number of tokens for memory in TransformerXL decoder during evaluation')
-    # distillation related
-    parser.add_argument('--teacher', default=False, nargs='?',
-                        help='Teacher ASR model for knowledge distillation')
-    parser.add_argument('--teacher_lm', default=False, nargs='?',
-                        help='Teacher LM for knowledge distillation')
-    parser.add_argument('--distillation_weight', type=float, default=0.1,
-                        help='soft label weight for knowledge distillation')
-    # special label
-    parser.add_argument('--replace_sos', type=strtobool, default=False,
-                        help='')
-
-    args = parser.parse_args()
-    # args, _ = parser.parse_known_args(parser)
-    return args
+    return parser

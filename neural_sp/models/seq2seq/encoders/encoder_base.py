@@ -11,9 +11,12 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
+import os
+import shutil
 import torch
 
 from neural_sp.models.base import ModelBase
+from neural_sp.utils import mkdir_join
 
 logger = logging.getLogger(__name__)
 
@@ -52,3 +55,36 @@ class EncoderBase(ModelBase):
                     logging.debug('Turn off ceil_mode in %s.' % name)
                 else:
                     self.turn_off_ceil_mode(module)
+
+    def _plot_attention(self, save_path, n_cols=2):
+        """Plot attention for each head in all layers."""
+        from matplotlib import pyplot as plt
+        from matplotlib.ticker import MaxNLocator
+
+        _save_path = mkdir_join(save_path, 'enc_att_weights')
+
+        # Clean directory
+        if _save_path is not None and os.path.isdir(_save_path):
+            shutil.rmtree(_save_path)
+            os.mkdir(_save_path)
+
+        for k, aw in self.aws_dict.items():
+            elens = self.data_dict['elens']
+
+            plt.clf()
+            n_heads = aw.shape[1]
+            n_cols_tmp = 1 if n_heads == 1 else n_cols
+            fig, axes = plt.subplots(max(1, n_heads // n_cols_tmp), n_cols_tmp,
+                                     figsize=(20, 8), squeeze=False)
+            for h in range(n_heads):
+                ax = axes[h // n_cols_tmp, h % n_cols_tmp]
+                ax.imshow(aw[-1, h, :elens[-1], :elens[-1]], aspect="auto")
+                ax.grid(False)
+                ax.set_xlabel("Input (head%d)" % h)
+                ax.set_ylabel("Output (head%d)" % h)
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+            fig.tight_layout()
+            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
+            plt.close()

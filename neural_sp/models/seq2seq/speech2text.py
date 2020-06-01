@@ -23,7 +23,6 @@ from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.build import build_decoder
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
-from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer
 from neural_sp.models.seq2seq.encoders.build import build_encoder
 from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.frontends.gaussian_noise import add_gaussian_noise
@@ -52,9 +51,6 @@ class Speech2Text(ModelBase):
         self.input_type = args.input_type
         self.input_dim = args.input_dim
         self.enc_type = args.enc_type
-        self.enc_n_units = args.enc_n_units
-        if args.enc_type in ['blstm', 'bgru', 'conv_blstm', 'conv_bgru']:
-            self.enc_n_units *= 2
         self.dec_type = args.dec_type
 
         # for OOV resolution
@@ -105,8 +101,6 @@ class Speech2Text(ModelBase):
         self.n_splices = args.n_splices
         self.use_specaug = args.n_freq_masks > 0 or args.n_time_masks > 0
         self.specaug = None
-        self.flip_time_prob = args.flip_time_prob
-        self.flip_freq_prob = args.flip_freq_prob
         self.weight_noise = args.weight_noise
         if self.use_specaug:
             assert args.n_stacks == 1 and args.n_skips == 1
@@ -115,7 +109,10 @@ class Speech2Text(ModelBase):
                                        T=args.time_width,
                                        n_freq_masks=args.n_freq_masks,
                                        n_time_masks=args.n_time_masks,
-                                       p=args.time_width_upper)
+                                       p=args.time_width_upper,
+                                       adaptive_number_ratio=args.adaptive_number_ratio,
+                                       adaptive_size_ratio=args.adaptive_size_ratio,
+                                       max_n_time_masks=args.max_n_time_masks)
 
         # Frontend
         self.ssn = None
@@ -185,11 +182,6 @@ class Speech2Text(ModelBase):
                                           padding_idx=self.pad)
                 self.dropout_emb = nn.Dropout(p=args.dropout_emb)
 
-        # Recurrent weights are orthogonalized
-        if args.rec_weight_orthogonal:
-            self.reset_parameters(args.param_init, dist='orthogonal',
-                                  keys=['rnn', 'weight'])
-
         # Initialize bias in forget gate with 1
         # self.init_forget_gate_bias_with_one()
 
@@ -211,6 +203,11 @@ class Speech2Text(ModelBase):
         for sub in ['sub1', 'sub2']:
             if hasattr(self, 'dec_fwd_' + sub):
                 getattr(self, 'dec_fwd_' + sub).start_scheduled_sampling()
+
+    def mocha_quantity_loss_trigger(self):
+        # main task only now
+        if hasattr(self, 'dec_fwd'):
+            getattr(self, 'dec_fwd').start_mocha_quantity_loss()
 
     def reset_session(self):
         # main task
@@ -285,22 +282,21 @@ class Speech2Text(ModelBase):
                                              batch['ys'], task,
                                              teacher_logits, self.recog_params, self.idx2token)
             loss += loss_fwd
-            if isinstance(self.dec_fwd, RNNTransducer) or isinstance(self.dec_fwd, TrasformerTransducer):
+            if isinstance(self.dec_fwd, RNNTransducer):
                 observation['loss.transducer'] = obs_fwd['loss_transducer']
             else:
+                observation['acc.att'] = obs_fwd['acc_att']
+                observation['ppl.att'] = obs_fwd['ppl_att']
                 observation['loss.att'] = obs_fwd['loss_att']
                 observation['loss.mbr'] = obs_fwd['loss_mbr']
                 if 'loss_quantity' not in obs_fwd.keys():
                     obs_fwd['loss_quantity'] = None
                 observation['loss.quantity'] = obs_fwd['loss_quantity']
-                if 'loss_headdiv' not in obs_fwd.keys():
-                    obs_fwd['loss_headdiv'] = None
-                observation['loss.headdiv'] = obs_fwd['loss_headdiv']
+
                 if 'loss_latency' not in obs_fwd.keys():
                     obs_fwd['loss_latency'] = None
                 observation['loss.latency'] = obs_fwd['loss_latency']
-                observation['acc.att'] = obs_fwd['acc_att']
-                observation['ppl.att'] = obs_fwd['ppl_att']
+
             observation['loss.ctc'] = obs_fwd['loss_ctc']
 
         # for the backward decoder in the main task
@@ -430,7 +426,7 @@ class Speech2Text(ModelBase):
     def plot_attention(self):
         if 'transformer' in self.enc_type:
             self.enc._plot_attention(self.save_path)
-        if 'transformer' in self.dec_type or 'transducer' not in self.dec_type:
+        if 'transformer' in self.dec_type or 'las' in self.dec_type:
             self.dec_fwd._plot_attention(self.save_path)
 
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
@@ -450,10 +446,11 @@ class Speech2Text(ModelBase):
         SPIKE_THRESHOLD = params['recog_ctc_vad_spike_threshold']
         MAX_N_ACCUM_FRAMES = params['recog_ctc_vad_n_accum_frames']
 
-        N_l = self.enc.lc_chunk_size_left
-        N_r = self.enc.lc_chunk_size_right
+        N_l = self.enc.chunk_size_left
+        N_r = self.enc.chunk_size_right
         if N_l == 0 and N_r == 0:
-            N_l = params['recog_lc_chunk_size_left']  # for unidirectional encoder
+            # N_l = params['lc_chunk_size_left']  # for unidirectional encoder
+            N_l = 40
         factor = self.enc.subsampling_factor
         BLANK_THRESHOLD /= factor
         x_whole = xs[0]  # `[T, input_dim]`
@@ -477,7 +474,7 @@ class Speech2Text(ModelBase):
             while True:
                 # Encode input features chunk by chunk
                 if self.enc.conv is not None:
-                    x_chunk = x_whole[max(0, t - 1):t + (N_l + N_r) + 1]
+                    x_chunk = x_whole[max(0, t - 1):t + (N_l + N_r) + 3]
                 else:
                     x_chunk = x_whole[t:t + (N_l + N_r)]
                 is_last_chunk = t + N_l >= len(x_whole) - 1
@@ -511,7 +508,8 @@ class Speech2Text(ModelBase):
                                 # print('CTC (T:%d): <blank>' % (t + j * factor))
                             else:
                                 n_blanks = 0
-                                # print('CTC (T:%d): %s' % (t + j * factor, idx2token([topk_ids_chunk[0, j, 0].item()])))
+                                # print('CTC (T:%d): %s' % (t + j * factor,
+                                #                           idx2token([topk_ids_chunk[0, j, 0].item()])))
                             if not is_reset and n_blanks > BLANK_THRESHOLD:
                                 boundary_offset = j  # select the most right blank offset
                                 is_reset = True
@@ -524,7 +522,7 @@ class Speech2Text(ModelBase):
                 # Chunk-synchronous attention decoding
                 if params['recog_chunk_sync']:
                     end_hyps, hyps, aws_seg = self.dec_fwd.beam_search_chunk_sync(
-                        eout_chunk, params, idx2token, lm, lm_second,
+                        eout_chunk, params, idx2token, lm,
                         ctc_log_probs=ctc_log_probs_chunk, hyps=hyps,
                         state_carry_over=False,
                         ignore_eos=self.enc.rnn_type in ['lstm', 'conv_lstm'])
@@ -627,6 +625,15 @@ class Speech2Text(ModelBase):
             else:
                 return [[]], [None]
 
+    def streamable(self):
+        return getattr(self.dec_fwd, 'streamable', False)
+
+    def quantity_rate(self):
+        return getattr(self.dec_fwd, 'quantity_rate', 1.0)
+
+    def last_success_frame_ratio(self):
+        return getattr(self.dec_fwd, 'last_success_frame_ratio', 0)
+
     def decode(self, xs, params, idx2token, exclude_eos=False,
                refs_id=None, refs=None, utt_ids=None, speakers=None,
                task='ys', ensemble_models=[]):
@@ -666,9 +673,10 @@ class Speech2Text(ModelBase):
         else:
             raise ValueError(task)
 
-        if self.utt_id_prev != utt_ids[0]:
-            self.reset_session()
-        self.utt_id_prev = utt_ids[0]
+        if utt_ids is not None:
+            if self.utt_id_prev != utt_ids[0]:
+                self.reset_session()
+            self.utt_id_prev = utt_ids[0]
 
         self.eval()
         with torch.no_grad():

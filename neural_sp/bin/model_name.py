@@ -29,8 +29,10 @@ def set_asr_model_name(args):
     if 'transformer' in args.enc_type:
         dir_name += str(args.transformer_d_model) + 'dmodel'
         dir_name += str(args.transformer_d_ff) + 'dff'
+        if args.transformer_d_ff_bottleneck_dim > 0:
+            dir_name += str(args.transformer_d_ff_bottleneck_dim) + 'bn'
         dir_name += str(args.enc_n_layers) + 'L'
-        dir_name += str(args.transformer_n_heads) + 'head'
+        dir_name += str(args.transformer_n_heads) + 'H'
         dir_name += 'pe' + str(args.transformer_enc_pe_type)
         if args.dropout_enc_layer > 0:
             dir_name += 'droplayer' + str(args.dropout_enc_layer)
@@ -59,14 +61,16 @@ def set_asr_model_name(args):
         if 'transformer' in args.dec_type:
             dir_name += str(args.transformer_d_model) + 'dmodel'
             dir_name += str(args.transformer_d_ff) + 'dff'
+            if args.transformer_d_ff_bottleneck_dim > 0:
+                dir_name += str(args.transformer_d_ff_bottleneck_dim) + 'bn'
             dir_name += str(args.dec_n_layers) + 'L'
-            dir_name += str(args.transformer_n_heads) + 'head'
+            dir_name += str(args.transformer_n_heads) + 'H'
             dir_name += 'pe' + str(args.transformer_dec_pe_type)
             dir_name += args.transformer_attn_type
             if 'mocha' in args.transformer_attn_type:
-                dir_name += '_mono' + str(args.mocha_n_heads_mono) + 'H'
-                dir_name += '_chunk' + str(args.mocha_n_heads_chunk) + 'H'
-                dir_name += '_chunk' + str(args.mocha_chunk_size)
+                dir_name += '_ma' + str(args.mocha_n_heads_mono) + 'H'
+                dir_name += '_ca' + str(args.mocha_n_heads_chunk) + 'H'
+                dir_name += '_w' + str(args.mocha_chunk_size)
                 dir_name += '_bias' + str(args.mocha_init_r)
                 if args.mocha_no_denominator:
                     dir_name += '_denom1'
@@ -95,9 +99,9 @@ def set_asr_model_name(args):
                 if args.attn_sigmoid:
                     dir_name += '_sig'
                 if 'mocha' in args.attn_type:
-                    dir_name += '_chunk' + str(args.mocha_chunk_size)
+                    dir_name += '_w' + str(args.mocha_chunk_size)
                     if args.mocha_n_heads_mono > 1:
-                        dir_name += '_mono' + str(args.mocha_n_heads_mono) + 'H'
+                        dir_name += '_ma' + str(args.mocha_n_heads_mono) + 'H'
                     if args.mocha_no_denominator:
                         dir_name += '_denom1'
                     if args.mocha_1dconv:
@@ -123,11 +127,10 @@ def set_asr_model_name(args):
     else:
         dir_name += '_lr' + str(args.lr)
     dir_name += '_bs' + str(args.batch_size)
-    if args.shuffle_bucket:
-        dir_name += '_bucket'
-
-    if 'transformer' in args.enc_type or 'transformer' in args.dec_type:
-        dir_name += '_' + args.transformer_param_init
+    # if args.shuffle_bucket:
+    #     dir_name += '_bucket'
+    # if 'transformer' in args.enc_type or 'transformer' in args.dec_type:
+    #     dir_name += '_' + args.transformer_param_init
 
     # regularization
     if args.ctc_weight < 1 and args.ss_prob > 0:
@@ -175,7 +178,11 @@ def set_asr_model_name(args):
     if args.n_freq_masks > 0:
         dir_name += '_' + str(args.freq_width) + 'FM' + str(args.n_freq_masks)
     if args.n_time_masks > 0:
-        dir_name += '_' + str(args.time_width) + 'TM' + str(args.n_time_masks)
+        if args.adaptive_number_ratio > 0 or args.adaptive_size_ratio > 0:
+            dir_name += '_pnum' + str(args.adaptive_number_ratio)
+            dir_name += '_psize' + str(args.adaptive_size_ratio)
+        else:
+            dir_name += '_' + str(args.time_width) + 'TM' + str(args.n_time_masks)
     if args.weight_noise:
         dir_name += '_weightnoise'
 
@@ -218,8 +225,9 @@ def set_lm_name(args):
         dir_name += str(args.transformer_d_model) + 'dmodel'
         dir_name += str(args.transformer_d_ff) + 'dff'
         dir_name += str(args.n_layers) + 'L'
-        dir_name += str(args.transformer_n_heads) + 'head'
-        dir_name += 'pe' + str(args.transformer_pe_type)
+        dir_name += str(args.transformer_n_heads) + 'H'
+        if getattr(args, 'transformer_pe_type', False):
+            dir_name += 'pe' + str(args.transformer_pe_type)
     elif 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
         dir_name += str(args.n_units) + 'H'
         dir_name += str(args.n_projs) + 'P'
@@ -233,23 +241,23 @@ def set_lm_name(args):
         dir_name += '_lr' + str(args.lr)
     dir_name += '_bs' + str(args.batch_size)
     dir_name += '_bptt' + str(args.bptt)
-    if args.mem_len > 0:
+    if getattr(args, 'mem_len', 0) > 0:
         dir_name += '_mem' + str(args.mem_len)
-    if args.lm_type == 'transformer_xl' and args.zero_center_offset:
+    if getattr(args, 'zero_center_offset', False):
         dir_name += '_zero_center'
     if args.tie_embedding:
         dir_name += '_tie'
-    if 'gated_conv' not in args.lm_type and 'transformer' not in args.lm_type:
+    if 'lstm' in args.lm_type or 'gru' in args.lm_type:
         if args.residual:
             dir_name += '_residual'
         if args.use_glu:
             dir_name += '_glu'
-        if args.n_units_null_context > 0:
-            dir_name += '_nullcv' + str(args.n_units_null_context)
+    if args.n_units_null_context > 0:
+        dir_name += '_nullcv' + str(args.n_units_null_context)
 
     # regularization
     dir_name += '_dropI' + str(args.dropout_in) + 'H' + str(args.dropout_hidden)
-    if args.dropout_layer > 0:
+    if getattr(args, 'dropout_layer', 0) > 0:
         dir_name += 'Layer' + str(args.dropout_layer)
     if args.lsm_prob > 0:
         dir_name += '_ls' + str(args.lsm_prob)

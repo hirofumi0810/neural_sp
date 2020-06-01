@@ -10,6 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from distutils.util import strtobool
 import logging
 import math
 import numpy as np
@@ -57,7 +58,7 @@ class RNNEncoder(EncoderBase):
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and RNN layers
         bidirectional_sum_fwd_bwd (bool): sum up forward and backward outputs for demiension reduction
         task_specific_layer (bool): add a task specific layer for each sub task
-        param_init (float): parameter initialization method
+        param_init (float): model initialization parameter
         chunk_size_left (int): left chunk size for latency-controlled bidirectional encoder
         chunk_size_right (int): right chunk size for latency-controlled bidirectional encoder
 
@@ -229,6 +230,24 @@ class RNNEncoder(EncoderBase):
 
         # for streaming inference
         self.reset_cache()
+
+    @staticmethod
+    def add_args(parser, args):
+        group = parser.add_argument_group("RNN encoder")
+        if 'conv' in args.enc_type:
+            parser = ConvEncoder.add_args(parser, args)
+        group.add_argument('--enc_n_units', type=int, default=512,
+                           help='number of units in each encoder RNN layer')
+        group.add_argument('--enc_n_projs', type=int, default=0,
+                           help='number of units in the projection layer after each encoder RNN layer')
+        group.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
+                           help='sum forward and backward RNN outputs for dimension reduction')
+        # streaming
+        group.add_argument('--lc_chunk_size_left', type=int, default=0,
+                           help='left chunk size for latency-controlled RNN encoder')
+        group.add_argument('--lc_chunk_size_right', type=int, default=0,
+                           help='right chunk size for latency-controlled RNN encoder')
+        return parser
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""

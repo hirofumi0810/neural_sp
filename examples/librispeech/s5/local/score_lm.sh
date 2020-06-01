@@ -45,7 +45,7 @@ for set in dev_clean dev_other test_clean test_other; do
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/eval.py \
         --recog_n_gpus ${n_gpus} \
-        --recog_sets ${data}/dataset_lm/${set}_960_train_960_wpbpe10000.tsv \
+        --recog_sets ${data}/dataset_lm/${set}_960_vocab960_wpbpe10000.tsv \
         --recog_model ${model} \
         --recog_batch_size ${batch_size} \
         --recog_n_caches ${n_caches} \

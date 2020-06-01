@@ -153,6 +153,22 @@ class RNNTransducer(DecoderBase):
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
+    @staticmethod
+    def add_args(parser, args):
+        """Add arguments."""
+        group = parser.add_argument_group("RNN-T decoder")
+        # common (LAS/RNN-T)
+        if not hasattr(args, 'dec_n_units'):
+            group.add_argument('--dec_n_units', type=int, default=512,
+                               help='number of units in each decoder RNN layer')
+            group.add_argument('--dec_n_projs', type=int, default=0,
+                               help='number of units in the projection layer after each decoder RNN layer')
+            group.add_argument('--dec_bottleneck_dim', type=int, default=1024,
+                               help='number of dimensions of the bottleneck layer before the softmax layer')
+            group.add_argument('--emb_dim', type=int, default=512,
+                               help='number of dimensions in the embedding layer')
+        return parser
+
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
         logger.info('===== Initialize %s with uniform distribution =====' % self.__class__.__name__)
