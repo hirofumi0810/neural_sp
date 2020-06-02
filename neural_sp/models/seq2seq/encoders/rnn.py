@@ -44,7 +44,7 @@ class RNNEncoder(EncoderBase):
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probability for hidden-hidden connection
         subsample (list): subsample in the corresponding RNN layers
-            ex.) [False, True, True, False] means that subsample is conducted in the 2nd and 3rd layers.
+            ex.) [1, 2, 2, 1] means that subsample is conducted in the 2nd and 3rd layers.
         subsample_type (str): drop/concat/max_pool
         n_stacks (int): number of frames to stack
         n_splices (int): number of frames to splice
@@ -75,9 +75,14 @@ class RNNEncoder(EncoderBase):
 
         super(RNNEncoder, self).__init__()
 
-        if len(subsample) > 0 and len(subsample) != n_layers:
+        # parse subsample
+        subsample_list = [1] * n_layers
+        for l, s in enumerate(list(map(int, subsample.split('_')[:n_layers]))):
+            subsample_list[l] = s
+
+        if len(subsample_list) > 0 and len(subsample_list) != n_layers:
             raise ValueError('subsample must be the same size as n_layers. n_layers: %d, subsample: %s' %
-                             (n_layers, subsample))
+                             (n_layers, subsample_list))
         if n_layers_sub1 < 0 or (n_layers_sub1 > 1 and n_layers < n_layers_sub1):
             raise ValueError('Set n_layers_sub1 between 1 to n_layers. n_layers: %d, n_layers_sub1: %d' %
                              (n_layers, n_layers_sub1))
@@ -149,7 +154,7 @@ class RNNEncoder(EncoderBase):
             self._odim = input_dim * n_splices * n_stacks
         else:
             self._odim = self.conv.output_dim
-            subsample = [1] * self.n_layers
+            subsample_list = [1] * self.n_layers
             logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
 
         self.padding = Padding(bidirectional_sum_fwd_bwd=bidirectional_sum_fwd_bwd)
@@ -165,17 +170,17 @@ class RNNEncoder(EncoderBase):
 
             # subsample
             self.subsample_layer = None
-            if subsample_type == 'max_pool' and np.prod(subsample) > 1:
-                self.subsample_layer = nn.ModuleList([MaxpoolSubsampler(subsample[l])
+            if subsample_type == 'max_pool' and np.prod(subsample_list) > 1:
+                self.subsample_layer = nn.ModuleList([MaxpoolSubsampler(subsample_list[l])
                                                       for l in range(n_layers)])
-            elif subsample_type == 'concat' and np.prod(subsample) > 1:
-                self.subsample_layer = nn.ModuleList([ConcatSubsampler(subsample[l], n_units * self.n_dirs)
+            elif subsample_type == 'concat' and np.prod(subsample_list) > 1:
+                self.subsample_layer = nn.ModuleList([ConcatSubsampler(subsample_list[l], n_units * self.n_dirs)
                                                       for l in range(n_layers)])
-            elif subsample_type == 'drop' and np.prod(subsample) > 1:
-                self.subsample_layer = nn.ModuleList([DropSubsampler(subsample[l])
+            elif subsample_type == 'drop' and np.prod(subsample_list) > 1:
+                self.subsample_layer = nn.ModuleList([DropSubsampler(subsample_list[l])
                                                       for l in range(n_layers)])
-            elif subsample_type == '1dconv' and np.prod(subsample) > 1:
-                self.subsample_layer = nn.ModuleList([Conv1dSubsampler(subsample[l], n_units * self.n_dirs)
+            elif subsample_type == '1dconv' and np.prod(subsample_list) > 1:
+                self.subsample_layer = nn.ModuleList([Conv1dSubsampler(subsample_list[l], n_units * self.n_dirs)
                                                       for l in range(n_layers)])
 
             for l in range(n_layers):
@@ -224,7 +229,7 @@ class RNNEncoder(EncoderBase):
         self._factor = 1
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor
-        self._factor *= np.prod(subsample)
+        self._factor *= np.prod(subsample_list)
 
         self.reset_parameters(param_init)
 

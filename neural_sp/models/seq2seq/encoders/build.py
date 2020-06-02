@@ -74,10 +74,6 @@ def build_encoder(args):
             d_ff_bottleneck_dim=args.transformer_d_ff_bottleneck_dim)
 
     else:
-        subsample = [1] * args.enc_n_layers
-        for l, s in enumerate(list(map(int, args.subsample.split('_')[:args.enc_n_layers]))):
-            subsample[l] = s
-
         from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
         encoder = RNNEncoder(
             input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
@@ -90,7 +86,7 @@ def build_encoder(args):
             n_layers_sub2=args.enc_n_layers_sub2,
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
-            subsample=subsample,
+            subsample=args.subsample,
             subsample_type=args.subsample_type,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
