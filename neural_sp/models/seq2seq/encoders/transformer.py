@@ -204,20 +204,28 @@ class TransformerEncoder(EncoderBase):
         if not hasattr(args, 'transformer_d_model'):
             group.add_argument('--transformer_d_model', type=int, default=256,
                                help='number of units in the MHA layer')
+        if not hasattr(args, 'transformer_d_ff'):
             group.add_argument('--transformer_d_ff', type=int, default=2048,
                                help='number of units in the FFN layer')
+        if not hasattr(args, 'transformer_d_ff_bottleneck_dim'):
             group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
+        if not hasattr(args, 'transformer_n_heads'):
             group.add_argument('--transformer_n_heads', type=int, default=4,
                                help='number of heads in the MHA layer')
+        if not hasattr(args, 'transformer_layer_norm_eps'):
             group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                                help='epsilon value for layer normalization')
+        if not hasattr(args, 'transformer_ffn_activation'):
             group.add_argument('--transformer_ffn_activation', type=str, default='relu',
                                choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
                                help='nonlinear activation for the FFN layer')
+        if not hasattr(args, 'transformer_param_init'):
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initializatin')
+        # NOTE: These checks are important to avoid conflict with asrgs in Transformer decoder
+
         # Transformer encoder specific
         group.add_argument('--transformer_enc_pe_type', type=str, default='add',
                            choices=['add', 'concat', 'none'],
