@@ -62,11 +62,11 @@ class ConvEncoder(EncoderBase):
         assert len(channels) == len(kernel_sizes) == len(strides) == len(poolings)
 
         self.layers = nn.ModuleList()
-        in_ch = in_channel
+        C_i = in_channel
         in_freq = self.input_freq
         for lth in range(len(channels)):
             block = Conv2LBlock(input_dim=in_freq,
-                                in_channel=in_ch,
+                                in_channel=C_i,
                                 out_channel=channels[lth],
                                 kernel_size=kernel_sizes[lth],  # (T,F)
                                 stride=strides[lth],  # (T,F)
@@ -78,9 +78,9 @@ class ConvEncoder(EncoderBase):
                                 residual=residual)
             self.layers += [block]
             in_freq = block.output_dim
-            in_ch = channels[lth]
+            C_i = channels[lth]
 
-        self._odim = int(in_ch * in_freq)
+        self._odim = int(C_i * in_freq)
 
         if bottleneck_dim > 0:
             self.bridge = nn.Linear(self._odim, bottleneck_dim)
@@ -126,21 +126,21 @@ class ConvEncoder(EncoderBase):
         """Forward computation.
 
         Args:
-            xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
+            xs (FloatTensor): `[B, T, F]`
             xlens (list): A list of length `[B]`
         Returns:
-            xs (FloatTensor): `[B, T', out_ch * feat_dim]`
+            xs (FloatTensor): `[B, T', F']`
             xlens (list): A list of length `[B]`
 
         """
         B, T, F = xs.size()
-        C = self.in_channel
-        xs = xs.view(B, T, C, F // C).contiguous().transpose(2, 1)  # `[B, C, T, F // C]`
+        C_i = self.in_channel
+        xs = xs.view(B, T, C_i, F // C_i).contiguous().transpose(2, 1)  # `[B, C_i, T, F // C_i]`
 
         for block in self.layers:
             xs, xlens = block(xs, xlens)
-        B, out_ch, T, freq = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T', out_ch * feat_dim]`
+        B, C_o, T, F = xs.size()
+        xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T', C_o * F']`
 
         # Bridge layer
         if self.bridge is not None:
@@ -184,10 +184,10 @@ class Conv1LBlock(EncoderBase):
         """Forward computation.
 
         Args:
-            xs (FloatTensor): `[B, in_ch, T, F]`
+            xs (FloatTensor): `[B, C_i, T, F]`
             xlens (list): A list of length `[B]`
         Returns:
-            xs (FloatTensor): `[B, out_ch, T', F']`
+            xs (FloatTensor): `[B, C_o, T', F']`
             xlens (list): A list of length `[B]`
 
         """
@@ -258,10 +258,10 @@ class Conv2LBlock(EncoderBase):
         """Forward computation.
 
         Args:
-            xs (FloatTensor): `[B, in_ch, T, F]`
+            xs (FloatTensor): `[B, C_i, T, F]`
             xlens (IntTensor): `[B]`
         Returns:
-            xs (FloatTensor): `[B, out_ch, T', F']`
+            xs (FloatTensor): `[B, C_o, T', F']`
             xlens (IntTensor): `[B]`
 
         """

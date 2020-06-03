@@ -98,9 +98,9 @@ class TransformerEncoder(EncoderBase):
         self.pe_type = pe_type
 
         # for streaming TransformerXL encoder
-        self.N_l = chunk_size_left
-        self.N_c = chunk_size_current
-        self.N_r = chunk_size_right
+        self.chunk_size_left = chunk_size_left
+        self.chunk_size_current = chunk_size_current
+        self.chunk_size_right = chunk_size_right
         self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
         self.memory_transformer = ('transformer_xl' in enc_type)
         self.mem_len = chunk_size_left
@@ -204,20 +204,28 @@ class TransformerEncoder(EncoderBase):
         if not hasattr(args, 'transformer_d_model'):
             group.add_argument('--transformer_d_model', type=int, default=256,
                                help='number of units in the MHA layer')
+        if not hasattr(args, 'transformer_d_ff'):
             group.add_argument('--transformer_d_ff', type=int, default=2048,
                                help='number of units in the FFN layer')
+        if not hasattr(args, 'transformer_d_ff_bottleneck_dim'):
             group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
+        if not hasattr(args, 'transformer_n_heads'):
             group.add_argument('--transformer_n_heads', type=int, default=4,
                                help='number of heads in the MHA layer')
+        if not hasattr(args, 'transformer_layer_norm_eps'):
             group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                                help='epsilon value for layer normalization')
+        if not hasattr(args, 'transformer_ffn_activation'):
             group.add_argument('--transformer_ffn_activation', type=str, default='relu',
                                choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
                                help='nonlinear activation for the FFN layer')
+        if not hasattr(args, 'transformer_param_init'):
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initializatin')
+        # NOTE: These checks are important to avoid conflict with asrgs in Transformer decoder
+
         # Transformer encoder specific
         group.add_argument('--transformer_enc_pe_type', type=str, default='add',
                            choices=['add', 'concat', 'none'],
@@ -314,19 +322,23 @@ class TransformerEncoder(EncoderBase):
                  'ys_sub1': {'xs': None, 'xlens': None},
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
+        N_l = self.chunk_size_left
+        N_c = self.chunk_size_current
+        N_r = self.chunk_size_right
+
         if self.latency_controlled:
             bs, xmax, idim = xs.size()
-            n_blocks = xmax // self.N_c
-            if xmax % self.N_c != 0:
+            n_blocks = xmax // N_c
+            if xmax % N_c != 0:
                 n_blocks += 1
-            xs_tmp = xs.new_zeros(bs, n_blocks, self.N_l + self.N_c + self.N_r, idim)
-            xs_pad = torch.cat([xs.new_zeros(bs, self.N_l, idim),
+            xs_tmp = xs.new_zeros(bs, n_blocks, N_l + N_c + N_r, idim)
+            xs_pad = torch.cat([xs.new_zeros(bs, N_l, idim),
                                 xs,
-                                xs.new_zeros(bs, self.N_r, idim)], dim=1)
-            for blc_id, t in enumerate(range(self.N_l, self.N_l + xmax, self.N_c)):
-                xs_chunk = xs_pad[:, t - self.N_l:t + (self.N_c + self.N_r)]
+                                xs.new_zeros(bs, N_r, idim)], dim=1)
+            for blc_id, t in enumerate(range(N_l, N_l + xmax, N_c)):
+                xs_chunk = xs_pad[:, t - N_l:t + (N_c + N_r)]
                 xs_tmp[:, blc_id, :xs_chunk.size(1), :] = xs_chunk
-            xs = xs_tmp.view(bs * n_blocks, self.N_l + self.N_c + self.N_r, idim)
+            xs = xs_tmp.view(bs * n_blocks, N_l + N_c + N_r, idim)
 
         if self.conv is None:
             xs = self.embed(xs)
@@ -338,8 +350,8 @@ class TransformerEncoder(EncoderBase):
             self.data_dict['elens'] = tensor2np(xlens)
 
         if self.latency_controlled:
-            N_l = max(0, self.N_l // self.subsampling_factor)
-            N_c = self.N_c // self.subsampling_factor
+            N_l = max(0, N_l // self.subsampling_factor)
+            N_c = N_c // self.subsampling_factor
 
             emax = xmax // self.subsampling_factor
             if xmax % self.subsampling_factor != 0:
