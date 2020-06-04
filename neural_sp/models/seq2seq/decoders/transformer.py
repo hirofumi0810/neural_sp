@@ -11,6 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import copy
+from distutils.util import strtobool
 import logging
 import math
 import numpy as np
@@ -22,7 +23,7 @@ import torch.nn as nn
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.modules.initialization import init_with_normal_dist
+from neural_sp.models.modules.initialization import init_like_transformer_xl
 from neural_sp.models.modules.positinal_embedding import PositionalEncoding
 from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
@@ -59,6 +60,7 @@ class TransformerDecoder(DecoderBase):
         n_layers (int): number of self-attention layers
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
+        d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
@@ -92,13 +94,15 @@ class TransformerDecoder(DecoderBase):
         latency_metric (str):
         latency_loss_weight (float):
         mocha_first_layer (int):
+        share_chunkwise_attention (bool):
         external_lm (RNNLM):
         lm_fusion (str):
 
     """
 
     def __init__(self, special_symbols,
-                 enc_n_units, attn_type, n_heads, n_layers, d_model, d_ff,
+                 enc_n_units, attn_type, n_heads, n_layers,
+                 d_model, d_ff, d_ff_bottleneck_dim,
                  pe_type, layer_norm_eps, ffn_activation,
                  vocab, tie_embedding,
                  dropout, dropout_emb, dropout_att, dropout_layer, dropout_head,
@@ -110,7 +114,8 @@ class TransformerDecoder(DecoderBase):
                  mocha_no_denominator, mocha_1dconv,
                  mocha_quantity_loss_weight, mocha_head_divergence_loss_weight,
                  latency_metric, latency_loss_weight,
-                 mocha_first_layer, external_lm, lm_fusion, d_ff_bottleneck_dim):
+                 mocha_first_layer, share_chunkwise_attention,
+                 external_lm, lm_fusion):
 
         super(TransformerDecoder, self).__init__()
 
@@ -198,7 +203,8 @@ class TransformerDecoder(DecoderBase):
                 mocha_1dconv=mocha_1dconv,
                 dropout_head=dropout_head,
                 lm_fusion=lm_fusion,
-                d_ff_bottleneck_dim=d_ff_bottleneck_dim)) for lth in range(n_layers)])
+                d_ff_bottleneck_dim=d_ff_bottleneck_dim,
+                share_chunkwise_attention=share_chunkwise_attention)) for lth in range(n_layers)])
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, self.vocab)
             if tie_embedding:
@@ -218,17 +224,23 @@ class TransformerDecoder(DecoderBase):
         if not hasattr(args, 'transformer_d_model'):
             group.add_argument('--transformer_d_model', type=int, default=256,
                                help='number of units in the MHA layer')
+        if not hasattr(args, 'transformer_d_ff'):
             group.add_argument('--transformer_d_ff', type=int, default=2048,
                                help='number of units in the FFN layer')
+        if not hasattr(args, 'transformer_d_ff_bottleneck_dim'):
             group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
+        if not hasattr(args, 'transformer_n_heads'):
             group.add_argument('--transformer_n_heads', type=int, default=4,
                                help='number of heads in the MHA layer')
+        if not hasattr(args, 'transformer_layer_norm_eps'):
             group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                                help='epsilon value for layer normalization')
+        if not hasattr(args, 'transformer_ffn_activation'):
             group.add_argument('--transformer_ffn_activation', type=str, default='relu',
                                choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
                                help='nonlinear activation for the FFN layer')
+        if not hasattr(args, 'transformer_param_init'):
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initializatin')
@@ -249,6 +261,8 @@ class TransformerDecoder(DecoderBase):
                            help='the initial layer to have a MMA function')
         group.add_argument('--mocha_head_divergence_loss_weight', type=float, default=0.0,
                            help='head divergence loss weight for MMA')
+        group.add_argument('--share_chunkwise_attention', type=strtobool, default=False,
+                           help='share chunkwise attention heads among monotonic attention heads in the same layer')
 
         return parser
 
@@ -259,7 +273,7 @@ class TransformerDecoder(DecoderBase):
             for n, p in self.named_parameters():
                 if 'conv' in n:
                     continue
-                init_with_normal_dist(n, p, std=0.02)
+                init_like_transformer_xl(n, p, std=0.02)
 
         elif param_init == 'xavier_uniform':
             logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
@@ -723,8 +737,7 @@ class TransformerDecoder(DecoderBase):
                 for j, beam in enumerate(hyps):
                     ys[j, :] = beam['ys']
                 if t > 0:
-                    xy_aws_prev = torch.cat([beam['aws'][-1] for beam in hyps], dim=0)
-                    # `[B, n_layers, H_mono, 1, klen]`
+                    xy_aws_prev = torch.cat([beam['aws'][-1] for beam in hyps], dim=0)  # `[B, n_layers, H_ma, 1, klen]`
                 else:
                     xy_aws_prev = None
 

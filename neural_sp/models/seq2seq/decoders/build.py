@@ -23,6 +23,7 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             n_layers=args.dec_n_layers,
             d_model=args.transformer_d_model,
             d_ff=args.transformer_d_ff,
+            d_ff_bottleneck_dim=getattr(args, 'transformer_d_ff_bottleneck_dim', 0),
             layer_norm_eps=args.transformer_layer_norm_eps,
             ffn_activation=args.transformer_ffn_activation,
             pe_type=args.transformer_dec_pe_type,
@@ -56,9 +57,9 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             latency_metric=args.mocha_latency_metric,
             latency_loss_weight=args.mocha_latency_loss_weight,
             mocha_first_layer=args.mocha_first_layer,
+            share_chunkwise_attention=getattr(args, 'share_chunkwise_attention', False),
             external_lm=external_lm,
-            lm_fusion=args.lm_fusion,
-            d_ff_bottleneck_dim=args.transformer_d_ff_bottleneck_dim)
+            lm_fusion=args.lm_fusion)
 
     elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
         from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
