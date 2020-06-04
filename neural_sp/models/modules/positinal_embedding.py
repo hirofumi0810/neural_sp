@@ -14,14 +14,12 @@ import copy
 import logging
 import math
 import numpy as np
-import random
 import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.causal_conv import CausalConv1d
-from neural_sp.models.modules.initialization import init_with_xavier_dist
+from neural_sp.models.modules.initialization import init_with_xavier_uniform
 
-random.seed(1)
 
 NEG_INF = float(np.finfo(np.float32).min)
 
@@ -85,7 +83,7 @@ class PositionalEncoding(nn.Module):
         for layer in self.pe:
             if isinstance(layer, CausalConv1d):
                 for n, p in layer.named_parameters():
-                    init_with_xavier_dist(n, p)
+                    init_with_xavier_uniform(n, p)
 
     def forward(self, xs, scale=True):
         """Forward computation.
@@ -131,7 +129,7 @@ class XLPositionalEmbedding(nn.Module):
         Args:
             positions (LongTensor): `[L]`
         Returns:
-            pos_emb (LongTensor): `[L, 1 d_model]`
+            pos_emb (LongTensor): `[L, 1, d_model]`
 
         """
         if device_id >= 0:

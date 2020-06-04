@@ -17,7 +17,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.initialization import init_with_lecun
+from neural_sp.models.modules.initialization import init_with_lecun_normal
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 logger = logging.getLogger(__name__)
@@ -120,7 +120,7 @@ class ConvEncoder(EncoderBase):
         """Initialize parameters with lecun style."""
         logger.info('===== Initialize %s with lecun style =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
-            init_with_lecun(n, p, param_init)
+            init_with_lecun_normal(n, p, param_init)
 
     def forward(self, xs, xlens):
         """Forward computation.

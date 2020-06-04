@@ -4,20 +4,20 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Self-attention encoder for Transformer."""
+"""Transformer encoder."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import copy
-import random
 import logging
 import math
+import random
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.initialization import init_with_normal_dist
+from neural_sp.models.modules.initialization import init_like_transformer_xl
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
 from neural_sp.models.modules.positinal_embedding import PositionalEncoding
 from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
@@ -45,6 +45,7 @@ class TransformerEncoder(EncoderBase):
         n_layers_sub2 (int): number of layers in the 2nd auxiliary task
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
+        d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
         last_proj_dim (int): dimension of the last projection layer
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
@@ -69,21 +70,19 @@ class TransformerEncoder(EncoderBase):
         chunk_size_left (int): left chunk size for time-restricted Transformer encoder
         chunk_size_current (int): current chunk size for time-restricted Transformer encoder
         chunk_size_right (int): right chunk size for time-restricted Transformer encoder
-        d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
 
     """
 
     def __init__(self, input_dim, enc_type, n_heads,
                  n_layers, n_layers_sub1, n_layers_sub2,
-                 d_model, d_ff, last_proj_dim,
+                 d_model, d_ff, d_ff_bottleneck_dim, last_proj_dim,
                  pe_type, layer_norm_eps, ffn_activation,
                  dropout_in, dropout, dropout_att, dropout_layer,
                  n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init,
-                 chunk_size_left, chunk_size_current, chunk_size_right,
-                 d_ff_bottleneck_dim):
+                 chunk_size_left, chunk_size_current, chunk_size_right):
 
         super(TransformerEncoder, self).__init__()
 
@@ -224,7 +223,7 @@ class TransformerEncoder(EncoderBase):
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initializatin')
-        # NOTE: These checks are important to avoid conflict with asrgs in Transformer decoder
+        # NOTE: These checks are important to avoid conflict with args in Transformer decoder
 
         # Transformer encoder specific
         group.add_argument('--transformer_enc_pe_type', type=str, default='add',
@@ -248,7 +247,7 @@ class TransformerEncoder(EncoderBase):
             for n, p in self.named_parameters():
                 if 'conv' in n:
                     continue
-                init_with_normal_dist(n, p, std=0.02)
+                init_like_transformer_xl(n, p, std=0.02)
 
         elif param_init == 'xavier_uniform':
             logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
