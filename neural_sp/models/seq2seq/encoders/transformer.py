@@ -150,12 +150,17 @@ class TransformerEncoder(EncoderBase):
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor
 
+        self.u = None
+        self.v = None
         if self.memory_transformer:
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
             self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
             self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
             # NOTE: u and v are global parameters
-        self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
+        elif pe_type == 'relative':
+            self.pos_emb = XLPositionalEmbedding(d_model, dropout)
+        else:
+            self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
 
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
             d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
@@ -227,7 +232,7 @@ class TransformerEncoder(EncoderBase):
 
         # Transformer encoder specific
         group.add_argument('--transformer_enc_pe_type', type=str, default='add',
-                           choices=['add', 'concat', 'none'],
+                           choices=['add', 'concat', 'none', 'relative'],
                            help='type of positional encoding for the Transformer encoder')
         group.add_argument('--dropout_enc_layer', type=float, default=0.0,
                            help='LayerDrop probability for Transformer encoder layers')
@@ -349,6 +354,7 @@ class TransformerEncoder(EncoderBase):
             self.data_dict['elens'] = tensor2np(xlens)
 
         if self.latency_controlled:
+            # streaming Transformer encoder
             N_l = max(0, N_l // self.subsampling_factor)
             N_c = N_c // self.subsampling_factor
 
@@ -356,10 +362,17 @@ class TransformerEncoder(EncoderBase):
             if xmax % self.subsampling_factor != 0:
                 emax += 1
 
-            xs = self.pos_enc(xs, scale=True)
+            pos_embs = None
+            if self.pe_type == 'relative':
+                xs = xs * self.scale
+                pos_idxs = torch.arange(xmax - 1, -1, -1.0, dtype=torch.float)
+                pos_embs = self.pos_emb(pos_idxs, self.device_id)
+            else:
+                xs = self.pos_enc(xs, scale=True)
+
             xx_mask = None  # NOTE: no mask
             for lth, layer in enumerate(self.layers):
-                xs, xx_aws = layer(xs, xx_mask)
+                xs, xx_aws = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
                     n_heads = xx_aws.size(1)
                     xx_aws = xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
@@ -379,13 +392,20 @@ class TransformerEncoder(EncoderBase):
 
         else:
             bs, xmax, idim = xs.size()
-            xs = self.pos_enc(xs, scale=True)
+
+            pos_embs = None
+            if self.pe_type == 'relative':
+                xs = xs * self.scale
+                pos_idxs = torch.arange(xmax - 1, -1, -1.0, dtype=torch.float)
+                pos_embs = self.pos_emb(pos_idxs, self.device_id)
+            else:
+                xs = self.pos_enc(xs, scale=True)
 
             # Create the self-attention mask
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
 
             for lth, layer in enumerate(self.layers):
-                xs, xx_aws = layer(xs, xx_mask)
+                xs, xx_aws = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws)
 
