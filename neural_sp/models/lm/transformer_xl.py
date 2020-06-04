@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 
 from neural_sp.models.lm.lm_base import LMBase
-from neural_sp.models.modules.initialization import init_with_normal_dist
+from neural_sp.models.modules.initialization import init_like_transformer_xl
 from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.torch_utils import tensor2np
@@ -140,11 +140,8 @@ class TransformerXL(LMBase):
     def reset_parameters(self):
         """Initialize parameters with normal distribution."""
         logging.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
-        # embedding
-        # nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
-        # nn.init.constant_(self.embed.weight[self.pad], 0)
         for n, p in self.named_parameters():
-            init_with_normal_dist(n, p, std=0.02)
+            init_like_transformer_xl(n, p, std=0.02)
 
     def init_memory(self):
         """Initialize memory."""

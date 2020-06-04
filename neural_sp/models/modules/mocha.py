@@ -18,7 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.causal_conv import CausalConv1d
-from neural_sp.models.modules.initialization import init_with_xavier_dist
+from neural_sp.models.modules.initialization import init_with_xavier_uniform
 
 random.seed(1)
 
@@ -97,7 +97,7 @@ class MonotonicEnergy(nn.Module):
         if self.conv1d is not None:
             logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.conv1d.__class__.__name__)
             for n, p in self.conv1d.named_parameters():
-                init_with_xavier_dist(n, p)
+                init_with_xavier_uniform(n, p)
 
     def reset(self):
         self.key = None

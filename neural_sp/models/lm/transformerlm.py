@@ -47,6 +47,7 @@ class TransformerLM(LMBase):
         self.n_layers = args.n_layers
         self.n_heads = args.transformer_n_heads
         self.lsm_prob = args.lsm_prob
+        self.tie_embedding = args.tie_embedding
 
         self.mem_len = args.mem_len
         if args.recog_mem_len > 0:
@@ -133,9 +134,10 @@ class TransformerLM(LMBase):
         nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
         nn.init.constant_(self.embed.weight[self.pad], 0)
         # output layer
-        if self.output is not None:
+        if self.output is not None and not self.tie_embedding:
             nn.init.xavier_uniform_(self.output.weight)
             nn.init.constant_(self.output.bias, 0.)
+            # nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
 
     def init_memory(self):
         """Initialize memory."""
