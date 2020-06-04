@@ -124,28 +124,28 @@ class MonotonicEnergy(nn.Module):
             if self.conv1d is not None:
                 key = torch.relu(self.conv1d(key))
             key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-            self.key = key.transpose(2, 1).contiguous()  # `[B, H, klen, d_k]`
+            self.key = key.transpose(2, 1).contiguous()  # `[B, H_ma, klen, d_k]`
             self.mask = mask
             if mask is not None:
-                self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
+                self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H_ma, qlen, klen]`
                 assert self.mask.size() == (bs, self.n_heads, qlen, klen), \
                     (self.mask.size(), (bs, self.n_heads, qlen, klen))
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-        query = query.transpose(2, 1).contiguous()  # `[B, H, qlen, d_k]`
+        query = query.transpose(2, 1).contiguous()  # `[B, H_ma, qlen, d_k]`
         m = self.mask
 
         if self.atype == 'add':
-            k = self.key.unsqueeze(2)  # `[B, H, 1, klen, d_k]`
+            k = self.key.unsqueeze(2)  # `[B, H_ma, 1, klen, d_k]`
             # Truncate encoder memories
             if boundary_leftmost > 0:
                 k = k[:, :, :, boundary_leftmost:]
                 klen = k.size(3)
                 if m is not None:
                     m = m[:, :, :, boundary_leftmost:]
-            e = torch.relu(k + query.unsqueeze(3))  # `[B, H, qlen, klen, d_k]`
+            e = torch.relu(k + query.unsqueeze(3))  # `[B, H_ma, qlen, klen, d_k]`
             e = e.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
-            e = self.v(e).permute(0, 3, 1, 2)  # `[B, qlen, klen, H]`
+            e = self.v(e).permute(0, 3, 1, 2)  # `[B, qlen, klen, H_ma]`
         elif self.atype == 'scaled_dot':
             k = self.key.transpose(3, 2)
             e = torch.matmul(query, k) / self.scale
@@ -188,7 +188,7 @@ class ChunkEnergy(nn.Module):
         if atype == 'add':
             self.w_key = nn.Linear(kdim, adim)
             self.w_query = nn.Linear(qdim, adim, bias=False)
-            self.v = nn.Linear(adim, 1, bias=False)
+            self.v = nn.Linear(adim, n_heads, bias=False)
         elif atype == 'scaled_dot':
             self.w_key = nn.Linear(kdim, adim, bias=bias)
             self.w_query = nn.Linear(qdim, adim, bias=bias)
@@ -230,27 +230,28 @@ class ChunkEnergy(nn.Module):
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
             key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-            self.key = key.transpose(2, 1).contiguous()  # `[B, H, klen, d_k]`
+            self.key = key.transpose(2, 1).contiguous()  # `[B, H_ca, klen, d_k]`
             self.mask = mask
             if mask is not None:
-                self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H, qlen, klen]`
+                self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H_ca, qlen, klen]`
                 assert self.mask.size() == (bs, self.n_heads, qlen, klen), \
                     (self.mask.size(), (bs, self.n_heads, qlen, klen))
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-        query = query.transpose(2, 1).contiguous()  # `[B, H, qlen, d_k]`
+        query = query.transpose(2, 1).contiguous()  # `[B, H_ca, qlen, d_k]`
         m = self.mask
 
         if self.atype == 'add':
-            k = self.key.unsqueeze(2)  # `[B, 1, 1, klen, d_k]`
+            k = self.key.unsqueeze(2)  # `[B, H_ca, 1, klen, d_k]`
             # Truncate
             k = k[:, :, :, boundary_leftmost:boundary_rightmost]
             klen = k.size(3)
             if m is not None:
                 m = m[:, :, :, boundary_leftmost:boundary_rightmost]
 
-            r = torch.relu(k + query.unsqueeze(3))  # `[B, 1, klen, qlen, d_k]`
-            r = self.v(r).squeeze(4)  # `[B, 1, qlen, klen]`
+            r = torch.relu(k + query.unsqueeze(3))  # `[B, H_ca, qlen, klen, d_k]`
+            r = r.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)  # `[B, qlen, klen, H_ca * d_k]`
+            r = self.v(r).permute(0, 3, 1, 2).contiguous()  # `[B, H_ca, qlen, klen]`
         elif self.atype == 'scaled_dot':
             k = self.key.transpose(3, 2)
             r = torch.matmul(query, k) / self.scale

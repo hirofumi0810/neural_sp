@@ -86,6 +86,8 @@ def make_args(**kwargs):
         ({'attn_type': 'luong_general'}),
         ({'attn_type': 'luong_concat'}),
         ({'attn_type': 'gmm', 'gmm_attn_n_mixtures': 5}),
+        # multihead attention
+        ({'attn_type': 'add', 'attn_n_heads': 4}),
         # MoChA
         ({'attn_type': 'mocha', 'mocha_chunk_size': 1}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4}),
@@ -96,8 +98,6 @@ def make_args(**kwargs):
         #   'ctc_weight': 0.5, 'latency_metric': 'ctc_sync', 'latency_loss_weight': 1.0}),
         # ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_quantity_loss_weight': 1.0,
         #   'ctc_weight': 0.5, 'latency_metric': 'ctc_sync', 'latency_loss_weight': 1.0}),
-        # multihead attention
-        # ({'attn_type': 'add', 'attn_n_heads': 4}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 1, 'mocha_n_heads_mono': 4}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 4}),
         # CTC
