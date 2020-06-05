@@ -264,7 +264,7 @@ class ChunkEnergy(nn.Module):
 
 
 class MoChA(nn.Module):
-    def __init__(self, kdim, qdim, adim, atype, chunk_size,
+    def __init__(self, kdim, qdim, adim, odim, atype, chunk_size,
                  n_heads_mono=1, n_heads_chunk=1,
                  conv1d=False, init_r=-4, eps=1e-6, noise_std=1.0,
                  no_denominator=False, sharpening_factor=1.0,
@@ -292,6 +292,7 @@ class MoChA(nn.Module):
             kdim (int): dimension of key
             qdim (int): dimension of query
             adim: (int) dimension of the attention layer
+            odim: (int) dimension of output
             atype (str): type of attention mechanism
             chunk_size (int): window size for chunkwise attention
             n_heads_mono (int): number of heads for monotonic attention
@@ -338,7 +339,7 @@ class MoChA(nn.Module):
                                         bias, param_init) if chunk_size > 1 or self.milk else None
         if n_heads_mono * n_heads_chunk > 1:
             self.w_value = nn.Linear(kdim, adim, bias=bias)
-            self.w_out = nn.Linear(adim, kdim, bias=bias)
+            self.w_out = nn.Linear(adim, odim, bias=bias)
             if param_init == 'xavier_uniform':
                 self.reset_parameters(bias)
 

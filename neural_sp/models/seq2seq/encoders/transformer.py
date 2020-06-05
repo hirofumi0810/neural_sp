@@ -158,7 +158,7 @@ class TransformerEncoder(EncoderBase):
             self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
             # NOTE: u and v are global parameters
         elif pe_type == 'relative':
-            self.pos_emb = XLPositionalEmbedding(d_model, dropout)
+            self.pos_emb = XLPositionalEmbedding(d_model, dropout)  # TODO: dropout_in?
         else:
             self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
 
@@ -475,6 +475,7 @@ class TransformerEncoderBlock(nn.Module):
         self.self_attn = mha(kdim=d_model,
                              qdim=d_model,
                              adim=d_model,
+                             odim=d_model,
                              n_heads=n_heads,
                              dropout=dropout_att,
                              param_init=param_init)
