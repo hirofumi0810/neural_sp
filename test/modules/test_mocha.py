@@ -13,6 +13,7 @@ def make_args(**kwargs):
         kdim=32,
         qdim=32,
         adim=16,
+        odim=32,
         atype='add',
         chunk_size=1,
         n_heads_mono=1,

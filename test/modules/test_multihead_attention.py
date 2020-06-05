@@ -13,6 +13,7 @@ def make_args(**kwargs):
         kdim=32,
         qdim=32,
         adim=16,
+        odim=32,
         atype='scaled_dot',
         n_heads=4,
         dropout=0.1,
