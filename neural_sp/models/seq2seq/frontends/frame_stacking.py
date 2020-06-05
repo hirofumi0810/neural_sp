@@ -50,8 +50,7 @@ def stack_frame(feat, n_stacks, n_skips, dtype=np.float32):
             while stack_count != int(n_frames_new):
                 # Concatenate stacked frames
                 for i in range(len(stack)):
-                    stacked_feat[stack_count][input_dim
-                                              * i:input_dim * (i + 1)] = stack[i]
+                    stacked_feat[stack_count][input_dim * i:input_dim * (i + 1)] = stack[i]
                 stack_count += 1
 
                 # Delete some frames to skip
@@ -66,8 +65,7 @@ def stack_frame(feat, n_stacks, n_skips, dtype=np.float32):
         if len(stack) == n_stacks:
             # Concatenate stacked frames
             for i in range(n_stacks):
-                stacked_feat[stack_count][input_dim
-                                          * i:input_dim * (i + 1)] = stack[i]
+                stacked_feat[stack_count][input_dim * i:input_dim * (i + 1)] = stack[i]
             stack_count += 1
 
             # Delete some frames to skip
