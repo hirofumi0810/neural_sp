@@ -247,8 +247,7 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
                     count2 += 1
             index2 = i - count2
             if len(ref[index1]) < len(hyp[index2]):
-                print(ref[index1] + space_char *
-                      (len(hyp[index2]) - len(ref[index1])), end=' ')
+                print(ref[index1] + space_char * (len(hyp[index2]) - len(ref[index1])), end=' ')
             else:
                 print(ref[index1], end=' ')
         else:
@@ -280,8 +279,7 @@ def wer_align(ref, hyp, normalize=False, double_byte=False):
                     count2 += 1
             index2 = i - count2
             if len(ref[index1]) > len(hyp[index2]):
-                print(hyp[index2] + space_char *
-                      (len(ref[index1]) - len(hyp[index2])), end=' ')
+                print(hyp[index2] + space_char * (len(ref[index1]) - len(hyp[index2])), end=' ')
             else:
                 print(hyp[index2], end=' ')
         else:

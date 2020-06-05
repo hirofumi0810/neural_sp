@@ -330,30 +330,33 @@ def update_lens(seq_lens, layer, dim=0, device_id=-1):
     if seq_lens is None:
         return seq_lens
     assert type(layer) in [nn.Conv2d, nn.MaxPool2d]
-    if type(layer) == nn.MaxPool2d and layer.ceil_mode:
-        def update(seq_len): return math.ceil(
-            (seq_len + 1 + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
-    else:
-        def update(seq_len): return math.floor(
-            (seq_len + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
-    seq_lens = [update(seq_len) for seq_len in seq_lens]
+    seq_lens = [_update(seq_len, layer, dim) for seq_len in seq_lens]
     seq_lens = torch.IntTensor(seq_lens)
     if device_id >= 0:
         seq_lens = seq_lens.cuda(device_id)
     return seq_lens
 
 
-def parse_config(conv_channels, conv_kernel_sizes, conv_strides, conv_poolings):
-    channels, kernel_sizes, strides, poolings = [], [], [], []
-    if len(conv_channels) > 0:
-        channels = [int(c) for c in conv_channels.split('_')]
-    if len(conv_kernel_sizes) > 0:
-        kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                        for c in conv_kernel_sizes.split('_')]
-    if len(conv_strides) > 0:
-        strides = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                   for c in conv_strides.split('_')]
-    if len(conv_poolings) > 0:
-        poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                    for c in conv_poolings.split('_')]
-    return channels, kernel_sizes, strides, poolings
+def _update(seq_len, layer, dim):
+    if type(layer) == nn.MaxPool2d and layer.ceil_mode:
+        return math.ceil(
+            (seq_len + 1 + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
+    else:
+        return math.floor(
+            (seq_len + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
+
+
+def parse_config(channels, kernel_sizes, strides, poolings):
+    _channels, _kernel_sizes, _strides, _poolings = [], [], [], []
+    if len(channels) > 0:
+        _channels = [int(c) for c in channels.split('_')]
+    if len(kernel_sizes) > 0:
+        _kernel_sizes = [[int(c.split(',')[0].replace('(', '')),
+                          int(c.split(',')[1].replace(')', ''))] for c in kernel_sizes.split('_')]
+    if len(strides) > 0:
+        _strides = [[int(c.split(',')[0].replace('(', '')),
+                     int(c.split(',')[1].replace(')', ''))] for c in strides.split('_')]
+    if len(poolings) > 0:
+        _poolings = [[int(c.split(',')[0].replace('(', '')),
+                      int(c.split(',')[1].replace(')', ''))] for c in poolings.split('_')]
+    return _channels, _kernel_sizes, _strides, _poolings

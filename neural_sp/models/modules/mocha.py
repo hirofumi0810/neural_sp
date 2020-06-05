@@ -569,12 +569,11 @@ class MoChA(nn.Module):
         assert alpha.size() == (bs, self.n_heads_mono, qlen, klen), \
             (alpha.size(), (bs, self.n_heads_mono, qlen, klen))
         if self.w > 1 or self.milk:
-            chunk_size_tmp = max(1, (bd_offset_old + bd_rightmost + 1) -
-                                 max(0, bd_offset_old + bd_leftmost - self.w + 1))
+            _w = max(1, (bd_offset_old + bd_rightmost + 1) - max(0, bd_offset_old + bd_leftmost - self.w + 1))
             # assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, e_chunk.size(3) + additional), \
             #     (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, e_chunk.size(3) + additional))
-            assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, chunk_size_tmp), \
-                (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, chunk_size_tmp))
+            assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, _w), \
+                (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, _w))
             # TODO: padding for beta
         return cv, alpha, beta
 

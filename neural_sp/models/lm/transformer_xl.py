@@ -22,7 +22,7 @@ import torch.nn as nn
 
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.initialization import init_like_transformer_xl
-from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
+from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join

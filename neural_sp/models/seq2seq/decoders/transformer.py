@@ -24,8 +24,8 @@ import torch.nn as nn
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.initialization import init_like_transformer_xl
-from neural_sp.models.modules.positinal_embedding import PositionalEncoding
-from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
+from neural_sp.models.modules.positional_embedding import PositionalEncoding
+from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.ctc import CTC
@@ -283,6 +283,7 @@ class TransformerDecoder(DecoderBase):
             nn.init.constant_(self.embed.weight[self.pad], 0.)
             # output layer
             nn.init.xavier_uniform_(self.output.weight)
+            # nn.init.normal_(self.output.weight, mean=0., std=self.d_model**-0.5)
             nn.init.constant_(self.output.bias, 0.)
 
     def init_memory(self):
@@ -368,7 +369,7 @@ class TransformerDecoder(DecoderBase):
                 if self._quantity_loss_weight > 0:
                     loss_att += losses_auxiliary['loss_quantity'] * self._quantity_loss_weight
                 observation['loss_quantity'] = losses_auxiliary['loss_quantity'].item()
-            if self.headdiv_loss_weight > 0:
+            if self.headdiv_loss_weight > 0 or trigger_points is not None:
                 loss_att += losses_auxiliary['loss_headdiv'] * self.headdiv_loss_weight
                 observation['loss_headdiv'] = losses_auxiliary['loss_headdiv'].item()
             if self.latency_metric:

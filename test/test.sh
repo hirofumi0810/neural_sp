@@ -2,6 +2,9 @@
 
 # pip install pytest
 
+modules="neural_sp test utils setup.py"
+pycodestyle -r ${modules} --show-source --show-pep8 --ignore="E501"
+
 # encoder
 pytest ./test/encoders/test_conv_encoder.py
 pytest ./test/encoders/test_rnn_encoder.py
@@ -20,3 +23,4 @@ pytest ./test/modules/test_gmm_attention.py
 pytest ./test/modules/test_multihead_attention.py
 pytest ./test/modules/test_mocha.py
 pytest ./test/modules/test_pointwise_feed_forward.py
+pytest ./test/modules/test_relative_multihead_attention.py

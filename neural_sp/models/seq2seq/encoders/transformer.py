@@ -19,8 +19,8 @@ import torch.nn as nn
 
 from neural_sp.models.modules.initialization import init_like_transformer_xl
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
-from neural_sp.models.modules.positinal_embedding import PositionalEncoding
-from neural_sp.models.modules.positinal_embedding import XLPositionalEmbedding
+from neural_sp.models.modules.positional_embedding import PositionalEncoding
+from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
