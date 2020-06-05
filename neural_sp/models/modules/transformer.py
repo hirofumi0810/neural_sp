@@ -15,6 +15,7 @@ import random
 import torch
 import torch.nn as nn
 
+from neural_sp.models.modules.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
@@ -77,6 +78,7 @@ class TransformerDecoderBlock(nn.Module):
         self.self_attn = mha(kdim=d_model,
                              qdim=d_model,
                              adim=d_model,
+                             odim=d_model,
                              n_heads=n_heads,
                              dropout=dropout_att,
                              param_init=param_init)
@@ -86,10 +88,10 @@ class TransformerDecoderBlock(nn.Module):
             self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if 'mocha' in atype:
                 self.n_heads = mocha_n_heads_mono
-                from neural_sp.models.modules.mocha import MoChA
                 self.src_attn = MoChA(kdim=d_model,
                                       qdim=d_model,
                                       adim=d_model,
+                                      odim=d_model,
                                       atype='scaled_dot',
                                       chunk_size=mocha_chunk_size,
                                       n_heads_mono=mocha_n_heads_mono,
@@ -107,6 +109,7 @@ class TransformerDecoderBlock(nn.Module):
                 self.src_attn = MHA(kdim=d_model,
                                     qdim=d_model,
                                     adim=d_model,
+                                    odim=d_model,
                                     n_heads=n_heads,
                                     dropout=dropout_att,
                                     param_init=param_init)
@@ -131,6 +134,7 @@ class TransformerDecoderBlock(nn.Module):
                 self.lm_attn = MHA(kdim=d_model,
                                    qdim=d_model,
                                    adim=d_model,
+                                   odim=d_model,
                                    n_heads=n_heads,
                                    dropout=dropout_att,
                                    param_init=param_init)
@@ -265,6 +269,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         self.src_attn = MHA(kdim=d_model,
                             qdim=d_model,
                             adim=d_model,
+                            odim=d_model,
                             n_heads=n_heads,
                             dropout=dropout_att,
                             param_init=param_init)
