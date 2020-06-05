@@ -201,7 +201,7 @@ class RNNDecoder(DecoderBase):
             qdim = n_units if n_projs == 0 else n_projs
             if attn_type == 'mocha':
                 assert attn_n_heads == 1
-                self.score = MoChA(enc_n_units, qdim, attn_dim,
+                self.score = MoChA(enc_n_units, qdim, attn_dim, enc_n_units,
                                    atype='add',
                                    chunk_size=mocha_chunk_size,
                                    n_heads_mono=mocha_n_heads_mono,
@@ -220,7 +220,7 @@ class RNNDecoder(DecoderBase):
                 if attn_n_heads > 1:
                     assert attn_type == 'add'
                     self.score = MultiheadAttentionMechanism(
-                        enc_n_units, qdim, attn_dim,
+                        enc_n_units, qdim, attn_dim, enc_n_units,
                         n_heads=attn_n_heads,
                         dropout=dropout_att,
                         atype='add')

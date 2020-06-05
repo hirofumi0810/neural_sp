@@ -31,6 +31,7 @@ class MultiheadAttentionMechanism(nn.Module):
         kdim (int): dimension of key
         qdim (int): dimension of query
         adim: (int) dimension of the attention space
+        odim: (int) dimension of output
         n_heads (int): number of heads
         dropout (float): dropout probability for attenion weights
         dropout_head (float): HeadDrop probability
@@ -40,7 +41,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
     """
 
-    def __init__(self, kdim, qdim, adim, n_heads, dropout, dropout_head=0.,
+    def __init__(self, kdim, qdim, adim, odim, n_heads, dropout, dropout_head=0.,
                  atype='scaled_dot', bias=True, param_init=''):
         super(MultiheadAttentionMechanism, self).__init__()
 
@@ -68,7 +69,7 @@ class MultiheadAttentionMechanism(nn.Module):
         else:
             raise NotImplementedError(atype)
 
-        self.w_out = nn.Linear(adim, kdim, bias=bias)
+        self.w_out = nn.Linear(adim, odim, bias=bias)
 
         if param_init == 'xavier_uniform':
             self.reset_parameters(bias)

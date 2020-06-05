@@ -105,7 +105,7 @@ class TransformerEncoder(EncoderBase):
         self.mem_len = chunk_size_left
         self.scale = math.sqrt(d_model)
         if self.memory_transformer:
-            assert pe_type == 'none'
+            assert pe_type == 'relative'
             assert chunk_size_left > 0
             assert chunk_size_current > 0
 
@@ -150,6 +150,7 @@ class TransformerEncoder(EncoderBase):
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor
 
+        self.pos_emb = None
         self.u = None
         self.v = None
         if self.memory_transformer:
@@ -158,14 +159,14 @@ class TransformerEncoder(EncoderBase):
             self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
             # NOTE: u and v are global parameters
         elif pe_type == 'relative':
-            self.pos_emb = XLPositionalEmbedding(d_model, dropout)
+            self.pos_emb = XLPositionalEmbedding(d_model, dropout)  # TODO: dropout_in?
         else:
             self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
 
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
             d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init,
-            memory_transformer=self.memory_transformer,
+            relative_attention=self.pos_emb is not None,
             d_ff_bottleneck_dim=d_ff_bottleneck_dim))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -365,7 +366,7 @@ class TransformerEncoder(EncoderBase):
             pos_embs = None
             if self.pe_type == 'relative':
                 xs = xs * self.scale
-                pos_idxs = torch.arange(xmax - 1, -1, -1.0, dtype=torch.float)
+                pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float)
                 pos_embs = self.pos_emb(pos_idxs, self.device_id)
             else:
                 xs = self.pos_enc(xs, scale=True)
@@ -455,7 +456,7 @@ class TransformerEncoderBlock(nn.Module):
         layer_norm_eps (float): epsilon parameter for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
-        memory_transformer (bool): streaming TransformerXL encoder
+        relative_attention (bool): relative postional encoding
         d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
 
     """
@@ -463,18 +464,19 @@ class TransformerEncoderBlock(nn.Module):
     def __init__(self, d_model, d_ff, n_heads,
                  dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init,
-                 memory_transformer=False, d_ff_bottleneck_dim=0):
+                 relative_attention=False, d_ff_bottleneck_dim=0):
         super(TransformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
-        self.memory_transformer = memory_transformer
+        self.relative_attention = relative_attention
 
         # self-attention
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        mha = RelMHA if memory_transformer else MHA
+        mha = RelMHA if relative_attention else MHA
         self.self_attn = mha(kdim=d_model,
                              qdim=d_model,
                              adim=d_model,
+                             odim=d_model,
                              n_heads=n_heads,
                              dropout=dropout_att,
                              param_init=param_init)
@@ -494,7 +496,7 @@ class TransformerEncoderBlock(nn.Module):
             xs (FloatTensor): `[B, T, d_model]`
             xx_mask (ByteTensor): `[B, T, T]`
             pos_embs (LongTensor): `[L, 1, d_model]`
-            memory (FloatTensor): `[B, L_prev, d_model]`
+            memory (FloatTensor): `[B, mlen, d_model]`
             u (FloatTensor): global parameter for relative positional embedding
             v (FloatTensor): global parameter for relative positional embedding
         Returns:
@@ -508,13 +510,8 @@ class TransformerEncoderBlock(nn.Module):
         # self-attention
         residual = xs
         xs = self.norm1(xs)
-        if self.memory_transformer:
-            # memory Transformer w/ relative positional encoding
-            xs, xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)
-        elif memory is not None:
-            # memory Transformer w/o relative positional encoding
-            xs_memory = torch.cat([memory, xs], dim=1)
-            xs, xx_aws, _ = self.self_attn(xs_memory, xs_memory, xs, mask=xx_mask)  # k/v/q
+        if self.relative_attention:
+            xs, xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)  # k/q/m
         else:
             xs, xx_aws, _ = self.self_attn(xs, xs, xs, mask=xx_mask)  # k/v/q
         xs = self.dropout(xs) + residual
