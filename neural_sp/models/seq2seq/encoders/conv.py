@@ -346,17 +346,17 @@ def _update(seq_len, layer, dim):
             (seq_len + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
 
 
-def parse_config(conv_channels, conv_kernel_sizes, conv_strides, conv_poolings):
+def parse_config(channels, kernel_sizes, strides, poolings):
     channels, kernel_sizes, strides, poolings = [], [], [], []
-    if len(conv_channels) > 0:
-        channels = [int(c) for c in conv_channels.split('_')]
-    if len(conv_kernel_sizes) > 0:
-        kernel_sizes = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                        for c in conv_kernel_sizes.split('_')]
-    if len(conv_strides) > 0:
-        strides = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                   for c in conv_strides.split('_')]
-    if len(conv_poolings) > 0:
-        poolings = [[int(c.split(',')[0].replace('(', '')), int(c.split(',')[1].replace(')', ''))]
-                    for c in conv_poolings.split('_')]
+    if len(channels) > 0:
+        channels = [int(c) for c in channels.split('_')]
+    if len(kernel_sizes) > 0:
+        kernel_sizes = [[int(c.split(',')[0].replace('(', '')),
+                         int(c.split(',')[1].replace(')', ''))] for c in kernel_sizes.split('_')]
+    if len(strides) > 0:
+        strides = [[int(c.split(',')[0].replace('(', '')),
+                    int(c.split(',')[1].replace(')', ''))] for c in strides.split('_')]
+    if len(poolings) > 0:
+        poolings = [[int(c.split(',')[0].replace('(', '')),
+                     int(c.split(',')[1].replace(')', ''))] for c in poolings.split('_')]
     return channels, kernel_sizes, strides, poolings
