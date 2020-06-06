@@ -54,10 +54,16 @@ def make_args(**kwargs):
 
 @pytest.mark.parametrize(
     "args", [
-        # Transformer type
         ({'enc_type': 'transformer'}),
+        # 2dCNN-Transformer
         ({'enc_type': 'conv_transformer'}),
         ({'enc_type': 'conv_transformer', 'input_dim': 240, 'conv_in_channel': 3}),
+        # 1dCNN-Transformer
+        ({'enc_type': 'conv_transformer',
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2"}),
+        ({'enc_type': 'conv_transformer',
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2",
+          'input_dim': 240, 'conv_in_channel': 3}),
         # positional encoding
         ({'pe_type': 'add'}),
         ({'pe_type': 'relative'}),

@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Test for RNN encoders."""
+"""Test for RNN encoder."""
 
 import importlib
 import numpy as np
@@ -51,13 +51,24 @@ def make_args(**kwargs):
         # RNN type
         ({'rnn_type': 'blstm'}),
         ({'rnn_type': 'bgru'}),
+        ({'rnn_type': 'lstm'}),
+        ({'rnn_type': 'lstm'}),
+        ({'rnn_type': 'gru'}),
+        # 2dCNN-RNN
         ({'rnn_type': 'conv_blstm'}),
         ({'rnn_type': 'conv_blstm', 'input_dim': 240, 'conv_in_channel': 3}),
         ({'rnn_type': 'conv_bgru'}),
-        ({'rnn_type': 'lstm'}),
-        ({'rnn_type': 'lstm', }),
-        ({'rnn_type': 'gru'}),
         ({'rnn_type': 'conv_gru'}),
+        # 1dCNN-RNN
+        ({'rnn_type': 'conv_blstm',
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2", }),
+        ({'rnn_type': 'conv_blstm',
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2",
+          'input_dim': 240, 'conv_in_channel': 3}),
+        ({'rnn_type': 'conv_bgru',
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2", }),
+        ({'rnn_type': 'conv_gru',
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2", }),
         # normalization
         ({'rnn_type': 'conv_blstm', 'conv_batch_norm': True}),
         ({'rnn_type': 'conv_blstm', 'conv_layer_norm': True}),
@@ -116,11 +127,11 @@ def test_forward(args):
         xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
         enc_out_dict = enc(xs, xlens, task='all')
 
-        assert enc_out_dict['ys']['xs'].size(0) == batch_size
-        assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
+        assert enc_out_dict['ys']['xs'].size(0) == batch_size, xs.size()
+        assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0], xs.size()
         if args['n_layers_sub1'] > 0:
-            assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
-            assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0]
+            assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size, xs.size()
+            assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0], xs.size()
         if args['n_layers_sub2'] > 0:
-            assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
-            assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0]
+            assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size, xs.size()
+            assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0], xs.size()
