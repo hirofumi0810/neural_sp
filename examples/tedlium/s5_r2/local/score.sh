@@ -17,7 +17,7 @@ data=/n/work1/inaguma/corpus/tedlium2
 unit=
 metric=edit_distance
 batch_size=1
-beam_width=5
+beam_width=10  ###
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
@@ -39,9 +39,10 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_average=1  # for Transformer
+n_average=10  # for Transformer
 oracle=false
 chunk_sync=false  # for MoChA
+mma_delay_threshold=-1
 
 . ./cmd.sh
 . ./path.sh
@@ -110,6 +111,9 @@ for set in dev test; do
     if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
     fi
+    if [ ${mma_delay_threshold} != -1 ]; then
+        recog_dir=${recog_dir}_epswait${mma_delay_threshold}
+    fi
     if [ ! -z ${model3} ]; then
         recog_dir=${recog_dir}_ensemble4
     elif [ ! -z ${model2} ]; then
@@ -159,6 +163,7 @@ for set in dev test; do
         --recog_chunk_sync ${chunk_sync} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
+        --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_stdout ${stdout} || exit 1;
 
     if [ ${metric} = 'edit_distance' ]; then

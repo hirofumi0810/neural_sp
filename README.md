@@ -39,12 +39,16 @@ make KALDI=/path/to/kaldi
   - Frame stacking
   - Sequence summary network [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1438.html)]
   - SpecAugment [[link](https://arxiv.org/abs/1904.08779)]
+  - Adaptive SpecAugment [[link](https://arxiv.org/abs/1912.05533)]
 
 ### Encoder
-  - CNN encoder
-  - LSTM encoder
-  - CNN+LSTM encoder
+  - RNN encoder
+    - (CNN-)BLSTM, (CNN-)LSTM, (CNN-)BLGRU, (CNN-)LGRU
+    - Latency-controlled BLSTM [[link](https://arxiv.org/abs/1510.08983)]
   - Transformer encoder [[link](https://arxiv.org/abs/1706.03762)]
+    - (CNN-)Transformer
+    - Chunk hopping mechanism [link](https://arxiv.org/abs/1902.06450)]
+    - Relative positional encoding
   - Time-Depth Seprarabel (TDS) convolutional encoder [[link](https://arxiv.org/abs/1904.02619)]
   - Gated CNN encoder (GLU) [[link](https://openreview.net/forum?id=Hyig0zb0Z)]
 
@@ -90,14 +94,15 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
   - Hierarchical CTC (e.g., word CTC + character CTC) [[link](https://arxiv.org/abs/1711.10136)]
   - Hierarchical CTC+Attention (e.g., word attention + character CTC) [[link](http://www.sap.ist.i.kyoto-u.ac.jp/lab/bib/intl/UEN-ICASSP18.pdf)]
   - Forward-backward attention [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
-  - RNNLM objective [link]
+  - LM objective
 
 
 ## ASR Performance
 ### AISHELL-1 (CER)
-| model       | dev | test |
-| ----------- | --- | ---- |
-| Transformer | 5.0 | 5.4  |
+| model         | dev | test |
+| -----------   | --- | ---- |
+| Transformer   | 5.0 | 5.4  |
+| Streaming MMA | 6.1 | 6.6  |
 
 ### CSJ (WER)
 | model | eval1 | eval2 | eval3 |
@@ -115,9 +120,10 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | LAS   | 7.8  | 13.8 |
 
 ### Librispeech (WER)
-| model       | dev-clean | dev-other | test-clean | test-other |
-| ----------- | --------- | --------- | ---------- | ---------- |
-| Transformer | 2.3       | 5.8       | 2.5        | 6.1        |
+| model         | dev-clean | dev-other | test-clean | test-other |
+| -----------   | --------- | --------- | ---------- | ---------- |
+| Transformer   | 2.3       | 5.8       | 2.5        | 6.1        |
+| Streaming MMA | 2.5       | 6.9       | 2.7        | 7.1        |
 
 ### TEDLIUM2 (WER)
 | model | dev  | test |

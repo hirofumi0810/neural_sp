@@ -13,11 +13,9 @@ from __future__ import print_function
 import logging
 import math
 import numpy as np
-import random
 import torch
 import torch.nn as nn
 
-random.seed(1)
 
 NEG_INF = float(np.finfo(np.float32).min)
 
@@ -31,6 +29,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         kdim (int): dimension of key
         qdim (int): dimension of query
         adim: (int) dimension of the attention space
+        odim: (int) dimension of output
         n_heads (int): number of heads
         dropout (float): dropout probability for attenion weights
         bias (bool): use bias term in linear layers
@@ -38,7 +37,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
 
     """
 
-    def __init__(self, kdim, qdim, adim, n_heads, dropout,
+    def __init__(self, kdim, qdim, adim, odim, n_heads, dropout,
                  bias=True, param_init=''):
         super(RelativeMultiheadAttentionMechanism, self).__init__()
 
@@ -55,7 +54,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         self.w_query = nn.Linear(qdim, adim, bias=bias)
         self.w_position = nn.Linear(qdim, adim, bias=bias)
         # TODO: fix later
-        self.w_out = nn.Linear(adim, kdim, bias=bias)
+        self.w_out = nn.Linear(adim, odim, bias=bias)
 
         if param_init == 'xavier_uniform':
             self.reset_parameters(bias)
@@ -113,7 +112,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         """
         bs, qlen = query.size()[: 2]
         klen = key.size(1)
-        mlen = memory.size(1) if memory.dim() > 1 else 0
+        mlen = memory.size(1) if memory is not None and memory.dim() > 1 else 0
         if mlen > 0:
             key = torch.cat([memory, key], dim=1)
 

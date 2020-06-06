@@ -17,7 +17,8 @@ import torch.nn as nn
 logger = logging.getLogger(__name__)
 
 
-def init_with_normal_dist(n, p, std):
+def init_like_transformer_xl(n, p, std):
+    # https://github.com/kimiyoung/transformer-xl/blob/44781ed21dbaec88b280f74d9ae2877f52b492a5/pytorch/train.py
     if 'norm' in n and 'weight' in n:
         assert p.dim() == 1
         nn.init.normal_(p, 1.0, std)  # layer normalization
@@ -32,8 +33,7 @@ def init_with_normal_dist(n, p, std):
         raise ValueError(n)
 
 
-def init_with_xavier_dist(n, p):
-    # https://github.com/kimiyoung/transformer-xl/blob/44781ed21dbaec88b280f74d9ae2877f52b492a5/pytorch/train.py
+def init_with_xavier_uniform(n, p):
     if p.dim() == 1:
         nn.init.constant_(p, 0.)  # bias
         logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
@@ -44,7 +44,7 @@ def init_with_xavier_dist(n, p):
         raise ValueError(n)
 
 
-def init_with_lecun(n, p, param_init):
+def init_with_lecun_normal(n, p, param_init):
     if p.dim() == 1:
         nn.init.constant_(p, 0.)  # bias
         logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
@@ -62,8 +62,3 @@ def init_with_lecun(n, p, param_init):
         logger.info('Initialize %s with %s / %.3f' % (n, 'lecun', param_init))
     else:
         raise ValueError(n)
-
-
-# def init_embedding(embed):
-#     nn.init.normal_(embed.weight, mean=0., std=d_model**-0.5)
-#     nn.init.constant_(embed.weight[pad], 0.)

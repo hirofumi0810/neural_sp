@@ -25,6 +25,7 @@ def make_args(**kwargs):
         n_layers=6,
         d_model=64,
         d_ff=256,
+        d_ff_bottleneck_dim=0,
         layer_norm_eps=1e-12,
         ffn_activation='relu',
         pe_type='add',
@@ -58,6 +59,7 @@ def make_args(**kwargs):
         latency_metric=False,
         latency_loss_weight=0.0,
         mocha_first_layer=1,
+        share_chunkwise_attention=False,
         external_lm=None,
         lm_fusion='',
         # lm_init=False,
@@ -78,6 +80,7 @@ def make_args(**kwargs):
         ({'ffn_activation': 'relu'}),
         ({'ffn_activation': 'gelu'}),
         # ({'ffn_activation': 'glu'}),
+        ({'ffn_activation': 'swish'}),
         # MMA
         ({'attn_type': 'mocha', 'mocha_chunk_size': 1, 'mocha_n_heads_mono': 1}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 1, 'mocha_n_heads_mono': 4}),
@@ -85,6 +88,8 @@ def make_args(**kwargs):
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 4, 'mocha_n_heads_chunk': 1}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 1, 'mocha_n_heads_chunk': 4}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 4, 'mocha_n_heads_chunk': 4}),
+        ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 4, 'mocha_n_heads_chunk': 4,
+          'share_chunkwise_attention': True}),
         # MMA + HeadDrop
         ({'attn_type': 'mocha', 'dropout_head': 0.1, 'mocha_chunk_size': 1, 'mocha_n_heads_mono': 1}),
         ({'attn_type': 'mocha', 'dropout_head': 0.1, 'mocha_chunk_size': 1, 'mocha_n_heads_mono': 4}),
@@ -105,6 +110,8 @@ def make_args(**kwargs):
         ({'backward': True}),
         ({'backward': True, 'ctc_weight': 0.5}),
         ({'backward': True, 'ctc_weight': 1.0}),
+        # bottleneck
+        ({'d_ff_bottleneck_dim': 256}),
         # RNNLM init
         # LM integration
     ]

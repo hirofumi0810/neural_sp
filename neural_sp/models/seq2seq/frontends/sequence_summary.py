@@ -47,8 +47,8 @@ class SequenceSummaryNetwork(nn.Module):
         self.ssn = nn.ModuleList()
         self.ssn += [nn.Linear(input_dim, n_units, bias=False)]
         self.ssn += [nn.Dropout(p=dropout)]
-        for l in range(1, n_layers - 1):
-            self.ssn += [nn.Linear(n_units, bottleneck_dim if l == n_layers - 2 else n_units,
+        for lth in range(1, n_layers - 1):
+            self.ssn += [nn.Linear(n_units, bottleneck_dim if lth == n_layers - 2 else n_units,
                                    bias=False)]
             self.ssn += [nn.Dropout(p=dropout)]
         self.p = nn.Linear(bottleneck_dim, input_dim, bias=False)
@@ -81,8 +81,8 @@ class SequenceSummaryNetwork(nn.Module):
         bs, time = xs.size()[:2]
 
         s = xs.clone()
-        for l in range(self.n_layers - 1):
-            s = torch.tanh(self.ssn[l](s))
+        for lth in range(self.n_layers - 1):
+            s = torch.tanh(self.ssn[lth](s))
         s = self.ssn[self.n_layers - 1](s)  # `[B, T, input_dim]`
 
         # padding

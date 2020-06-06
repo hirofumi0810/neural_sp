@@ -185,13 +185,13 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
         cv_bwd_h = torch.matmul(aw_bwd_h, self.value_bwd)  # `[B, H, qlen, d_k]`
         cv_bwd_f = torch.matmul(aw_bwd_f, self.value_fwd)  # `[B, H, qlen, d_k]`
 
-        cv_fwd_h = cv_fwd_h.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
+        cv_fwd_h = cv_fwd_h.transpose(2, 1).contiguous().view(bs, -1, self.n_heads * self.d_k)
         cv_fwd_h = self.w_out(cv_fwd_h)
-        cv_fwd_f = cv_fwd_f.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
+        cv_fwd_f = cv_fwd_f.transpose(2, 1).contiguous().view(bs, -1, self.n_heads * self.d_k)
         cv_fwd_f = self.w_out(cv_fwd_f)
-        cv_bwd_h = cv_bwd_h.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
+        cv_bwd_h = cv_bwd_h.transpose(2, 1).contiguous().view(bs, -1, self.n_heads * self.d_k)
         cv_bwd_h = self.w_out(cv_bwd_h)
-        cv_bwd_f = cv_bwd_f.transpose(2, 1).contiguous().view(bs, -1,  self.n_heads * self.d_k)
+        cv_bwd_f = cv_bwd_f.transpose(2, 1).contiguous().view(bs, -1, self.n_heads * self.d_k)
         cv_bwd_f = self.w_out(cv_bwd_f)
 
         # merge history and future information

@@ -47,6 +47,7 @@ def build_encoder(args):
             n_layers_sub2=args.enc_n_layers_sub2,
             d_model=args.transformer_d_model,
             d_ff=args.transformer_d_ff,
+            d_ff_bottleneck_dim=getattr(args, 'transformer_d_ff_bottleneck_dim', 0),
             last_proj_dim=args.transformer_d_model if 'transformer' in args.dec_type else 0,
             pe_type=args.transformer_enc_pe_type,
             layer_norm_eps=args.transformer_layer_norm_eps,
@@ -70,14 +71,9 @@ def build_encoder(args):
             param_init=args.transformer_param_init,
             chunk_size_left=args.lc_chunk_size_left,
             chunk_size_current=args.lc_chunk_size_current,
-            chunk_size_right=args.lc_chunk_size_right,
-            d_ff_bottleneck_dim=args.transformer_d_ff_bottleneck_dim)
+            chunk_size_right=args.lc_chunk_size_right)
 
     else:
-        subsample = [1] * args.enc_n_layers
-        for l, s in enumerate(list(map(int, args.subsample.split('_')[:args.enc_n_layers]))):
-            subsample[l] = s
-
         from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
         encoder = RNNEncoder(
             input_dim=args.input_dim if args.input_type == 'speech' else args.emb_dim,
@@ -90,7 +86,7 @@ def build_encoder(args):
             n_layers_sub2=args.enc_n_layers_sub2,
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
-            subsample=subsample,
+            subsample=args.subsample,
             subsample_type=args.subsample_type,
             n_stacks=args.n_stacks,
             n_splices=args.n_splices,
