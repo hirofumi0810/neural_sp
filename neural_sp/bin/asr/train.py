@@ -72,19 +72,19 @@ def main():
         args.subsample_factor_sub1 = 1
         args.subsample_factor_sub2 = 1
         subsample = [int(s) for s in args.subsample.split('_')]
-        if args.conv_poolings and 'conv' in args.enc_type:
+        if 'conv' in args.enc_type and args.conv_poolings:
             for p in args.conv_poolings.split('_'):
                 args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
         else:
             args.subsample_factor = int(np.prod(subsample))
         if args.train_set_sub1:
-            if args.conv_poolings and 'conv' in args.enc_type:
+            if 'conv' in args.enc_type and args.conv_poolings:
                 args.subsample_factor_sub1 = args.subsample_factor * \
                     int(np.prod(subsample[:args.enc_n_layers_sub1 - 1]))
             else:
                 args.subsample_factor_sub1 = args.subsample_factor
         if args.train_set_sub2:
-            if args.conv_poolings and 'conv' in args.enc_type:
+            if 'conv' in args.enc_type and args.conv_poolings:
                 args.subsample_factor_sub2 = args.subsample_factor * \
                     int(np.prod(subsample[:args.enc_n_layers_sub2 - 1]))
             else:
@@ -187,40 +187,7 @@ def main():
     # Model setting
     model = Speech2Text(args, save_path, train_set.idx2token[0])
 
-    if args.resume:
-        is_transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
-    else:
-        is_transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
-
-    if args.resume:
-        # Set optimizer
-        epoch = int(args.resume.split('-')[-1])
-        optimizer = set_optimizer(model, 'sgd' if epoch > conf['convert_to_sgd_epoch'] else conf['optimizer'],
-                                  conf['lr'], conf['weight_decay'])
-
-        # Wrap optimizer by learning rate scheduler
-        optimizer = LRScheduler(optimizer, conf['lr'],
-                                decay_type=conf['lr_decay_type'],
-                                decay_start_epoch=conf['lr_decay_start_epoch'],
-                                decay_rate=conf['lr_decay_rate'],
-                                decay_patient_n_epochs=conf['lr_decay_patient_n_epochs'],
-                                early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
-                                lower_better=conf['metric'] not in ['accuracy', 'bleu'],
-                                warmup_start_lr=conf['warmup_start_lr'],
-                                warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['transformer_d_model'] if 'transformer_d_model' in conf.keys() else 0,
-                                factor=conf['lr_factor'],
-                                noam=is_transformer,
-                                save_checkpoints_topk=10 if is_transformer else 1)
-
-        # Restore the last saved model
-        load_checkpoint(model, args.resume, optimizer)
-
-        # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
-        if epoch == conf['convert_to_sgd_epoch']:
-            optimizer.convert_to_sgd(model, args.lr, conf['weight_decay'],
-                                     decay_type='always', decay_rate=0.5)
-    else:
+    if not args.resume:
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
         if args.external_lm:
@@ -264,23 +231,39 @@ def main():
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
-        # Set optimizer
+    # Set optimizer
+    resume_epoch = 0
+    if args.resume:
+        resume_epoch = int(args.resume.split('-')[-1])
+        optimizer = set_optimizer(model, 'sgd' if resume_epoch > args.convert_to_sgd_epoch else args.optimizer,
+                                  args.lr, args.weight_decay)
+    else:
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
-        # Wrap optimizer by learning rate scheduler
-        optimizer = LRScheduler(optimizer, args.lr,
-                                decay_type=args.lr_decay_type,
-                                decay_start_epoch=args.lr_decay_start_epoch,
-                                decay_rate=args.lr_decay_rate,
-                                decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
-                                early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
-                                lower_better=args.metric not in ['accuracy', 'bleu'],
-                                warmup_start_lr=args.warmup_start_lr,
-                                warmup_n_steps=args.warmup_n_steps,
-                                model_size=getattr(args, 'transformer_d_model', 0),
-                                factor=args.lr_factor,
-                                noam=is_transformer,
-                                save_checkpoints_topk=10 if is_transformer else 1)
+    # Wrap optimizer by learning rate scheduler
+    is_transformer = 'former' in args.enc_type or args.dec_type == 'former'
+    optimizer = LRScheduler(optimizer, args.lr,
+                            decay_type=args.lr_decay_type,
+                            decay_start_epoch=args.lr_decay_start_epoch,
+                            decay_rate=args.lr_decay_rate,
+                            decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
+                            early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
+                            lower_better=args.metric not in ['accuracy', 'bleu'],
+                            warmup_start_lr=args.warmup_start_lr,
+                            warmup_n_steps=args.warmup_n_steps,
+                            model_size=getattr(args, 'transformer_d_model', 0),
+                            factor=args.lr_factor,
+                            noam=is_transformer,
+                            save_checkpoints_topk=10 if is_transformer else 1)
+
+    if args.resume:
+        # Restore the last saved model
+        load_checkpoint(model, args.resume, optimizer)
+
+        # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
+        if resume_epoch == args.convert_to_sgd_epoch:
+            optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
+                                     decay_type='always', decay_rate=0.5)
 
     # Load the teacher ASR model
     teacher = None
@@ -510,7 +493,7 @@ def evaluate(models, dataset, recog_params, args, epoch, logger):
         logger.info('PPL (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
     elif args.metric == 'loss':
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
-        logger.info('Loss (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+        logger.info('Loss (%s, ep:%d): %.5f' % (dataset.set, epoch, metric))
     elif args.metric == 'accuracy':
         metric = eval_accuracy(models, dataset, batch_size=args.batch_size)
         logger.info('Accuracy (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))

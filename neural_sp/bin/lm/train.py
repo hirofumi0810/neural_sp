@@ -106,39 +106,7 @@ def main():
     # Model setting
     model = build_lm(args, save_path)
 
-    if args.resume:
-        is_transformer = conf['lm_type'] in ['transformer', 'transformer_xl']
-    else:
-        is_transformer = args.lm_type in ['transformer', 'transformer_xl']
-
-    if args.resume:
-        # Set optimizer
-        epoch = int(args.resume.split('-')[-1])
-        optimizer = set_optimizer(model, 'sgd' if epoch > conf['convert_to_sgd_epoch'] else conf['optimizer'],
-                                  conf['lr'], conf['weight_decay'])
-
-        # Wrap optimizer by learning rate scheduler
-        optimizer = LRScheduler(optimizer, conf['lr'],
-                                decay_type=conf['lr_decay_type'],
-                                decay_start_epoch=conf['lr_decay_start_epoch'],
-                                decay_rate=conf['lr_decay_rate'],
-                                decay_patient_n_epochs=conf['lr_decay_patient_n_epochs'],
-                                early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
-                                warmup_start_lr=conf['warmup_start_lr'],
-                                warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['transformer_d_model'] if 'transformer_d_model' in conf.keys() else 0,
-                                factor=conf['lr_factor'],
-                                noam=is_transformer,
-                                save_checkpoints_topk=1)
-
-        # Restore the last saved model
-        load_checkpoint(model, args.resume, optimizer)
-
-        # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
-        if epoch == conf['convert_to_sgd_epoch']:
-            optimizer.convert_to_sgd(model, args.lr, conf['weight_decay'],
-                                     decay_type='always', decay_rate=0.5)
-    else:
+    if not args.resume:
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
 
@@ -159,22 +127,38 @@ def main():
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
         logger.info(model)
 
-        # Set optimizer
+    # Set optimizer
+    resume_epoch = 0
+    if args.resume:
+        epoch = int(args.resume.split('-')[-1])
+        optimizer = set_optimizer(model, 'sgd' if epoch > args.convert_to_sgd_epoch else args.optimizer,
+                                  args.lr, args.weight_decay)
+    else:
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
-        # Wrap optimizer by learning rate scheduler
-        optimizer = LRScheduler(optimizer, args.lr,
-                                decay_type=args.lr_decay_type,
-                                decay_start_epoch=args.lr_decay_start_epoch,
-                                decay_rate=args.lr_decay_rate,
-                                decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
-                                early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
-                                warmup_start_lr=args.warmup_start_lr,
-                                warmup_n_steps=args.warmup_n_steps,
-                                model_size=getattr(args, 'transformer_d_model', 0),
-                                factor=args.lr_factor,
-                                noam=is_transformer,
-                                save_checkpoints_topk=1)
+    # Wrap optimizer by learning rate scheduler
+    is_transformer = args.lm_type in ['transformer', 'transformer_xl']
+    optimizer = LRScheduler(optimizer, args.lr,
+                            decay_type=args.lr_decay_type,
+                            decay_start_epoch=args.lr_decay_start_epoch,
+                            decay_rate=args.lr_decay_rate,
+                            decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
+                            early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
+                            warmup_start_lr=args.warmup_start_lr,
+                            warmup_n_steps=args.warmup_n_steps,
+                            model_size=getattr(args, 'transformer_d_model', 0),
+                            factor=args.lr_factor,
+                            noam=is_transformer,
+                            save_checkpoints_topk=1)
+
+    if args.resume:
+        # Restore the last saved model
+        load_checkpoint(model, args.resume, optimizer)
+
+        # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
+        if resume_epoch == args.convert_to_sgd_epoch:
+            optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
+                                     decay_type='always', decay_rate=0.5)
 
     # GPU setting
     if args.n_gpus >= 1:
