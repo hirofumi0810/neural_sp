@@ -12,12 +12,50 @@ from __future__ import print_function
 
 import functools
 import logging
+import numpy as np
 import os
 import time
 import torch
 import yaml
 
 logger = logging.getLogger(__name__)
+
+
+def compute_susampling_factor(args):
+    """Register subsample factor to args.
+
+        Args:
+            args (Namespace):
+        Returns:
+            args (Namespace):
+
+    """
+    if args.resume:
+        return args
+
+    args.subsample_factor = 1
+    args.subsample_factor_sub1 = 1
+    args.subsample_factor_sub2 = 1
+    subsample = [int(s) for s in args.subsample.split('_')]
+    if 'conv' in args.enc_type and args.conv_poolings:
+        for p in args.conv_poolings.split('_'):
+            args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
+    else:
+        args.subsample_factor = int(np.prod(subsample))
+    if args.train_set_sub1:
+        if 'conv' in args.enc_type and args.conv_poolings:
+            args.subsample_factor_sub1 = args.subsample_factor * \
+                int(np.prod(subsample[:args.enc_n_layers_sub1 - 1]))
+        else:
+            args.subsample_factor_sub1 = args.subsample_factor
+    if args.train_set_sub2:
+        if 'conv' in args.enc_type and args.conv_poolings:
+            args.subsample_factor_sub2 = args.subsample_factor * \
+                int(np.prod(subsample[:args.enc_n_layers_sub2 - 1]))
+        else:
+            args.subsample_factor_sub2 = args.subsample_factor
+
+    return args
 
 
 def measure_time(func):
