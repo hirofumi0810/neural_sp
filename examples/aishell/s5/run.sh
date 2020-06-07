@@ -141,7 +141,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
-        --corpus csj \
+        --corpus aishell1 \
         --config ${lm_conf} \
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
@@ -163,7 +163,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
-        --corpus tedlium2 \
+        --corpus aishell1 \
         --config ${conf} \
         --config2 ${conf2} \
         --n_gpus ${n_gpus} \
