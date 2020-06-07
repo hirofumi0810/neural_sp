@@ -20,9 +20,11 @@ import sys
 from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_attention_weights
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import (
+    load_checkpoint,
+    load_config,
+    set_logger
+)
 from neural_sp.datasets.asr import Dataset
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text

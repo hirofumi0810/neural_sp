@@ -14,7 +14,6 @@ import argparse
 import copy
 import cProfile
 import logging
-import numpy as np
 import os
 from setproctitle import setproctitle
 import shutil
@@ -25,11 +24,14 @@ from tqdm import tqdm
 
 from neural_sp.bin.args_asr import parse_args_train
 from neural_sp.bin.model_name import set_asr_model_name
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import save_config
-from neural_sp.bin.train_utils import set_logger
-from neural_sp.bin.train_utils import set_save_path
+from neural_sp.bin.train_utils import (
+    compute_susampling_factor,
+    load_checkpoint,
+    load_config,
+    save_config,
+    set_logger,
+    set_save_path
+)
 from neural_sp.datasets.asr import Dataset
 from neural_sp.evaluators.accuracy import eval_accuracy
 from neural_sp.evaluators.character import eval_char
@@ -66,29 +68,7 @@ def main():
                 setattr(args, k, v)
     recog_params = vars(args)
 
-    # Compute subsampling factor
-    if not args.resume:
-        args.subsample_factor = 1
-        args.subsample_factor_sub1 = 1
-        args.subsample_factor_sub2 = 1
-        subsample = [int(s) for s in args.subsample.split('_')]
-        if 'conv' in args.enc_type and args.conv_poolings:
-            for p in args.conv_poolings.split('_'):
-                args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
-        else:
-            args.subsample_factor = int(np.prod(subsample))
-        if args.train_set_sub1:
-            if 'conv' in args.enc_type and args.conv_poolings:
-                args.subsample_factor_sub1 = args.subsample_factor * \
-                    int(np.prod(subsample[:args.enc_n_layers_sub1 - 1]))
-            else:
-                args.subsample_factor_sub1 = args.subsample_factor
-        if args.train_set_sub2:
-            if 'conv' in args.enc_type and args.conv_poolings:
-                args.subsample_factor_sub2 = args.subsample_factor * \
-                    int(np.prod(subsample[:args.enc_n_layers_sub2 - 1]))
-            else:
-                args.subsample_factor_sub2 = args.subsample_factor
+    args = compute_susampling_factor(args)
 
     # Load dataset
     train_set = Dataset(corpus=args.corpus,
@@ -482,9 +462,13 @@ def evaluate(models, dataset, recog_params, args, epoch, logger):
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, cer))
         elif 'char' in args.unit:
-            metric, cer = eval_char(models, dataset, recog_params, epoch=epoch)
-            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
+            wer, cer = eval_char(models, dataset, recog_params, epoch=epoch)
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, wer))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, cer))
+            if dataset.corpus in ['aishell1']:
+                metric = cer
+            else:
+                metric = wer
         elif 'phone' in args.unit:
             metric = eval_phone(models, dataset, recog_params, epoch=epoch)
             logger.info('PER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))

@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import numpy as np
 import os
 import shutil
 import sys
@@ -19,8 +18,10 @@ import sys
 from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_ctc_probs
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import (
+    load_checkpoint,
+    set_logger
+)
 from neural_sp.datasets.asr import Dataset
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
@@ -39,15 +40,6 @@ def main():
     set_logger(os.path.join(args.recog_dir, 'plot.log'), stdout=args.recog_stdout)
 
     for i, s in enumerate(args.recog_sets):
-        subsample_factor = 1
-        subsample = [int(s) for s in args.subsample.split('_')]
-        if args.conv_poolings:
-            for p in args.conv_poolings.split('_'):
-                p = int(p.split(',')[0].replace('(', ''))
-                if p > 1:
-                    subsample_factor *= p
-        subsample_factor *= np.prod(subsample)
-
         # Load dataset
         dataset = Dataset(corpus=args.corpus,
                           tsv_path=s,
@@ -106,7 +98,7 @@ def main():
 
                 plot_ctc_probs(
                     ctc_probs[b, :xlens[b]], topk_ids[b],
-                    subsample_factor=subsample_factor,
+                    subsample_factor=args.subsample_factor,
                     spectrogram=batch['xs'][b][:, :dataset.input_dim],
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8))
