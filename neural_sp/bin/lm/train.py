@@ -22,11 +22,13 @@ from tqdm import tqdm
 
 from neural_sp.bin.args_lm import parse_args_train
 from neural_sp.bin.model_name import set_lm_name
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import save_config
-from neural_sp.bin.train_utils import set_logger
-from neural_sp.bin.train_utils import set_save_path
+from neural_sp.bin.train_utils import (
+    load_checkpoint,
+    load_config,
+    save_config,
+    set_logger,
+    set_save_path
+)
 from neural_sp.datasets.lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel

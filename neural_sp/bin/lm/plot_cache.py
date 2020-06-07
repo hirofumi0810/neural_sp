@@ -19,8 +19,10 @@ import sys
 from neural_sp.bin.args_lm import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_cache_weights
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import (
+    load_checkpoint,
+    set_logger
+)
 from neural_sp.datasets.lm import Dataset
 from neural_sp.models.lm.build import build_lm
 from neural_sp.utils import mkdir_join
