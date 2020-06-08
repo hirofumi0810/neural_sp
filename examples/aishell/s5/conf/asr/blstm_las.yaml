@@ -33,7 +33,6 @@ ctc_fc_list: "512"
 ### optimization
 batch_size: 30
 optimizer: adam
-# n_epochs: 20  # 25->20
 n_epochs: 25
 convert_to_sgd_epoch: 100
 print_step: 600  # 200->600
