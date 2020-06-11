@@ -66,7 +66,7 @@ def main():
                 model = average_checkpoints(model, args.recog_model[0],
                                             n_average=args.recog_n_average)
             else:
-                load_checkpoint(model, args.recog_model[0])
+                load_checkpoint(args.recog_model[0], model)
 
             # Ensemble (different models)
             ensemble_models = [model]
@@ -78,7 +78,7 @@ def main():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
-                    load_checkpoint(model_e, recog_model_e)
+                    load_checkpoint(recog_model_e, model_e)
                     if args.recog_n_gpus >= 1:
                         model_e.cuda()
                     ensemble_models += [model_e]
@@ -92,7 +92,7 @@ def main():
                     for k, v in conf_lm.items():
                         setattr(args_lm, k, v)
                     lm = build_lm(args_lm)
-                    load_checkpoint(lm, args.recog_lm)
+                    load_checkpoint(args.recog_lm, lm)
                     if args_lm.backward:
                         model.lm_bwd = lm
                     else:

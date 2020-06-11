@@ -62,7 +62,7 @@ def main():
                 model = average_checkpoints(model, args.recog_model[0],
                                             n_average=args.recog_n_average)
             else:
-                load_checkpoint(model, args.recog_model[0])
+                load_checkpoint(args.recog_model[0], model)
 
             if not args.recog_unit:
                 args.recog_unit = args.unit

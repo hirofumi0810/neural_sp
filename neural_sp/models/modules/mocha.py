@@ -22,8 +22,6 @@ from neural_sp.models.modules.initialization import init_with_xavier_uniform
 
 random.seed(1)
 
-NEG_INF = float(np.finfo(np.float32).min)
-
 logger = logging.getLogger(__name__)
 
 
@@ -153,6 +151,7 @@ class MonotonicEnergy(nn.Module):
         if self.r is not None:
             e = e + self.r
         if m is not None:
+            NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
             e = e.masked_fill_(m == 0, NEG_INF)
         assert e.size() == (bs, self.n_heads, qlen, klen), \
             (e.size(), (bs, self.n_heads, qlen, klen))
@@ -257,6 +256,7 @@ class ChunkEnergy(nn.Module):
             r = torch.matmul(query, k) / self.scale
 
         if m is not None:
+            NEG_INF = float(np.finfo(torch.tensor(0, dtype=r.dtype).numpy().dtype).min)
             r = r.masked_fill_(m == 0, NEG_INF)
         assert r.size() == (bs, self.n_heads, qlen, klen), \
             (r.size(), (bs, self.n_heads, qlen, klen))
@@ -732,6 +732,7 @@ def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
                 else:
                     mask[b, h, :, 0, max(0, boundary - chunk_size + 1):boundary + 1] = 1
 
+    NEG_INF = float(np.finfo(torch.tensor(0, dtype=u.dtype).numpy().dtype).min)
     u = u.masked_fill(mask == 0, NEG_INF)
     beta = torch.softmax(u, dim=-1)
     return beta.view(bs, -1, qlen, klen)

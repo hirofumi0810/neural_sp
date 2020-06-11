@@ -177,7 +177,8 @@ class LRScheduler(object):
             else:
                 param_group['lr'] = self.lr
 
-    def save_checkpoint(self, model, save_path, remove_old=True, epoch_detail=None):
+    def save_checkpoint(self, model, save_path, remove_old=True, amp=None,
+                        epoch_detail=None):
         """Save checkpoint.
 
         Args:
@@ -186,6 +187,7 @@ class LRScheduler(object):
             optimizer (LRScheduler): optimizer wrapped by LRScheduler class
             remove_old (bool): if True, all checkpoints
                 worse than the top-k ones are deleted
+            amp ():
             epoch_detail (float): fine-grained epoch (used for MBR training)
 
         """
@@ -207,6 +209,8 @@ class LRScheduler(object):
             "model_state_dict": model.module.state_dict(),
             "optimizer_state_dict": self.state_dict(),  # LRScheduler class
         }
+        if amp is not None:
+            checkpoint['amp_state_dict'] = amp.state_dict()
         torch.save(checkpoint, model_path)
 
         logger.info("=> Saved checkpoint (epoch:%s): %s" % (str(epoch_detail), model_path))

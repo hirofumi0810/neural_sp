@@ -155,7 +155,7 @@ def main():
 
     if args.resume:
         # Restore the last saved model
-        load_checkpoint(model, args.resume, optimizer)
+        load_checkpoint(args.resume, model, optimizer)
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if resume_epoch == args.convert_to_sgd_epoch:
@@ -163,15 +163,27 @@ def main():
                                      decay_type='always', decay_rate=0.5)
 
     # GPU setting
+    use_apex = args.train_dtype in ["O0", "O1", "O2", "O3"]
+    amp = None
     if args.n_gpus >= 1:
         model.cudnn_setting(deterministic=not (is_transformer or args.cudnn_benchmark),
                             benchmark=args.cudnn_benchmark)
-        model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
         model.cuda()
+
+        # Mix precision training setting
+        if use_apex:
+            from apex import amp
+            model, optimizer.optimizer = amp.initialize(model, optimizer.optimizer,
+                                                        opt_level=args.train_dtype)
+            amp.init()
+            if args.resume:
+                load_checkpoint(args.resume, amp=amp)
+        model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
 
     # Set process name
     logger.info('PID: %s' % os.getpid())
     logger.info('USERNAME: %s' % os.uname()[1])
+    logger.info('#GPU: %d' % torch.cuda.device_count())
     setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
@@ -191,7 +203,11 @@ def main():
 
         loss, hidden, observation = model(ys_train, hidden)
         reporter.add(observation)
-        loss.backward()
+        if use_apex:
+            with amp.scale_loss(loss, optimizer.optimizer) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            loss.backward()
         loss.detach()  # Trancate the graph
         if args.accum_grad_n_steps == 1 or accum_n_steps >= args.accum_grad_n_steps:
             if args.clip_grad_norm > 0:
@@ -209,6 +225,7 @@ def main():
         reporter.step()
         pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
         n_steps += 1
+        # NOTE: n_steps is different from the step counter in Noam Optimizer
 
         if n_steps % args.print_step == 0:
             # Compute loss in the dev set
@@ -242,7 +259,8 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                optimizer.save_checkpoint(model, save_path, remove_old=True)
+                optimizer.save_checkpoint(
+                    model, save_path, remove_old=not is_transformer, amp=amp)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -255,9 +273,10 @@ def main():
                 logger.info('PPL (%s, ep:%d): %.2f' %
                             (dev_set.set, optimizer.n_epochs, ppl_dev))
 
-                if optimizer.is_topk:
+                if optimizer.is_topk or is_transformer:
                     # Save the model
-                    optimizer.save_checkpoint(model, save_path, remove_old=True)
+                    optimizer.save_checkpoint(
+                        model, save_path, remove_old=not is_transformer, amp=amp)
 
                     # test
                     ppl_test_avg = 0.
@@ -287,7 +306,7 @@ def main():
 
             pbar_epoch = tqdm(total=len(train_set))
 
-            if optimizer.n_epochs == args.n_epochs:
+            if optimizer.n_epochs >= args.n_epochs:
                 break
 
             start_time_step = time.time()
