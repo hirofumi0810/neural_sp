@@ -54,7 +54,7 @@ def main():
         if i == 0:
             # Load the LM
             model = build_lm(args)
-            load_checkpoint(model, args.recog_model[0])
+            load_checkpoint(args.recog_model[0], model)
             epoch = int(args.recog_model[0].split('-')[-1])
             # NOTE: model averaging is not helpful for LM
 

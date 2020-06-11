@@ -19,8 +19,6 @@ import torch.nn as nn
 
 random.seed(1)
 
-NEG_INF = float(np.finfo(np.float32).min)
-
 logger = logging.getLogger(__name__)
 
 
@@ -140,6 +138,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # Compute attention weights
         if self.mask is not None:
+            NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
             e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, qlen, klen, H]`
         aw = torch.softmax(e, dim=2)
         aw = self.dropout_attn(aw)

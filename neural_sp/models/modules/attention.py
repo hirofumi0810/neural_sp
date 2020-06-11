@@ -14,8 +14,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-NEG_INF = float(np.finfo(np.float32).min)
-
 
 class AttentionMechanism(nn.Module):
     """Single-head attention layer.
@@ -166,6 +164,8 @@ class AttentionMechanism(nn.Module):
             query = query.repeat([1, klen, 1])
             e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1)))).transpose(2, 1)
         assert e.size() == (bs, qlen, klen), (e.size(), (bs, qlen, klen))
+
+        NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
 
         # Mask the right part from the trigger point
         if self.atype == 'triggered_attention':
