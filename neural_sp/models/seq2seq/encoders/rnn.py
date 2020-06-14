@@ -313,7 +313,7 @@ class RNNEncoder(EncoderBase):
                 eouts['ys']['xlens'] = xlens
                 return eouts
 
-        if not use_cache:
+        if not use_cache and not streaming:
             self.reset_cache()
 
         if self.latency_controlled:
@@ -323,8 +323,10 @@ class RNNEncoder(EncoderBase):
         else:
             for lth in range(self.n_layers):
                 self.rnn[lth].flatten_parameters()  # for multi-GPUs
-                xs, self.fwd_states[lth] = self.padding(xs, xlens, self.rnn[lth],
-                                                        prev_state=self.fwd_states[lth])
+                xs, state = self.padding(xs, xlens, self.rnn[lth],
+                                         prev_state=self.fwd_states[lth],
+                                         streaming=streaming)
+                self.fwd_states[lth] = state
                 xs = self.dropout(xs)
 
                 # Pick up outputs in the sub task before the projection layer
@@ -430,10 +432,13 @@ class RNNEncoder(EncoderBase):
                 xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, N_l+N_r, n_units]`
                 # fwd
                 if xs_chunk.size(1) <= N_l:
-                    xs_chunk_fwd, self.fwd_states[lth] = self.rnn[lth](xs_chunk, hx=self.fwd_states[lth])
+                    xs_chunk_fwd, self.fwd_states[lth] = self.rnn[lth](xs_chunk,
+                                                                       hx=self.fwd_states[lth])
                 else:
-                    xs_chunk_fwd1, self.fwd_states[lth] = self.rnn[lth](xs_chunk[:, :N_l], hx=self.fwd_states[lth])
-                    xs_chunk_fwd2, _ = self.rnn[lth](xs_chunk[:, N_l:], hx=self.fwd_states[lth])
+                    xs_chunk_fwd1, self.fwd_states[lth] = self.rnn[lth](xs_chunk[:, :N_l],
+                                                                        hx=self.fwd_states[lth])
+                    xs_chunk_fwd2, _ = self.rnn[lth](xs_chunk[:, N_l:],
+                                                     hx=self.fwd_states[lth])
                     xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, N_l+N_r, n_units]`
                     # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer
                 if self.bidir_sum:
@@ -487,10 +492,14 @@ class Padding(nn.Module):
         super(Padding, self).__init__()
         self.bidir_sum = bidirectional_sum_fwd_bwd
 
-    def forward(self, xs, xlens, rnn, prev_state=None):
-        xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
-        xs, state = rnn(xs, hx=prev_state)
-        xs = pad_packed_sequence(xs, batch_first=True)[0]
+    def forward(self, xs, xlens, rnn, prev_state=None, streaming=False):
+        if not streaming and xlens is not None:
+            xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
+            xs, state = rnn(xs, hx=prev_state)
+            xs = pad_packed_sequence(xs, batch_first=True)[0]
+        else:
+            xs, state = rnn(xs, hx=prev_state)
+
         if self.bidir_sum:
             assert rnn.bidirectional
             half = xs.size(-1) // 2
