@@ -307,7 +307,7 @@ class RNNEncoder(EncoderBase):
 
         # Path through CNN blocks before RNN layers
         if self.conv is not None:
-            xs, xlens = self.conv(xs, xlens)
+            xs, xlens = self.conv(xs, xlens, streaming=streaming)
             if self.rnn_type in ['conv', 'tds', 'gated_conv']:
                 eouts['ys']['xs'] = xs
                 eouts['ys']['xlens'] = xlens
