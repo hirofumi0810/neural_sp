@@ -50,12 +50,21 @@ class EncoderBase(ModelBase):
     def forward(self, xs, xlens, task):
         raise NotImplementedError
 
+    def turn_on_ceil_mode(self, encoder):
+        if isinstance(encoder, torch.nn.Module):
+            for name, module in encoder.named_children():
+                if isinstance(module, torch.nn.MaxPool2d):
+                    module.ceil_mode = True
+                    logging.debug('Turn ON ceil_mode in %s.' % name)
+                else:
+                    self.turn_on_ceil_mode(module)
+
     def turn_off_ceil_mode(self, encoder):
         if isinstance(encoder, torch.nn.Module):
             for name, module in encoder.named_children():
                 if isinstance(module, torch.nn.MaxPool2d):
                     module.ceil_mode = False
-                    logging.debug('Turn off ceil_mode in %s.' % name)
+                    logging.debug('Turn OFF ceil_mode in %s.' % name)
                 else:
                     self.turn_off_ceil_mode(module)
 
