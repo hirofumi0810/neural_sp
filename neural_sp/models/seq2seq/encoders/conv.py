@@ -136,12 +136,13 @@ class ConvEncoder(EncoderBase):
         for n, p in self.named_parameters():
             init_with_lecun_normal(n, p, param_init)
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, streaming=False):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, T, F]`
             xlens (list): A list of length `[B]`
+            streaming (bool): streaming encoding
         Returns:
             xs (FloatTensor): `[B, T', F']`
             xlens (list): A list of length `[B]`
@@ -153,7 +154,8 @@ class ConvEncoder(EncoderBase):
             xs = xs.view(B, T, C_i, F // C_i).contiguous().transpose(2, 1)  # `[B, C_i, T, F // C_i]`
 
         for block in self.layers:
-            xs, xlens = block(xs, xlens)
+            xs, xlens = block(xs, xlens,
+                              streaming=streaming if xs.size(2) // self._factor >= 1 else False)
         if not self.is_1dconv:
             B, C_o, T, F = xs.size()
             xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T', C_o * F']`
@@ -185,7 +187,7 @@ class Conv1dBlock(EncoderBase):
                                kernel_size=kernel_size,
                                stride=stride,
                                padding=1)
-        self._odim = update_lens_1d([in_channel], self.conv1)[0]
+        self._odim = update_lens_1d([in_channel], self.conv1)[0].item()
         self.batch_norm1 = nn.BatchNorm1d(out_channel) if batch_norm else lambda x: x
         self.layer_norm1 = nn.LayerNorm(out_channel,
                                         eps=layer_norm_eps) if layer_norm else lambda x: x
@@ -196,7 +198,7 @@ class Conv1dBlock(EncoderBase):
                                kernel_size=kernel_size,
                                stride=stride,
                                padding=1)
-        self._odim = update_lens_1d([self._odim], self.conv2)[0]
+        self._odim = update_lens_1d([self._odim], self.conv2)[0].item()
         self.batch_norm2 = nn.BatchNorm1d(out_channel) if batch_norm else lambda x: x
         self.layer_norm2 = nn.LayerNorm(out_channel,
                                         eps=layer_norm_eps) if layer_norm else lambda x: x
@@ -214,12 +216,13 @@ class Conv1dBlock(EncoderBase):
                 self._odim = (self._odim // 2) * 2
                 # TODO(hirofumi0810): more efficient way?
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, streaming=False):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, T, F]`
             xlens (IntTensor): `[B]`
+            streaming (bool): streaming encoding
         Returns:
             xs (FloatTensor): `[B, T', F']`
             xlens (IntTensor): `[B]`
@@ -274,9 +277,9 @@ class Conv2dBlock(EncoderBase):
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
-        self._odim = update_lens_2d([input_dim], self.conv1, dim=1)[0]
+        self._odim = update_lens_2d([input_dim], self.conv1, dim=1)[0].item()
         self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm1 = LayerNorm2D(out_channel * self._odim.item(),
+        self.layer_norm1 = LayerNorm2D(out_channel * self._odim,
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # 2nd layer
@@ -285,13 +288,14 @@ class Conv2dBlock(EncoderBase):
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
-        self._odim = update_lens_2d([self._odim], self.conv2, dim=1)[0]
+        self._odim = update_lens_2d([self._odim], self.conv2, dim=1)[0].item()
         self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm2 = LayerNorm2D(out_channel * self._odim.item(),
+        self.layer_norm2 = LayerNorm2D(out_channel * self._odim,
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # Max Pooling
         self.pool = None
+        self._factor = 1
         if len(pooling) > 0 and np.prod(pooling) > 1:
             self.pool = nn.MaxPool2d(kernel_size=tuple(pooling),
                                      stride=tuple(pooling),
@@ -303,12 +307,16 @@ class Conv2dBlock(EncoderBase):
                 self._odim = (self._odim // 2) * 2
                 # TODO(hirofumi0810): more efficient way?
 
-    def forward(self, xs, xlens):
+            # calculate subsampling factor
+            self._factor *= pooling[0]
+
+    def forward(self, xs, xlens, streaming=False):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, C_i, T, F]`
             xlens (IntTensor): `[B]`
+            streaming (bool): streaming encoding
         Returns:
             xs (FloatTensor): `[B, C_o, T', F']`
             xlens (IntTensor): `[B]`
@@ -322,6 +330,8 @@ class Conv2dBlock(EncoderBase):
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv1, dim=0)
+        if streaming and xs.size(2) > self.conv1.stride[0] * 2:
+            xs = xs[:, :, self.conv1.stride[0]:xs.size(2) - self.conv1.stride[0]]
 
         xs = self.conv2(xs)
         xs = self.batch_norm2(xs)
@@ -331,6 +341,8 @@ class Conv2dBlock(EncoderBase):
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv2, dim=0)
+        if streaming and xs.size(2) > self.conv2.stride[0] * 2:
+            xs = xs[:, :, self.conv2.stride[0]:xs.size(2) - self.conv2.stride[0]]
 
         if self.pool is not None:
             xs = self.pool(xs)
