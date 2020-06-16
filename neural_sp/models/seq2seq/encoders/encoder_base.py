@@ -100,3 +100,21 @@ class EncoderBase(ModelBase):
             fig.tight_layout()
             fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
             plt.close()
+
+
+def blockwise(xs, N_l, N_c, N_r):
+    bs, xmax, idim = xs.size()
+
+    n_blocks = xmax // N_c
+    if xmax % N_c != 0:
+        n_blocks += 1
+    xs_tmp = xs.new_zeros(bs, n_blocks, N_l + N_c + N_r, idim)
+    xs_pad = torch.cat([xs.new_zeros(bs, N_l, idim),
+                        xs,
+                        xs.new_zeros(bs, N_r, idim)], dim=1)
+    for blc_id, t in enumerate(range(N_l, N_l + xmax, N_c)):
+        xs_chunk = xs_pad[:, t - N_l:t + (N_c + N_r)]
+        xs_tmp[:, blc_id, :xs_chunk.size(1), :] = xs_chunk
+    xs = xs_tmp.view(bs * n_blocks, N_l + N_c + N_r, idim)
+
+    return xs
