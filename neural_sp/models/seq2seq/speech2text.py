@@ -99,10 +99,9 @@ class Speech2Text(ModelBase):
         self.n_stacks = args.n_stacks
         self.n_skips = args.n_skips
         self.n_splices = args.n_splices
-        self.use_specaug = args.n_freq_masks > 0 or args.n_time_masks > 0
-        self.specaug = None
         self.weight_noise = args.weight_noise
-        if self.use_specaug:
+        self.specaug = None
+        if args.n_freq_masks > 0 or args.n_time_masks > 0:
             assert args.n_stacks == 1 and args.n_skips == 1
             assert args.n_splices == 1
             self.specaug = SpecAugment(F=args.freq_width,
@@ -373,7 +372,7 @@ class Speech2Text(ModelBase):
             xs = pad_list([np2tensor(x, self.device_id).float() for x in xs], 0.)
 
             # SpecAugment
-            if self.use_specaug and self.training:
+            if self.specaug is not None and self.training:
                 xs = self.specaug(xs)
                 if self.weight_noise:
                     self.add_weight_noise(std=0.075)
@@ -424,12 +423,14 @@ class Speech2Text(ModelBase):
             return tensor2np(ctc_probs), tensor2np(indices_topk), eout_dict[task]['xlens']
 
     def plot_attention(self):
-        if 'transformer' in self.enc_type:
+        if 'former' in self.enc_type:
             self.enc._plot_attention(self.save_path)
-        if 'transformer' in self.dec_type or 'las' in self.dec_type:
+        if 'former' in self.dec_type or self.dec_type in ['lstm', 'gru']:
             self.dec_fwd._plot_attention(self.save_path)
 
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
+        from neural_sp.models.seq2seq.frontends.streaming import Streaming
+
         # check configurations
         assert task == 'ys'
         assert self.input_type == 'speech'
@@ -440,84 +441,36 @@ class Speech2Text(ModelBase):
         global_params = copy.deepcopy(params)
         global_params['recog_max_len_ratio'] = 1.0
 
-        # hyper parameters
-        ctc_vad = params['recog_ctc_vad']
-        BLANK_THRESHOLD = params['recog_ctc_vad_blank_threshold']
-        SPIKE_THRESHOLD = params['recog_ctc_vad_spike_threshold']
-        MAX_N_ACCUM_FRAMES = params['recog_ctc_vad_n_accum_frames']
-
-        N_l = self.enc.chunk_size_left
-        N_r = self.enc.chunk_size_right
-        if N_l == 0 and N_r == 0:
-            # N_l = params['lc_chunk_size_left']  # for unidirectional encoder
-            N_l = 40
-        factor = self.enc.subsampling_factor
-        BLANK_THRESHOLD /= factor
-        x_whole = xs[0]  # `[T, input_dim]`
-        if self.enc.conv is not None:
-            self.enc.turn_off_ceil_mode(self.enc)
+        streaming = Streaming(xs[0], params, self.enc, idx2token)
 
         self.eval()
         with torch.no_grad():
             lm = getattr(self, 'lm_fwd', None)
             lm_second = getattr(self, 'lm_second', None)
 
-            eout_chunks = []
-            ctc_probs_chunks = []
-            t = 0  # global time offset
-            n_blanks = 0
-            n_accum_frames = 0
-            boundary_offset = -1  # boudnary offset in each chunk (after subsampling)
-            is_reset = True   # for the first step
+            is_reset = True   # for the first chunk
             hyps = None
             best_hyp_id_stream = []
             while True:
                 # Encode input features chunk by chunk
-                if self.enc.conv is not None:
-                    x_chunk = x_whole[max(0, t - 1):t + (N_l + N_r) + 3]
-                else:
-                    x_chunk = x_whole[t:t + (N_l + N_r)]
-                is_last_chunk = t + N_l >= len(x_whole) - 1
-                eout_dict_chunk = self.encode([x_chunk], task, use_cache=not is_reset, streaming=True)
-                eout_chunk = eout_dict_chunk[task]['xs']
-                boundary_offset = -1  # reset
+                x_chunk, is_last_chunk = streaming.extract_feature()
+                eout_chunk = self.encode([x_chunk], task,
+                                         use_cache=not is_reset,
+                                         streaming=True)[task]['xs']
                 is_reset = False  # detect the first boundary in the same chunk
-                n_accum_frames += eout_chunk.size(1) * factor
 
                 # CTC-based VAD
                 ctc_log_probs_chunk = None
-                if ctc_vad:
+                if streaming.is_ctc_vad:
                     ctc_probs_chunk = self.dec_fwd.ctc_probs(eout_chunk)
                     if params['recog_ctc_weight'] > 0:
                         ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
-
-                    # Segmentation strategy 1:
-                    # If any segmentation points are not found in the current chunk,
-                    # encoder states will be carried over to the next chunk.
-                    # Otherwise, the current chunk is segmented at the point where
-                    # n_blanks surpasses the threshold.
-                    if n_accum_frames >= MAX_N_ACCUM_FRAMES:
-                        _, topk_ids_chunk = torch.topk(ctc_probs_chunk, k=1, dim=-1, largest=True, sorted=True)
-                        ctc_probs_chunks.append(ctc_probs_chunk)
-                        for j in range(ctc_probs_chunk.size(1)):
-                            if topk_ids_chunk[0, j, 0] == self.blank:
-                                n_blanks += 1
-                                # print('CTC (T:%d): <blank>' % (t + j * factor))
-                            elif ctc_probs_chunk[0, j, topk_ids_chunk[0, j, 0]] < SPIKE_THRESHOLD:
-                                n_blanks += 1
-                                # print('CTC (T:%d): <blank>' % (t + j * factor))
-                            else:
-                                n_blanks = 0
-                                # print('CTC (T:%d): %s' % (t + j * factor,
-                                #                           idx2token([topk_ids_chunk[0, j, 0].item()])))
-                            if not is_reset and n_blanks > BLANK_THRESHOLD:
-                                boundary_offset = j  # select the most right blank offset
-                                is_reset = True
+                    is_reset = streaming.ctc_vad(ctc_probs_chunk)
 
                 # Truncate the most right frames
                 if is_reset and not is_last_chunk:
-                    eout_chunk = eout_chunk[:, :boundary_offset + 1]
-                eout_chunks.append(eout_chunk)
+                    eout_chunk = eout_chunk[:, :streaming.boundary_offset + 1]
+                streaming.eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
                 if params['recog_chunk_sync']:
@@ -535,22 +488,18 @@ class Speech2Text(ModelBase):
                         # If <eos> is emitted from the decoder (not CTC),
                         # the current chunk is segmented.
                         if not is_reset:
-                            boundary_offset = eout_chunk.size(1) - 1
+                            streaming.boundary_offset = eout_chunk.size(1) - 1
                             is_reset = True
-                    # print('\rSync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
-                    #       (t + eout_chunk.size(1) * factor,
-                    #        self.dec_fwd.n_frames * factor,
-                    #        n_blanks * factor, idx2token(best_hyp_id_prefix)), end='')
-                    # print('\rSync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
-                    #       (t + eout_chunk.size(1) * factor,
-                    #        self.dec_fwd.n_frames * factor,
-                    #        n_blanks * factor, idx2token(best_hyp_id_prefix)))
+                    print('\rSync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
+                          (streaming.offset + eout_chunk.size(1) * streaming.factor,
+                           self.dec_fwd.n_frames * streaming.factor,
+                           streaming.n_blanks * streaming.factor, idx2token(best_hyp_id_prefix)), end='')
                     # print('-' * 50)
 
                 if is_reset:
                     # Global decoding over the segmented region
                     if not params['recog_chunk_sync']:
-                        eout = torch.cat(eout_chunks, dim=1)
+                        eout = torch.cat(streaming.eout_chunks, dim=1)
                         elens = torch.IntTensor([eout.size(1)])
                         ctc_log_probs = None
                         if params['recog_ctc_weight'] > 0:
@@ -559,16 +508,16 @@ class Speech2Text(ModelBase):
                             eout, elens, global_params, idx2token, lm, lm_second,
                             ctc_log_probs=ctc_log_probs)
                         # print('Offline MoChA (T:%d): %s' %
-                        #       (t + eout_chunk.size(1) * factor,
+                        #       (streaming.offset + eout_chunk.size(1) * streaming.factor,
                         #        idx2token(nbest_hyps_id_offline[0][0])))
-                    eout = torch.cat(eout_chunks, dim=1)
+                    eout = torch.cat(streaming.eout_chunks, dim=1)
                     elens = torch.IntTensor([eout.size(1)])
                     ctc_log_probs = None
                     nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
                         eout, elens, global_params, idx2token, lm, lm_second,
                         ctc_log_probs=ctc_log_probs)
                     # print('Offline MoChA (T:%d): %s' %
-                    #       (t + eout_chunk.size(1) * factor,
+                    #       (streaming.offset + eout_chunk.size(1) * streaming.factor,
                     #        idx2token(nbest_hyps_id_offline[0][0])))
 
                     # pick up the best hyp from ended and active hypotheses
@@ -579,8 +528,8 @@ class Speech2Text(ModelBase):
                         if len(best_hyp_id_prefix) > 0:
                             best_hyp_id_stream.extend(best_hyp_id_prefix)
                         # print('Final Sync MoChA (T:%d, segment:%d frames): %s' %
-                        #       (t + eout_chunk.size(1) * factor,
-                        #        self.dec_fwd.n_frames * factor,
+                        #       (streaming.offset + eout_chunk.size(1) * streaming.factor,
+                        #        self.dec_fwd.n_frames * streaming.factor,
                         #        idx2token(best_hyp_id_prefix)))
                         # print('-' * 50)
                         # for test
@@ -589,25 +538,24 @@ class Speech2Text(ModelBase):
                         # best_hyp_id_stream.extend(eos_hyp)
 
                     # reset
-                    eout_chunks = []
-                    ctc_probs_chunks = []
-                    n_blanks = 0
-                    n_accum_frames = 0
+                    streaming.reset()
                     hyps = None
 
                     # next chunk will start from the frame next to the boundary
-                    if not is_last_chunk and 0 <= boundary_offset * factor < N_l - 1:
-                        t -= x_chunk[(boundary_offset + 1) * factor:N_l].shape[0]
-                        self.dec_fwd.n_frames -= x_chunk[(boundary_offset + 1) * factor:N_l].shape[0] // factor
-                        # print('Back %d frames' % (x_chunk[(boundary_offset + 1) * factor:N_l].shape[0]))
+                    if not is_last_chunk and 0 <= streaming.boundary_offset * streaming.factor < streaming.N_l - 1:
+                        streaming.offset -= x_chunk[(streaming.boundary_offset + 1) *
+                                                    streaming.factor:streaming.N_l].shape[0]
+                        self.dec_fwd.n_frames -= x_chunk[(streaming.boundary_offset + 1) *
+                                                         streaming.factor:streaming.N_l].shape[0] // streaming.factor
+                        # print('Back %d frames' % (x_chunk[(streaming.boundary_offset + 1) * streaming.factor:streaming.N_l].shape[0]))
 
-                t += N_l
+                streaming.offset += streaming.N_l
                 if is_last_chunk:
                     break
 
             # Global decoding over the last chunk
-            if not params['recog_chunk_sync'] and len(eout_chunks) > 0:
-                eout = torch.cat(eout_chunks, dim=1)
+            if not params['recog_chunk_sync'] and len(streaming.eout_chunks) > 0:
+                eout = torch.cat(streaming.eout_chunks, dim=1)
                 elens = torch.IntTensor([eout.size(1)])
                 nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
                     eout, elens, global_params, idx2token, lm, lm_second, None)
