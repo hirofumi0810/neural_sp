@@ -40,7 +40,7 @@ def make_args(**kwargs):
         task_specific_layer=False,
         param_init=0.1,
         chunk_size_left=-1,
-        chunk_size_right=-1
+        chunk_size_right=-1,
     )
     args.update(kwargs)
     return args
@@ -51,7 +51,6 @@ def make_args(**kwargs):
         # RNN type
         ({'rnn_type': 'blstm'}),
         ({'rnn_type': 'bgru'}),
-        ({'rnn_type': 'lstm'}),
         ({'rnn_type': 'lstm'}),
         ({'rnn_type': 'gru'}),
         # 2dCNN-RNN
@@ -127,11 +126,11 @@ def test_forward(args):
         xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
         enc_out_dict = enc(xs, xlens, task='all')
 
-        assert enc_out_dict['ys']['xs'].size(0) == batch_size, xs.size()
-        assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0], xs.size()
+        assert enc_out_dict['ys']['xs'].size(0) == batch_size
+        assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
         if args['n_layers_sub1'] > 0:
-            assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size, xs.size()
-            assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0], xs.size()
+            assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
+            assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0]
         if args['n_layers_sub2'] > 0:
-            assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size, xs.size()
-            assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0], xs.size()
+            assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
+            assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0]

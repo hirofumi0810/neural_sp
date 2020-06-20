@@ -16,7 +16,7 @@ import torch
 class Streaming(object):
     """Streaming encoding interface."""
 
-    def __init__(self, x_whole, params, encoder):
+    def __init__(self, x_whole, params, encoder, idx2token):
         """
         Args:
             x_whole (FloatTensor): `[T, input_dim]`
@@ -24,12 +24,11 @@ class Streaming(object):
         """
         super(Streaming, self).__init__()
 
-        self.blank = 0
-
         self.x_whole = x_whole
         self.encoder = encoder
         if self.encoder.conv is not None:
             self.encoder.turn_off_ceil_mode(self.encoder)
+        self.idx2token = idx2token
 
         # latency
         self.factor = encoder.subsampling_factor
@@ -42,6 +41,7 @@ class Streaming(object):
             self.N_c = 40
 
         # threshold for CTC-VAD
+        self.blank = 0
         self.is_ctc_vad = params['recog_ctc_vad']
         self.BLANK_THRESHOLD = params['recog_ctc_vad_blank_threshold']
         self.SPIKE_THRESHOLD = params['recog_ctc_vad_spike_threshold']
@@ -114,7 +114,7 @@ class Streaming(object):
                 else:
                     self.n_blanks = 0
                     # print('CTC (T:%d): %s' % (self.offset + j * self.factor,
-                    #                           idx2token([topk_ids_chunk[0, j, 0].item()])))
+                    #                           self.idx2token([topk_ids_chunk[0, j, 0].item()])))
 
                 if not is_reset and self.n_blanks > self.BLANK_THRESHOLD:
                     self.boundary_offset = j  # select the most right blank offset
