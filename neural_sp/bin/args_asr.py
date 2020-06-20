@@ -202,31 +202,6 @@ def build_parser():
                         help='')
     parser.add_argument('--ctc_fc_list_sub2', type=str, default="", nargs='?',
                         help='')
-    # streaming decoder
-    parser.add_argument('--mocha_n_heads_mono', type=int, default=1,
-                        help='number of heads for monotonic attention')
-    parser.add_argument('--mocha_n_heads_chunk', type=int, default=1,
-                        help='number of heads for chunkwise attention')
-    parser.add_argument('--mocha_chunk_size', type=int, default=0,
-                        help='chunk size for MoChA/MMA. -1 means infinite lookback.')
-    parser.add_argument('--mocha_init_r', type=float, default=-4,
-                        help='')
-    parser.add_argument('--mocha_eps', type=float, default=1e-6,
-                        help='')
-    parser.add_argument('--mocha_std', type=float, default=1.0,
-                        help='')
-    parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
-                        help='remove denominator (set to 1) in the alpha recurrence')
-    parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
-                        help='1dconv for MoChA/MMA')
-    parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
-                        help='quantity loss weight for MoChA/MMA')
-    parser.add_argument('--mocha_latency_metric', type=str, default=False,
-                        choices=[False, 'decot', 'minlt', 'ctc_sync',
-                                 'interval', 'frame_dal', 'ctc_dal'],
-                        help='differentiable latency metric for MoChA/MMA')
-    parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
-                        help='latency loss weight for MoChA/MMA')
     # optimization
     parser.add_argument('--batch_size', type=int, default=50,
                         help='mini-batch size')
