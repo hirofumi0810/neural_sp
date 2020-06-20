@@ -331,6 +331,31 @@ class RNNDecoder(DecoderBase):
                            help='')
         group.add_argument('--gmm_attn_n_mixtures', type=int, default=5,
                            help='number of mixtures for GMM attention')
+        # streaming
+        parser.add_argument('--mocha_n_heads_mono', type=int, default=1,
+                            help='number of heads for monotonic attention')
+        parser.add_argument('--mocha_n_heads_chunk', type=int, default=1,
+                            help='number of heads for chunkwise attention')
+        parser.add_argument('--mocha_chunk_size', type=int, default=0,
+                            help='chunk size for MoChA. -1 means infinite lookback.')
+        parser.add_argument('--mocha_init_r', type=float, default=-4,
+                            help='initialization of bias parameter for monotonic attention')
+        parser.add_argument('--mocha_eps', type=float, default=1e-6,
+                            help='epsilon value to avoid numerical instability for MoChA')
+        parser.add_argument('--mocha_std', type=float, default=1.0,
+                            help='standard deviation of Gaussian noise for MoChA during training')
+        parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
+                            help='remove denominator (set to 1) in the alpha recurrence in MoChA')
+        parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
+                            help='1dconv for MoChA')
+        parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
+                            help='quantity loss weight for MoChA')
+        parser.add_argument('--mocha_latency_metric', type=str, default=False,
+                            choices=[False, 'decot', 'minlt', 'ctc_sync',
+                                     'interval', 'frame_dal', 'ctc_dal'],
+                            help='differentiable latency metric for MoChA')
+        parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
+                            help='latency loss weight for MoChA')
         return parser
 
     def reset_parameters(self, param_init):
@@ -1370,8 +1395,7 @@ class RNNDecoder(DecoderBase):
     def beam_search_chunk_sync(self, eouts_c, params, idx2token,
                                lm=None, ctc_log_probs=None,
                                hyps=False, state_carry_over=False, ignore_eos=False):
-        bs, chunk_size, _ = eouts_c.size()
-        assert bs == 1
+        assert eouts_c.size(0) == 1
         assert self.attn_type == 'mocha'
 
         beam_width = params['recog_beam_width']
