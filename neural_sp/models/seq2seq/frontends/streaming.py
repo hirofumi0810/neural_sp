@@ -70,7 +70,8 @@ class Streaming(object):
 
         # Encode input features chunk by chunk
         if getattr(self.encoder, 'conv', None) is not None:
-            x_chunk = self.x_whole[max(0, j - 1):j + (c + r) + 3]
+            context = self.encoder.conv.n_frames_context
+            x_chunk = self.x_whole[max(0, j - context):j + (c + r) + context]
         else:
             x_chunk = self.x_whole[j:j + (c + r)]
 
