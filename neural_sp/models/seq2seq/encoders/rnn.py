@@ -234,7 +234,8 @@ class RNNEncoder(EncoderBase):
             self._factor *= self.conv.subsampling_factor
         # else:
         #     self._factor *= np.prod(subsamples)
-        assert self.chunk_size_left % self._factor == 0
+        if self.chunk_size_left > 0:
+            assert self.chunk_size_left % self._factor == 0
 
         self.reset_parameters(param_init)
 
