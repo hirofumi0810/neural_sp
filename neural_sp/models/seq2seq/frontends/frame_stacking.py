@@ -36,10 +36,10 @@ def stack_frame(feat, n_stacks, n_skips, dtype=np.float32):
     if n_stacks < n_skips:
         raise ValueError('n_skips must be less than n_stacks.')
 
-    n_frames, input_dim = feat.shape
-    n_frames_new = (n_frames + 1) // n_skips
+    T, input_dim = feat.shape
+    T_new = T // n_skips if T % n_stacks == 0 else (T // n_skips) + 1
 
-    stacked_feat = np.zeros((n_frames_new, input_dim * n_stacks), dtype=dtype)
+    stacked_feat = np.zeros((T_new, input_dim * n_stacks), dtype=dtype)
     stack_count = 0
     stack = []
     for t, frame_t in enumerate(feat):
@@ -47,7 +47,7 @@ def stack_frame(feat, n_stacks, n_skips, dtype=np.float32):
             # Stack the final frame
             stack.append(frame_t)
 
-            while stack_count != int(n_frames_new):
+            while stack_count != int(T_new):
                 # Concatenate stacked frames
                 for i in range(len(stack)):
                     stacked_feat[stack_count][input_dim * i:input_dim * (i + 1)] = stack[i]

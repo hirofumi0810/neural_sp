@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 
-# pip install pytest
-
 modules="neural_sp test utils setup.py"
 pycodestyle -r ${modules} --show-source --show-pep8 --ignore="E501"
 
 # encoder
 pytest ./test/encoders/test_conv_encoder.py
 pytest ./test/encoders/test_rnn_encoder.py
+pytest ./test/encoders/test_rnn_encoder_streaming_chunkwise.py
 pytest ./test/encoders/test_transformer_encoder.py
 pytest ./test/encoders/test_conformer_encoder.py
 # decoder

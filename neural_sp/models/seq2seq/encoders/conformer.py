@@ -22,6 +22,7 @@ from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
+from neural_sp.models.seq2seq.encoders.encoder_base import blockwise
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
@@ -191,23 +192,17 @@ class ConformerEncoder(EncoderBase):
         if not hasattr(args, 'transformer_d_model'):
             group.add_argument('--transformer_d_model', type=int, default=256,
                                help='number of units in the MHA layer')
-        if not hasattr(args, 'transformer_d_ff'):
             group.add_argument('--transformer_d_ff', type=int, default=2048,
                                help='number of units in the FFN layer')
-        if not hasattr(args, 'transformer_d_ff_bottleneck_dim'):
             group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
-        if not hasattr(args, 'transformer_n_heads'):
             group.add_argument('--transformer_n_heads', type=int, default=4,
                                help='number of heads in the MHA layer')
-        if not hasattr(args, 'transformer_layer_norm_eps'):
             group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                                help='epsilon value for layer normalization')
-        if not hasattr(args, 'transformer_ffn_activation'):
             group.add_argument('--transformer_ffn_activation', type=str, default='relu',
                                choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
                                help='nonlinear activation for the FFN layer')
-        if not hasattr(args, 'transformer_param_init'):
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initializatin')
@@ -270,19 +265,10 @@ class ConformerEncoder(EncoderBase):
         N_c = self.chunk_size_current
         N_r = self.chunk_size_right
 
+        bs, xmax, idim = xs.size()
+
         if self.latency_controlled:
-            bs, xmax, idim = xs.size()
-            n_blocks = xmax // N_c
-            if xmax % N_c != 0:
-                n_blocks += 1
-            xs_tmp = xs.new_zeros(bs, n_blocks, N_l + N_c + N_r, idim)
-            xs_pad = torch.cat([xs.new_zeros(bs, N_l, idim),
-                                xs,
-                                xs.new_zeros(bs, N_r, idim)], dim=1)
-            for blc_id, t in enumerate(range(N_l, N_l + xmax, N_c)):
-                xs_chunk = xs_pad[:, t - N_l:t + (N_c + N_r)]
-                xs_tmp[:, blc_id, :xs_chunk.size(1), :] = xs_chunk
-            xs = xs_tmp.view(bs * n_blocks, N_l + N_c + N_r, idim)
+            xs = blockwise(xs, N_l, N_c, N_r)
 
         if self.conv is None:
             xs = self.embed(xs)
@@ -295,9 +281,10 @@ class ConformerEncoder(EncoderBase):
 
         if self.latency_controlled:
             # streaming Conformer encoder
-            N_l = max(0, N_l // self.subsampling_factor)
-            N_c = N_c // self.subsampling_factor
+            _N_l = max(0, N_l // self.subsampling_factor)
+            _N_c = N_c // self.subsampling_factor
 
+            n_blocks = xs.size(0) // bs
             emax = xmax // self.subsampling_factor
             if xmax % self.subsampling_factor != 0:
                 emax += 1
@@ -311,18 +298,18 @@ class ConformerEncoder(EncoderBase):
                 xs, xx_aws = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
                     n_heads = xx_aws.size(1)
-                    xx_aws = xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
-                    xx_aws = xx_aws.view(bs, n_blocks, n_heads, N_c, N_c)
+                    xx_aws = xx_aws[:, :, _N_l:_N_l + _N_c, _N_l:_N_l + _N_c]
+                    xx_aws = xx_aws.view(bs, n_blocks, n_heads, _N_c, _N_c)
                     xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
                     for blc_id in range(n_blocks):
-                        offset = blc_id * N_c
-                        emax_blc = xx_aws_center[:, :, offset:offset + N_c].size(2)
+                        offset = blc_id * _N_c
+                        emax_blc = xx_aws_center[:, :, offset:offset + _N_c].size(2)
                         xx_aws_chunk = xx_aws[:, blc_id, :, :emax_blc, :emax_blc]
-                        xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
+                        xx_aws_center[:, :, offset:offset + _N_c, offset:offset + _N_c] = xx_aws_chunk
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
 
             # Extract the center region
-            xs = xs[:, N_l:N_l + N_c]  # `[B * n_blocks, N_c // subsampling_factor, d_model]`
+            xs = xs[:, _N_l:_N_l + _N_c]  # `[B * n_blocks, _N_c, d_model]`
             xs = xs.contiguous().view(bs, -1, xs.size(2))
             xs = xs[:, :emax]
 

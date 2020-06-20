@@ -36,10 +36,10 @@ class ConvEncoder(EncoderBase):
         dropout (float): probability to drop nodes in hidden-hidden connection
         batch_norm (bool): apply batch normalization
         layer_norm (bool): apply layer normalization
-        residual (bool): add residual connections
+        residual (bool): apply residual connections
         bottleneck_dim (int): dimension of the bridge layer after the last layer
-        param_init (float): model initialization parameter
-        layer_norm_eps (float):
+        param_init (float): mean of uniform distribution for parameter initialization
+        layer_norm_eps (float): epsilon value for layer normalization
 
     """
 
@@ -130,13 +130,25 @@ class ConvEncoder(EncoderBase):
                            help='dimension of the bottleneck layer between CNN and the subsequent RNN/Transformer layers')
         return parser
 
+    @property
+    def n_frames_context(self):
+        n_frame = 0
+        factor_tmp = self.subsampling_factor
+        if factor_tmp > 1:
+            for _ in range(int(math.log(factor_tmp, 2))):
+                n_frame += factor_tmp
+                factor_tmp //= 2
+                if factor_tmp < 2:
+                    break
+        return n_frame
+
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""
         logger.info('===== Initialize %s with lecun style =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             init_with_lecun_normal(n, p, param_init)
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, lookback=False, lookahead=False):
         """Forward computation.
 
         Args:
@@ -153,7 +165,7 @@ class ConvEncoder(EncoderBase):
             xs = xs.view(B, T, C_i, F // C_i).contiguous().transpose(2, 1)  # `[B, C_i, T, F // C_i]`
 
         for block in self.layers:
-            xs, xlens = block(xs, xlens)
+            xs, xlens = block(xs, xlens, lookback=lookback, lookahead=lookahead)
         if not self.is_1dconv:
             B, C_o, T, F = xs.size()
             xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T', C_o * F']`
@@ -185,7 +197,7 @@ class Conv1dBlock(EncoderBase):
                                kernel_size=kernel_size,
                                stride=stride,
                                padding=1)
-        self._odim = update_lens_1d([in_channel], self.conv1)[0]
+        self._odim = update_lens_1d([in_channel], self.conv1)[0].item()
         self.batch_norm1 = nn.BatchNorm1d(out_channel) if batch_norm else lambda x: x
         self.layer_norm1 = nn.LayerNorm(out_channel,
                                         eps=layer_norm_eps) if layer_norm else lambda x: x
@@ -196,7 +208,7 @@ class Conv1dBlock(EncoderBase):
                                kernel_size=kernel_size,
                                stride=stride,
                                padding=1)
-        self._odim = update_lens_1d([self._odim], self.conv2)[0]
+        self._odim = update_lens_1d([self._odim], self.conv2)[0].item()
         self.batch_norm2 = nn.BatchNorm1d(out_channel) if batch_norm else lambda x: x
         self.layer_norm2 = nn.LayerNorm(out_channel,
                                         eps=layer_norm_eps) if layer_norm else lambda x: x
@@ -214,12 +226,16 @@ class Conv1dBlock(EncoderBase):
                 self._odim = (self._odim // 2) * 2
                 # TODO(hirofumi0810): more efficient way?
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, lookback=False, lookahead=False):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, T, F]`
             xlens (IntTensor): `[B]`
+            lookback (bool): truncate the leftmost frames
+                because of lookback frames for context
+            lookahead (bool): truncate the rightmost frames
+                because of lookahead frames for context
         Returns:
             xs (FloatTensor): `[B, T', F']`
             xlens (IntTensor): `[B]`
@@ -227,18 +243,14 @@ class Conv1dBlock(EncoderBase):
         """
         residual = xs
 
-        xs = xs.transpose(2, 1)
-        xs = self.conv1(xs)
-        xs = xs.transpose(2, 1)
+        xs = self.conv1(xs.transpose(2, 1)).transpose(2, 1)
         xs = self.batch_norm1(xs)
         xs = self.layer_norm1(xs)
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_1d(xlens, self.conv1)
 
-        xs = xs.transpose(2, 1)
-        xs = self.conv2(xs)
-        xs = xs.transpose(2, 1)
+        xs = self.conv2(xs.transpose(2, 1)).transpose(2, 1)
         xs = self.batch_norm2(xs)
         xs = self.layer_norm2(xs)
         if self.residual and xs.size() == residual.size():
@@ -274,9 +286,9 @@ class Conv2dBlock(EncoderBase):
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
-        self._odim = update_lens_2d([input_dim], self.conv1, dim=1)[0]
+        self._odim = update_lens_2d([input_dim], self.conv1, dim=1)[0].item()
         self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm1 = LayerNorm2D(out_channel * self._odim.item(),
+        self.layer_norm1 = LayerNorm2D(out_channel * self._odim,
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # 2nd layer
@@ -285,13 +297,14 @@ class Conv2dBlock(EncoderBase):
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
-        self._odim = update_lens_2d([self._odim], self.conv2, dim=1)[0]
+        self._odim = update_lens_2d([self._odim], self.conv2, dim=1)[0].item()
         self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm2 = LayerNorm2D(out_channel * self._odim.item(),
+        self.layer_norm2 = LayerNorm2D(out_channel * self._odim,
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # Max Pooling
         self.pool = None
+        self._factor = 1
         if len(pooling) > 0 and np.prod(pooling) > 1:
             self.pool = nn.MaxPool2d(kernel_size=tuple(pooling),
                                      stride=tuple(pooling),
@@ -303,12 +316,19 @@ class Conv2dBlock(EncoderBase):
                 self._odim = (self._odim // 2) * 2
                 # TODO(hirofumi0810): more efficient way?
 
-    def forward(self, xs, xlens):
+            # calculate subsampling factor
+            self._factor *= pooling[0]
+
+    def forward(self, xs, xlens, lookback=False, lookahead=False):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, C_i, T, F]`
             xlens (IntTensor): `[B]`
+            lookback (bool): truncate the leftmost frames
+                because of lookback frames for context
+            lookahead (bool): truncate the rightmost frames
+                because of lookahead frames for context
         Returns:
             xs (FloatTensor): `[B, C_o, T', F']`
             xlens (IntTensor): `[B]`
@@ -322,6 +342,10 @@ class Conv2dBlock(EncoderBase):
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv1, dim=0)
+        if lookback and xs.size(2) > self.conv1.stride[0]:
+            xs = xs[:, :, self.conv1.stride[0]:]
+        if lookahead and xs.size(2) > self.conv1.stride[0]:
+            xs = xs[:, :, :xs.size(2) - self.conv1.stride[0]]
 
         xs = self.conv2(xs)
         xs = self.batch_norm2(xs)
@@ -331,6 +355,10 @@ class Conv2dBlock(EncoderBase):
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv2, dim=0)
+        if lookback and xs.size(2) > self.conv2.stride[0]:
+            xs = xs[:, :, self.conv2.stride[0]:]
+        if lookahead and xs.size(2) > self.conv2.stride[0]:
+            xs = xs[:, :, :xs.size(2) - self.conv2.stride[0]]
 
         if self.pool is not None:
             xs = self.pool(xs)
