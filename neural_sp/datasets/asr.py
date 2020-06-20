@@ -54,13 +54,13 @@ class Dataset(object):
                  wp_model_sub1=False, ctc_sub1=False, subsample_factor_sub1=1,
                  tsv_path_sub2=False, dict_path_sub2=False, unit_sub2=False,
                  wp_model_sub2=False, ctc_sub2=False, subsample_factor_sub2=1,
-                 discourse_aware=False):
+                 discourse_aware=False, first_n_utterances=-1):
         """A class for loading dataset.
 
         Args:
             tsv_path (str): path to the dataset tsv file
             dict_path (str): path to the dictionary
-            unit (str): word or wp or char or phone or word_char
+            unit (str): word/wp/char/phone/word_char
             batch_size (int): size of mini-batch
             nlsyms (str): path to the non-linguistic symbols file
             n_epochs (int): total epochs for training.
@@ -81,6 +81,7 @@ class Dataset(object):
             wp_model (): path to the word-piece model for sentencepiece
             corpus (str): name of corpus
             discourse_aware (bool):
+            first_n_utterances (int): evaluate the first N utterances
 
         """
         super(Dataset, self).__init__()
@@ -122,7 +123,7 @@ class Dataset(object):
         elif unit == 'wp':
             self.idx2token += [Idx2wp(dict_path, wp_model)]
             self.token2idx += [Wp2idx(dict_path, wp_model)]
-        elif unit == 'char':
+        elif unit in ['char']:
             self.idx2token += [Idx2char(dict_path)]
             self.token2idx += [Char2idx(dict_path, nlsyms=nlsyms)]
         elif 'phone' in unit:
@@ -174,6 +175,11 @@ class Dataset(object):
             n_utts = len(df)
             df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
             print('Removed %d empty utterances' % (n_utts - len(df)))
+            if first_n_utterances > 0:
+                n_utts = len(df)
+                df = df[df.apply(lambda x: x['ylen'] > 0, axis=1)]
+                df = df.truncate(before=0, after=first_n_utterances - 1)
+                print('Select first %d utterances' % len(df))
         else:
             print('Original utterance num: %d' % len(df))
             n_utts = len(df)

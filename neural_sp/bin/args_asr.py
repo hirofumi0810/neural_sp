@@ -383,6 +383,8 @@ def build_parser():
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='tsv file paths for the evaluation sets')
+    parser.add_argument('--recog_first_n_utt', type=int, default=-1,
+                        help='recognize the first N utterances for quick evalaution')
     parser.add_argument('--recog_model', type=str, default=False, nargs='+',
                         help='model path')
     parser.add_argument('--recog_model_bwd', type=str, default=False, nargs='?',

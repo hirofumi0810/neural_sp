@@ -67,6 +67,7 @@ def main():
                           unit_sub1=args.unit_sub1,
                           unit_sub2=args.unit_sub2,
                           batch_size=args.recog_batch_size,
+                          first_n_utterances=args.recog_first_n_utt,
                           is_test=True)
 
         if i == 0:
