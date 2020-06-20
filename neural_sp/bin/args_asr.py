@@ -57,6 +57,8 @@ def register_args_encoder(parser, args):
         from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder as module
     elif 'transformer' in args.enc_type:
         from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder as module
+    elif 'conformer' in args.enc_type:
+        from neural_sp.models.seq2seq.encoders.conformer import ConformerEncoder as module
     else:
         from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder as module
     if hasattr(module, 'add_args'):
@@ -170,6 +172,7 @@ def build_parser():
                         choices=['blstm', 'lstm', 'bgru', 'gru',
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
                                  'transformer', 'conv_transformer',
+                                 'conformer', 'conv_conformer',
                                  'conv', 'tds', 'gated_conv'],
                         help='type of the encoder')
     parser.add_argument('--enc_n_layers', type=int, default=5,
