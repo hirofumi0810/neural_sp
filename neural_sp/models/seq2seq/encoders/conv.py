@@ -36,10 +36,10 @@ class ConvEncoder(EncoderBase):
         dropout (float): probability to drop nodes in hidden-hidden connection
         batch_norm (bool): apply batch normalization
         layer_norm (bool): apply layer normalization
-        residual (bool): add residual connections
+        residual (bool): apply residual connections
         bottleneck_dim (int): dimension of the bridge layer after the last layer
-        param_init (float): model initialization parameter
-        layer_norm_eps (float):
+        param_init (float): mean of uniform distribution for parameter initialization
+        layer_norm_eps (float): epsilon value for layer normalization
 
     """
 
@@ -136,13 +136,12 @@ class ConvEncoder(EncoderBase):
         for n, p in self.named_parameters():
             init_with_lecun_normal(n, p, param_init)
 
-    def forward(self, xs, xlens, streaming=False):
+    def forward(self, xs, xlens, lookback=False, lookahead=False):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, T, F]`
             xlens (list): A list of length `[B]`
-            streaming (bool): streaming encoding
         Returns:
             xs (FloatTensor): `[B, T', F']`
             xlens (list): A list of length `[B]`
@@ -154,8 +153,7 @@ class ConvEncoder(EncoderBase):
             xs = xs.view(B, T, C_i, F // C_i).contiguous().transpose(2, 1)  # `[B, C_i, T, F // C_i]`
 
         for block in self.layers:
-            xs, xlens = block(xs, xlens,
-                              streaming=streaming if xs.size(2) // self._factor >= 1 else False)
+            xs, xlens = block(xs, xlens, lookback=lookback, lookahead=lookahead)
         if not self.is_1dconv:
             B, C_o, T, F = xs.size()
             xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T', C_o * F']`
@@ -216,13 +214,16 @@ class Conv1dBlock(EncoderBase):
                 self._odim = (self._odim // 2) * 2
                 # TODO(hirofumi0810): more efficient way?
 
-    def forward(self, xs, xlens, streaming=False):
+    def forward(self, xs, xlens, lookback=False, lookahead=False):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, T, F]`
             xlens (IntTensor): `[B]`
-            streaming (bool): streaming encoding
+            lookback (bool): truncate the leftmost frames
+                because of lookback frames for context
+            lookahead (bool): truncate the rightmost frames
+                because of lookahead frames for context
         Returns:
             xs (FloatTensor): `[B, T', F']`
             xlens (IntTensor): `[B]`
@@ -230,18 +231,14 @@ class Conv1dBlock(EncoderBase):
         """
         residual = xs
 
-        xs = xs.transpose(2, 1)
-        xs = self.conv1(xs)
-        xs = xs.transpose(2, 1)
+        xs = self.conv1(xs.transpose(2, 1)).transpose(2, 1)
         xs = self.batch_norm1(xs)
         xs = self.layer_norm1(xs)
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_1d(xlens, self.conv1)
 
-        xs = xs.transpose(2, 1)
-        xs = self.conv2(xs)
-        xs = xs.transpose(2, 1)
+        xs = self.conv2(xs.transpose(2, 1)).transpose(2, 1)
         xs = self.batch_norm2(xs)
         xs = self.layer_norm2(xs)
         if self.residual and xs.size() == residual.size():
@@ -310,13 +307,16 @@ class Conv2dBlock(EncoderBase):
             # calculate subsampling factor
             self._factor *= pooling[0]
 
-    def forward(self, xs, xlens, streaming=False):
+    def forward(self, xs, xlens, lookback=False, lookahead=False):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, C_i, T, F]`
             xlens (IntTensor): `[B]`
-            streaming (bool): streaming encoding
+            lookback (bool): truncate the leftmost frames
+                because of lookback frames for context
+            lookahead (bool): truncate the rightmost frames
+                because of lookahead frames for context
         Returns:
             xs (FloatTensor): `[B, C_o, T', F']`
             xlens (IntTensor): `[B]`
@@ -330,8 +330,10 @@ class Conv2dBlock(EncoderBase):
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv1, dim=0)
-        if streaming and xs.size(2) > self.conv1.stride[0] * 2:
-            xs = xs[:, :, self.conv1.stride[0]:xs.size(2) - self.conv1.stride[0]]
+        if lookback and xs.size(2) > self.conv1.stride[0]:
+            xs = xs[:, :, self.conv1.stride[0]:]
+        if lookahead and xs.size(2) > self.conv1.stride[0]:
+            xs = xs[:, :, :xs.size(2) - self.conv1.stride[0]]
 
         xs = self.conv2(xs)
         xs = self.batch_norm2(xs)
@@ -341,8 +343,10 @@ class Conv2dBlock(EncoderBase):
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv2, dim=0)
-        if streaming and xs.size(2) > self.conv2.stride[0] * 2:
-            xs = xs[:, :, self.conv2.stride[0]:xs.size(2) - self.conv2.stride[0]]
+        if lookback and xs.size(2) > self.conv2.stride[0]:
+            xs = xs[:, :, self.conv2.stride[0]:]
+        if lookahead and xs.size(2) > self.conv2.stride[0]:
+            xs = xs[:, :, :xs.size(2) - self.conv2.stride[0]]
 
         if self.pool is not None:
             xs = self.pool(xs)
