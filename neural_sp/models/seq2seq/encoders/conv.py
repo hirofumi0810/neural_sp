@@ -130,6 +130,18 @@ class ConvEncoder(EncoderBase):
                            help='dimension of the bottleneck layer between CNN and the subsequent RNN/Transformer layers')
         return parser
 
+    @property
+    def n_frames_context(self):
+        n_frame = 0
+        factor_tmp = self.subsampling_factor
+        if factor_tmp > 1:
+            for _ in range(int(math.log(factor_tmp, 2))):
+                n_frame += factor_tmp
+                factor_tmp //= 2
+                if factor_tmp < 2:
+                    break
+        return n_frame
+
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""
         logger.info('===== Initialize %s with lecun style =====' % self.__class__.__name__)
