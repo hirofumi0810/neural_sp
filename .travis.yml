@@ -10,7 +10,7 @@ sudo: false
 install:
   - travis_retry ./test/install.sh
 script:
-  - ./test/test.sh
+  - ./test/test_python.sh
   - ./test/test_training.sh
 env:
   - NEURAL_SP_PYTHON_VERSION=3.7 PYTORCH_VERSION=1.0.0 CC=gcc-7 CXX=g++-7
