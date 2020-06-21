@@ -9,11 +9,6 @@ __pycache__
 neural_sp.egg-info
 
 # CI test
+data
 results
-dataset
-dict
-dump
-fbank
-log
-.done_stage*
-.backup
+sample
