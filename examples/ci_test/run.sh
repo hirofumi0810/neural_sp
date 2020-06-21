@@ -75,6 +75,12 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e data/.done_stage_0 ];
     touch data/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
+ls $NEURALSP_ROOT
+ls $NEURALSP_ROOT/tools
+ls $NEURALSP_ROOT/tools/kaldi
+echo $KALDI_ROOT
+which compute-fbank-feats
+
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e data/.done_stage_1 ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
