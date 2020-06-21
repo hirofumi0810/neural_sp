@@ -60,7 +60,7 @@ class TransformerDecoder(DecoderBase):
         n_layers (int): number of self-attention layers
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
-        d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
+        ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
@@ -102,7 +102,7 @@ class TransformerDecoder(DecoderBase):
 
     def __init__(self, special_symbols,
                  enc_n_units, attn_type, n_heads, n_layers,
-                 d_model, d_ff, d_ff_bottleneck_dim,
+                 d_model, d_ff, ffn_bottleneck_dim,
                  pe_type, layer_norm_eps, ffn_activation,
                  vocab, tie_embedding,
                  dropout, dropout_emb, dropout_att, dropout_layer, dropout_head,
@@ -203,7 +203,7 @@ class TransformerDecoder(DecoderBase):
                 mocha_1dconv=mocha_1dconv,
                 dropout_head=dropout_head,
                 lm_fusion=lm_fusion,
-                d_ff_bottleneck_dim=d_ff_bottleneck_dim,
+                ffn_bottleneck_dim=ffn_bottleneck_dim,
                 share_chunkwise_attention=share_chunkwise_attention)) for lth in range(n_layers)])
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, self.vocab)
@@ -224,23 +224,17 @@ class TransformerDecoder(DecoderBase):
         if not hasattr(args, 'transformer_d_model'):
             group.add_argument('--transformer_d_model', type=int, default=256,
                                help='number of units in the MHA layer')
-        if not hasattr(args, 'transformer_d_ff'):
             group.add_argument('--transformer_d_ff', type=int, default=2048,
                                help='number of units in the FFN layer')
-        if not hasattr(args, 'transformer_d_ff_bottleneck_dim'):
-            group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
+            group.add_argument('--transformer_ffn_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
-        if not hasattr(args, 'transformer_n_heads'):
             group.add_argument('--transformer_n_heads', type=int, default=4,
                                help='number of heads in the MHA layer')
-        if not hasattr(args, 'transformer_layer_norm_eps'):
             group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                                help='epsilon value for layer normalization')
-        if not hasattr(args, 'transformer_ffn_activation'):
             group.add_argument('--transformer_ffn_activation', type=str, default='relu',
                                choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
                                help='nonlinear activation for the FFN layer')
-        if not hasattr(args, 'transformer_param_init'):
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initializatin')
@@ -257,6 +251,30 @@ class TransformerDecoder(DecoderBase):
         group.add_argument('--dropout_head', type=float, default=0.0,
                            help='HeadDrop probability for masking out a head in the Transformer decoder')
         # streaming
+        parser.add_argument('--mocha_n_heads_mono', type=int, default=1,
+                            help='number of heads for monotonic attention')
+        parser.add_argument('--mocha_n_heads_chunk', type=int, default=1,
+                            help='number of heads for chunkwise attention')
+        parser.add_argument('--mocha_chunk_size', type=int, default=1,
+                            help='chunk size for MMA. -1 means infinite lookback.')
+        parser.add_argument('--mocha_init_r', type=float, default=-4,
+                            help='initialization of bias parameter for monotonic attention')
+        parser.add_argument('--mocha_eps', type=float, default=1e-6,
+                            help='epsilon value to avoid numerical instability for MoChA')
+        parser.add_argument('--mocha_std', type=float, default=1.0,
+                            help='standard deviation of Gaussian noise for MoChA during training')
+        parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
+                            help='remove denominator (set to 1) in the alpha recurrence in MoChA')
+        parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
+                            help='1dconv for MMA')
+        parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
+                            help='quantity loss weight for MMA')
+        parser.add_argument('--mocha_latency_metric', type=str, default=False,
+                            choices=[False, 'ctc_sync'],
+                            help='differentiable latency metric for MMA')
+        parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
+                            help='latency loss weight for MMA')
+        # MMA specific
         group.add_argument('--mocha_first_layer', type=int, default=1,
                            help='the initial layer to have a MMA function')
         group.add_argument('--mocha_head_divergence_loss_weight', type=float, default=0.0,
@@ -369,7 +387,7 @@ class TransformerDecoder(DecoderBase):
                 if self._quantity_loss_weight > 0:
                     loss_att += losses_auxiliary['loss_quantity'] * self._quantity_loss_weight
                 observation['loss_quantity'] = losses_auxiliary['loss_quantity'].item()
-            if self.headdiv_loss_weight > 0 or trigger_points is not None:
+            if self.headdiv_loss_weight > 0:
                 loss_att += losses_auxiliary['loss_headdiv'] * self.headdiv_loss_weight
                 observation['loss_headdiv'] = losses_auxiliary['loss_headdiv'].item()
             if self.latency_metric:
