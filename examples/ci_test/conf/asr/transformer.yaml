@@ -39,11 +39,11 @@ warmup_n_steps: 10
 accum_grad_n_steps: 2
 ### regularization
 clip_grad_norm: 5.0
-dropout_in: 0.0
+dropout_in: 0.1
 dropout_enc: 0.1
 dropout_dec: 0.1
 dropout_emb: 0.1
-dropout_att: 0.0
+dropout_att: 0.1
 weight_decay: 1e-6
 lsm_prob: 0.1
 ### MTL
