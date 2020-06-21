@@ -34,6 +34,7 @@ from neural_sp.bin.train_utils import (
 )
 from neural_sp.datasets.asr import Dataset
 from neural_sp.models.data_parallel import CustomDataParallel
+from neural_sp.models.data_parallel import CPUWrapperASR
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.trainers.lr_scheduler import LRScheduler
@@ -64,6 +65,7 @@ def main():
     args = compute_susampling_factor(args)
 
     # Load dataset
+    batch_size = args.batch_size * args.n_gpus if args.n_gpus >= 1 else args.batch_size
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
                         tsv_path_sub1=args.train_set_sub1,
@@ -78,7 +80,7 @@ def main():
                         wp_model=args.wp_model,
                         wp_model_sub1=args.wp_model_sub1,
                         wp_model_sub2=args.wp_model_sub2,
-                        batch_size=args.batch_size * args.n_gpus,
+                        batch_size=batch_size,
                         n_epochs=args.n_epochs,
                         min_n_frames=args.min_n_frames,
                         max_n_frames=args.max_n_frames,
@@ -108,7 +110,7 @@ def main():
                       wp_model=args.wp_model,
                       wp_model_sub1=args.wp_model_sub1,
                       wp_model_sub2=args.wp_model_sub2,
-                      batch_size=args.batch_size * args.n_gpus,
+                      batch_size=batch_size,
                       min_n_frames=args.min_n_frames,
                       max_n_frames=args.max_n_frames,
                       ctc=args.ctc_weight > 0,
@@ -287,6 +289,8 @@ def main():
             teacher.cuda()
         if teacher_lm is not None:
             teacher_lm.cuda()
+    else:
+        model = CPUWrapperASR(model)
 
     # Set process name
     logger.info('PID: %s' % os.getpid())

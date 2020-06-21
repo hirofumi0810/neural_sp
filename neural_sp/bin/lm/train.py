@@ -32,6 +32,7 @@ from neural_sp.bin.train_utils import (
 from neural_sp.datasets.lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
+from neural_sp.models.data_parallel import CPUWrapperLM
 from neural_sp.models.lm.build import build_lm
 from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.trainers.optimizer import set_optimizer
@@ -56,13 +57,14 @@ def main():
                 setattr(args, k, v)
 
     # Load dataset
+    batch_size = args.batch_size * args.n_gpus if args.n_gpus >= 1 else args.batch_size
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
                         dict_path=args.dict,
                         nlsyms=args.nlsyms,
                         unit=args.unit,
                         wp_model=args.wp_model,
-                        batch_size=args.batch_size * args.n_gpus,
+                        batch_size=batch_size,
                         n_epochs=args.n_epochs,
                         min_n_tokens=args.min_n_tokens,
                         bptt=args.bptt,
@@ -75,7 +77,7 @@ def main():
                       nlsyms=args.nlsyms,
                       unit=args.unit,
                       wp_model=args.wp_model,
-                      batch_size=args.batch_size * args.n_gpus,
+                      batch_size=batch_size,
                       bptt=args.bptt,
                       backward=args.backward,
                       serialize=args.serialize)
@@ -112,7 +114,7 @@ def main():
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
 
-        # Save the nlsyms, dictionar, and wp_model
+        # Save the nlsyms, dictionary, and wp_model
         if args.nlsyms:
             shutil.copy(args.nlsyms, os.path.join(save_path, 'nlsyms.txt'))
         shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
@@ -179,6 +181,8 @@ def main():
             if args.resume:
                 load_checkpoint(args.resume, amp=amp)
         model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
+    else:
+        model = CPUWrapperLM(model)
 
     # Set process name
     logger.info('PID: %s' % os.getpid())
