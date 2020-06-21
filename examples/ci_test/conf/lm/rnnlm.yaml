@@ -12,7 +12,7 @@ use_glu: true
 batch_size: 1
 bptt: 10
 optimizer: adam
-n_epochs: 100
+n_epochs: 30
 convert_to_sgd_epoch: 100
 print_step: 1
 lr: 1e-3
@@ -26,9 +26,9 @@ eval_start_epoch: 1
 param_init: 0.05
 # regularization
 clip_grad_norm: 1.0
-dropout_in: 0.0
-dropout_hidden: 0.0
-dropout_out: 0.0
+dropout_in: 0.1
+dropout_hidden: 0.1
+dropout_out: 0.1
 weight_decay: 1e-6
-lsm_prob: 0.0
+lsm_prob: 0.1
 adaptive_softmax: false

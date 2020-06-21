@@ -28,7 +28,7 @@ ctc_fc_list: "128"
 ### optimization
 batch_size: 1
 optimizer: adam
-n_epochs: 100
+n_epochs: 30
 convert_to_sgd_epoch: 100
 print_step: 1
 metric: edit_distance
@@ -39,9 +39,9 @@ lr_decay_rate: 0.85
 lr_decay_patient_n_epochs: 0
 early_stop_patient_n_epochs: 5
 sort_stop_epoch: 100
-eval_start_epoch: 30
+eval_start_epoch: 10
 warmup_start_lr: 1e-4
-warmup_n_steps: 0
+warmup_n_steps: 10
 ### initialization
 param_init: 0.1
 ### regularization

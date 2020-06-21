@@ -12,21 +12,21 @@ batch_size: 1
 bptt: 10
 mem_len: 10
 optimizer: noam
-n_epochs: 100
+n_epochs: 30
 convert_to_sgd_epoch: 100
 print_step: 1
 lr_factor: 1.0
 early_stop_patient_n_epochs: 5
 eval_start_epoch: 1
-warmup_n_steps: 4000
-accum_grad_n_steps: 8  ### this is faster
+warmup_n_steps: 10
+accum_grad_n_steps: 2
 # regularization
 clip_grad_norm: 1.0
 dropout_in: 0.1
-dropout_hidden: 0.0
-dropout_out: 0.0
+dropout_hidden: 0.1
+dropout_out: 0.1
 dropout_att: 0.1
-dropout_layer: 0.0
+dropout_layer: 0.1
 weight_decay: 1e-6
-lsm_prob: 0.1  ### TODO: confirm if this is effective
+lsm_prob: 0.1
 adaptive_softmax: false
