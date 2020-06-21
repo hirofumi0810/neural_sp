@@ -134,7 +134,7 @@ class LRScheduler(object):
         self._is_topk = False
         is_best = False
 
-        if not self.lower_better:
+        if metric is not None and not self.lower_better:
             metric *= -1
 
         if metric is not None:
