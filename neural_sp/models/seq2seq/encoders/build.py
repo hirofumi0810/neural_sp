@@ -47,7 +47,7 @@ def build_encoder(args):
             n_layers_sub2=args.enc_n_layers_sub2,
             d_model=args.transformer_d_model,
             d_ff=args.transformer_d_ff,
-            d_ff_bottleneck_dim=getattr(args, 'transformer_d_ff_bottleneck_dim', 0),
+            ffn_bottleneck_dim=getattr(args, 'transformer_ffn_bottleneck_dim', 0),
             last_proj_dim=args.transformer_d_model if 'transformer' in args.dec_type else 0,
             pe_type=args.transformer_enc_pe_type,
             layer_norm_eps=args.transformer_layer_norm_eps,
