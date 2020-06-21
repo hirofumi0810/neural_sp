@@ -802,16 +802,16 @@ class TransformerDecoder(DecoderBase):
                     # ensmbl_cache = []
                     # cache_e = [None] * self.n_layers
                     # if cache_states and t > 0:
-                    #     for l in range(self.n_layers):
-                    #         cache_e[l] = torch.cat([beam['ensmbl_cache'][l] for beam in hyps], dim=0)
+                    #     for lth in range(self.n_layers):
+                    #         cache_e[lth] = torch.cat([beam['ensmbl_cache'][lth] for beam in hyps], dim=0)
                     for i_e, dec in enumerate(ensmbl_decs):
                         out_e = dec.pos_enc(dec.embed(ys))  # scaled
                         eouts_e = ensmbl_eouts[i_e][b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
                         new_cache_e = [None] * dec.n_layers
-                        for l in range(dec.n_layers):
-                            out_e, _, xy_aws_e, _, _ = dec.layers[l](out_e, causal_mask, eouts_e, None,
-                                                                     cache=cache[lth])
-                            new_cache_e[l] = out_e
+                        for lth in range(dec.n_layers):
+                            out_e, _, xy_aws_e, _, _ = dec.layers[lth](out_e, causal_mask, eouts_e, None,
+                                                                       cache=cache[lth])
+                            new_cache_e[lth] = out_e
                         ensmbl_new_cache.append(new_cache_e)
                         logits_e = dec.output(dec.norm_out(out_e))
                         probs += torch.softmax(logits_e[:, -1] * softmax_smoothing, dim=1)

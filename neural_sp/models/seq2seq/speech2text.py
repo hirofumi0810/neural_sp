@@ -219,7 +219,7 @@ class Speech2Text(ModelBase):
             if hasattr(self, 'dec_fwd_' + sub):
                 getattr(self, 'dec_fwd_' + sub).reset_session()
 
-    def forward(self, batch, task='all', is_eval=False, teacher=None, teacher_lm=None):
+    def forward(self, batch, task, is_eval=False, teacher=None, teacher_lm=None):
         """Forward computation.
 
         Args:
@@ -443,14 +443,15 @@ class Speech2Text(ModelBase):
 
         streaming = Streaming(xs[0], params, self.enc, idx2token)
 
+        hyps = None
+        best_hyp_id_stream = []
+        is_reset = True   # for the first chunk
+
         self.eval()
         with torch.no_grad():
             lm = getattr(self, 'lm_fwd', None)
             lm_second = getattr(self, 'lm_second', None)
 
-            is_reset = True   # for the first chunk
-            hyps = None
-            best_hyp_id_stream = []
             while True:
                 # Encode input features chunk by chunk
                 x_chunk, is_last_chunk = streaming.extract_feature()
@@ -469,7 +470,7 @@ class Speech2Text(ModelBase):
 
                 # Truncate the most right frames
                 if is_reset and not is_last_chunk:
-                    eout_chunk = eout_chunk[:, :streaming.boundary_offset + 1]
+                    eout_chunk = eout_chunk[:, :streaming.bd_offset + 1]
                 streaming.eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
@@ -488,7 +489,7 @@ class Speech2Text(ModelBase):
                         # If <eos> is emitted from the decoder (not CTC),
                         # the current chunk is segmented.
                         if not is_reset:
-                            streaming.boundary_offset = eout_chunk.size(1) - 1
+                            streaming.bd_offset = eout_chunk.size(1) - 1
                             is_reset = True
                     print('\rSync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
                           (streaming.offset + eout_chunk.size(1) * streaming.factor,
@@ -542,14 +543,13 @@ class Speech2Text(ModelBase):
                     hyps = None
 
                     # next chunk will start from the frame next to the boundary
-                    if not is_last_chunk and 0 <= streaming.boundary_offset * streaming.factor < streaming.N_l - 1:
-                        streaming.offset -= x_chunk[(streaming.boundary_offset + 1) *
-                                                    streaming.factor:streaming.N_l].shape[0]
-                        self.dec_fwd.n_frames -= x_chunk[(streaming.boundary_offset + 1) *
-                                                         streaming.factor:streaming.N_l].shape[0] // streaming.factor
-                        # print('Back %d frames' % (x_chunk[(streaming.boundary_offset + 1) * streaming.factor:streaming.N_l].shape[0]))
+                    if not is_last_chunk and 0 <= streaming.bd_offset * streaming.factor < streaming.N_l - 1:
+                        streaming.offset -= x_chunk[(streaming.bd_offset + 1) * streaming.factor:streaming.N_l].shape[0]
+                        self.dec_fwd.n_frames -= x_chunk[
+                            (streaming.bd_offset + 1) * streaming.factor:streaming.N_l].shape[0] // streaming.factor
+                        # print('Back %d frames' % (x_chunk[(streaming.bd_offset + 1) * streaming.factor:streaming.N_l].shape[0]))
 
-                streaming.offset += streaming.N_l
+                streaming.next_chunk()
                 if is_last_chunk:
                     break
 

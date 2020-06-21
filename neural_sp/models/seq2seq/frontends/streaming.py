@@ -50,7 +50,7 @@ class Streaming(object):
         self.offset = 0  # global time offset in the session
         self.n_blanks = 0  # number of blank frames
         self.n_accum_frames = 0
-        self.boundary_offset = -1  # boudnary offset in each chunk (after subsampling)
+        self.bd_offset = -1  # boudnary offset in each chunk (after subsampling)
 
         # for test
         self.eout_chunks = []
@@ -62,6 +62,9 @@ class Streaming(object):
 
     def register(self):
         pass
+
+    def next_chunk(self):
+        self.offset += self.N_l
 
     def extract_feature(self):
         j = self.offset
@@ -76,7 +79,7 @@ class Streaming(object):
             x_chunk = self.x_whole[j:j + (c + r)]
 
         is_last_chunk = (j + c - 1) >= len(self.x_whole) - 1
-        self.boundary_offset = -1  # reset
+        self.bd_offset = -1  # reset
         self.n_accum_frames += x_chunk.shape[1]
 
         return x_chunk, is_last_chunk
@@ -117,7 +120,7 @@ class Streaming(object):
                     #                           self.idx2token([topk_ids_chunk[0, j, 0].item()])))
 
                 if not is_reset and self.n_blanks > self.BLANK_THRESHOLD:
-                    self.boundary_offset = j  # select the most right blank offset
+                    self.bd_offset = j  # select the most right blank offset
                     self.next_start_offset = self.offset + j
                     is_reset = True
 

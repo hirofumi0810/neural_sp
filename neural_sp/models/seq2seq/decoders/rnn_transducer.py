@@ -125,7 +125,7 @@ class RNNTransducer(DecoderBase):
             if n_projs > 0:
                 self.proj = repeat(nn.Linear(n_units, n_projs), n_layers)
             dec_idim = emb_dim
-            for l in range(n_layers):
+            for _ in range(n_layers):
                 self.rnn += [rnn_l(dec_idim, n_units, 1, batch_first=True)]
                 dec_idim = n_projs if n_projs > 0 else n_units
 
@@ -308,17 +308,17 @@ class RNNTransducer(DecoderBase):
         new_dstate = {'hxs': None, 'cxs': None}
 
         new_hxs, new_cxs = [], []
-        for l in range(self.n_layers):
+        for lth in range(self.n_layers):
             if self.rnn_type == 'lstm_transducer':
-                ys_emb, (h, c) = self.rnn[l](ys_emb, hx=(dstate['hxs'][l:l + 1],
-                                                         dstate['cxs'][l:l + 1]))
+                ys_emb, (h, c) = self.rnn[lth](ys_emb, hx=(dstate['hxs'][lth:lth + 1],
+                                                           dstate['cxs'][lth:lth + 1]))
                 new_cxs.append(c)
             elif self.rnn_type == 'gru_transducer':
-                ys_emb, h = self.rnn[l](ys_emb, hx=dstate['hxs'][l:l + 1])
+                ys_emb, h = self.rnn[lth](ys_emb, hx=dstate['hxs'][lth:lth + 1])
             new_hxs.append(h)
             ys_emb = self.dropout(ys_emb)
             if self.n_projs > 0:
-                ys_emb = torch.tanh(self.proj[l](ys_emb))
+                ys_emb = torch.tanh(self.proj[lth](ys_emb))
 
         # Repackage
         new_dstate['hxs'] = torch.cat(new_hxs, dim=0)
@@ -434,7 +434,7 @@ class RNNTransducer(DecoderBase):
         lm_weight = params['recog_lm_weight']
         lm_weight_second = params['recog_lm_second_weight']
         lm_weight_second_bwd = params['recog_lm_bwd_weight']
-        asr_state_carry_over = params['recog_asr_state_carry_over']
+        # asr_state_carry_over = params['recog_asr_state_carry_over']
         lm_state_carry_over = params['recog_lm_state_carry_over']
 
         if lm is not None:
