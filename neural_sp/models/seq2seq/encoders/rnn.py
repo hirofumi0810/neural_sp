@@ -205,7 +205,7 @@ class RNNEncoder(EncoderBase):
                 # Projection layer
                 if self.proj is not None:
                     if lth != n_layers - 1:
-                        self.proj += [nn.Linear(n_units * self.n_dirs, n_projs)]
+                        self.proj += [nn.Linear(self._odim, n_projs)]
                         self._odim = n_projs
 
                 # Task specific layer
@@ -245,8 +245,7 @@ class RNNEncoder(EncoderBase):
     @staticmethod
     def add_args(parser, args):
         group = parser.add_argument_group("RNN encoder")
-        if 'conv' in args.enc_type:
-            parser = ConvEncoder.add_args(parser, args)
+        parser = ConvEncoder.add_args(parser, args)
         group.add_argument('--enc_n_units', type=int, default=512,
                            help='number of units in each encoder RNN layer')
         group.add_argument('--enc_n_projs', type=int, default=0,
