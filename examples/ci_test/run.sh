@@ -82,8 +82,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e data/.done_stage_1 ];
 
     for x in train; do
         steps/make_fbank.sh --nj 1 --cmd "$train_cmd" --write_utt2num_frames true \
-            data/${x} data/log/make_fbank/${x} data/fbank
-        data/log/make_fbank/train/make_fbank_train.1.log
+            data/${x} data/log/make_fbank/${x} data/fbank || exit 1;
     done
 
     compute-cmvn-stats scp:data/${train_set}/feats.scp data/${train_set}/cmvn.ark || exit 1;

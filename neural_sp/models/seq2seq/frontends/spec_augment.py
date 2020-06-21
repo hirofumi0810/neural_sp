@@ -10,7 +10,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class SpecAugment(object):
@@ -46,6 +49,13 @@ class SpecAugment(object):
         self.adaptive_number_ratio = adaptive_number_ratio
         self.adaptive_size_ratio = adaptive_size_ratio
         self.max_n_time_masks = max_n_time_masks
+
+        if adaptive_number_ratio > 0:
+            self.n_time_masks = 0
+            logger.info('n_time_masks is set ot zero for adaptive SpecAugment.')
+        if adaptive_size_ratio > 0:
+            self.T = 0
+            logger.info('T is set to zero for adaptive SpecAugment.')
 
         self._freq_mask = None
         self._time_mask = None

@@ -1,0 +1,8 @@
+# mask
+freq_width: 27
+n_freq_masks: 2
+time_width_upper: 1.0
+
+adaptive_number_ratio: 0.04
+adaptive_size_ratio: 0.04
+max_n_time_masks: 20
