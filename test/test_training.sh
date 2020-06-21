@@ -17,4 +17,4 @@ cd ./examples/ci_test || exit 1;
 
 # streaming ASR
 # ./run.sh --stage 4 --conf conf/asr/lcblstm_mocha_chunk4040.yaml || exit 1;
-# ./run.sh --stage 4 --conf conf/asr/lc_transformer_mma_mono4H_chunk4H_chunk16_from4L_headdrop0.5_64_128_64.yaml || exit 1;
+./run.sh --stage 4 --conf conf/asr/lc_transformer_mma_mono4H_chunk4H_chunk16_from4L_headdrop0.5_64_128_64.yaml || exit 1;

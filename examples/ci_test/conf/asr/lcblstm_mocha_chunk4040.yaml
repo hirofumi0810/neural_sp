@@ -12,7 +12,7 @@ subsample: "1_1_1_1_1"
 enc_type: conv_blstm
 bidirectional_sum_fwd_bwd: true
 enc_n_units: 128
-enc_n_projs: 0
+enc_n_projs: 64
 enc_n_layers: 2
 subsample_type: drop
 lc_chunk_size_left: 40
@@ -29,7 +29,7 @@ attn_dim: 128
 attn_n_heads: 1
 dec_type: lstm
 dec_n_units: 128
-dec_n_projs: 0
+dec_n_projs: 64
 dec_n_layers: 1
 dec_bottleneck_dim: 128  ### this is effective
 emb_dim: 128
