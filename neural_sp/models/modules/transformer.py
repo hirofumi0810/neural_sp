@@ -51,7 +51,7 @@ class TransformerDecoderBlock(nn.Module):
             mocha_no_denominator (bool):
             mocha_1dconv (bool):
             lm_fusion (bool):
-            d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
+            ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
             share_chunkwise_attention (bool):
 
     """
@@ -63,7 +63,7 @@ class TransformerDecoderBlock(nn.Module):
                  mocha_chunk_size=0, mocha_n_heads_mono=1, mocha_n_heads_chunk=1,
                  mocha_init_r=2, mocha_eps=1e-6, mocha_std=1.0,
                  mocha_no_denominator=False, mocha_1dconv=False,
-                 dropout_head=0, lm_fusion=False, d_ff_bottleneck_dim=0,
+                 dropout_head=0, lm_fusion=False, ffn_bottleneck_dim=0,
                  share_chunkwise_attention=False):
         super(TransformerDecoderBlock, self).__init__()
 
@@ -117,7 +117,7 @@ class TransformerDecoderBlock(nn.Module):
         # position-wise feed-forward
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
-                                d_ff_bottleneck_dim)
+                                ffn_bottleneck_dim)
 
         self.dropout = nn.Dropout(p=dropout)
         self.dropout_layer = dropout_layer
