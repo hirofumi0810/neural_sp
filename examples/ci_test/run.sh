@@ -138,6 +138,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo "                        LM Training stage (stage:3)                       "
     echo ============================================================================
 
+    echo ${lm_conf}
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
         --corpus ci_test \
         --config ${lm_conf} \
@@ -160,6 +161,8 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
 
+    echo ${conf}
+    echo ${conf2}
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus ci_test \
         --config ${conf} \
