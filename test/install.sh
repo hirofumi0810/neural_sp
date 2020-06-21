@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
+$CXX -v
+
 TOOL=$(pwd)/tools/tmp
 CONDA=$TOOL/miniconda
-
-$CXX -v
 
 python --version
 pip install -U pip wheel
@@ -26,6 +26,11 @@ pip install -e .  # setup.py
 
 # install kaldi
 git clone https://github.com/kaldi-asr/kaldi.git tools/kaldi
+
+# download pre-built kaldi binary (copy from espnet)
+[ ! -e ubuntu16-featbin.tar.gz ] && wget --tries=3 https://github.com/espnet/kaldi-bin/releases/download/v0.0.1/ubuntu16-featbin.tar.gz
+tar -xf ./ubuntu16-featbin.tar.gz
+cp featbin/* tools/kaldi/src/featbin/
 
 # install warp-ctc (use @jnishi patched version)
 git clone https://github.com/jnishi/warp-ctc.git -b pytorch-1.0.0
