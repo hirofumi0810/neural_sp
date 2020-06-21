@@ -36,8 +36,7 @@ optimizer: adam
 n_epochs: 100
 convert_to_sgd_epoch: 100
 print_step: 1
-# metric: edit_distance
-metric: loss
+metric: edit_distance
 lr: 1e-3
 lr_decay_type: always
 lr_decay_start_epoch: 10
