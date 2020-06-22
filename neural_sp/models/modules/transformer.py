@@ -139,6 +139,8 @@ class TransformerDecoderBlock(nn.Module):
                                    dropout=dropout_att,
                                    param_init=param_init)
 
+        self.reset_visualization()
+
     @property
     def yy_aws(self):
         return self._yy_aws
@@ -211,7 +213,7 @@ class TransformerDecoderBlock(nn.Module):
                 pos_embs = pos_embs[-ys_q.size(1):]
             out, self._yy_aws = self.self_attn(ys, ys_q, memory, pos_embs, yy_mask, u, v)
         else:
-            out, self._yy_aws, _ = self.self_attn(ys, ys, ys_q, mask=yy_mask)  # k/v/q
+            out, self._yy_aws = self.self_attn(ys, ys, ys_q, mask=yy_mask)[:2]  # k/v/q
         out = self.dropout(out) + residual
 
         # attention over encoder stacks
@@ -220,8 +222,7 @@ class TransformerDecoderBlock(nn.Module):
             out = self.norm2(out)
             out, self._xy_aws, self._xy_aws_beta, self._xy_p_choose = self.src_attn(
                 xs, xs, out, mask=xy_mask,  # k/v/q
-                aw_prev=xy_aws_prev, mode=mode,
-                eps_wait=eps_wait)
+                aw_prev=xy_aws_prev, mode=mode, eps_wait=eps_wait)
             out = self.dropout(out) + residual
 
         # LM integration
