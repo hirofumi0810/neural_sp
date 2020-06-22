@@ -14,9 +14,7 @@ from distutils.util import strtobool
 import logging
 import math
 import numpy as np
-import os
 import random
-import shutil
 import torch
 import torch.nn as nn
 
@@ -43,7 +41,6 @@ from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import tensor2np
-from neural_sp.utils import mkdir_join
 
 import matplotlib
 matplotlib.use('Agg')
@@ -336,7 +333,7 @@ class RNNDecoder(DecoderBase):
                             help='number of heads for monotonic attention')
         parser.add_argument('--mocha_n_heads_chunk', type=int, default=1,
                             help='number of heads for chunkwise attention')
-        parser.add_argument('--mocha_chunk_size', type=int, default=0,
+        parser.add_argument('--mocha_chunk_size', type=int, default=1,
                             help='chunk size for MoChA. -1 means infinite lookback.')
         parser.add_argument('--mocha_init_r', type=float, default=-4,
                             help='initialization of bias parameter for monotonic attention')
@@ -828,47 +825,6 @@ class RNNDecoder(DecoderBase):
             out = self.output_bn(torch.cat([dout, cv], dim=-1))
         attn_v = torch.tanh(out)
         return attn_v
-
-    def _plot_attention(self, save_path, n_cols=1):
-        """Plot attention for each head."""
-        if self.att_weight == 0:
-            return 0
-
-        from matplotlib import pyplot as plt
-        from matplotlib.ticker import MaxNLocator
-
-        _save_path = mkdir_join(save_path, 'dec_att_weights')
-
-        # Clean directory
-        if _save_path is not None and os.path.isdir(_save_path):
-            shutil.rmtree(_save_path)
-            os.mkdir(_save_path)
-
-        elens = self.data_dict['elens']
-        ylens = self.data_dict['ylens']
-        # ys = self.data_dict['ys']
-
-        for k, aw in self.aws_dict.items():
-            plt.clf()
-            n_heads = aw.shape[1]
-            n_cols_tmp = 1 if n_heads == 1 else n_cols
-            fig, axes = plt.subplots(max(1, n_heads // n_cols_tmp), n_cols_tmp,
-                                     figsize=(20, 8), squeeze=False)
-            for h in range(n_heads):
-                ax = axes[h // n_cols_tmp, h % n_cols_tmp]
-                ax.imshow(aw[-1, h, :ylens[-1], :elens[-1]], aspect="auto")
-                ax.grid(False)
-                ax.set_xlabel("Input (head%d)" % h)
-                ax.set_ylabel("Output (head%d)" % h)
-                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-                # ax.set_yticks(np.linspace(0, ylens[-1] - 1, ylens[-1]))
-                # ax.set_yticks(np.linspace(0, ylens[-1] - 1, 1), minor=True)
-                # ax.set_yticklabels(ys + [''])
-
-            fig.tight_layout()
-            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
-            plt.close()
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
                exclude_eos=False, refs_id=None, utt_ids=None, speakers=None,

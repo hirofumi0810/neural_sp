@@ -423,10 +423,16 @@ class Speech2Text(ModelBase):
             return tensor2np(ctc_probs), tensor2np(indices_topk), eout_dict[task]['xlens']
 
     def plot_attention(self):
+        """Plot attention weights during training."""
         if 'former' in self.enc_type:
             self.enc._plot_attention(self.save_path)
         if 'former' in self.dec_type or self.dec_type in ['lstm', 'gru']:
             self.dec_fwd._plot_attention(self.save_path)
+
+    def plot_ctc(self):
+        """Plot CTC posteriors during training."""
+        if self.ctc_weight > 0:
+            self.dec_fwd._plot_ctc(self.save_path)
 
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
         from neural_sp.models.seq2seq.frontends.streaming import Streaming
