@@ -71,6 +71,10 @@ class CTC(DecoderBase):
 
         self.space = -1  # TODO(hirofumi): fix later
 
+        # for posterior plot
+        self.prob_dict = {}
+        self.data_dict = {}
+
         # Fully-connected layers before the softmax
         if fc_list is not None and len(fc_list) > 0:
             _fc_list = [int(fc) for fc in fc_list.split('_')]
@@ -93,11 +97,11 @@ class CTC(DecoderBase):
         """Compute CTC loss.
 
         Args:
-            eouts (FloatTensor): `[B, T, dec_n_units]`
-            elens (list): A list of length B
-            ys (list): A list of length B, which contains a list of size `[L]`
+            eouts (FloatTensor): `[B, T, enc_n_units]`
+            elens (list): length `B`
+            ys (list): length `B`, each of which contains a list of size `[L]`
         Returns:
-            loss (FloatTensor): `[B, L, vocab]`
+            loss (FloatTensor): `[1]`
 
         """
         # Concatenate all elements in ys for warpctc_pytorch
@@ -108,12 +112,7 @@ class CTC(DecoderBase):
 
         # Compute CTC loss
         logits = self.output(eouts)
-        loss = self.warpctc_loss(logits.transpose(1, 0),  # time-major
-                                 ys_ctc, elens.cpu(), ylens)
-        # NOTE: ctc loss has already been normalized by bs
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
-        if self.device_id >= 0:
-            loss = loss.cuda(self.device_id)
+        loss = self.loss_fn(logits, ys_ctc, elens, ylens)
 
         # Label smoothing for CTC
         if self.lsm_prob > 0:
@@ -125,7 +124,20 @@ class CTC(DecoderBase):
             ys_in_pad = pad_list(ys, 0)  # pad by zero
             trigger_points = self.forced_aligner.align(logits.clone(), elens, ys_in_pad, ylens)
 
+        if not self.training:
+            self.data_dict['elens'] = tensor2np(elens)
+            self.prob_dict['probs'] = tensor2np(torch.softmax(logits, dim=-1))
+
         return loss, trigger_points
+
+    def loss_fn(self, logits, ys_ctc, elens, ylens):
+        loss = self.warpctc_loss(logits.transpose(1, 0),  # time-major
+                                 ys_ctc, elens.cpu(), ylens)
+        # NOTE: ctc loss has already been normalized by bs
+        # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        if self.device_id >= 0:
+            loss = loss.cuda(self.device_id)
+        return loss
 
     def trigger_points(self, eouts, elens):
         """Extract trigger points.
@@ -205,7 +217,7 @@ class CTC(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
-            elens (list): A list of length B
+            elens (list): length `B`
             params (dict):
                 recog_beam_width (int): size of beam
                 recog_length_penalty (float): length penalty
@@ -230,7 +242,6 @@ class CTC(DecoderBase):
         lp_weight = params['recog_length_penalty']
         lm_weight = params['recog_lm_weight']
         lm_weight_second = params['recog_lm_second_weight']
-        lm_weight_second_bwd = params['recog_lm_bwd_weight']
 
         if lm is not None:
             assert lm_weight > 0
@@ -283,7 +294,7 @@ class CTC(DecoderBase):
                                      'lmstate': beam[i_beam]['lmstate']})
 
                     # Update LM states for shallow fusion
-                    if lm_weight > 0 and lm is not None:
+                    if lm is not None:
                         _, lmstate, lm_log_probs = lm.predict(
                             eouts.new_zeros(1, 1).fill_(hyp[-1]), beam[i_beam]['lmstate'])
                     else:
@@ -344,16 +355,24 @@ class CTC(DecoderBase):
 
             best_hyps.append(np.array(beam[0]['hyp'][1:]))
 
-            if utt_ids is not None:
-                logger.info('Utt-id: %s' % utt_ids[b])
-            if refs_id is not None and self.vocab == idx2token.vocab:
-                logger.info('Ref: %s' % idx2token(refs_id[b]))
-            logger.info('Hyp: %s' % idx2token(beam[0]['hyp'][1:]))
-            logger.info('log prob (hyp): %.7f' % beam[0]['score'])
-            logger.info('log prob (CTC): %.7f' % beam[0]['score_ctc'])
-            logger.info('log prob (lp): %.7f' % beam[0]['score_lp'])
-            if lm is not None:
-                logger.info('log prob (hyp, lm): %.7f' % (beam[0]['score_lm']))
+            if idx2token is not None:
+                if utt_ids is not None:
+                    logger.info('Utt-id: %s' % utt_ids[b])
+                assert self.vocab == idx2token.vocab
+                logger.info('=' * 200)
+                for k in range(len(beam)):
+                    if refs_id is not None:
+                        logger.info('Ref: %s' % idx2token(refs_id[b]))
+                    logger.info('Hyp: %s' % idx2token(beam[k]['hyp'][1:]))
+                    logger.info('log prob (hyp): %.7f' % beam[k]['score'])
+                    logger.info('log prob (hyp, ctc): %.7f' % (beam[k]['score_ctc']))
+                    logger.info('log prob (hyp, lp): %.7f' % (beam[k]['score_lp'] * lp_weight))
+                    if lm is not None:
+                        logger.info('log prob (hyp, first-path lm): %.7f' % (beam[k]['score_lm'] * lm_weight))
+                    if lm_second is not None:
+                        logger.info('log prob (hyp, second-path lm): %.7f' %
+                                    (beam[k]['score_lm_second'] * lm_weight_second))
+                    logger.info('-' * 50)
 
         return np.array(best_hyps)
 
