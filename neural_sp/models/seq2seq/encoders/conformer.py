@@ -330,8 +330,8 @@ class ConformerEncoder(EncoderBase):
 
                 # Pick up outputs in the sub task before the projection layer
                 if lth == self.n_layers_sub1 - 1:
-                    xs_sub1 = self.layer_sub1(xs, xx_mask, pos_embs=pos_embs)[
-                        0] if self.task_specific_layer else xs.clone()
+                    xs_sub1 = self.layer_sub1(
+                        xs, xx_mask, pos_embs=pos_embs) if self.task_specific_layer else xs.clone()
                     xs_sub1 = self.norm_out_sub1(xs_sub1)
                     if self.bridge_sub1 is not None:
                         xs_sub1 = self.bridge_sub1(xs_sub1)
@@ -339,8 +339,8 @@ class ConformerEncoder(EncoderBase):
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
                         return eouts
                 if lth == self.n_layers_sub2 - 1:
-                    xs_sub2 = self.layer_sub2(xs, xx_mask, pos_embs=pos_embs)[
-                        0] if self.task_specific_layer else xs.clone()
+                    xs_sub2 = self.layer_sub2(
+                        xs, xx_mask, pos_embs=pos_embs) if self.task_specific_layer else xs.clone()
                     xs_sub2 = self.norm_out_sub2(xs_sub2)
                     if self.bridge_sub2 is not None:
                         xs_sub2 = self.bridge_sub2(xs_sub2)
