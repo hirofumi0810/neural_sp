@@ -11,7 +11,6 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import random
 import torch
 import torch.nn as nn
 
@@ -19,7 +18,6 @@ from neural_sp.models.modules.gelu import gelu, gelu_accurate
 from neural_sp.models.modules.glu import LinearGLUBlock
 from neural_sp.models.modules.swish import Swish
 
-random.seed(1)
 
 logger = logging.getLogger(__name__)
 

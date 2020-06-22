@@ -96,15 +96,17 @@ class TransformerEncoder(EncoderBase):
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.pe_type = pe_type
+        self.scale = math.sqrt(d_model)
 
-        # for streaming TransformerXL encoder
+        # for streaming encoder
         self.chunk_size_left = chunk_size_left
         self.chunk_size_current = chunk_size_current
         self.chunk_size_right = chunk_size_right
         self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
+
+        # TransformerXL like streaming encoder
         self.memory_transformer = ('transformer_xl' in enc_type)
         self.mem_len = chunk_size_left
-        self.scale = math.sqrt(d_model)
         if self.memory_transformer:
             assert pe_type == 'relative'
             assert chunk_size_left > 0
@@ -156,8 +158,8 @@ class TransformerEncoder(EncoderBase):
         self.v = None
         if self.memory_transformer:
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
-            self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
-            self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+            self.u = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+            self.v = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
             # NOTE: u and v are global parameters
         elif pe_type == 'relative':
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)  # TODO: dropout_in?
@@ -361,10 +363,10 @@ class TransformerEncoder(EncoderBase):
 
             xx_mask = None  # NOTE: no mask
             for lth, layer in enumerate(self.layers):
-                xs, xx_aws = layer(xs, xx_mask, pos_embs=pos_embs)
+                xs = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
-                    n_heads = xx_aws.size(1)
-                    xx_aws = xx_aws[:, :, _N_l:_N_l + _N_c, _N_l:_N_l + _N_c]
+                    n_heads = layer.xx_aws.size(1)
+                    xx_aws = layer.xx_aws[:, :, _N_l:_N_l + _N_c, _N_l:_N_l + _N_c]
                     xx_aws = xx_aws.view(bs, n_blocks, n_heads, _N_c, _N_c)
                     xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
                     for blc_id in range(n_blocks):
@@ -394,13 +396,13 @@ class TransformerEncoder(EncoderBase):
             xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).repeat([1, xmax, 1])
 
             for lth, layer in enumerate(self.layers):
-                xs, xx_aws = layer(xs, xx_mask, pos_embs=pos_embs)
+                xs = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
-                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws)
+                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
 
                 # Pick up outputs in the sub task before the projection layer
                 if lth == self.n_layers_sub1 - 1:
-                    xs_sub1 = self.layer_sub1(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
+                    xs_sub1 = self.layer_sub1(xs, xx_mask) if self.task_specific_layer else xs.clone()
                     xs_sub1 = self.norm_out_sub1(xs_sub1)
                     if self.bridge_sub1 is not None:
                         xs_sub1 = self.bridge_sub1(xs_sub1)
@@ -408,7 +410,7 @@ class TransformerEncoder(EncoderBase):
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
                         return eouts
                 if lth == self.n_layers_sub2 - 1:
-                    xs_sub2 = self.layer_sub2(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
+                    xs_sub2 = self.layer_sub2(xs, xx_mask) if self.task_specific_layer else xs.clone()
                     xs_sub2 = self.norm_out_sub2(xs_sub2)
                     if self.bridge_sub2 is not None:
                         xs_sub2 = self.bridge_sub2(xs_sub2)
@@ -477,6 +479,15 @@ class TransformerEncoderBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.dropout_layer = dropout_layer
 
+        self.reset_visualization()
+
+    @property
+    def xx_aws(self):
+        return self._xx_aws
+
+    def reset_visualization(self):
+        self._xx_aws = None
+
     def forward(self, xs, xx_mask=None, pos_embs=None, memory=None, u=None, v=None):
         """Transformer encoder layer definition.
 
@@ -489,19 +500,21 @@ class TransformerEncoderBlock(nn.Module):
             v (FloatTensor): global parameter for relative positional embedding
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
-            xx_aws (FloatTensor): `[B, H, T (query), T (key)]`
 
         """
+        self.reset_visualization()
+
+        # LayerDrop
         if self.dropout_layer > 0 and self.training and random.random() >= self.dropout_layer:
-            return xs, None
+            return xs
 
         # self-attention
         residual = xs
         xs = self.norm1(xs)
         if self.relative_attention:
-            xs, xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)  # k/q/m
+            xs, self._xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)  # k/q/m
         else:
-            xs, xx_aws, _ = self.self_attn(xs, xs, xs, mask=xx_mask)  # k/v/q
+            xs, self._xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)[:2]  # k/v/q
         xs = self.dropout(xs) + residual
 
         # position-wise feed-forward
@@ -510,4 +523,4 @@ class TransformerEncoderBlock(nn.Module):
         xs = self.feed_forward(xs)
         xs = self.dropout(xs) + residual
 
-        return xs, xx_aws
+        return xs

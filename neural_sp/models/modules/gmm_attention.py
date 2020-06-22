@@ -61,6 +61,7 @@ class GMMAttention(nn.Module):
             cv (FloatTensor): `[B, 1, vdim]`
             alpha (FloatTensor): `[B, klen, 1]`
             beta: dummy interface for MoChA
+            p_choose_i: dummy interface for MoChA
 
         """
         bs, klen = key.size()[:2]
@@ -95,4 +96,4 @@ class GMMAttention(nn.Module):
             aw = aw.masked_fill_(self.mask == 0, NEG_INF)
         cv = torch.bmm(aw, value)
 
-        return cv, aw.unsqueeze(2), None
+        return cv, aw.unsqueeze(2), None, None

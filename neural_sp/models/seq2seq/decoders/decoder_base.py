@@ -52,7 +52,7 @@ class DecoderBase(ModelBase):
     def beam_search(self, eouts, elens, params, idx2token):
         raise NotImplementedError
 
-    def _plot_attention(self, save_path, n_cols=1):
+    def _plot_attention(self, save_path, n_cols=2):
         """Plot attention for each head in all decoder layers."""
         if getattr(self, 'att_weight', 0) == 0:
             return
@@ -96,7 +96,7 @@ class DecoderBase(ModelBase):
             fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
             plt.close()
 
-    def _plot_ctc(self, save_path, n_cols=2, topk=10):
+    def _plot_ctc(self, save_path, topk=10):
         """Plot CTC posteriors."""
         if self.ctc_weight == 0:
             return

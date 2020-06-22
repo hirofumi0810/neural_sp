@@ -181,8 +181,8 @@ class TransformerDecoder(DecoderBase):
                 self.dropout_emb = nn.Dropout(p=dropout_emb)  # for token embedding
                 self.pos_emb = XLPositionalEmbedding(d_model, dropout_emb)
                 if self.mem_len > 0:
-                    self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
-                    self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+                    self.u = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+                    self.v = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
                     # NOTE: u and v are global parameters
             # self-attention
             self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
@@ -460,27 +460,27 @@ class TransformerDecoder(DecoderBase):
         hidden_states = [out]
         xy_aws_layers = []
         for lth, (mem, layer) in enumerate(zip(mems, self.layers)):
-            out, yy_aws, xy_aws, xy_aws_beta, yy_aws_lm = layer(
-                out, tgt_mask, eouts, src_mask, mode='parallel', lmout=lmout,
-                pos_embs=pos_embs, memory=mem, u=self.u, v=self.v)
+            out = layer(out, tgt_mask, eouts, src_mask, mode='parallel', lmout=lmout,
+                        pos_embs=pos_embs, memory=mem, u=self.u, v=self.v)
             if lth < self.n_layers - 1:
                 hidden_states.append(out)
                 # NOTE: outputs from the last layer is not used for momory
             # Attention padding
+            xy_aws = layer.xy_aws
             if xy_aws is not None and 'mocha' in self.attn_type:
                 tgt_mask_v2 = (ys_out != self.pad).unsqueeze(1).unsqueeze(3)  # `[B, 1, L, 1]`
                 xy_aws = xy_aws.masked_fill_(tgt_mask_v2.repeat([1, xy_aws.size(1), 1, xmax]) == 0, 0)
                 # NOTE: attention padding is quite effective for quantity loss
                 xy_aws_layers.append(xy_aws.clone())
             if not self.training:
-                if yy_aws is not None:
-                    self.aws_dict['yy_aws_layer%d' % lth] = tensor2np(yy_aws)
-                if xy_aws is not None:
-                    self.aws_dict['xy_aws_layer%d' % lth] = tensor2np(xy_aws)
-                if xy_aws_beta is not None:
-                    self.aws_dict['xy_aws_beta_layer%d' % lth] = tensor2np(xy_aws_beta)
-                if yy_aws_lm is not None:
-                    self.aws_dict['yy_aws_lm_layer%d' % lth] = tensor2np(yy_aws_lm)
+                if layer.yy_aws is not None:
+                    self.aws_dict['yy_aws_layer%d' % lth] = tensor2np(layer.yy_aws)
+                if layer.xy_aws is not None:
+                    self.aws_dict['xy_aws_layer%d' % lth] = tensor2np(layer.xy_aws)
+                if layer.xy_aws_beta is not None:
+                    self.aws_dict['xy_aws_beta_layer%d' % lth] = tensor2np(layer.xy_aws_beta)
+                if layer.yy_aws_lm is not None:
+                    self.aws_dict['yy_aws_lm_layer%d' % lth] = tensor2np(layer.yy_aws_lm)
         logits = self.output(self.norm_out(out))
 
         # for knowledge distillation
@@ -543,7 +543,7 @@ class TransformerDecoder(DecoderBase):
             new_cache = [None] * self.n_layers
             out = self.pos_enc(self.embed(ys))  # scaled
             for lth, layer in enumerate(self.layers):
-                out, _, xy_aws, _, _ = layer(out, causal_mask, eouts, None, cache=cache[lth])
+                out = layer(out, causal_mask, eouts, None, cache=cache[lth])
                 new_cache[lth] = out
 
             if cache_states:
@@ -570,7 +570,7 @@ class TransformerDecoder(DecoderBase):
 
         # Concatenate in L dimension
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
-        xy_aws = tensor2np(xy_aws.transpose(1, 2).transpose(2, 3))
+        xy_aws = tensor2np(layer.xy_aws.transpose(1, 2).transpose(2, 3))
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.bwd:
@@ -746,25 +746,24 @@ class TransformerDecoder(DecoderBase):
                 eouts_b = eouts[b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
                 new_cache = [None] * self.n_layers
                 xy_aws_all_layers = []
-                xy_aws = None
                 lth_s = self.mocha_first_layer - 1
                 for lth, layer in enumerate(self.layers):
                     if self.memory_transformer:
-                        out, _, xy_aws, _, _ = layer(
+                        out = layer(
                             out, causal_mask, eouts_b, None,
                             cache=cache[lth],
                             pos_embs=pos_embs, memory=mems[lth], u=self.u, v=self.v)
                         hidden_states.append(out)
                     else:
-                        out, _, xy_aws, _, _ = layer(
+                        out = layer(
                             out, causal_mask, eouts_b, None,
                             cache=cache[lth],
                             xy_aws_prev=xy_aws_prev[:, lth - lth_s] if lth >= lth_s and t > 0 else None,
                             eps_wait=eps_wait)
 
                     new_cache[lth] = out
-                    if xy_aws is not None:
-                        xy_aws_all_layers.append(xy_aws)
+                    if layer.xy_aws is not None:
+                        xy_aws_all_layers.append(layer.xy_aws)
                 logits = self.output(self.norm_out(out))
                 probs = torch.softmax(logits[:, -1] * softmax_smoothing, dim=1)
                 xy_aws_all_layers = torch.stack(xy_aws_all_layers, dim=1)  # `[B, H, n_layers, L, T]`

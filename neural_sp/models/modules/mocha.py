@@ -455,6 +455,7 @@ class MoChA(nn.Module):
         elif mode == 'hard':  # inference
             assert qlen == 1
             assert not self.training
+            p_choose = None
             if self.n_heads_mono == 1:
                 # assert aw_prev.sum() > 0
                 p_choose_i = (torch.sigmoid(e_mono) >= 0.5).float()[:, :, 0:1]
@@ -575,7 +576,8 @@ class MoChA(nn.Module):
             assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, _w), \
                 (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, _w))
             # TODO: padding for beta
-        return cv, alpha, beta
+
+        return cv, alpha, beta, p_choose
 
 
 def add_gaussian_noise(xs, std):

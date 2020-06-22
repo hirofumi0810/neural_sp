@@ -114,7 +114,7 @@ class TransformerXL(LMBase):
                            help='number of units in the MHA layer')
         group.add_argument('--transformer_d_ff', type=int, default=2048,
                            help='number of units in the FFN layer')
-        # group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
+        # group.add_argument('--transformer_ffn_bottleneck_dim', type=int, default=0,
         #                    help='bottleneck dimension in the FFN layer')
         group.add_argument('--transformer_n_heads', type=int, default=4,
                            help='number of heads in the MHA layer')
@@ -231,16 +231,15 @@ class TransformerXL(LMBase):
         for lth, (mem, layer) in enumerate(zip(mems, self.layers)):
             if incremental and mlen > 0 and mem.size(0) != bs:
                 mem = mem.repeat([bs, 1, 1])
-            out, yy_aws = layer(out, causal_mask, cache=cache[lth],
-                                pos_embs=pos_embs, memory=mem,
-                                u=self.u, v=self.v)[:2]
+            out = layer(out, causal_mask, cache=cache[lth],
+                        pos_embs=pos_embs, memory=mem, u=self.u, v=self.v)
             if incremental:
                 new_cache[lth] = out
             elif lth < self.n_layers - 1:
                 hidden_states.append(out)
                 # NOTE: outputs from the last layer is not used for memory
-            if not self.training and yy_aws is not None:
-                setattr(self, 'yy_aws_layer%d' % lth, tensor2np(yy_aws))
+            if not self.training and layer.yy_aws is not None:
+                setattr(self, 'yy_aws_layer%d' % lth, tensor2np(layer.yy_aws))
         out = self.norm_out(out)
         if self.adaptive_softmax is None:
             logits = self.output(out)

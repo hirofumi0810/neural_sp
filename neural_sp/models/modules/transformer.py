@@ -139,6 +139,34 @@ class TransformerDecoderBlock(nn.Module):
                                    dropout=dropout_att,
                                    param_init=param_init)
 
+        self.reset_visualization()
+
+    @property
+    def yy_aws(self):
+        return self._yy_aws
+
+    @property
+    def xy_aws(self):
+        return self._xy_aws
+
+    @property
+    def xy_aws_beta(self):
+        return self._xy_aws_beta
+
+    @property
+    def xy_p_choose(self):
+        return self._xy_p_choose
+
+    @property
+    def yy_aws_lm(self):
+        return self._yy_aws_lm
+
+    def reset_visualization(self):
+        self._yy_aws = None
+        self._xy_aws = None
+        self._xy_aws_beta, self._xy_p_choose = None, None
+        self._yy_aws_lm = None
+
     def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
                 xy_aws_prev=None, mode='hard', lmout=None,
                 pos_embs=None, memory=None, u=None, v=None,
@@ -161,17 +189,13 @@ class TransformerDecoderBlock(nn.Module):
             eps_wait (int): wait time delay for head-synchronous decoding in MMA
         Returns:
             out (FloatTensor): `[B, L, d_model]`
-            yy_aws (FloatTensor)`[B, H, L, L]`
-            xy_aws (FloatTensor): `[B, H, L, T]`
-            xy_aws_beta (FloatTensor): `[B, H, L, T]`
 
         """
+        self.reset_visualization()
+
+        # LayerDrop
         if self.dropout_layer > 0 and self.training and random.random() >= self.dropout_layer:
-            xy_aws = None
-            if self.src_tgt_attention:
-                bs, qlen, klen = xy_mask.size()
-                xy_aws = ys.new_zeros(bs, self.n_heads, qlen, klen)
-            return ys, None, xy_aws, None, None
+            return ys
 
         residual = ys
         ys = self.norm1(ys)
@@ -184,27 +208,24 @@ class TransformerDecoderBlock(nn.Module):
             ys_q = ys
 
         # self-attention
-        yy_aws = None
         if self.memory_transformer:
             if cache is not None:
                 pos_embs = pos_embs[-ys_q.size(1):]
-            out, yy_aws = self.self_attn(ys, ys_q, memory, pos_embs, yy_mask, u, v)
+            out, self._yy_aws = self.self_attn(ys, ys_q, memory, pos_embs, yy_mask, u, v)
         else:
-            out, yy_aws, _ = self.self_attn(ys, ys, ys_q, mask=yy_mask)  # k/v/q
+            out, self._yy_aws = self.self_attn(ys, ys, ys_q, mask=yy_mask)[:2]  # k/v/q
         out = self.dropout(out) + residual
 
         # attention over encoder stacks
-        xy_aws, xy_aws_beta = None, None
         if self.src_tgt_attention:
             residual = out
             out = self.norm2(out)
-            out, xy_aws, xy_aws_beta = self.src_attn(xs, xs, out, mask=xy_mask,  # k/v/q
-                                                     aw_prev=xy_aws_prev, mode=mode,
-                                                     eps_wait=eps_wait)
+            out, self._xy_aws, self._xy_aws_beta, self._xy_p_choose = self.src_attn(
+                xs, xs, out, mask=xy_mask,  # k/v/q
+                aw_prev=xy_aws_prev, mode=mode, eps_wait=eps_wait)
             out = self.dropout(out) + residual
 
         # LM integration
-        yy_aws_lm = None
         if self.lm_fusion:
             residual = out
             out = self.norm_lm(out)
@@ -212,7 +233,7 @@ class TransformerDecoderBlock(nn.Module):
 
             # attention over LM outputs
             if 'attention' in self.lm_fusion:
-                out, yy_aws_lm, _ = self.lm_attn(lmout, lmout, out, mask=yy_mask)  # k/v/q
+                out, self._yy_aws_lm, _ = self.lm_attn(lmout, lmout, out, mask=yy_mask)  # k/v/q
 
             gate = torch.sigmoid(self.linear_lm_gate(torch.cat([out, lmout], dim=-1)))
             gated_lmout = gate * lmout
@@ -228,7 +249,7 @@ class TransformerDecoderBlock(nn.Module):
         if cache is not None:
             out = torch.cat([cache, out], dim=1)
 
-        return out, yy_aws, xy_aws, xy_aws_beta, yy_aws_lm
+        return out
 
 
 class SyncBidirTransformerDecoderBlock(nn.Module):
@@ -281,6 +302,13 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         # self.dropout_layer = dropout_layer
 
+        self.reset_visualization()
+
+    def reset_visualization(self):
+        self._yy_aws_h, self.yy_aws_f = None, None
+        self._yy_aws_bwd_h, self._yy_aws_bwd_f = None, None
+        self._xy_aws, self._xy_aws_bwd = None, None
+
     def forward(self, ys, ys_bwd, yy_mask, identity_mask, xs, xy_mask,
                 cache=None, cache_bwd=None):
         """Synchronous bidirectional Transformer decoder forward pass.
@@ -296,14 +324,10 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
             cache_bwd (FloatTensor): `[B, L-1, d_model]`
         Returns:
             out (FloatTensor): `[B, L, d_model]`
-            yy_aws_h (FloatTensor)`[B, L, L]`
-            yy_aws_f (FloatTensor)`[B, L, L]`
-            yy_aws_bwd_h (FloatTensor)`[B, L, L]`
-            yy_aws_bwd_f (FloatTensor)`[B, L, L]`
-            xy_aws (FloatTensor): `[B, L, T]`
-            xy_aws_bwd (FloatTensor): `[B, L, T]`
 
         """
+        self.reset_visualization()
+
         residual = ys
         residual_bwd = ys_bwd
         ys = self.norm1(ys)
@@ -321,7 +345,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
             ys_bwd_q = ys_bwd
 
         # synchronous bidirectional attention
-        out, out_bwd, yy_aws_h, yy_aws_f, yy_aws_bwd_h, yy_aws_bwd_f = self.self_attn(
+        out, out_bwd, self._yy_aws_h, self.yy_aws_f, self._yy_aws_bwd_h, self._yy_aws_bwd_f = self.self_attn(
             ys, ys, ys_q,  # k/v/q
             ys_bwd, ys_bwd, ys_bwd_q,  # k/v/q
             tgt_mask=yy_mask, identity_mask=identity_mask)
@@ -332,12 +356,12 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
         # fwd
         residual = out
         out = self.norm2(out)
-        out, xy_aws, _ = self.src_attn(xs, xs, out, mask=xy_mask)  # k/v/q
+        out, self._xy_aws, _ = self.src_attn(xs, xs, out, mask=xy_mask)  # k/v/q
         out = self.dropout(out) + residual
         # bwd
         residual_bwd = out_bwd
         out_bwd = self.norm2(out_bwd)
-        out_bwd, xy_aws_bwd, _ = self.src_attn(xs, xs, out_bwd, mask=xy_mask)  # k/v/q
+        out_bwd, self._xy_aws_bwd, _ = self.src_attn(xs, xs, out_bwd, mask=xy_mask)  # k/v/q
         out_bwd = self.dropout(out_bwd) + residual_bwd
 
         # position-wise feed-forward
@@ -356,4 +380,4 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
             out = torch.cat([cache, out], dim=1)
             out_bwd = torch.cat([cache_bwd, out_bwd], dim=1)
 
-        return out, out_bwd, yy_aws_h, yy_aws_f, yy_aws_bwd_h, yy_aws_bwd_f, xy_aws, xy_aws_bwd
+        return out, out_bwd
