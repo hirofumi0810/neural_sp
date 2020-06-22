@@ -69,7 +69,7 @@ class EncoderBase(ModelBase):
                     self.turn_off_ceil_mode(module)
 
     def _plot_attention(self, save_path, n_cols=2):
-        """Plot attention for each head in all layers."""
+        """Plot attention for each head in all encoder layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
@@ -80,9 +80,9 @@ class EncoderBase(ModelBase):
             shutil.rmtree(_save_path)
             os.mkdir(_save_path)
 
-        for k, aw in self.aws_dict.items():
-            elens = self.data_dict['elens']
+        elens = self.data_dict['elens']
 
+        for k, aw in self.aws_dict.items():
             plt.clf()
             n_heads = aw.shape[1]
             n_cols_tmp = 1 if n_heads == 1 else n_cols

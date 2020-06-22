@@ -15,9 +15,7 @@ from distutils.util import strtobool
 import logging
 import math
 import numpy as np
-import os
 import random
-import shutil
 import torch
 import torch.nn as nn
 
@@ -35,7 +33,6 @@ from neural_sp.models.torch_utils import append_sos_eos
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
-from neural_sp.utils import mkdir_join
 
 import matplotlib
 matplotlib.use('Agg')
@@ -130,9 +127,9 @@ class TransformerDecoder(DecoderBase):
         self.n_heads = n_heads
         self.pe_type = pe_type
         self.lsm_prob = lsm_prob
+        self.att_weight = global_weight - ctc_weight
         self.ctc_weight = ctc_weight
         self.bwd = backward
-        self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
 
         self.prev_spk = ''
@@ -172,7 +169,7 @@ class TransformerDecoder(DecoderBase):
                            param_init=0.1,
                            backward=backward)
 
-        if ctc_weight < global_weight:
+        if self.att_weight > 0:
             # token embedding
             self.embed = nn.Embedding(self.vocab, d_model, padding_idx=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type, param_init)
@@ -377,7 +374,7 @@ class TransformerDecoder(DecoderBase):
                 loss += loss_ctc * self.ctc_weight
 
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or 'ctc' not in task):
+        if self.att_weight > 0 and (task == 'all' or 'ctc' not in task):
             loss_att, acc_att, ppl_att, losses_auxiliary = self.forward_att(
                 eouts, elens, ys, trigger_points=trigger_points)
             observation['loss_att'] = loss_att.item()
@@ -397,7 +394,7 @@ class TransformerDecoder(DecoderBase):
             if self.mtl_per_batch:
                 loss += loss_att
             else:
-                loss += loss_att * (self.global_weight - self.ctc_weight)
+                loss += loss_att * self.att_weight
 
         observation['loss'] = loss.item()
         return loss, observation
@@ -509,47 +506,6 @@ class TransformerDecoder(DecoderBase):
         acc = compute_accuracy(logits, ys_out, self.pad)
 
         return loss, acc, ppl, losses_auxiliary
-
-    def _plot_attention(self, save_path, n_cols=2):
-        """Plot attention for each head in all layers."""
-        from matplotlib import pyplot as plt
-        from matplotlib.ticker import MaxNLocator
-
-        _save_path = mkdir_join(save_path, 'dec_att_weights')
-
-        # Clean directory
-        if _save_path is not None and os.path.isdir(_save_path):
-            shutil.rmtree(_save_path)
-            os.mkdir(_save_path)
-
-        for k, aw in self.aws_dict.items():
-            elens = self.data_dict['elens']
-            ylens = self.data_dict['ylens']
-            # ys = self.data_dict['ys']
-
-            plt.clf()
-            n_heads = aw.shape[1]
-            n_cols_tmp = 1 if n_heads == 1 else n_cols * max(1, n_heads // 4)
-            fig, axes = plt.subplots(max(1, n_heads // n_cols_tmp), n_cols_tmp,
-                                     figsize=(20 * max(1, n_heads // 4), 8), squeeze=False)
-            for h in range(n_heads):
-                ax = axes[h // n_cols_tmp, h % n_cols_tmp]
-                if 'xy' in k:
-                    ax.imshow(aw[-1, h, :ylens[-1], :elens[-1]], aspect="auto")
-                else:
-                    ax.imshow(aw[-1, h, :ylens[-1], :ylens[-1]], aspect="auto")
-                ax.grid(False)
-                ax.set_xlabel("Input (head%d)" % h)
-                ax.set_ylabel("Output (head%d)" % h)
-                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-                # ax.set_yticks(np.linspace(0, ylens[-1] - 1, ylens[-1]))
-                # ax.set_yticks(np.linspace(0, ylens[-1] - 1, 1), minor=True)
-                # ax.set_yticklabels(ys + [''])
-
-            fig.tight_layout()
-            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
-            plt.close()
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
                exclude_eos=False, refs_id=None, utt_ids=None, speakers=None,

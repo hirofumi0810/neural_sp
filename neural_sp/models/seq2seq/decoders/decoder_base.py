@@ -19,7 +19,6 @@ import shutil
 from neural_sp.models.base import ModelBase
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import tensor2np
 from neural_sp.utils import mkdir_join
 
 import matplotlib
@@ -54,7 +53,47 @@ class DecoderBase(ModelBase):
         raise NotImplementedError
 
     def _plot_attention(self, save_path, n_cols=1):
-        pass
+        """Plot attention for each head in all decoder layers."""
+        assert self.att_weight > 0
+        from matplotlib import pyplot as plt
+        from matplotlib.ticker import MaxNLocator
+
+        _save_path = mkdir_join(save_path, 'dec_att_weights')
+
+        # Clean directory
+        if _save_path is not None and os.path.isdir(_save_path):
+            shutil.rmtree(_save_path)
+            os.mkdir(_save_path)
+
+        elens = self.data_dict['elens']
+        ylens = self.data_dict['ylens']
+        # ys = self.data_dict['ys']
+
+        for k, aw in self.aws_dict.items():
+            plt.clf()
+            n_heads = aw.shape[1]
+            n_cols_tmp = 1 if n_heads == 1 else n_cols * max(1, n_heads // 4)
+            fig, axes = plt.subplots(max(1, n_heads // n_cols_tmp), n_cols_tmp,
+                                     figsize=(20 * max(1, n_heads // 4), 8), squeeze=False)
+            for h in range(n_heads):
+                ax = axes[h // n_cols_tmp, h % n_cols_tmp]
+                if 'yy' in k:
+                    ax.imshow(aw[-1, h, :ylens[-1], :ylens[-1]], aspect="auto")
+                else:
+                    ax.imshow(aw[-1, h, :ylens[-1], :elens[-1]], aspect="auto")
+                # NOTE: show the last utterance in a mini-batch
+                ax.grid(False)
+                ax.set_xlabel("Input (head%d)" % h)
+                ax.set_ylabel("Output (head%d)" % h)
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+                # ax.set_yticks(np.linspace(0, ylens[-1] - 1, ylens[-1]))
+                # ax.set_yticks(np.linspace(0, ylens[-1] - 1, 1), minor=True)
+                # ax.set_yticklabels(ys + [''])
+
+            fig.tight_layout()
+            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
+            plt.close()
 
     def _plot_ctc(self, save_path, n_cols=2, topk=10):
         """Plot CTC posteriors."""
