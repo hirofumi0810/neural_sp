@@ -17,8 +17,22 @@ from tqdm import tqdm
 from neural_sp.models.lm.gated_convlm import GatedConvLM
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.lm.transformerlm import TransformerLM
+from neural_sp.models.lm.transformer_xl import TransformerXL
 
 logger = logging.getLogger(__name__)
+
+
+def check_lm(model):
+    if isinstance(model, RNNLM):
+        return True
+    elif isinstance(model, GatedConvLM):
+        return True
+    elif isinstance(model, TransformerLM):
+        return True
+    elif isinstance(model, TransformerXL):
+        return True
+    else:
+        return False
 
 
 def eval_ppl(models, dataset, batch_size=1, bptt=None,
@@ -40,10 +54,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
     # Reset data counter
     dataset.reset()
 
-    is_lm = False
-    if isinstance(models[0], RNNLM) or isinstance(models[0], GatedConvLM) or isinstance(models[0], TransformerLM):
-        is_lm = True
-
+    is_lm = check_lm(models[0])
     total_loss = 0
     n_tokens = 0
     hidden = None  # for RNNLM

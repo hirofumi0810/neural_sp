@@ -59,10 +59,10 @@ class GatedConvLM(LMBase):
             blocks['conv1'] = ConvGLUBlock(args.kernel_size, args.emb_dim, args.n_units,
                                            bottlececk_dim=args.n_projs,
                                            dropout=dropout)
-            for l in range(args.n_layers - 1):
-                blocks['conv%d' % (l + 2)] = ConvGLUBlock(args.kernel_size, args.n_units, args.n_units,
-                                                          bottlececk_dim=args.n_projs,
-                                                          dropout=dropout)
+            for lth in range(args.n_layers - 1):
+                blocks['conv%d' % (lth + 2)] = ConvGLUBlock(args.kernel_size, args.n_units, args.n_units,
+                                                            bottlececk_dim=args.n_projs,
+                                                            dropout=dropout)
             last_dim = args.n_units
 
         elif model_size == '8':

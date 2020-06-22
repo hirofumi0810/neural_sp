@@ -61,11 +61,11 @@ class GatedConvEncoder(EncoderBase):
         assert len(channels) == len(kernel_sizes)
 
         layers = OrderedDict()
-        for l in range(len(channels)):
-            layers['conv%d' % l] = ConvGLUBlock(kernel_sizes[l][0], input_dim, channels[l],
-                                                weight_norm=True,
-                                                dropout=0.2)
-            input_dim = channels[l]
+        for lth in range(len(channels)):
+            layers['conv%d' % lth] = ConvGLUBlock(kernel_sizes[lth][0], input_dim, channels[lth],
+                                                  weight_norm=True,
+                                                  dropout=0.2)
+            input_dim = channels[lth]
 
         # weight normalization + GLU for the last fully-connected layer
         self.fc_glu = nn.utils.weight_norm(nn.Linear(input_dim, input_dim * 2),

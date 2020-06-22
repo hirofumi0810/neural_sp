@@ -41,7 +41,7 @@ def eval_word(models, dataset, recog_params, epoch,
 
     """
     # Reset data counter
-    dataset.reset()
+    dataset.reset(recog_params['recog_batch_size'])
 
     if recog_dir is None:
         recog_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])

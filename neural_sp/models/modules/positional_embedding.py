@@ -54,7 +54,7 @@ class PositionalEncoding(nn.Module):
                                          kernel_size=conv_kernel_size)
             layers = []
             conv_nlayers = int(pe_type.replace('1dconv', '')[0])
-            for l in range(conv_nlayers):
+            for _ in range(conv_nlayers):
                 layers.append(copy.deepcopy(causal_conv1d))
                 layers.append(nn.LayerNorm(d_model, eps=layer_norm_eps))
                 layers.append(nn.ReLU())

@@ -241,7 +241,7 @@ class RNNDecoder(DecoderBase):
                 self.proj = repeat(nn.Linear(n_units, n_projs), n_layers)
             self.dropout = nn.Dropout(p=dropout)
             dec_odim = enc_n_units + emb_dim
-            for l in range(n_layers):
+            for lth in range(n_layers):
                 self.rnn += [cell(dec_odim, n_units)]
                 dec_odim = n_units
                 if self.n_projs > 0:
@@ -286,10 +286,10 @@ class RNNDecoder(DecoderBase):
             assert lm_init.n_units_null_context == enc_n_units
 
             # RNN
-            for l in range(lm_init.n_layers):
-                for n, p in lm_init.rnn[l].named_parameters():
-                    assert getattr(self.rnn[l], n).size() == p.size()
-                    getattr(self.rnn[l], n).data = p.data
+            for lth in range(lm_init.n_layers):
+                for n, p in lm_init.rnn[lth].named_parameters():
+                    assert getattr(self.rnn[lth], n).size() == p.size()
+                    getattr(self.rnn[lth], n).data = p.data
                     logger.info('Overwrite %s' % n)
 
             # embedding
@@ -1159,11 +1159,11 @@ class RNNDecoder(DecoderBase):
                                        'cxs': torch.cat([beam['lmstate']['cxs'] for beam in hyps], dim=1)}
                         elif trfm_lm:
                             if isinstance(lm, TransformerLM):
-                                lmstate = [torch.cat([beam['lmstate'][l] for beam in hyps], dim=0)
-                                           for l in range(lm.n_layers)]
+                                lmstate = [torch.cat([beam['lmstate'][lth] for beam in hyps], dim=0)
+                                           for lth in range(lm.n_layers)]
                             elif t > 0:
-                                lmstate = [torch.cat([beam['lmstate'][l] for beam in hyps], dim=0)
-                                           for l in range(lm.n_layers)]
+                                lmstate = [torch.cat([beam['lmstate'][lth] for beam in hyps], dim=0)
+                                           for lth in range(lm.n_layers)]
 
                     if self.lm is not None:  # cold/deep fusion
                         lmout, lmstate, scores_lm = self.lm.predict(y, lmstate)

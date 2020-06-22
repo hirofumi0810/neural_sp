@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright 2018 Kyoto University (Hirofumi Inaguma)
+# Copyright 2018 Kyoto University (Hirofumi Inylensguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 """Custom class for data parallel training."""
@@ -9,6 +9,8 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+
+import torch.nn as nn
 
 from torch.nn import DataParallel
 from torch.nn.parallel.scatter_gather import gather
@@ -37,3 +39,22 @@ class CustomDataParallel(DataParallel):
             return gather(losses, output_device, dim=self.dim).mean(), observation_mean
         else:
             raise ValueError(n_returns)
+
+
+class CPUWrapperASR(nn.Module):
+    def __init__(self, model):
+        super(CPUWrapperASR, self).__init__()
+        self.module = model
+
+    def forward(self, batch, task, is_eval=False, teacher=None, teacher_lm=None):
+        return self.module(batch, task, is_eval, teacher, teacher_lm)
+
+
+class CPUWrapperLM(nn.Module):
+    def __init__(self, model):
+        super(CPUWrapperLM, self).__init__()
+        self.module = model
+
+    def forward(self, ys, state=None, is_eval=False, n_caches=0,
+                ylens=[], predict_last=False):
+        return self.module(ys, state, is_eval, n_caches, ylens, predict_last)
