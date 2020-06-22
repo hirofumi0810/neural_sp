@@ -529,6 +529,7 @@ class RNNDecoder(DecoderBase):
         self.score.reset()
         aw, aws = None, []
         betas = []
+        p_chooses = []
         lmout, lmstate = None, None
 
         ys_emb = self.dropout_emb(self.embed(ys_in))
@@ -545,11 +546,13 @@ class RNNDecoder(DecoderBase):
             # Recurrency -> Score -> Generate
             y_emb = self.dropout_emb(self.embed(
                 self.output(logits[-1]).detach().argmax(-1))) if is_sample else ys_emb[:, t:t + 1]
-            dstates, cv, aw, attn_v, beta = self.decode_step(
+            dstates, cv, aw, attn_v, beta, p_choose = self.decode_step(
                 eouts, dstates, cv, y_emb, src_mask, aw, lmout, mode='parallel')
             aws.append(aw)  # `[B, H, 1, T]`
             if beta is not None:
                 betas.append(beta)  # `[B, H, 1, T]`
+            if p_choose is not None:
+                p_chooses.append(p_choose)  # `[B, H, 1, T]`
             logits.append(attn_v)
 
         # for attention plot
@@ -562,6 +565,9 @@ class RNNDecoder(DecoderBase):
             if len(betas) > 0:
                 betas = torch.cat(betas, dim=2)  # `[B, H, L, T]`
                 self.aws_dict['xy_aws_beta'] = tensor2np(betas)
+            if len(p_chooses) > 0:
+                p_chooses = torch.cat(p_chooses, dim=2)  # `[B, H, L, T]`
+                self.aws_dict['xy_aws_p_choose'] = tensor2np(p_chooses)
 
         logits = self.output(torch.cat(logits, dim=1))
         return logits
@@ -602,6 +608,7 @@ class RNNDecoder(DecoderBase):
         self.score.reset()
         aw, aws = None, []
         betas = []
+        p_chooses = []
         lmout, lmstate = None, None
 
         ys_emb = self.dropout_emb(self.embed(ys_in))
@@ -621,12 +628,14 @@ class RNNDecoder(DecoderBase):
             # Recurrency -> Score -> Generate
             y_emb = self.dropout_emb(self.embed(
                 self.output(logits[-1]).detach().argmax(-1))) if is_sample else ys_emb[:, t:t + 1]
-            dstates, cv, aw, attn_v, beta = self.decode_step(
+            dstates, cv, aw, attn_v, beta, p_choose = self.decode_step(
                 eouts, dstates, cv, y_emb, src_mask, aw, lmout, mode='parallel',
                 trigger_point=trigger_points[:, t] if trigger_points is not None else None)
             aws.append(aw)  # `[B, H, 1, T]`
             if beta is not None:
                 betas.append(beta)  # `[B, H, 1, T]`
+            if p_choose is not None:
+                p_chooses.append(p_choose)  # `[B, H, 1, T]`
             logits.append(attn_v)
 
             if self.training and self.discourse_aware:
@@ -661,6 +670,9 @@ class RNNDecoder(DecoderBase):
             if len(betas) > 0:
                 betas = torch.cat(betas, dim=2)  # `[B, H, L, T]`
                 self.aws_dict['xy_aws_beta'] = tensor2np(betas)
+            if len(p_chooses) > 0:
+                p_chooses = torch.cat(p_chooses, dim=2)  # `[B, H, L, T]`
+                self.aws_dict['xy_p_choose'] = tensor2np(p_chooses)
 
         n_heads = aws.size(1)  # mono
 
@@ -725,10 +737,10 @@ class RNNDecoder(DecoderBase):
     def decode_step(self, eouts, dstates, cv, y_emb, mask, aw, lmout,
                     mode='hard', trigger_point=None, cache=True):
         dstates = self.recurrency(torch.cat([y_emb, cv], dim=-1), dstates['dstate'])
-        cv, aw, beta = self.score(eouts, eouts, dstates['dout_score'], mask, aw,
-                                  cache=cache, mode=mode, trigger_point=trigger_point)
+        cv, aw, beta, p_choose = self.score(eouts, eouts, dstates['dout_score'], mask, aw,
+                                            cache=cache, mode=mode, trigger_point=trigger_point)
         attn_v = self.generate(cv, dstates['dout_gen'], lmout)
-        return dstates, cv, aw, attn_v, beta
+        return dstates, cv, aw, attn_v, beta, p_choose
 
     def zero_state(self, bs):
         """Initialize decoder state.
@@ -877,7 +889,7 @@ class RNNDecoder(DecoderBase):
 
             # Recurrency -> Score -> Generate
             y_emb = self.dropout_emb(self.embed(y))
-            dstates, cv, aw, attn_v, _ = self.decode_step(
+            dstates, cv, aw, attn_v, _, _ = self.decode_step(
                 eouts, dstates, cv, y_emb, src_mask, aw, lmout,
                 trigger_point=trigger_points[:, t] if trigger_points is not None else None)
             aws_batch += [aw]  # `[B, H, 1, T]`
@@ -1129,7 +1141,7 @@ class RNNDecoder(DecoderBase):
                                                                cache=lmstate if cache_states else None)
 
                 # for the main model
-                dstates, cv, aw, attn_v, _ = self.decode_step(
+                dstates, cv, aw, attn_v, _, _ = self.decode_step(
                     eouts[b:b + 1, :elens[b]].repeat([cv.size(0), 1, 1]),
                     dstates, cv, self.dropout_emb(self.embed(y)), None, aw, lmout)
                 probs = torch.softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
@@ -1145,7 +1157,7 @@ class RNNDecoder(DecoderBase):
                             cxs_e = torch.cat([beam['dstates'][i_e]['dstate'][1] for beam in hyps], dim=1)
                         dstates_e = {'dstate': (hxs_e, cxs_e)}
 
-                        dstate_e, cv_e, aw_e, attn_v_e, _ = dec.decode_step(
+                        dstate_e, cv_e, aw_e, attn_v_e, _, _ = dec.decode_step(
                             ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]].repeat([cv_e.size(0), 1, 1]),
                             dstates_e, cv_e, dec.dropout_emb(dec.embed(y)), None, aw_e, lmout)
 

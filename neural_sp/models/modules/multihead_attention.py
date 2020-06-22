@@ -94,8 +94,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask, aw_prev=None,
-                cache=False, mode='', trigger_point=None,
-                eps_wait=-1):
+                cache=False, mode='', trigger_point=None, eps_wait=-1):
         """Forward pass.
 
         Args:
@@ -112,6 +111,7 @@ class MultiheadAttentionMechanism(nn.Module):
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, H, qlen, klen]`
             beta: dummy interface for MoChA
+            p_choose: dummy interface for MoChA
 
         """
         bs, klen = key.size()[: 2]
@@ -162,4 +162,4 @@ class MultiheadAttentionMechanism(nn.Module):
         cv = self.w_out(cv)
         aw = aw.permute(0, 3, 1, 2)  # `[B, H, qlen, klen]`
 
-        return cv, aw, None
+        return cv, aw, None, None
