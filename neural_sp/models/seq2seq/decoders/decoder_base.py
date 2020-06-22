@@ -12,11 +12,18 @@ from __future__ import print_function
 
 import logging
 import numpy as np
+import os
 import torch
+import shutil
 
 from neural_sp.models.base import ModelBase
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import tensor2np
+from neural_sp.utils import mkdir_join
+
+import matplotlib
+matplotlib.use('Agg')
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +53,45 @@ class DecoderBase(ModelBase):
     def beam_search(self, eouts, elens, params, idx2token):
         raise NotImplementedError
 
-    def _plot_attention(self):
-        raise NotImplementedError
+    def _plot_attention(self, save_path, n_cols=1):
+        pass
+
+    def _plot_ctc(self, save_path, n_cols=2, topk=10):
+        """Plot CTC posteriors."""
+        assert self.ctc_weight > 0
+        from matplotlib import pyplot as plt
+
+        _save_path = mkdir_join(save_path, 'ctc')
+
+        # Clean directory
+        if _save_path is not None and os.path.isdir(_save_path):
+            shutil.rmtree(_save_path)
+            os.mkdir(_save_path)
+
+        elen = self.ctc.data_dict['elens'][-1]
+        probs = self.ctc.prob_dict['probs'][-1, :elen]  # `[T, vocab]`
+        # NOTE: show the last utterance in a mini-batch
+
+        topk_ids = np.argsort(probs, axis=1)
+
+        plt.clf()
+        n_frames = probs.shape[0]
+        times_probs = np.arange(n_frames)
+
+        # NOTE: index 0 is reserved for blank
+        for idx in set(topk_ids.reshape(-1).tolist()):
+            if idx == 0:
+                plt.plot(times_probs, probs[:, 0], ':', label='<blank>', color='grey')
+            else:
+                plt.plot(times_probs, probs[:, idx])
+        plt.xlabel(u'Time [frame]', fontsize=12)
+        plt.ylabel('Posteriors', fontsize=12)
+        plt.xticks(list(range(0, int(n_frames) + 1, 10)))
+        plt.yticks(list(range(0, 2, 1)))
+
+        plt.tight_layout()
+        plt.savefig(os.path.join(_save_path, '%s.png' % 'prob'), dvi=500)
+        plt.close()
 
     def decode_ctc(self, eouts, elens, params, idx2token,
                    lm=None, lm_2nd=None, lm_2nd_rev=None,

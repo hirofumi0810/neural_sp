@@ -395,6 +395,7 @@ def main():
         if n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
+            model.module.plot_ctc()
 
         # Ealuate model every 0.1 epoch during MBR training
         if args.mbr_training:
