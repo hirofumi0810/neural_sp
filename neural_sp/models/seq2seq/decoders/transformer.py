@@ -455,7 +455,7 @@ class TransformerDecoder(DecoderBase):
             # NOTE: TransformerXL does not use positional encoding in the token embedding
             # adopt zero-centered offset
             pos_idxs = torch.arange(mlen - 1, -ymax - 1, -1.0, dtype=torch.float)
-            pos_embs = self.pos_emb(pos_idxs)
+            pos_embs = self.pos_emb(pos_idxs, self.device_id)
 
         hidden_states = [out]
         xy_aws_layers = []
@@ -466,11 +466,12 @@ class TransformerDecoder(DecoderBase):
                 hidden_states.append(out)
                 # NOTE: outputs from the last layer is not used for momory
             # Attention padding
-            if layer.xy_aws is not None and 'mocha' in self.attn_type:
+            xy_aws = layer.xy_aws
+            if xy_aws is not None and 'mocha' in self.attn_type:
                 tgt_mask_v2 = (ys_out != self.pad).unsqueeze(1).unsqueeze(3)  # `[B, 1, L, 1]`
-                layer.xy_aws = layer.xy_aws.masked_fill_(tgt_mask_v2.repeat([1, layer.xy_aws.size(1), 1, xmax]) == 0, 0)
+                xy_aws = xy_aws.masked_fill_(tgt_mask_v2.repeat([1, xy_aws.size(1), 1, xmax]) == 0, 0)
                 # NOTE: attention padding is quite effective for quantity loss
-                xy_aws_layers.append(layer.xy_aws.clone())
+                xy_aws_layers.append(xy_aws.clone())
             if not self.training:
                 if layer.yy_aws is not None:
                     self.aws_dict['yy_aws_layer%d' % lth] = tensor2np(layer.yy_aws)
@@ -737,7 +738,7 @@ class TransformerDecoder(DecoderBase):
                     mems = self.init_memory()
                     # adopt zero-centered offset
                     pos_idxs = torch.arange(mlen - 1, -(t + 1) - 1, -1.0, dtype=torch.float)
-                    pos_embs = self.pos_emb(pos_idxs)
+                    pos_embs = self.pos_emb(pos_idxs, self.device_id)
                     out = self.dropout_emb(out)
                     hidden_states = [out]
 
