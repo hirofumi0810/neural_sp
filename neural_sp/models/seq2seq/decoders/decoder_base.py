@@ -54,7 +54,8 @@ class DecoderBase(ModelBase):
 
     def _plot_attention(self, save_path, n_cols=1):
         """Plot attention for each head in all decoder layers."""
-        assert self.att_weight > 0
+        if getattr(self, 'att_weight', 0) == 0:
+            return
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
@@ -97,7 +98,8 @@ class DecoderBase(ModelBase):
 
     def _plot_ctc(self, save_path, n_cols=2, topk=10):
         """Plot CTC posteriors."""
-        assert self.ctc_weight > 0
+        if self.ctc_weight == 0:
+            return
         from matplotlib import pyplot as plt
 
         _save_path = mkdir_join(save_path, 'ctc')
