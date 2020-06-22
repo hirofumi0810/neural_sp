@@ -26,8 +26,8 @@ mocha_std: 1.0
 mocha_quantity_loss_weight: 0.0
 mocha_first_layer: 2  ###
 share_chunkwise_attention: true  ###
-transformer_enc_pe_type: none  ###
-transformer_dec_pe_type: 1dconv3L  ### this is effective
+transformer_enc_pe_type: none
+transformer_dec_pe_type: 1dconv3L
 transformer_d_model: 64
 transformer_d_ff: 256
 transformer_ffn_activation: relu
@@ -44,7 +44,7 @@ print_step: 1
 metric: accuracy
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5
-shuffle_bucket: true  ### this is important
+shuffle_bucket: true
 sort_stop_epoch: 100
 eval_start_epoch: 10
 warmup_n_steps: 10
