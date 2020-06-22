@@ -130,10 +130,11 @@ def test_forward_hard(args):
         out = mocha(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
                     mode='hard', cache=False, eps_wait=-1,
                     efficient_decoding=False)
-        assert len(out) == 3
-        cv, alpha, beta = out
+        assert len(out) == 4
+        cv, alpha, beta, p_choose = out
         assert cv.size() == (batch_size, 1, value.size(2))
         assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
+        assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
         if args['chunk_size'] > 1:
             assert beta is not None
             assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
