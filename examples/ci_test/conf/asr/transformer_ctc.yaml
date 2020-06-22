@@ -29,7 +29,7 @@ optimizer: noam
 n_epochs: 30
 convert_to_sgd_epoch: 100
 print_step: 1
-metric: accuracy
+metric: edit_distance
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5
 shuffle_bucket: true
