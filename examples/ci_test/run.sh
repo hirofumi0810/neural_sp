@@ -16,7 +16,7 @@ stdout=false
 
 ### vocabulary
 unit=char      # word/wp/char/word_char
-vocab=100
+vocab=50
 wp_type=bpe  # bpe/unigram (for wordpiece)
 
 #########################

@@ -17,6 +17,10 @@ cd ./examples/ci_test || exit 1;
 ./run.sh --stage 4 --conf conf/asr/transformer_ctc.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/conformer.yaml || exit 1;
 
+# output unit (default: char)
+./run.sh --stage 0 --conf conf/asr/blstm_las.yaml --unit wp || exit 1;
+# ./run.sh --stage 0 --conf conf/asr/blstm_las.yaml --unit phone || exit 1;
+
 # speed perturbation
 ./run.sh --stage 0 --conf conf/asr/blstm_las.yaml --speed_perturb true || exit 1;
 
