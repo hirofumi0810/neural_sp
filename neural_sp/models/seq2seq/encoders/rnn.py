@@ -210,7 +210,6 @@ class RNNEncoder(EncoderBase):
 
                 # Task specific layer
                 if lth == n_layers_sub1 - 1 and task_specific_layer:
-                    assert not self.lc_bidir
                     self.rnn_sub1 = rnn_i(self._odim, n_units, 1,
                                           batch_first=True,
                                           bidirectional=self.bidirectional)
@@ -328,6 +327,9 @@ class RNNEncoder(EncoderBase):
             # Flip the layer and time loop
             xs, xlens, xs_sub1 = self._forward_streaming(xs, xlens, streaming)
             xlens_sub1 = xlens.clone()
+            if task == 'ys_sub1':
+                eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens_sub1
+                return eouts
         else:
             for lth in range(self.n_layers):
                 self.rnn[lth].flatten_parameters()  # for multi-GPUs

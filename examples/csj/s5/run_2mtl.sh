@@ -226,7 +226,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     echo "                      Dataset preparation (stage:2, sub1)                  "
     echo ============================================================================
 
-    if [ ${unit} = wp ]; then
+    if [ ${unit_sub1} = wp ]; then
         make_vocab.sh --unit ${unit_sub1} --speed_perturb ${speed_perturb} --character_coverage 0.9995 \
             --vocab ${vocab_sub1} --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} \
             ${data} ${dict_sub1} ${data}/${train_set}/text || exit 1;
