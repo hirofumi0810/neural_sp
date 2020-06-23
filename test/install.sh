@@ -43,5 +43,9 @@ git clone https://github.com/HawkAaron/warp-transducer.git
 cd warp-transducer && mkdir build && cd build && cmake .. && make && cd ..
 cd pytorch_binding && python setup.py install && cd ../..
 
+# install sentencepiece
+git clone https://github.com/google/sentencepiece.git
+cd sentencepiece && mkdir build && cd build && (cmake3 .. || cmake ..) && make && cd ../..
+
 # log
 pip freeze
