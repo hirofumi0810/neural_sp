@@ -27,3 +27,8 @@ cd ./examples/ci_test || exit 1;
 # streaming ASR
 # ./run.sh --stage 4 --conf conf/asr/lcblstm_mocha_chunk4040.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/lc_transformer_mma_mono4H_chunk4H_chunk16_from4L_headdrop0.5_64_128_64.yaml || exit 1;
+
+# multi-task
+./run_2mtl.sh --stage 0 --conf conf/asr/blstm_las_2mtl.yaml --unit wp --unit_sub1 char || exit 1;
+./run_2mtl.sh --stage 0 --conf conf/asr/blstm_las_2mtl.yaml --speed_perturb true --unit wp --unit_sub1 char || exit 1;
+# ./run_2mtl.sh --stage 0 --conf conf/asr/blstm_las_2mtl_per_batch.yaml --unit wp --unit_sub1 char || exit 1;
