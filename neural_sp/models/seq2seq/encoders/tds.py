@@ -16,7 +16,7 @@ import math
 import torch
 import torch.nn as nn
 
-from neural_sp.models.seq2seq.encoders.conv import parse_config
+from neural_sp.models.seq2seq.encoders.conv import parse_cnn_config
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class TDSEncoder(EncoderBase):
 
         super(TDSEncoder, self).__init__()
 
-        channels, kernel_sizes, _, _ = parse_config(channels, kernel_sizes, '', '')
+        (channels, kernel_sizes, _, _), _ = parse_cnn_config(channels, kernel_sizes, '', '')
 
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
@@ -59,25 +59,25 @@ class TDSEncoder(EncoderBase):
         assert len(channels) == len(kernel_sizes)
 
         layers = OrderedDict()
-        in_ch = in_channel
+        C_i = in_channel
         in_freq = self.input_freq
-        for l in range(len(channels)):
+        for lth in range(len(channels)):
             # subsample
-            if in_ch != channels[l]:
-                layers['subsample%d' % l] = SubsampelBlock(in_channel=in_ch,
-                                                           out_channel=channels[l],
-                                                           in_freq=in_freq,
-                                                           dropout=dropout)
+            if C_i != channels[lth]:
+                layers['subsample%d' % lth] = SubsampelBlock(in_channel=C_i,
+                                                             out_channel=channels[lth],
+                                                             in_freq=in_freq,
+                                                             dropout=dropout)
 
             # Conv
-            layers['tds%d_block%d' % (channels[l], l)] = TDSBlock(channel=channels[l],
-                                                                  kernel_size=kernel_sizes[l][0],
-                                                                  in_freq=in_freq,
-                                                                  dropout=dropout)
+            layers['tds%d_block%d' % (channels[lth], lth)] = TDSBlock(channel=channels[lth],
+                                                                      kernel_size=kernel_sizes[lth][0],
+                                                                      in_freq=in_freq,
+                                                                      dropout=dropout)
 
-            in_ch = channels[l]
+            C_i = channels[lth]
 
-        self._odim = int(in_ch * in_freq)
+        self._odim = int(C_i * in_freq)
 
         if bottleneck_dim > 0:
             self.bridge = nn.Linear(self._odim, bottleneck_dim)
@@ -111,27 +111,27 @@ class TDSEncoder(EncoderBase):
         """Forward computation.
 
         Args:
-            xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
+            xs (FloatTensor): `[B, T, F]`
             xlens (list): A list of length `[B]`
         Returns:
-            xs (FloatTensor): `[B, T', out_ch * feat_dim]`
+            xs (FloatTensor): `[B, T', C_o * F]`
             xlens (list): A list of length `[B]`
 
         """
-        bs, time, input_dim = xs.size()
-        xs = xs.contiguous().view(bs, time, self.in_channel, input_dim // self.in_channel).transpose(2, 1)
-        # `[B, in_ch, T, input_dim // in_ch]`
+        B, T, F = xs.size()
+        xs = xs.contiguous().view(B, T, self.in_channel, F // self.in_channel).transpose(2, 1)
+        # `[B, C_i, T, F // C_i]`
 
-        xs = self.layers(xs)  # `[B, out_ch, T, feat_dim]`
-        bs, out_ch, time, freq = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, out_ch * feat_dim]`
+        xs = self.layers(xs)  # `[B, C_o, T, F]`
+        B, C_o, T, F = xs.size()
+        xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T, C_o * F]`
 
         # Bridge layer
         if self.bridge is not None:
             xs = self.bridge(xs)
 
         # Update xlens
-        xlens /= 8
+        xlens //= 8
 
         return xs, xlens
 
@@ -153,13 +153,15 @@ class TDSBlock(nn.Module):
         self.channel = channel
         self.in_freq = in_freq
 
+        self.dropout = nn.Dropout(p=dropout)
+
         self.conv2d = nn.Conv2d(in_channels=channel,
                                 out_channels=channel,
                                 kernel_size=(kernel_size, 1),
                                 stride=(1, 1),
-                                padding=(kernel_size // 2, 0))
-        self.dropout1 = nn.Dropout(p=dropout)
-        self.layer_norm1 = nn.LayerNorm(in_freq * channel, eps=1e-6)
+                                padding=(kernel_size // 2, 0),
+                                groups=channel)  # depthwise
+        self.norm1 = nn.LayerNorm(in_freq * channel, eps=1e-12)
 
         # second block
         self.conv1d_1 = nn.Conv2d(in_channels=in_freq * channel,
@@ -167,53 +169,45 @@ class TDSBlock(nn.Module):
                                   kernel_size=1,
                                   stride=1,
                                   padding=0)
-        self.dropout2_1 = nn.Dropout(p=dropout)
         self.conv1d_2 = nn.Conv2d(in_channels=in_freq * channel,
                                   out_channels=in_freq * channel,
                                   kernel_size=1,
                                   stride=1,
                                   padding=0)
-        self.dropout2_2 = nn.Dropout(p=dropout)
-        self.layer_norm2 = nn.LayerNorm(in_freq * channel, eps=1e-6)
+        self.norm2 = nn.LayerNorm(in_freq * channel, eps=1e-12)
 
     def forward(self, xs):
         """Forward computation.
         Args:
-            xs (FloatTensor): `[B, in_ch, T, feat_dim]`
+            xs (FloatTensor): `[B, C_i, T, F]`
         Returns:
-            out (FloatTensor): `[B, out_ch, T, feat_dim]`
+            out (FloatTensor): `[B, C_o, T, F]`
 
         """
-        bs, _, time, _ = xs.size()
+        B, C_i, T, F = xs.size()
 
         # first block
         residual = xs
-        xs = self.conv2d(xs)
-        xs = torch.relu(xs)
-        self.dropout1(xs)
-
-        xs = xs + residual  # `[B, out_ch, T, feat_dim]`
+        xs = self.dropout(torch.relu(self.conv2d(xs)))
+        raise ValueError(xs.size())
+        xs = xs + residual  # `[B, C_o, T, F]`
 
         # layer normalization
-        bs, out_ch, time, feat_dim = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, out_ch * feat_dim]`
-        xs = self.layer_norm1(xs)
-        xs = xs.contiguous().transpose(2, 1).unsqueeze(3)  # `[B, out_ch * feat_dim, T, 1]`
+        B, C_o, T, F = xs.size()
+        xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T, C_o * F]`
+        xs = self.norm1(xs)
+        xs = xs.contiguous().transpose(2, 1).unsqueeze(3)  # `[B, C_o * F, T, 1]`
 
         # second block
         residual = xs
-        xs = self.conv1d_1(xs)
-        xs = torch.relu(xs)
-        self.dropout2_1(xs)
-        xs = self.conv1d_2(xs)
-        self.dropout2_2(xs)
-        xs = xs + residual  # `[B, out_ch * feat_dim, T, 1]`
+        self.dropout(torch.relu(self.conv1d_1(xs)))
+        xs = self.dropout(self.conv1d_2(xs)) + residual  # `[B, C_o * F, T, 1]`
 
         # layer normalization
-        xs = xs.unsqueeze(3)  # `[B, out_ch * feat_dim, T]`
-        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, out_ch * feat_dim]`
-        xs = self.layer_norm2(xs)
-        xs = xs.view(bs, time, out_ch, feat_dim).contiguous().transpose(2, 1)
+        xs = xs.unsqueeze(3)  # `[B, C_o * F, T]`
+        xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T, C_o * F]`
+        xs = self.norm2(xs)
+        xs = xs.view(B, T, C_o, F).contiguous().transpose(2, 1)
 
         return xs
 
@@ -228,26 +222,24 @@ class SubsampelBlock(nn.Module):
                                 stride=(2, 1),
                                 padding=(0, 0))
         self.dropout = nn.Dropout(p=dropout)
-        self.layer_norm = nn.LayerNorm(in_freq * out_channel, eps=1e-6)
+        self.norm = nn.LayerNorm(in_freq * out_channel, eps=1e-12)
 
     def forward(self, xs):
         """Forward computation.
         Args:
-            xs (FloatTensor): `[B, in_ch, T, feat_dim]`
+            xs (FloatTensor): `[B, C_i, T, F]`
         Returns:
-            out (FloatTensor): `[B, out_ch, T, feat_dim]`
+            out (FloatTensor): `[B, C_o, T, F]`
 
         """
         bs, _, time, _ = xs.size()
 
-        xs = self.conv1d(xs)
-        xs = torch.relu(xs)
-        xs = self.dropout(xs)
+        xs = self.dropout(torch.relu(self.conv1d(xs)))
 
         # layer normalization
-        bs, out_ch, time, feat_dim = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, out_ch * feat_dim]`
-        xs = self.layer_norm(xs)
-        xs = xs.view(bs, time, out_ch, feat_dim).contiguous().transpose(2, 1)
+        bs, C_o, time, F = xs.size()
+        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, C_o * F]`
+        xs = self.norm(xs)
+        xs = xs.view(bs, time, C_o, F).contiguous().transpose(2, 1)
 
         return xs

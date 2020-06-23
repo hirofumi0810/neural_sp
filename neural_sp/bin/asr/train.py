@@ -14,7 +14,6 @@ import argparse
 import copy
 import cProfile
 import logging
-import numpy as np
 import os
 from setproctitle import setproctitle
 import shutil
@@ -25,20 +24,17 @@ from tqdm import tqdm
 
 from neural_sp.bin.args_asr import parse_args_train
 from neural_sp.bin.model_name import set_asr_model_name
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import save_config
-from neural_sp.bin.train_utils import set_logger
-from neural_sp.bin.train_utils import set_save_path
+from neural_sp.bin.train_utils import (
+    compute_susampling_factor,
+    load_checkpoint,
+    load_config,
+    save_config,
+    set_logger,
+    set_save_path
+)
 from neural_sp.datasets.asr import Dataset
-from neural_sp.evaluators.accuracy import eval_accuracy
-from neural_sp.evaluators.character import eval_char
-from neural_sp.evaluators.phone import eval_phone
-from neural_sp.evaluators.ppl import eval_ppl
-from neural_sp.evaluators.word import eval_word
-from neural_sp.evaluators.wordpiece import eval_wordpiece
-from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
 from neural_sp.models.data_parallel import CustomDataParallel
+from neural_sp.models.data_parallel import CPUWrapperASR
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.trainers.lr_scheduler import LRScheduler
@@ -66,31 +62,10 @@ def main():
                 setattr(args, k, v)
     recog_params = vars(args)
 
-    # Compute subsampling factor
-    if not args.resume:
-        args.subsample_factor = 1
-        args.subsample_factor_sub1 = 1
-        args.subsample_factor_sub2 = 1
-        subsample = [int(s) for s in args.subsample.split('_')]
-        if args.conv_poolings and 'conv' in args.enc_type:
-            for p in args.conv_poolings.split('_'):
-                args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
-        else:
-            args.subsample_factor = int(np.prod(subsample))
-        if args.train_set_sub1:
-            if args.conv_poolings and 'conv' in args.enc_type:
-                args.subsample_factor_sub1 = args.subsample_factor * \
-                    int(np.prod(subsample[:args.enc_n_layers_sub1 - 1]))
-            else:
-                args.subsample_factor_sub1 = args.subsample_factor
-        if args.train_set_sub2:
-            if args.conv_poolings and 'conv' in args.enc_type:
-                args.subsample_factor_sub2 = args.subsample_factor * \
-                    int(np.prod(subsample[:args.enc_n_layers_sub2 - 1]))
-            else:
-                args.subsample_factor_sub2 = args.subsample_factor
+    args = compute_susampling_factor(args)
 
     # Load dataset
+    batch_size = args.batch_size * args.n_gpus if args.n_gpus >= 1 else args.batch_size
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
                         tsv_path_sub1=args.train_set_sub1,
@@ -105,7 +80,7 @@ def main():
                         wp_model=args.wp_model,
                         wp_model_sub1=args.wp_model_sub1,
                         wp_model_sub2=args.wp_model_sub2,
-                        batch_size=args.batch_size * args.n_gpus,
+                        batch_size=batch_size,
                         n_epochs=args.n_epochs,
                         min_n_frames=args.min_n_frames,
                         max_n_frames=args.max_n_frames,
@@ -135,7 +110,7 @@ def main():
                       wp_model=args.wp_model,
                       wp_model_sub1=args.wp_model_sub1,
                       wp_model_sub2=args.wp_model_sub2,
-                      batch_size=args.batch_size * args.n_gpus,
+                      batch_size=batch_size,
                       min_n_frames=args.min_n_frames,
                       max_n_frames=args.max_n_frames,
                       ctc=args.ctc_weight > 0,
@@ -187,40 +162,7 @@ def main():
     # Model setting
     model = Speech2Text(args, save_path, train_set.idx2token[0])
 
-    if args.resume:
-        is_transformer = 'transformer' in conf['enc_type'] or conf['dec_type'] == 'transformer'
-    else:
-        is_transformer = 'transformer' in args.enc_type or args.dec_type == 'transformer'
-
-    if args.resume:
-        # Set optimizer
-        epoch = int(args.resume.split('-')[-1])
-        optimizer = set_optimizer(model, 'sgd' if epoch > conf['convert_to_sgd_epoch'] else conf['optimizer'],
-                                  conf['lr'], conf['weight_decay'])
-
-        # Wrap optimizer by learning rate scheduler
-        optimizer = LRScheduler(optimizer, conf['lr'],
-                                decay_type=conf['lr_decay_type'],
-                                decay_start_epoch=conf['lr_decay_start_epoch'],
-                                decay_rate=conf['lr_decay_rate'],
-                                decay_patient_n_epochs=conf['lr_decay_patient_n_epochs'],
-                                early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
-                                lower_better=conf['metric'] not in ['accuracy', 'bleu'],
-                                warmup_start_lr=conf['warmup_start_lr'],
-                                warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['transformer_d_model'] if 'transformer_d_model' in conf.keys() else 0,
-                                factor=conf['lr_factor'],
-                                noam=is_transformer,
-                                save_checkpoints_topk=10 if is_transformer else 1)
-
-        # Restore the last saved model
-        load_checkpoint(model, args.resume, optimizer)
-
-        # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
-        if epoch == conf['convert_to_sgd_epoch']:
-            optimizer.convert_to_sgd(model, args.lr, conf['weight_decay'],
-                                     decay_type='always', decay_rate=0.5)
-    else:
+    if not args.resume:
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
         if args.external_lm:
@@ -253,7 +195,7 @@ def main():
             for k, v in conf_init.items():
                 setattr(args_init, k, v)
             model_init = Speech2Text(args_init)
-            load_checkpoint(model_init, args.asr_init)
+            load_checkpoint(args.asr_init, model_init)
 
             # Overwrite parameters
             param_dict = dict(model_init.named_parameters())
@@ -264,23 +206,39 @@ def main():
                     p.data = param_dict[n].data
                     logger.info('Overwrite %s' % n)
 
-        # Set optimizer
+    # Set optimizer
+    resume_epoch = 0
+    if args.resume:
+        resume_epoch = int(args.resume.split('-')[-1])
+        optimizer = set_optimizer(model, 'sgd' if resume_epoch > args.convert_to_sgd_epoch else args.optimizer,
+                                  args.lr, args.weight_decay)
+    else:
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
-        # Wrap optimizer by learning rate scheduler
-        optimizer = LRScheduler(optimizer, args.lr,
-                                decay_type=args.lr_decay_type,
-                                decay_start_epoch=args.lr_decay_start_epoch,
-                                decay_rate=args.lr_decay_rate,
-                                decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
-                                early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
-                                lower_better=args.metric not in ['accuracy', 'bleu'],
-                                warmup_start_lr=args.warmup_start_lr,
-                                warmup_n_steps=args.warmup_n_steps,
-                                model_size=getattr(args, 'transformer_d_model', 0),
-                                factor=args.lr_factor,
-                                noam=is_transformer,
-                                save_checkpoints_topk=10 if is_transformer else 1)
+    # Wrap optimizer by learning rate scheduler
+    is_transformer = 'former' in args.enc_type or args.dec_type == 'former'
+    optimizer = LRScheduler(optimizer, args.lr,
+                            decay_type=args.lr_decay_type,
+                            decay_start_epoch=args.lr_decay_start_epoch,
+                            decay_rate=args.lr_decay_rate,
+                            decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
+                            early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
+                            lower_better=args.metric not in ['accuracy', 'bleu'],
+                            warmup_start_lr=args.warmup_start_lr,
+                            warmup_n_steps=args.warmup_n_steps,
+                            model_size=getattr(args, 'transformer_d_model', 0),
+                            factor=args.lr_factor,
+                            noam=is_transformer,
+                            save_checkpoints_topk=10 if is_transformer else 1)
+
+    if args.resume:
+        # Restore the last saved model
+        load_checkpoint(args.resume, model, optimizer)
+
+        # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
+        if resume_epoch == args.convert_to_sgd_epoch:
+            optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
+                                     decay_type='always', decay_rate=0.5)
 
     # Load the teacher ASR model
     teacher = None
@@ -293,7 +251,7 @@ def main():
         args_teacher.ss_prob = 0
         args.lsm_prob = 0
         teacher = Speech2Text(args_teacher)
-        load_checkpoint(teacher, args.teacher)
+        load_checkpoint(args.teacher, teacher)
 
     # Load the teacher LM
     teacher_lm = None
@@ -304,22 +262,40 @@ def main():
         for k, v in conf_lm.items():
             setattr(args_lm, k, v)
         teacher_lm = build_lm(args_lm)
-        load_checkpoint(teacher_lm, args.teacher_lm)
+        load_checkpoint(args.teacher_lm, teacher_lm)
 
     # GPU setting
+    use_apex = args.train_dtype in ["O0", "O1", "O2", "O3"]
+    amp = None
     if args.n_gpus >= 1:
         model.cudnn_setting(deterministic=not (is_transformer or args.cudnn_benchmark),
                             benchmark=args.cudnn_benchmark)
-        model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
         model.cuda()
+
+        # Mix precision training setting
+        if use_apex:
+            from apex import amp
+            model, optimizer.optimizer = amp.initialize(model, optimizer.optimizer,
+                                                        opt_level=args.train_dtype)
+            from neural_sp.models.seq2seq.decoders.ctc import CTC
+            amp.register_float_function(CTC, "loss_fn")
+            # NOTE: see https://github.com/espnet/espnet/pull/1779
+            amp.init()
+            if args.resume:
+                load_checkpoint(args.resume, amp=amp)
+        model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
+
         if teacher is not None:
             teacher.cuda()
         if teacher_lm is not None:
             teacher_lm.cuda()
+    else:
+        model = CPUWrapperASR(model)
 
     # Set process name
     logger.info('PID: %s' % os.getpid())
     logger.info('USERNAME: %s' % os.uname()[1])
+    logger.info('#GPU: %d' % torch.cuda.device_count())
     setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
@@ -366,7 +342,11 @@ def main():
             loss, observation = model(batch_train, task,
                                       teacher=teacher, teacher_lm=teacher_lm)
             reporter.add(observation)
-            loss.backward()
+            if use_apex:
+                with amp.scale_loss(loss, optimizer.optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()
             loss.detach()  # Trancate the graph
             if accum_n_steps >= args.accum_grad_n_steps:
                 if args.clip_grad_norm > 0:
@@ -415,6 +395,7 @@ def main():
         if n_steps % (args.print_step * 10) == 0:
             reporter.snapshot()
             model.module.plot_attention()
+            model.module.plot_ctc()
 
         # Ealuate model every 0.1 epoch during MBR training
         if args.mbr_training:
@@ -423,8 +404,9 @@ def main():
                 evaluate([model.module], dev_set, recog_params, args,
                          int(train_set.epoch_detail * 10) / 10, logger)
                 # Save the model
-                optimizer.save_checkpoint(model, save_path, remove_old=False,
-                                          epoch_detail=train_set.epoch_detail)
+                optimizer.save_checkpoint(
+                    model, save_path, remove_old=False, amp=amp,
+                    epoch_detail=train_set.epoch_detail)
             epoch_detail_prev = train_set.epoch_detail
 
         # Save checkpoint and evaluate model per epoch
@@ -438,7 +420,8 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                optimizer.save_checkpoint(model, save_path, remove_old=not is_transformer)
+                optimizer.save_checkpoint(
+                    model, save_path, remove_old=not is_transformer, amp=amp)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -449,7 +432,8 @@ def main():
 
                 if optimizer.is_topk or is_transformer:
                     # Save the model
-                    optimizer.save_checkpoint(model, save_path, remove_old=not is_transformer)
+                    optimizer.save_checkpoint(
+                        model, save_path, remove_old=not is_transformer, amp=amp)
 
                     # test
                     if optimizer.is_topk:
@@ -490,35 +474,57 @@ def main():
 
 
 def evaluate(models, dataset, recog_params, args, epoch, logger):
+
     if args.metric == 'edit_distance':
         if args.unit in ['word', 'word_char']:
+            from neural_sp.evaluators.word import eval_word
             metric = eval_word(models, dataset, recog_params, epoch=epoch)[0]
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
+
         elif args.unit == 'wp':
+            from neural_sp.evaluators.wordpiece import eval_wordpiece
             metric, cer = eval_wordpiece(models, dataset, recog_params, epoch=epoch)
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, cer))
+
         elif 'char' in args.unit:
-            metric, cer = eval_char(models, dataset, recog_params, epoch=epoch)
-            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
+            from neural_sp.evaluators.character import eval_char
+            wer, cer = eval_char(models, dataset, recog_params, epoch=epoch)
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, wer))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, cer))
+            if dataset.corpus in ['aishell1']:
+                metric = cer
+            else:
+                metric = wer
+
         elif 'phone' in args.unit:
+            from neural_sp.evaluators.phone import eval_phone
             metric = eval_phone(models, dataset, recog_params, epoch=epoch)
             logger.info('PER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
+
     elif args.metric == 'ppl':
+        from neural_sp.evaluators.ppl import eval_ppl
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[0]
         logger.info('PPL (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+
     elif args.metric == 'loss':
+        from neural_sp.evaluators.ppl import eval_ppl
         metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
-        logger.info('Loss (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+        logger.info('Loss (%s, ep:%d): %.5f' % (dataset.set, epoch, metric))
+
     elif args.metric == 'accuracy':
+        from neural_sp.evaluators.accuracy import eval_accuracy
         metric = eval_accuracy(models, dataset, batch_size=args.batch_size)
         logger.info('Accuracy (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+
     elif args.metric == 'bleu':
+        from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
         metric = eval_wordpiece_bleu(models, dataset, recog_params, epoch=epoch)
         logger.info('BLEU (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+
     else:
         raise NotImplementedError(args.metric)
+
     return metric
 
 

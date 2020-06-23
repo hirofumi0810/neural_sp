@@ -16,7 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.glu import ConvGLUBlock
-from neural_sp.models.seq2seq.encoders.conv import parse_config
+from neural_sp.models.seq2seq.encoders.conv import parse_cnn_config
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class GatedConvEncoder(EncoderBase):
         dropout (float) probability to drop nodes in hidden-hidden connection
         batch_norm (bool): if True, apply batch normalization
         bottleneck_dim (int): dimension of the bottleneck layer after the last layer
-        param_init (float):
+        param_init (float): model initialization parameter
 
     """
 
@@ -50,7 +50,7 @@ class GatedConvEncoder(EncoderBase):
 
         super(GatedConvEncoder, self).__init__()
 
-        channels, kernel_sizes, _, _ = parse_config(channels, kernel_sizes, '', '')
+        (channels, kernel_sizes, _, _), _ = parse_cnn_config(channels, kernel_sizes, '', '')
 
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
@@ -61,11 +61,11 @@ class GatedConvEncoder(EncoderBase):
         assert len(channels) == len(kernel_sizes)
 
         layers = OrderedDict()
-        for l in range(len(channels)):
-            layers['conv%d' % l] = ConvGLUBlock(kernel_sizes[l][0], input_dim, channels[l],
-                                                weight_norm=True,
-                                                dropout=0.2)
-            input_dim = channels[l]
+        for lth in range(len(channels)):
+            layers['conv%d' % lth] = ConvGLUBlock(kernel_sizes[lth][0], input_dim, channels[lth],
+                                                  weight_norm=True,
+                                                  dropout=0.2)
+            input_dim = channels[lth]
 
         # weight normalization + GLU for the last fully-connected layer
         self.fc_glu = nn.utils.weight_norm(nn.Linear(input_dim, input_dim * 2),

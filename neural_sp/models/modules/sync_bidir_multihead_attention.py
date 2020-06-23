@@ -16,7 +16,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-NEG_INF = float(np.finfo(np.float32).min)
 
 logger = logging.getLogger(__name__)
 
@@ -170,9 +169,11 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
 
         # Compute attention weights
         if self.tgt_mask is not None:
+            NEG_INF = float(np.finfo(torch.tensor(0, dtype=e_fwd_h.dtype).numpy().dtype).min)
             e_fwd_h = e_fwd_h.masked_fill_(self.tgt_mask == 0, NEG_INF)  # `[B, H, qlen, klen]`
             e_bwd_h = e_bwd_h.masked_fill_(self.tgt_mask == 0, NEG_INF)  # `[B, H, qlen, klen]`
         if self.identity_mask is not None:
+            NEG_INF = float(np.finfo(torch.tensor(0, dtype=e_fwd_f.dtype).numpy().dtype).min)
             e_fwd_f = e_fwd_f.masked_fill_(self.identity_mask == 0, NEG_INF)  # `[B, H, qlen, klen]`
             e_bwd_f = e_bwd_f.masked_fill_(self.identity_mask == 0, NEG_INF)  # `[B, H, qlen, klen]`
         aw_fwd_h = self.dropout(torch.softmax(e_fwd_h, dim=-1))

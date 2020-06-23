@@ -12,12 +12,50 @@ from __future__ import print_function
 
 import functools
 import logging
+import numpy as np
 import os
 import time
 import torch
 import yaml
 
 logger = logging.getLogger(__name__)
+
+
+def compute_susampling_factor(args):
+    """Register subsample factor to args.
+
+        Args:
+            args (Namespace):
+        Returns:
+            args (Namespace):
+
+    """
+    if args.resume:
+        return args
+
+    args.subsample_factor = 1
+    args.subsample_factor_sub1 = 1
+    args.subsample_factor_sub2 = 1
+    subsample = [int(s) for s in args.subsample.split('_')]
+    if 'conv' in args.enc_type and args.conv_poolings:
+        for p in args.conv_poolings.split('_'):
+            args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
+    else:
+        args.subsample_factor = int(np.prod(subsample))
+    if args.train_set_sub1:
+        if 'conv' in args.enc_type and args.conv_poolings:
+            args.subsample_factor_sub1 = args.subsample_factor * \
+                int(np.prod(subsample[:args.enc_n_layers_sub1 - 1]))
+        else:
+            args.subsample_factor_sub1 = args.subsample_factor
+    if args.train_set_sub2:
+        if 'conv' in args.enc_type and args.conv_poolings:
+            args.subsample_factor_sub2 = args.subsample_factor * \
+                int(np.prod(subsample[:args.enc_n_layers_sub2 - 1]))
+        else:
+            args.subsample_factor_sub2 = args.subsample_factor
+
+    return args
 
 
 def measure_time(func):
@@ -95,13 +133,14 @@ def set_save_path(save_path):
     return save_path_new
 
 
-def load_checkpoint(model, checkpoint_path, optimizer=None):
+def load_checkpoint(checkpoint_path, model=None, optimizer=None, amp=None):
     """Load checkpoint.
 
     Args:
-        model (torch.nn.Module):
         checkpoint_path (str): path to the saved model (model..epoch-*)
+        model (torch.nn.Module):
         optimizer (LRScheduler): optimizer wrapped by LRScheduler class
+        amp ():
     Returns:
         topk_list (list): list of (epoch, metric)
 
@@ -120,15 +159,8 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
         logger.info("=> Loading checkpoint (epoch:%d): %s" % (epoch + 1, checkpoint_path))
     else:
         logger.info("=> Loading checkpoint: %s" % checkpoint_path)
-    try:
+    if model is not None:
         model.load_state_dict(checkpoint['model_state_dict'])
-    except KeyError:
-        model.load_state_dict(checkpoint['state_dict'])
-        checkpoint['model_state_dict'] = checkpoint['state_dict']
-        checkpoint['optimizer_state_dict'] = checkpoint['optimizer']
-        del checkpoint['state_dict']
-        del checkpoint['optimizer']
-        torch.save(checkpoint, checkpoint_path + '.tmp')
 
     # Restore optimizer
     if optimizer is not None:
@@ -139,6 +171,12 @@ def load_checkpoint(model, checkpoint_path, optimizer=None):
             optimizer.optimizer.param_groups[0]['params'].append(param_group)
     else:
         logger.warning('Optimizer is not loaded.')
+
+    # Restore apex
+    if amp is not None:
+        amp.load_state_dict(checkpoint['amp_state_dict'])
+    else:
+        logger.warning('amp is not loaded.')
 
     if 'optimizer_state_dict' in checkpoint.keys() and 'topk_list' in checkpoint['optimizer_state_dict'].keys():
         topk_list = checkpoint['optimizer_state_dict']['topk_list']

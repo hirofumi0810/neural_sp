@@ -57,6 +57,8 @@ def register_args_encoder(parser, args):
         from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder as module
     elif 'transformer' in args.enc_type:
         from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder as module
+    elif 'conformer' in args.enc_type:
+        from neural_sp.models.seq2seq.encoders.conformer import ConformerEncoder as module
     else:
         from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder as module
     if hasattr(module, 'add_args'):
@@ -94,6 +96,9 @@ def build_parser():
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--cudnn_benchmark', type=strtobool, default=True,
                         help='use CuDNN benchmark mode')
+    parser.add_argument("--train_dtype", default="float32",
+                        choices=["float16", "float32", "float64", "O0", "O1", "O2", "O3"],
+                        help="Data type for training")
     parser.add_argument('--model_save_dir', type=str, default=False,
                         help='directory to save a model')
     parser.add_argument('--resume', type=str, default=False, nargs='?',
@@ -167,6 +172,7 @@ def build_parser():
                         choices=['blstm', 'lstm', 'bgru', 'gru',
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
                                  'transformer', 'conv_transformer',
+                                 'conformer', 'conv_conformer',
                                  'conv', 'tds', 'gated_conv'],
                         help='type of the encoder')
     parser.add_argument('--enc_n_layers', type=int, default=5,
@@ -196,31 +202,6 @@ def build_parser():
                         help='')
     parser.add_argument('--ctc_fc_list_sub2', type=str, default="", nargs='?',
                         help='')
-    # streaming decoder
-    parser.add_argument('--mocha_n_heads_mono', type=int, default=1,
-                        help='number of heads for monotonic attention')
-    parser.add_argument('--mocha_n_heads_chunk', type=int, default=1,
-                        help='number of heads for chunkwise attention')
-    parser.add_argument('--mocha_chunk_size', type=int, default=0,
-                        help='chunk size for MoChA/MMA. -1 means infinite lookback.')
-    parser.add_argument('--mocha_init_r', type=float, default=-4,
-                        help='')
-    parser.add_argument('--mocha_eps', type=float, default=1e-6,
-                        help='')
-    parser.add_argument('--mocha_std', type=float, default=1.0,
-                        help='')
-    parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
-                        help='remove denominator (set to 1) in the alpha recurrence')
-    parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
-                        help='1dconv for MoChA/MMA')
-    parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
-                        help='quantity loss weight for MoChA/MMA')
-    parser.add_argument('--mocha_latency_metric', type=str, default=False,
-                        choices=[False, 'decot', 'minlt', 'ctc_sync',
-                                 'interval', 'frame_dal', 'ctc_dal'],
-                        help='differentiable latency metric for MoChA/MMA')
-    parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
-                        help='latency loss weight for MoChA/MMA')
     # optimization
     parser.add_argument('--batch_size', type=int, default=50,
                         help='mini-batch size')
@@ -377,6 +358,8 @@ def build_parser():
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='tsv file paths for the evaluation sets')
+    parser.add_argument('--recog_first_n_utt', type=int, default=-1,
+                        help='recognize the first N utterances for quick evalaution')
     parser.add_argument('--recog_model', type=str, default=False, nargs='+',
                         help='model path')
     parser.add_argument('--recog_model_bwd', type=str, default=False, nargs='?',

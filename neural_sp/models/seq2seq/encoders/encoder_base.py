@@ -50,17 +50,26 @@ class EncoderBase(ModelBase):
     def forward(self, xs, xlens, task):
         raise NotImplementedError
 
+    def turn_on_ceil_mode(self, encoder):
+        if isinstance(encoder, torch.nn.Module):
+            for name, module in encoder.named_children():
+                if isinstance(module, torch.nn.MaxPool2d):
+                    module.ceil_mode = True
+                    logging.debug('Turn ON ceil_mode in %s.' % name)
+                else:
+                    self.turn_on_ceil_mode(module)
+
     def turn_off_ceil_mode(self, encoder):
         if isinstance(encoder, torch.nn.Module):
             for name, module in encoder.named_children():
                 if isinstance(module, torch.nn.MaxPool2d):
                     module.ceil_mode = False
-                    logging.debug('Turn off ceil_mode in %s.' % name)
+                    logging.debug('Turn OFF ceil_mode in %s.' % name)
                 else:
                     self.turn_off_ceil_mode(module)
 
     def _plot_attention(self, save_path, n_cols=2):
-        """Plot attention for each head in all layers."""
+        """Plot attention for each head in all encoder layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
@@ -71,9 +80,9 @@ class EncoderBase(ModelBase):
             shutil.rmtree(_save_path)
             os.mkdir(_save_path)
 
-        for k, aw in self.aws_dict.items():
-            elens = self.data_dict['elens']
+        elens = self.data_dict['elens']
 
+        for k, aw in self.aws_dict.items():
             plt.clf()
             n_heads = aw.shape[1]
             n_cols_tmp = 1 if n_heads == 1 else n_cols
@@ -91,3 +100,21 @@ class EncoderBase(ModelBase):
             fig.tight_layout()
             fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
             plt.close()
+
+
+def blockwise(xs, N_l, N_c, N_r):
+    bs, xmax, idim = xs.size()
+
+    n_blocks = xmax // N_c
+    if xmax % N_c != 0:
+        n_blocks += 1
+    xs_tmp = xs.new_zeros(bs, n_blocks, N_l + N_c + N_r, idim)
+    xs_pad = torch.cat([xs.new_zeros(bs, N_l, idim),
+                        xs,
+                        xs.new_zeros(bs, N_r, idim)], dim=1)
+    for blc_id, t in enumerate(range(N_l, N_l + xmax, N_c)):
+        xs_chunk = xs_pad[:, t - N_l:t + (N_c + N_r)]
+        xs_tmp[:, blc_id, :xs_chunk.size(1), :] = xs_chunk
+    xs = xs_tmp.view(bs * n_blocks, N_l + N_c + N_r, idim)
+
+    return xs

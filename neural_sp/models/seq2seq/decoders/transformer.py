@@ -15,9 +15,7 @@ from distutils.util import strtobool
 import logging
 import math
 import numpy as np
-import os
 import random
-import shutil
 import torch
 import torch.nn as nn
 
@@ -35,7 +33,6 @@ from neural_sp.models.torch_utils import append_sos_eos
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
-from neural_sp.utils import mkdir_join
 
 import matplotlib
 matplotlib.use('Agg')
@@ -60,7 +57,7 @@ class TransformerDecoder(DecoderBase):
         n_layers (int): number of self-attention layers
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
-        d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
+        ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
@@ -102,7 +99,7 @@ class TransformerDecoder(DecoderBase):
 
     def __init__(self, special_symbols,
                  enc_n_units, attn_type, n_heads, n_layers,
-                 d_model, d_ff, d_ff_bottleneck_dim,
+                 d_model, d_ff, ffn_bottleneck_dim,
                  pe_type, layer_norm_eps, ffn_activation,
                  vocab, tie_embedding,
                  dropout, dropout_emb, dropout_att, dropout_layer, dropout_head,
@@ -130,9 +127,9 @@ class TransformerDecoder(DecoderBase):
         self.n_heads = n_heads
         self.pe_type = pe_type
         self.lsm_prob = lsm_prob
+        self.att_weight = global_weight - ctc_weight
         self.ctc_weight = ctc_weight
         self.bwd = backward
-        self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
 
         self.prev_spk = ''
@@ -172,7 +169,7 @@ class TransformerDecoder(DecoderBase):
                            param_init=0.1,
                            backward=backward)
 
-        if ctc_weight < global_weight:
+        if self.att_weight > 0:
             # token embedding
             self.embed = nn.Embedding(self.vocab, d_model, padding_idx=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type, param_init)
@@ -184,8 +181,8 @@ class TransformerDecoder(DecoderBase):
                 self.dropout_emb = nn.Dropout(p=dropout_emb)  # for token embedding
                 self.pos_emb = XLPositionalEmbedding(d_model, dropout_emb)
                 if self.mem_len > 0:
-                    self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
-                    self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+                    self.u = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+                    self.v = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
                     # NOTE: u and v are global parameters
             # self-attention
             self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
@@ -203,7 +200,7 @@ class TransformerDecoder(DecoderBase):
                 mocha_1dconv=mocha_1dconv,
                 dropout_head=dropout_head,
                 lm_fusion=lm_fusion,
-                d_ff_bottleneck_dim=d_ff_bottleneck_dim,
+                ffn_bottleneck_dim=ffn_bottleneck_dim,
                 share_chunkwise_attention=share_chunkwise_attention)) for lth in range(n_layers)])
             self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
             self.output = nn.Linear(d_model, self.vocab)
@@ -224,23 +221,17 @@ class TransformerDecoder(DecoderBase):
         if not hasattr(args, 'transformer_d_model'):
             group.add_argument('--transformer_d_model', type=int, default=256,
                                help='number of units in the MHA layer')
-        if not hasattr(args, 'transformer_d_ff'):
             group.add_argument('--transformer_d_ff', type=int, default=2048,
                                help='number of units in the FFN layer')
-        if not hasattr(args, 'transformer_d_ff_bottleneck_dim'):
-            group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
+            group.add_argument('--transformer_ffn_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
-        if not hasattr(args, 'transformer_n_heads'):
             group.add_argument('--transformer_n_heads', type=int, default=4,
                                help='number of heads in the MHA layer')
-        if not hasattr(args, 'transformer_layer_norm_eps'):
             group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                                help='epsilon value for layer normalization')
-        if not hasattr(args, 'transformer_ffn_activation'):
             group.add_argument('--transformer_ffn_activation', type=str, default='relu',
                                choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
                                help='nonlinear activation for the FFN layer')
-        if not hasattr(args, 'transformer_param_init'):
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initializatin')
@@ -257,6 +248,30 @@ class TransformerDecoder(DecoderBase):
         group.add_argument('--dropout_head', type=float, default=0.0,
                            help='HeadDrop probability for masking out a head in the Transformer decoder')
         # streaming
+        parser.add_argument('--mocha_n_heads_mono', type=int, default=1,
+                            help='number of heads for monotonic attention')
+        parser.add_argument('--mocha_n_heads_chunk', type=int, default=1,
+                            help='number of heads for chunkwise attention')
+        parser.add_argument('--mocha_chunk_size', type=int, default=1,
+                            help='chunk size for MMA. -1 means infinite lookback.')
+        parser.add_argument('--mocha_init_r', type=float, default=-4,
+                            help='initialization of bias parameter for monotonic attention')
+        parser.add_argument('--mocha_eps', type=float, default=1e-6,
+                            help='epsilon value to avoid numerical instability for MoChA')
+        parser.add_argument('--mocha_std', type=float, default=1.0,
+                            help='standard deviation of Gaussian noise for MoChA during training')
+        parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
+                            help='remove denominator (set to 1) in the alpha recurrence in MoChA')
+        parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
+                            help='1dconv for MMA')
+        parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
+                            help='quantity loss weight for MMA')
+        parser.add_argument('--mocha_latency_metric', type=str, default=False,
+                            choices=[False, 'ctc_sync'],
+                            help='differentiable latency metric for MMA')
+        parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
+                            help='latency loss weight for MMA')
+        # MMA specific
         group.add_argument('--mocha_first_layer', type=int, default=1,
                            help='the initial layer to have a MMA function')
         group.add_argument('--mocha_head_divergence_loss_weight', type=float, default=0.0,
@@ -359,7 +374,7 @@ class TransformerDecoder(DecoderBase):
                 loss += loss_ctc * self.ctc_weight
 
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or 'ctc' not in task):
+        if self.att_weight > 0 and (task == 'all' or 'ctc' not in task):
             loss_att, acc_att, ppl_att, losses_auxiliary = self.forward_att(
                 eouts, elens, ys, trigger_points=trigger_points)
             observation['loss_att'] = loss_att.item()
@@ -369,7 +384,7 @@ class TransformerDecoder(DecoderBase):
                 if self._quantity_loss_weight > 0:
                     loss_att += losses_auxiliary['loss_quantity'] * self._quantity_loss_weight
                 observation['loss_quantity'] = losses_auxiliary['loss_quantity'].item()
-            if self.headdiv_loss_weight > 0 or trigger_points is not None:
+            if self.headdiv_loss_weight > 0:
                 loss_att += losses_auxiliary['loss_headdiv'] * self.headdiv_loss_weight
                 observation['loss_headdiv'] = losses_auxiliary['loss_headdiv'].item()
             if self.latency_metric:
@@ -379,7 +394,7 @@ class TransformerDecoder(DecoderBase):
             if self.mtl_per_batch:
                 loss += loss_att
             else:
-                loss += loss_att * (self.global_weight - self.ctc_weight)
+                loss += loss_att * self.att_weight
 
         observation['loss'] = loss.item()
         return loss, observation
@@ -445,27 +460,27 @@ class TransformerDecoder(DecoderBase):
         hidden_states = [out]
         xy_aws_layers = []
         for lth, (mem, layer) in enumerate(zip(mems, self.layers)):
-            out, yy_aws, xy_aws, xy_aws_beta, yy_aws_lm = layer(
-                out, tgt_mask, eouts, src_mask, mode='parallel', lmout=lmout,
-                pos_embs=pos_embs, memory=mem, u=self.u, v=self.v)
+            out = layer(out, tgt_mask, eouts, src_mask, mode='parallel', lmout=lmout,
+                        pos_embs=pos_embs, memory=mem, u=self.u, v=self.v)
             if lth < self.n_layers - 1:
                 hidden_states.append(out)
                 # NOTE: outputs from the last layer is not used for momory
             # Attention padding
+            xy_aws = layer.xy_aws
             if xy_aws is not None and 'mocha' in self.attn_type:
                 tgt_mask_v2 = (ys_out != self.pad).unsqueeze(1).unsqueeze(3)  # `[B, 1, L, 1]`
                 xy_aws = xy_aws.masked_fill_(tgt_mask_v2.repeat([1, xy_aws.size(1), 1, xmax]) == 0, 0)
                 # NOTE: attention padding is quite effective for quantity loss
                 xy_aws_layers.append(xy_aws.clone())
             if not self.training:
-                if yy_aws is not None:
-                    self.aws_dict['yy_aws_layer%d' % lth] = tensor2np(yy_aws)
-                if xy_aws is not None:
-                    self.aws_dict['xy_aws_layer%d' % lth] = tensor2np(xy_aws)
-                if xy_aws_beta is not None:
-                    self.aws_dict['xy_aws_beta_layer%d' % lth] = tensor2np(xy_aws_beta)
-                if yy_aws_lm is not None:
-                    self.aws_dict['yy_aws_lm_layer%d' % lth] = tensor2np(yy_aws_lm)
+                if layer.yy_aws is not None:
+                    self.aws_dict['yy_aws_layer%d' % lth] = tensor2np(layer.yy_aws)
+                if layer.xy_aws is not None:
+                    self.aws_dict['xy_aws_layer%d' % lth] = tensor2np(layer.xy_aws)
+                if layer.xy_aws_beta is not None:
+                    self.aws_dict['xy_aws_beta_layer%d' % lth] = tensor2np(layer.xy_aws_beta)
+                if layer.yy_aws_lm is not None:
+                    self.aws_dict['yy_aws_lm_layer%d' % lth] = tensor2np(layer.yy_aws_lm)
         logits = self.output(self.norm_out(out))
 
         # for knowledge distillation
@@ -491,47 +506,6 @@ class TransformerDecoder(DecoderBase):
         acc = compute_accuracy(logits, ys_out, self.pad)
 
         return loss, acc, ppl, losses_auxiliary
-
-    def _plot_attention(self, save_path, n_cols=2):
-        """Plot attention for each head in all layers."""
-        from matplotlib import pyplot as plt
-        from matplotlib.ticker import MaxNLocator
-
-        _save_path = mkdir_join(save_path, 'dec_att_weights')
-
-        # Clean directory
-        if _save_path is not None and os.path.isdir(_save_path):
-            shutil.rmtree(_save_path)
-            os.mkdir(_save_path)
-
-        for k, aw in self.aws_dict.items():
-            elens = self.data_dict['elens']
-            ylens = self.data_dict['ylens']
-            # ys = self.data_dict['ys']
-
-            plt.clf()
-            n_heads = aw.shape[1]
-            n_cols_tmp = 1 if n_heads == 1 else n_cols * max(1, n_heads // 4)
-            fig, axes = plt.subplots(max(1, n_heads // n_cols_tmp), n_cols_tmp,
-                                     figsize=(20 * max(1, n_heads // 4), 8), squeeze=False)
-            for h in range(n_heads):
-                ax = axes[h // n_cols_tmp, h % n_cols_tmp]
-                if 'xy' in k:
-                    ax.imshow(aw[-1, h, :ylens[-1], :elens[-1]], aspect="auto")
-                else:
-                    ax.imshow(aw[-1, h, :ylens[-1], :ylens[-1]], aspect="auto")
-                ax.grid(False)
-                ax.set_xlabel("Input (head%d)" % h)
-                ax.set_ylabel("Output (head%d)" % h)
-                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-                # ax.set_yticks(np.linspace(0, ylens[-1] - 1, ylens[-1]))
-                # ax.set_yticks(np.linspace(0, ylens[-1] - 1, 1), minor=True)
-                # ax.set_yticklabels(ys + [''])
-
-            fig.tight_layout()
-            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
-            plt.close()
 
     def greedy(self, eouts, elens, max_len_ratio, idx2token,
                exclude_eos=False, refs_id=None, utt_ids=None, speakers=None,
@@ -569,7 +543,7 @@ class TransformerDecoder(DecoderBase):
             new_cache = [None] * self.n_layers
             out = self.pos_enc(self.embed(ys))  # scaled
             for lth, layer in enumerate(self.layers):
-                out, _, xy_aws, _, _ = layer(out, causal_mask, eouts, None, cache=cache[lth])
+                out = layer(out, causal_mask, eouts, None, cache=cache[lth])
                 new_cache[lth] = out
 
             if cache_states:
@@ -596,7 +570,7 @@ class TransformerDecoder(DecoderBase):
 
         # Concatenate in L dimension
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
-        xy_aws = tensor2np(xy_aws.transpose(1, 2).transpose(2, 3))
+        xy_aws = tensor2np(layer.xy_aws.transpose(1, 2).transpose(2, 3))
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.bwd:
@@ -772,25 +746,24 @@ class TransformerDecoder(DecoderBase):
                 eouts_b = eouts[b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
                 new_cache = [None] * self.n_layers
                 xy_aws_all_layers = []
-                xy_aws = None
                 lth_s = self.mocha_first_layer - 1
                 for lth, layer in enumerate(self.layers):
                     if self.memory_transformer:
-                        out, _, xy_aws, _, _ = layer(
+                        out = layer(
                             out, causal_mask, eouts_b, None,
                             cache=cache[lth],
                             pos_embs=pos_embs, memory=mems[lth], u=self.u, v=self.v)
                         hidden_states.append(out)
                     else:
-                        out, _, xy_aws, _, _ = layer(
+                        out = layer(
                             out, causal_mask, eouts_b, None,
                             cache=cache[lth],
                             xy_aws_prev=xy_aws_prev[:, lth - lth_s] if lth >= lth_s and t > 0 else None,
                             eps_wait=eps_wait)
 
                     new_cache[lth] = out
-                    if xy_aws is not None:
-                        xy_aws_all_layers.append(xy_aws)
+                    if layer.xy_aws is not None:
+                        xy_aws_all_layers.append(layer.xy_aws)
                 logits = self.output(self.norm_out(out))
                 probs = torch.softmax(logits[:, -1] * softmax_smoothing, dim=1)
                 xy_aws_all_layers = torch.stack(xy_aws_all_layers, dim=1)  # `[B, H, n_layers, L, T]`
@@ -802,16 +775,16 @@ class TransformerDecoder(DecoderBase):
                     # ensmbl_cache = []
                     # cache_e = [None] * self.n_layers
                     # if cache_states and t > 0:
-                    #     for l in range(self.n_layers):
-                    #         cache_e[l] = torch.cat([beam['ensmbl_cache'][l] for beam in hyps], dim=0)
+                    #     for lth in range(self.n_layers):
+                    #         cache_e[lth] = torch.cat([beam['ensmbl_cache'][lth] for beam in hyps], dim=0)
                     for i_e, dec in enumerate(ensmbl_decs):
                         out_e = dec.pos_enc(dec.embed(ys))  # scaled
                         eouts_e = ensmbl_eouts[i_e][b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
                         new_cache_e = [None] * dec.n_layers
-                        for l in range(dec.n_layers):
-                            out_e, _, xy_aws_e, _, _ = dec.layers[l](out_e, causal_mask, eouts_e, None,
-                                                                     cache=cache[lth])
-                            new_cache_e[l] = out_e
+                        for lth in range(dec.n_layers):
+                            out_e, _, xy_aws_e, _, _ = dec.layers[lth](out_e, causal_mask, eouts_e, None,
+                                                                       cache=cache[lth])
+                            new_cache_e[lth] = out_e
                         ensmbl_new_cache.append(new_cache_e)
                         logits_e = dec.output(dec.norm_out(out_e))
                         probs += torch.softmax(logits_e[:, -1] * softmax_smoothing, dim=1)

@@ -25,7 +25,7 @@ def make_args(**kwargs):
         n_layers=6,
         d_model=64,
         d_ff=256,
-        d_ff_bottleneck_dim=0,
+        ffn_bottleneck_dim=0,
         layer_norm_eps=1e-12,
         ffn_activation='relu',
         pe_type='add',
@@ -111,7 +111,7 @@ def make_args(**kwargs):
         ({'backward': True, 'ctc_weight': 0.5}),
         ({'backward': True, 'ctc_weight': 1.0}),
         # bottleneck
-        ({'d_ff_bottleneck_dim': 256}),
+        ({'ffn_bottleneck_dim': 256}),
         # RNNLM init
         # LM integration
     ]

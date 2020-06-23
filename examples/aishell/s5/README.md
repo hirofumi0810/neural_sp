@@ -1,3 +1,15 @@
+### BLSTM-LAS
+- conf: `conf/asr/blstm_las.yaml`
+- lm_conf: `conf/lm/rnnlm.yaml`
+- decoding parameters
+  - beam width: 5
+
+| Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
+| -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
+|dev|14326|205341|94.6|5.2|0.1|0.1|**5.5**|38.9|
+|test|7176|104765|93.9|5.9|0.2|0.1|**6.2**|42.3|
+
+
 ### Transformer
 - conf: `conf/asr/transformer.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
@@ -54,7 +66,7 @@
 |dev|14326|205341|94.1|5.7|0.2|0.1|**6.0**|41.0|
 |test|7176|104765|93.6|6.1|0.3|0.1|**6.5**|42.6|
 
-- conf: `conf/asr/transformer_mocha_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8.yaml`
+- conf: `conf/asr/transformer_mma/transformer_mma_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
   - n_average: 10
@@ -64,7 +76,7 @@
 
 
 ### Streaming Transformer-MMA, subsample1/8, 96/64/32
-- conf: `conf/asr/lc_transformer_mocha_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8_96_64_32.yaml`
+- conf: `conf/asr/transformer_mma/lc_transformer_mma_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8_96_64_32.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
   - n_average: 10
@@ -79,7 +91,7 @@
 
 
 ### Streaming Transformer-MMA, subsample1/8, 64/128/64
-- conf: `conf/asr/lc_transformer_mocha_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8_64_128_64.yaml`
+- conf: `conf/asr/transformer_mma/lc_transformer_mma_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8_64_128_64.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
   - n_average: 10

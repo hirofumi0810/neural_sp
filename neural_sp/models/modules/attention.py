@@ -14,8 +14,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-NEG_INF = float(np.finfo(np.float32).min)
-
 
 class AttentionMechanism(nn.Module):
     """Single-head attention layer.
@@ -118,6 +116,7 @@ class AttentionMechanism(nn.Module):
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
             beta: dummy interface for MoChA
+            p_choose_i: dummy interface for MoChA
 
         """
         bs, klen = key.size()[:2]
@@ -141,7 +140,7 @@ class AttentionMechanism(nn.Module):
 
         # for batch beam search decoding
         if self.key.size(0) != query.size(0):
-            self.key = self.key[0:1, :, :].repeat([query.size(0), 1, 1])
+            self.key = self.key[0: 1, :, :].repeat([query.size(0), 1, 1])
 
         if self.atype == 'no':
             raise NotImplementedError
@@ -167,6 +166,8 @@ class AttentionMechanism(nn.Module):
             e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1)))).transpose(2, 1)
         assert e.size() == (bs, qlen, klen), (e.size(), (bs, qlen, klen))
 
+        NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
+
         # Mask the right part from the trigger point
         if self.atype == 'triggered_attention':
             assert trigger_point is not None
@@ -183,4 +184,4 @@ class AttentionMechanism(nn.Module):
         aw = self.dropout(aw)
         cv = torch.bmm(aw, value)
 
-        return cv, aw.unsqueeze(1), None
+        return cv, aw.unsqueeze(1), None, None

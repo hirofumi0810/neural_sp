@@ -67,6 +67,7 @@ def main():
                           unit_sub1=args.unit_sub1,
                           unit_sub2=args.unit_sub2,
                           batch_size=args.recog_batch_size,
+                          first_n_utterances=args.recog_first_n_utt,
                           is_test=True)
 
         if i == 0:
@@ -75,12 +76,12 @@ def main():
             epoch = int(args.recog_model[0].split('-')[-1])
             if args.recog_n_average > 1:
                 # Model averaging for Transformer
-                # topk_list = load_checkpoint(model, args.recog_model[0])
+                # topk_list = load_checkpoint(args.recog_model[0], model)
                 model = average_checkpoints(model, args.recog_model[0],
                                             # topk_list=topk_list,
                                             n_average=args.recog_n_average)
             else:
-                load_checkpoint(model, args.recog_model[0])
+                load_checkpoint(args.recog_model[0], model)
 
             # Ensemble (different models)
             ensemble_models = [model]
@@ -92,7 +93,7 @@ def main():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
-                    load_checkpoint(model_e, recog_model_e)
+                    load_checkpoint(recog_model_e, model_e)
                     if args.recog_n_gpus >= 1:
                         model_e.cuda()
                     ensemble_models += [model_e]
@@ -109,7 +110,7 @@ def main():
                     lm = build_lm(args_lm, wordlm=args.recog_wordlm,
                                   lm_dict_path=os.path.join(os.path.dirname(args.recog_lm), 'dict.txt'),
                                   asr_dict_path=os.path.join(dir_name, 'dict.txt'))
-                    load_checkpoint(lm, args.recog_lm)
+                    load_checkpoint(args.recog_lm, lm)
                     if args_lm.backward:
                         model.lm_bwd = lm
                     else:
@@ -123,7 +124,7 @@ def main():
                         setattr(args_lm_second, k, v)
                     args_lm_second.recog_mem_len = args.recog_mem_len
                     lm_second = build_lm(args_lm_second)
-                    load_checkpoint(lm_second, args.recog_lm_second)
+                    load_checkpoint(args.recog_lm_second, lm_second)
                     model.lm_second = lm_second
 
                 # second path (bakward)
@@ -134,7 +135,7 @@ def main():
                         setattr(args_lm_bwd, k, v)
                     args_lm_bwd.recog_mem_len = args.recog_mem_len
                     lm_bwd = build_lm(args_lm_bwd)
-                    load_checkpoint(lm_bwd, args.recog_lm_bwd)
+                    load_checkpoint(args.recog_lm_bwd, lm_bwd)
                     model.lm_bwd = lm_bwd
 
             if not args.recog_unit:

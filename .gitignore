@@ -7,3 +7,8 @@ __pycache__
 .nfs*
 *.done
 neural_sp.egg-info
+
+# CI test
+data
+results
+sample

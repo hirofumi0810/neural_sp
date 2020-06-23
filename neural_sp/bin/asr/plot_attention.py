@@ -20,9 +20,11 @@ import sys
 from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_attention_weights
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import (
+    load_checkpoint,
+    load_config,
+    set_logger
+)
 from neural_sp.datasets.asr import Dataset
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
@@ -64,7 +66,7 @@ def main():
                 model = average_checkpoints(model, args.recog_model[0],
                                             n_average=args.recog_n_average)
             else:
-                load_checkpoint(model, args.recog_model[0])
+                load_checkpoint(args.recog_model[0], model)
 
             # Ensemble (different models)
             ensemble_models = [model]
@@ -76,7 +78,7 @@ def main():
                         if 'recog' not in k:
                             setattr(args_e, k, v)
                     model_e = Speech2Text(args_e)
-                    load_checkpoint(model_e, recog_model_e)
+                    load_checkpoint(recog_model_e, model_e)
                     if args.recog_n_gpus >= 1:
                         model_e.cuda()
                     ensemble_models += [model_e]
@@ -90,7 +92,7 @@ def main():
                     for k, v in conf_lm.items():
                         setattr(args_lm, k, v)
                     lm = build_lm(args_lm)
-                    load_checkpoint(lm, args.recog_lm)
+                    load_checkpoint(args.recog_lm, lm)
                     if args_lm.backward:
                         model.lm_bwd = lm
                     else:

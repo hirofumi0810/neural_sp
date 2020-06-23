@@ -54,7 +54,7 @@ class Char2idx(object):
         """
         token_ids = []
         words = text.replace(' ', '<space>').split('<space>')
-        for i,  w in enumerate(words):
+        for i, w in enumerate(words):
             if w in self.nlsyms_list:
                 token_ids.append(self.token2idx[w])
             else:
@@ -81,7 +81,7 @@ class Idx2char(object):
 
     """
 
-    def __init__(self, dict_path,  remove_list=[]):
+    def __init__(self, dict_path, remove_list=[]):
         self.remove_list = remove_list
 
         # Load a dictionary file

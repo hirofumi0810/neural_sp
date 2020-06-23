@@ -39,7 +39,7 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
 
     """
     # Reset data counter
-    dataset.reset()
+    dataset.reset(recog_params['recog_batch_size'])
 
     if recog_dir is None:
         recog_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
@@ -58,6 +58,8 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     n_sub_w, n_ins_w, n_del_w = 0, 0, 0
     n_sub_c, n_ins_c, n_del_c = 0, 0, 0
     n_word, n_char = 0, 0
+    n_streamable, quantity_rate, n_utt = 0, 0, 0
+    last_success_frame_ratio = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
@@ -130,6 +132,12 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
                     n_ins_c += ins_b
                     n_del_c += del_b
                     n_char += len(ref)
+                    if models[0].streamable():
+                        n_streamable += 1
+                    else:
+                        last_success_frame_ratio += models[0].last_success_frame_ratio()
+                    quantity_rate += models[0].quantity_rate()
+                    n_utt += 1
 
                 if progressbar:
                     pbar.update(1)
@@ -154,6 +162,11 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
         n_ins_c /= n_char
         n_del_c /= n_char
 
+        if n_utt - n_streamable > 0:
+            last_success_frame_ratio /= (n_utt - n_streamable)
+        n_streamable /= n_utt
+        quantity_rate /= n_utt
+
         if fine_grained:
             for len_bin, wers in sorted(wer_dist.items(), key=lambda x: x[0]):
                 logger.info('  WER (%s): %.2f %% (%d)' % (dataset.set, sum(wers) / len(wers), len_bin))
@@ -162,5 +175,9 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
     logger.debug('CER (%s): %.2f %%' % (dataset.set, cer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
+
+    logger.info('Streamablility (%s): %.2f %%' % (dataset.set, n_streamable * 100))
+    logger.info('Quantity rate (%s): %.2f %%' % (dataset.set, quantity_rate * 100))
+    logger.info('Last success frame ratio (%s): %.2f %%' % (dataset.set, last_success_frame_ratio))
 
     return wer, cer

@@ -24,6 +24,7 @@ from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
+from neural_sp.models.seq2seq.encoders.encoder_base import blockwise
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
@@ -45,7 +46,7 @@ class TransformerEncoder(EncoderBase):
         n_layers_sub2 (int): number of layers in the 2nd auxiliary task
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
-        d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
+        ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
         last_proj_dim (int): dimension of the last projection layer
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
@@ -75,7 +76,7 @@ class TransformerEncoder(EncoderBase):
 
     def __init__(self, input_dim, enc_type, n_heads,
                  n_layers, n_layers_sub1, n_layers_sub2,
-                 d_model, d_ff, d_ff_bottleneck_dim, last_proj_dim,
+                 d_model, d_ff, ffn_bottleneck_dim, last_proj_dim,
                  pe_type, layer_norm_eps, ffn_activation,
                  dropout_in, dropout, dropout_att, dropout_layer,
                  n_stacks, n_splices,
@@ -95,15 +96,17 @@ class TransformerEncoder(EncoderBase):
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.pe_type = pe_type
+        self.scale = math.sqrt(d_model)
 
-        # for streaming TransformerXL encoder
+        # for streaming encoder
         self.chunk_size_left = chunk_size_left
         self.chunk_size_current = chunk_size_current
         self.chunk_size_right = chunk_size_right
         self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
+
+        # TransformerXL like streaming encoder
         self.memory_transformer = ('transformer_xl' in enc_type)
         self.mem_len = chunk_size_left
-        self.scale = math.sqrt(d_model)
         if self.memory_transformer:
             assert pe_type == 'relative'
             assert chunk_size_left > 0
@@ -155,8 +158,8 @@ class TransformerEncoder(EncoderBase):
         self.v = None
         if self.memory_transformer:
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
-            self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
-            self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+            self.u = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+            self.v = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
             # NOTE: u and v are global parameters
         elif pe_type == 'relative':
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)  # TODO: dropout_in?
@@ -167,7 +170,7 @@ class TransformerEncoder(EncoderBase):
             d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init,
             relative_attention=self.pos_emb is not None,
-            d_ff_bottleneck_dim=d_ff_bottleneck_dim))
+            ffn_bottleneck_dim=ffn_bottleneck_dim))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
@@ -178,7 +181,7 @@ class TransformerEncoder(EncoderBase):
                 self.layer_sub1 = TransformerEncoderBlock(
                     d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init,
-                    d_ff_bottleneck_dim=d_ff_bottleneck_dim)
+                    ffn_bottleneck_dim=ffn_bottleneck_dim)
             self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
@@ -188,7 +191,7 @@ class TransformerEncoder(EncoderBase):
                 self.layer_sub2 = TransformerEncoderBlock(
                     d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init,
-                    d_ff_bottleneck_dim=d_ff_bottleneck_dim)
+                    ffn_bottleneck_dim=ffn_bottleneck_dim)
             self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
@@ -209,27 +212,22 @@ class TransformerEncoder(EncoderBase):
         if not hasattr(args, 'transformer_d_model'):
             group.add_argument('--transformer_d_model', type=int, default=256,
                                help='number of units in the MHA layer')
-        if not hasattr(args, 'transformer_d_ff'):
             group.add_argument('--transformer_d_ff', type=int, default=2048,
                                help='number of units in the FFN layer')
-        if not hasattr(args, 'transformer_d_ff_bottleneck_dim'):
             group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
-        if not hasattr(args, 'transformer_n_heads'):
+            group.add_argument('--transformer_input_bottleneck_dim', type=int, default=0,
+                               help='bottleneck dimension in the FFN layer')
             group.add_argument('--transformer_n_heads', type=int, default=4,
                                help='number of heads in the MHA layer')
-        if not hasattr(args, 'transformer_layer_norm_eps'):
             group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                                help='epsilon value for layer normalization')
-        if not hasattr(args, 'transformer_ffn_activation'):
             group.add_argument('--transformer_ffn_activation', type=str, default='relu',
                                choices=['relu', 'gelu', 'gelu_accurate', 'glu', 'swish'],
                                help='nonlinear activation for the FFN layer')
-        if not hasattr(args, 'transformer_param_init'):
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initializatin')
-        # NOTE: These checks are important to avoid conflict with args in Transformer decoder
 
         # Transformer encoder specific
         group.add_argument('--transformer_enc_pe_type', type=str, default='add',
@@ -331,19 +329,10 @@ class TransformerEncoder(EncoderBase):
         N_c = self.chunk_size_current
         N_r = self.chunk_size_right
 
+        bs, xmax, idim = xs.size()
+
         if self.latency_controlled:
-            bs, xmax, idim = xs.size()
-            n_blocks = xmax // N_c
-            if xmax % N_c != 0:
-                n_blocks += 1
-            xs_tmp = xs.new_zeros(bs, n_blocks, N_l + N_c + N_r, idim)
-            xs_pad = torch.cat([xs.new_zeros(bs, N_l, idim),
-                                xs,
-                                xs.new_zeros(bs, N_r, idim)], dim=1)
-            for blc_id, t in enumerate(range(N_l, N_l + xmax, N_c)):
-                xs_chunk = xs_pad[:, t - N_l:t + (N_c + N_r)]
-                xs_tmp[:, blc_id, :xs_chunk.size(1), :] = xs_chunk
-            xs = xs_tmp.view(bs * n_blocks, N_l + N_c + N_r, idim)
+            xs = blockwise(xs, N_l, N_c, N_r)
 
         if self.conv is None:
             xs = self.embed(xs)
@@ -356,9 +345,10 @@ class TransformerEncoder(EncoderBase):
 
         if self.latency_controlled:
             # streaming Transformer encoder
-            N_l = max(0, N_l // self.subsampling_factor)
-            N_c = N_c // self.subsampling_factor
+            _N_l = max(0, N_l // self.subsampling_factor)
+            _N_c = N_c // self.subsampling_factor
 
+            n_blocks = xs.size(0) // bs
             emax = xmax // self.subsampling_factor
             if xmax % self.subsampling_factor != 0:
                 emax += 1
@@ -373,21 +363,21 @@ class TransformerEncoder(EncoderBase):
 
             xx_mask = None  # NOTE: no mask
             for lth, layer in enumerate(self.layers):
-                xs, xx_aws = layer(xs, xx_mask, pos_embs=pos_embs)
+                xs = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
-                    n_heads = xx_aws.size(1)
-                    xx_aws = xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
-                    xx_aws = xx_aws.view(bs, n_blocks, n_heads, N_c, N_c)
+                    n_heads = layer.xx_aws.size(1)
+                    xx_aws = layer.xx_aws[:, :, _N_l:_N_l + _N_c, _N_l:_N_l + _N_c]
+                    xx_aws = xx_aws.view(bs, n_blocks, n_heads, _N_c, _N_c)
                     xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
                     for blc_id in range(n_blocks):
-                        offset = blc_id * N_c
-                        emax_blc = xx_aws_center[:, :, offset:offset + N_c].size(2)
+                        offset = blc_id * _N_c
+                        emax_blc = xx_aws_center[:, :, offset:offset + _N_c].size(2)
                         xx_aws_chunk = xx_aws[:, blc_id, :, :emax_blc, :emax_blc]
-                        xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
+                        xx_aws_center[:, :, offset:offset + _N_c, offset:offset + _N_c] = xx_aws_chunk
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
 
             # Extract the center region
-            xs = xs[:, N_l:N_l + N_c]  # `[B * n_blocks, N_c // subsampling_factor, d_model]`
+            xs = xs[:, _N_l:_N_l + _N_c]  # `[B * n_blocks, _N_c, d_model]`
             xs = xs.contiguous().view(bs, -1, xs.size(2))
             xs = xs[:, :emax]
 
@@ -403,16 +393,16 @@ class TransformerEncoder(EncoderBase):
                 xs = self.pos_enc(xs, scale=True)
 
             # Create the self-attention mask
-            xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xmax])
+            xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).repeat([1, xmax, 1])
 
             for lth, layer in enumerate(self.layers):
-                xs, xx_aws = layer(xs, xx_mask, pos_embs=pos_embs)
+                xs = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
-                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws)
+                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
 
                 # Pick up outputs in the sub task before the projection layer
                 if lth == self.n_layers_sub1 - 1:
-                    xs_sub1 = self.layer_sub1(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
+                    xs_sub1 = self.layer_sub1(xs, xx_mask) if self.task_specific_layer else xs.clone()
                     xs_sub1 = self.norm_out_sub1(xs_sub1)
                     if self.bridge_sub1 is not None:
                         xs_sub1 = self.bridge_sub1(xs_sub1)
@@ -420,7 +410,7 @@ class TransformerEncoder(EncoderBase):
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
                         return eouts
                 if lth == self.n_layers_sub2 - 1:
-                    xs_sub2 = self.layer_sub2(xs, xx_mask)[0] if self.task_specific_layer else xs.clone()
+                    xs_sub2 = self.layer_sub2(xs, xx_mask) if self.task_specific_layer else xs.clone()
                     xs_sub2 = self.norm_out_sub2(xs_sub2)
                     if self.bridge_sub2 is not None:
                         xs_sub2 = self.bridge_sub2(xs_sub2)
@@ -457,14 +447,14 @@ class TransformerEncoderBlock(nn.Module):
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
         relative_attention (bool): relative postional encoding
-        d_ff_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
+        ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
 
     """
 
     def __init__(self, d_model, d_ff, n_heads,
                  dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init,
-                 relative_attention=False, d_ff_bottleneck_dim=0):
+                 relative_attention=False, ffn_bottleneck_dim=0):
         super(TransformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
@@ -484,36 +474,47 @@ class TransformerEncoderBlock(nn.Module):
         # position-wise feed-forward
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
-                                d_ff_bottleneck_dim)
+                                ffn_bottleneck_dim)
 
         self.dropout = nn.Dropout(dropout)
         self.dropout_layer = dropout_layer
+
+        self.reset_visualization()
+
+    @property
+    def xx_aws(self):
+        return self._xx_aws
+
+    def reset_visualization(self):
+        self._xx_aws = None
 
     def forward(self, xs, xx_mask=None, pos_embs=None, memory=None, u=None, v=None):
         """Transformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
-            xx_mask (ByteTensor): `[B, T, T]`
+            xx_mask (ByteTensor): `[B, T (query), T (key)]`
             pos_embs (LongTensor): `[L, 1, d_model]`
             memory (FloatTensor): `[B, mlen, d_model]`
             u (FloatTensor): global parameter for relative positional embedding
             v (FloatTensor): global parameter for relative positional embedding
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
-            xx_aws (FloatTensor): `[B, H, T, T]`
 
         """
+        self.reset_visualization()
+
+        # LayerDrop
         if self.dropout_layer > 0 and self.training and random.random() >= self.dropout_layer:
-            return xs, None
+            return xs
 
         # self-attention
         residual = xs
         xs = self.norm1(xs)
         if self.relative_attention:
-            xs, xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)  # k/q/m
+            xs, self._xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)  # k/q/m
         else:
-            xs, xx_aws, _ = self.self_attn(xs, xs, xs, mask=xx_mask)  # k/v/q
+            xs, self._xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)[:2]  # k/v/q
         xs = self.dropout(xs) + residual
 
         # position-wise feed-forward
@@ -522,4 +523,4 @@ class TransformerEncoderBlock(nn.Module):
         xs = self.feed_forward(xs)
         xs = self.dropout(xs) + residual
 
-        return xs, xx_aws
+        return xs

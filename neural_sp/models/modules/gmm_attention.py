@@ -15,8 +15,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-NEG_INF = float(np.finfo(np.float32).min)
-
 
 class GMMAttention(nn.Module):
     def __init__(self, kdim, qdim, adim, n_mixtures, vfloor=1e-6):
@@ -63,6 +61,7 @@ class GMMAttention(nn.Module):
             cv (FloatTensor): `[B, 1, vdim]`
             alpha (FloatTensor): `[B, klen, 1]`
             beta: dummy interface for MoChA
+            p_choose_i: dummy interface for MoChA
 
         """
         bs, klen = key.size()[:2]
@@ -93,7 +92,8 @@ class GMMAttention(nn.Module):
 
         # Compute context vector
         if self.mask is not None:
+            NEG_INF = float(np.finfo(torch.tensor(0, dtype=myu.dtype).numpy().dtype).min)
             aw = aw.masked_fill_(self.mask == 0, NEG_INF)
         cv = torch.bmm(aw, value)
 
-        return cv, aw.unsqueeze(2), None
+        return cv, aw.unsqueeze(2), None, None

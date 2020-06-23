@@ -36,10 +36,10 @@ class ConvEncoder(EncoderBase):
         dropout (float): probability to drop nodes in hidden-hidden connection
         batch_norm (bool): apply batch normalization
         layer_norm (bool): apply layer normalization
-        residual (bool): add residual connections
+        residual (bool): apply residual connections
         bottleneck_dim (int): dimension of the bridge layer after the last layer
-        param_init (float): model initialization parameter
-        layer_norm_eps (float):
+        param_init (float): mean of uniform distribution for parameter initialization
+        layer_norm_eps (float): epsilon value for layer normalization
 
     """
 
@@ -50,8 +50,10 @@ class ConvEncoder(EncoderBase):
 
         super(ConvEncoder, self).__init__()
 
-        channels, kernel_sizes, strides, poolings = parse_config(channels, kernel_sizes, strides, poolings)
+        (channels, kernel_sizes, strides, poolings), is_1dconv = parse_cnn_config(
+            channels, kernel_sizes, strides, poolings)
 
+        self.is_1dconv = is_1dconv
         self.in_channel = in_channel
         assert input_dim % in_channel == 0
         self.input_freq = input_dim // in_channel
@@ -62,25 +64,37 @@ class ConvEncoder(EncoderBase):
         assert len(channels) == len(kernel_sizes) == len(strides) == len(poolings)
 
         self.layers = nn.ModuleList()
-        C_i = in_channel
+        C_i = input_dim if is_1dconv else in_channel
         in_freq = self.input_freq
         for lth in range(len(channels)):
-            block = Conv2LBlock(input_dim=in_freq,
-                                in_channel=C_i,
-                                out_channel=channels[lth],
-                                kernel_size=kernel_sizes[lth],  # (T,F)
-                                stride=strides[lth],  # (T,F)
-                                pooling=poolings[lth],  # (T,F)
-                                dropout=dropout,
-                                batch_norm=batch_norm,
-                                layer_norm=layer_norm,
-                                layer_norm_eps=layer_norm_eps,
-                                residual=residual)
+            if is_1dconv:
+                block = Conv1dBlock(in_channel=C_i,
+                                    out_channel=channels[lth],
+                                    kernel_size=kernel_sizes[lth],  # T
+                                    stride=strides[lth],  # T
+                                    pooling=poolings[lth],  # T
+                                    dropout=dropout,
+                                    batch_norm=batch_norm,
+                                    layer_norm=layer_norm,
+                                    layer_norm_eps=layer_norm_eps,
+                                    residual=residual)
+            else:
+                block = Conv2dBlock(input_dim=in_freq,
+                                    in_channel=C_i,
+                                    out_channel=channels[lth],
+                                    kernel_size=kernel_sizes[lth],  # (T,F)
+                                    stride=strides[lth],  # (T,F)
+                                    pooling=poolings[lth],  # (T,F)
+                                    dropout=dropout,
+                                    batch_norm=batch_norm,
+                                    layer_norm=layer_norm,
+                                    layer_norm_eps=layer_norm_eps,
+                                    residual=residual)
             self.layers += [block]
             in_freq = block.output_dim
             C_i = channels[lth]
 
-        self._odim = int(C_i * in_freq)
+        self._odim = C_i if is_1dconv else int(C_i * in_freq)
 
         if bottleneck_dim > 0:
             self.bridge = nn.Linear(self._odim, bottleneck_dim)
@@ -90,7 +104,7 @@ class ConvEncoder(EncoderBase):
         self._factor = 1
         if poolings:
             for p in poolings:
-                self._factor *= p[0]
+                self._factor *= p if is_1dconv else p[0]
 
         self.reset_parameters(param_init)
 
@@ -116,13 +130,25 @@ class ConvEncoder(EncoderBase):
                            help='dimension of the bottleneck layer between CNN and the subsequent RNN/Transformer layers')
         return parser
 
+    @property
+    def n_frames_context(self):
+        n_frame = 0
+        factor_tmp = self.subsampling_factor
+        if factor_tmp > 1:
+            for _ in range(int(math.log(factor_tmp, 2))):
+                n_frame += factor_tmp
+                factor_tmp //= 2
+                if factor_tmp < 2:
+                    break
+        return n_frame
+
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""
         logger.info('===== Initialize %s with lecun style =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             init_with_lecun_normal(n, p, param_init)
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, lookback=False, lookahead=False):
         """Forward computation.
 
         Args:
@@ -135,12 +161,14 @@ class ConvEncoder(EncoderBase):
         """
         B, T, F = xs.size()
         C_i = self.in_channel
-        xs = xs.view(B, T, C_i, F // C_i).contiguous().transpose(2, 1)  # `[B, C_i, T, F // C_i]`
+        if not self.is_1dconv:
+            xs = xs.view(B, T, C_i, F // C_i).contiguous().transpose(2, 1)  # `[B, C_i, T, F // C_i]`
 
         for block in self.layers:
-            xs, xlens = block(xs, xlens)
-        B, C_o, T, F = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T', C_o * F']`
+            xs, xlens = block(xs, xlens, lookback=lookback, lookahead=lookahead)
+        if not self.is_1dconv:
+            B, C_o, T, F = xs.size()
+            xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T', C_o * F']`
 
         # Bridge layer
         if self.bridge is not None:
@@ -149,75 +177,108 @@ class ConvEncoder(EncoderBase):
         return xs, xlens
 
 
-class Conv1LBlock(EncoderBase):
-    """1-layer CNN block without residual connection."""
+class Conv1dBlock(EncoderBase):
+    """1d-CNN block."""
 
-    def __init__(self, input_dim, in_channel, out_channel,
+    def __init__(self, in_channel, out_channel,
                  kernel_size, stride, pooling,
-                 dropout, batch_norm, layer_norm, layer_norm_eps):
+                 dropout, batch_norm, layer_norm, layer_norm_eps, residual):
 
-        super(Conv1LBlock, self).__init__()
+        super(Conv1dBlock, self).__init__()
 
-        # Conv
-        self.conv = nn.Conv2d(in_channels=in_channel,
-                              out_channels=out_channel,
-                              kernel_size=tuple(kernel_size),
-                              stride=tuple(stride),
-                              padding=(1, 1))
-        self._odim = update_lens([input_dim], self.conv, dim=1)[0]
-        self.batch_norm = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm = LayerNorm2D(out_channel * self._odim.item(),
-                                      eps=layer_norm_eps) if layer_norm else lambda x: x
-        self.dropout = nn.Dropout2d(p=dropout)
+        self.batch_norm = batch_norm
+        self.layer_norm = layer_norm
+        self.residual = residual
+        self.dropout = nn.Dropout(p=dropout)
+
+        # 1st layer
+        self.conv1 = nn.Conv1d(in_channels=in_channel,
+                               out_channels=out_channel,
+                               kernel_size=kernel_size,
+                               stride=stride,
+                               padding=1)
+        self._odim = update_lens_1d([in_channel], self.conv1)[0].item()
+        self.batch_norm1 = nn.BatchNorm1d(out_channel) if batch_norm else lambda x: x
+        self.layer_norm1 = nn.LayerNorm(out_channel,
+                                        eps=layer_norm_eps) if layer_norm else lambda x: x
+
+        # 2nd layer
+        self.conv2 = nn.Conv1d(in_channels=out_channel,
+                               out_channels=out_channel,
+                               kernel_size=kernel_size,
+                               stride=stride,
+                               padding=1)
+        self._odim = update_lens_1d([self._odim], self.conv2)[0].item()
+        self.batch_norm2 = nn.BatchNorm1d(out_channel) if batch_norm else lambda x: x
+        self.layer_norm2 = nn.LayerNorm(out_channel,
+                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # Max Pooling
         self.pool = None
-        if len(pooling) > 0 and np.prod(pooling) > 1:
-            self.pool = nn.MaxPool2d(kernel_size=tuple(pooling),
-                                     stride=tuple(pooling),
-                                     padding=(0, 0),
+        if pooling > 1:
+            self.pool = nn.MaxPool1d(kernel_size=pooling,
+                                     stride=pooling,
+                                     padding=0,
                                      ceil_mode=True)
             # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
-            self._odim = update_lens([self._odim], self.pool, dim=1)[0].item()
+            self._odim = update_lens_1d([self._odim], self.pool)[0].item()
+            if self._odim % 2 != 0:
+                self._odim = (self._odim // 2) * 2
+                # TODO(hirofumi0810): more efficient way?
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, lookback=False, lookahead=False):
         """Forward computation.
 
         Args:
-            xs (FloatTensor): `[B, C_i, T, F]`
-            xlens (list): A list of length `[B]`
+            xs (FloatTensor): `[B, T, F]`
+            xlens (IntTensor): `[B]`
+            lookback (bool): truncate the leftmost frames
+                because of lookback frames for context
+            lookahead (bool): truncate the rightmost frames
+                because of lookahead frames for context
         Returns:
-            xs (FloatTensor): `[B, C_o, T', F']`
-            xlens (list): A list of length `[B]`
+            xs (FloatTensor): `[B, T', F']`
+            xlens (IntTensor): `[B]`
 
         """
-        xs = self.conv(xs)
-        xs = self.batch_norm(xs)
-        xs = self.layer_norm(xs)
+        residual = xs
+
+        xs = self.conv1(xs.transpose(2, 1)).transpose(2, 1)
+        xs = self.batch_norm1(xs)
+        xs = self.layer_norm1(xs)
         xs = torch.relu(xs)
         xs = self.dropout(xs)
-        xlens = update_lens(xlens, self.conv, dim=0)
+        xlens = update_lens_1d(xlens, self.conv1)
+
+        xs = self.conv2(xs.transpose(2, 1)).transpose(2, 1)
+        xs = self.batch_norm2(xs)
+        xs = self.layer_norm2(xs)
+        if self.residual and xs.size() == residual.size():
+            xs += residual  # NOTE: this is the same place as in ResNet
+        xs = torch.relu(xs)
+        xs = self.dropout(xs)
+        xlens = update_lens_1d(xlens, self.conv2)
 
         if self.pool is not None:
             xs = self.pool(xs)
-            xlens = update_lens(xlens, self.pool, dim=0)
+            xlens = update_lens_1d(xlens, self.pool)
 
         return xs, xlens
 
 
-class Conv2LBlock(EncoderBase):
-    """2-layer CNN block."""
+class Conv2dBlock(EncoderBase):
+    """2d-CNN block."""
 
     def __init__(self, input_dim, in_channel, out_channel,
                  kernel_size, stride, pooling,
                  dropout, batch_norm, layer_norm, layer_norm_eps, residual):
 
-        super(Conv2LBlock, self).__init__()
+        super(Conv2dBlock, self).__init__()
 
         self.batch_norm = batch_norm
         self.layer_norm = layer_norm
         self.residual = residual
-        self.dropout = nn.Dropout2d(p=dropout)
+        self.dropout = nn.Dropout(p=dropout)
 
         # 1st layer
         self.conv1 = nn.Conv2d(in_channels=in_channel,
@@ -225,9 +286,9 @@ class Conv2LBlock(EncoderBase):
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
-        self._odim = update_lens([input_dim], self.conv1, dim=1)[0]
+        self._odim = update_lens_2d([input_dim], self.conv1, dim=1)[0].item()
         self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm1 = LayerNorm2D(out_channel * self._odim.item(),
+        self.layer_norm1 = LayerNorm2D(out_channel * self._odim,
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # 2nd layer
@@ -236,30 +297,38 @@ class Conv2LBlock(EncoderBase):
                                kernel_size=tuple(kernel_size),
                                stride=tuple(stride),
                                padding=(1, 1))
-        self._odim = update_lens([self._odim], self.conv2, dim=1)[0]
+        self._odim = update_lens_2d([self._odim], self.conv2, dim=1)[0].item()
         self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm2 = LayerNorm2D(out_channel * self._odim.item(),
+        self.layer_norm2 = LayerNorm2D(out_channel * self._odim,
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # Max Pooling
         self.pool = None
+        self._factor = 1
         if len(pooling) > 0 and np.prod(pooling) > 1:
             self.pool = nn.MaxPool2d(kernel_size=tuple(pooling),
                                      stride=tuple(pooling),
                                      padding=(0, 0),
                                      ceil_mode=True)
             # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
-            self._odim = update_lens([self._odim], self.pool, dim=1)[0].item()
+            self._odim = update_lens_2d([self._odim], self.pool, dim=1)[0].item()
             if self._odim % 2 != 0:
                 self._odim = (self._odim // 2) * 2
                 # TODO(hirofumi0810): more efficient way?
 
-    def forward(self, xs, xlens):
+            # calculate subsampling factor
+            self._factor *= pooling[0]
+
+    def forward(self, xs, xlens, lookback=False, lookahead=False):
         """Forward computation.
 
         Args:
             xs (FloatTensor): `[B, C_i, T, F]`
             xlens (IntTensor): `[B]`
+            lookback (bool): truncate the leftmost frames
+                because of lookback frames for context
+            lookahead (bool): truncate the rightmost frames
+                because of lookahead frames for context
         Returns:
             xs (FloatTensor): `[B, C_o, T', F']`
             xlens (IntTensor): `[B]`
@@ -272,21 +341,28 @@ class Conv2LBlock(EncoderBase):
         xs = self.layer_norm1(xs)
         xs = torch.relu(xs)
         xs = self.dropout(xs)
-        xlens = update_lens(xlens, self.conv1, dim=0)
+        xlens = update_lens_2d(xlens, self.conv1, dim=0)
+        if lookback and xs.size(2) > self.conv1.stride[0]:
+            xs = xs[:, :, self.conv1.stride[0]:]
+        if lookahead and xs.size(2) > self.conv1.stride[0]:
+            xs = xs[:, :, :xs.size(2) - self.conv1.stride[0]]
 
         xs = self.conv2(xs)
         xs = self.batch_norm2(xs)
         xs = self.layer_norm2(xs)
         if self.residual and xs.size() == residual.size():
-            xs += residual
-            # NOTE: this is based on ResNet
+            xs += residual  # NOTE: this is the same place as in ResNet
         xs = torch.relu(xs)
         xs = self.dropout(xs)
-        xlens = update_lens(xlens, self.conv2, dim=0)
+        xlens = update_lens_2d(xlens, self.conv2, dim=0)
+        if lookback and xs.size(2) > self.conv2.stride[0]:
+            xs = xs[:, :, self.conv2.stride[0]:]
+        if lookahead and xs.size(2) > self.conv2.stride[0]:
+            xs = xs[:, :, :xs.size(2) - self.conv2.stride[0]]
 
         if self.pool is not None:
             xs = self.pool(xs)
-            xlens = update_lens(xlens, self.pool, dim=0)
+            xlens = update_lens_2d(xlens, self.pool, dim=0)
 
         return xs, xlens
 
@@ -315,7 +391,37 @@ class LayerNorm2D(nn.Module):
         return xs
 
 
-def update_lens(seq_lens, layer, dim=0, device_id=-1):
+def update_lens_1d(seq_lens, layer, device_id=-1):
+    """Update lenghts (frequency or time).
+
+    Args:
+        seq_lens (list or IntTensor):
+        layer (nn.Conv1d or nn.MaxPool1d):
+        device_id (int):
+    Returns:
+        seq_lens (IntTensor):
+
+    """
+    if seq_lens is None:
+        return seq_lens
+    assert type(layer) in [nn.Conv1d, nn.MaxPool1d]
+    seq_lens = [_update_1d(seq_len, layer) for seq_len in seq_lens]
+    seq_lens = torch.IntTensor(seq_lens)
+    if device_id >= 0:
+        seq_lens = seq_lens.cuda(device_id)
+    return seq_lens
+
+
+def _update_1d(seq_len, layer):
+    if type(layer) == nn.MaxPool1d and layer.ceil_mode:
+        return math.ceil(
+            (seq_len + 1 + 2 * layer.padding[0] - (layer.kernel_size[0] - 1) - 1) / layer.stride[0] + 1)
+    else:
+        return math.floor(
+            (seq_len + 2 * layer.padding[0] - (layer.kernel_size[0] - 1) - 1) / layer.stride[0] + 1)
+
+
+def update_lens_2d(seq_lens, layer, dim=0, device_id=-1):
     """Update lenghts (frequency or time).
 
     Args:
@@ -330,14 +436,14 @@ def update_lens(seq_lens, layer, dim=0, device_id=-1):
     if seq_lens is None:
         return seq_lens
     assert type(layer) in [nn.Conv2d, nn.MaxPool2d]
-    seq_lens = [_update(seq_len, layer, dim) for seq_len in seq_lens]
+    seq_lens = [_update_2d(seq_len, layer, dim) for seq_len in seq_lens]
     seq_lens = torch.IntTensor(seq_lens)
     if device_id >= 0:
         seq_lens = seq_lens.cuda(device_id)
     return seq_lens
 
 
-def _update(seq_len, layer, dim):
+def _update_2d(seq_len, layer, dim):
     if type(layer) == nn.MaxPool2d and layer.ceil_mode:
         return math.ceil(
             (seq_len + 1 + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
@@ -346,17 +452,29 @@ def _update(seq_len, layer, dim):
             (seq_len + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
 
 
-def parse_config(channels, kernel_sizes, strides, poolings):
+def parse_cnn_config(channels, kernel_sizes, strides, poolings):
     _channels, _kernel_sizes, _strides, _poolings = [], [], [], []
+    is_1dconv = '(' not in kernel_sizes
     if len(channels) > 0:
         _channels = [int(c) for c in channels.split('_')]
     if len(kernel_sizes) > 0:
-        _kernel_sizes = [[int(c.split(',')[0].replace('(', '')),
-                          int(c.split(',')[1].replace(')', ''))] for c in kernel_sizes.split('_')]
+        if is_1dconv:
+            _kernel_sizes = [int(c) for c in kernel_sizes.split('_')]
+        else:
+            _kernel_sizes = [[int(c.split(',')[0].replace('(', '')),
+                              int(c.split(',')[1].replace(')', ''))] for c in kernel_sizes.split('_')]
     if len(strides) > 0:
-        _strides = [[int(c.split(',')[0].replace('(', '')),
-                     int(c.split(',')[1].replace(')', ''))] for c in strides.split('_')]
+        if is_1dconv:
+            assert '(' not in _strides and ')' not in _strides
+            _strides = [int(s) for s in strides.split('_')]
+        else:
+            _strides = [[int(s.split(',')[0].replace('(', '')),
+                         int(s.split(',')[1].replace(')', ''))] for s in strides.split('_')]
     if len(poolings) > 0:
-        _poolings = [[int(c.split(',')[0].replace('(', '')),
-                      int(c.split(',')[1].replace(')', ''))] for c in poolings.split('_')]
-    return _channels, _kernel_sizes, _strides, _poolings
+        if is_1dconv:
+            assert '(' not in poolings and ')' not in poolings
+            _poolings = [int(p) for p in strides.split('_')]
+        else:
+            _poolings = [[int(p.split(',')[0].replace('(', '')),
+                          int(p.split(',')[1].replace(')', ''))] for p in poolings.split('_')]
+    return (_channels, _kernel_sizes, _strides, _poolings), is_1dconv

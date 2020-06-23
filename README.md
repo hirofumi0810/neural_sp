@@ -47,10 +47,11 @@ make KALDI=/path/to/kaldi
     - Latency-controlled BLSTM [[link](https://arxiv.org/abs/1510.08983)]
   - Transformer encoder [[link](https://arxiv.org/abs/1706.03762)]
     - (CNN-)Transformer
-    - Chunk hopping mechanism [link](https://arxiv.org/abs/1902.06450)]
-    - Relative positional encoding
+    - Chunk hopping mechanism [[link](https://arxiv.org/abs/1902.06450)]
+    - Relative positional encoding [[link](https://arxiv.org/abs/1901.02860)]
   - Time-Depth Seprarabel (TDS) convolutional encoder [[link](https://arxiv.org/abs/1904.02619)]
   - Gated CNN encoder (GLU) [[link](https://openreview.net/forum?id=Hyig0zb0Z)]
+  - Conformer encoder [[link](https://arxiv.org/abs/2005.08100)]
 
 ### Connectionist Temporal Classification (CTC) decoder
   - Forced alignment

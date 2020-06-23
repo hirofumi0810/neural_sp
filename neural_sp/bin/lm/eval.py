@@ -16,8 +16,10 @@ import sys
 import time
 
 from neural_sp.bin.args_lm import parse_args_eval
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import (
+    load_checkpoint,
+    set_logger
+)
 from neural_sp.datasets.lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.lm.build import build_lm
@@ -52,7 +54,7 @@ def main():
         if i == 0:
             # Load the LM
             model = build_lm(args)
-            load_checkpoint(model, args.recog_model[0])
+            load_checkpoint(args.recog_model[0], model)
             epoch = int(args.recog_model[0].split('-')[-1])
             # NOTE: model averaging is not helpful for LM
 

@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Test for RNN encoders."""
+"""Test for RNN encoder."""
 
 import importlib
 import numpy as np
@@ -40,7 +40,7 @@ def make_args(**kwargs):
         task_specific_layer=False,
         param_init=0.1,
         chunk_size_left=-1,
-        chunk_size_right=-1
+        chunk_size_right=-1,
     )
     args.update(kwargs)
     return args
@@ -51,13 +51,23 @@ def make_args(**kwargs):
         # RNN type
         ({'rnn_type': 'blstm'}),
         ({'rnn_type': 'bgru'}),
+        ({'rnn_type': 'lstm'}),
+        ({'rnn_type': 'gru'}),
+        # 2dCNN-RNN
         ({'rnn_type': 'conv_blstm'}),
         ({'rnn_type': 'conv_blstm', 'input_dim': 240, 'conv_in_channel': 3}),
         ({'rnn_type': 'conv_bgru'}),
-        ({'rnn_type': 'lstm'}),
-        ({'rnn_type': 'lstm', }),
-        ({'rnn_type': 'gru'}),
         ({'rnn_type': 'conv_gru'}),
+        # 1dCNN-RNN
+        ({'rnn_type': 'conv_blstm',
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2", }),
+        ({'rnn_type': 'conv_blstm',
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2",
+          'input_dim': 240, 'conv_in_channel': 3}),
+        ({'rnn_type': 'conv_bgru',
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2", }),
+        ({'rnn_type': 'conv_gru',
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2", }),
         # normalization
         ({'rnn_type': 'conv_blstm', 'conv_batch_norm': True}),
         ({'rnn_type': 'conv_blstm', 'conv_layer_norm': True}),
@@ -78,12 +88,12 @@ def make_args(**kwargs):
         ({'rnn_type': 'blstm', 'n_projs': 64}),
         ({'rnn_type': 'lstm', 'n_projs': 64}),
         ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True}),
-        # ({'rnn_type': 'blstm', 'n_projs': 64, 'bidirectional_sum_fwd_bwd': True}),
+        ({'rnn_type': 'blstm', 'n_projs': 64, 'bidirectional_sum_fwd_bwd': True}),
         ({'rnn_type': 'blstm', 'last_proj_dim': 256}),
         ({'rnn_type': 'blstm', 'n_projs': 64, 'last_proj_dim': 256}),
         ({'rnn_type': 'lstm', 'n_projs': 64, 'last_proj_dim': 256}),
         ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'last_proj_dim': 256}),
-        # ({'rnn_type': 'blstm', 'n_projs': 64, 'bidirectional_sum_fwd_bwd': True, 'last_proj_dim': 256}),
+        ({'rnn_type': 'blstm', 'n_projs': 64, 'bidirectional_sum_fwd_bwd': True, 'last_proj_dim': 256}),
         # LC-BLSTM
         ({'rnn_type': 'blstm', 'chunk_size_left': -1, 'chunk_size_right': 40}),
         ({'rnn_type': 'blstm', 'chunk_size_left': 40, 'chunk_size_right': 40}),

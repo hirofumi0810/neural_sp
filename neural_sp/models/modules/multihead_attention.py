@@ -19,8 +19,6 @@ import torch.nn as nn
 
 random.seed(1)
 
-NEG_INF = float(np.finfo(np.float32).min)
-
 logger = logging.getLogger(__name__)
 
 
@@ -96,8 +94,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask, aw_prev=None,
-                cache=False, mode='', trigger_point=None,
-                eps_wait=-1):
+                cache=False, mode='', trigger_point=None, eps_wait=-1):
         """Forward pass.
 
         Args:
@@ -114,6 +111,7 @@ class MultiheadAttentionMechanism(nn.Module):
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, H, qlen, klen]`
             beta: dummy interface for MoChA
+            p_choose: dummy interface for MoChA
 
         """
         bs, klen = key.size()[: 2]
@@ -140,6 +138,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # Compute attention weights
         if self.mask is not None:
+            NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
             e = e.masked_fill_(self.mask == 0, NEG_INF)  # `[B, qlen, klen, H]`
         aw = torch.softmax(e, dim=2)
         aw = self.dropout_attn(aw)
@@ -163,4 +162,4 @@ class MultiheadAttentionMechanism(nn.Module):
         cv = self.w_out(cv)
         aw = aw.permute(0, 3, 1, 2)  # `[B, H, qlen, klen]`
 
-        return cv, aw, None
+        return cv, aw, None, None

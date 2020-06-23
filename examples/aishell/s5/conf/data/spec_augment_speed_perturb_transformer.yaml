@@ -1,6 +1,5 @@
 # optimization
-# n_epochs: 35  # 30->35
-n_epochs: 40  # 35->40
+n_epochs: 35  # 30->35
 print_step: 1200  # 600->1200
 
 # mask

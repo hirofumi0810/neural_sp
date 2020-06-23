@@ -22,14 +22,17 @@ from tqdm import tqdm
 
 from neural_sp.bin.args_lm import parse_args_train
 from neural_sp.bin.model_name import set_lm_name
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import save_config
-from neural_sp.bin.train_utils import set_logger
-from neural_sp.bin.train_utils import set_save_path
+from neural_sp.bin.train_utils import (
+    load_checkpoint,
+    load_config,
+    save_config,
+    set_logger,
+    set_save_path
+)
 from neural_sp.datasets.lm import Dataset
 from neural_sp.evaluators.ppl import eval_ppl
 from neural_sp.models.data_parallel import CustomDataParallel
+from neural_sp.models.data_parallel import CPUWrapperLM
 from neural_sp.models.lm.build import build_lm
 from neural_sp.trainers.lr_scheduler import LRScheduler
 from neural_sp.trainers.optimizer import set_optimizer
@@ -54,13 +57,14 @@ def main():
                 setattr(args, k, v)
 
     # Load dataset
+    batch_size = args.batch_size * args.n_gpus if args.n_gpus >= 1 else args.batch_size
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
                         dict_path=args.dict,
                         nlsyms=args.nlsyms,
                         unit=args.unit,
                         wp_model=args.wp_model,
-                        batch_size=args.batch_size * args.n_gpus,
+                        batch_size=batch_size,
                         n_epochs=args.n_epochs,
                         min_n_tokens=args.min_n_tokens,
                         bptt=args.bptt,
@@ -73,7 +77,7 @@ def main():
                       nlsyms=args.nlsyms,
                       unit=args.unit,
                       wp_model=args.wp_model,
-                      batch_size=args.batch_size * args.n_gpus,
+                      batch_size=batch_size,
                       bptt=args.bptt,
                       backward=args.backward,
                       serialize=args.serialize)
@@ -106,43 +110,11 @@ def main():
     # Model setting
     model = build_lm(args, save_path)
 
-    if args.resume:
-        is_transformer = conf['lm_type'] in ['transformer', 'transformer_xl']
-    else:
-        is_transformer = args.lm_type in ['transformer', 'transformer_xl']
-
-    if args.resume:
-        # Set optimizer
-        epoch = int(args.resume.split('-')[-1])
-        optimizer = set_optimizer(model, 'sgd' if epoch > conf['convert_to_sgd_epoch'] else conf['optimizer'],
-                                  conf['lr'], conf['weight_decay'])
-
-        # Wrap optimizer by learning rate scheduler
-        optimizer = LRScheduler(optimizer, conf['lr'],
-                                decay_type=conf['lr_decay_type'],
-                                decay_start_epoch=conf['lr_decay_start_epoch'],
-                                decay_rate=conf['lr_decay_rate'],
-                                decay_patient_n_epochs=conf['lr_decay_patient_n_epochs'],
-                                early_stop_patient_n_epochs=conf['early_stop_patient_n_epochs'],
-                                warmup_start_lr=conf['warmup_start_lr'],
-                                warmup_n_steps=conf['warmup_n_steps'],
-                                model_size=conf['transformer_d_model'] if 'transformer_d_model' in conf.keys() else 0,
-                                factor=conf['lr_factor'],
-                                noam=is_transformer,
-                                save_checkpoints_topk=1)
-
-        # Restore the last saved model
-        load_checkpoint(model, args.resume, optimizer)
-
-        # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
-        if epoch == conf['convert_to_sgd_epoch']:
-            optimizer.convert_to_sgd(model, args.lr, conf['weight_decay'],
-                                     decay_type='always', decay_rate=0.5)
-    else:
+    if not args.resume:
         # Save the conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
 
-        # Save the nlsyms, dictionar, and wp_model
+        # Save the nlsyms, dictionary, and wp_model
         if args.nlsyms:
             shutil.copy(args.nlsyms, os.path.join(save_path, 'nlsyms.txt'))
         shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
@@ -159,33 +131,63 @@ def main():
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
         logger.info(model)
 
-        # Set optimizer
+    # Set optimizer
+    resume_epoch = 0
+    if args.resume:
+        epoch = int(args.resume.split('-')[-1])
+        optimizer = set_optimizer(model, 'sgd' if epoch > args.convert_to_sgd_epoch else args.optimizer,
+                                  args.lr, args.weight_decay)
+    else:
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
-        # Wrap optimizer by learning rate scheduler
-        optimizer = LRScheduler(optimizer, args.lr,
-                                decay_type=args.lr_decay_type,
-                                decay_start_epoch=args.lr_decay_start_epoch,
-                                decay_rate=args.lr_decay_rate,
-                                decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
-                                early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
-                                warmup_start_lr=args.warmup_start_lr,
-                                warmup_n_steps=args.warmup_n_steps,
-                                model_size=getattr(args, 'transformer_d_model', 0),
-                                factor=args.lr_factor,
-                                noam=is_transformer,
-                                save_checkpoints_topk=1)
+    # Wrap optimizer by learning rate scheduler
+    is_transformer = args.lm_type in ['transformer', 'transformer_xl']
+    optimizer = LRScheduler(optimizer, args.lr,
+                            decay_type=args.lr_decay_type,
+                            decay_start_epoch=args.lr_decay_start_epoch,
+                            decay_rate=args.lr_decay_rate,
+                            decay_patient_n_epochs=args.lr_decay_patient_n_epochs,
+                            early_stop_patient_n_epochs=args.early_stop_patient_n_epochs,
+                            warmup_start_lr=args.warmup_start_lr,
+                            warmup_n_steps=args.warmup_n_steps,
+                            model_size=getattr(args, 'transformer_d_model', 0),
+                            factor=args.lr_factor,
+                            noam=is_transformer,
+                            save_checkpoints_topk=1)
+
+    if args.resume:
+        # Restore the last saved model
+        load_checkpoint(args.resume, model, optimizer)
+
+        # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
+        if resume_epoch == args.convert_to_sgd_epoch:
+            optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
+                                     decay_type='always', decay_rate=0.5)
 
     # GPU setting
+    use_apex = args.train_dtype in ["O0", "O1", "O2", "O3"]
+    amp = None
     if args.n_gpus >= 1:
         model.cudnn_setting(deterministic=not (is_transformer or args.cudnn_benchmark),
                             benchmark=args.cudnn_benchmark)
-        model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
         model.cuda()
+
+        # Mix precision training setting
+        if use_apex:
+            from apex import amp
+            model, optimizer.optimizer = amp.initialize(model, optimizer.optimizer,
+                                                        opt_level=args.train_dtype)
+            amp.init()
+            if args.resume:
+                load_checkpoint(args.resume, amp=amp)
+        model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
+    else:
+        model = CPUWrapperLM(model)
 
     # Set process name
     logger.info('PID: %s' % os.getpid())
     logger.info('USERNAME: %s' % os.uname()[1])
+    logger.info('#GPU: %d' % torch.cuda.device_count())
     setproctitle(args.job_name if args.job_name else dir_name)
 
     # Set reporter
@@ -205,7 +207,11 @@ def main():
 
         loss, hidden, observation = model(ys_train, hidden)
         reporter.add(observation)
-        loss.backward()
+        if use_apex:
+            with amp.scale_loss(loss, optimizer.optimizer) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            loss.backward()
         loss.detach()  # Trancate the graph
         if args.accum_grad_n_steps == 1 or accum_n_steps >= args.accum_grad_n_steps:
             if args.clip_grad_norm > 0:
@@ -223,6 +229,7 @@ def main():
         reporter.step()
         pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
         n_steps += 1
+        # NOTE: n_steps is different from the step counter in Noam Optimizer
 
         if n_steps % args.print_step == 0:
             # Compute loss in the dev set
@@ -256,7 +263,8 @@ def main():
                 reporter.epoch()  # plot
 
                 # Save the model
-                optimizer.save_checkpoint(model, save_path, remove_old=True)
+                optimizer.save_checkpoint(
+                    model, save_path, remove_old=not is_transformer, amp=amp)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -269,9 +277,10 @@ def main():
                 logger.info('PPL (%s, ep:%d): %.2f' %
                             (dev_set.set, optimizer.n_epochs, ppl_dev))
 
-                if optimizer.is_topk:
+                if optimizer.is_topk or is_transformer:
                     # Save the model
-                    optimizer.save_checkpoint(model, save_path, remove_old=True)
+                    optimizer.save_checkpoint(
+                        model, save_path, remove_old=not is_transformer, amp=amp)
 
                     # test
                     ppl_test_avg = 0.
@@ -301,7 +310,7 @@ def main():
 
             pbar_epoch = tqdm(total=len(train_set))
 
-            if optimizer.n_epochs == args.n_epochs:
+            if optimizer.n_epochs >= args.n_epochs:
                 break
 
             start_time_step = time.time()
