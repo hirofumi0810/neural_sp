@@ -5,6 +5,8 @@
 
 . ./path.sh
 
+nj=32
+
 . utils/parse_options.sh
 
 if [ $# != 3 ]; then
@@ -23,7 +25,7 @@ utils/perturb_data_dir_speed.sh 1.0 ${data}/${train_set_original} ${tmpdir}/temp
 utils/perturb_data_dir_speed.sh 1.1 ${data}/${train_set_original} ${tmpdir}/temp3
 utils/combine_data.sh --extra-files utt2uniq ${data}/${train_set} ${tmpdir}/temp1 ${tmpdir}/temp2 ${tmpdir}/temp3
 rm -r ${tmpdir}/temp1 ${tmpdir}/temp2 ${tmpdir}/temp3
-steps/make_fbank.sh --cmd "$train_cmd" --nj 32 --write_utt2num_frames true \
+steps/make_fbank.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
     ${data}/${train_set} ${data}/log/make_fbank/${train_set} ${data}/fbank
 awk -v p="sp0.9-" '{printf("%s %s%s\n", $1, p, $1);}' ${data}/${train_set_original}/utt2spk > ${data}/${train_set}/utt_map
 utils/apply_map.pl -f 1 ${data}/${train_set}/utt_map <${data}/${train_set_original}/text >${data}/${train_set}/text

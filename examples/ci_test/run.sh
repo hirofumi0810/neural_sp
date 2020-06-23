@@ -55,6 +55,10 @@ fi
 
 train_set=train
 dev_set=train
+if [ ${speed_perturb} = true ]; then
+    train_set=train_sp
+    dev_set=train_sp
+fi
 
 if [ ${unit} = char ]; then
     vocab=
@@ -75,15 +79,19 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e data/.done_stage_0 ];
     touch data/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e data/.done_stage_1 ]; then
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e data/.done_stage_1_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
 
-    for x in train; do
+    if [ ! -e data/.done_stage_1_spfalse ]; then
         steps/make_fbank.sh --nj 1 --cmd "$train_cmd" --write_utt2num_frames true \
-            data/${x} data/log/make_fbank/${x} data/fbank || exit 1;
-    done
+            data/train data/log/make_fbank/train data/fbank || exit 1;
+    fi
+
+    if [ ${speed_perturb} = true ]; then
+        speed_perturb_3way.sh --nj 1 data train ${train_set}
+    fi
 
     compute-cmvn-stats scp:data/${train_set}/feats.scp data/${train_set}/cmvn.ark || exit 1;
 
@@ -91,22 +99,22 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e data/.done_stage_1 ];
     dump_feat.sh --cmd "$train_cmd" --nj 1 \
         data/${train_set}/feats.scp data/${train_set}/cmvn.ark data/log/dump_feat/${train_set} data/dump/${train_set} || exit 1;
 
-    touch data/.done_stage_1 && echo "Finish feature extranction (stage: 1)."
+    touch data/.done_stage_1_sp${speed_perturb} && echo "Finish feature extranction (stage: 1)."
 fi
 
 dict=data/dict/${train_set}_${unit}${wp_type}${vocab}.txt; mkdir -p data/dict
 wp_model=data/dict/${train_set}_${wp_type}${vocab}
-if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e data/.done_stage_2_${unit}${wp_type}${vocab} ]; then
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e data/.done_stage_2_${unit}${wp_type}${vocab}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                      Dataset preparation (stage:2)                        "
     echo ============================================================================
 
     if [ ${unit} = wp ]; then
-        make_vocab.sh --unit ${unit} \
+        make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} \
             --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
             data ${dict} data/${train_set}/text || exit 1;
     else
-        make_vocab.sh --unit ${unit} \
+        make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} \
             data ${dict} data/${train_set}/text || exit 1;
     fi
 
@@ -129,7 +137,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e data/.done_stage_2_${
     make_dataset.sh --feat data/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
         data/${train_set} ${dict} > data/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
 
-    touch data/.done_stage_2_${unit}${wp_type}${vocab} && echo "Finish creating dataset for ASR (stage: 2)."
+    touch data/.done_stage_2_${unit}${wp_type}${vocab}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
 mkdir -p ${model}
