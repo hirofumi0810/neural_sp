@@ -62,14 +62,14 @@ def make_args(**kwargs):
         ({'rnn_type': 'conv_gru'}),
         # 1dCNN-RNN
         ({'rnn_type': 'conv_blstm',
-          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2", }),
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2"}),
         ({'rnn_type': 'conv_blstm',
           'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2",
           'input_dim': 240, 'conv_in_channel': 3}),
         ({'rnn_type': 'conv_bgru',
-          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2", }),
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2"}),
         ({'rnn_type': 'conv_gru',
-          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2", }),
+          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2"}),
         # normalization
         ({'rnn_type': 'conv_blstm', 'conv_batch_norm': True}),
         ({'rnn_type': 'conv_blstm', 'conv_layer_norm': True}),
@@ -90,22 +90,27 @@ def make_args(**kwargs):
         ({'rnn_type': 'blstm', 'n_projs': 64}),
         ({'rnn_type': 'lstm', 'n_projs': 64}),
         ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True}),
-        ({'rnn_type': 'blstm', 'n_projs': 64, 'bidir_sum_fwd_bwd': True}),
-        ({'rnn_type': 'blstm', 'last_proj_dim': 256}),
-        ({'rnn_type': 'blstm', 'n_projs': 64, 'last_proj_dim': 256}),
-        ({'rnn_type': 'lstm', 'n_projs': 64, 'last_proj_dim': 256}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 256}),
-        ({'rnn_type': 'blstm', 'n_projs': 64, 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 256}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'n_projs': 64}),
+        ({'rnn_type': 'blstm', 'last_proj_dim': 128}),
+        ({'rnn_type': 'blstm', 'last_proj_dim': 128, 'n_projs': 64}),
+        ({'rnn_type': 'lstm', 'last_proj_dim': 128, 'n_projs': 64}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 128}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 128, 'n_projs': 64}),
         # LC-BLSTM
         ({'rnn_type': 'blstm', 'chunk_size_left': -1, 'chunk_size_right': 40}),
         ({'rnn_type': 'blstm', 'chunk_size_left': 40, 'chunk_size_right': 40}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': -1, 'chunk_size_right': 40}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True,
+          'chunk_size_left': -1, 'chunk_size_right': 40}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True,
+          'chunk_size_left': 40, 'chunk_size_right': 40}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True,
+          'chunk_size_left': 40, 'chunk_size_right': 40,
           'conv_poolings': "(2,1)_(2,1)"}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True,
+          'chunk_size_left': 40, 'chunk_size_right': 40,
           'conv_poolings': "(1,2)_(1,2)"}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True,
+          'chunk_size_left': 40, 'chunk_size_right': 40,
           'conv_poolings': "(1,1)_(1,1)"}),
         # Multi-task
         ({'rnn_type': 'blstm', 'n_layers_sub1': 4}),
@@ -118,7 +123,7 @@ def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [41, 45] if args['chunk_size_left'] == -1 else [1601, 1655]
+    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [800, 855]
     device_id = -1
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
     enc = module.RNNEncoder(**args)
@@ -131,7 +136,7 @@ def test_forward(args):
         assert enc_out_dict['ys']['xs'].size(0) == batch_size
         assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'].max()
         for b in range(batch_size):
-            if 'conv' in args['rnn_type']:
+            if 'conv' in args['rnn_type'] or args['subsample_type'] in ['max_pool', '1dconv']:
                 assert enc_out_dict['ys']['xlens'][b].item() == math.ceil(xlens[b].item() / enc.subsampling_factor)
             else:
                 assert enc_out_dict['ys']['xlens'][b].item() == math.floor(xlens[b].item() / enc.subsampling_factor)
@@ -139,7 +144,7 @@ def test_forward(args):
             assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
             assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'].max()
             for b in range(batch_size):
-                if 'conv' in args['rnn_type']:
+                if 'conv' in args['rnn_type'] or args['subsample_type'] in ['max_pool', '1dconv']:
                     assert enc_out_dict['ys_sub1']['xlens'][b].item() == math.ceil(
                         xlens[b].item() / enc.subsampling_factor)
                 else:
@@ -149,7 +154,7 @@ def test_forward(args):
             assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
             assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'].max()
             for b in range(batch_size):
-                if 'conv' in args['rnn_type']:
+                if 'conv' in args['rnn_type'] or args['subsample_type'] in ['max_pool', '1dconv']:
                     assert enc_out_dict['ys_sub2']['xlens'][b].item() == math.ceil(
                         xlens[b].item() / enc.subsampling_factor)
                 else:
