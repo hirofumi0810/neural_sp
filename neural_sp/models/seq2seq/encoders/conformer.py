@@ -22,8 +22,8 @@ from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
-from neural_sp.models.seq2seq.encoders.encoder_base import blockwise
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
+from neural_sp.models.seq2seq.encoders.utils import chunkwise
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
 
@@ -268,7 +268,7 @@ class ConformerEncoder(EncoderBase):
         bs, xmax, idim = xs.size()
 
         if self.latency_controlled:
-            xs = blockwise(xs, N_l, N_c, N_r)
+            xs = chunkwise(xs, N_l, N_c, N_r)
 
         if self.conv is None:
             xs = self.embed(xs)
@@ -284,7 +284,7 @@ class ConformerEncoder(EncoderBase):
             _N_l = max(0, N_l // self.subsampling_factor)
             _N_c = N_c // self.subsampling_factor
 
-            n_blocks = xs.size(0) // bs
+            n_chunks = xs.size(0) // bs
             emax = xmax // self.subsampling_factor
             if xmax % self.subsampling_factor != 0:
                 emax += 1
@@ -299,17 +299,17 @@ class ConformerEncoder(EncoderBase):
                 if not self.training:
                     n_heads = layer.xx_aws.size(1)
                     xx_aws = layer.xx_aws[:, :, _N_l:_N_l + _N_c, _N_l:_N_l + _N_c]
-                    xx_aws = xx_aws.view(bs, n_blocks, n_heads, _N_c, _N_c)
+                    xx_aws = xx_aws.view(bs, n_chunks, n_heads, _N_c, _N_c)
                     xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
-                    for blc_id in range(n_blocks):
-                        offset = blc_id * _N_c
+                    for chunk_idx in range(n_chunks):
+                        offset = chunk_idx * _N_c
                         emax_blc = xx_aws_center[:, :, offset:offset + _N_c].size(2)
-                        xx_aws_chunk = xx_aws[:, blc_id, :, :emax_blc, :emax_blc]
+                        xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_blc, :emax_blc]
                         xx_aws_center[:, :, offset:offset + _N_c, offset:offset + _N_c] = xx_aws_chunk
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
 
             # Extract the center region
-            xs = xs[:, _N_l:_N_l + _N_c]  # `[B * n_blocks, _N_c, d_model]`
+            xs = xs[:, _N_l:_N_l + _N_c]  # `[B * n_chunks, _N_c, d_model]`
             xs = xs.contiguous().view(bs, -1, xs.size(2))
             xs = xs[:, :emax]
 

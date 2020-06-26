@@ -166,9 +166,7 @@ class RNNEncoder(EncoderBase):
             if self.lc_bidir:
                 self.rnn_bwd = nn.ModuleList()
             self.dropout = nn.Dropout(p=dropout)
-            self.proj = None
-            if n_projs > 0:
-                self.proj = nn.ModuleList()
+            self.proj = nn.ModuleList() if n_projs > 0 else None
 
             # subsample
             self.subsample_layer = None
@@ -274,7 +272,7 @@ class RNNEncoder(EncoderBase):
                 raise ValueError(n)
 
     def reset_cache(self):
-        self.fwd_states = [None] * self.n_layers
+        self.hx_fwd = [None] * self.n_layers
         logger.debug('Reset cache.')
 
     def forward(self, xs, xlens, task, use_cache=False, streaming=False,
@@ -334,9 +332,9 @@ class RNNEncoder(EncoderBase):
             for lth in range(self.n_layers):
                 self.rnn[lth].flatten_parameters()  # for multi-GPUs
                 xs, state = self.padding(xs, xlens, self.rnn[lth],
-                                         prev_state=self.fwd_states[lth],
+                                         prev_state=self.hx_fwd[lth],
                                          streaming=streaming)
-                self.fwd_states[lth] = state
+                self.hx_fwd[lth] = state
                 xs = self.dropout(xs)
 
                 # Pick up outputs in the sub task before the projection layer
@@ -421,12 +419,12 @@ class RNNEncoder(EncoderBase):
         _N_l = self.chunk_size_left // self.subsampling_factor
         _N_r = self.chunk_size_right // self.subsampling_factor
 
-        bs, xmax, input_dim = xs.size()
+        bs, xmax, _ = xs.size()
         n_chunks = 1 if streaming else math.ceil(xmax / _N_l)
 
         xs_chunks = []
         xs_chunks_sub1 = []
-        for t in range(0, _N_l * n_chunks, _N_l):
+        for chunk_idx, t in enumerate(range(0, _N_l * n_chunks, _N_l)):
             xs_chunk = xs[:, t:t + (_N_l + _N_r)]
             xlens = torch.IntTensor(bs).fill_(_N_l if streaming else xmax)
             for lth in range(self.n_layers):
@@ -438,13 +436,13 @@ class RNNEncoder(EncoderBase):
                 xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[1])  # `[B, _N_l+_N_r, n_units]`
                 # fwd
                 if xs_chunk.size(1) <= _N_l:
-                    xs_chunk_fwd, self.fwd_states[lth] = self.rnn[lth](xs_chunk,
-                                                                       hx=self.fwd_states[lth])
+                    xs_chunk_fwd, self.hx_fwd[lth] = self.rnn[lth](xs_chunk,
+                                                                   hx=self.hx_fwd[lth])
                 else:
-                    xs_chunk_fwd1, self.fwd_states[lth] = self.rnn[lth](xs_chunk[:, :_N_l],
-                                                                        hx=self.fwd_states[lth])
+                    xs_chunk_fwd1, self.hx_fwd[lth] = self.rnn[lth](xs_chunk[:, :_N_l],
+                                                                    hx=self.hx_fwd[lth])
                     xs_chunk_fwd2, _ = self.rnn[lth](xs_chunk[:, _N_l:],
-                                                     hx=self.fwd_states[lth])
+                                                     hx=self.hx_fwd[lth])
                     xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, _N_l+_N_r, n_units]`
                     # NOTE: xs_chunk_fwd2 is for xs_chunk_bwd in the next layer
                 if self.bidir_sum:
