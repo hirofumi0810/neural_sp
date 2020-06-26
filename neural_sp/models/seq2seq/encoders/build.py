@@ -136,7 +136,7 @@ def build_encoder(args):
             conv_batch_norm=args.conv_batch_norm,
             conv_layer_norm=args.conv_layer_norm,
             conv_bottleneck_dim=args.conv_bottleneck_dim,
-            bidirectional_sum_fwd_bwd=args.bidirectional_sum_fwd_bwd,
+            bidir_sum_fwd_bwd=args.bidirectional_sum_fwd_bwd,
             task_specific_layer=args.task_specific_layer,
             param_init=args.param_init,
             chunk_size_left=args.lc_chunk_size_left,
