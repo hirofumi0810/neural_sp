@@ -21,6 +21,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
+from neural_sp.models.seq2seq.encoders.conv import update_lens_1d
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
 from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
@@ -251,7 +252,7 @@ class RNNEncoder(EncoderBase):
                            help='number of units in each encoder RNN layer')
         group.add_argument('--enc_n_projs', type=int, default=0,
                            help='number of units in the projection layer after each encoder RNN layer')
-        group.add_argument('--bidir_sum_fwd_bwd', type=strtobool, default=False,
+        group.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
                            help='sum forward and backward RNN outputs for dimension reduction')
         # streaming
         group.add_argument('--lc_chunk_size_left', type=int, default=0,
@@ -521,15 +522,18 @@ class MaxpoolSubsampler(nn.Module):
 
         self.factor = factor
         if factor > 1:
-            self.max_pool = nn.MaxPool1d(1, stride=factor, ceil_mode=True)
+            self.pool = nn.MaxPool1d(kernel_size=factor,
+                                     stride=factor,
+                                     padding=0,
+                                     ceil_mode=True)
 
     def forward(self, xs, xlens):
         if self.factor == 1:
             return xs, xlens
 
-        xs = self.max_pool(xs.transpose(2, 1)).transpose(2, 1).contiguous()
+        xs = self.pool(xs.transpose(2, 1)).transpose(2, 1).contiguous()
 
-        xlens //= self.factor
+        xlens = update_lens_1d(xlens, self.pool)
         return xs, xlens
 
 
@@ -547,16 +551,19 @@ class Conv1dSubsampler(nn.Module):
                                     kernel_size=conv_kernel_size,
                                     stride=1,
                                     padding=(conv_kernel_size - 1) // 2)
-            self.max_pool = nn.MaxPool1d(1, stride=factor, ceil_mode=True)
+            self.pool = nn.MaxPool1d(kernel_size=factor,
+                                     stride=factor,
+                                     padding=0,
+                                     ceil_mode=True)
 
     def forward(self, xs, xlens):
         if self.factor == 1:
             return xs, xlens
 
         xs = torch.relu(self.conv1d(xs.transpose(2, 1)))
-        xs = self.max_pool(xs).transpose(2, 1).contiguous()
+        xs = self.pool(xs).transpose(2, 1).contiguous()
 
-        xlens //= self.factor
+        xlens = update_lens_1d(xlens, self.pool)
         return xs, xlens
 
 
