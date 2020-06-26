@@ -168,24 +168,7 @@ class RNNEncoder(EncoderBase):
                 self.rnn_bwd = nn.ModuleList()
             self.dropout = nn.Dropout(p=dropout)
             self.proj = nn.ModuleList() if n_projs > 0 else None
-
-            # subsample
-            self.subsample_layer = None
-            if np.prod(subsamples) > 1:
-                if subsample_type == 'max_pool':
-                    self.subsample_layer = nn.ModuleList([MaxpoolSubsampler(subsamples[lth])
-                                                          for lth in range(n_layers)])
-                elif subsample_type == 'concat':
-                    self.subsample_layer = nn.ModuleList([ConcatSubsampler(subsamples[lth],
-                                                                           n_units if bidir_sum_fwd_bwd else n_units * self.n_dirs)
-                                                          for lth in range(n_layers)])
-                elif subsample_type == 'drop':
-                    self.subsample_layer = nn.ModuleList([DropSubsampler(subsamples[lth])
-                                                          for lth in range(n_layers)])
-                elif subsample_type == '1dconv':
-                    self.subsample_layer = nn.ModuleList([Conv1dSubsampler(subsamples[lth],
-                                                                           n_units if bidir_sum_fwd_bwd else n_units * self.n_dirs)
-                                                          for lth in range(n_layers)])
+            self.subsample = nn.ModuleList() if np.prod(subsamples) > 1 else None
 
             for lth in range(n_layers):
                 if 'lstm' in rnn_type:
@@ -208,6 +191,17 @@ class RNNEncoder(EncoderBase):
                     if lth != n_layers - 1:
                         self.proj += [nn.Linear(self._odim, n_projs)]
                         self._odim = n_projs
+
+                # subsample
+                if np.prod(subsamples) > 1:
+                    if subsample_type == 'max_pool':
+                        self.subsample += [MaxpoolSubsampler(subsamples[lth])]
+                    elif subsample_type == 'concat':
+                        self.subsample += [ConcatSubsampler(subsamples[lth], self._odim)]
+                    elif subsample_type == 'drop':
+                        self.subsample += [DropSubsampler(subsamples[lth])]
+                    elif subsample_type == '1dconv':
+                        self.subsample += [Conv1dSubsampler(subsamples[lth], self._odim)]
 
                 # Task specific layer
                 if lth == n_layers_sub1 - 1 and task_specific_layer:
