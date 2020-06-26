@@ -41,10 +41,7 @@ def make_args(**kwargs):
         task_specific_layer=False,
         param_init=0.1,
         chunk_size_left=-1,
-        chunk_size_current=-1,
         chunk_size_right=-1,
-        streaming_type='carry_over',
-        latency_controllable=False
     )
     args.update(kwargs)
     return args
