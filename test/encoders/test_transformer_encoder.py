@@ -53,40 +53,8 @@ def make_args(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "args", [
-        ({'enc_type': 'transformer', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'enc_type': 'transformer', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
-    ]
-)
-def test_blockwise(args):
-    args = make_args(**args)
-
-    batch_size = 4
-    xmaxs = [1600, 1655]
-    device_id = -1
-    module = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
-
-    N_l = args['chunk_size_left']
-    N_c = args['chunk_size_current']
-    N_r = args['chunk_size_right']
-
-    for xmax in xmaxs:
-        xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
-        xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
-
-        xs_block = module.blockwise(xs, N_l, N_c, N_r)
-
-        # Extract the center region
-        xs_block = xs_block[:, N_l:N_l + N_c]  # `[B * n_blocks, N_c, input_dim]`
-        xs_block = xs_block.contiguous().view(batch_size, -1, xs_block.size(2))
-        xs_block = xs_block[:, :xmax]
-
-        assert xs_block.size() == xs.size()
-        assert torch.equal(xs_block, xs)
-
-
-@pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         ({'enc_type': 'transformer'}),
         # 2dCNN-Transformer
         ({'enc_type': 'conv_transformer'}),
@@ -123,7 +91,7 @@ def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [1600, 1655]
+    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [800, 855]
     device_id = -1
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
     enc = module.TransformerEncoder(**args)

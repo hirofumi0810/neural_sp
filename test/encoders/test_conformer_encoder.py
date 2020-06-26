@@ -54,7 +54,8 @@ def make_args(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # Conformer type
         ({'enc_type': 'conformer'}),
         ({'enc_type': 'conv_conformer'}),
@@ -80,7 +81,7 @@ def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [1600, 1655]
+    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [800, 855]
     device_id = -1
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.conformer')
     enc = module.ConformerEncoder(**args)
