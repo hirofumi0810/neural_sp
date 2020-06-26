@@ -36,7 +36,7 @@ def make_args(**kwargs):
         conv_batch_norm=False,
         conv_layer_norm=False,
         conv_bottleneck_dim=0,
-        bidirectional_sum_fwd_bwd=False,
+        bidir_sum_fwd_bwd=False,
         task_specific_layer=False,
         param_init=0.1,
         chunk_size_left=-1,
