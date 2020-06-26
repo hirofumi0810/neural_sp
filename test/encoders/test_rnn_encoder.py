@@ -130,8 +130,6 @@ def test_forward(args):
 
         assert enc_out_dict['ys']['xs'].size(0) == batch_size
         assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'].max()
-        print(xlens)
-        print(enc_out_dict['ys']['xlens'])
         for b in range(batch_size):
             if 'conv' in args['rnn_type']:
                 assert enc_out_dict['ys']['xlens'][b].item() == math.ceil(xlens[b].item() / enc.subsampling_factor)
