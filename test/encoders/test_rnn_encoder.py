@@ -4,6 +4,7 @@
 """Test for RNN encoder."""
 
 import importlib
+import math
 import numpy as np
 import pytest
 import torch
@@ -36,7 +37,7 @@ def make_args(**kwargs):
         conv_batch_norm=False,
         conv_layer_norm=False,
         conv_bottleneck_dim=0,
-        bidirectional_sum_fwd_bwd=False,
+        bidir_sum_fwd_bwd=False,
         task_specific_layer=False,
         param_init=0.1,
         chunk_size_left=-1,
@@ -47,7 +48,8 @@ def make_args(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # RNN type
         ({'rnn_type': 'blstm'}),
         ({'rnn_type': 'bgru'}),
@@ -77,33 +79,33 @@ def make_args(**kwargs):
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'max_pool'}),
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv'}),
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop',
-          'bidirectional_sum_fwd_bwd': True}),
-        # ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat',
-        #   'bidirectional_sum_fwd_bwd': True}),
+          'bidir_sum_fwd_bwd': True}),
+        ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat',
+          'bidir_sum_fwd_bwd': True}),
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'max_pool',
-          'bidirectional_sum_fwd_bwd': True}),
-        # ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv',
-        #   'bidirectional_sum_fwd_bwd': True}),
+          'bidir_sum_fwd_bwd': True}),
+        ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv',
+          'bidir_sum_fwd_bwd': True}),
         # projection
         ({'rnn_type': 'blstm', 'n_projs': 64}),
         ({'rnn_type': 'lstm', 'n_projs': 64}),
-        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True}),
-        ({'rnn_type': 'blstm', 'n_projs': 64, 'bidirectional_sum_fwd_bwd': True}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True}),
+        ({'rnn_type': 'blstm', 'n_projs': 64, 'bidir_sum_fwd_bwd': True}),
         ({'rnn_type': 'blstm', 'last_proj_dim': 256}),
         ({'rnn_type': 'blstm', 'n_projs': 64, 'last_proj_dim': 256}),
         ({'rnn_type': 'lstm', 'n_projs': 64, 'last_proj_dim': 256}),
-        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'last_proj_dim': 256}),
-        ({'rnn_type': 'blstm', 'n_projs': 64, 'bidirectional_sum_fwd_bwd': True, 'last_proj_dim': 256}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 256}),
+        ({'rnn_type': 'blstm', 'n_projs': 64, 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 256}),
         # LC-BLSTM
         ({'rnn_type': 'blstm', 'chunk_size_left': -1, 'chunk_size_right': 40}),
         ({'rnn_type': 'blstm', 'chunk_size_left': 40, 'chunk_size_right': 40}),
-        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'chunk_size_left': -1, 'chunk_size_right': 40}),
-        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40}),
-        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': -1, 'chunk_size_right': 40}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
           'conv_poolings': "(2,1)_(2,1)"}),
-        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
           'conv_poolings': "(1,2)_(1,2)"}),
-        ({'rnn_type': 'blstm', 'bidirectional_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40,
           'conv_poolings': "(1,1)_(1,1)"}),
         # Multi-task
         ({'rnn_type': 'blstm', 'n_layers_sub1': 4}),
@@ -116,21 +118,42 @@ def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [1600, 1655]
+    xmaxs = [41, 45] if args['chunk_size_left'] == -1 else [1601, 1655]
     device_id = -1
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
     enc = module.RNNEncoder(**args)
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
-        xlens = torch.IntTensor([len(x) for x in xs])
+        xlens = torch.IntTensor([len(x) - i * enc.subsampling_factor for i, x in enumerate(xs)])
         xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
         enc_out_dict = enc(xs, xlens, task='all')
 
         assert enc_out_dict['ys']['xs'].size(0) == batch_size
-        assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
+        assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'].max()
+        print(xlens)
+        print(enc_out_dict['ys']['xlens'])
+        for b in range(batch_size):
+            if 'conv' in args['rnn_type']:
+                assert enc_out_dict['ys']['xlens'][b].item() == math.ceil(xlens[b].item() / enc.subsampling_factor)
+            else:
+                assert enc_out_dict['ys']['xlens'][b].item() == math.floor(xlens[b].item() / enc.subsampling_factor)
         if args['n_layers_sub1'] > 0:
             assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
-            assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0]
+            assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'].max()
+            for b in range(batch_size):
+                if 'conv' in args['rnn_type']:
+                    assert enc_out_dict['ys_sub1']['xlens'][b].item() == math.ceil(
+                        xlens[b].item() / enc.subsampling_factor)
+                else:
+                    assert enc_out_dict['ys_sub1']['xlens'][b].item() == math.floor(
+                        xlens[b].item() / enc.subsampling_factor)
         if args['n_layers_sub2'] > 0:
             assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
-            assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0]
+            assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'].max()
+            for b in range(batch_size):
+                if 'conv' in args['rnn_type']:
+                    assert enc_out_dict['ys_sub2']['xlens'][b].item() == math.ceil(
+                        xlens[b].item() / enc.subsampling_factor)
+                else:
+                    assert enc_out_dict['ys_sub2']['xlens'][b].item() == math.floor(
+                        xlens[b].item() / enc.subsampling_factor)
