@@ -353,8 +353,8 @@ class RNNEncoder(EncoderBase):
                     # Projection layer -> Subsampling
                     if self.proj is not None:
                         xs = torch.tanh(self.proj[lth](xs))
-                    if self.subsample_layer is not None:
-                        xs, xlens = self.subsample_layer[lth](xs, xlens)
+                    if self.subsample is not None:
+                        xs, xlens = self.subsample[lth](xs, xlens)
 
         # Bridge layer
         if self.bridge is not None:
