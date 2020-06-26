@@ -261,7 +261,7 @@ class Conv1dBlock(EncoderBase):
         xlens = update_lens_1d(xlens, self.conv2)
 
         if self.pool is not None:
-            xs = self.pool(xs)
+            xs = self.pool(xs.transpose(2, 1)).transpose(2, 1)
             xlens = update_lens_1d(xlens, self.pool)
 
         return xs, xlens
@@ -416,7 +416,7 @@ def update_lens_1d(seq_lens, layer, device_id=-1):
 def _update_1d(seq_len, layer):
     if type(layer) == nn.MaxPool1d and layer.ceil_mode:
         return math.ceil(
-            (seq_len + 1 + 2 * layer.padding[0] - (layer.kernel_size[0] - 1) - 1) / layer.stride[0] + 1)
+            (seq_len + 1 + 2 * layer.padding - (layer.kernel_size - 1) - 1) / layer.stride + 1)
     else:
         return math.floor(
             (seq_len + 2 * layer.padding[0] - (layer.kernel_size[0] - 1) - 1) / layer.stride[0] + 1)
