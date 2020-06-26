@@ -422,7 +422,6 @@ class RNNEncoder(EncoderBase):
         bs, xmax, _ = xs.size()
         n_chunks = math.ceil(xmax / _N_l)
         if streaming:
-            assert 1 <= n_chunks <= 2
             xlens = torch.IntTensor(bs).fill_(_N_l)
 
         xs_chunks = []
@@ -468,6 +467,10 @@ class RNNEncoder(EncoderBase):
             xs_chunks.append(xs_chunk[:, :_N_l])
             if self.n_layers_sub1 > 0:
                 xs_chunks_sub1.append(xs_chunk_sub1[:, :_N_l])
+
+            if streaming:
+                break
+
         xs = torch.cat(xs_chunks, dim=1)
         if self.n_layers_sub1 > 0:
             xs_sub1 = torch.cat(xs_chunks_sub1, dim=1)

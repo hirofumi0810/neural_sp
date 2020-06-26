@@ -41,7 +41,10 @@ def make_args(**kwargs):
         task_specific_layer=False,
         param_init=0.1,
         chunk_size_left=-1,
+        chunk_size_current=-1,
         chunk_size_right=-1,
+        streaming_type='carry_over',
+        latency_controllable=False
     )
     args.update(kwargs)
     return args
@@ -61,38 +64,50 @@ def make_args(**kwargs):
         # subsample: 1/2
         ({'rnn_type': 'conv',
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
-          'conv_strides': "(1,1)", 'conv_poolings': "(2, 2)",
-          'chunk_size_left': 20, 'chunk_size_right': 10}),
+          'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
+          'chunk_size_left': 20, 'chunk_size_right': 0}),
         ({'rnn_type': 'conv',
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
-          'conv_strides': "(1,1)", 'conv_poolings': "(2, 2)",
-          'chunk_size_left': 32, 'chunk_size_right': 16}),
+          'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
+          'chunk_size_left': 32, 'chunk_size_right': 0}),
         # subsample: 1/4
-        ({'rnn_type': 'conv', 'chunk_size_left': 20, 'chunk_size_right': 10}),
-        ({'rnn_type': 'conv', 'chunk_size_left': 32, 'chunk_size_right': 16}),
+        ({'rnn_type': 'conv', 'chunk_size_left': 20, 'chunk_size_right': 0}),
+        ({'rnn_type': 'conv', 'chunk_size_left': 32, 'chunk_size_right': 0}),
         ({'rnn_type': 'conv_blstm', 'chunk_size_left': 20, 'chunk_size_right': 20}),
         ({'rnn_type': 'conv_blstm', 'chunk_size_left': 32, 'chunk_size_right': 16}),
-        # subsample: 1/8
+        # # subsample: 1/8
         ({'rnn_type': 'conv',
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2, 2)_(2, 2)_(2, 2)",
+          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
+          'chunk_size_left': 32, 'chunk_size_right': 0}),
+        ({'rnn_type': 'conv',
+          'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
+          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
+          'chunk_size_left': 64, 'chunk_size_right': 0}),
+        ({'rnn_type': 'conv_blstm',
+          'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
+          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
           'chunk_size_left': 32, 'chunk_size_right': 16}),
-        ({'rnn_type': 'conv',
+        ({'rnn_type': 'conv_blstm',
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2, 2)_(2, 2)_(2, 2)",
+          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
           'chunk_size_left': 64, 'chunk_size_right': 32}),
     ]
 )
 def test_forward_streaming_chunkwise(args):
     args = make_args(**args)
     assert args['chunk_size_left'] > 0
+    unidir = args['rnn_type'] in ['conv_lstm', 'conv_gru', 'lstm', 'gru']
 
     batch_size = 1
-    xmaxs = [t for t in range(160, 192)]
+    xmaxs = [t for t in range(160, 192, 1)]
     device_id = -1
+    N_l = max(0, args['chunk_size_left']) // args['n_stacks']
+    N_r = max(0, args['chunk_size_right']) // args['n_stacks']
+    if unidir:
+        args['chunk_size_left'] = -1
+        args['chunk_size_right'] = -1
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
-    N_l = args['chunk_size_left'] // args['n_stacks']
-    N_r = args['chunk_size_right'] // args['n_stacks']
     enc = module.RNNEncoder(**args)
 
     factor = enc.subsampling_factor
@@ -141,13 +156,16 @@ def test_forward_streaming_chunkwise(args):
                                           lookahead=end < xmax - 1)
 
                 a = enc_out_dict['ys']['xs'][:, j_out:j_out + (N_l // factor)]
-                b = enc_out_dict_stream['ys']['xs'][:, :a.size(1)]
+                b = enc_out_dict_stream['ys']['xs']
+                b = b[:, :a.size(1)]
                 eouts_stream.append(b)
 
                 j += N_l
                 j_out += (N_l // factor)
                 if j > xmax:
                     break
+
+            enc.reset_cache()
 
             eouts_stream = torch.cat(eouts_stream, dim=1)
             assert enc_out_dict['ys']['xs'].size() == eouts_stream.size()
