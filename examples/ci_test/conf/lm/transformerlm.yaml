@@ -12,7 +12,7 @@ tie_embedding: true
 batch_size: 1
 bptt: 10
 optimizer: noam
-n_epochs: 30
+n_epochs: 10
 convert_to_sgd_epoch: 100
 print_step: 1
 lr_factor: 10.0
