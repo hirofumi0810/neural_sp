@@ -215,6 +215,7 @@ class Conv1dBlock(EncoderBase):
 
         # Max Pooling
         self.pool = None
+
         if pooling > 1:
             self.pool = nn.MaxPool1d(kernel_size=pooling,
                                      stride=pooling,
@@ -473,7 +474,7 @@ def parse_cnn_config(channels, kernel_sizes, strides, poolings):
     if len(poolings) > 0:
         if is_1dconv:
             assert '(' not in poolings and ')' not in poolings
-            _poolings = [int(p) for p in strides.split('_')]
+            _poolings = [int(p) for p in poolings.split('_')]
         else:
             _poolings = [[int(p.split(',')[0].replace('(', '')),
                           int(p.split(',')[1].replace(')', ''))] for p in poolings.split('_')]
