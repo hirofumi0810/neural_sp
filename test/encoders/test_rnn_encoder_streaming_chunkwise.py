@@ -4,6 +4,7 @@
 """Test for chunkwise encoding in streaming RNN encoder."""
 
 import importlib
+import math
 import numpy as np
 import pytest
 import torch
@@ -49,6 +50,14 @@ def make_args(**kwargs):
 @pytest.mark.parametrize(
     "args",
     [
+        # no CNN
+        ({'rnn_type': 'blstm', 'chunk_size_left': 20, 'chunk_size_right': 20}),
+        ({'rnn_type': 'blstm', 'chunk_size_left': 32, 'chunk_size_right': 16}),
+        # no CNN, frame stacking
+        ({'rnn_type': 'blstm', 'n_stacks': 2,
+          'chunk_size_left': 20, 'chunk_size_right': 20}),
+        ({'rnn_type': 'blstm', 'n_stacks': 2,
+          'chunk_size_left': 32, 'chunk_size_right': 16}),
         # subsample: 1/2
         ({'rnn_type': 'conv',
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
@@ -72,11 +81,6 @@ def make_args(**kwargs):
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2, 2)_(2, 2)_(2, 2)",
           'chunk_size_left': 64, 'chunk_size_right': 32}),
-        # no CNN, frame stacking
-        ({'rnn_type': 'blstm', 'n_stacks': 4,
-          'chunk_size_left': 20, 'chunk_size_right': 20}),
-        ({'rnn_type': 'blstm', 'n_stacks': 4,
-          'chunk_size_left': 32, 'chunk_size_right': 16}),
     ]
 )
 def test_forward_streaming_chunkwise(args):
@@ -87,15 +91,15 @@ def test_forward_streaming_chunkwise(args):
     xmaxs = [t for t in range(160, 192)]
     device_id = -1
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
+    N_l = args['chunk_size_left'] // args['n_stacks']
+    N_r = args['chunk_size_right'] // args['n_stacks']
     enc = module.RNNEncoder(**args)
 
     factor = enc.subsampling_factor
-    N_l = enc.chunk_size_left
-    N_r = enc.chunk_size_right
     lookback = enc.conv.n_frames_context if enc.conv is not None else 0
     lookahead = enc.conv.n_frames_context if enc.conv is not None else 0
 
-    module_frame_stack = importlib.import_module('neural_sp.models.seq2seq.frontends.frame_stacking')
+    module_fs = importlib.import_module('neural_sp.models.seq2seq.frontends.frame_stacking')
 
     if enc.conv is not None:
         enc.turn_off_ceil_mode(enc)
@@ -104,12 +108,12 @@ def test_forward_streaming_chunkwise(args):
     with torch.no_grad():
         for xmax in xmaxs:
             xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
-            xlens = torch.IntTensor([len(x) for x in xs])
 
             if args['n_stacks'] > 1:
-                xs = [module_frame_stack.stack_frame(x, args['n_stacks'], args['n_stacks']) for x in xs]
-                xlens = xlens // args['n_stacks'] if xmax % args['n_stacks'] == 0 else xlens // args['n_stacks'] + 1
-                xmax = xlens.max().item()
+                xs = [module_fs.stack_frame(x, args['n_stacks'], args['n_stacks']) for x in xs]
+
+            xlens = torch.IntTensor([len(x) for x in xs])
+            xmax = xlens.max().item()
 
             # all inputs
             xs_pad = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
@@ -122,17 +126,14 @@ def test_forward_streaming_chunkwise(args):
 
             # chunk by chunk encoding
             eouts_stream = []
-            n_chunks = xmax // N_l
-            if xmax % N_l != 0:
-                n_chunks += 1
+            n_chunks = math.ceil(xmax / N_l)
             j = 0  # time offset for input
             j_out = 0  # time offset for encoder output
-            for i_chunk in range(n_chunks):
+            for chunk_idx in range(n_chunks):
                 start = j - lookback
                 end = (j + N_l + N_r) + lookahead
                 xs_pad_stream = pad_list(
                     [np2tensor(x[max(0, start):end], device_id).float() for x in xs], 0.)
-
                 xlens_stream = torch.IntTensor([xs_pad_stream.size(1) for x in xs])
                 enc_out_dict_stream = enc(xs_pad_stream, xlens_stream, task='all',
                                           streaming=True,
