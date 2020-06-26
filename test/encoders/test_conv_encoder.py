@@ -33,29 +33,30 @@ def make_args_2d(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # subsample4
         ({'channels': "32_32", 'kernel_sizes': "(3,3)_(3,3)",
-          'strides': "(1,1)_(1,1)", 'poolings': "(2, 2)_(2, 2)"}),
+          'strides': "(1,1)_(1,1)", 'poolings': "(2,2)_(2,2)"}),
         ({'channels': "32_32", 'kernel_sizes': "(3,3)_(3,3)",
-          'strides': "(1,1)_(1,1)", 'poolings': "(2, 2)_(2, 1)"}),
+          'strides': "(1,1)_(1,1)", 'poolings': "(2,2)_(2,1)"}),
         # ({'channels': "32_32", 'kernel_sizes': "(3,3)_(3,3)",
-        #   'strides': "(1,1)_(1,1)", 'poolings': "(2, 2)_(1, 2)"}),
+        #   'strides': "(1,1)_(1,1)", 'poolings': "(2,2)_(1,2)"}),
         ({'channels': "32_32", 'kernel_sizes': "(3,3)_(3,3)",
-          'strides': "(1,1)_(1,1)", 'poolings': "(1, 1)_(1, 1)"}),
+          'strides': "(1,1)_(1,1)", 'poolings': "(1,1)_(1,1)"}),
         # subsample8
         ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'poolings': "(2, 2)_(2, 2)_(2, 2)"}),
+          'poolings': "(2,2)_(2,2)_(2,2)"}),
         ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'poolings': "(2, 2)_(2, 2)_(2, 1)"}),
+          'poolings': "(2,2)_(2,2)_(2,1)"}),
         ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'poolings': "(2, 2)_(2, 1)_(2, 1)"}),
+          'poolings': "(2,2)_(2,1)_(2,1)"}),
         # ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
-        #   'poolings': "(2, 2)_(2, 2)_(1, 2)"}),
+        #   'poolings': "(2,2)_(2,2)_(1,2)"}),
         # ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
-        #   'poolings': "(2, 2)_(1, 2)_(1, 2)"}),
+        #   'poolings': "(2,2)_(1,2)_(1,2)"}),
         ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'poolings': "(1, 1)_(1, 1)_(1, 1)"}),
+          'poolings': "(1,1)_(1,1)_(1,1)"}),
         # bottleneck
         # ({'bottleneck_dim': 128}),
     ]
