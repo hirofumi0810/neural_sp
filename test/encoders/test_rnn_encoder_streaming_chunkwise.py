@@ -47,7 +47,8 @@ def make_args(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # subsample: 1/2
         ({'rnn_type': 'conv',
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
@@ -140,9 +141,6 @@ def test_forward_streaming_chunkwise(args):
 
                 a = enc_out_dict['ys']['xs'][:, j_out:j_out + (N_l // factor)]
                 b = enc_out_dict_stream['ys']['xs'][:, :a.size(1)]
-                print(torch.equal(a, b))
-                print(a.size())
-                print(b.size())
                 eouts_stream.append(b)
 
                 j += N_l
