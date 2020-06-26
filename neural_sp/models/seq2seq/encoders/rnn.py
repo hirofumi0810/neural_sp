@@ -228,10 +228,11 @@ class RNNEncoder(EncoderBase):
             self._factor *= self.conv.subsampling_factor
         elif np.prod(subsamples) > 1:
             self._factor *= np.prod(subsamples)
-        elif n_stacks > 1:
-            self._factor = n_stacks
+        # NOTE: subsampling factor for frame stacking should not be included here
         if self.chunk_size_left > 0:
             assert self.chunk_size_left % self._factor == 0
+        if self.chunk_size_right > 0:
+            assert self.chunk_size_right % self._factor == 0
 
         self.reset_parameters(param_init)
 
@@ -421,7 +422,7 @@ class RNNEncoder(EncoderBase):
         bs, xmax, _ = xs.size()
         n_chunks = math.ceil(xmax / _N_l)
         if streaming:
-            assert n_chunks == 1
+            assert 1 <= n_chunks <= 2
             xlens = torch.IntTensor(bs).fill_(_N_l)
 
         xs_chunks = []
