@@ -215,6 +215,7 @@ class Conv1dBlock(EncoderBase):
 
         # Max Pooling
         self.pool = None
+
         if pooling > 1:
             self.pool = nn.MaxPool1d(kernel_size=pooling,
                                      stride=pooling,
@@ -260,7 +261,7 @@ class Conv1dBlock(EncoderBase):
         xlens = update_lens_1d(xlens, self.conv2)
 
         if self.pool is not None:
-            xs = self.pool(xs)
+            xs = self.pool(xs.transpose(2, 1)).transpose(2, 1)
             xlens = update_lens_1d(xlens, self.pool)
 
         return xs, xlens
@@ -415,7 +416,7 @@ def update_lens_1d(seq_lens, layer, device_id=-1):
 def _update_1d(seq_len, layer):
     if type(layer) == nn.MaxPool1d and layer.ceil_mode:
         return math.ceil(
-            (seq_len + 1 + 2 * layer.padding[0] - (layer.kernel_size[0] - 1) - 1) / layer.stride[0] + 1)
+            (seq_len + 1 + 2 * layer.padding - (layer.kernel_size - 1) - 1) / layer.stride + 1)
     else:
         return math.floor(
             (seq_len + 2 * layer.padding[0] - (layer.kernel_size[0] - 1) - 1) / layer.stride[0] + 1)
@@ -473,7 +474,7 @@ def parse_cnn_config(channels, kernel_sizes, strides, poolings):
     if len(poolings) > 0:
         if is_1dconv:
             assert '(' not in poolings and ')' not in poolings
-            _poolings = [int(p) for p in strides.split('_')]
+            _poolings = [int(p) for p in poolings.split('_')]
         else:
             _poolings = [[int(p.split(',')[0].replace('(', '')),
                           int(p.split(',')[1].replace(')', ''))] for p in poolings.split('_')]
