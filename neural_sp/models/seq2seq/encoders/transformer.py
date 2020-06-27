@@ -6,10 +6,6 @@
 
 """Transformer encoder."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 import logging
 import math
@@ -349,9 +345,7 @@ class TransformerEncoder(EncoderBase):
             _N_c = N_c // self.subsampling_factor
 
             n_chunks = xs.size(0) // bs
-            emax = xmax // self.subsampling_factor
-            if xmax % self.subsampling_factor != 0:
-                emax += 1
+            emax = math.ceil(xmax / self.subsampling_factor)
 
             pos_embs = None
             if self.pe_type == 'relative':

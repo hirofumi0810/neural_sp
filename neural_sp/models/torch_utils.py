@@ -6,10 +6,6 @@
 
 """Utility functions."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 import numpy as np
 import torch
@@ -100,11 +96,11 @@ def append_sos_eos(xs, ys, sos, eos, pad, bwd=False, replace_sos=False):
     Args:
         xs (Tensor): for GPU id extraction
         ys (list): A list of length `[B]`, which contains a list of size `[L]`
-        sos (int):
-        eos (int):
-        pad (int):
-        bwd (bool):
-        replace_sos (bool):
+        sos (int): index for <sos>
+        eos (int): index for <eos>
+        pad (int): index for <pad>
+        bwd (bool): reverse ys for backward reference
+        replace_sos (bool): replace <sos> with the special token
     Returns:
         ys_in (LongTensor): `[B, L]`
         ys_out (LongTensor): `[B, L]`

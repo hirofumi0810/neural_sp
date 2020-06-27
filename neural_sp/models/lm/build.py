@@ -6,10 +6,6 @@
 
 """Select a language model"""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 
 def build_lm(args, save_path=None, wordlm=False, lm_dict_path=None, asr_dict_path=None):
     """Select LM class.
@@ -36,4 +32,5 @@ def build_lm(args, save_path=None, wordlm=False, lm_dict_path=None, asr_dict_pat
     else:
         from neural_sp.models.lm.rnnlm import RNNLM
         lm = RNNLM(args, save_path)
+
     return lm

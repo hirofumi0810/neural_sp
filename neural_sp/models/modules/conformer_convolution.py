@@ -6,10 +6,6 @@
 
 """Convolution block for Conformer encoder."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 import torch.nn as nn
 import torch.nn.functional as F

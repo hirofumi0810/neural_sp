@@ -6,10 +6,6 @@
 
 """Evaluate the ASR model."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import argparse
 import copy
 import logging

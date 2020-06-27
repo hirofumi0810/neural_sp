@@ -6,10 +6,6 @@
 
 """Transformer decoder (including CTC loss calculation)."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 from distutils.util import strtobool
 import logging
@@ -185,6 +181,7 @@ class TransformerDecoder(DecoderBase):
                     self.v = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
                     # NOTE: u and v are global parameters
             # self-attention
+            assert mocha_first_layer <= n_layers
             self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
                 d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
                 layer_norm_eps, ffn_activation, param_init,

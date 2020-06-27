@@ -6,10 +6,6 @@
 
 """Conformer encoder."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 import logging
 import math
@@ -143,6 +139,13 @@ class ConformerEncoder(EncoderBase):
         self._factor = 1
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor
+
+        if self.chunk_size_left > 0:
+            assert self.chunk_size_left % self._factor == 0
+        if self.chunk_size_current > 0:
+            assert self.chunk_size_current % self._factor == 0
+        if self.chunk_size_right > 0:
+            assert self.chunk_size_right % self._factor == 0
 
         self.pos_emb = XLPositionalEmbedding(d_model, dropout)  # TODO: dropout_in?
         assert pe_type == 'relative'
@@ -285,9 +288,7 @@ class ConformerEncoder(EncoderBase):
             _N_c = N_c // self.subsampling_factor
 
             n_chunks = xs.size(0) // bs
-            emax = xmax // self.subsampling_factor
-            if xmax % self.subsampling_factor != 0:
-                emax += 1
+            emax = math.ceil(xmax / self.subsampling_factor)
 
             xs = xs * self.scale
             pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float)

@@ -6,10 +6,6 @@
 
 """Transformer blocks."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 import random
 import torch
@@ -154,8 +150,8 @@ class TransformerDecoderBlock(nn.Module):
         return self._xy_aws_beta
 
     @property
-    def xy_p_choose(self):
-        return self._xy_p_choose
+    def xy_aws_p_choose(self):
+        return self._xy_aws_p_choose
 
     @property
     def yy_aws_lm(self):
@@ -164,13 +160,13 @@ class TransformerDecoderBlock(nn.Module):
     def reset_visualization(self):
         self._yy_aws = None
         self._xy_aws = None
-        self._xy_aws_beta, self._xy_p_choose = None, None
+        self._xy_aws_beta = None
+        self._xy_aws_p_choose = None
         self._yy_aws_lm = None
 
     def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
-                xy_aws_prev=None, mode='hard', lmout=None,
-                pos_embs=None, memory=None, u=None, v=None,
-                eps_wait=-1):
+                xy_aws_prev=None, mode='hard', eps_wait=-1, lmout=None,
+                pos_embs=None, memory=None, u=None, v=None):
         """Transformer decoder forward pass.
 
         Args:
@@ -180,7 +176,8 @@ class TransformerDecoderBlock(nn.Module):
             xy_mask (ByteTensor): `[B, L, T]`
             cache (FloatTensor): `[B, L-1, d_model]`
             xy_aws_prev (FloatTensor): `[B, H, L, T]`
-            mode (str):
+            mode (str): decoding mode for MMA
+            eps_wait (int): wait time delay for head-synchronous decoding in MMA
             lmout (FloatTensor): `[B, L, d_model]`
             pos_embs (LongTensor): `[L, 1, d_model]`
             memory (FloatTensor): `[B, L_prev, d_model]`
@@ -220,7 +217,7 @@ class TransformerDecoderBlock(nn.Module):
         if self.src_tgt_attention:
             residual = out
             out = self.norm2(out)
-            out, self._xy_aws, self._xy_aws_beta, self._xy_p_choose = self.src_attn(
+            out, self._xy_aws, self._xy_aws_beta, self._xy_aws_p_choose = self.src_attn(
                 xs, xs, out, mask=xy_mask,  # k/v/q
                 aw_prev=xy_aws_prev, mode=mode, eps_wait=eps_wait)
             out = self.dropout(out) + residual

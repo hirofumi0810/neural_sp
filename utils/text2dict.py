@@ -1,14 +1,10 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 """Make a dictionary file."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import argparse
 import codecs
@@ -32,7 +28,7 @@ parser.add_argument('--speed_perturb', type=strtobool, default=False,
 args = parser.parse_args()
 
 
-# TODO(hirofumi): python sentencepiece shows different behaviors from bash command.
+# TODO(hirofumi0810): python sentencepiece shows different behaviors from bash command.
 
 def main():
 

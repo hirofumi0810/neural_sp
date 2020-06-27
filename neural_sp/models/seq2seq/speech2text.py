@@ -6,10 +6,6 @@
 
 """Speech to text sequence-to-sequence model."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 import logging
 import numpy as np
@@ -127,8 +123,9 @@ class Speech2Text(ModelBase):
         # Encoder
         self.enc = build_encoder(args)
         if args.freeze_encoder:
-            for p in self.enc.parameters():
+            for n, p in self.enc.named_parameters():
                 p.requires_grad = False
+                logger.info('freeze %s' % n)
 
         # main task
         external_lm = None

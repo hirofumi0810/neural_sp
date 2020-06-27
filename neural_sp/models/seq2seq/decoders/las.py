@@ -6,10 +6,6 @@
 
 """RNN decoder for Listen Attend and Spell (LAS) model (including CTC loss calculation)."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from distutils.util import strtobool
 import logging
 import math
@@ -234,11 +230,10 @@ class RNNDecoder(DecoderBase):
             # Decoder
             self.rnn = nn.ModuleList()
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
-            if self.n_projs > 0:
-                self.proj = repeat(nn.Linear(n_units, n_projs), n_layers)
-            self.dropout = nn.Dropout(p=dropout)
             dec_odim = enc_n_units + emb_dim
-            for lth in range(n_layers):
+            self.proj = repeat(nn.Linear(n_units, n_projs), n_layers) if self.n_projs > 0 else None
+            self.dropout = nn.Dropout(p=dropout)
+            for _ in range(n_layers):
                 self.rnn += [cell(dec_odim, n_units)]
                 dec_odim = n_units
                 if self.n_projs > 0:
@@ -793,7 +788,7 @@ class RNNDecoder(DecoderBase):
                 h = self.rnn[lth](dout, hxs[lth])
             new_hxs.append(h)
             dout = self.dropout(h)
-            if self.n_projs > 0:
+            if self.proj is not None:
                 dout = torch.tanh(self.proj[lth](dout))
             # use output in the first layer for attention scoring
             if lth == 0:
@@ -1469,7 +1464,7 @@ class RNNDecoder(DecoderBase):
                 elif lm is not None:  # shallow fusion
                     lmout, lmstate, scores_lm = lm.predict(y, lmstate)
 
-            dstates, cv, aw, attn_v, _ = self.decode_step(
+            dstates, cv, aw, attn_v, _, _ = self.decode_step(
                 eouts_c[0:1].repeat([cv.size(0), 1, 1]),
                 dstates, cv, self.dropout_emb(self.embed(y)), None, aw, lmout, cache=False)
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1), dim=1)

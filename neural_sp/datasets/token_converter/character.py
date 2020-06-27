@@ -6,10 +6,6 @@
 
 """Character-level token <-> index converter."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import codecs
 import os
 
