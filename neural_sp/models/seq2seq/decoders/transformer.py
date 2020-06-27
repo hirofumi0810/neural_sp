@@ -476,6 +476,8 @@ class TransformerDecoder(DecoderBase):
                     self.aws_dict['xy_aws_layer%d' % lth] = tensor2np(layer.xy_aws)
                 if layer.xy_aws_beta is not None:
                     self.aws_dict['xy_aws_beta_layer%d' % lth] = tensor2np(layer.xy_aws_beta)
+                if layer.xy_aws_p_choose is not None:
+                    self.aws_dict['xy_aws_p_choose%d' % lth] = tensor2np(layer.xy_aws_p_choose)
                 if layer.yy_aws_lm is not None:
                     self.aws_dict['yy_aws_lm_layer%d' % lth] = tensor2np(layer.yy_aws_lm)
         logits = self.output(self.norm_out(out))
