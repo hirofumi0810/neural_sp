@@ -6,10 +6,6 @@
 
 """Train the ASR model."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import argparse
 import copy
 import cProfile
@@ -168,7 +164,7 @@ def main():
         if args.external_lm:
             save_config(args.lm_conf, os.path.join(save_path, 'conf_lm.yml'))
 
-        # Save the nlsyms, dictionar, and wp_model
+        # Save the nlsyms, dictionary, and wp_model
         if args.nlsyms:
             shutil.copy(args.nlsyms, os.path.join(save_path, 'nlsyms.txt'))
         for sub in ['', '_sub1', '_sub2']:

@@ -1,14 +1,10 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 """Map transcription to phone sequence with a lexicon."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import argparse
 import codecs

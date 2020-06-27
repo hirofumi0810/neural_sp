@@ -6,10 +6,6 @@
 
 """Evaluate a phene-level model by PER."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 from tqdm import tqdm
 

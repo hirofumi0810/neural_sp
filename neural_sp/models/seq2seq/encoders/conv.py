@@ -6,10 +6,6 @@
 
 """CNN encoder."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from distutils.util import strtobool
 import logging
 import math
@@ -215,7 +211,6 @@ class Conv1dBlock(EncoderBase):
 
         # Max Pooling
         self.pool = None
-
         if pooling > 1:
             self.pool = nn.MaxPool1d(kernel_size=pooling,
                                      stride=pooling,

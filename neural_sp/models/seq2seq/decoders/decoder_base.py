@@ -6,10 +6,6 @@
 
 """Base class for decoders."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 import numpy as np
 import os
@@ -118,6 +114,7 @@ class DecoderBase(ModelBase):
         plt.clf()
         n_frames = probs.shape[0]
         times_probs = np.arange(n_frames)
+        plt.figure(figsize=(20, 8))
 
         # NOTE: index 0 is reserved for blank
         for idx in set(topk_ids.reshape(-1).tolist()):

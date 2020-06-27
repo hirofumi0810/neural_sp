@@ -6,10 +6,6 @@
 
 """Gated Linear Units (GLU) block."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from collections import OrderedDict
 import torch.nn as nn
 import torch.nn.functional as F
@@ -63,6 +59,7 @@ class ConvGLUBlock(nn.Module):
                 nn.Conv2d(in_channels=in_ch,
                           out_channels=out_ch * 2,
                           kernel_size=(kernel_size, 1)), name='weight', dim=0)
+            # TODO(hirofumi0810): padding?
             layers['dropout'] = nn.Dropout(p=dropout)
             layers['glu'] = nn.GLU()
 

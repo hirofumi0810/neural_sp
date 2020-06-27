@@ -9,10 +9,6 @@
    You can use the multi-GPU version.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import codecs
 import kaldiio
 import numpy as np

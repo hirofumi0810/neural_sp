@@ -6,10 +6,6 @@
 
 """Select an decoder network."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 
 def build_decoder(args, special_symbols, enc_n_units, vocab,
                   ctc_weight, ctc_fc_list, global_weight, external_lm=None):
