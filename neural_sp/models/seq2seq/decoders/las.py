@@ -876,7 +876,7 @@ class RNNDecoder(DecoderBase):
         hyps_batch, aws_batch = [], []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
-        ymax = int(math.floor(xmax * max_len_ratio)) + 1
+        ymax = math.ceil(xmax * max_len_ratio)
         for t in range(ymax):
             # Update LM states for LM fusion
             if self.lm is not None:
@@ -1089,7 +1089,7 @@ class RNNDecoder(DecoderBase):
                      'ensmbl_cv': ensmbl_cv,
                      'ensmbl_aws':[[None]] * (n_models - 1),
                      'ctc_state': ctc_prefix_scorer.initial_state() if ctc_prefix_scorer is not None else None}]
-            ymax = int(math.floor(elens[b] * max_len_ratio)) + 1
+            ymax = math.ceil(elens[b] * max_len_ratio)
             for t in range(ymax):
                 # batchfy all hypotheses for batch decoding
                 y = eouts.new_zeros(len(hyps), 1).long()
@@ -1420,7 +1420,7 @@ class RNNDecoder(DecoderBase):
             for h in hyps:
                 h['no_boundary'] = False
 
-        ymax = int(math.floor(eouts_c.size(1) * max_len_ratio)) + 1
+        ymax = math.ceil(eouts_c.size(1) * max_len_ratio)
         for t in range(ymax):
             # finish if no additional decision boundary is found in all candidates
             if len(hyps) == 0:
