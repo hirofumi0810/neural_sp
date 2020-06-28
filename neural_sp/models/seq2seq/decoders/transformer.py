@@ -145,7 +145,7 @@ class TransformerDecoder(DecoderBase):
         self.attn_type = attn_type
         self.quantity_loss_weight = mocha_quantity_loss_weight
         self._quantity_loss_weight = 0  # for curriculum
-        self.mocha_first_layer = mocha_first_layer
+        self.mocha_first_layer = max(1, mocha_first_layer)
 
         self.headdiv_loss_weight = mocha_head_divergence_loss_weight
         self.latency_metric = latency_metric
@@ -181,7 +181,6 @@ class TransformerDecoder(DecoderBase):
                     self.v = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
                     # NOTE: u and v are global parameters
             # self-attention
-            assert mocha_first_layer <= n_layers
             self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
                 d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
                 layer_norm_eps, ffn_activation, param_init,
@@ -534,7 +533,7 @@ class TransformerDecoder(DecoderBase):
         hyps_batch = []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
-        ymax = int(math.floor(xtime * max_len_ratio)) + 1
+        ymax = math.ceil(xtime * max_len_ratio)
         for t in range(ymax):
             causal_mask = eouts.new_ones(t + 1, t + 1).byte()
             causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
@@ -686,7 +685,7 @@ class TransformerDecoder(DecoderBase):
             helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id)
 
             end_hyps = []
-            ymax = int(math.floor(elens[b] * max_len_ratio)) + 1
+            ymax = math.ceil(elens[b] * max_len_ratio)
             hyps = [{'hyp': [self.eos],
                      'ys': ys,
                      'cache': None,
