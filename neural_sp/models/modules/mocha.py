@@ -321,22 +321,33 @@ class MoChA(nn.Module):
         self.w = chunk_size
         self.milk = (chunk_size == -1)
         self.n_heads = n_heads_mono
-        self.n_heads_mono = n_heads_mono
-        self.n_heads_chunk = n_heads_chunk
+        self.n_heads_ma = n_heads_mono
+        self.n_heads_ca = n_heads_chunk
         self.eps = eps
         self.noise_std = noise_std
         self.no_denom = no_denominator
         self.sharpening_factor = sharpening_factor
         self.decot = decot
         self.lookahead = lookahead
-        self.share_chunkwise_attention = share_chunkwise_attention
+        self.share_ca = share_chunkwise_attention
 
-        self.monotonic_energy = MonotonicEnergy(kdim, qdim, adim, atype,
-                                                n_heads_mono, init_r,
-                                                bias, param_init, conv1d=conv1d)
-        self.chunk_energy = ChunkEnergy(kdim, qdim, adim, atype,
-                                        n_heads_chunk if share_chunkwise_attention else n_heads_mono * n_heads_chunk,
-                                        bias, param_init) if chunk_size > 1 or self.milk else None
+        if n_heads_mono >= 1:
+            self.monotonic_energy = MonotonicEnergy(
+                kdim, qdim, adim, atype,
+                n_heads_mono, init_r,
+                bias, param_init, conv1d=conv1d)
+        else:
+            self.monotonic_energy = None
+            logger.info('Only chunkwise attention is enabled.')
+
+        if chunk_size > 1 or self.milk:
+            self.chunk_energy = ChunkEnergy(
+                kdim, qdim, adim, atype,
+                n_heads_chunk if self.share_ca else n_heads_mono * n_heads_chunk,
+                bias, param_init)
+        else:
+            self.chunk_energy = None
+
         if n_heads_mono * n_heads_chunk > 1:
             self.w_value = nn.Linear(kdim, adim, bias=bias)
             self.w_out = nn.Linear(adim, odim, bias=bias)
@@ -362,7 +373,8 @@ class MoChA(nn.Module):
             nn.init.constant_(self.w_out.bias, 0.)
 
     def reset(self):
-        self.monotonic_energy.reset()
+        if self.monotonic_energy is not None:
+            self.monotonic_energy.reset()
         if self.chunk_energy is not None:
             self.chunk_energy.reset()
         self.bd_offset = 0
@@ -377,7 +389,7 @@ class MoChA(nn.Module):
             value (FloatTensor): `[B, klen, vdim]`
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
-            aw_prev (FloatTensor): `[B, H, 1, klen]`
+            aw_prev (FloatTensor): `[B, H_ma, 1, klen]`
             mode (str): recursive/parallel/hard
             cache (bool): cache key and mask
             trigger_point (IntTensor): `[B]`
@@ -386,6 +398,7 @@ class MoChA(nn.Module):
             cv (FloatTensor): `[B, qlen, vdim]`
             alpha (FloatTensor): `[B, H_ma, qlen, klen]`
             beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
+            p_choose (FloatTensor): `[B, H_ma, qlen, klen]`
 
         """
         bs, klen = key.size()[:2]
@@ -393,25 +406,25 @@ class MoChA(nn.Module):
 
         if aw_prev is None:
             # aw_prev = [1, 0, 0 ... 0]
-            aw_prev = key.new_zeros(bs, self.n_heads_mono, 1, klen)
-            aw_prev[:, :, :, 0:1] = key.new_ones(bs, self.n_heads_mono, 1, 1)
+            aw_prev = key.new_zeros(bs, self.n_heads_ma, 1, klen)
+            aw_prev[:, :, :, 0:1] = key.new_ones(bs, self.n_heads_ma, 1, 1)
 
         # Compute monotonic energy
-        e_mono = self.monotonic_energy(key, query, mask, cache=cache,
-                                       boundary_leftmost=self.bd_offset)  # `[B, H_ma, qlen, klen]`
-        assert e_mono.size(3) + self.bd_offset == key.size(1)
+        e_ma = self.monotonic_energy(key, query, mask, cache=cache,
+                                     boundary_leftmost=self.bd_offset)  # `[B, H_ma, qlen, klen]`
+        assert e_ma.size(3) + self.bd_offset == key.size(1)
 
         if mode == 'recursive':  # training
-            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_ma, qlen, klen]`
+            p_choose = torch.sigmoid(add_gaussian_noise(e_ma, self.noise_std))  # `[B, H_ma, qlen, klen]`
             alpha = []
             for i in range(qlen):
                 # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
-                shifted_1mp_choose = torch.cat([key.new_ones(bs, self.n_heads_mono, 1, 1),
+                shifted_1mp_choose = torch.cat([key.new_ones(bs, self.n_heads_ma, 1, 1),
                                                 1 - p_choose[:, :, i:i + 1, :-1]], dim=-1)
                 # Compute attention distribution recursively as
                 # q_j = (1 - p_choose_j) * q_(j-1) + aw_prev_j
                 # alpha_j = p_choose_j * q_j
-                q = key.new_zeros(bs, self.n_heads_mono, 1, klen + 1)
+                q = key.new_zeros(bs, self.n_heads_ma, 1, klen + 1)
                 for j in range(klen):
                     q[:, :, i:i + 1, j + 1] = shifted_1mp_choose[:, :, i:i + 1, j].clone() * q[:, :, i:i + 1, j].clone() + \
                         aw_prev[:, :, :, j].clone()
@@ -421,7 +434,7 @@ class MoChA(nn.Module):
             alpha_masked = alpha.clone()
 
         elif mode == 'parallel':  # training
-            p_choose = torch.sigmoid(add_gaussian_noise(e_mono, self.noise_std))  # `[B, H_ma, qlen, klen]`
+            p_choose = torch.sigmoid(add_gaussian_noise(e_ma, self.noise_std))  # `[B, H_ma, qlen, klen]`
             # safe_cumprod computes cumprod in logspace with numeric checks
             cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, H_ma, qlen, klen]`
             # Compute recurrence relation solution
@@ -441,28 +454,28 @@ class MoChA(nn.Module):
 
             # mask out each head independently (HeadDrop)
             if self.dropout_head > 0 and self.training:
-                n_effective_heads = self.n_heads_mono
+                n_effective_heads = self.n_heads_ma
                 head_mask = alpha.new_ones(alpha.size()).byte()
-                for h in range(self.n_heads_mono):
+                for h in range(self.n_heads_ma):
                     if random.random() < self.dropout_head:
                         head_mask[:, h] = 0
                         n_effective_heads -= 1
                 alpha_masked = alpha_masked.masked_fill_(head_mask == 0, 0)
                 # Normalization
                 if n_effective_heads > 0:
-                    alpha_masked = alpha_masked * (self.n_heads_mono / n_effective_heads)
+                    alpha_masked = alpha_masked * (self.n_heads_ma / n_effective_heads)
 
         elif mode == 'hard':  # inference
             assert qlen == 1
             assert not self.training
             p_choose = None
-            if self.n_heads_mono == 1:
+            if self.n_heads_ma == 1:
                 # assert aw_prev.sum() > 0
-                p_choose_i = (torch.sigmoid(e_mono) >= 0.5).float()[:, :, 0:1]
+                p_choose_i = (torch.sigmoid(e_ma) >= 0.5).float()[:, :, 0:1]
                 # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
                 # Remove any probabilities before the index chosen at the last time step
                 p_choose_i *= torch.cumsum(
-                    aw_prev[:, :, 0:1, -e_mono.size(3):], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
+                    aw_prev[:, :, 0:1, -e_ma.size(3):], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
                 # Now, use exclusive cumprod to remove probabilities after the first
                 # chosen index, like so:
                 # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
@@ -471,7 +484,7 @@ class MoChA(nn.Module):
                 # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
                 alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_ma, 1 (qlen), klen]`
             else:
-                p_choose_i = (torch.sigmoid(e_mono) >= 0.5).float()[:, :, 0:1]
+                p_choose_i = (torch.sigmoid(e_ma) >= 0.5).float()[:, :, 0:1]
                 # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
                 # Remove any probabilities before the index chosen at the last time step
                 p_choose_i *= torch.cumsum(aw_prev[:, :, 0:1], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
@@ -491,7 +504,7 @@ class MoChA(nn.Module):
 
                     leftmost = alpha[b, :, 0].nonzero()[:, -1].min().item()
                     rightmost = alpha[b, :, 0].nonzero()[:, -1].max().item()
-                    for h in range(self.n_heads_mono):
+                    for h in range(self.n_heads_ma):
                         # no bondary at the h-th head
                         if alpha[b, h, 0].sum().item() == 0:
                             alpha[b, h, 0, min(rightmost, leftmost + eps_wait)] = 1
@@ -509,7 +522,7 @@ class MoChA(nn.Module):
 
         # Compute chunk energy
         beta = None
-        if self.w > 1 or self.milk:
+        if self.chunk_energy is not None:
             bd_leftmost = 0
             bd_rightmost = klen - 1 - self.bd_offset
             if efficient_decoding and mode == 'hard' and alpha.sum() > 0:
@@ -520,12 +533,12 @@ class MoChA(nn.Module):
                 else:
                     alpha_masked = alpha_masked[:, :, :, bd_leftmost:bd_rightmost]
 
-            e_chunk = self.chunk_energy(key, query, mask, cache=cache,
-                                        boundary_leftmost=max(0, self.bd_offset + bd_leftmost - self.w + 1),
-                                        boundary_rightmost=self.bd_offset + bd_rightmost + 1)  # `[B, (H_ma*)H_ca, qlen, ken]`
+            e_ca = self.chunk_energy(key, query, mask, cache=cache,
+                                     boundary_leftmost=max(0, self.bd_offset + bd_leftmost - self.w + 1),
+                                     boundary_rightmost=self.bd_offset + bd_rightmost + 1)  # `[B, (H_ma*)H_ca, qlen, ken]`
 
             # padding
-            additional = e_chunk.size(3) - alpha_masked.size(3)
+            additional = e_ca.size(3) - alpha_masked.size(3)
             if efficient_decoding and mode == 'hard':
                 alpha = torch.cat([alpha.new_zeros(bs, alpha.size(1), 1, klen - alpha.size(3)), alpha], dim=3)
                 if additional > 0:
@@ -533,14 +546,14 @@ class MoChA(nn.Module):
                                               alpha_masked], dim=3)
 
             if mode == 'hard':
-                beta = hard_chunkwise_attention(alpha_masked, e_chunk, mask, self.w,
-                                                self.n_heads_chunk, self.sharpening_factor,
-                                                self.share_chunkwise_attention)
+                beta = hard_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
+                                                self.n_heads_ca, self.sharpening_factor,
+                                                self.share_ca)
 
             else:
-                beta = efficient_chunkwise_attention(alpha_masked, e_chunk, mask, self.w,
-                                                     self.n_heads_chunk, self.sharpening_factor,
-                                                     self.share_chunkwise_attention)
+                beta = efficient_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
+                                                     self.n_heads_ca, self.sharpening_factor,
+                                                     self.share_ca)
             beta = self.dropout_attn(beta)  # `[B, H_ma * H_ca, qlen, klen]`
 
             if efficient_decoding and mode == 'hard':
@@ -552,14 +565,11 @@ class MoChA(nn.Module):
             self.bd_offset += alpha[:, :, 0, self.bd_offset:].nonzero()[:, -1].min().item()
 
         # Compute context vector
-        if self.n_heads_mono * self.n_heads_chunk > 1:
-            value = self.w_value(value).view(bs, -1, self.n_heads_mono * self.n_heads_chunk, self.d_k)
+        if self.n_heads_ma * self.n_heads_ca > 1:
+            value = self.w_value(value).view(bs, -1, self.n_heads_ma * self.n_heads_ca, self.d_k)
             value = value.transpose(2, 1).contiguous()  # `[B, H_ma * H_ca, klen, d_k]`
-            if self.w == 1:
-                cv = torch.matmul(alpha, value)  # `[B, H_ma, qlen, d_k]`
-            else:
-                cv = torch.matmul(beta, value)  # `[B, H_ma * H_ca, qlen, d_k]`
-            cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads_mono * self.n_heads_chunk * self.d_k)
+            cv = torch.matmul(alpha if self.w == 1 else beta, value)  # `[B, H_ma * H_ca, qlen, d_k]`
+            cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads_ma * self.n_heads_ca * self.d_k)
             cv = self.w_out(cv)  # `[B, qlen, adim]`
         else:
             if self.w == 1:
@@ -567,14 +577,14 @@ class MoChA(nn.Module):
             else:
                 cv = torch.bmm(beta.squeeze(1), value)  # `[B, 1, adim]`
 
-        assert alpha.size() == (bs, self.n_heads_mono, qlen, klen), \
-            (alpha.size(), (bs, self.n_heads_mono, qlen, klen))
+        assert alpha.size() == (bs, self.n_heads_ma, qlen, klen), \
+            (alpha.size(), (bs, self.n_heads_ma, qlen, klen))
         if self.w > 1 or self.milk:
             _w = max(1, (bd_offset_old + bd_rightmost + 1) - max(0, bd_offset_old + bd_leftmost - self.w + 1))
-            # assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, e_chunk.size(3) + additional), \
-            #     (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, e_chunk.size(3) + additional))
-            assert beta.size() == (bs, self.n_heads_mono * self.n_heads_chunk, qlen, _w), \
-                (beta.size(), (bs, self.n_heads_mono * self.n_heads_chunk, qlen, _w))
+            # assert beta.size() == (bs, self.n_heads_ma * self.n_heads_ca, qlen, e_ca.size(3) + additional), \
+            #     (beta.size(), (bs, self.n_heads_ma * self.n_heads_ca, qlen, e_ca.size(3) + additional))
+            assert beta.size() == (bs, self.n_heads_ma * self.n_heads_ca, qlen, _w), \
+                (beta.size(), (bs, self.n_heads_ma * self.n_heads_ca, qlen, _w))
             # TODO: padding for beta
 
         return cv, alpha, beta, p_choose
