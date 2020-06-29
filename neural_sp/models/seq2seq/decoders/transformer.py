@@ -465,9 +465,9 @@ class TransformerDecoder(DecoderBase):
             xy_aws = layer.xy_aws
             if xy_aws is not None and 'mocha' in self.attn_type:
                 tgt_mask_v2 = (ys_out != self.pad).unsqueeze(1).unsqueeze(3)  # `[B, 1, L, 1]`
-                xy_aws = xy_aws.masked_fill_(tgt_mask_v2.repeat([1, xy_aws.size(1), 1, xmax]) == 0, 0)
+                xy_aws_masked = xy_aws.masked_fill_(tgt_mask_v2.repeat([1, xy_aws.size(1), 1, xmax]) == 0, 0)
                 # NOTE: attention padding is quite effective for quantity loss
-                xy_aws_layers.append(xy_aws.clone())
+                xy_aws_layers.append(xy_aws_masked.clone())
             if not self.training:
                 if layer.yy_aws is not None:
                     self.aws_dict['yy_aws_layer%d' % lth] = tensor2np(layer.yy_aws)
@@ -519,13 +519,13 @@ class TransformerDecoder(DecoderBase):
             refs_id (list): reference list
             utt_ids (list): utterance id list
             speakers (list): speaker list
-            cache_states (bool):
+            cache_states (bool): cache decoder states for fast decoding
         Returns:
             hyps (list): length `B`, each of which contains arrays of size `[L]`
-            aw (list): length `B`, each of which contains arrays of size `[L, T]`
+            aws (list): length `B`, each of which contains arrays of size `[H, L, T]`
 
         """
-        bs, xtime = eouts.size()[:2]
+        bs, xmax = eouts.size()[:2]
         ys = eouts.new_zeros(bs, 1).fill_(self.eos).long()
 
         cache = [None] * self.n_layers
@@ -533,7 +533,7 @@ class TransformerDecoder(DecoderBase):
         hyps_batch = []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
-        ymax = math.ceil(xtime * max_len_ratio)
+        ymax = math.ceil(xmax * max_len_ratio)
         for t in range(ymax):
             causal_mask = eouts.new_ones(t + 1, t + 1).byte()
             causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
@@ -586,20 +586,21 @@ class TransformerDecoder(DecoderBase):
             else:
                 hyps = [hyps[b][:-1] if eos_flags[b] else hyps[b] for b in range(bs)]
 
-        for b in range(bs):
-            if utt_ids is not None:
-                logger.debug('Utt-id: %s' % utt_ids[b])
-            if refs_id is not None and self.vocab == idx2token.vocab:
-                logger.debug('Ref: %s' % idx2token(refs_id[b]))
-            if self.bwd:
-                logger.debug('Hyp: %s' % idx2token(hyps[b][::-1]))
-            else:
-                logger.debug('Hyp: %s' % idx2token(hyps[b]))
+        if idx2token is not None:
+            for b in range(bs):
+                if utt_ids is not None:
+                    logger.debug('Utt-id: %s' % utt_ids[b])
+                if refs_id is not None and self.vocab == idx2token.vocab:
+                    logger.debug('Ref: %s' % idx2token(refs_id[b]))
+                if self.bwd:
+                    logger.debug('Hyp: %s' % idx2token(hyps[b][::-1]))
+                else:
+                    logger.debug('Hyp: %s' % idx2token(hyps[b]))
 
         return hyps, aws
 
     def beam_search(self, eouts, elens, params, idx2token=None,
-                    lm=None, lm_second=None, lm_bwd=None, ctc_log_probs=None,
+                    lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
                     ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[], cache_states=True):
@@ -612,7 +613,7 @@ class TransformerDecoder(DecoderBase):
             idx2token (): converter from index to token
             lm: firsh path LM
             lm_second: second path LM
-            lm_bwd: first/secoding path backward LM
+            lm_second_bwd: secoding path backward LM
             ctc_log_probs (FloatTensor):
             nbest (int):
             exclude_eos (bool): exclude <eos> from hypothesis
@@ -641,7 +642,7 @@ class TransformerDecoder(DecoderBase):
         length_norm = params['recog_length_norm']
         lm_weight = params['recog_lm_weight']
         lm_weight_second = params['recog_lm_second_weight']
-        lm_weight_bwd = params['recog_lm_bwd_weight']
+        lm_weight_second_bwd = params['recog_lm_bwd_weight']
         eos_threshold = params['recog_eos_threshold']
         lm_state_carry_over = params['recog_lm_state_carry_over']
         softmax_smoothing = params['recog_softmax_smoothing']
@@ -653,9 +654,9 @@ class TransformerDecoder(DecoderBase):
         if lm_second is not None:
             assert lm_weight_second > 0
             lm_second.eval()
-        if lm_bwd is not None:
-            assert lm_weight_bwd > 0
-            lm_bwd.eval()
+        if lm_second_bwd is not None:
+            assert lm_weight_second_bwd > 0
+            lm_second_bwd.eval()
 
         if ctc_log_probs is not None:
             assert ctc_weight > 0
@@ -685,12 +686,11 @@ class TransformerDecoder(DecoderBase):
             helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id)
 
             end_hyps = []
-            ymax = math.ceil(elens[b] * max_len_ratio)
             hyps = [{'hyp': [self.eos],
                      'ys': ys,
                      'cache': None,
                      'score': 0.,
-                     'score_attn': 0.,
+                     'score_att': 0.,
                      'score_ctc': 0.,
                      'score_lm': 0.,
                      'aws': [None],
@@ -700,6 +700,7 @@ class TransformerDecoder(DecoderBase):
                      'streamable': True,
                      'streaming_failed_point': 1000}]
             streamable_global = True
+            ymax = math.ceil(elens[b] * max_len_ratio)
             for t in range(ymax):
                 # batchfy all hypotheses for batch decoding
                 cache = [None] * self.n_layers
@@ -788,14 +789,14 @@ class TransformerDecoder(DecoderBase):
                         probs += torch.softmax(logits_e[:, -1] * softmax_smoothing, dim=1)
                         # NOTE: sum in the probability scale (not log-scale)
 
-                # Ensemble in log-scale
-                scores_attn = torch.log(probs) / n_models
+                # Ensemble
+                scores_att = torch.log(probs / n_models)
 
                 new_hyps = []
                 for j, beam in enumerate(hyps):
                     # Attention scores
-                    total_scores_attn = beam['score_attn'] + scores_attn[j:j + 1]
-                    total_scores = total_scores_attn * (1 - ctc_weight)
+                    total_scores_att = beam['score_att'] + scores_att[j:j + 1]
+                    total_scores = total_scores_att * (1 - ctc_weight)
 
                     # Add LM score <before> top-K selection
                     if lm is not None:
@@ -824,16 +825,16 @@ class TransformerDecoder(DecoderBase):
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
                         length_norm_factor = len(beam['hyp'][1:]) + 1 if length_norm else 1
-                        total_scores_topk /= length_norm_factor
+                        total_score = total_scores_topk[0, k].item() / length_norm_factor
 
                         if idx == self.eos:
                             # Exclude short hypotheses
                             if len(beam['hyp']) - 1 < elens[b] * min_len_ratio:
                                 continue
                             # EOS threshold
-                            max_score_no_eos = scores_attn[j, :idx].max(0)[0].item()
-                            max_score_no_eos = max(max_score_no_eos, scores_attn[j, idx + 1:].max(0)[0].item())
-                            if scores_attn[j, idx].item() <= eos_threshold * max_score_no_eos:
+                            max_score_no_eos = scores_att[j, :idx].max(0)[0].item()
+                            max_score_no_eos = max(max_score_no_eos, scores_att[j, idx + 1:].max(0)[0].item())
+                            if scores_att[j, idx].item() <= eos_threshold * max_score_no_eos:
                                 continue
 
                         quantity_rate = 1.
@@ -861,7 +862,7 @@ class TransformerDecoder(DecoderBase):
                              'ys': torch.cat([beam['ys'], eouts.new_zeros(1, 1).fill_(idx).long()], dim=-1),
                              'cache': [new_cache_l[j:j + 1] for new_cache_l in new_cache] if cache_states else cache,
                              'score': total_scores_topk[0, k].item(),
-                             'score_attn': total_scores_attn[0, idx].item(),
+                             'score_att': total_scores_att[0, idx].item(),
                              'score_ctc': total_scores_ctc[k].item(),
                              'score_lm': total_scores_lm[0, idx].item(),
                              'aws': new_aws,
@@ -894,8 +895,8 @@ class TransformerDecoder(DecoderBase):
                 self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
 
             # backward secodn path LM rescoring
-            if lm_bwd is not None and lm_weight_bwd > 0:
-                self.lm_rescoring(end_hyps, lm_bwd, lm_weight_bwd, tag='second_bwd')
+            if lm_second_bwd is not None:
+                self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -921,7 +922,7 @@ class TransformerDecoder(DecoderBase):
                         end_hyps[k]['hyp'][1:][::-1] if self.bwd else end_hyps[k]['hyp'][1:]))
                     logger.info('num tokens (hyp): %d' % len(end_hyps[k]['hyp'][1:]))
                     logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
-                    logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_attn'] * (1 - ctc_weight)))
+                    logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_att'] * (1 - ctc_weight)))
                     if ctc_prefix_scorer is not None:
                         logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                     if lm is not None:
@@ -929,9 +930,9 @@ class TransformerDecoder(DecoderBase):
                     if lm_second is not None:
                         logger.info('log prob (hyp, second-path lm): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
-                    if lm_bwd is not None:
-                        logger.info('log prob (hyp, second-path lm-bwd): %.7f' %
-                                    (end_hyps[k]['score_lm_second_bwd'] * lm_weight_bwd))
+                    if lm_second_bwd is not None:
+                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
+                                    (end_hyps[k]['score_lm_second_rev'] * lm_weight_second_bwd))
                     if 'mocha' in self.attn_type:
                         logger.info('streamable: %s' % end_hyps[k]['streamable'])
                         logger.info('streaming failed point: %d' % (end_hyps[k]['streaming_failed_point'] + 1))
@@ -954,7 +955,7 @@ class TransformerDecoder(DecoderBase):
             else:
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
                 aws += [tensor2np(torch.cat(end_hyps[0]['aws'][1:], dim=2).squeeze(0))]
-            scores += [[end_hyps[n]['score_attn'] for n in range(nbest)]]
+            scores += [[end_hyps[n]['score_att'] for n in range(nbest)]]
 
             # Check <eos>
             eos_flags.append([(end_hyps[n]['hyp'][-1] == self.eos) for n in range(nbest)])
@@ -969,7 +970,7 @@ class TransformerDecoder(DecoderBase):
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
 
         # Store ASR/LM state
-        if len(end_hyps) > 0:
+        if isinstance(lm, RNNLM):
             self.lmstate_final = end_hyps[0]['lmstate']
 
         return nbest_hyps_idx, aws, scores
