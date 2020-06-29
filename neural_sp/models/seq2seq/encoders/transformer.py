@@ -396,18 +396,12 @@ class TransformerEncoder(EncoderBase):
 
                 # Pick up outputs in the sub task before the projection layer
                 if lth == self.n_layers_sub1 - 1:
-                    xs_sub1 = self.layer_sub1(xs, xx_mask) if self.task_specific_layer else xs.clone()
-                    xs_sub1 = self.norm_out_sub1(xs_sub1)
-                    if self.bridge_sub1 is not None:
-                        xs_sub1 = self.bridge_sub1(xs_sub1)
+                    xs_sub1 = self.sub_module(xs, xx_mask, lth, pos_embs, 'sub1')
                     if task == 'ys_sub1':
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
                         return eouts
                 if lth == self.n_layers_sub2 - 1:
-                    xs_sub2 = self.layer_sub2(xs, xx_mask) if self.task_specific_layer else xs.clone()
-                    xs_sub2 = self.norm_out_sub2(xs_sub2)
-                    if self.bridge_sub2 is not None:
-                        xs_sub2 = self.bridge_sub2(xs_sub2)
+                    xs_sub2 = self.sub_module(xs, xx_mask, lth, pos_embs, 'sub2')
                     if task == 'ys_sub2':
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens
                         return eouts
@@ -425,6 +419,18 @@ class TransformerEncoder(EncoderBase):
         if self.n_layers_sub2 >= 1 and task == 'all':
             eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens
         return eouts
+
+    def sub_module(self, xs, xx_mask, lth, pos_embs=None, module='sub1'):
+        if self.task_specific_layer:
+            xs_sub = getattr(self, 'layer_' + module)(xs, xx_mask, pos_embs=pos_embs)
+        else:
+            xs_sub = xs.clone()
+        xs_sub = getattr(self, 'norm_out_' + module)(xs_sub)
+        if getattr(self, 'bridge_' + module) is not None:
+            xs_sub = getattr(self, 'bridge_' + module)(xs_sub)
+        if not self.training:
+            self.aws_dict['xx_aws_%s_layer%d' % (module, lth)] = tensor2np(getattr(self, 'layer_' + module).xx_aws)
+        return xs_sub
 
 
 class TransformerEncoderBlock(nn.Module):

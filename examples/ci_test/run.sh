@@ -179,6 +179,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --cudnn_benchmark ${benchmark} \
         --train_set data/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
         --dev_set data/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
+        --eval_sets data/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
         --unit ${unit} \
         --dict ${dict} \
         --wp_model ${wp_model}.model \

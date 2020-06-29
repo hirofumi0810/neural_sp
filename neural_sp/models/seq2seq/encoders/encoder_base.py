@@ -12,7 +12,6 @@ import shutil
 import torch
 
 from neural_sp.models.base import ModelBase
-from neural_sp.utils import mkdir_join
 
 import matplotlib
 matplotlib.use('Agg')
@@ -69,12 +68,13 @@ class EncoderBase(ModelBase):
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
-        _save_path = mkdir_join(save_path, 'enc_att_weights')
-
         # Clean directory
-        if _save_path is not None and os.path.isdir(_save_path):
-            shutil.rmtree(_save_path)
-            os.mkdir(_save_path)
+        if save_path is not None and os.path.isdir(save_path):
+            shutil.rmtree(save_path)
+            os.mkdir(save_path)
+
+        if not hasattr(self, 'aws_dict'):
+            return
 
         elens = self.data_dict['elens']
 
@@ -94,5 +94,5 @@ class EncoderBase(ModelBase):
                 ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
             fig.tight_layout()
-            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
+            fig.savefig(os.path.join(save_path, '%s.png' % k), dvi=500)
             plt.close()
