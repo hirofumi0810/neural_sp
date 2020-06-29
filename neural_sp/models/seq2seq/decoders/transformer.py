@@ -30,9 +30,6 @@ from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
 
-import matplotlib
-matplotlib.use('Agg')
-
 random.seed(1)
 
 logger = logging.getLogger(__name__)
@@ -158,7 +155,7 @@ class TransformerDecoder(DecoderBase):
             self.ctc = CTC(eos=self.eos,
                            blank=self.blank,
                            enc_n_units=enc_n_units,
-                           vocab=self.vocab,
+                           vocab=vocab,
                            dropout=dropout,
                            lsm_prob=ctc_lsm_prob,
                            fc_list=ctc_fc_list,
@@ -522,7 +519,7 @@ class TransformerDecoder(DecoderBase):
             cache_states (bool): cache decoder states for fast decoding
         Returns:
             hyps (list): length `B`, each of which contains arrays of size `[L]`
-            aws (list): length `B`, each of which contains arrays of size `[H, L, T]`
+            aws (list): length `B`, each of which contains arrays of size `[H * n_layers, L, T]`
 
         """
         bs, xmax = eouts.size()[:2]
@@ -533,16 +530,20 @@ class TransformerDecoder(DecoderBase):
         hyps_batch = []
         ylens = torch.zeros(bs).int()
         eos_flags = [False] * bs
+        xy_aws_layers_steps = []
         ymax = math.ceil(xmax * max_len_ratio)
         for t in range(ymax):
             causal_mask = eouts.new_ones(t + 1, t + 1).byte()
-            causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
+            causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0).repeat([bs, 1, 1])
 
             new_cache = [None] * self.n_layers
+            xy_aws_layers = []
             out = self.pos_enc(self.embed(ys))  # scaled
             for lth, layer in enumerate(self.layers):
                 out = layer(out, causal_mask, eouts, None, cache=cache[lth])
                 new_cache[lth] = out
+                if layer.xy_aws is not None:
+                    xy_aws_layers.append(layer.xy_aws)
 
             if cache_states:
                 cache = new_cache[:]
@@ -550,6 +551,8 @@ class TransformerDecoder(DecoderBase):
             # Pick up 1-best
             y = self.output(self.norm_out(out))[:, -1:].argmax(-1)
             hyps_batch += [y]
+            xy_aws_layers = torch.stack(xy_aws_layers, dim=1)  # `[B, H, n_layers, L, 1]`
+            xy_aws_layers_steps.append(xy_aws_layers)
 
             # Count lengths of hypotheses
             for b in range(bs):
@@ -568,23 +571,27 @@ class TransformerDecoder(DecoderBase):
 
         # Concatenate in L dimension
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
-        xy_aws = tensor2np(layer.xy_aws.transpose(1, 2).transpose(2, 3))
+        xy_aws_layers_steps = torch.cat(xy_aws_layers_steps, dim=-1)  # `[B, H, n_layers, L, T]`
+        xy_aws_layers_steps = xy_aws_layers_steps.view(bs, self.n_heads * self.n_layers, ys.size(1), xmax)
+        xy_aws = tensor2np(xy_aws_layers_steps)
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
         if self.bwd:
             # Reverse the order
             hyps = [hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
-            aws = [xy_aws[b, :, :ylens[b]][::-1] for b in range(bs)]
+            aws = [xy_aws[b, :, :ylens[b], :][:, ::-1] for b in range(bs)]
         else:
             hyps = [hyps_batch[b, :ylens[b]] for b in range(bs)]
-            aws = [xy_aws[b, :, :ylens[b]] for b in range(bs)]
+            aws = [xy_aws[b, :, :ylens[b], :] for b in range(bs)]
 
         # Exclude <eos> (<sos> in case of the backward decoder)
         if exclude_eos:
             if self.bwd:
                 hyps = [hyps[b][1:] if eos_flags[b] else hyps[b] for b in range(bs)]
+                aws = [aws[b][:, 1:] if eos_flags[b] else hyps[b] for b in range(bs)]
             else:
                 hyps = [hyps[b][:-1] if eos_flags[b] else hyps[b] for b in range(bs)]
+                aws = [aws[b][:, :-1] if eos_flags[b] else hyps[b] for b in range(bs)]
 
         if idx2token is not None:
             for b in range(bs):
@@ -744,7 +751,7 @@ class TransformerDecoder(DecoderBase):
                 n_heads_total = 0
                 eouts_b = eouts[b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
                 new_cache = [None] * self.n_layers
-                xy_aws_all_layers = []
+                xy_aws_layers = []
                 lth_s = self.mocha_first_layer - 1
                 for lth, layer in enumerate(self.layers):
                     if self.memory_transformer:
@@ -762,10 +769,10 @@ class TransformerDecoder(DecoderBase):
 
                     new_cache[lth] = out
                     if layer.xy_aws is not None:
-                        xy_aws_all_layers.append(layer.xy_aws)
+                        xy_aws_layers.append(layer.xy_aws)
                 logits = self.output(self.norm_out(out))
                 probs = torch.softmax(logits[:, -1] * softmax_smoothing, dim=1)
-                xy_aws_all_layers = torch.stack(xy_aws_all_layers, dim=1)  # `[B, H, n_layers, L, T]`
+                xy_aws_layers = torch.stack(xy_aws_layers, dim=1)  # `[B, H, n_layers, L, T]`
 
                 # for the ensemble
                 ensmbl_new_cache = []
@@ -817,7 +824,7 @@ class TransformerDecoder(DecoderBase):
                         beam['hyp'], topk_ids, beam['ctc_state'],
                         total_scores_topk, ctc_prefix_scorer)
 
-                    new_aws = beam['aws'] + [xy_aws_all_layers[j:j + 1, :, :, -1:]]
+                    new_aws = beam['aws'] + [xy_aws_layers[j:j + 1, :, :, -1:]]
                     aws_j = torch.cat(new_aws[1:], dim=3)  # `[1, H, n_layers, L, T]`
                     streaming_failed_point = beam['streaming_failed_point']
 
@@ -861,7 +868,7 @@ class TransformerDecoder(DecoderBase):
                             {'hyp': beam['hyp'] + [idx],
                              'ys': torch.cat([beam['ys'], eouts.new_zeros(1, 1).fill_(idx).long()], dim=-1),
                              'cache': [new_cache_l[j:j + 1] for new_cache_l in new_cache] if cache_states else cache,
-                             'score': total_scores_topk[0, k].item(),
+                             'score': total_score,
                              'score_att': total_scores_att[0, idx].item(),
                              'score_ctc': total_scores_ctc[k].item(),
                              'score_lm': total_scores_lm[0, idx].item(),
@@ -951,10 +958,10 @@ class TransformerDecoder(DecoderBase):
             if self.bwd:
                 # Reverse the order
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:][::-1]) for n in range(nbest)]]
-                aws += [tensor2np(torch.cat(end_hyps[0]['aws'][1:][::-1], dim=2).squeeze(0))]
+                aws += [[tensor2np(torch.cat(end_hyps[n]['aws'][1:][::-1], dim=2).squeeze(0)) for n in range(nbest)]]
             else:
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
-                aws += [tensor2np(torch.cat(end_hyps[0]['aws'][1:], dim=2).squeeze(0))]
+                aws += [[tensor2np(torch.cat(end_hyps[n]['aws'][1:], dim=2).squeeze(0)) for n in range(nbest)]]
             scores += [[end_hyps[n]['score_att'] for n in range(nbest)]]
 
             # Check <eos>
@@ -965,9 +972,11 @@ class TransformerDecoder(DecoderBase):
             if self.bwd:
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][1:] if eos_flags[b][n]
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
+                aws = [[aws[b][n][:, 1:] if eos_flags[b][n] else aws[b][n] for n in range(nbest)] for b in range(bs)]
             else:
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][:-1] if eos_flags[b][n]
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
+                aws = [[aws[b][n][:, :-1] if eos_flags[b][n] else aws[b][n] for n in range(nbest)] for b in range(bs)]
 
         # Store ASR/LM state
         if isinstance(lm, RNNLM):
