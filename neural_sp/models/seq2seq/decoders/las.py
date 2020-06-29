@@ -853,7 +853,7 @@ class RNNDecoder(DecoderBase):
             aws (list): length `B`, each of which contains arrays of size `[H, L, T]`
 
         """
-        bs, xmax, _ = eouts.size()
+        bs, xmax = eouts.size()[:2]
 
         # Initialization
         dstates = self.zero_state(bs)
@@ -1216,9 +1216,7 @@ class RNNDecoder(DecoderBase):
 
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
-                        length_norm_factor = 1.
-                        if length_norm:
-                            length_norm_factor = len(beam['hyp'][1:]) + 1
+                        length_norm_factor = len(beam['hyp'][1:]) + 1 if length_norm else 1
                         total_score = total_scores_topk[0, k].item() / length_norm_factor
 
                         if idx == self.eos:
@@ -1265,7 +1263,8 @@ class RNNDecoder(DecoderBase):
                 new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
                 # Remove complete hypotheses
-                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted, end_hyps)
+                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
+                    new_hyps_sorted, end_hyps)
                 hyps = new_hyps[:]
                 if is_finish:
                     break
