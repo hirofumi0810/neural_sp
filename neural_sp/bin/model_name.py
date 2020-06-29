@@ -175,9 +175,9 @@ def set_asr_model_name(args):
             if getattr(args, sub + '_weight') > 0:
                 dir_name += '_' + getattr(args, 'unit_' + sub) + str(getattr(args, 'vocab_' + sub))
                 if getattr(args, 'ctc_weight_' + sub) > 0:
-                    dir_name += 'ctc' + str(getattr(args, 'ctc_weight_' + sub))
+                    dir_name += 'ctc%.1f' % getattr(args, 'ctc_weight_' + sub)
                 if getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub) > 0:
-                    dir_name += 'fwd' + str(1 - getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub))
+                    dir_name += 'fwd%.2f' % (1.0 - getattr(args, sub + '_weight') - getattr(args, 'ctc_weight_' + sub))
     if args.task_specific_layer:
         dir_name += '_tsl'
 
