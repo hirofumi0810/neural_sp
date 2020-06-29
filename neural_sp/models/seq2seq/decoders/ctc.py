@@ -332,7 +332,7 @@ class CTC(DecoderBase):
                 # Pruning
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
 
-            # Rescoing lattice
+            # Rescoing alignments
             if lm_second is not None:
                 new_beam = []
                 for i_beam in range(len(beam)):
@@ -473,7 +473,18 @@ class CTCForcedAligner(object):
         log_prob += y[batch_index, path]
         return log_prob
 
-    def align(self, logits, elens, ys, ylens):
+    def align(self, logits, elens, ys, ylens, add_eos=True):
+        """Calculte the best CTC alignment with the forward-backward algorithm.
+        Args:
+            logits (FloatTensor): `[B, T, vocab]`
+            elens (FloatTensor): `[B]`
+            ys (FloatTensor): `[B, L]`
+            ylens (FloatTensor): `[B]`
+            add_eos (bool): Use the last time index as a boundary corresponding to <eos>
+        Returns:
+            trigger_points (IntTensor): `[B, L]`
+
+        """
         bs, xmax, vocab = logits.size()
 
         # zero padding
@@ -512,7 +523,7 @@ class CTCForcedAligner(object):
             beta = self._computes_transition(beta, r_path, path_lens, log_probs_fwd_bwd[t], log_probs_inv[t])
 
         # pick up the best CTC path
-        best_lattices = log_probs.new_zeros((bs, xmax), dtype=torch.int64)
+        best_aligns = log_probs.new_zeros((bs, xmax), dtype=torch.int64)
 
         # forward algorithm
         log_probs_fwd_bwd = _flip_path_probability(log_probs_fwd_bwd, elens.long(), path_lens)
@@ -523,12 +534,12 @@ class CTCForcedAligner(object):
             # select paths where gamma is valid
             log_probs_fwd_bwd[t] = log_probs_fwd_bwd[t].masked_fill_(gamma == self.log0, self.log0)
 
-            # pick up the best lattice
+            # pick up the best alignment
             offsets = log_probs_fwd_bwd[t].argmax(1)
             for b in range(bs):
                 if t <= elens[b] - 1:
                     token_idx = path[b, offsets[b]]
-                    best_lattices[b, t] = token_idx
+                    best_aligns[b, t] = token_idx
 
             # remove the rest of paths
             gamma = log_probs.new_zeros(bs, max_path_len).fill_(self.log0)
@@ -536,28 +547,31 @@ class CTCForcedAligner(object):
                 gamma[b, offsets[b]] = LOG_1
 
         # pick up trigger points
-        trigger_lattices = torch.zeros((bs, xmax), dtype=torch.int64)
+        trigger_aligns = torch.zeros((bs, xmax), dtype=torch.int64)
         trigger_points = log_probs.new_zeros((bs, ymax + 1), dtype=torch.int32)  # +1 for <eos>
         for b in range(bs):
             n_triggers = 0
-            trigger_points[b, ylens[b]] = elens[b] - 1  # for <eos>
+            if add_eos:
+                trigger_points[b, ylens[b]] = elens[b] - 1
+                # NOTE: use the last time index as a boundary corresponding to <eos>
+                # Otherwise, index: 0 is used for <eos>
             for t in range(elens[b]):
-                token_idx = best_lattices[b, t]
+                token_idx = best_aligns[b, t]
                 if token_idx == self.blank:
                     continue
-                if not (t == 0 or token_idx != best_lattices[b, t - 1]):
+                if not (t == 0 or token_idx != best_aligns[b, t - 1]):
                     continue
 
                 # NOTE: select the most left trigger points
-                trigger_lattices[b, t] = token_idx
+                trigger_aligns[b, t] = token_idx
                 trigger_points[b, n_triggers] = t
                 n_triggers += 1
 
         # print(trigger_points[0])
-        # print(trigger_lattices[0])
+        # print(trigger_aligns[0])
         # print(ys[0])
 
-        assert ylens.sum() == (trigger_lattices != 0).sum()
+        assert ylens.sum() == (trigger_aligns != 0).sum()
         return trigger_points
 
 
