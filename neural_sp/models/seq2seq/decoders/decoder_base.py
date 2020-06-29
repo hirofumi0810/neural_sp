@@ -49,7 +49,9 @@ class DecoderBase(ModelBase):
 
     def _plot_attention(self, save_path, n_cols=2):
         """Plot attention for each head in all decoder layers."""
-        if getattr(self, 'att_weight', 0) == 0:
+        if getattr(self, 'att_weight', 0) == 0 and getattr(self, 'rnnt_weight', 0) == 0:
+            return
+        if not hasattr(self, 'aws_dict'):
             return
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
@@ -58,9 +60,6 @@ class DecoderBase(ModelBase):
         if save_path is not None and os.path.isdir(save_path):
             shutil.rmtree(save_path)
             os.mkdir(save_path)
-
-        if not hasattr(self, 'aws_dict'):
-            return
 
         elens = self.data_dict['elens']
         ylens = self.data_dict['ylens']
