@@ -12,6 +12,7 @@ conv_layer_norm: false
 enc_type: conv_transformer
 dec_type: transformer
 enc_n_layers: 2
+enc_n_layers_sub1: 1
 dec_n_layers: 2
 transformer_attn_type: scaled_dot
 transformer_enc_pe_type: none  ###
@@ -23,16 +24,17 @@ transformer_n_heads: 4
 transformer_param_init: xavier_uniform
 tie_embedding: false
 ctc_fc_list: "128"
+ctc_fc_list_sub1: "128"
 ### optimization
 batch_size: 1
 optimizer: noam
 n_epochs: 10
 convert_to_sgd_epoch: 100
 print_step: 1
-metric: edit_distance
+metric: accuracy
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5
-shuffle_bucket: true
+shuffle_bucket: true  ### this is important
 sort_stop_epoch: 100
 eval_start_epoch: 5
 warmup_n_steps: 5
@@ -47,7 +49,9 @@ dropout_att: 0.1
 weight_decay: 1e-6
 lsm_prob: 0.1
 ### MTL
-ctc_weight: 1.0
+ctc_weight: 0.3
+ctc_weight_sub1: 0.1
 ctc_lsm_prob: 0.1
+sub1_weight: 0.2
 mtl_per_batch: false
-task_specific_layer: false
+task_specific_layer: true
