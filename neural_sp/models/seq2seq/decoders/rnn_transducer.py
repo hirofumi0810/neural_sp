@@ -50,7 +50,6 @@ class RNNTransducer(DecoderBase):
         vocab (int): number of nodes in softmax layer
         dropout (float): dropout probability for the RNN layer
         dropout_emb (float): dropout probability for the embedding layer
-        lsm_prob (float): label smoothing probability
         ctc_weight (float):
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
@@ -65,7 +64,7 @@ class RNNTransducer(DecoderBase):
                  enc_n_units, rnn_type, n_units, n_projs, n_layers,
                  bottleneck_dim, emb_dim, vocab,
                  dropout, dropout_emb,
-                 lsm_prob, ctc_weight, ctc_lsm_prob, ctc_fc_list,
+                 ctc_weight, ctc_lsm_prob, ctc_fc_list,
                  global_weight, mtl_per_batch, param_init, external_lm):
 
         super(RNNTransducer, self).__init__()
@@ -81,7 +80,6 @@ class RNNTransducer(DecoderBase):
         self.dec_n_units = n_units
         self.n_projs = n_projs
         self.n_layers = n_layers
-        self.lsm_prob = lsm_prob
         self.rnnt_weight = global_weight - ctc_weight
         self.ctc_weight = ctc_weight
         self.mtl_per_batch = mtl_per_batch
