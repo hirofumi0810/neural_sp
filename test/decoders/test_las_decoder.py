@@ -13,7 +13,7 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
-ENC_N_UNITS = 64
+ENC_N_UNITS = 32
 VOCAB = 10
 
 
@@ -23,14 +23,14 @@ def make_args(**kwargs):
         enc_n_units=ENC_N_UNITS,
         attn_type='location',
         rnn_type='lstm',
-        n_units=64,
+        n_units=32,
         n_projs=0,
         n_layers=2,
-        bottleneck_dim=32,
+        bottleneck_dim=16,
         emb_dim=16,
         vocab=VOCAB,
         tie_embedding=False,
-        attn_dim=128,
+        attn_dim=32,
         attn_sharpening_factor=1.0,
         attn_sigmoid_smoothing=False,
         attn_conv_out_channels=10,
@@ -44,7 +44,7 @@ def make_args(**kwargs):
         ss_type='constant',
         ctc_weight=0.0,
         ctc_lsm_prob=0.1,
-        ctc_fc_list='128_128',
+        ctc_fc_list='32_32',
         mbr_training=False,
         mbr_ce_weight=0.01,
         external_lm=None,
@@ -82,7 +82,7 @@ def make_decode_params(**kwargs):
         recog_lm_second_weight=0.0,
         recog_lm_bwd_weight=0.0,
         recog_max_len_ratio=1.0,
-        recog_min_len_ratio=0.0,
+        recog_min_len_ratio=0.1,
         recog_length_penalty=0.0,
         recog_coverage_penalty=0.0,
         recog_coverage_threshold=1.0,
@@ -102,13 +102,13 @@ def make_decode_params(**kwargs):
 def make_args_lm(**kwargs):
     args = dict(
         lm_type='lstm',
-        n_units=64,
+        n_units=32,
         n_projs=0,
         n_layers=2,
         residual=False,
         use_glu=False,
         n_units_null_context=0,
-        bottleneck_dim=32,
+        bottleneck_dim=16,
         emb_dim=16,
         vocab=VOCAB,
         dropout_in=0.1,
@@ -137,7 +137,7 @@ def make_args_lm(**kwargs):
         ({'attn_type': 'luong_concat'}),
         ({'attn_type': 'gmm', 'gmm_attn_n_mixtures': 5}),
         # projection
-        ({'n_projs': 32}),
+        ({'n_projs': 16}),
         # multihead attention
         ({'attn_type': 'add', 'attn_n_heads': 4}),
         # MoChA
@@ -161,7 +161,7 @@ def make_args_lm(**kwargs):
         ({'backward': True, 'ctc_weight': 0.5}),
         ({'backward': True, 'ctc_weight': 1.0}),
         # others
-        ({'tie_embedding': True, 'bottleneck_dim': 64, 'emb_dim': 64}),
+        ({'tie_embedding': True, 'bottleneck_dim': 32, 'emb_dim': 32}),
         ({'lsm_prob': 0.1}),
         ({'ss_prob': 0.2}),
         # RNNLM init

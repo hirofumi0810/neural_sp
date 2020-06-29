@@ -13,7 +13,7 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
-ENC_N_UNITS = 64
+ENC_N_UNITS = 32
 VOCAB = 10
 
 
@@ -24,11 +24,12 @@ def make_args(**kwargs):
         attn_type='scaled_dot',
         n_heads=4,
         n_layers=2,
-        d_model=64,
-        d_ff=256,
+        d_model=32,
+        d_ff=128,
         ffn_bottleneck_dim=0,
         layer_norm_eps=1e-12,
         ffn_activation='relu',
+        input_bottleneck_dim=0,
         pe_type='add',
         vocab=VOCAB,
         tie_embedding=False,
@@ -40,7 +41,7 @@ def make_args(**kwargs):
         lsm_prob=0.0,
         ctc_weight=0.0,
         ctc_lsm_prob=0.1,
-        ctc_fc_list='128_128',
+        ctc_fc_list='32_32',
         backward=False,
         global_weight=1.0,
         mtl_per_batch=False,
@@ -64,32 +65,6 @@ def make_args(**kwargs):
         external_lm=None,
         lm_fusion='',
         # lm_init=False,
-    )
-    args.update(kwargs)
-    return args
-
-
-def make_decode_params(**kwargs):
-    args = dict(
-        recog_batch_size=1,
-        recog_beam_width=1,
-        recog_ctc_weight=0.0,
-        recog_lm_weight=0.0,
-        recog_lm_second_weight=0.0,
-        recog_lm_bwd_weight=0.0,
-        recog_max_len_ratio=1.0,
-        recog_min_len_ratio=0.0,
-        recog_length_penalty=0.0,
-        recog_coverage_penalty=0.0,
-        recog_coverage_threshold=1.0,
-        recog_length_norm=False,
-        recog_eos_threshold=1.0,
-        recog_asr_state_carry_over=False,
-        recog_lm_state_carry_over=False,
-        recog_softmax_smoothing=1.0,
-        recog_mma_delay_threshold=-1,
-        nbest=1,
-        exclude_eos=False,
     )
     args.update(kwargs)
     return args
@@ -138,7 +113,7 @@ def make_decode_params(**kwargs):
         ({'backward': True, 'ctc_weight': 0.5}),
         ({'backward': True, 'ctc_weight': 1.0}),
         # bottleneck
-        ({'ffn_bottleneck_dim': 256}),
+        ({'ffn_bottleneck_dim': 128}),
         # RNNLM init
         # LM integration
     ]
@@ -165,10 +140,36 @@ def test_forward(args):
     assert isinstance(observation, dict)
 
 
+def make_decode_params(**kwargs):
+    args = dict(
+        recog_batch_size=1,
+        recog_beam_width=1,
+        recog_ctc_weight=0.0,
+        recog_lm_weight=0.0,
+        recog_lm_second_weight=0.0,
+        recog_lm_bwd_weight=0.0,
+        recog_max_len_ratio=1.0,
+        recog_min_len_ratio=0.1,
+        recog_length_penalty=0.0,
+        recog_coverage_penalty=0.0,
+        recog_coverage_threshold=1.0,
+        recog_length_norm=False,
+        recog_eos_threshold=1.0,
+        recog_asr_state_carry_over=False,
+        recog_lm_state_carry_over=False,
+        recog_softmax_smoothing=1.0,
+        recog_mma_delay_threshold=-1,
+        nbest=1,
+        exclude_eos=False,
+    )
+    args.update(kwargs)
+    return args
+
+
 def make_args_lm(**kwargs):
     args = dict(
         lm_type='lstm',
-        n_units=64,
+        n_units=32,
         n_projs=0,
         n_layers=2,
         residual=False,
