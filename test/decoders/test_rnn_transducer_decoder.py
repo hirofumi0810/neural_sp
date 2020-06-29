@@ -49,6 +49,7 @@ def make_decode_params(**kwargs):
         recog_lm_weight=0.0,
         recog_lm_second_weight=0.0,
         recog_lm_bwd_weight=0.0,
+        recog_max_len_ratio=1.0,
         recog_lm_state_carry_over=False,
         nbest=1,
     )
@@ -128,8 +129,11 @@ def test_decoding(params):
     dec.eval()
     with torch.no_grad():
         if params['recog_beam_width'] == 1:
-            hyps, aws = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=None,
-                                   exclude_eos=False, refs_id=ys, utt_ids=None, speakers=None)
+            out = dec.greedy(eouts, elens, max_len_ratio=params['recog_max_len_ratio'],
+                             idx2token=None, exclude_eos=False,
+                             refs_id=ys, utt_ids=None, speakers=None)
+            assert len(out) == 2
+            hyps, aws = out
             assert isinstance(hyps, list)
             assert len(hyps) == batch_size
             assert aws is None
