@@ -3,6 +3,7 @@
 
 """Test for attention-based RNN decoder."""
 
+import argparse
 import importlib
 import numpy as np
 import pytest
@@ -98,6 +99,29 @@ def make_decode_params(**kwargs):
     return args
 
 
+def make_args_lm(**kwargs):
+    args = dict(
+        lm_type='lstm',
+        n_units=64,
+        n_projs=0,
+        n_layers=2,
+        residual=False,
+        use_glu=False,
+        n_units_null_context=0,
+        bottleneck_dim=32,
+        emb_dim=16,
+        vocab=VOCAB,
+        dropout_in=0.1,
+        dropout_hidden=0.1,
+        lsm_prob=0.0,
+        param_init=0.1,
+        adaptive_softmax=False,
+        tie_embedding=False,
+    )
+    args.update(kwargs)
+    return argparse.Namespace(**args)
+
+
 @pytest.mark.parametrize(
     "args", [
         # RNN type
@@ -186,6 +210,11 @@ def test_forward(args):
         # coverage
         ({'recog_coverage_penalty': 0.1}),
         ({'recog_coverage_penalty': 0.1, 'recog_gnmt_decoding': True}),
+        # shallow fusion
+        ({'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+        # rescoring
+        ({'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
+        ({'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
     ]
 )
 def test_decoding(params):
@@ -201,6 +230,21 @@ def test_decoding(params):
     ctc_log_probs = None
     if params['recog_ctc_weight'] > 0:
         ctc_log_probs = torch.softmax(torch.FloatTensor(batch_size, emax, VOCAB), dim=-1)
+    lm = None
+    if params['recog_lm_weight'] > 0:
+        args_lm = make_args_lm()
+        module = importlib.import_module('neural_sp.models.lm.rnnlm')
+        lm = module.RNNLM(args_lm)
+    lm_second = None
+    if params['recog_lm_second_weight'] > 0:
+        args_lm = make_args_lm()
+        module = importlib.import_module('neural_sp.models.lm.rnnlm')
+        lm_second = module.RNNLM(args_lm)
+    lm_second_bwd = None
+    if params['recog_lm_bwd_weight'] > 0:
+        args_lm = make_args_lm()
+        module = importlib.import_module('neural_sp.models.lm.rnnlm')
+        lm_second_bwd = module.RNNLM(args_lm)
 
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
@@ -211,7 +255,6 @@ def test_decoding(params):
     # TODO(hirofumi0810):
     # recog_asr_state_carry_over
     # recog_lm_state_carry_over
-    # shallow fusion
     # cold fusion
     # deep fusion
     # ensemble
@@ -230,7 +273,7 @@ def test_decoding(params):
             assert aws[0].shape == (args['attn_n_heads'], len(hyps[0]), emax)
         else:
             out = dec.beam_search(eouts, elens, params, idx2token=None,
-                                  lm=None, lm_second=None, lm_second_bwd=None,
+                                  lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
                                   ctc_log_probs=ctc_log_probs,
                                   nbest=params['nbest'], exclude_eos=params['exclude_eos'],
                                   refs_id=None, utt_ids=None, speakers=None,
