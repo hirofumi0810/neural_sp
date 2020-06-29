@@ -1312,10 +1312,10 @@ class RNNDecoder(DecoderBase):
             if self.bwd:
                 # Reverse the order
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:][::-1]) for n in range(nbest)]]
-                aws += [tensor2np(torch.cat(end_hyps[0]['aws'][1:][::-1], dim=2).squeeze(0))]
+                aws += [[tensor2np(torch.cat(end_hyps[n]['aws'][1:][::-1], dim=2).squeeze(0)) for n in range(nbest)]]
             else:
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
-                aws += [tensor2np(torch.cat(end_hyps[0]['aws'][1:], dim=2).squeeze(0))]
+                aws += [[tensor2np(torch.cat(end_hyps[n]['aws'][1:], dim=2).squeeze(0)) for n in range(nbest)]]
             if length_norm:
                 scores += [[end_hyps[n]['score_att'] / len(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
             else:
@@ -1329,9 +1329,11 @@ class RNNDecoder(DecoderBase):
             if self.bwd:
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][1:] if eos_flags[b][n]
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
+                aws = [[aws[b][n][:, 1:] if eos_flags[b][n] else aws[b][n] for n in range(nbest)] for b in range(bs)]
             else:
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][:-1] if eos_flags[b][n]
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
+                aws = [[aws[b][n][:, :-1] if eos_flags[b][n] else aws[b][n] for n in range(nbest)] for b in range(bs)]
 
         # Store ASR/LM state
         self.dstates_final = end_hyps[0]['dstates']

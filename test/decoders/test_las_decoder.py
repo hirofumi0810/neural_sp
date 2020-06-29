@@ -219,13 +219,15 @@ def test_decoding(params):
     dec.eval()
     with torch.no_grad():
         if params['recog_beam_width'] == 1:
-            hyps, aws = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=None,
-                                   exclude_eos=params['exclude_eos'],
-                                   refs_id=ys, utt_ids=None, speakers=None)
+            out = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=None,
+                             exclude_eos=params['exclude_eos'],
+                             refs_id=ys, utt_ids=None, speakers=None)
+            assert len(out) == 2
+            hyps, aws = out
             assert isinstance(hyps, list)
             assert len(hyps) == batch_size
             assert isinstance(aws, list)
-            assert aws[0].shape == (1, len(hyps[0]), emax)
+            assert aws[0].shape == (args['attn_n_heads'], len(hyps[0]), emax)
         else:
             out = dec.beam_search(eouts, elens, params, idx2token=None,
                                   lm=None, lm_second=None, lm_second_bwd=None,
@@ -241,5 +243,5 @@ def test_decoding(params):
             assert len(nbest_hyps[0]) == params['nbest']
             ymax = len(nbest_hyps[0][0])
             assert isinstance(aws, list)
-            assert aws[0].shape == (1, ymax, emax)
+            assert aws[0][0].shape == (args['attn_n_heads'], ymax, emax)
             # assert scores is None
