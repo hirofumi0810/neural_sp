@@ -72,6 +72,32 @@ def make_args(**kwargs):
     return args
 
 
+def make_decode_params(**kwargs):
+    args = dict(
+        recog_batch_size=1,
+        recog_beam_width=1,
+        recog_ctc_weight=0.0,
+        recog_lm_weight=0.0,
+        recog_lm_second_weight=0.0,
+        recog_lm_bwd_weight=0.0,
+        recog_max_len_ratio=1.0,
+        recog_min_len_ratio=0.0,
+        recog_length_penalty=0.0,
+        recog_coverage_penalty=0.0,
+        recog_coverage_threshold=1.0,
+        recog_length_norm=False,
+        recog_gnmt_decoding=False,
+        recog_eos_threshold=1.0,
+        recog_asr_state_carry_over=False,
+        recog_lm_state_carry_over=False,
+        recog_softmax_smoothing=1.0,
+        nbest=1,
+        exclude_eos=False,
+    )
+    args.update(kwargs)
+    return args
+
+
 @pytest.mark.parametrize(
     "args", [
         # RNN type
@@ -86,6 +112,8 @@ def make_args(**kwargs):
         ({'attn_type': 'luong_general'}),
         ({'attn_type': 'luong_concat'}),
         ({'attn_type': 'gmm', 'gmm_attn_n_mixtures': 5}),
+        # projection
+        ({'n_projs': 32}),
         # multihead attention
         ({'attn_type': 'add', 'attn_n_heads': 4}),
         # MoChA
@@ -136,3 +164,82 @@ def test_forward(args):
     assert loss.size(0) == 1
     assert loss.item() >= 0
     assert isinstance(observation, dict)
+
+
+@pytest.mark.parametrize(
+    "params", [
+        # greedy decoding
+        ({'recog_beam_width': 1}),
+        ({'recog_beam_width': 1, 'exclude_eos': True}),
+        ({'recog_beam_width': 1, 'recog_batch_size': 4}),
+        # beam search
+        ({'recog_beam_width': 4}),
+        ({'recog_beam_width': 4, 'exclude_eos': True}),
+        ({'recog_beam_width': 4, 'nbest': 2}),
+        ({'recog_beam_width': 4, 'nbest': 4}),
+        ({'recog_beam_width': 4, 'nbest': 4, 'softmax_smoothing': 2.0}),
+        ({'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
+        # length penalty
+        ({'recog_length_penalty': 0.1}),
+        ({'recog_length_penalty': 0.1, 'recog_gnmt_decoding': True}),
+        ({'recog_length_norm': True}),
+        # coverage
+        ({'recog_coverage_penalty': 0.1}),
+        ({'recog_coverage_penalty': 0.1, 'recog_gnmt_decoding': True}),
+    ]
+)
+def test_decoding(params):
+    args = make_args()
+    params = make_decode_params(**params)
+
+    batch_size = params['recog_batch_size']
+    emax = 40
+    device_id = -1
+    eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
+    elens = torch.IntTensor([len(x) for x in eouts])
+    eouts = pad_list([np2tensor(x, device_id).float() for x in eouts], 0.)
+    ctc_log_probs = None
+    if params['recog_ctc_weight'] > 0:
+        ctc_log_probs = torch.softmax(torch.FloatTensor(batch_size, emax, VOCAB), dim=-1)
+
+    ylens = [4, 5, 3, 7]
+    ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
+
+    module = importlib.import_module('neural_sp.models.seq2seq.decoders.las')
+    dec = module.RNNDecoder(**args)
+
+    # TODO(hirofumi0810):
+    # recog_asr_state_carry_over
+    # recog_lm_state_carry_over
+    # shallow fusion
+    # cold fusion
+    # deep fusion
+    # ensemble
+
+    dec.eval()
+    with torch.no_grad():
+        if params['recog_beam_width'] == 1:
+            hyps, aws = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=None,
+                                   exclude_eos=params['exclude_eos'],
+                                   refs_id=ys, utt_ids=None, speakers=None)
+            assert isinstance(hyps, list)
+            assert len(hyps) == batch_size
+            assert isinstance(aws, list)
+            assert aws[0].shape == (1, len(hyps[0]), emax)
+        else:
+            out = dec.beam_search(eouts, elens, params, idx2token=None,
+                                  lm=None, lm_second=None, lm_second_bwd=None,
+                                  ctc_log_probs=ctc_log_probs,
+                                  nbest=params['nbest'], exclude_eos=params['exclude_eos'],
+                                  refs_id=None, utt_ids=None, speakers=None,
+                                  ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[],
+                                  cache_states=True)
+            assert len(out) == 3
+            nbest_hyps, aws, scores = out
+            assert isinstance(nbest_hyps, list)
+            assert len(nbest_hyps) == batch_size
+            assert len(nbest_hyps[0]) == params['nbest']
+            ymax = len(nbest_hyps[0][0])
+            assert isinstance(aws, list)
+            assert aws[0].shape == (1, ymax, emax)
+            # assert scores is None
