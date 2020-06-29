@@ -45,9 +45,9 @@ def make_args(**kwargs):
         conv_param_init=0.1,
         task_specific_layer=False,
         param_init='xavier_uniform',
-        chunk_size_left=-1,
-        chunk_size_current=-1,
-        chunk_size_right=-1
+        chunk_size_left=0,
+        chunk_size_current=0,
+        chunk_size_right=0
     )
     args.update(kwargs)
     return args

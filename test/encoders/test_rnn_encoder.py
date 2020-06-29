@@ -17,10 +17,10 @@ def make_args(**kwargs):
     args = dict(
         input_dim=80,
         rnn_type='blstm',
-        n_units=128,
+        n_units=64,
         n_projs=0,
         last_proj_dim=0,
-        n_layers=5,
+        n_layers=4,
         n_layers_sub1=0,
         n_layers_sub2=0,
         dropout_in=0.1,
@@ -40,8 +40,8 @@ def make_args(**kwargs):
         bidir_sum_fwd_bwd=False,
         task_specific_layer=False,
         param_init=0.1,
-        chunk_size_left=-1,
-        chunk_size_right=-1,
+        chunk_size_left=0,
+        chunk_size_right=0,
     )
     args.update(kwargs)
     return args
@@ -74,15 +74,15 @@ def make_args(**kwargs):
         ({'rnn_type': 'conv_blstm', 'conv_batch_norm': True}),
         ({'rnn_type': 'conv_blstm', 'conv_layer_norm': True}),
         # projection
-        ({'rnn_type': 'blstm', 'n_projs': 64}),
-        ({'rnn_type': 'lstm', 'n_projs': 64}),
+        ({'rnn_type': 'blstm', 'n_projs': 32}),
+        ({'rnn_type': 'lstm', 'n_projs': 32}),
         ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'n_projs': 64}),
-        ({'rnn_type': 'blstm', 'last_proj_dim': 128}),
-        ({'rnn_type': 'blstm', 'last_proj_dim': 128, 'n_projs': 64}),
-        ({'rnn_type': 'lstm', 'last_proj_dim': 128, 'n_projs': 64}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 128}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 128, 'n_projs': 64}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'n_projs': 32}),
+        ({'rnn_type': 'blstm', 'last_proj_dim': 32}),
+        ({'rnn_type': 'blstm', 'last_proj_dim': 32, 'n_projs': 32}),
+        ({'rnn_type': 'lstm', 'last_proj_dim': 32, 'n_projs': 32}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 32}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 32, 'n_projs': 32}),
         # subsampling
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop'}),
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat'}),
@@ -97,18 +97,18 @@ def make_args(**kwargs):
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv',
           'bidir_sum_fwd_bwd': True}),
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop',
-          'n_projs': 64}),
+          'n_projs': 32}),
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat',
-          'n_projs': 64}),
+          'n_projs': 32}),
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'max_pool',
-          'n_projs': 64}),
+          'n_projs': 32}),
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv',
-          'n_projs': 64}),
+          'n_projs': 32}),
         # LC-BLSTM
-        ({'rnn_type': 'blstm', 'chunk_size_left': -1, 'chunk_size_right': 40}),
+        ({'rnn_type': 'blstm', 'chunk_size_right': 40}),  # for PT
         ({'rnn_type': 'blstm', 'chunk_size_left': 40, 'chunk_size_right': 40}),
         ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True,
-          'chunk_size_left': -1, 'chunk_size_right': 40}),
+          'chunk_size_right': 40}),  # for PT
         ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True,
           'chunk_size_left': 40, 'chunk_size_right': 40}),
         ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True,
@@ -121,10 +121,10 @@ def make_args(**kwargs):
           'chunk_size_left': 40, 'chunk_size_right': 40,
           'conv_poolings': "(1,1)_(1,1)"}),
         # Multi-task
-        ({'rnn_type': 'blstm', 'n_layers_sub1': 4}),
-        ({'rnn_type': 'blstm', 'n_layers_sub1': 4, 'task_specific_layer': True}),
-        ({'rnn_type': 'blstm', 'n_layers_sub1': 4, 'n_layers_sub2': 3}),
-        ({'rnn_type': 'blstm', 'n_layers_sub1': 4, 'n_layers_sub2': 3, 'task_specific_layer': True}),
+        ({'rnn_type': 'blstm', 'n_layers_sub1': 3}),
+        ({'rnn_type': 'blstm', 'n_layers_sub1': 3, 'task_specific_layer': True}),
+        ({'rnn_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2}),
+        ({'rnn_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2, 'task_specific_layer': True}),
     ]
 )
 def test_forward(args):
