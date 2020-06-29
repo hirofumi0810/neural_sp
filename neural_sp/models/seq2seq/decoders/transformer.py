@@ -588,10 +588,10 @@ class TransformerDecoder(DecoderBase):
         if exclude_eos:
             if self.bwd:
                 hyps = [hyps[b][1:] if eos_flags[b] else hyps[b] for b in range(bs)]
-                aws = [aws[b][:, 1:] if eos_flags[b] else hyps[b] for b in range(bs)]
+                aws = [aws[b][:, 1:] if eos_flags[b] else aws[b] for b in range(bs)]
             else:
                 hyps = [hyps[b][:-1] if eos_flags[b] else hyps[b] for b in range(bs)]
-                aws = [aws[b][:, :-1] if eos_flags[b] else hyps[b] for b in range(bs)]
+                aws = [aws[b][:, :-1] if eos_flags[b] else aws[b] for b in range(bs)]
 
         if idx2token is not None:
             for b in range(bs):
