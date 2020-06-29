@@ -309,6 +309,10 @@ class Speech2Text(ModelBase):
         for sub in ['sub1', 'sub2']:
             # for the forward decoder in the sub tasks
             if (getattr(self, 'fwd_weight_' + sub) > 0 or getattr(self, 'ctc_weight_' + sub) > 0) and task in ['all', 'ys_' + sub, 'ys_' + sub + '.ctc']:
+                if len(batch['ys_' + sub]) == 0:
+                    continue
+                # NOTE: this is for evaluation at the end of every opoch
+
                 loss_sub, obs_fwd_sub = getattr(self, 'dec_fwd_' + sub)(
                     eout_dict['ys_' + sub]['xs'], eout_dict['ys_' + sub]['xlens'],
                     batch['ys_' + sub], task)
