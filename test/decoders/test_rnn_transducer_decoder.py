@@ -30,13 +30,27 @@ def make_args(**kwargs):
         dropout=0.1,
         dropout_emb=0.1,
         lsm_prob=0.0,
-        ctc_weight=0.0,
+        ctc_weight=0.1,
         ctc_lsm_prob=0.1,
         ctc_fc_list='128_128',
         external_lm=None,
         global_weight=1.0,
         mtl_per_batch=False,
         param_init=0.1,
+    )
+    args.update(kwargs)
+    return args
+
+
+def make_decode_params(**kwargs):
+    args = dict(
+        recog_batch_size=1,
+        recog_beam_width=1,
+        recog_ctc_weight=0.0,
+        recog_lm_weight=0.0,
+        recog_lm_second_weight=0.0,
+        recog_lm_bwd_weight=0.0,
+        recog_lm_state_carry_over=False,
     )
     args.update(kwargs)
     return args
@@ -49,6 +63,8 @@ def make_args(**kwargs):
         ({'rnn_type': 'lstm_transducer', 'n_layers': 2}),
         ({'rnn_type': 'gru_transducer', 'n_layers': 1}),
         ({'rnn_type': 'gru_transducer', 'n_layers': 2}),
+        # projection
+        ({'n_projs': 32}),
         # CTC
         ({'ctc_weight': 0.5}),
         ({'ctc_weight': 1.0}),
@@ -75,3 +91,53 @@ def test_forward(args):
     assert loss.size(0) == 1
     assert loss.item() >= 0
     assert isinstance(observation, dict)
+
+
+@pytest.mark.parametrize(
+    "params", [
+        # greedy decoding
+        ({'recog_beam_width': 1}),
+        ({'recog_beam_width': 1, 'recog_batch_size': 4}),
+        # beam search
+        ({'recog_beam_width': 4}),
+        ({'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
+    ]
+)
+def test_decoding(params):
+    args = make_args()
+    params = make_decode_params(**params)
+
+    batch_size = params['recog_batch_size']
+    emax = 40
+    device_id = -1
+    eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
+    elens = torch.IntTensor([len(x) for x in eouts])
+    eouts = pad_list([np2tensor(x, device_id).float() for x in eouts], 0.)
+    ctc_log_probs = None
+    if params['recog_ctc_weight'] > 0:
+        ctc_log_probs = torch.softmax(torch.FloatTensor(batch_size, emax, VOCAB), dim=-1)
+
+    ylens = [4, 5, 3, 7]
+    ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
+
+    module = importlib.import_module('neural_sp.models.seq2seq.decoders.rnn_transducer')
+    dec = module.RNNTransducer(**args)
+
+    if params['recog_beam_width'] == 1:
+        hyps, aws = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=None,
+                               exclude_eos=False, refs_id=ys, utt_ids=None, speakers=None)
+        assert isinstance(hyps, list)
+        assert len(hyps) == params['recog_batch_size']
+        assert aws is None
+    else:
+        out = dec.beam_search(eouts, elens, params, idx2token=None,
+                              lm=None, lm_second=None, lm_second_bwd=None,
+                              ctc_log_probs=ctc_log_probs,
+                              nbest=1, exclude_eos=False,
+                              refs_id=None, utt_ids=None, speakers=None,
+                              ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[])
+        assert len(out) == 3
+        nbest_hyps, aws, scores = out
+        assert isinstance(nbest_hyps, list)
+        assert aws is None
+        assert scores is None

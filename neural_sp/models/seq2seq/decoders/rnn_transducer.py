@@ -400,8 +400,8 @@ class RNNTransducer(DecoderBase):
             lm: firsh path LM
             lm_second: second path LM
             lm_second_bwd: secoding path backward LM
-            ctc_log_probs (FloatTensor):
-            nbest (int):
+            ctc_log_probs (FloatTensor): `[B, T, vocab]`
+            nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
             refs_id (list): reference list
             utt_ids (list): utterance id list
