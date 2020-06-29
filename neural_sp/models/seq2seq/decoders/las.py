@@ -231,12 +231,12 @@ class RNNDecoder(DecoderBase):
             self.rnn = nn.ModuleList()
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             dec_odim = enc_n_units + emb_dim
-            self.proj = repeat(nn.Linear(n_units, n_projs), n_layers) if self.n_projs > 0 else None
+            self.proj = repeat(nn.Linear(n_units, n_projs), n_layers) if n_projs > 0 else None
             self.dropout = nn.Dropout(p=dropout)
             for _ in range(n_layers):
                 self.rnn += [cell(dec_odim, n_units)]
                 dec_odim = n_units
-                if self.n_projs > 0:
+                if n_projs > 0:
                     dec_odim = n_projs
 
             # LM fusion
@@ -853,7 +853,7 @@ class RNNDecoder(DecoderBase):
             aws (list): length `B`, each of which contains arrays of size `[H, L, T]`
 
         """
-        bs, xmax = eouts.size()[:2]
+        bs, xmax, _ = eouts.size()
 
         # Initialization
         dstates = self.zero_state(bs)
@@ -1216,7 +1216,9 @@ class RNNDecoder(DecoderBase):
 
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
-                        length_norm_factor = len(beam['hyp'][1:]) + 1 if length_norm else 1
+                        length_norm_factor = 1.
+                        if length_norm:
+                            length_norm_factor = len(beam['hyp'][1:]) + 1
                         total_score = total_scores_topk[0, k].item() / length_norm_factor
 
                         if idx == self.eos:
@@ -1263,8 +1265,7 @@ class RNNDecoder(DecoderBase):
                 new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
                 # Remove complete hypotheses
-                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
-                    new_hyps_sorted, end_hyps)
+                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted, end_hyps)
                 hyps = new_hyps[:]
                 if is_finish:
                     break

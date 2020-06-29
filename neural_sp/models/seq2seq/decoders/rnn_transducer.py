@@ -109,12 +109,12 @@ class RNNTransducer(DecoderBase):
             self.rnn = nn.ModuleList()
             rnn = nn.LSTM if rnn_type == 'lstm_transducer' else nn.GRU
             dec_odim = emb_dim
-            self.proj = repeat(nn.Linear(n_units, n_projs), n_layers) if self.n_projs > 0 else None
+            self.proj = repeat(nn.Linear(n_units, n_projs), n_layers) if n_projs > 0 else None
             self.dropout = nn.Dropout(p=dropout)
             for _ in range(n_layers):
                 self.rnn += [rnn(dec_odim, n_units, 1, batch_first=True)]
-                dec_odim = n_projs
-                if self.n_projs > 0:
+                dec_odim = n_units
+                if n_projs > 0:
                     dec_odim = n_projs
 
             self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
