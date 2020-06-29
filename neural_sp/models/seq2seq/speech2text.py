@@ -28,6 +28,7 @@ from neural_sp.models.seq2seq.frontends.splicing import splice
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import tensor2np
 from neural_sp.models.torch_utils import pad_list
+from neural_sp.utils import mkdir_join
 
 random.seed(1)
 
@@ -65,7 +66,7 @@ class Speech2Text(ModelBase):
         # NOTE: reserved in advance
 
         # for the sub tasks
-        self.main_weight = 1 - args.sub1_weight - args.sub2_weight
+        self.main_weight = 1.0 - args.sub1_weight - args.sub2_weight
         self.sub1_weight = args.sub1_weight
         self.sub2_weight = args.sub2_weight
         self.mtl_per_batch = args.mtl_per_batch
@@ -421,15 +422,22 @@ class Speech2Text(ModelBase):
 
     def plot_attention(self):
         """Plot attention weights during training."""
-        if 'former' in self.enc_type:
-            self.enc._plot_attention(self.save_path)
-        if 'former' in self.dec_type or self.dec_type in ['lstm', 'gru']:
-            self.dec_fwd._plot_attention(self.save_path)
+        # encoder
+        self.enc._plot_attention(mkdir_join(self.save_path, 'enc_att_weights'))
+        # decoder
+        self.dec_fwd._plot_attention(mkdir_join(self.save_path, 'dec_att_weights'))
+        if getattr(self, 'dec_fwd_sub1', None) is not None:
+            self.dec_fwd_sub1._plot_attention(mkdir_join(self.save_path, 'dec_att_weights_sub1'))
+        if getattr(self, 'dec_fwd_sub2', None) is not None:
+            self.dec_fwd_sub2._plot_attention(mkdir_join(self.save_path, 'dec_att_weights_sub2'))
 
     def plot_ctc(self):
         """Plot CTC posteriors during training."""
-        if self.ctc_weight > 0:
-            self.dec_fwd._plot_ctc(self.save_path)
+        self.dec_fwd._plot_ctc(mkdir_join(self.save_path, 'ctc'))
+        if getattr(self, 'dec_fwd_sub1', None) is not None:
+            self.dec_fwd_sub1._plot_ctc(mkdir_join(self.save_path, 'ctc_sub1'))
+        if getattr(self, 'dec_fwd_sub2', None) is not None:
+            self.dec_fwd_sub2._plot_ctc(mkdir_join(self.save_path, 'ctc_sub2'))
 
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
         from neural_sp.models.seq2seq.frontends.streaming import Streaming

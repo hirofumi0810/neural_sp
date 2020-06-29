@@ -15,7 +15,6 @@ import shutil
 from neural_sp.models.base import ModelBase
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
-from neural_sp.utils import mkdir_join
 
 import matplotlib
 matplotlib.use('Agg')
@@ -55,12 +54,13 @@ class DecoderBase(ModelBase):
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
-        _save_path = mkdir_join(save_path, 'dec_att_weights')
-
         # Clean directory
-        if _save_path is not None and os.path.isdir(_save_path):
-            shutil.rmtree(_save_path)
-            os.mkdir(_save_path)
+        if save_path is not None and os.path.isdir(save_path):
+            shutil.rmtree(save_path)
+            os.mkdir(save_path)
+
+        if not hasattr(self, 'aws_dict'):
+            return
 
         elens = self.data_dict['elens']
         ylens = self.data_dict['ylens']
@@ -89,7 +89,7 @@ class DecoderBase(ModelBase):
                 # ax.set_yticklabels(ys + [''])
 
             fig.tight_layout()
-            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
+            fig.savefig(os.path.join(save_path, '%s.png' % k), dvi=500)
             plt.close()
 
     def _plot_ctc(self, save_path, topk=10):
@@ -98,12 +98,10 @@ class DecoderBase(ModelBase):
             return
         from matplotlib import pyplot as plt
 
-        _save_path = mkdir_join(save_path, 'ctc')
-
         # Clean directory
-        if _save_path is not None and os.path.isdir(_save_path):
-            shutil.rmtree(_save_path)
-            os.mkdir(_save_path)
+        if save_path is not None and os.path.isdir(save_path):
+            shutil.rmtree(save_path)
+            os.mkdir(save_path)
 
         elen = self.ctc.data_dict['elens'][-1]
         probs = self.ctc.prob_dict['probs'][-1, :elen]  # `[T, vocab]`
@@ -128,7 +126,7 @@ class DecoderBase(ModelBase):
         plt.yticks(list(range(0, 2, 1)))
 
         plt.tight_layout()
-        plt.savefig(os.path.join(_save_path, '%s.png' % 'prob'), dvi=500)
+        plt.savefig(os.path.join(save_path, 'prob.png'), dvi=500)
         plt.close()
 
     def decode_ctc(self, eouts, elens, params, idx2token,
