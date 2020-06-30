@@ -382,7 +382,7 @@ class RNNEncoder(EncoderBase):
         xs_sub1 = None
 
         # full context BPTT
-        if self.chunk_size_left < 0:
+        if self.chunk_size_left <= 0:
             for lth in range(self.n_layers):
                 self.rnn[lth].flatten_parameters()  # for multi-GPUs
                 self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
