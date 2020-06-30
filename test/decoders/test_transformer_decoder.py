@@ -114,7 +114,7 @@ def make_args(**kwargs):
         ({'backward': True, 'ctc_weight': 1.0}),
         # bottleneck
         ({'ffn_bottleneck_dim': 128}),
-        # RNNLM init
+        # TransformerLM init
         # LM integration
     ]
 )
@@ -161,6 +161,7 @@ def make_decode_params(**kwargs):
         recog_mma_delay_threshold=-1,
         nbest=1,
         exclude_eos=False,
+        cache_states=True,
     )
     args.update(kwargs)
     return args
@@ -194,10 +195,12 @@ def make_args_lm(**kwargs):
     [
         # greedy decoding
         ({'recog_beam_width': 1}),
+        ({'recog_beam_width': 1, 'cache_states': False}),
         ({'recog_beam_width': 1, 'exclude_eos': True}),
         ({'recog_beam_width': 1, 'recog_batch_size': 4}),
         # beam search
         ({'recog_beam_width': 4}),
+        ({'recog_beam_width': 4, 'cache_states': False}),
         ({'recog_beam_width': 4, 'exclude_eos': True}),
         ({'recog_beam_width': 4, 'nbest': 2}),
         ({'recog_beam_width': 4, 'nbest': 4}),
@@ -257,7 +260,8 @@ def test_decoding(params):
         if params['recog_beam_width'] == 1:
             out = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=None,
                              exclude_eos=params['exclude_eos'],
-                             refs_id=ys, utt_ids=None, speakers=None)
+                             refs_id=ys, utt_ids=None, speakers=None,
+                             cache_states=params['cache_states'])
             assert len(out) == 2
             hyps, aws = out
             assert isinstance(hyps, list)
@@ -270,8 +274,7 @@ def test_decoding(params):
                                   ctc_log_probs=ctc_log_probs,
                                   nbest=params['nbest'], exclude_eos=params['exclude_eos'],
                                   refs_id=None, utt_ids=None, speakers=None,
-                                  ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[],
-                                  cache_states=True)
+                                  cache_states=params['cache_states'])
             assert len(out) == 3
             nbest_hyps, aws, scores = out
             assert isinstance(nbest_hyps, list)
