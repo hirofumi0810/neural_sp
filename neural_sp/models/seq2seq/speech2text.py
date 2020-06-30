@@ -385,7 +385,7 @@ class Speech2Text(ModelBase):
 
             # Sequence summary network
             if self.ssn is not None:
-                xs += self.ssn(xs, xlens)
+                xs = self.ssn(xs, xlens)
 
         elif self.input_type == 'text':
             xlens = torch.IntTensor([len(x) for x in xs])

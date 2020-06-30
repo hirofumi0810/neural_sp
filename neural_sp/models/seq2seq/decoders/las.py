@@ -22,10 +22,11 @@ from neural_sp.models.criterion import MBR
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.lm.transformerlm import TransformerLM
 from neural_sp.models.lm.transformer_xl import TransformerXL
+from neural_sp.models.modules.attention import AttentionMechanism
 from neural_sp.models.modules.gmm_attention import GMMAttention
+from neural_sp.models.modules.initialization import init_with_uniform
 from neural_sp.models.modules.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
-from neural_sp.models.modules.attention import AttentionMechanism
 from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
@@ -360,20 +361,13 @@ class RNNDecoder(DecoderBase):
             if 'score.chunk_energy.v.weight_g' in n or 'score.chunk_energy.r' in n:
                 logger.info('Skip initialization of %s' % n)
                 continue
+            if 'linear_lm_gate.fc.bias' in n and p.dim() == 1:
+                # Initialize bias in gating with -1 for cold fusion
+                nn.init.constant_(p, -1.)  # bias
+                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', -1.))
+                continue
 
-            if p.dim() == 1:
-                if 'linear_lm_gate.fc.bias' in n:
-                    # Initialize bias in gating with -1 for cold fusion
-                    nn.init.constant_(p, -1.)  # bias
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', -1.))
-                else:
-                    nn.init.constant_(p, 0.)  # bias
-                    logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
-            elif p.dim() in [2, 3, 4]:
-                nn.init.uniform_(p, a=-param_init, b=param_init)
-                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
-            else:
-                raise ValueError(n)
+            init_with_uniform(n, p, param_init)
 
     def start_scheduled_sampling(self):
         self._ss_prob = self.ss_prob

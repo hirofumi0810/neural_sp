@@ -16,6 +16,7 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.utils.rnn import pad_packed_sequence
 
+from neural_sp.models.modules.initialization import init_with_uniform
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.conv import update_lens_1d
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
@@ -258,14 +259,7 @@ class RNNEncoder(EncoderBase):
         for n, p in self.named_parameters():
             if 'conv' in n or 'tds' in n or 'gated_conv' in n:
                 continue  # for CNN layers before RNN layers
-            if p.dim() == 1:
-                nn.init.constant_(p, 0.)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
-            elif p.dim() in [2, 4]:
-                nn.init.uniform_(p, a=-param_init, b=param_init)
-                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
-            else:
-                raise ValueError(n)
+            init_with_uniform(n, p, param_init)
 
     def reset_cache(self):
         self.hx_fwd = [None] * self.n_layers
