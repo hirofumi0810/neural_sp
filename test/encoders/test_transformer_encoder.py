@@ -72,7 +72,7 @@ def make_args(**kwargs):
         ({'enc_type': 'conv_transformer', 'conv_batch_norm': True}),
         ({'enc_type': 'conv_transformer', 'conv_layer_norm': True}),
         # projection
-        ({'enc_type': 'conv_transformer', 'last_proj_dim': 256}),
+        ({'enc_type': 'conv_transformer', 'last_proj_dim': 32}),
         # LC-Transformer
         ({'enc_type': 'transformer', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         ({'enc_type': 'transformer', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
@@ -84,9 +84,7 @@ def make_args(**kwargs):
         ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1}),
         ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True}),
         # bottleneck
-        ({'ffn_bottleneck_dim': 128}),
-        ({'input_bottleneck_dim': 128}),
-        ({'ffn_bottleneck_dim': 128, 'input_bottleneck_dim': 512}),
+        ({'ffn_bottleneck_dim': 32}),
     ]
 )
 def test_forward(args):
