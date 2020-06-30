@@ -43,7 +43,8 @@ def make_args(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # RNN type
         ({'rnn_type': 'lstm_transducer', 'n_layers': 1}),
         ({'rnn_type': 'lstm_transducer', 'n_layers': 2}),
@@ -119,7 +120,8 @@ def make_args_lm(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "params", [
+    "params",
+    [
         # greedy decoding
         ({'recog_beam_width': 1}),
         ({'recog_beam_width': 1, 'recog_batch_size': 4}),

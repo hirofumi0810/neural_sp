@@ -71,7 +71,8 @@ def make_args(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # head
         ({'n_heads': 1}),
         ({'n_heads': 4}),
@@ -190,7 +191,8 @@ def make_args_lm(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "params", [
+    "params",
+    [
         # greedy decoding
         ({'recog_beam_width': 1}),
         ({'recog_beam_width': 1, 'exclude_eos': True}),
@@ -279,4 +281,6 @@ def test_decoding(params):
             ymax = len(nbest_hyps[0][0])
             assert isinstance(aws, list)
             assert aws[0][0].shape == (args['n_heads'] * args['n_layers'], ymax, emax)
-            # assert scores is None
+            assert isinstance(scores, list)
+            assert len(scores) == batch_size
+            assert len(scores[0]) == params['nbest']

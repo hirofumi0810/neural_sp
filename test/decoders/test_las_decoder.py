@@ -73,57 +73,9 @@ def make_args(**kwargs):
     return args
 
 
-def make_decode_params(**kwargs):
-    args = dict(
-        recog_batch_size=1,
-        recog_beam_width=1,
-        recog_ctc_weight=0.0,
-        recog_lm_weight=0.0,
-        recog_lm_second_weight=0.0,
-        recog_lm_bwd_weight=0.0,
-        recog_max_len_ratio=1.0,
-        recog_min_len_ratio=0.1,
-        recog_length_penalty=0.0,
-        recog_coverage_penalty=0.0,
-        recog_coverage_threshold=1.0,
-        recog_length_norm=False,
-        recog_gnmt_decoding=False,
-        recog_eos_threshold=1.0,
-        recog_asr_state_carry_over=False,
-        recog_lm_state_carry_over=False,
-        recog_softmax_smoothing=1.0,
-        nbest=1,
-        exclude_eos=False,
-    )
-    args.update(kwargs)
-    return args
-
-
-def make_args_lm(**kwargs):
-    args = dict(
-        lm_type='lstm',
-        n_units=32,
-        n_projs=0,
-        n_layers=2,
-        residual=False,
-        use_glu=False,
-        n_units_null_context=0,
-        bottleneck_dim=16,
-        emb_dim=16,
-        vocab=VOCAB,
-        dropout_in=0.1,
-        dropout_hidden=0.1,
-        lsm_prob=0.0,
-        param_init=0.1,
-        adaptive_softmax=False,
-        tie_embedding=False,
-    )
-    args.update(kwargs)
-    return argparse.Namespace(**args)
-
-
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # RNN type
         ({'rnn_type': 'lstm', 'n_layers': 1}),
         ({'rnn_type': 'lstm', 'n_layers': 2}),
@@ -190,8 +142,58 @@ def test_forward(args):
     assert isinstance(observation, dict)
 
 
+def make_decode_params(**kwargs):
+    args = dict(
+        recog_batch_size=1,
+        recog_beam_width=1,
+        recog_ctc_weight=0.0,
+        recog_lm_weight=0.0,
+        recog_lm_second_weight=0.0,
+        recog_lm_bwd_weight=0.0,
+        recog_max_len_ratio=1.0,
+        recog_min_len_ratio=0.1,
+        recog_length_penalty=0.0,
+        recog_coverage_penalty=0.0,
+        recog_coverage_threshold=1.0,
+        recog_length_norm=False,
+        recog_gnmt_decoding=False,
+        recog_eos_threshold=1.0,
+        recog_asr_state_carry_over=False,
+        recog_lm_state_carry_over=False,
+        recog_softmax_smoothing=1.0,
+        nbest=1,
+        exclude_eos=False,
+    )
+    args.update(kwargs)
+    return args
+
+
+def make_args_lm(**kwargs):
+    args = dict(
+        lm_type='lstm',
+        n_units=32,
+        n_projs=0,
+        n_layers=2,
+        residual=False,
+        use_glu=False,
+        n_units_null_context=0,
+        bottleneck_dim=16,
+        emb_dim=16,
+        vocab=VOCAB,
+        dropout_in=0.1,
+        dropout_hidden=0.1,
+        lsm_prob=0.0,
+        param_init=0.1,
+        adaptive_softmax=False,
+        tie_embedding=False,
+    )
+    args.update(kwargs)
+    return argparse.Namespace(**args)
+
+
 @pytest.mark.parametrize(
-    "params", [
+    "params",
+    [
         # greedy decoding
         ({'recog_beam_width': 1}),
         ({'recog_beam_width': 1, 'exclude_eos': True}),
