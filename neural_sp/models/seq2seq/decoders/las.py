@@ -236,7 +236,7 @@ class RNNDecoder(DecoderBase):
                 if n_projs > 0:
                     dec_odim = n_projs
 
-            # LM fusion
+            # RNNLM fusion
             if external_lm is not None and lm_fusion:
                 self.linear_dec_feat = nn.Linear(dec_odim + enc_n_units, n_units)
                 if lm_fusion in ['cold', 'deep']:
@@ -261,29 +261,32 @@ class RNNDecoder(DecoderBase):
                 self.output.weight = self.embed.weight
 
         self.reset_parameters(param_init)
+        # NOTE: LM registration and initialization should be performed after reset_parameters()
 
-        # resister the external LM
-        self.lm = external_lm
+        # resister the external RNNLM
+        self.lm = external_lm if lm_fusion else None
 
-        # decoder initialization with pre-trained LM
+        # decoder initialization with pre-trained RNNLM
         if lm_init:
-            assert lm_init.vocab == vocab
-            assert lm_init.n_units == n_units
-            assert lm_init.emb_dim == emb_dim
+            assert self.att_weight > 0
+            assert external_lm is not None
+            assert external_lm.vocab == vocab, 'vocab'
+            assert external_lm.n_units == n_units, 'n_units'
+            assert external_lm.emb_dim == emb_dim, 'emb_dim'
             logger.info('===== Initialize the decoder with pre-trained RNNLM')
-            assert lm_init.n_projs == 0  # TODO(hirofumi): fix later
-            assert lm_init.n_units_null_context == enc_n_units
+            assert external_lm.n_projs == 0  # TODO(hirofumi): fix later
+            assert external_lm.n_units_cv == enc_n_units, 'enc_n_units'
 
             # RNN
-            for lth in range(lm_init.n_layers):
-                for n, p in lm_init.rnn[lth].named_parameters():
+            for lth in range(external_lm.n_layers):
+                for n, p in external_lm.rnn[lth].named_parameters():
+                    n = '_'.join(n.split('_')[:2])
                     assert getattr(self.rnn[lth], n).size() == p.size()
                     getattr(self.rnn[lth], n).data = p.data
                     logger.info('Overwrite %s' % n)
-
             # embedding
-            assert self.embed.weight.size() == lm_init.embed.weight.size()
-            self.embed.weight.data = lm_init.embed.weight.data
+            assert self.embed.weight.size() == external_lm.embed.weight.size()
+            self.embed.weight.data = external_lm.embed.weight.data
             logger.info('Overwrite %s' % 'embed.weight')
 
     @staticmethod

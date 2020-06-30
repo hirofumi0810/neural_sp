@@ -117,7 +117,11 @@ def make_args(**kwargs):
         ({'lsm_prob': 0.1}),
         ({'ss_prob': 0.2}),
         # RNNLM init
+        ({'lm_init': True}),
         # LM integration
+        ({'lm_fusion': 'cold'}),
+        ({'lm_fusion': 'cold_prob'}),
+        ({'lm_fusion': 'deep'}),
     ]
 )
 def test_forward(args):
@@ -133,6 +137,11 @@ def test_forward(args):
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
 
+    if args['lm_init'] or args['lm_fusion']:
+        args_lm = make_args_lm()
+        module = importlib.import_module('neural_sp.models.lm.rnnlm')
+        args['external_lm'] = module.RNNLM(args_lm)
+
     module = importlib.import_module('neural_sp.models.seq2seq.decoders.las')
     dec = module.RNNDecoder(**args)
     loss, observation = dec(eouts, elens, ys, task='all')
@@ -140,6 +149,17 @@ def test_forward(args):
     assert loss.size(0) == 1
     assert loss.item() >= 0
     assert isinstance(observation, dict)
+
+    # NOTE: this is performed in Speech2Text class
+    # if args['lm_fusion']:
+    #     for p in dec.lm.parameters():
+    #         assert not p.requires_grad
+    #     if args['lm_fusion'] == 'deep':
+    #         for n, p in dec.named_parameters():
+    #             if 'output' in n or 'output_bn' in n or 'linear' in n:
+    #                 assert p.requires_grad
+    #             else:
+    #                 assert not p.requires_grad
 
 
 def make_decode_params(**kwargs):
@@ -176,7 +196,7 @@ def make_args_lm(**kwargs):
         n_layers=2,
         residual=False,
         use_glu=False,
-        n_units_null_context=0,
+        n_units_null_context=32,
         bottleneck_dim=16,
         emb_dim=16,
         vocab=VOCAB,
@@ -257,8 +277,8 @@ def test_decoding(params):
     # TODO(hirofumi0810):
     # recog_asr_state_carry_over
     # recog_lm_state_carry_over
-    # cold fusion
-    # deep fusion
+    # cold fusion + beam search + shallow fusion
+    # deep fusion + beam search + shallow fusion
 
     dec.eval()
     with torch.no_grad():
