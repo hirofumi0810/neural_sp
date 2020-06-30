@@ -958,7 +958,7 @@ class RNNDecoder(DecoderBase):
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
-                    ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[], cache_states=True):
+                    ensmbl_eouts=[], ensmbl_elens=[], ensmbl_decs=[], cache_states=True):
         """Beam search decoding.
 
         Args:
@@ -1140,25 +1140,24 @@ class RNNDecoder(DecoderBase):
 
                 # for the ensemble
                 ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
-                if n_models > 1:
-                    for i_e, dec in enumerate(ensmbl_decs):
-                        cv_e = torch.cat([beam['ensmbl_cv'][i_e] for beam in hyps], dim=0)
-                        aw_e = torch.cat([beam['ensmbl_aws'][i_e][-1] for beam in hyps], dim=0) if t > 0 else None
-                        hxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][0] for beam in hyps], dim=1)
-                        if self.rnn_type == 'lstm':
-                            cxs_e = torch.cat([beam['dstates'][i_e]['dstate'][1] for beam in hyps], dim=1)
-                        dstates_e = {'dstate': (hxs_e, cxs_e)}
+                for i_e, dec in enumerate(ensmbl_decs):
+                    cv_e = torch.cat([beam['ensmbl_cv'][i_e] for beam in hyps], dim=0)
+                    aw_e = torch.cat([beam['ensmbl_aws'][i_e][-1] for beam in hyps], dim=0) if t > 0 else None
+                    hxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][0] for beam in hyps], dim=1)
+                    if self.rnn_type == 'lstm':
+                        cxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][1] for beam in hyps], dim=1)
+                    dstates_e = {'dstate': (hxs_e, cxs_e)}
 
-                        dstate_e, cv_e, aw_e, attn_v_e, _, _ = dec.decode_step(
-                            ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]].repeat([cv_e.size(0), 1, 1]),
-                            dstates_e, cv_e, dec.dropout_emb(dec.embed(y)), None, aw_e, lmout)
+                    dstates_e, cv_e, aw_e, attn_v_e, _, _ = dec.decode_step(
+                        ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]].repeat([cv_e.size(0), 1, 1]),
+                        dstates_e, cv_e, dec.dropout_emb(dec.embed(y)), None, aw_e, lmout)
 
-                        ensmbl_dstate += [{'dstate': (beam['dstates'][i_e]['dstate'][0][:, j:j + 1],
-                                                      beam['dstates'][i_e]['dstate'][1][:, j:j + 1])}]
-                        ensmbl_cv += [cv_e[j:j + 1]]
-                        ensmbl_aws += [beam['ensmbl_aws'][i_e] + [aw_e[j:j + 1]]]
-                        probs += torch.softmax(dec.output(attn_v_e).squeeze(1), dim=1)
-                        # NOTE: sum in the probability scale (not log-scale)
+                    ensmbl_dstate += [{'dstate': (dstates_e['dstate'][0][:, j:j + 1],
+                                                  dstates_e['dstate'][1][:, j:j + 1])}]
+                    ensmbl_cv += [cv_e[j:j + 1]]
+                    ensmbl_aws += [beam['ensmbl_aws'][i_e] + [aw_e[j:j + 1]]]
+                    probs += torch.softmax(dec.output(attn_v_e).squeeze(1), dim=1)
+                    # NOTE: sum in the probability scale (not log-scale)
 
                 # Ensemble
                 scores_att = torch.log(probs / n_models)
