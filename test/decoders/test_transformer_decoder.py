@@ -29,7 +29,6 @@ def make_args(**kwargs):
         ffn_bottleneck_dim=0,
         layer_norm_eps=1e-12,
         ffn_activation='relu',
-        input_bottleneck_dim=0,
         pe_type='add',
         vocab=VOCAB,
         tie_embedding=False,
