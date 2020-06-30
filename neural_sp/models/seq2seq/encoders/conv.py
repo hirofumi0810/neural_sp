@@ -54,7 +54,6 @@ class ConvEncoder(EncoderBase):
         assert input_dim % in_channel == 0
         self.input_freq = input_dim // in_channel
         self.residual = residual
-        self.bridge = None
 
         assert len(channels) > 0
         assert len(channels) == len(kernel_sizes) == len(strides) == len(poolings)
@@ -92,6 +91,7 @@ class ConvEncoder(EncoderBase):
 
         self._odim = C_i if is_1dconv else int(C_i * in_freq)
 
+        self.bridge = None
         if bottleneck_dim > 0:
             self.bridge = nn.Linear(self._odim, bottleneck_dim)
             self._odim = bottleneck_dim
@@ -284,7 +284,7 @@ class Conv2dBlock(EncoderBase):
                                padding=(1, 1))
         self._odim = update_lens_2d([input_dim], self.conv1, dim=1)[0].item()
         self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm1 = LayerNorm2D(out_channel * self._odim,
+        self.layer_norm1 = LayerNorm2D(out_channel, self._odim,
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # 2nd layer
@@ -295,7 +295,7 @@ class Conv2dBlock(EncoderBase):
                                padding=(1, 1))
         self._odim = update_lens_2d([self._odim], self.conv2, dim=1)[0].item()
         self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm2 = LayerNorm2D(out_channel * self._odim,
+        self.layer_norm2 = LayerNorm2D(out_channel, self._odim,
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # Max Pooling
@@ -366,10 +366,10 @@ class Conv2dBlock(EncoderBase):
 class LayerNorm2D(nn.Module):
     """Layer normalization for CNN outputs."""
 
-    def __init__(self, dim, eps=1e-12):
+    def __init__(self, channel, idim, eps=1e-12):
 
         super(LayerNorm2D, self).__init__()
-        self.norm = nn.LayerNorm(dim, eps=eps)
+        self.norm = nn.LayerNorm([channel, idim], eps=eps)
 
     def forward(self, xs):
         """Forward computation.
@@ -381,9 +381,9 @@ class LayerNorm2D(nn.Module):
 
         """
         B, C, T, F = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(B, T, C * F)
+        xs = xs.transpose(2, 1).contiguous()
         xs = self.norm(xs)
-        xs = xs.view(B, T, C, F).transpose(2, 1)
+        xs = xs.transpose(2, 1)
         return xs
 
 
