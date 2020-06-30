@@ -253,7 +253,6 @@ def test_decoding(params):
 
     # TODO(hirofumi0810):
     # recog_lm_state_carry_over
-    # ensemble
 
     dec.eval()
     with torch.no_grad():
@@ -274,6 +273,32 @@ def test_decoding(params):
                                   ctc_log_probs=ctc_log_probs,
                                   nbest=params['nbest'], exclude_eos=params['exclude_eos'],
                                   refs_id=None, utt_ids=None, speakers=None,
+                                  cache_states=params['cache_states'])
+            assert len(out) == 3
+            nbest_hyps, aws, scores = out
+            assert isinstance(nbest_hyps, list)
+            assert len(nbest_hyps) == batch_size
+            assert len(nbest_hyps[0]) == params['nbest']
+            ymax = len(nbest_hyps[0][0])
+            assert isinstance(aws, list)
+            assert aws[0][0].shape == (args['n_heads'] * args['n_layers'], ymax, emax)
+            assert isinstance(scores, list)
+            assert len(scores) == batch_size
+            assert len(scores[0]) == params['nbest']
+
+            # ensemble
+            ensmbl_eouts, ensmbl_elens, ensmbl_decs = [], [], []
+            for _ in range(3):
+                ensmbl_eouts += [eouts]
+                ensmbl_elens += [elens]
+                ensmbl_decs += [dec]
+
+            out = dec.beam_search(eouts, elens, params, idx2token=None,
+                                  lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
+                                  ctc_log_probs=ctc_log_probs,
+                                  nbest=params['nbest'], exclude_eos=params['exclude_eos'],
+                                  refs_id=None, utt_ids=None, speakers=None,
+                                  ensmbl_eouts=ensmbl_eouts, ensmbl_elens=ensmbl_elens, ensmbl_decs=ensmbl_decs,
                                   cache_states=params['cache_states'])
             assert len(out) == 3
             nbest_hyps, aws, scores = out

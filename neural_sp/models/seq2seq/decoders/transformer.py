@@ -610,7 +610,7 @@ class TransformerDecoder(DecoderBase):
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
-                    ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[], cache_states=True):
+                    ensmbl_eouts=[], ensmbl_elens=[], ensmbl_decs=[], cache_states=True):
         """Beam search decoding.
 
         Args:
@@ -702,7 +702,7 @@ class TransformerDecoder(DecoderBase):
                      'score_lm': 0.,
                      'aws': [None],
                      'lmstate': lmstate,
-                     'ensmbl_aws':[[None]] * (n_models - 1),
+                     'ensmbl_cache': [[None] * dec.n_layers for dec in ensmbl_decs] if n_models > 1 else None,
                      'ctc_state': ctc_prefix_scorer.initial_state() if ctc_prefix_scorer is not None else None,
                      'streamable': True,
                      'streaming_failed_point': 1000}]
@@ -774,27 +774,25 @@ class TransformerDecoder(DecoderBase):
                 probs = torch.softmax(logits[:, -1] * softmax_smoothing, dim=1)
                 xy_aws_layers = torch.stack(xy_aws_layers, dim=1)  # `[B, H, n_layers, L, T]`
 
-                # for the ensemble
-                ensmbl_new_cache = []
-                if n_models > 1:
-                    # Ensemble initialization
-                    # ensmbl_cache = []
-                    # cache_e = [None] * self.n_layers
-                    # if cache_states and t > 0:
-                    #     for lth in range(self.n_layers):
-                    #         cache_e[lth] = torch.cat([beam['ensmbl_cache'][lth] for beam in hyps], dim=0)
+                # Ensemble initialization
+                ensmbl_cache = [[None] * dec.n_layers for dec in ensmbl_decs]
+                if n_models > 1 and cache_states and t > 0:
                     for i_e, dec in enumerate(ensmbl_decs):
-                        out_e = dec.pos_enc(dec.embed(ys))  # scaled
-                        eouts_e = ensmbl_eouts[i_e][b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
-                        new_cache_e = [None] * dec.n_layers
                         for lth in range(dec.n_layers):
-                            out_e, _, xy_aws_e, _, _ = dec.layers[lth](out_e, causal_mask, eouts_e, None,
-                                                                       cache=cache[lth])
-                            new_cache_e[lth] = out_e
-                        ensmbl_new_cache.append(new_cache_e)
-                        logits_e = dec.output(dec.norm_out(out_e))
-                        probs += torch.softmax(logits_e[:, -1] * softmax_smoothing, dim=1)
-                        # NOTE: sum in the probability scale (not log-scale)
+                            ensmbl_cache[i_e][lth] = torch.cat([beam['ensmbl_cache'][i_e][lth] for beam in hyps], dim=0)
+
+                # for the ensemble
+                ensmbl_new_cache = [[None] * dec.n_layers for dec in ensmbl_decs]
+                for i_e, dec in enumerate(ensmbl_decs):
+                    out_e = dec.pos_enc(dec.embed(ys))  # scaled
+                    eouts_e = ensmbl_eouts[i_e][b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
+                    for lth in range(dec.n_layers):
+                        out_e = dec.layers[lth](out_e, causal_mask, eouts_e, None,
+                                                cache=ensmbl_cache[i_e][lth])
+                        ensmbl_new_cache[i_e][lth] = out_e
+                    logits_e = dec.output(dec.norm_out(out_e))
+                    probs += torch.softmax(logits_e[:, -1] * softmax_smoothing, dim=1)
+                    # NOTE: sum in the probability scale (not log-scale)
 
                 # Ensemble
                 scores_att = torch.log(probs / n_models)
@@ -876,7 +874,7 @@ class TransformerDecoder(DecoderBase):
                              'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1],
                                          'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                              'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
-                             'ensmbl_cache': ensmbl_new_cache,
+                             'ensmbl_cache': [[new_cache_e_l[j:j + 1] for new_cache_e_l in new_cache_e] for new_cache_e in ensmbl_new_cache] if cache_states else None,
                              'streamable': streamable_global,
                              'streaming_failed_point': streaming_failed_point,
                              'quantity_rate': quantity_rate})
