@@ -1,9 +1,9 @@
 # topology
 lm_type: lstm
-n_units: 128
-n_projs: 0
+n_units: 64
+n_projs: 32
 n_layers: 2
-emb_dim: 128
+emb_dim: 64
 n_units_null_context: 0
 tie_embedding: true
 residual: true

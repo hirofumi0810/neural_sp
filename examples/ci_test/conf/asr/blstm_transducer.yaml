@@ -11,20 +11,20 @@ conv_batch_norm: false
 subsample: "1_1_1_1_1"
 enc_type: conv_blstm
 bidirectional_sum_fwd_bwd: true
-enc_n_units: 128
-enc_n_projs: 64
+enc_n_units: 64
+enc_n_projs: 32
 enc_n_layers: 2
 subsample_type: drop
 lc_chunk_size_left: -1  ### offline
 lc_chunk_size_right: 40
 dec_type: lstm_transducer
-dec_n_units: 128
-dec_n_projs: 64
+dec_n_units: 64
+dec_n_projs: 32
 dec_n_layers: 2
-dec_bottleneck_dim: 128
-emb_dim: 128
+dec_bottleneck_dim: 64
+emb_dim: 64
 tie_embedding: false
-ctc_fc_list: "128"
+ctc_fc_list: "64"
 ### optimization
 batch_size: 1
 optimizer: adam
