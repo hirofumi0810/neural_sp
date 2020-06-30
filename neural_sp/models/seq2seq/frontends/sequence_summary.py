@@ -79,7 +79,7 @@ class SequenceSummaryNetwork(nn.Module):
         # padding
         device_id = torch.cuda.device_of(next(self.parameters())).idx
         mask = make_pad_mask(xlens, device_id).unsqueeze(2)  # `[B, T, 1]`
-        xs = xs.masked_fill_(mask == 0, 0)
+        xs = xs.clone().masked_fill_(mask == 0, 0)
 
         # time average
         denom = xlens.float().unsqueeze(1)
