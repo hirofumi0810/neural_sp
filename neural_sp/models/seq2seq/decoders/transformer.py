@@ -543,7 +543,7 @@ class TransformerDecoder(DecoderBase):
                 out = layer(out, causal_mask, eouts, None, cache=cache[lth])
                 new_cache[lth] = out
                 if layer.xy_aws is not None:
-                    xy_aws_layers.append(layer.xy_aws)
+                    xy_aws_layers.append(layer.xy_aws[:, :, -1:])
 
             if cache_states:
                 cache = new_cache[:]
@@ -551,7 +551,7 @@ class TransformerDecoder(DecoderBase):
             # Pick up 1-best
             y = self.output(self.norm_out(out))[:, -1:].argmax(-1)
             hyps_batch += [y]
-            xy_aws_layers = torch.stack(xy_aws_layers, dim=1)  # `[B, H, n_layers, L, 1]`
+            xy_aws_layers = torch.stack(xy_aws_layers, dim=2)  # `[B, H, n_layers, 1, T]`
             xy_aws_layers_steps.append(xy_aws_layers)
 
             # Count lengths of hypotheses
@@ -571,7 +571,7 @@ class TransformerDecoder(DecoderBase):
 
         # Concatenate in L dimension
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
-        xy_aws_layers_steps = torch.cat(xy_aws_layers_steps, dim=-1)  # `[B, H, n_layers, L, T]`
+        xy_aws_layers_steps = torch.cat(xy_aws_layers_steps, dim=-2)  # `[B, H, n_layers, L, T]`
         xy_aws_layers_steps = xy_aws_layers_steps.view(bs, self.n_heads * self.n_layers, ys.size(1), xmax)
         xy_aws = tensor2np(xy_aws_layers_steps)
 
