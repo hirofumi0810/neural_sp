@@ -18,11 +18,11 @@ def make_args(**kwargs):
         enc_type='conformer',
         n_heads=4,
         kernel_size=3,
-        n_layers=6,
+        n_layers=3,
         n_layers_sub1=0,
         n_layers_sub2=0,
-        d_model=64,
-        d_ff=256,
+        d_model=32,
+        d_ff=128,
         ffn_bottleneck_dim=0,
         last_proj_dim=0,
         pe_type='relative',
@@ -45,9 +45,9 @@ def make_args(**kwargs):
         conv_param_init=0.1,
         task_specific_layer=False,
         param_init='xavier_uniform',
-        chunk_size_left=-1,
-        chunk_size_current=-1,
-        chunk_size_right=-1
+        chunk_size_left=0,
+        chunk_size_current=0,
+        chunk_size_right=0
     )
     args.update(kwargs)
     return args
@@ -69,12 +69,12 @@ def make_args(**kwargs):
         ({'enc_type': 'conformer', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         ({'enc_type': 'conformer', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
         # Multi-task
-        ({'enc_type': 'conformer', 'n_layers_sub1': 4}),
-        ({'enc_type': 'conformer', 'n_layers_sub1': 4, 'task_specific_layer': True}),
-        ({'enc_type': 'conformer', 'n_layers_sub1': 4, 'n_layers_sub2': 3}),
-        ({'enc_type': 'conformer', 'n_layers_sub1': 4, 'n_layers_sub2': 3, 'task_specific_layer': True}),
+        ({'enc_type': 'conformer', 'n_layers_sub1': 2}),
+        ({'enc_type': 'conformer', 'n_layers_sub1': 2, 'task_specific_layer': True}),
+        ({'enc_type': 'conformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1}),
+        ({'enc_type': 'conformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True}),
         # bottleneck
-        ({'ffn_bottleneck_dim': 128}),
+        ({'ffn_bottleneck_dim': 32}),
     ]
 )
 def test_forward(args):

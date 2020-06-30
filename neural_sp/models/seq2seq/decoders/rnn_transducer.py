@@ -50,32 +50,22 @@ class RNNTransducer(DecoderBase):
         vocab (int): number of nodes in softmax layer
         dropout (float): dropout probability for the RNN layer
         dropout_emb (float): dropout probability for the embedding layer
-        lsm_prob (float): label smoothing probability
         ctc_weight (float):
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list):
-        external_lm (RNNLM):
         global_weight (float):
         mtl_per_batch (bool):
         param_init (str): parameter initialization method
+        external_lm (RNNLM): external RNNLM for prediction network initialization
 
     """
 
     def __init__(self, special_symbols,
                  enc_n_units, rnn_type, n_units, n_projs, n_layers,
-                 bottleneck_dim,
-                 emb_dim,
-                 vocab,
-                 dropout=0.,
-                 dropout_emb=0.,
-                 lsm_prob=0.,
-                 ctc_weight=0.,
-                 ctc_lsm_prob=0.,
-                 ctc_fc_list=[],
-                 external_lm=None,
-                 global_weight=1.,
-                 mtl_per_batch=False,
-                 param_init=0.1):
+                 bottleneck_dim, emb_dim, vocab,
+                 dropout, dropout_emb,
+                 ctc_weight, ctc_lsm_prob, ctc_fc_list,
+                 global_weight, mtl_per_batch, param_init, external_lm):
 
         super(RNNTransducer, self).__init__()
 
@@ -90,9 +80,8 @@ class RNNTransducer(DecoderBase):
         self.dec_n_units = n_units
         self.n_projs = n_projs
         self.n_layers = n_layers
-        self.lsm_prob = lsm_prob
+        self.rnnt_weight = global_weight - ctc_weight
         self.ctc_weight = ctc_weight
-        self.global_weight = global_weight
         self.mtl_per_batch = mtl_per_batch
 
         # for cache
@@ -110,27 +99,28 @@ class RNNTransducer(DecoderBase):
                            fc_list=ctc_fc_list,
                            param_init=0.1)
 
-        if ctc_weight < global_weight:
+        if self.rnnt_weight > 0:
             # import warprnnt_pytorch
             # self.warprnnt_loss = warprnnt_pytorch.RNNTLoss()
 
             # Prediction network
-            rnn_l = nn.LSTM if rnn_type == 'lstm_transducer' else nn.GRU
             self.rnn = nn.ModuleList()
+            rnn = nn.LSTM if rnn_type == 'lstm_transducer' else nn.GRU
+            dec_odim = emb_dim
+            self.proj = repeat(nn.Linear(n_units, n_projs), n_layers) if n_projs > 0 else None
             self.dropout = nn.Dropout(p=dropout)
-            if n_projs > 0:
-                self.proj = repeat(nn.Linear(n_units, n_projs), n_layers)
-            dec_idim = emb_dim
             for _ in range(n_layers):
-                self.rnn += [rnn_l(dec_idim, n_units, 1, batch_first=True)]
-                dec_idim = n_projs if n_projs > 0 else n_units
+                self.rnn += [rnn(dec_odim, n_units, 1, batch_first=True)]
+                dec_odim = n_units
+                if n_projs > 0:
+                    dec_odim = n_projs
 
             self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
             self.dropout_emb = nn.Dropout(p=dropout_emb)
 
             # Joint network
             self.w_enc = nn.Linear(enc_n_units, bottleneck_dim)
-            self.w_dec = nn.Linear(dec_idim, bottleneck_dim, bias=False)
+            self.w_dec = nn.Linear(dec_odim, bottleneck_dim, bias=False)
             self.output = nn.Linear(bottleneck_dim, vocab)
 
         self.reset_parameters(param_init)
@@ -211,13 +201,13 @@ class RNNTransducer(DecoderBase):
                 loss += loss_ctc * self.ctc_weight
 
         # XE loss
-        if self.global_weight - self.ctc_weight > 0 and (task == 'all' or 'ctc' not in task):
+        if self.rnnt_weight > 0 and (task == 'all' or 'ctc' not in task):
             loss_transducer = self.forward_transducer(eouts, elens, ys)
             observation['loss_transducer'] = loss_transducer.item()
             if self.mtl_per_batch:
                 loss += loss_transducer
             else:
-                loss += loss_transducer * (self.global_weight - self.ctc_weight)
+                loss += loss_transducer * self.rnnt_weight
 
         observation['loss'] = loss.item()
         return loss, observation
@@ -313,7 +303,7 @@ class RNNTransducer(DecoderBase):
                 ys_emb, h = self.rnn[lth](ys_emb, hx=dstate['hxs'][lth:lth + 1])
             new_hxs.append(h)
             ys_emb = self.dropout(ys_emb)
-            if self.n_projs > 0:
+            if self.proj is not None:
                 ys_emb = torch.tanh(self.proj[lth](ys_emb))
 
         # Repackage
@@ -408,8 +398,8 @@ class RNNTransducer(DecoderBase):
             lm: firsh path LM
             lm_second: second path LM
             lm_second_bwd: secoding path backward LM
-            ctc_log_probs (FloatTensor):
-            nbest (int):
+            ctc_log_probs (FloatTensor): `[B, T, vocab]`
+            nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
             refs_id (list): reference list
             utt_ids (list): utterance id list
@@ -426,6 +416,7 @@ class RNNTransducer(DecoderBase):
         bs = eouts.size(0)
 
         beam_width = params['recog_beam_width']
+        assert 1 <= nbest <= beam_width
         ctc_weight = params['recog_ctc_weight']
         lm_weight = params['recog_lm_weight']
         lm_weight_second = params['recog_lm_second_weight']
@@ -471,7 +462,7 @@ class RNNTransducer(DecoderBase):
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
-                     'ref_id': [self.eos],
+                     'ys': [self.eos],
                      'score': 0.,
                      'score_rnnt': 0.,
                      'score_lm': 0.,
@@ -579,16 +570,13 @@ class RNNTransducer(DecoderBase):
                 new_hyps = [v for v in new_hyps_merged.values()]
 
                 # Local pruning
-                new_hyps_tmp = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+                new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
                 # Remove complete hypotheses
-                new_hyps = []
-                for hyp in new_hyps_tmp:
-                    new_hyps += [hyp]
-                if len(end_hyps) >= beam_width:
-                    end_hyps = end_hyps[:beam_width]
-                    break
+                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted, end_hyps)
                 hyps = new_hyps[:]
+                if is_finish:
+                    break
 
             # Global pruning
             if len(end_hyps) == 0:
@@ -602,8 +590,9 @@ class RNNTransducer(DecoderBase):
 
             # backward secodn path LM rescoring
             if lm_second_bwd is not None:
-                self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_rev')
+                self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
+            # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
 
             # Reset state cache
@@ -612,16 +601,23 @@ class RNNTransducer(DecoderBase):
             if idx2token is not None:
                 if utt_ids is not None:
                     logger.info('Utt-id: %s' % utt_ids[b])
+                assert self.vocab == idx2token.vocab
                 logger.info('=' * 200)
                 for k in range(len(end_hyps)):
-                    if refs_id is not None and self.vocab == idx2token.vocab:
+                    if refs_id is not None:
                         logger.info('Ref: %s' % idx2token(refs_id[b]))
                     logger.info('Hyp: %s' % idx2token(end_hyps[k]['hyp'][1:]))
                     logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
-                    if ctc_log_probs is not None:
-                        logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc']))
+                    if ctc_prefix_scorer is not None:
+                        logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                     if lm is not None:
-                        logger.info('log prob (hyp, lm): %.7f' % (end_hyps[k]['score_lm']))
+                        logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
+                    if lm_second is not None:
+                        logger.info('log prob (hyp, second-path lm): %.7f' %
+                                    (end_hyps[k]['score_lm_second'] * lm_weight_second))
+                    if lm_second_bwd is not None:
+                        logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
+                                    (end_hyps[k]['score_lm_second_rev'] * lm_weight_second_bwd))
                     logger.info('-' * 50)
 
             # N-best list

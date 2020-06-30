@@ -71,14 +71,13 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             vocab=vocab,
             dropout=args.dropout_dec,
             dropout_emb=args.dropout_emb,
-            lsm_prob=args.lsm_prob,
             ctc_weight=ctc_weight,
             ctc_lsm_prob=args.ctc_lsm_prob,
             ctc_fc_list=ctc_fc_list,
-            external_lm=external_lm if args.lm_init else None,
             global_weight=global_weight,
             mtl_per_batch=args.mtl_per_batch,
-            param_init=args.param_init)
+            param_init=args.param_init,
+            external_lm=external_lm if args.lm_init else None)
 
     else:
         from neural_sp.models.seq2seq.decoders.las import RNNDecoder

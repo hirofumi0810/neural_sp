@@ -38,9 +38,6 @@ from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import tensor2np
 
-import matplotlib
-matplotlib.use('Agg')
-
 random.seed(1)
 
 logger = logging.getLogger(__name__)
@@ -231,15 +228,15 @@ class RNNDecoder(DecoderBase):
             self.rnn = nn.ModuleList()
             cell = nn.LSTMCell if rnn_type == 'lstm' else nn.GRUCell
             dec_odim = enc_n_units + emb_dim
-            self.proj = repeat(nn.Linear(n_units, n_projs), n_layers) if self.n_projs > 0 else None
+            self.proj = repeat(nn.Linear(n_units, n_projs), n_layers) if n_projs > 0 else None
             self.dropout = nn.Dropout(p=dropout)
             for _ in range(n_layers):
                 self.rnn += [cell(dec_odim, n_units)]
                 dec_odim = n_units
-                if self.n_projs > 0:
+                if n_projs > 0:
                     dec_odim = n_projs
 
-            # LM fusion
+            # RNNLM fusion
             if external_lm is not None and lm_fusion:
                 self.linear_dec_feat = nn.Linear(dec_odim + enc_n_units, n_units)
                 if lm_fusion in ['cold', 'deep']:
@@ -264,29 +261,32 @@ class RNNDecoder(DecoderBase):
                 self.output.weight = self.embed.weight
 
         self.reset_parameters(param_init)
+        # NOTE: LM registration and initialization should be performed after reset_parameters()
 
-        # resister the external LM
-        self.lm = external_lm
+        # resister the external RNNLM
+        self.lm = external_lm if lm_fusion else None
 
-        # decoder initialization with pre-trained LM
+        # decoder initialization with pre-trained RNNLM
         if lm_init:
-            assert lm_init.vocab == vocab
-            assert lm_init.n_units == n_units
-            assert lm_init.emb_dim == emb_dim
+            assert self.att_weight > 0
+            assert external_lm is not None
+            assert external_lm.vocab == vocab, 'vocab'
+            assert external_lm.n_units == n_units, 'n_units'
+            assert external_lm.emb_dim == emb_dim, 'emb_dim'
             logger.info('===== Initialize the decoder with pre-trained RNNLM')
-            assert lm_init.n_projs == 0  # TODO(hirofumi): fix later
-            assert lm_init.n_units_null_context == enc_n_units
+            assert external_lm.n_projs == 0  # TODO(hirofumi): fix later
+            assert external_lm.n_units_cv == enc_n_units, 'enc_n_units'
 
             # RNN
-            for lth in range(lm_init.n_layers):
-                for n, p in lm_init.rnn[lth].named_parameters():
+            for lth in range(external_lm.n_layers):
+                for n, p in external_lm.rnn[lth].named_parameters():
+                    n = '_'.join(n.split('_')[:2])
                     assert getattr(self.rnn[lth], n).size() == p.size()
                     getattr(self.rnn[lth], n).data = p.data
                     logger.info('Overwrite %s' % n)
-
             # embedding
-            assert self.embed.weight.size() == lm_init.embed.weight.size()
-            self.embed.weight.data = lm_init.embed.weight.data
+            assert self.embed.weight.size() == external_lm.embed.weight.size()
+            self.embed.weight.data = external_lm.embed.weight.data
             logger.info('Overwrite %s' % 'embed.weight')
 
     @staticmethod
@@ -853,7 +853,7 @@ class RNNDecoder(DecoderBase):
             aws (list): length `B`, each of which contains arrays of size `[H, L, T]`
 
         """
-        bs, xmax, _ = eouts.size()
+        bs, xmax = eouts.size()[:2]
 
         # Initialization
         dstates = self.zero_state(bs)
@@ -961,7 +961,7 @@ class RNNDecoder(DecoderBase):
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
-                    ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[], cache_states=True):
+                    ensmbl_eouts=[], ensmbl_elens=[], ensmbl_decs=[], cache_states=True):
         """Beam search decoding.
 
         Args:
@@ -972,8 +972,8 @@ class RNNDecoder(DecoderBase):
             lm: firsh path LM
             lm_second: second path LM
             lm_second_bwd: secoding path backward LM
-            ctc_log_probs (FloatTensor):
-            nbest (int):
+            ctc_log_probs (FloatTensor): `[B, T, vocab]`
+            nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
             refs_id (list): reference list
             utt_ids (list): utterance id list
@@ -1143,25 +1143,24 @@ class RNNDecoder(DecoderBase):
 
                 # for the ensemble
                 ensmbl_dstate, ensmbl_cv, ensmbl_aws = [], [], []
-                if n_models > 1:
-                    for i_e, dec in enumerate(ensmbl_decs):
-                        cv_e = torch.cat([beam['ensmbl_cv'][i_e] for beam in hyps], dim=0)
-                        aw_e = torch.cat([beam['ensmbl_aws'][i_e][-1] for beam in hyps], dim=0) if t > 0 else None
-                        hxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][0] for beam in hyps], dim=1)
-                        if self.rnn_type == 'lstm':
-                            cxs_e = torch.cat([beam['dstates'][i_e]['dstate'][1] for beam in hyps], dim=1)
-                        dstates_e = {'dstate': (hxs_e, cxs_e)}
+                for i_e, dec in enumerate(ensmbl_decs):
+                    cv_e = torch.cat([beam['ensmbl_cv'][i_e] for beam in hyps], dim=0)
+                    aw_e = torch.cat([beam['ensmbl_aws'][i_e][-1] for beam in hyps], dim=0) if t > 0 else None
+                    hxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][0] for beam in hyps], dim=1)
+                    if self.rnn_type == 'lstm':
+                        cxs_e = torch.cat([beam['ensmbl_dstate'][i_e]['dstate'][1] for beam in hyps], dim=1)
+                    dstates_e = {'dstate': (hxs_e, cxs_e)}
 
-                        dstate_e, cv_e, aw_e, attn_v_e, _, _ = dec.decode_step(
-                            ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]].repeat([cv_e.size(0), 1, 1]),
-                            dstates_e, cv_e, dec.dropout_emb(dec.embed(y)), None, aw_e, lmout)
+                    dstates_e, cv_e, aw_e, attn_v_e, _, _ = dec.decode_step(
+                        ensmbl_eouts[i_e][b:b + 1, :ensmbl_elens[i_e][b]].repeat([cv_e.size(0), 1, 1]),
+                        dstates_e, cv_e, dec.dropout_emb(dec.embed(y)), None, aw_e, lmout)
 
-                        ensmbl_dstate += [{'dstate': (beam['dstates'][i_e]['dstate'][0][:, j:j + 1],
-                                                      beam['dstates'][i_e]['dstate'][1][:, j:j + 1])}]
-                        ensmbl_cv += [cv_e[j:j + 1]]
-                        ensmbl_aws += [beam['ensmbl_aws'][i_e] + [aw_e[j:j + 1]]]
-                        probs += torch.softmax(dec.output(attn_v_e).squeeze(1), dim=1)
-                        # NOTE: sum in the probability scale (not log-scale)
+                    ensmbl_dstate += [{'dstate': (dstates_e['dstate'][0][:, j:j + 1],
+                                                  dstates_e['dstate'][1][:, j:j + 1])}]
+                    ensmbl_cv += [cv_e[j:j + 1]]
+                    ensmbl_aws += [beam['ensmbl_aws'][i_e] + [aw_e[j:j + 1]]]
+                    probs += torch.softmax(dec.output(attn_v_e).squeeze(1), dim=1)
+                    # NOTE: sum in the probability scale (not log-scale)
 
                 # Ensemble
                 scores_att = torch.log(probs / n_models)
@@ -1216,9 +1215,7 @@ class RNNDecoder(DecoderBase):
 
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
-                        length_norm_factor = 1.
-                        if length_norm:
-                            length_norm_factor = len(beam['hyp'][1:]) + 1
+                        length_norm_factor = len(beam['hyp'][1:]) + 1 if length_norm else 1
                         total_score = total_scores_topk[0, k].item() / length_norm_factor
 
                         if idx == self.eos:
@@ -1265,7 +1262,8 @@ class RNNDecoder(DecoderBase):
                 new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
                 # Remove complete hypotheses
-                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted, end_hyps)
+                new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(
+                    new_hyps_sorted, end_hyps)
                 hyps = new_hyps[:]
                 if is_finish:
                     break
@@ -1316,10 +1314,10 @@ class RNNDecoder(DecoderBase):
             if self.bwd:
                 # Reverse the order
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:][::-1]) for n in range(nbest)]]
-                aws += [tensor2np(torch.cat(end_hyps[0]['aws'][1:][::-1], dim=2).squeeze(0))]
+                aws += [[tensor2np(torch.cat(end_hyps[n]['aws'][1:][::-1], dim=2).squeeze(0)) for n in range(nbest)]]
             else:
                 nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
-                aws += [tensor2np(torch.cat(end_hyps[0]['aws'][1:], dim=2).squeeze(0))]
+                aws += [[tensor2np(torch.cat(end_hyps[n]['aws'][1:], dim=2).squeeze(0)) for n in range(nbest)]]
             if length_norm:
                 scores += [[end_hyps[n]['score_att'] / len(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
             else:
@@ -1333,9 +1331,11 @@ class RNNDecoder(DecoderBase):
             if self.bwd:
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][1:] if eos_flags[b][n]
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
+                aws = [[aws[b][n][:, 1:] if eos_flags[b][n] else aws[b][n] for n in range(nbest)] for b in range(bs)]
             else:
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][:-1] if eos_flags[b][n]
                                    else nbest_hyps_idx[b][n] for n in range(nbest)] for b in range(bs)]
+                aws = [[aws[b][n][:, :-1] if eos_flags[b][n] else aws[b][n] for n in range(nbest)] for b in range(bs)]
 
         # Store ASR/LM state
         self.dstates_final = end_hyps[0]['dstates']

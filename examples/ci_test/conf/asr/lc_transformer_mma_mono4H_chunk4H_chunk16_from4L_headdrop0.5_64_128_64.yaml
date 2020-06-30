@@ -28,8 +28,8 @@ mocha_first_layer: 2  ###
 share_chunkwise_attention: true  ###
 transformer_enc_pe_type: none
 transformer_dec_pe_type: 1dconv3L
-transformer_d_model: 64
-transformer_d_ff: 256
+transformer_d_model: 32
+transformer_d_ff: 128
 transformer_ffn_activation: relu
 transformer_n_heads: 4
 transformer_param_init: xavier_uniform
