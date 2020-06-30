@@ -41,13 +41,18 @@ class SequenceSummaryNetwork(nn.Module):
 
         self.n_layers = n_layers
 
-        self.ssn = nn.ModuleList()
+        layers = nn.ModuleList()
         self.dropout = nn.Dropout(p=dropout)
         odim = input_dim
         for lth in range(n_layers - 1):
-            self.ssn += [nn.Linear(odim, n_units)]
+            layers += [nn.Linear(odim, n_units)]
+            layers += [nn.Tanh()]
+            layers += [nn.Dropout(p=dropout)]
             odim = n_units
-        self.ssn += [nn.Linear(odim, bottleneck_dim if bottleneck_dim > 0 else n_units)]
+        layers += [nn.Linear(odim, bottleneck_dim if bottleneck_dim > 0 else n_units)]
+        layers += [nn.Tanh()]
+        layers += [nn.Dropout(p=dropout)]
+        self.layers = nn.Sequential(*layers)
         self.proj = nn.Linear(bottleneck_dim if bottleneck_dim > 0 else n_units, input_dim)
 
         self.reset_parameters(param_init)
@@ -65,23 +70,21 @@ class SequenceSummaryNetwork(nn.Module):
             xs (FloatTensor): `[B, T, input_dim (+Δ, ΔΔ)]`
             xlens (IntTensor): `[B]`
         Returns:
-            xs (FloatTensor): `[B, T', input_dim]`
+            xs (FloatTensor): `[B, T, input_dim]`
 
         """
-        s = xs.clone()
-        for lth in range(self.n_layers):
-            s = self.dropout(torch.tanh(self.ssn[lth](s)))
-        # `[B, T, input_dim]`
+        residual = xs
+        xs = self.layers(xs)  # `[B, T, input_dim]`
 
         # padding
         device_id = torch.cuda.device_of(next(self.parameters())).idx
         mask = make_pad_mask(xlens, device_id).unsqueeze(2)  # `[B, T, 1]`
-        s = s.masked_fill_(mask == 0, 0)
+        xs = xs.masked_fill_(mask == 0, 0)
 
         # time average
         denom = xlens.float().unsqueeze(1)
         if device_id >= 0:
             denom = denom.cuda(device_id)
-        s = s.sum(1) / denom
-        xs = xs + self.proj(s).unsqueeze(1)
+        xs = xs.sum(1) / denom
+        xs = residual + self.proj(xs).unsqueeze(1)
         return xs
