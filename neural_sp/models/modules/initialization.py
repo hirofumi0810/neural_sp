@@ -14,7 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 def init_like_transformer_xl(n, p, std):
-    # https://github.com/kimiyoung/transformer-xl/blob/44781ed21dbaec88b280f74d9ae2877f52b492a5/pytorch/train.py
+    """Initialize like TransformerXL.
+        See https://github.com/kimiyoung/transformer-xl/blob/44781ed21dbaec88b280f74d9ae2877f52b492a5/pytorch/train.py
+
+    Args:
+        n (str): parameter name
+        p (Tensor): parameter
+        str (float): standard devication
+
+    """
     if 'norm' in n and 'weight' in n:
         assert p.dim() == 1
         nn.init.normal_(p, 1.0, std)  # layer normalization
@@ -30,10 +38,17 @@ def init_like_transformer_xl(n, p, std):
 
 
 def init_with_xavier_uniform(n, p):
+    """Initialize with Xavier uniform distribution.
+
+    Args:
+        n (str): parameter name
+        p (Tensor): parameter
+
+    """
     if p.dim() == 1:
         nn.init.constant_(p, 0.)  # bias
         logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
-    elif p.dim() in [2, 3]:
+    elif p.dim() in [2, 3, 4]:
         nn.init.xavier_uniform_(p)  # linear layer
         logger.info('Initialize %s with %s' % (n, 'xavier_uniform'))
     else:
@@ -41,6 +56,14 @@ def init_with_xavier_uniform(n, p):
 
 
 def init_with_lecun_normal(n, p, param_init):
+    """Initialize with Lecun style.
+
+    Args:
+        n (str): parameter name
+        p (Tensor): parameter
+        param_init (float):
+
+    """
     if p.dim() == 1:
         nn.init.constant_(p, 0.)  # bias
         logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
@@ -56,5 +79,24 @@ def init_with_lecun_normal(n, p, param_init):
         fan_in = p.size(1) * p[0][0].numel()
         nn.init.normal_(p, mean=0., std=1. / math.sqrt(fan_in))  # 2d conv weight
         logger.info('Initialize %s with %s / %.3f' % (n, 'lecun', param_init))
+    else:
+        raise ValueError(n)
+
+
+def init_with_uniform(n, p, param_init):
+    """Initialize with uniform distribution.
+
+    Args:
+        n (str): parameter name
+        p (Tensor): parameter
+        param_init (float):
+
+    """
+    if p.dim() == 1:
+        nn.init.constant_(p, 0.)  # bias
+        logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
+    elif p.dim() in [2, 3, 4]:
+        nn.init.uniform_(p, a=-param_init, b=param_init)
+        logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
     else:
         raise ValueError(n)
