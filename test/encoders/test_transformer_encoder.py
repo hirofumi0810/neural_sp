@@ -72,7 +72,7 @@ def make_args(**kwargs):
         ({'enc_type': 'conv_transformer', 'conv_batch_norm': True}),
         ({'enc_type': 'conv_transformer', 'conv_layer_norm': True}),
         # projection
-        ({'enc_type': 'conv_transformer', 'last_proj_dim': 16}),
+        ({'enc_type': 'conv_transformer', 'last_proj_dim': 10}),
         # LC-Transformer
         ({'enc_type': 'transformer', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         ({'enc_type': 'transformer', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
@@ -81,10 +81,10 @@ def make_args(**kwargs):
         # Multi-task
         ({'enc_type': 'transformer', 'n_layers_sub1': 2}),
         ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1}),
-        ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'last_proj_dim': 64}),
+        ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'last_proj_dim': 10}),
         ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True}),
         ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True,
-          'last_proj_dim': 32}),
+          'last_proj_dim': 10}),
         # bottleneck
         ({'ffn_bottleneck_dim': 16}),
     ]
