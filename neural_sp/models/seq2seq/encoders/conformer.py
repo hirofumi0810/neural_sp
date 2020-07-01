@@ -114,7 +114,8 @@ class ConformerEncoder(EncoderBase):
         self.data_dict = {}
 
         # Setting for CNNs
-        if conv_channels:
+        if 'conv' in enc_type:
+            assert conv_channels
             assert n_stacks == 1 and n_splices == 1
             self.conv = ConvEncoder(input_dim,
                                     in_channel=conv_in_channel,

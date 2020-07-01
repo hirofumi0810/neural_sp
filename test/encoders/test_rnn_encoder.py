@@ -78,11 +78,11 @@ def make_args(**kwargs):
         ({'rnn_type': 'lstm', 'n_projs': 32}),
         ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True}),
         ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'n_projs': 32}),
-        ({'rnn_type': 'blstm', 'last_proj_dim': 32}),
-        ({'rnn_type': 'blstm', 'last_proj_dim': 32, 'n_projs': 32}),
-        ({'rnn_type': 'lstm', 'last_proj_dim': 32, 'n_projs': 32}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 32}),
-        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 32, 'n_projs': 32}),
+        ({'rnn_type': 'blstm', 'last_proj_dim': 10}),
+        ({'rnn_type': 'blstm', 'last_proj_dim': 10, 'n_projs': 32}),
+        ({'rnn_type': 'lstm', 'last_proj_dim': 10, 'n_projs': 32}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 10}),
+        ({'rnn_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 10, 'n_projs': 32}),
         # subsampling
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop'}),
         ({'rnn_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat'}),
@@ -122,7 +122,6 @@ def make_args(**kwargs):
           'conv_poolings': "(1,1)_(1,1)"}),
         # Multi-task
         ({'rnn_type': 'blstm', 'n_layers_sub1': 3}),
-        ({'rnn_type': 'blstm', 'n_layers_sub1': 3, 'task_specific_layer': True}),
         ({'rnn_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2}),
         ({'rnn_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2, 'task_specific_layer': True}),
     ]
@@ -131,7 +130,7 @@ def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [800, 855]
+    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [400, 455]
     device_id = -1
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
     enc = module.RNNEncoder(**args)
@@ -149,6 +148,7 @@ def test_forward(args):
             else:
                 assert enc_out_dict['ys']['xlens'][b].item() == math.floor(xlens[b].item() / enc.subsampling_factor)
         if args['n_layers_sub1'] > 0:
+            # all outputs
             assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
             assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'].max()
             for b in range(batch_size):
@@ -158,7 +158,13 @@ def test_forward(args):
                 else:
                     assert enc_out_dict['ys_sub1']['xlens'][b].item() == math.floor(
                         xlens[b].item() / enc.subsampling_factor)
+            # single output
+            enc_out_dict_sub1 = enc(xs, xlens, task='ys_sub1')
+            assert enc_out_dict_sub1['ys_sub1']['xs'].size(0) == batch_size
+            assert enc_out_dict_sub1['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'].max()
+
         if args['n_layers_sub2'] > 0:
+            # all outputs
             assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
             assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'].max()
             for b in range(batch_size):
@@ -168,3 +174,7 @@ def test_forward(args):
                 else:
                     assert enc_out_dict['ys_sub2']['xlens'][b].item() == math.floor(
                         xlens[b].item() / enc.subsampling_factor)
+            # single output
+            enc_out_dict_sub12 = enc(xs, xlens, task='ys_sub2')
+            assert enc_out_dict_sub12['ys_sub2']['xs'].size(0) == batch_size
+            assert enc_out_dict_sub12['ys_sub2']['xs'].size(1) == enc_out_dict_sub12['ys_sub2']['xlens'].max()

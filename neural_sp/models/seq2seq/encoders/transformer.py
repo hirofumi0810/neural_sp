@@ -123,7 +123,8 @@ class TransformerEncoder(EncoderBase):
         self.data_dict = {}
 
         # Setting for CNNs
-        if conv_channels:
+        if 'conv' in enc_type:
+            assert conv_channels
             assert n_stacks == 1 and n_splices == 1
             self.conv = ConvEncoder(input_dim,
                                     in_channel=conv_in_channel,
@@ -149,6 +150,13 @@ class TransformerEncoder(EncoderBase):
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor
 
+        if self.chunk_size_left > 0:
+            assert self.chunk_size_left % self._factor == 0
+        if self.chunk_size_current > 0:
+            assert self.chunk_size_current % self._factor == 0
+        if self.chunk_size_right > 0:
+            assert self.chunk_size_right % self._factor == 0
+
         self.pos_emb = None
         self.u = None
         self.v = None
@@ -158,7 +166,7 @@ class TransformerEncoder(EncoderBase):
             self.v = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
             # NOTE: u and v are global parameters
         elif pe_type == 'relative':
-            self.pos_emb = XLPositionalEmbedding(d_model, dropout)  # TODO: dropout_in?
+            self.pos_emb = XLPositionalEmbedding(d_model, dropout)
         else:
             self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
 

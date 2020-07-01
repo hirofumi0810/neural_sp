@@ -63,7 +63,7 @@ class EncoderBase(ModelBase):
                 else:
                     self.turn_off_ceil_mode(module)
 
-    def _plot_attention(self, save_path, n_cols=2):
+    def _plot_attention(self, save_path=None, n_cols=2):
         """Plot attention for each head in all encoder layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
@@ -94,5 +94,6 @@ class EncoderBase(ModelBase):
                 ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
             fig.tight_layout()
-            fig.savefig(os.path.join(save_path, '%s.png' % k), dvi=500)
+            if save_path is not None:
+                fig.savefig(os.path.join(save_path, '%s.png' % k), dvi=500)
             plt.close()
