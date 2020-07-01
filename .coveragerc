@@ -1,0 +1,11 @@
+[run]
+branch = True
+source = neural_sp
+
+[report]
+exclude_lines =
+    raise ValueError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+
+ignore_errors = True
