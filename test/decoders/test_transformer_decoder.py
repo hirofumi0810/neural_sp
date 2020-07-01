@@ -149,12 +149,12 @@ def make_decode_params(**kwargs):
         recog_lm_second_weight=0.0,
         recog_lm_bwd_weight=0.0,
         recog_max_len_ratio=1.0,
-        recog_min_len_ratio=0.1,
+        recog_min_len_ratio=0.2,
         recog_length_penalty=0.0,
         recog_coverage_penalty=0.0,
         recog_coverage_threshold=1.0,
         recog_length_norm=False,
-        recog_eos_threshold=1.0,
+        recog_eos_threshold=1.5,
         recog_asr_state_carry_over=False,
         recog_lm_state_carry_over=False,
         recog_softmax_smoothing=1.0,
@@ -167,7 +167,7 @@ def make_decode_params(**kwargs):
     return args
 
 
-def make_args_lm(**kwargs):
+def make_args_rnnlm(**kwargs):
     args = dict(
         lm_type='lstm',
         n_units=32,
@@ -231,17 +231,17 @@ def test_decoding(params):
         ctc_log_probs = torch.softmax(torch.FloatTensor(batch_size, emax, VOCAB), dim=-1)
     lm = None
     if params['recog_lm_weight'] > 0:
-        args_lm = make_args_lm()
+        args_lm = make_args_rnnlm()
         module = importlib.import_module('neural_sp.models.lm.rnnlm')
         lm = module.RNNLM(args_lm)
     lm_second = None
     if params['recog_lm_second_weight'] > 0:
-        args_lm = make_args_lm()
+        args_lm = make_args_rnnlm()
         module = importlib.import_module('neural_sp.models.lm.rnnlm')
         lm_second = module.RNNLM(args_lm)
     lm_second_bwd = None
     if params['recog_lm_bwd_weight'] > 0:
-        args_lm = make_args_lm()
+        args_lm = make_args_rnnlm()
         module = importlib.import_module('neural_sp.models.lm.rnnlm')
         lm_second_bwd = module.RNNLM(args_lm)
 
