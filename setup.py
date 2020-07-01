@@ -61,6 +61,7 @@ setup(name='neural_sp',
       extras_require=extras_require,
       classifiers=[
           'Programming Language :: Python',
+          'Programming Language :: Python :: 3.6',
           'Programming Language :: Python :: 3.7',
           'Development Status :: 5 - Production/Stable',
           'Intended Audience :: Science/Research',
