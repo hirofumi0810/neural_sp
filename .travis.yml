@@ -25,6 +25,9 @@ script:
   - ./test/test_python.sh
   - ./test/test_training.sh
 
+after_success:
+  - bash <(curl -s https://codecov.io/bash)
+
 env:
   - PYTHON_VERSION=3.7 PYTORCH_VERSION=1.0.0 CC=gcc-7 CXX=g++-7
 
