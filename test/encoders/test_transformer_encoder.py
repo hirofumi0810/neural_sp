@@ -20,8 +20,8 @@ def make_args(**kwargs):
         n_layers=3,
         n_layers_sub1=0,
         n_layers_sub2=0,
-        d_model=32,
-        d_ff=128,
+        d_model=16,
+        d_ff=64,
         ffn_bottleneck_dim=0,
         last_proj_dim=0,
         pe_type='none',
@@ -72,7 +72,7 @@ def make_args(**kwargs):
         ({'enc_type': 'conv_transformer', 'conv_batch_norm': True}),
         ({'enc_type': 'conv_transformer', 'conv_layer_norm': True}),
         # projection
-        ({'enc_type': 'conv_transformer', 'last_proj_dim': 32}),
+        ({'enc_type': 'conv_transformer', 'last_proj_dim': 16}),
         # LC-Transformer
         ({'enc_type': 'transformer', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         ({'enc_type': 'transformer', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
@@ -80,18 +80,20 @@ def make_args(**kwargs):
           'pe_type': 'relative'}),
         # Multi-task
         ({'enc_type': 'transformer', 'n_layers_sub1': 2}),
-        ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'task_specific_layer': True}),
         ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1}),
+        ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'last_proj_dim': 64}),
         ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True}),
+        ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True,
+          'last_proj_dim': 32}),
         # bottleneck
-        ({'ffn_bottleneck_dim': 32}),
+        ({'ffn_bottleneck_dim': 16}),
     ]
 )
 def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [800, 855]
+    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [400, 455]
     device_id = -1
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
     enc = module.TransformerEncoder(**args)
@@ -99,13 +101,23 @@ def test_forward(args):
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
         xlens = torch.IntTensor([len(x) for x in xs])
         xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
-        enc_out_dict = enc(xs, xlens, task='all')
 
-        assert enc_out_dict['ys']['xs'].size(0) == batch_size, xs.size()
-        assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0], xs.size()
-        if args['n_layers_sub1'] > 0:
-            assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size, xs.size()
-            assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0], xs.size()
-        if args['n_layers_sub2'] > 0:
-            assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size, xs.size()
-            assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0], xs.size()
+        # for mode in ['train', 'eval']:  # too slow
+        for mode in ['train']:
+            if mode == 'train':
+                enc.train()
+                enc_out_dict = enc(xs, xlens, task='all')
+            elif mode == 'eval':
+                enc.eval()
+                with torch.no_grad():
+                    enc_out_dict = enc(xs, xlens, task='all')
+                    # enc._plot_attention()  # too slow
+
+            assert enc_out_dict['ys']['xs'].size(0) == batch_size, xs.size()
+            assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0], xs.size()
+            if args['n_layers_sub1'] > 0:
+                assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size, xs.size()
+                assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0], xs.size()
+            if args['n_layers_sub2'] > 0:
+                assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size, xs.size()
+                assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0], xs.size()
