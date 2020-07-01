@@ -27,9 +27,9 @@ def make_args(**kwargs):
         d_model=32,
         d_ff=128,
         ffn_bottleneck_dim=0,
+        pe_type='add',
         layer_norm_eps=1e-12,
         ffn_activation='relu',
-        pe_type='add',
         vocab=VOCAB,
         tie_embedding=False,
         dropout=0.1,
@@ -113,7 +113,7 @@ def make_args(**kwargs):
         ({'backward': True, 'ctc_weight': 0.5}),
         ({'backward': True, 'ctc_weight': 1.0}),
         # bottleneck
-        ({'ffn_bottleneck_dim': 128}),
+        ({'ffn_bottleneck_dim': 32}),
         # TransformerLM init
         # LM integration
     ]
@@ -191,34 +191,50 @@ def make_args_rnnlm(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "params",
+    "backward, params",
     [
+        # !!! forward
         # greedy decoding
-        ({'recog_beam_width': 1}),
-        ({'recog_beam_width': 1, 'cache_states': False}),
-        ({'recog_beam_width': 1, 'exclude_eos': True}),
-        ({'recog_beam_width': 1, 'recog_batch_size': 4}),
+        (False, {'recog_beam_width': 1}),
+        (False, {'recog_beam_width': 1, 'cache_states': False}),
+        (False, {'recog_beam_width': 1, 'exclude_eos': True}),
+        (False, {'recog_beam_width': 1, 'recog_batch_size': 4}),
         # beam search
-        ({'recog_beam_width': 4}),
-        ({'recog_beam_width': 4, 'cache_states': False}),
-        ({'recog_beam_width': 4, 'exclude_eos': True}),
-        ({'recog_beam_width': 4, 'nbest': 2}),
-        ({'recog_beam_width': 4, 'nbest': 4}),
-        ({'recog_beam_width': 4, 'nbest': 4, 'softmax_smoothing': 2.0}),
-        ({'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
+        (False, {'recog_beam_width': 4}),
+        (False, {'recog_beam_width': 4, 'cache_states': False}),
+        (False, {'recog_beam_width': 4, 'exclude_eos': True}),
+        (False, {'recog_beam_width': 4, 'nbest': 2}),
+        (False, {'recog_beam_width': 4, 'nbest': 4}),
+        (False, {'recog_beam_width': 4, 'nbest': 4, 'softmax_smoothing': 2.0}),
+        (False, {'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
         # length penalty
-        ({'recog_length_penalty': 0.1}),
-        ({'recog_length_norm': True}),
+        (False, {'recog_length_penalty': 0.1}),
+        (False, {'recog_length_norm': True}),
         # shallow fusion
-        ({'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+        (False, {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
         # rescoring
-        ({'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
-        ({'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
+        (False, {'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
+        (False, {'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
+        # !!! backward
+        # greedy decoding
+        (True, {'recog_beam_width': 1}),
+        (True, {'recog_beam_width': 1, 'cache_states': False}),
+        (True, {'recog_beam_width': 1, 'exclude_eos': True}),
+        (True, {'recog_beam_width': 1, 'recog_batch_size': 4}),
+        # beam search
+        (True, {'recog_beam_width': 4}),
+        (True, {'recog_beam_width': 4, 'cache_states': False}),
+        (True, {'recog_beam_width': 4, 'exclude_eos': True}),
+        (True, {'recog_beam_width': 4, 'nbest': 2}),
+        (True, {'recog_beam_width': 4, 'nbest': 4}),
+        (True, {'recog_beam_width': 4, 'nbest': 4, 'softmax_smoothing': 2.0}),
+        (True, {'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
     ]
 )
-def test_decoding(params):
+def test_decoding(backward, params):
     args = make_args()
     params = make_decode_params(**params)
+    params['backward'] = backward
 
     batch_size = params['recog_batch_size']
     emax = 40
