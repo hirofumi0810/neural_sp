@@ -15,12 +15,8 @@ pip list
 pip install pip --upgrade
 pip install torch==$PYTORCH_VERSION
 pip install -e .  # setup.py
-# pip install -e ".[test]"
+pip install -e ".[test]"  # install test dependencies
 # conda install -y $(CONDA_PYTORCH) -c pytorch
-
-# install other tools
-pip install pycodestyle
-pip install pytest-cov
 
 # [FIXME] hacking==1.1.0 requires flake8<2.7.0,>=2.6.0, but that version has a problem around fstring
 # pip install -U flake8 flake8-docstrings
