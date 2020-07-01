@@ -159,9 +159,9 @@ def test_forward(args):
                     assert enc_out_dict['ys_sub1']['xlens'][b].item() == math.floor(
                         xlens[b].item() / enc.subsampling_factor)
             # single output
-            enc_out_dict = enc(xs, xlens, task='ys_sub1')
-            assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
-            assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'].max()
+            enc_out_dict_sub1 = enc(xs, xlens, task='ys_sub1')
+            assert enc_out_dict_sub1['ys_sub1']['xs'].size(0) == batch_size
+            assert enc_out_dict_sub1['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'].max()
 
         if args['n_layers_sub2'] > 0:
             # all outputs
@@ -175,6 +175,6 @@ def test_forward(args):
                     assert enc_out_dict['ys_sub2']['xlens'][b].item() == math.floor(
                         xlens[b].item() / enc.subsampling_factor)
             # single output
-            enc_out_dict = enc(xs, xlens, task='ys_sub2')
-            assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
-            assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'].max()
+            enc_out_dict_sub12 = enc(xs, xlens, task='ys_sub2')
+            assert enc_out_dict_sub12['ys_sub2']['xs'].size(0) == batch_size
+            assert enc_out_dict_sub12['ys_sub2']['xs'].size(1) == enc_out_dict_sub12['ys_sub2']['xlens'].max()
