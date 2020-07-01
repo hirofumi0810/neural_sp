@@ -284,7 +284,7 @@ class Conv2dBlock(EncoderBase):
                                padding=(1, 1))
         self._odim = update_lens_2d([input_dim], self.conv1, dim=1)[0].item()
         self.batch_norm1 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm1 = LayerNorm2D(out_channel * self._odim,
+        self.layer_norm1 = LayerNorm2D(out_channel, self._odim,
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # 2nd layer
@@ -295,7 +295,7 @@ class Conv2dBlock(EncoderBase):
                                padding=(1, 1))
         self._odim = update_lens_2d([self._odim], self.conv2, dim=1)[0].item()
         self.batch_norm2 = nn.BatchNorm2d(out_channel) if batch_norm else lambda x: x
-        self.layer_norm2 = LayerNorm2D(out_channel * self._odim,
+        self.layer_norm2 = LayerNorm2D(out_channel, self._odim,
                                        eps=layer_norm_eps) if layer_norm else lambda x: x
 
         # Max Pooling
