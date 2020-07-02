@@ -224,7 +224,7 @@ def main():
                             warmup_n_steps=args.warmup_n_steps,
                             model_size=getattr(args, 'transformer_d_model', 0),
                             factor=args.lr_factor,
-                            noam=is_transformer,
+                            noam=args.optimizer == 'noam',
                             save_checkpoints_topk=10 if is_transformer else 1)
 
     if args.resume:
