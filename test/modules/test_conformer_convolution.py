@@ -11,21 +11,23 @@ import torch
 def make_args(**kwargs):
     args = dict(
         d_model=256,
-        kernel_size=32,
-        param_init='xavier_init'
+        kernel_size=3,
+        param_init=''
     )
     args.update(kwargs)
     return args
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         ({'kernel_size': 3}),
         ({'kernel_size': 7}),
         ({'kernel_size': 17}),
         ({'kernel_size': 31}),
         ({'kernel_size': 33}),
         ({'kernel_size': 65}),
+        ({'param_init': 'xavier_uniform'}),
     ]
 )
 def test_forward(args):

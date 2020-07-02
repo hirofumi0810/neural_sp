@@ -30,14 +30,15 @@ def make_args(**kwargs):
         param_init='',
         decot=False,
         lookahead=2,
-        share_chunkwise_attention=True
+        share_chunkwise_attention=True,
     )
     args.update(kwargs)
     return args
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # hard monotonic attention
         ({'n_heads_mono': 1, 'chunk_size': 1}),
         ({'n_heads_mono': 1, 'chunk_size': 1, 'conv1d': True}),
@@ -63,6 +64,8 @@ def make_args(**kwargs):
           'dropout_head': 0.5}),
         ({'n_heads_mono': 4, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot',
           'dropout_head': 0.5}),
+        # initialization
+        ({'param_init': 'xavier_uniform'}),
     ]
 )
 def test_forward_soft_parallel(args):

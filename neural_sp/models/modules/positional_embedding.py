@@ -14,7 +14,6 @@ import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.causal_conv import CausalConv1d
-from neural_sp.models.modules.initialization import init_with_xavier_uniform
 
 
 NEG_INF = float(np.finfo(np.float32).min)
@@ -30,9 +29,9 @@ class PositionalEncoding(nn.Module):
         dropout (float): dropout probability
         pe_type (str): type of positional encoding
         param_init (str): parameter initialization method
-        max_len (int):
-        conv_kernel_size (int):
-        layer_norm_eps (float):
+        max_len (int): maximum lenght for sinusoidal positional encoding
+        conv_kernel_size (int): window size for 1dconv positional encoding
+        layer_norm_eps (float): epsilon value for layer normalization
 
     """
 
@@ -47,18 +46,16 @@ class PositionalEncoding(nn.Module):
         if '1dconv' in pe_type:
             causal_conv1d = CausalConv1d(in_channels=d_model,
                                          out_channels=d_model,
-                                         kernel_size=conv_kernel_size)
+                                         kernel_size=conv_kernel_size,
+                                         param_init=param_init)
             layers = []
-            conv_nlayers = int(pe_type.replace('1dconv', '')[0])
-            for _ in range(conv_nlayers):
+            nlayers = int(pe_type.replace('1dconv', '')[0])
+            for _ in range(nlayers):
                 layers.append(copy.deepcopy(causal_conv1d))
                 layers.append(nn.LayerNorm(d_model, eps=layer_norm_eps))
                 layers.append(nn.ReLU())
                 layers.append(nn.Dropout(p=dropout))
             self.pe = nn.Sequential(*layers)
-
-            if param_init == 'xavier_uniform':
-                self.reset_parameters()
 
         elif pe_type != 'none':
             # Compute the positional encodings once in log space.
@@ -72,14 +69,6 @@ class PositionalEncoding(nn.Module):
             self.dropout = nn.Dropout(p=dropout)
 
         logger.info('Positional encoding: %s' % pe_type)
-
-    def reset_parameters(self):
-        """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
-        for layer in self.pe:
-            if isinstance(layer, CausalConv1d):
-                for n, p in layer.named_parameters():
-                    init_with_xavier_uniform(n, p)
 
     def forward(self, xs, scale=True):
         """Forward computation.
@@ -100,7 +89,9 @@ class PositionalEncoding(nn.Module):
             xs = xs + self.pe[:, :xs.size(1)]
             xs = self.dropout(xs)
         elif self.pe_type == 'concat':
-            xs = torch.cat([xs, self.pe[:, :xs.size(1)]], dim=-1)
+            raise NotImplementedError
+            xs = torch.cat([xs, self.pe[:, :xs.size(1)].repeat([xs.size(0), 1, 1])], dim=-1)
+            # TODO(hirofumi0810): need dimension reduction
             xs = self.dropout(xs)
         elif '1dconv' in self.pe_type:
             xs = self.pe(xs)

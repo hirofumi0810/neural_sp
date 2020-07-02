@@ -19,20 +19,22 @@ def make_args(**kwargs):
         dropout=0.1,
         dropout_head=0.,
         bias=True,
-        param_init='xavier_uniform'
+        param_init='',
     )
     args.update(kwargs)
     return args
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         ({'n_heads': 1}),
         ({'n_heads': 1, 'atype': 'add'}),
         ({'n_heads': 4}),
         ({'n_heads': 4, 'atype': 'add'}),
         ({'dropout_head': 0.5}),
         ({'bias': False}),
+        ({'param_init': 'xavier_uniform'}),
     ]
 )
 def test_forward(args):

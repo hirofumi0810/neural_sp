@@ -22,7 +22,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
     Args:
         kdim (int): dimension of key
         qdim (int): dimension of query
-        adim: (int) dimension of the attention space
+        adim: (int) dimension of attention space
         odim: (int) dimension of output
         n_heads (int): number of heads
         dropout (float): dropout probability for attenion weights
@@ -52,6 +52,8 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
 
         if param_init == 'xavier_uniform':
             self.reset_parameters(bias)
+        else:
+            logger.info('Parameter initialization is skipped.')
 
     def reset_parameters(self, bias):
         """Initialize parameters with Xavier uniform distribution."""

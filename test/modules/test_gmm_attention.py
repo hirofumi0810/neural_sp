@@ -14,15 +14,19 @@ def make_args(**kwargs):
         qdim=32,
         adim=16,
         n_mixtures=5,
+        vfloor=1e-6,
+        param_init='',
     )
     args.update(kwargs)
     return args
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         ({'n_mixtures': 1}),
         ({'n_mixtures': 4}),
+        ({'param_init': 'xavier_uniform'}),
     ]
 )
 def test_forward(args):

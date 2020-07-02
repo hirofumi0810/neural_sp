@@ -4,11 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Multi-head attention layer."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+"""Multi-head attention (MHA) layer."""
 
 import logging
 import math
@@ -23,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class MultiheadAttentionMechanism(nn.Module):
-    """Multi-headed attention layer.
+    """Multi-headed attention (MHA) layer.
 
     Args:
         kdim (int): dimension of key
         qdim (int): dimension of query
-        adim: (int) dimension of the attention space
+        adim: (int) dimension of attention space
         odim: (int) dimension of output
         n_heads (int): number of heads
         dropout (float): dropout probability for attenion weights

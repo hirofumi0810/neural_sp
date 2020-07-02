@@ -6,22 +6,29 @@
 
 """GMM attention."""
 
+import logging
 import math
 import numpy as np
 import torch
 import torch.nn as nn
 
+from neural_sp.models.modules.initialization import init_with_xavier_uniform
+
+logger = logging.getLogger(__name__)
+
 
 class GMMAttention(nn.Module):
-    def __init__(self, kdim, qdim, adim, n_mixtures, vfloor=1e-6):
+    def __init__(self, kdim, qdim, adim, n_mixtures, vfloor=1e-6,
+                 param_init=''):
         """GMM attention.
 
         Args:
             kdim (int): dimension of key
             qdim (int): dimension of query
-            adim: (int) dimension of the attention layer
+            adim: (int) dimension of attention space
             n_mixtures (int): number of mixtures
-            vfloor (float):
+            vfloor (float): parameter for numerical stability
+            param_init (str): parameter initialization method
 
         """
         super(GMMAttention, self).__init__()
@@ -35,6 +42,17 @@ class GMMAttention(nn.Module):
         self.ffn_gamma = nn.Linear(qdim, n_mixtures)
         self.ffn_beta = nn.Linear(qdim, n_mixtures)
         self.ffn_kappa = nn.Linear(qdim, n_mixtures)
+
+        if param_init == 'xavier_uniform':
+            self.reset_parameters()
+        else:
+            logger.info('Parameter initialization is skipped.')
+
+    def reset_parameters(self):
+        """Initialize parameters with Xavier uniform distribution."""
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            init_with_xavier_uniform(n, p)
 
     def reset(self):
         self.mask = None
@@ -68,7 +86,7 @@ class GMMAttention(nn.Module):
             myu_prev = self.myu
 
         self.mask = mask
-        if self.mask is None:
+        if self.mask is not None:
             assert self.mask.size() == (bs, 1, klen), (self.mask.size(), (bs, 1, klen))
 
         w = torch.softmax(self.ffn_gamma(query), dim=-1)  # `[B, 1, n_mix]`
