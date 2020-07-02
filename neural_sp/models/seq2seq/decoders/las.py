@@ -874,7 +874,7 @@ class RNNDecoder(DecoderBase):
         for t in range(ymax):
             # Update LM states for LM fusion
             if self.lm is not None:
-                lmout, lmstate = self.lm.decode(self.lm(y), lmstate)
+                lmout, lmstate, _ = self.lm.predict(y, lmstate)
 
             # Recurrency -> Score -> Generate
             y_emb = self.dropout_emb(self.embed(y))
@@ -935,8 +935,10 @@ class RNNDecoder(DecoderBase):
         if exclude_eos:
             if self.bwd:
                 hyps = [hyps[b][1:] if eos_flags[b] else hyps[b] for b in range(bs)]
+                aws = [aws[b][:, 1:] if eos_flags[b] else aws[b] for b in range(bs)]
             else:
                 hyps = [hyps[b][:-1] if eos_flags[b] else hyps[b] for b in range(bs)]
+                aws = [aws[b][:, :-1] if eos_flags[b] else aws[b] for b in range(bs)]
 
         if idx2token is not None:
             for b in range(bs):
@@ -948,6 +950,8 @@ class RNNDecoder(DecoderBase):
                     logger.debug('Hyp: %s' % idx2token(hyps[b][::-1]))
                 else:
                     logger.debug('Hyp: %s' % idx2token(hyps[b]))
+                logger.info('=' * 200)
+                # NOTE: do not show with logger.info here
 
         return hyps, aws
 
@@ -1123,7 +1127,7 @@ class RNNDecoder(DecoderBase):
                                            for lth in range(lm.n_layers)]
 
                     if self.lm is not None:  # cold/deep fusion
-                        lmout, lmstate, scores_lm = self.lm.predict(y, lmstate)
+                        lmout, lmstate, scores_lm = self.lm.predict(ys, lmstate)
                     elif lm is not None:  # shallow fusion
                         lmout, lmstate, scores_lm = lm.predict(ys, lmstate,
                                                                mems=self.lmmemory,
@@ -1214,7 +1218,7 @@ class RNNDecoder(DecoderBase):
 
                         if idx == self.eos:
                             # Exclude short hypotheses
-                            if len(beam['hyp']) - 1 < elens[b] * min_len_ratio:
+                            if len(beam['hyp'][1:]) < elens[b] * min_len_ratio:
                                 continue
                             # EOS threshold
                             max_score_no_eos = scores_att[j, :idx].max(0)[0].item()
@@ -1224,13 +1228,13 @@ class RNNDecoder(DecoderBase):
 
                         new_lmstate = None
                         if lmstate is not None:
-                            if isinstance(lm, RNNLM):
+                            if isinstance(lm, RNNLM) or isinstance(self.lm, RNNLM):
                                 new_lmstate = {'hxs': lmstate['hxs'][:, j:j + 1],
                                                'cxs': lmstate['cxs'][:, j:j + 1]}
                             elif trfm_lm:
                                 new_lmstate = [lmstate_l[j:j + 1] for lmstate_l in lmstate]
                             else:
-                                raise ValueError(type(lm))
+                                raise ValueError
 
                         ys = torch.cat([beam['ys'], eouts.new_zeros(1, 1).fill_(idx).long()], dim=-1)
 

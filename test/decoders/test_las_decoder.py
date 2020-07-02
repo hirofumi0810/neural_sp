@@ -130,17 +130,17 @@ def test_forward(args):
     batch_size = 4
     emax = 40
     device_id = -1
+
     eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
     elens = torch.IntTensor([len(x) for x in eouts])
     eouts = pad_list([np2tensor(x, device_id).float() for x in eouts], 0.)
-
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
 
     if args['lm_init'] or args['lm_fusion']:
         args_lm = make_args_rnnlm()
-        module = importlib.import_module('neural_sp.models.lm.rnnlm')
-        args['external_lm'] = module.RNNLM(args_lm)
+        module_rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
+        args['external_lm'] = module_rnnlm.RNNLM(args_lm)
 
     module = importlib.import_module('neural_sp.models.seq2seq.decoders.las')
     dec = module.RNNDecoder(**args)
@@ -212,90 +212,98 @@ def make_args_rnnlm(**kwargs):
 
 
 @pytest.mark.parametrize(
-    "backward, params",
+    "backward, lm_fusion, params",
     [
         # !!! forward
         # greedy decoding
-        (False, {'recog_beam_width': 1}),
-        (False, {'recog_beam_width': 1, 'exclude_eos': True}),
-        (False, {'recog_beam_width': 1, 'recog_batch_size': 4}),
+        (False, '', {'recog_beam_width': 1}),
+        (False, '', {'recog_beam_width': 1, 'exclude_eos': True}),
+        (False, '', {'recog_beam_width': 1, 'recog_batch_size': 4}),
+        (False, 'cold', {'recog_beam_width': 1}),
         # beam search
-        (False, {'recog_beam_width': 4}),
-        (False, {'recog_beam_width': 4, 'exclude_eos': True}),
-        (False, {'recog_beam_width': 4, 'nbest': 2}),
-        (False, {'recog_beam_width': 4, 'nbest': 4}),
-        (False, {'recog_beam_width': 4, 'nbest': 4, 'softmax_smoothing': 2.0}),
-        (False, {'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
+        (False, '', {'recog_beam_width': 4}),
+        (False, '', {'recog_beam_width': 4, 'exclude_eos': True}),
+        (False, '', {'recog_beam_width': 4, 'nbest': 2}),
+        (False, '', {'recog_beam_width': 4, 'nbest': 4}),
+        (False, '', {'recog_beam_width': 4, 'nbest': 4, 'softmax_smoothing': 2.0}),
+        (False, '', {'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
         # length penalty
-        (False, {'recog_length_penalty': 0.1}),
-        (False, {'recog_length_penalty': 0.1, 'recog_gnmt_decoding': True}),
-        (False, {'recog_length_norm': True}),
+        (False, '', {'recog_length_penalty': 0.1}),
+        (False, '', {'recog_length_penalty': 0.1, 'recog_gnmt_decoding': True}),
+        (False, '', {'recog_length_norm': True}),
         # coverage
-        (False, {'recog_coverage_penalty': 0.1}),
-        (False, {'recog_coverage_penalty': 0.1, 'recog_gnmt_decoding': True}),
+        (False, '', {'recog_coverage_penalty': 0.1}),
+        (False, '', {'recog_coverage_penalty': 0.1, 'recog_gnmt_decoding': True}),
         # shallow fusion
-        (False, {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+        (False, '', {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+        # cold fusion
+        (False, 'cold', {'recog_beam_width': 4}),
+        (False, 'cold', {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
         # rescoring
-        (False, {'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
-        (False, {'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
+        (False, '', {'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
+        (False, '', {'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
         # !!! backward
         # greedy decoding
-        (True, {'recog_beam_width': 1}),
-        (True, {'recog_beam_width': 1, 'exclude_eos': True}),
-        (True, {'recog_beam_width': 1, 'recog_batch_size': 4}),
+        (True, '', {'recog_beam_width': 1}),
+        (True, '', {'recog_beam_width': 1, 'exclude_eos': True}),
+        (True, '', {'recog_beam_width': 1, 'recog_batch_size': 4}),
         # beam search
-        (True, {'recog_beam_width': 4}),
-        (True, {'recog_beam_width': 4, 'exclude_eos': True}),
-        (True, {'recog_beam_width': 4, 'nbest': 2}),
-        (True, {'recog_beam_width': 4, 'nbest': 4}),
-        (True, {'recog_beam_width': 4, 'nbest': 4, 'softmax_smoothing': 2.0}),
-        (True, {'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
+        (True, '', {'recog_beam_width': 4}),
+        (True, '', {'recog_beam_width': 4, 'exclude_eos': True}),
+        (True, '', {'recog_beam_width': 4, 'nbest': 2}),
+        (True, '', {'recog_beam_width': 4, 'nbest': 4}),
+        (True, '', {'recog_beam_width': 4, 'nbest': 4, 'softmax_smoothing': 2.0}),
+        (True, '', {'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
         # length penalty
-        (True, {'recog_length_penalty': 0.1}),
-        (True, {'recog_length_penalty': 0.1, 'recog_gnmt_decoding': True}),
-        (True, {'recog_length_norm': True}),
+        (True, '', {'recog_length_penalty': 0.1}),
+        (True, '', {'recog_length_penalty': 0.1, 'recog_gnmt_decoding': True}),
+        (True, '', {'recog_length_norm': True}),
         # coverage
-        (True, {'recog_coverage_penalty': 0.1}),
-        (True, {'recog_coverage_penalty': 0.1, 'recog_gnmt_decoding': True}),
+        (True, '', {'recog_coverage_penalty': 0.1}),
+        (True, '', {'recog_coverage_penalty': 0.1, 'recog_gnmt_decoding': True}),
         # shallow fusion
-        (True, {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+        (True, '', {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+        # cold fusion
+        (True, 'cold', {'recog_beam_width': 4}),
+        (True, 'cold', {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
         # rescoring
-        (True, {'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
-        (True, {'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
+        (True, '', {'recog_beam_width': 4, 'recog_lm_second_weight': 0.1}),
+        (True, '', {'recog_beam_width': 4, 'recog_lm_bwd_weight': 0.1}),
     ]
 )
-def test_decoding(backward, params):
+def test_decoding(backward, lm_fusion, params):
     args = make_args()
+    args['backward'] = backward
+    args['lm_fusion'] = lm_fusion
     params = make_decode_params(**params)
-    params['backward'] = backward
 
     batch_size = params['recog_batch_size']
     emax = 40
     device_id = -1
+
     eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
     elens = torch.IntTensor([len(x) for x in eouts])
     eouts = pad_list([np2tensor(x, device_id).float() for x in eouts], 0.)
+    ylens = [4, 5, 3, 7]
+    ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
+
     ctc_log_probs = None
     if params['recog_ctc_weight'] > 0:
         ctc_log_probs = torch.softmax(torch.FloatTensor(batch_size, emax, VOCAB), dim=-1)
-    lm = None
-    if params['recog_lm_weight'] > 0:
-        args_lm = make_args_rnnlm()
-        module = importlib.import_module('neural_sp.models.lm.rnnlm')
-        lm = module.RNNLM(args_lm)
-    lm_second = None
-    if params['recog_lm_second_weight'] > 0:
-        args_lm = make_args_rnnlm()
-        module = importlib.import_module('neural_sp.models.lm.rnnlm')
-        lm_second = module.RNNLM(args_lm)
-    lm_second_bwd = None
-    if params['recog_lm_bwd_weight'] > 0:
-        args_lm = make_args_rnnlm()
-        module = importlib.import_module('neural_sp.models.lm.rnnlm')
-        lm_second_bwd = module.RNNLM(args_lm)
 
-    ylens = [4, 5, 3, 7]
-    ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
+    args_lm = make_args_rnnlm()
+    module_rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
+    lm = None
+    lm_second = None
+    lm_second_bwd = None
+    if params['recog_lm_weight'] > 0:
+        lm = module_rnnlm.RNNLM(args_lm)
+    if params['recog_lm_second_weight'] > 0:
+        lm_second = module_rnnlm.RNNLM(args_lm)
+    if params['recog_lm_bwd_weight'] > 0:
+        lm_second_bwd = module_rnnlm.RNNLM(args_lm)
+    if args['lm_fusion']:
+        args['external_lm'] = module_rnnlm.RNNLM(args_lm)
 
     module = importlib.import_module('neural_sp.models.seq2seq.decoders.las')
     dec = module.RNNDecoder(**args)
