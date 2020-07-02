@@ -25,7 +25,7 @@ class GMMAttention(nn.Module):
         Args:
             kdim (int): dimension of key
             qdim (int): dimension of query
-            adim: (int) dimension of the attention layer
+            adim: (int) dimension of attention space
             n_mixtures (int): number of mixtures
             vfloor (float): parameter for numerical stability
             param_init (str): parameter initialization method

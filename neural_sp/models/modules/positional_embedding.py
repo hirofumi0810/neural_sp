@@ -14,7 +14,6 @@ import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.causal_conv import CausalConv1d
-from neural_sp.models.modules.initialization import init_with_xavier_uniform
 
 
 NEG_INF = float(np.finfo(np.float32).min)
