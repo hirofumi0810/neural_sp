@@ -25,6 +25,15 @@ class ZoneoutCell(nn.Module):
             self.prob = zoneout_prob_h
 
     def forward(self, inputs, state):
+        """Forward pass.
+
+        Args:
+            inputs (FloatTensor): `[B, input_dim]'
+            state (tuple or FloatTensor):
+        Returns:
+            state (tuple or FloatTensor):
+
+        """
         return self.zoneout(state, self.cell(inputs, state), self.prob)
 
     def zoneout(self, state, next_state, prob):
