@@ -14,21 +14,24 @@ def make_args(**kwargs):
         d_ff=128,
         dropout=0.1,
         activation='relu',
-        param_init='xavier_uniform',
-        bottleneck_dim=0
+        param_init='',
+        bottleneck_dim=0,
     )
     args.update(kwargs)
     return args
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # activation
         ({'activation': 'relu'}),
         ({'activation': 'gelu'}),
         ({'activation': 'gelu_accurate'}),
         ({'activation': 'glu'}),
         ({'activation': 'swish'}),
+        # initialization
+        ({'param_init': 'xavier_uniform'}),
         # bottleneck
         ({'bottleneck_dim': 16}),
     ]

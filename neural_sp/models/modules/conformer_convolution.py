@@ -30,7 +30,7 @@ class ConformerConvBlock(nn.Module):
         super(ConformerConvBlock, self).__init__()
 
         self.d_model = d_model
-        assert kernel_size % 2 == 1
+        assert (kernel_size - 1) % 2 == 0, 'kernel_size must be the odd number.'
 
         self.pointwise_conv1 = nn.Conv1d(in_channels=d_model,
                                          out_channels=d_model * 2,  # for GLU
@@ -41,8 +41,7 @@ class ConformerConvBlock(nn.Module):
                                         out_channels=d_model,
                                         kernel_size=kernel_size,
                                         stride=1,
-                                        # padding=kernel_size // 2 - 1,
-                                        padding=kernel_size // 2,
+                                        padding=(kernel_size - 1) // 2,
                                         groups=d_model)  # depthwise
         self.batch_norm = nn.BatchNorm1d(d_model)
         self.activation = Swish()
@@ -54,6 +53,8 @@ class ConformerConvBlock(nn.Module):
 
         if param_init == 'xavier_uniform':
             self.reset_parameters()
+        else:
+            logger.info('Parameter initialization is skipped.')
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""

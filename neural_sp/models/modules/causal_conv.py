@@ -9,20 +9,43 @@
 import logging
 import torch.nn as nn
 
+from neural_sp.models.modules.initialization import init_with_xavier_uniform
+
 logger = logging.getLogger(__name__)
 
 
 class CausalConv1d(nn.Module):
-    """1D dilated causal convolution."""
+    """1D dilated causal convolution.
 
-    def __init__(self, in_channels, out_channels, kernel_size, dilation=1):
+    Args:
+        in_channels (int): input channel size
+        out_channels (int): output channel size
+        kernel_size (int): kernel size
+        dilation (int): delation rate
+        param_init (str): parameter initialization method
+
+    """
+
+    def __init__(self, in_channels, out_channels, kernel_size, dilation=1,
+                 param_init=''):
         super(CausalConv1d, self).__init__()
         self.padding = (kernel_size - 1) * dilation
         self.conv1d = nn.Conv1d(in_channels, out_channels, kernel_size,
                                 padding=self.padding, dilation=dilation)
 
+        if param_init == 'xavier_uniform':
+            self.reset_parameters()
+        else:
+            logger.info('Parameter initialization is skipped.')
+
+    def reset_parameters(self):
+        """Initialize parameters with Xavier uniform distribution."""
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            init_with_xavier_uniform(n, p)
+
     def forward(self, xs):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, in_channels]`

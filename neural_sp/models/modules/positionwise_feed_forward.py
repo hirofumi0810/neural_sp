@@ -64,6 +64,8 @@ class PositionwiseFeedForward(nn.Module):
 
         if param_init == 'xavier_uniform':
             self.reset_parameters()
+        else:
+            logger.info('Parameter initialization is skipped.')
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
