@@ -11,7 +11,7 @@ import torch
 def make_args(**kwargs):
     args = dict(
         d_model=256,
-        kernel_size=32,
+        kernel_size=3,
         param_init=''
     )
     args.update(kwargs)
