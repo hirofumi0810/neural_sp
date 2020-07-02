@@ -1,7 +1,7 @@
 # topology
 lm_type: transformer
-transformer_d_model: 32
-transformer_d_ff: 128
+transformer_d_model: 16
+transformer_d_ff: 64
 transformer_ffn_activation: relu
 n_layers: 2
 transformer_pe_type: add
@@ -12,13 +12,13 @@ tie_embedding: true
 batch_size: 1
 bptt: 10
 optimizer: noam
-n_epochs: 10
+n_epochs: 4
 convert_to_sgd_epoch: 100
 print_step: 1
 lr_factor: 10.0
-early_stop_patient_n_epochs: 5
+early_stop_patient_n_epochs: 2
 eval_start_epoch: 1
-warmup_n_steps: 10
+warmup_n_steps: 2
 accum_grad_n_steps: 2
 # regularization
 clip_grad_norm: 1.0
