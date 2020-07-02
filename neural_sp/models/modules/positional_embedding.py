@@ -89,7 +89,9 @@ class PositionalEncoding(nn.Module):
             xs = xs + self.pe[:, :xs.size(1)]
             xs = self.dropout(xs)
         elif self.pe_type == 'concat':
-            xs = torch.cat([xs, self.pe[:, :xs.size(1)]], dim=-1)
+            raise NotImplementedError
+            xs = torch.cat([xs, self.pe[:, :xs.size(1)].repeat([xs.size(0), 1, 1])], dim=-1)
+            # TODO(hirofumi0810): need dimension reduction
             xs = self.dropout(xs)
         elif '1dconv' in self.pe_type:
             xs = self.pe(xs)

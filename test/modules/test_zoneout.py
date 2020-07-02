@@ -47,12 +47,18 @@ def test_forward(rnn_type, args):
     module = importlib.import_module('neural_sp.models.modules.zoneout')
     zoneout_cell = module.ZoneoutCell(**args)
 
-    if rnn_type == 'lstm':
-        h, c = zoneout_cell(xs, (hxs, cxs))
-        assert h.size() == (batch_size, cell_size)
-        assert c.size() == (batch_size, cell_size)
-    elif rnn_type == 'gru':
-        h = zoneout_cell(xs, hxs)
-        assert h.size() == (batch_size, cell_size)
-    else:
-        raise ValueError(rnn_type)
+    for mode in ['train', 'eval']:
+        if mode == 'train':
+            zoneout_cell.train()
+        elif mode == 'eval':
+            zoneout_cell.eval()
+
+        if rnn_type == 'lstm':
+            h, c = zoneout_cell(xs, (hxs, cxs))
+            assert h.size() == (batch_size, cell_size)
+            assert c.size() == (batch_size, cell_size)
+        elif rnn_type == 'gru':
+            h = zoneout_cell(xs, hxs)
+            assert h.size() == (batch_size, cell_size)
+        else:
+            raise ValueError(rnn_type)

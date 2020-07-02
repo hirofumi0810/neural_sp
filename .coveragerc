@@ -5,6 +5,7 @@ source = neural_sp
 [report]
 exclude_lines =
     raise ValueError
+    raise TypeError
     raise NotImplementedError
     if __name__ == .__main__.:
 

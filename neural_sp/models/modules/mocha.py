@@ -72,7 +72,8 @@ class MonotonicEnergy(nn.Module):
         if conv1d:
             self.conv1d = CausalConv1d(in_channels=kdim,
                                        out_channels=kdim,
-                                       kernel_size=conv_kernel_size)
+                                       kernel_size=conv_kernel_size,
+                                       param_init=param_init)
             # padding=(conv_kernel_size - 1) // 2
 
         if atype == 'add':
@@ -92,10 +93,6 @@ class MonotonicEnergy(nn.Module):
         if bias:
             nn.init.constant_(self.w_key.bias, 0.)
             nn.init.constant_(self.w_query.bias, 0.)
-        if self.conv1d is not None:
-            logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.conv1d.__class__.__name__)
-            for n, p in self.conv1d.named_parameters():
-                init_with_xavier_uniform(n, p)
 
     def reset(self):
         self.key = None
@@ -591,7 +588,7 @@ class MoChA(nn.Module):
 
 
 def add_gaussian_noise(xs, std):
-    """Additive gaussian nosie to encourage discreteness."""
+    """Add Gaussian nosie to encourage discreteness."""
     noise = xs.new_zeros(xs.size()).normal_(std=std)
     return xs + noise
 
