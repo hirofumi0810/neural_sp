@@ -19,14 +19,15 @@ def make_args(**kwargs):
         conv_out_channels=10,
         conv_kernel_size=201,
         dropout=0.1,
-        lookahead=2
+        lookahead=2,
     )
     args.update(kwargs)
     return args
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # attention type
         ({'atype': 'location'}),
         ({'atype': 'add'}),
