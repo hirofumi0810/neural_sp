@@ -161,10 +161,10 @@ def build_parser():
                         help='minimum number of input frames')
     parser.add_argument('--dynamic_batching', type=strtobool, default=True,
                         help='')
-    parser.add_argument('--gaussian_noise', type=strtobool, default=False,
-                        help='add Gaussian noise to input features')
-    parser.add_argument('--weight_noise', type=strtobool, default=False,
-                        help='add Gaussian noise to weight parameters')
+    parser.add_argument('--input_noise_std', type=float, default=0,
+                        help='standard deviation of Gaussian noise to input features')
+    parser.add_argument('--weight_noise_std', type=float, default=0,
+                        help='standard deviation of Gaussian noise to weight parameters')
     parser.add_argument('--sequence_summary_network', type=strtobool, default=False,
                         help='use sequence summary network')
     # topology (encoder)
@@ -286,11 +286,11 @@ def build_parser():
                         help='width of frequency mask for SpecAugment')
     parser.add_argument('--n_freq_masks', type=int, default=0,
                         help='number of frequency masks for SpecAugment')
-    parser.add_argument('--time_width', type=int, default=70,
+    parser.add_argument('--time_width', type=int, default=100,
                         help='width of time mask for SpecAugment')
     parser.add_argument('--n_time_masks', type=int, default=0,
                         help='number of time masks for SpecAugment')
-    parser.add_argument('--time_width_upper', type=float, default=0.2,
+    parser.add_argument('--time_width_upper', type=float, default=1.0,
                         help='')
     parser.add_argument('--adaptive_number_ratio', type=float, default=0.0,
                         help='adaptive multiplicity ratio for time masking')
