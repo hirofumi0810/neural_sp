@@ -79,7 +79,7 @@ def set_asr_model_name(args):
                 if args.mocha_1dconv:
                     dir_name += '_1dconv'
                 if args.mocha_quantity_loss_weight > 0:
-                    dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
+                    dir_name += '_qua' + str(args.mocha_quantity_loss_weight)
                 if args.mocha_head_divergence_loss_weight != 0:
                     dir_name += '_headdiv' + str(args.mocha_head_divergence_loss_weight)
                 if args.mocha_latency_metric:
@@ -113,7 +113,7 @@ def set_asr_model_name(args):
                     if args.attn_sharpening_factor:
                         dir_name += '_temp' + str(args.attn_sharpening_factor)
                     if args.mocha_quantity_loss_weight > 0:
-                        dir_name += '_quantity' + str(args.mocha_quantity_loss_weight)
+                        dir_name += '_qua' + str(args.mocha_quantity_loss_weight)
                 elif args.attn_type == 'gmm':
                     dir_name += '_mix' + str(args.gmm_attn_n_mixtures)
                 if args.mocha_latency_metric:
@@ -191,8 +191,10 @@ def set_asr_model_name(args):
             dir_name += '_' + str(args.time_width) + 'TM' + str(args.n_time_masks)
         if args.adaptive_size_ratio > 0:
             dir_name += '_psize' + str(args.adaptive_size_ratio)
-    if args.weight_noise:
-        dir_name += '_weightnoise'
+    if args.input_noise_std > 0:
+        dir_name += '_inputnoisestd'
+    if args.weight_noise_std > 0:
+        dir_name += '_weightnoisestd'
 
     # contextualization
     if args.discourse_aware:
