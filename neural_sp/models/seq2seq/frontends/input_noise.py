@@ -9,8 +9,8 @@
 import torch
 
 
-def add_gaussian_noise(xs):
-    noise = torch.normal(torch.zeros(xs.shape[-1]), 0.075)
+def add_input_noise(xs, std=0.075):
+    noise = torch.normal(torch.zeros(xs.shape[-1]), std)
     if xs.is_cuda:
         noise = noise.cuda()
     xs.data += noise

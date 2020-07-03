@@ -21,7 +21,7 @@ from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attentio
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
 from neural_sp.models.seq2seq.encoders.build import build_encoder
 from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
-from neural_sp.models.seq2seq.frontends.gaussian_noise import add_gaussian_noise
+from neural_sp.models.seq2seq.frontends.input_noise import add_input_noise
 from neural_sp.models.seq2seq.frontends.sequence_summary import SequenceSummaryNetwork
 from neural_sp.models.seq2seq.frontends.spec_augment import SpecAugment
 from neural_sp.models.seq2seq.frontends.splicing import splice
@@ -92,11 +92,11 @@ class Speech2Text(ModelBase):
         self.utt_id_prev = None
 
         # Feature extraction
-        self.gaussian_noise = args.gaussian_noise
+        self.input_noise_std = args.input_noise_std
         self.n_stacks = args.n_stacks
         self.n_skips = args.n_skips
         self.n_splices = args.n_splices
-        self.weight_noise = args.weight_noise
+        self.weight_noise_std = args.weight_noise_std
         self.specaug = None
         if args.n_freq_masks > 0 or args.n_time_masks > 0:
             assert args.n_stacks == 1 and args.n_skips == 1
@@ -376,12 +376,13 @@ class Speech2Text(ModelBase):
             # SpecAugment
             if self.specaug is not None and self.training:
                 xs = self.specaug(xs)
-                if self.weight_noise:
-                    self.add_weight_noise(std=0.075)
+                if self.weight_noise_std > 0:
+                    # self.add_weight_noise(std=0.075)
+                    self.add_weight_noise(std=0.01)
 
             # Gaussian noise injection
-            if self.gaussian_noise:
-                xs = add_gaussian_noise(xs)
+            if self.input_noise_std > 0:
+                xs = add_input_noise(xs)
 
             # Sequence summary network
             if self.ssn is not None:
@@ -660,7 +661,7 @@ class Speech2Text(ModelBase):
                     lm, lm_second, lm_second_bwd, 1, refs_id, utt_ids, speakers)
                 return best_hyps_id, None
 
-            # Attention
+            # Attention/RNN-T
             elif params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
                 best_hyps_id, aws = getattr(self, 'dec_' + dir).greedy(
                     eout_dict[task]['xs'], eout_dict[task]['xlens'],
