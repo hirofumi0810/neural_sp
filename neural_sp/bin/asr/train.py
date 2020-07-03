@@ -347,24 +347,24 @@ def main():
                 loss.backward()
             loss.detach()  # Trancate the graph
             loss_train = (loss_train * (accum_n_steps - 1) + loss.item()) / accum_n_steps
-            if accum_n_steps >= args.accum_grad_n_steps:
+            if accum_n_steps >= args.accum_grad_n_steps or is_new_epoch:
                 if args.clip_grad_norm > 0:
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         model.module.parameters(), args.clip_grad_norm)
                     reporter.add_tensorboard_scalar('total_norm', total_norm)
                 optimizer.step()
                 optimizer.zero_grad()
-                accum_n_steps = 0
             del loss
         pbar_epoch.update(len(batch_train['utt_ids']))
-        if accum_n_steps > 0:
+        if not (accum_n_steps >= args.accum_grad_n_steps or is_new_epoch):
             continue
 
         reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
         # NOTE: loss/acc/ppl are already added in the model
         reporter.step()
-        n_steps += args.accum_grad_n_steps
+        n_steps += accum_n_steps
         # NOTE: n_steps is different from the step counter in Noam Optimizer
+        accum_n_steps = 0
 
         if n_steps % args.print_step == 0:
             # Compute loss in the dev set
