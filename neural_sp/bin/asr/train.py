@@ -354,17 +354,16 @@ def main():
                     reporter.add_tensorboard_scalar('total_norm', total_norm)
                 optimizer.step()
                 optimizer.zero_grad()
+                accum_n_steps = 0
+                # NOTE: parameters are forcibly updated at the end of every epoch
             del loss
-        pbar_epoch.update(len(batch_train['utt_ids']))
-        if not (accum_n_steps >= args.accum_grad_n_steps or is_new_epoch):
-            continue
 
+        pbar_epoch.update(len(batch_train['utt_ids']))
         reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
         # NOTE: loss/acc/ppl are already added in the model
         reporter.step()
-        n_steps += accum_n_steps
+        n_steps += 1
         # NOTE: n_steps is different from the step counter in Noam Optimizer
-        accum_n_steps = 0
 
         if n_steps % args.print_step == 0:
             # Compute loss in the dev set
