@@ -352,7 +352,7 @@ class TransformerEncoder(EncoderBase):
             _N_l = max(0, N_l // self.subsampling_factor)
             _N_c = N_c // self.subsampling_factor
 
-            n_chunks = xs.size(0) // bs
+            n_chunks = math.ceil(xs.size(0) / bs)
             emax = math.ceil(xmax / self.subsampling_factor)
 
             pos_embs = None

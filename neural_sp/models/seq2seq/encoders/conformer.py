@@ -148,8 +148,9 @@ class ConformerEncoder(EncoderBase):
         if self.chunk_size_right > 0:
             assert self.chunk_size_right % self._factor == 0
 
-        self.pos_emb = XLPositionalEmbedding(d_model, dropout)  # TODO: dropout_in?
+        self.pos_emb = XLPositionalEmbedding(d_model, dropout)
         assert pe_type == 'relative'
+        # TODO(hirofumi0810): try other positional encodings
 
         self.layers = nn.ModuleList([copy.deepcopy(ConformerEncoderBlock(
             d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
@@ -288,7 +289,7 @@ class ConformerEncoder(EncoderBase):
             _N_l = max(0, N_l // self.subsampling_factor)
             _N_c = N_c // self.subsampling_factor
 
-            n_chunks = xs.size(0) // bs
+            n_chunks = math.ceil(xs.size(0) / bs)
             emax = math.ceil(xmax / self.subsampling_factor)
 
             xs = xs * self.scale
