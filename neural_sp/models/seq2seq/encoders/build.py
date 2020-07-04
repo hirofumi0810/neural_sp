@@ -11,7 +11,6 @@ def build_encoder(args):
 
     if args.enc_type == 'tds':
         from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
-        raise ValueError
         encoder = TDSEncoder(
             input_dim=args.input_dim * args.n_stacks,
             in_channel=args.conv_in_channel,

@@ -41,7 +41,7 @@ def set_asr_model_name(args):
         if args.lc_chunk_size_left > 0 or args.lc_chunk_size_current > 0 or args.lc_chunk_size_right > 0:
             dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
                 str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
-    else:
+    elif args.enc_type != 'tds':
         dir_name += str(args.enc_n_units) + 'H'
         if args.enc_n_projs > 0:
             dir_name += str(args.enc_n_projs) + 'P'
