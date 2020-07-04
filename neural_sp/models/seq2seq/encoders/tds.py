@@ -35,7 +35,7 @@ class TDSEncoder(EncoderBase):
     """
 
     def __init__(self, input_dim, in_channel, channels, kernel_sizes,
-                 dropout, last_proj_dim, layer_norm_eps):
+                 dropout, last_proj_dim, layer_norm_eps=1e-12):
 
         super(TDSEncoder, self).__init__()
 

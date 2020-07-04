@@ -428,9 +428,6 @@ class RNNEncoder(EncoderBase):
         n_chunks = math.ceil(xmax / _N_l)
         if streaming:
             xlens = torch.IntTensor(bs).fill_(xs.size(1))
-        else:
-            xlens = torch.IntTensor(bs).fill_(xmax)
-            # NOTE: Although this is not the exact padding, the results are indeed improved
 
         xs_chunks = []
         xs_chunks_sub1 = []
