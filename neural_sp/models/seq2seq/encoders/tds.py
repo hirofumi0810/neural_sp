@@ -175,12 +175,12 @@ class TDSBlock(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
         # 2D conv over time
-        self.conv = nn.Conv1d(in_channels=in_freq * channel,
-                              out_channels=in_freq * channel,
-                              kernel_size=kernel_size,
-                              stride=1,
-                              padding=(kernel_size - 1) // 2,  # TODO(hirofumi0810): assymetric
-                              groups=in_freq)  # depthwise
+        self.conv1d = nn.Conv1d(in_channels=in_freq * channel,
+                                out_channels=in_freq * channel,
+                                kernel_size=kernel_size,
+                                stride=1,
+                                padding=(kernel_size - 1) // 2,  # TODO(hirofumi0810): assymetric
+                                groups=in_freq)  # depthwise
         self.norm1 = LayerNorm2D(channel, in_freq, eps=layer_norm_eps)
 
         # fully connected block
@@ -194,6 +194,7 @@ class TDSBlock(nn.Module):
                                          kernel_size=1,
                                          stride=1,
                                          padding=0)
+        # self.feed_forward = nn.Linear(in_freq * channel, in_freq * channel)
         self.norm2 = LayerNorm2D(channel, in_freq, eps=layer_norm_eps)
 
     def forward(self, xs, xlens):
@@ -212,7 +213,7 @@ class TDSBlock(nn.Module):
         # 1d conv
         residual = xs
         xs = xs.transpose(3, 2).view(B, C * F, T)
-        xs = self.dropout(torch.relu(self.conv(xs)))
+        xs = self.dropout(torch.relu(self.conv1d(xs)))
         xs = xs.view(B, -1, F, T).transpose(3, 2)
         xs = xs + residual  # `[B, C, T, F]`
         xs = self.norm1(xs)  # not depends on time-axis based on https://arxiv.org/abs/2001.09727
@@ -220,10 +221,18 @@ class TDSBlock(nn.Module):
         # fully connected block
         B, C, T, F = xs.size()
         residual = xs
+
+        # v1
         xs = xs.transpose(3, 2).view(B, C * F, T)
         xs = self.dropout(torch.relu(self.pointwise_conv1(xs)))
         xs = self.dropout(self.pointwise_conv2(xs))
         xs = xs.view(B, -1, F, T).transpose(3, 2)  # `[B, C, T, F]`
+
+        # v2
+        # xs = xs.transpose(2, 1).view(B, T, -1)
+        # xs = self.dropout(torch.relu(self.feed_forward(xs)))
+        # xs = xs.view(B, T, C, F).transpose(2, 1)
+
         xs = xs + residual
         xs = self.norm2(xs)  # not depends on time-axis based on https://arxiv.org/abs/2001.09727
         return xs, xlens
@@ -242,7 +251,8 @@ class SubsampelBlock(nn.Module):
                                 out_channels=in_freq * out_channel,
                                 kernel_size=kernel_size,
                                 stride=stride,
-                                padding=(kernel_size - 1) // 2)
+                                padding=(kernel_size - 1) // 2,
+                                groups=in_freq)  # TODO(hirofumi0810): Is this correct?
         self.dropout = nn.Dropout(p=dropout)
         self.norm = LayerNorm2D(out_channel, in_freq, eps=layer_norm_eps)
 
