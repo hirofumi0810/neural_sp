@@ -9,6 +9,7 @@
 import copy
 import logging
 import math
+import numpy as np
 import random
 import torch
 import torch.nn as nn
@@ -19,6 +20,10 @@ from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedF
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
+from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import MaxpoolSubsampler
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
@@ -50,6 +55,9 @@ class ConformerEncoder(EncoderBase):
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
         dropout_layer (float): LayerDrop probability for layers
+        subsample (list): subsample in the corresponding Conformer layers
+            ex.) [1, 2, 2, 1] means that subsample is conducted in the 2nd and 3rd layers.
+        subsample_type (str): drop/concat/max_pool/1dconv
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
@@ -74,7 +82,7 @@ class ConformerEncoder(EncoderBase):
                  d_model, d_ff, ffn_bottleneck_dim, last_proj_dim,
                  pe_type, layer_norm_eps, ffn_activation,
                  dropout_in, dropout, dropout_att, dropout_layer,
-                 n_stacks, n_splices,
+                 subsample, subsample_type, n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init,
@@ -82,6 +90,14 @@ class ConformerEncoder(EncoderBase):
 
         super(ConformerEncoder, self).__init__()
 
+        # parse subsample
+        subsamples = [1] * n_layers
+        for lth, s in enumerate(list(map(int, subsample.split('_')[:n_layers]))):
+            subsamples[lth] = s
+
+        if len(subsamples) > 0 and len(subsamples) != n_layers:
+            raise ValueError('subsample must be the same size as n_layers. n_layers: %d, subsample: %s' %
+                             (n_layers, subsamples))
         if n_layers_sub1 < 0 or (n_layers_sub1 > 1 and n_layers < n_layers_sub1):
             raise ValueError('Set n_layers_sub1 between 1 to n_layers.')
         if n_layers_sub2 < 0 or (n_layers_sub2 > 1 and n_layers_sub1 < n_layers_sub2):
@@ -140,6 +156,21 @@ class ConformerEncoder(EncoderBase):
         self._factor = 1
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor
+        self.subsample = None
+        if np.prod(subsamples) > 1:
+            self._factor *= np.prod(subsamples)
+            if subsample_type == 'max_pool':
+                self.subsample = nn.ModuleList([MaxpoolSubsampler(factor)
+                                                for factor in subsamples])
+            elif subsample_type == 'concat':
+                self.subsample = nn.ModuleList([ConcatSubsampler(factor, self._odim)
+                                                for factor in subsamples])
+            elif subsample_type == 'drop':
+                self.subsample = nn.ModuleList([DropSubsampler(factor)
+                                                for factor in subsamples])
+            elif subsample_type == '1dconv':
+                self.subsample = nn.ModuleList([Conv1dSubsampler(factor, self._odim)
+                                                for factor in subsamples])
 
         if self.chunk_size_left > 0:
             assert self.chunk_size_left % self._factor == 0
@@ -302,9 +333,6 @@ class ConformerEncoder(EncoderBase):
             # Path through CNN blocks
             xs, xlens = self.conv(xs, xlens)
 
-        if not self.training:
-            self.data_dict['elens'] = tensor2np(xlens)
-
         if self.latency_controlled:
             # streaming Conformer encoder
             _N_l = max(0, N_l // self.subsampling_factor)
@@ -320,6 +348,8 @@ class ConformerEncoder(EncoderBase):
             xx_mask = None  # NOTE: no mask
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
+                if self.subsample is not None:
+                    xs, xlens = self.subsample[lth](xs, xlens)
                 if not self.training:
                     n_heads = layer.xx_aws.size(1)
                     xx_aws = layer.xx_aws[:, :, _N_l:_N_l + _N_c, _N_l:_N_l + _N_c]
@@ -327,10 +357,11 @@ class ConformerEncoder(EncoderBase):
                     xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
                     for chunk_idx in range(n_chunks):
                         offset = chunk_idx * _N_c
-                        emax_blc = xx_aws_center[:, :, offset:offset + _N_c].size(2)
-                        xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_blc, :emax_blc]
+                        emax_chunk = xx_aws_center[:, :, offset:offset + _N_c].size(2)
+                        xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk, :emax_chunk]
                         xx_aws_center[:, :, offset:offset + _N_c, offset:offset + _N_c] = xx_aws_chunk
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
+                    self.data_dict['elens%d' % lth] = tensor2np(xlens)
 
             # Extract the center region
             xs = xs[:, _N_l:_N_l + _N_c]  # `[B * n_chunks, _N_c, d_model]`
@@ -349,25 +380,20 @@ class ConformerEncoder(EncoderBase):
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
+                if self.subsample is not None:
+                    xs, xlens = self.subsample[lth](xs, xlens)
                 if not self.training:
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
+                    self.data_dict['elens%d' % lth] = tensor2np(xlens)
 
                 # Pick up outputs in the sub task before the projection layer
                 if lth == self.n_layers_sub1 - 1:
-                    xs_sub1 = self.layer_sub1(
-                        xs, xx_mask, pos_embs=pos_embs) if self.task_specific_layer else xs.clone()
-                    xs_sub1 = self.norm_out_sub1(xs_sub1)
-                    if self.bridge_sub1 is not None:
-                        xs_sub1 = self.bridge_sub1(xs_sub1)
+                    xs_sub1 = self.sub_module(xs, xx_mask, lth, pos_embs, 'sub1')
                     if task == 'ys_sub1':
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
                         return eouts
                 if lth == self.n_layers_sub2 - 1:
-                    xs_sub2 = self.layer_sub2(
-                        xs, xx_mask, pos_embs=pos_embs) if self.task_specific_layer else xs.clone()
-                    xs_sub2 = self.norm_out_sub2(xs_sub2)
-                    if self.bridge_sub2 is not None:
-                        xs_sub2 = self.bridge_sub2(xs_sub2)
+                    xs_sub2 = self.sub_module(xs, xx_mask, lth, pos_embs, 'sub2')
                     if task == 'ys_sub2':
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens
                         return eouts
@@ -385,6 +411,18 @@ class ConformerEncoder(EncoderBase):
         if self.n_layers_sub2 >= 1 and task == 'all':
             eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens
         return eouts
+
+    def sub_module(self, xs, xx_mask, lth, pos_embs=None, module='sub1'):
+        if self.task_specific_layer:
+            xs_sub = getattr(self, 'layer_' + module)(xs, xx_mask, pos_embs=pos_embs)
+        else:
+            xs_sub = xs.clone()
+        xs_sub = getattr(self, 'norm_out_' + module)(xs_sub)
+        if getattr(self, 'bridge_' + module) is not None:
+            xs_sub = getattr(self, 'bridge_' + module)(xs_sub)
+        if not self.training:
+            self.aws_dict['xx_aws_%s_layer%d' % (module, lth)] = tensor2np(getattr(self, 'layer_' + module).xx_aws)
+        return xs_sub
 
 
 class ConformerEncoderBlock(nn.Module):

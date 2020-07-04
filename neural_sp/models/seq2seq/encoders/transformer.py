@@ -9,6 +9,7 @@
 import copy
 import logging
 import math
+import numpy as np
 import random
 import torch
 import torch.nn as nn
@@ -21,6 +22,10 @@ from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedF
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
+from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import MaxpoolSubsampler
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
@@ -51,6 +56,9 @@ class TransformerEncoder(EncoderBase):
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
         dropout_layer (float): LayerDrop probability for layers
+        subsample (list): subsample in the corresponding Transformer layers
+            ex.) [1, 2, 2, 1] means that subsample is conducted in the 2nd and 3rd layers.
+        subsample_type (str): drop/concat/max_pool/1dconv
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
@@ -75,7 +83,7 @@ class TransformerEncoder(EncoderBase):
                  d_model, d_ff, ffn_bottleneck_dim, last_proj_dim,
                  pe_type, layer_norm_eps, ffn_activation,
                  dropout_in, dropout, dropout_att, dropout_layer,
-                 n_stacks, n_splices,
+                 subsample, subsample_type, n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init,
@@ -83,6 +91,14 @@ class TransformerEncoder(EncoderBase):
 
         super(TransformerEncoder, self).__init__()
 
+        # parse subsample
+        subsamples = [1] * n_layers
+        for lth, s in enumerate(list(map(int, subsample.split('_')[:n_layers]))):
+            subsamples[lth] = s
+
+        if len(subsamples) > 0 and len(subsamples) != n_layers:
+            raise ValueError('subsample must be the same size as n_layers. n_layers: %d, subsample: %s' %
+                             (n_layers, subsamples))
         if n_layers_sub1 < 0 or (n_layers_sub1 > 1 and n_layers < n_layers_sub1):
             raise ValueError('Set n_layers_sub1 between 1 to n_layers.')
         if n_layers_sub2 < 0 or (n_layers_sub2 > 1 and n_layers_sub1 < n_layers_sub2):
@@ -149,6 +165,21 @@ class TransformerEncoder(EncoderBase):
         self._factor = 1
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor
+        self.subsample = None
+        if np.prod(subsamples) > 1:
+            self._factor *= np.prod(subsamples)
+            if subsample_type == 'max_pool':
+                self.subsample = nn.ModuleList([MaxpoolSubsampler(factor)
+                                                for factor in subsamples])
+            elif subsample_type == 'concat':
+                self.subsample = nn.ModuleList([ConcatSubsampler(factor, self._odim)
+                                                for factor in subsamples])
+            elif subsample_type == 'drop':
+                self.subsample = nn.ModuleList([DropSubsampler(factor)
+                                                for factor in subsamples])
+            elif subsample_type == '1dconv':
+                self.subsample = nn.ModuleList([Conv1dSubsampler(factor, self._odim)
+                                                for factor in subsamples])
 
         if self.chunk_size_left > 0:
             assert self.chunk_size_left % self._factor == 0
@@ -355,16 +386,13 @@ class TransformerEncoder(EncoderBase):
         bs, xmax, idim = xs.size()
 
         if self.latency_controlled:
-            xs = chunkwise(xs, N_l, N_c, N_r)   # `[B * n_chunks, N_l+N_c+N_r, idim]`
+            xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
 
         if self.conv is None:
             xs = self.embed(xs)
         else:
             # Path through CNN blocks
             xs, xlens = self.conv(xs, xlens)
-
-        if not self.training:
-            self.data_dict['elens'] = tensor2np(xlens)
 
         if self.latency_controlled:
             # streaming Transformer encoder
@@ -385,6 +413,8 @@ class TransformerEncoder(EncoderBase):
             xx_mask = None  # NOTE: no mask
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
+                if self.subsample is not None:
+                    xs, xlens = self.subsample[lth](xs, xlens)
                 if not self.training:
                     n_heads = layer.xx_aws.size(1)
                     xx_aws = layer.xx_aws[:, :, _N_l:_N_l + _N_c, _N_l:_N_l + _N_c]
@@ -396,6 +426,7 @@ class TransformerEncoder(EncoderBase):
                         xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk, :emax_chunk]
                         xx_aws_center[:, :, offset:offset + _N_c, offset:offset + _N_c] = xx_aws_chunk
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
+                    self.data_dict['elens%d' % lth] = tensor2np(xlens)
 
             # Extract the center region
             xs = xs[:, _N_l:_N_l + _N_c]  # `[B * n_chunks, _N_c, d_model]`
@@ -418,8 +449,11 @@ class TransformerEncoder(EncoderBase):
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
+                if self.subsample is not None:
+                    xs, xlens = self.subsample[lth](xs, xlens)
                 if not self.training:
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
+                    self.data_dict['elens%d' % lth] = tensor2np(xlens)
 
                 # Pick up outputs in the sub task before the projection layer
                 if lth == self.n_layers_sub1 - 1:
