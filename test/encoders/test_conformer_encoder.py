@@ -28,8 +28,6 @@ def make_args(**kwargs):
         pe_type='relative',
         layer_norm_eps=1e-12,
         ffn_activation='swish',
-        subsample="1_1_1",
-        subsample_type='max_pool',
         dropout_in=0.1,
         dropout=0.1,
         dropout_att=0.1,
