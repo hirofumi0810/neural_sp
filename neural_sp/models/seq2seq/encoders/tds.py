@@ -161,9 +161,9 @@ class TDSBlock(nn.Module):
     """TDS block.
 
     Args:
-        channel (int):
+        channel (int): input/output channle size
         kernel_size (int): kernel size
-        in_freq (int):
+        in_freq (int): frequency width
         dropout (float): dropout probability
 
     """
