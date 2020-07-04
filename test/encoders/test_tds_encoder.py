@@ -19,7 +19,7 @@ def make_args(**kwargs):
         channels="10_10_14_14_14_18_18_18_18_18",
         kernel_sizes="(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)",
         dropout=0.1,
-        bottleneck_dim=0,
+        last_proj_dim=0,
         layer_norm_eps=1e-12,
     )
     args.update(kwargs)
@@ -35,8 +35,8 @@ def make_args(**kwargs):
         # FAIR Interspeech2020 setting
         ({'channels': "15_15_19_19_19_23_23_23_23_27_27_27_27_27",
           'kernel_sizes': "(15,1)_(15,1)_(19,1)_(19,1)_(19,1)_(23,1)_(23,1)_(23,1)_(23,1)_(27,1)_(27,1)_(27,1)_(27,1)_(27,1)"}),
-        ({'bottleneck_dim': 64}),
-        ({'bottleneck_dim': 3}),
+        ({'last_proj_dim': 64}),
+        ({'input_dim': 3}),
     ]
 )
 def test_forward(args):
@@ -51,7 +51,7 @@ def test_forward(args):
         xs = np.random.randn(batch_size, xmax, args['input_dim'] * args['in_channel']).astype(np.float32)
         xlens = torch.IntTensor([len(x) - i * enc.subsampling_factor for i, x in enumerate(xs)])
         xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
-        xs, xlens = enc(xs, xlens)
+        enc_out_dict = enc(xs, xlens, task='all')
 
-        assert xs.size(0) == batch_size
-        assert xs.size(1) == xlens[0]
+        assert enc_out_dict['ys']['xs'].size(0) == batch_size
+        assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'].max()

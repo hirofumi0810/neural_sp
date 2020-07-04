@@ -28,12 +28,9 @@ class TDSEncoder(EncoderBase):
         in_channel (int) number of channels of input features
         channels (list) number of channles in TDS layers
         kernel_sizes (list) size of kernels in TDS layers
-        strides (list): strides in TDS layers
-        poolings (list) size of poolings in TDS layers
         dropout (float) probability to drop nodes in hidden-hidden connection
-        batch_norm (bool): if True, apply batch normalization
-        bottleneck_dim (int): dimension of the bottleneck layer after the last layer
-        layer_norm_eps ()
+        last_proj_dim (int): dimension of the last projection layer
+        layer_norm_eps (float): epsilon value for layer normalization
 
     """
 
@@ -43,7 +40,7 @@ class TDSEncoder(EncoderBase):
                  channels,
                  kernel_sizes,
                  dropout,
-                 bottleneck_dim=0,
+                 last_proj_dim=0,
                  layer_norm_eps=1e-12):
 
         super(TDSEncoder, self).__init__()
@@ -84,9 +81,9 @@ class TDSEncoder(EncoderBase):
 
         self._odim = int(C_i * in_freq)
 
-        if bottleneck_dim > 0:
-            self.bridge = nn.Linear(self._odim, bottleneck_dim)
-            self._odim = bottleneck_dim
+        if last_proj_dim > 0:
+            self.bridge = nn.Linear(self._odim, last_proj_dim)
+            self._odim = last_proj_dim
 
         self._factor = 8
 
