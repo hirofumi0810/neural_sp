@@ -49,7 +49,7 @@ make KALDI=/path/to/kaldi
     - (CNN-)Transformer
     - Chunk hopping mechanism [[link](https://arxiv.org/abs/1902.06450)]
     - Relative positional encoding [[link](https://arxiv.org/abs/1901.02860)]
-  - Time-Depth Seprarabel (TDS) convolutional encoder [[link](https://arxiv.org/abs/1904.02619)]
+  - Time-depth separable (TDS) convolution encoder [[link](https://arxiv.org/abs/1904.02619)] [[line](https://arxiv.org/abs/2001.09727)]
   - Gated CNN encoder (GLU) [[link](https://openreview.net/forum?id=Hyig0zb0Z)]
   - Conformer encoder [[link](https://arxiv.org/abs/2005.08100)]
 

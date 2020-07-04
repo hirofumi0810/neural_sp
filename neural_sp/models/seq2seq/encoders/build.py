@@ -11,14 +11,13 @@ def build_encoder(args):
 
     if args.enc_type == 'tds':
         from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
-        raise ValueError
         encoder = TDSEncoder(
             input_dim=args.input_dim * args.n_stacks,
             in_channel=args.conv_in_channel,
             channels=args.conv_channels,
             kernel_sizes=args.conv_kernel_sizes,
             dropout=args.dropout_enc,
-            bottleneck_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units)
+            last_proj_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units)
 
     elif args.enc_type == 'gated_conv':
         from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder

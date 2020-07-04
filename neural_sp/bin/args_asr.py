@@ -69,8 +69,6 @@ def register_args_encoder(parser, args):
 def register_args_decoder(parser, args):
     if args.dec_type in ['transformer', 'transformer_xl']:
         from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder as module
-    elif args.dec_type == 'transformer_transducer':
-        from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer as module
     elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
         from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer as module
     elif args.dec_type == 'asg':
@@ -173,7 +171,7 @@ def build_parser():
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
                                  'transformer', 'conv_transformer',
                                  'conformer', 'conv_conformer',
-                                 'conv', 'tds', 'gated_conv'],
+                                 'tds', 'gated_conv'],
                         help='type of the encoder')
     parser.add_argument('--enc_n_layers', type=int, default=5,
                         help='number of encoder RNN layers')
