@@ -230,6 +230,27 @@ class ConformerEncoder(EncoderBase):
                            help='right chunk size for latency-controlled Conformer encoder')
         return parser
 
+    @staticmethod
+    def define_name(dir_name, args):
+        if 'conv' in args.enc_type:
+            dir_name = ConvEncoder.define_name(dir_name, args)
+
+        dir_name += str(args.transformer_d_model) + 'dmodel'
+        # dir_name += str(args.transformer_d_model * 4) + 'dff'
+        dir_name += str(args.transformer_d_ff) + 'dff'
+        if args.transformer_d_ff_bottleneck_dim > 0:
+            dir_name += str(args.transformer_d_ff_bottleneck_dim) + 'bn'
+        dir_name += str(args.enc_n_layers) + 'L'
+        dir_name += str(args.transformer_n_heads) + 'H'
+        dir_name += 'kernel' + str(args.conformer_kernel_size)
+        if args.dropout_enc_layer > 0:
+            dir_name += 'droplayer' + str(args.dropout_enc_layer)
+        if args.lc_chunk_size_left > 0 or getattr(args, 'lc_chunk_size_current', 0) > 0 or args.lc_chunk_size_right > 0:
+            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
+                str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
+
+        return dir_name
+
     def reset_parameters(self, param_init):
         """Initialize parameters."""
         if param_init == 'xavier_uniform':
@@ -273,7 +294,7 @@ class ConformerEncoder(EncoderBase):
         bs, xmax, idim = xs.size()
 
         if self.latency_controlled:
-            xs = chunkwise(xs, N_l, N_c, N_r)
+            xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
 
         if self.conv is None:
             xs = self.embed(xs)
@@ -289,7 +310,7 @@ class ConformerEncoder(EncoderBase):
             _N_l = max(0, N_l // self.subsampling_factor)
             _N_c = N_c // self.subsampling_factor
 
-            n_chunks = math.ceil(xs.size(0) / bs)
+            n_chunks = xs.size(0) // bs
             emax = math.ceil(xmax / self.subsampling_factor)
 
             xs = xs * self.scale

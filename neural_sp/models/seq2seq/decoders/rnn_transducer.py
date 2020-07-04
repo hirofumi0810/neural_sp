@@ -155,6 +155,17 @@ class RNNTransducer(DecoderBase):
                                help='number of dimensions in the embedding layer')
         return parser
 
+    @staticmethod
+    def define_name(dir_name, args):
+        dir_name += '_' + args.dec_type
+
+        dir_name += str(args.dec_n_units) + 'H'
+        if args.dec_n_projs > 0:
+            dir_name += str(args.dec_n_projs) + 'P'
+        dir_name += str(args.dec_n_layers) + 'L'
+
+        return dir_name
+
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
         logger.info('===== Initialize %s with uniform distribution =====' % self.__class__.__name__)

@@ -351,6 +351,42 @@ class RNNDecoder(DecoderBase):
                             help='latency loss weight for MoChA')
         return parser
 
+    @staticmethod
+    def define_name(dir_name, args):
+        dir_name += '_' + args.dec_type
+
+        dir_name += str(args.dec_n_units) + 'H'
+        if args.dec_n_projs > 0:
+            dir_name += str(args.dec_n_projs) + 'P'
+        dir_name += str(args.dec_n_layers) + 'L'
+
+        dir_name += '_' + args.attn_type
+        if args.attn_sigmoid:
+            dir_name += '_sig'
+        if 'mocha' in args.attn_type:
+            dir_name += '_w' + str(args.mocha_chunk_size)
+            if args.mocha_n_heads_mono > 1:
+                dir_name += '_ma' + str(args.mocha_n_heads_mono) + 'H'
+            if args.mocha_no_denominator:
+                dir_name += '_denom1'
+            if args.mocha_1dconv:
+                dir_name += '_1dconv'
+            if args.attn_sharpening_factor:
+                dir_name += '_temp' + str(args.attn_sharpening_factor)
+            if args.mocha_quantity_loss_weight > 0:
+                dir_name += '_qua' + str(args.mocha_quantity_loss_weight)
+        elif args.attn_type == 'gmm':
+            dir_name += '_mix' + str(args.gmm_attn_n_mixtures)
+        if args.mocha_latency_metric:
+            dir_name += '_' + args.mocha_latency_metric
+            dir_name += str(args.mocha_latency_loss_weight)
+        if args.attn_n_heads > 1:
+            dir_name += '_head' + str(args.attn_n_heads)
+        if args.tie_embedding:
+            dir_name += '_tie'
+
+        return dir_name
+
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
         logger.info('===== Initialize %s with uniform distribution =====' % self.__class__.__name__)

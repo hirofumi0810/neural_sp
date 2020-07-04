@@ -28,20 +28,14 @@ class TDSEncoder(EncoderBase):
         in_channel (int) number of channels of input features
         channels (list) number of channles in TDS layers
         kernel_sizes (list) size of kernels in TDS layers
-        dropout (float) probability to drop nodes in hidden-hidden connection
+        dropout (float) dropout probability
         last_proj_dim (int): dimension of the last projection layer
         layer_norm_eps (float): epsilon value for layer normalization
 
     """
 
-    def __init__(self,
-                 input_dim,
-                 in_channel,
-                 channels,
-                 kernel_sizes,
-                 dropout,
-                 last_proj_dim=0,
-                 layer_norm_eps=1e-12):
+    def __init__(self, input_dim, in_channel, channels, kernel_sizes,
+                 dropout, last_proj_dim, layer_norm_eps):
 
         super(TDSEncoder, self).__init__()
 
@@ -96,8 +90,8 @@ class TDSEncoder(EncoderBase):
         return parser
 
     @staticmethod
-    def define_name(parser, args):
-        raise NotImplementedError
+    def define_name(dir_name, args):
+        return dir_name
 
     def reset_parameters(self):
         """Initialize parameters with uniform distribution."""

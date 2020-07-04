@@ -35,6 +35,10 @@ class DecoderBase(ModelBase):
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters()).data).idx
 
+    @staticmethod
+    def define_name(dir_name, args):
+        raise NotImplementedError
+
     def reset_parameters(self, param_init):
         raise NotImplementedError
 
@@ -47,7 +51,7 @@ class DecoderBase(ModelBase):
     def beam_search(self, eouts, elens, params, idx2token):
         raise NotImplementedError
 
-    def _plot_attention(self, save_path, n_cols=2):
+    def _plot_attention(self, save_path=None, n_cols=2):
         """Plot attention for each head in all decoder layers."""
         if getattr(self, 'att_weight', 0) == 0 and getattr(self, 'rnnt_weight', 0) == 0:
             return
@@ -88,10 +92,11 @@ class DecoderBase(ModelBase):
                 # ax.set_yticklabels(ys + [''])
 
             fig.tight_layout()
-            fig.savefig(os.path.join(save_path, '%s.png' % k), dvi=500)
+            if save_path is not None:
+                fig.savefig(os.path.join(save_path, '%s.png' % k), dvi=500)
             plt.close()
 
-    def _plot_ctc(self, save_path, topk=10):
+    def _plot_ctc(self, save_path=None, topk=10):
         """Plot CTC posteriors."""
         if self.ctc_weight == 0:
             return
@@ -125,11 +130,12 @@ class DecoderBase(ModelBase):
         plt.yticks(list(range(0, 2, 1)))
 
         plt.tight_layout()
-        plt.savefig(os.path.join(save_path, 'prob.png'), dvi=500)
+        if save_path is not None:
+            plt.savefig(os.path.join(save_path, 'prob.png'), dvi=500)
         plt.close()
 
     def decode_ctc(self, eouts, elens, params, idx2token,
-                   lm=None, lm_2nd=None, lm_2nd_rev=None,
+                   lm=None, lm_second=None, lm_second_bwd=None,
                    nbest=1, refs_id=None, utt_ids=None, speakers=None):
         """Decoding with CTC scores in the inference stage.
 
@@ -143,8 +149,8 @@ class DecoderBase(ModelBase):
                 recog_lm_second_weight (float): weight of second path LM score
                 recog_lm_rev_weight (float): weight of second path backward LM score
             lm: firsh path LM
-            lm_2nd: second path LM
-            lm_2nd_rev: secoding path backward LM
+            lm_second: second path LM
+            lm_second_bwd: secoding path backward LM
         Returns:
             probs (FloatTensor): `[B, T, vocab]`
             topk_ids (LongTensor): `[B, T, topk]`
@@ -155,7 +161,7 @@ class DecoderBase(ModelBase):
             best_hyps = self.ctc.greedy(eouts, elens)
         else:
             best_hyps = self.ctc.beam_search(eouts, elens, params, idx2token,
-                                             lm, lm_2nd, lm_2nd_rev,
+                                             lm, lm_second, lm_second_bwd,
                                              nbest, refs_id, utt_ids, speakers)
         return best_hyps
 
