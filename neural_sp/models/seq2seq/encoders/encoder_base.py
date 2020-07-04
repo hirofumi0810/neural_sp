@@ -80,9 +80,10 @@ class EncoderBase(ModelBase):
         if not hasattr(self, 'aws_dict'):
             return
 
-        elens = self.data_dict['elens']
-
         for k, aw in self.aws_dict.items():
+            lth = k.split('_')[-1].replace('layer', '')
+            elens_l = self.data_dict['elens' + lth]
+
             plt.clf()
             n_heads = aw.shape[1]
             n_cols_tmp = 1 if n_heads == 1 else n_cols
@@ -90,7 +91,7 @@ class EncoderBase(ModelBase):
                                      figsize=(20, 8), squeeze=False)
             for h in range(n_heads):
                 ax = axes[h // n_cols_tmp, h % n_cols_tmp]
-                ax.imshow(aw[-1, h, :elens[-1], :elens[-1]], aspect="auto")
+                ax.imshow(aw[-1, h, :elens_l[-1], :elens_l[-1]], aspect="auto")
                 ax.grid(False)
                 ax.set_xlabel("Input (head%d)" % h)
                 ax.set_ylabel("Output (head%d)" % h)

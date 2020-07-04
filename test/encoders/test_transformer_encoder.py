@@ -31,6 +31,8 @@ def make_args(**kwargs):
         dropout=0.1,
         dropout_att=0.1,
         dropout_layer=0.1,
+        subsample="1_1_1",
+        subsample_type='max_pool',
         n_stacks=1,
         n_splices=1,
         conv_in_channel=1,
@@ -87,6 +89,13 @@ def make_args(**kwargs):
           'last_proj_dim': 10}),
         # bottleneck
         ({'ffn_bottleneck_dim': 16}),
+        # subsampling
+        ({'subsample': "1_2_1"}),
+        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1"}),
+        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'drop'}),
+        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'concat'}),
+        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
+        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'conv1d'}),
     ]
 )
 def test_forward(args):
@@ -99,7 +108,7 @@ def test_forward(args):
     enc = module.TransformerEncoder(**args)
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
-        xlens = torch.IntTensor([len(x) for x in xs])
+        xlens = torch.IntTensor([len(x) - i * enc.subsampling_factor for i, x in enumerate(xs)])
         xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
 
         # for mode in ['train', 'eval']:  # too slow
