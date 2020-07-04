@@ -133,6 +133,23 @@ class TransformerXL(LMBase):
                            help='set the offset right after memory to zero (accept negaitve indices)')
         return parser
 
+    @staticmethod
+    def define_name(dir_name, args):
+        dir_name = args.lm_type
+        dir_name += str(args.transformer_d_model) + 'dmodel'
+        dir_name += str(args.transformer_d_ff) + 'dff'
+        dir_name += str(args.n_layers) + 'L'
+        dir_name += str(args.transformer_n_heads) + 'H'
+        if args.tie_embedding:
+            dir_name += '_tie'
+        if args.adaptive_softmax:
+            dir_name += '_adaptiveSM'
+        if args.mem_len > 0:
+            dir_name += '_mem' + str(args.mem_len)
+        if args.zero_center_offset:
+            dir_name += '_zero_center'
+        return dir_name
+
     def reset_parameters(self):
         """Initialize parameters with normal distribution."""
         logging.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)

@@ -28,6 +28,10 @@ class LMBase(ModelBase):
         logger.info(self.__class__.__name__)
         logger.info('Overriding LMBase class.')
 
+    @staticmethod
+    def define_name(dir_name, args):
+        raise NotImplementedError
+
     def reset_parameters(self, param_init):
         raise NotImplementedError
 

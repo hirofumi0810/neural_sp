@@ -28,7 +28,7 @@ def build_encoder(args):
             channels=args.conv_channels,
             kernel_sizes=args.conv_kernel_sizes,
             dropout=args.dropout_enc,
-            bottleneck_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units,
+            last_proj_dim=args.transformer_d_model if 'transformer' in args.dec_type else args.dec_n_units,
             param_init=args.param_init)
 
     elif 'transformer' in args.enc_type:

@@ -126,6 +126,20 @@ class ConvEncoder(EncoderBase):
                            help='dimension of the bottleneck layer between CNN and the subsequent RNN/Transformer layers')
         return parser
 
+    @staticmethod
+    def define_name(dir_name, args):
+        assert 'conv' in args.enc_type
+        dir_name = args.enc_type.replace('conv_', '')
+        if args.conv_channels and len(args.conv_channels.split('_')) > 0:
+            tmp = dir_name
+            dir_name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
+            if args.conv_batch_norm:
+                dir_name += 'bn'
+            if args.conv_layer_norm:
+                dir_name += 'ln'
+            dir_name += tmp
+        return dir_name
+
     @property
     def n_frames_context(self):
         n_frame = 0

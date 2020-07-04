@@ -78,7 +78,7 @@ class TransformerDecoder(DecoderBase):
         mocha_eps (float):
         mocha_std (float):
         mocha_no_denominator (bool):
-        mocha_1dconv (bool): 1dconv for MoChA
+        mocha_1dconv (bool): 1dconv for MMA
         mocha_quantity_loss_weight (float):
         mocha_head_divergence_loss_weight (float):
         latency_metric (str):
@@ -227,11 +227,10 @@ class TransformerDecoder(DecoderBase):
                                help='nonlinear activation for the FFN layer')
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
-                               help='parameter initializatin')
+                               help='parameter initialization')
         # Transformer decoder specific
         group.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
-                           choices=['scaled_dot', 'add', 'average',
-                                    'mocha', 'sync_bidir', 'sync_bidir_half'],
+                           choices=['scaled_dot', 'add', 'mocha'],
                            help='type of attention mechasnism for Transformer decoder')
         group.add_argument('--transformer_dec_pe_type', type=str, default='add',
                            choices=['add', 'concat', 'none', '1dconv3L'],
@@ -250,11 +249,11 @@ class TransformerDecoder(DecoderBase):
         parser.add_argument('--mocha_init_r', type=float, default=-4,
                             help='initialization of bias parameter for monotonic attention')
         parser.add_argument('--mocha_eps', type=float, default=1e-6,
-                            help='epsilon value to avoid numerical instability for MoChA')
+                            help='epsilon value to avoid numerical instability for MMA')
         parser.add_argument('--mocha_std', type=float, default=1.0,
-                            help='standard deviation of Gaussian noise for MoChA during training')
+                            help='standard deviation of Gaussian noise for MMA during training')
         parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
-                            help='remove denominator (set to 1) in the alpha recurrence in MoChA')
+                            help='remove denominator (set to 1) in the alpha recurrence in MMA')
         parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
                             help='1dconv for MMA')
         parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
@@ -273,6 +272,50 @@ class TransformerDecoder(DecoderBase):
                            help='share chunkwise attention heads among monotonic attention heads in the same layer')
 
         return parser
+
+    @staticmethod
+    def define_name(dir_name, args):
+        dir_name += '_' + args.dec_type
+
+        dir_name += str(args.transformer_d_model) + 'dmodel'
+        dir_name += str(args.transformer_d_ff) + 'dff'
+        if args.transformer_d_ff_bottleneck_dim > 0:
+            dir_name += str(args.transformer_d_ff_bottleneck_dim) + 'bn'
+        dir_name += str(args.dec_n_layers) + 'L'
+        dir_name += str(args.transformer_n_heads) + 'H'
+        dir_name += 'pe' + str(args.transformer_dec_pe_type)
+        dir_name += args.transformer_attn_type
+
+        # streaming
+        if 'mocha' in args.transformer_attn_type:
+            dir_name += '_ma' + str(args.mocha_n_heads_mono) + 'H'
+            dir_name += '_ca' + str(args.mocha_n_heads_chunk) + 'H'
+            dir_name += '_w' + str(args.mocha_chunk_size)
+            dir_name += '_bias' + str(args.mocha_init_r)
+            if args.mocha_no_denominator:
+                dir_name += '_denom1'
+            if args.mocha_1dconv:
+                dir_name += '_1dconv'
+            if args.mocha_quantity_loss_weight > 0:
+                dir_name += '_qua' + str(args.mocha_quantity_loss_weight)
+            if args.mocha_head_divergence_loss_weight != 0:
+                dir_name += '_headdiv' + str(args.mocha_head_divergence_loss_weight)
+            if args.mocha_latency_metric:
+                dir_name += '_' + args.mocha_latency_metric
+                dir_name += str(args.mocha_latency_loss_weight)
+            if args.share_chunkwise_attention:
+                dir_name += '_share'
+            if args.mocha_first_layer > 1:
+                dir_name += '_from' + str(args.mocha_first_layer) + 'L'
+
+        if args.dropout_dec_layer > 0:
+            dir_name += 'droplayer' + str(args.dropout_dec_layer)
+        if args.dropout_head > 0:
+            dir_name += 'drophead' + str(args.dropout_head)
+        if args.tie_embedding:
+            dir_name += '_tie'
+
+        return dir_name
 
     def reset_parameters(self, param_init):
         """Initialize parameters."""
@@ -373,7 +416,7 @@ class TransformerDecoder(DecoderBase):
             observation['loss_att'] = loss_att.item()
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
-            if 'mocha' in self.attn_type:
+            if self.attn_type == 'mocha':
                 if self._quantity_loss_weight > 0:
                     loss_att += losses_auxiliary['loss_quantity'] * self._quantity_loss_weight
                 observation['loss_quantity'] = losses_auxiliary['loss_quantity'].item()
@@ -460,7 +503,7 @@ class TransformerDecoder(DecoderBase):
                 # NOTE: outputs from the last layer is not used for momory
             # Attention padding
             xy_aws = layer.xy_aws
-            if xy_aws is not None and 'mocha' in self.attn_type:
+            if xy_aws is not None and self.attn_type == 'mocha':
                 tgt_mask_v2 = (ys_out != self.pad).unsqueeze(1).unsqueeze(3)  # `[B, 1, L, 1]`
                 xy_aws_masked = xy_aws.masked_fill_(tgt_mask_v2.repeat([1, xy_aws.size(1), 1, xmax]) == 0, 0)
                 # NOTE: attention padding is quite effective for quantity loss
@@ -488,7 +531,7 @@ class TransformerDecoder(DecoderBase):
 
         # Quantity loss
         losses_auxiliary['loss_quantity'] = 0.
-        if 'mocha' in self.attn_type:
+        if self.attn_type == 'mocha':
             # Average over all heads across all layers
             n_tokens_ref = tgt_mask[:, -1, :].sum(1).float()  # `[B]`
             # NOTE: count <eos> tokens
@@ -603,6 +646,8 @@ class TransformerDecoder(DecoderBase):
                     logger.debug('Hyp: %s' % idx2token(hyps[b][::-1]))
                 else:
                     logger.debug('Hyp: %s' % idx2token(hyps[b]))
+                logger.info('=' * 200)
+                # NOTE: do not show with logger.info here
 
         return hyps, aws
 
@@ -834,7 +879,7 @@ class TransformerDecoder(DecoderBase):
 
                         if idx == self.eos:
                             # Exclude short hypotheses
-                            if len(beam['hyp']) - 1 < elens[b] * min_len_ratio:
+                            if len(beam['hyp'][1:]) < elens[b] * min_len_ratio:
                                 continue
                             # EOS threshold
                             max_score_no_eos = scores_att[j, :idx].max(0)[0].item()
@@ -843,7 +888,7 @@ class TransformerDecoder(DecoderBase):
                                 continue
 
                         quantity_rate = 1.
-                        if 'mocha' in self.attn_type:
+                        if self.attn_type == 'mocha':
                             n_tokens_hyp_k = t + 1
                             n_quantity_k = aws_j[:, :, :, :n_tokens_hyp_k].int().sum().item()
                             quantity_diff = n_tokens_hyp_k * n_heads_total - n_quantity_k
@@ -938,13 +983,13 @@ class TransformerDecoder(DecoderBase):
                     if lm_second_bwd is not None:
                         logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
                                     (end_hyps[k]['score_lm_second_rev'] * lm_weight_second_bwd))
-                    if 'mocha' in self.attn_type:
+                    if self.attn_type == 'mocha':
                         logger.info('streamable: %s' % end_hyps[k]['streamable'])
                         logger.info('streaming failed point: %d' % (end_hyps[k]['streaming_failed_point'] + 1))
                         logger.info('quantity rate [%%]: %.2f' % (end_hyps[k]['quantity_rate'] * 100))
                     logger.info('-' * 50)
 
-                if 'mocha' in self.attn_type and end_hyps[0]['streaming_failed_point'] < 1000:
+                if self.attn_type == 'mocha' and end_hyps[0]['streaming_failed_point'] < 1000:
                     assert not self.streamable
                     aws_last_success = end_hyps[0]['aws'][1:][end_hyps[0]['streaming_failed_point'] - 1]
                     rightmost_frame = max(0, aws_last_success[0, :, 0].nonzero()[:, -1].max().item()) + 1

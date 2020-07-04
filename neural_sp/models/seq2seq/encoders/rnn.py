@@ -253,6 +253,21 @@ class RNNEncoder(EncoderBase):
                            help='right chunk size for latency-controlled RNN encoder')
         return parser
 
+    @staticmethod
+    def define_name(dir_name, args):
+        if 'conv' in args.enc_type:
+            dir_name = ConvEncoder.define_name(dir_name, args)
+
+        dir_name += str(args.enc_n_units) + 'H'
+        if args.enc_n_projs > 0:
+            dir_name += str(args.enc_n_projs) + 'P'
+        dir_name += str(args.enc_n_layers) + 'L'
+        if args.bidirectional_sum_fwd_bwd:
+            dir_name += '_sumfwdbwd'
+        if args.lc_chunk_size_left > 0 or args.lc_chunk_size_right > 0:
+            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
+        return dir_name
+
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""
         logger.info('===== Initialize %s with uniform distribution =====' % self.__class__.__name__)
@@ -412,7 +427,7 @@ class RNNEncoder(EncoderBase):
         bs, xmax, _ = xs.size()
         n_chunks = math.ceil(xmax / _N_l)
         if streaming:
-            xlens = torch.IntTensor(bs).fill_(_N_l)
+            xlens = torch.IntTensor(bs).fill_(xs.size(1))
 
         xs_chunks = []
         xs_chunks_sub1 = []

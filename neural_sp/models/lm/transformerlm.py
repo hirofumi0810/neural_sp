@@ -122,6 +122,20 @@ class TransformerLM(LMBase):
                            help='number of tokens for memory in TransformerXL during training')
         return parser
 
+    @staticmethod
+    def define_name(dir_name, args):
+        dir_name = args.lm_type
+        dir_name += str(args.transformer_d_model) + 'dmodel'
+        dir_name += str(args.transformer_d_ff) + 'dff'
+        dir_name += str(args.n_layers) + 'L'
+        dir_name += str(args.transformer_n_heads) + 'H'
+        dir_name += 'pe' + str(args.transformer_pe_type)
+        if args.tie_embedding:
+            dir_name += '_tie'
+        if args.adaptive_softmax:
+            dir_name += '_adaptiveSM'
+        return dir_name
+
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
         logging.info('===== Initialize %s =====' % self.__class__.__name__)

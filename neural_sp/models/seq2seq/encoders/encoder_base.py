@@ -39,6 +39,10 @@ class EncoderBase(ModelBase):
     def subsampling_factor(self):
         return self._factor
 
+    @staticmethod
+    def define_name(dir_name, args):
+        raise NotImplementedError
+
     def reset_parameters(self, param_init):
         raise NotImplementedError
 

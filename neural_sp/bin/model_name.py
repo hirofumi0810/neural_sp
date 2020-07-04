@@ -11,45 +11,63 @@ import os
 from neural_sp.bin.train_utils import load_config
 
 
+def _define_encoder_name(dir_name, args):
+    if args.enc_type == 'tds':
+        from neural_sp.models.seq2seq.encoders.tds import TDSEncoder as module
+    elif args.enc_type == 'gated_conv':
+        from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder as module
+    elif 'transformer' in args.enc_type:
+        from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder as module
+    elif 'conformer' in args.enc_type:
+        from neural_sp.models.seq2seq.encoders.conformer import ConformerEncoder as module
+    else:
+        from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder as module
+    if hasattr(module, 'define_name'):
+        dir_name = module.define_name(dir_name, args)
+    else:
+        raise NotImplementedError(module)
+    return dir_name
+
+
+def _define_decoder_name(dir_name, args):
+    if args.dec_type in ['transformer', 'transformer_xl']:
+        from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder as module
+    elif args.dec_type in ['transformer_transducer', 'transformer_transducer_xl']:
+        from neural_sp.models.seq2seq.decoders.transformer_transducer import TransformerTransducer as module
+    elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
+        from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer as module
+    elif args.dec_type == 'asg':
+        from neural_sp.models.seq2seq.decoders.asg import ASGDecoder as module
+    else:
+        from neural_sp.models.seq2seq.decoders.las import RNNDecoder as module
+    if hasattr(module, 'define_name'):
+        dir_name = module.define_name(dir_name, args)
+    else:
+        raise NotImplementedError(module)
+    return dir_name
+
+
+def _define_lm_name(dir_name, args):
+    if 'gated_conv' in args.lm_type:
+        from neural_sp.models.lm.gated_convlm import GatedConvLM as module
+    elif args.lm_type == 'transformer':
+        from neural_sp.models.lm.transformerlm import TransformerLM as module
+    elif args.lm_type == 'transformer_xl':
+        from neural_sp.models.lm.transformer_xl import TransformerXL as module
+    else:
+        from neural_sp.models.lm.rnnlm import RNNLM as module
+    if hasattr(module, 'define_name'):
+        dir_name = module.define_name(dir_name, args)
+    else:
+        raise NotImplementedError(module)
+    return dir_name
+
+
 def set_asr_model_name(args):
     # encoder
     dir_name = args.enc_type.replace('conv_', '')
-    if 'conv' in args.enc_type and args.conv_channels and len(args.conv_channels.split('_')) > 0:
-        tmp = dir_name
-        dir_name = 'conv' + str(len(args.conv_channels.split('_'))) + 'L'
-        if args.conv_batch_norm:
-            dir_name += 'bn'
-        if args.conv_layer_norm:
-            dir_name += 'ln'
-        dir_name += tmp
-    if 'former' in args.enc_type:
-        dir_name += str(args.transformer_d_model) + 'dmodel'
-        if 'conformer' in args.enc_type:
-            dir_name += str(args.transformer_d_model * 4) + 'dff'
-        else:
-            dir_name += str(args.transformer_d_ff) + 'dff'
-        if args.transformer_d_ff_bottleneck_dim > 0:
-            dir_name += str(args.transformer_d_ff_bottleneck_dim) + 'bn'
-        dir_name += str(args.enc_n_layers) + 'L'
-        dir_name += str(args.transformer_n_heads) + 'H'
-        if 'conformer' in args.enc_type:
-            dir_name += 'kernel' + str(args.conformer_kernel_size)
-        else:
-            dir_name += 'pe' + str(args.transformer_enc_pe_type)
-        if args.dropout_enc_layer > 0:
-            dir_name += 'droplayer' + str(args.dropout_enc_layer)
-        if args.lc_chunk_size_left > 0 or args.lc_chunk_size_current > 0 or args.lc_chunk_size_right > 0:
-            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
-                str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
-    elif args.enc_type != 'tds':
-        dir_name += str(args.enc_n_units) + 'H'
-        if args.enc_n_projs > 0:
-            dir_name += str(args.enc_n_projs) + 'P'
-        dir_name += str(args.enc_n_layers) + 'L'
-        if args.bidirectional_sum_fwd_bwd:
-            dir_name += '_sumfwdbwd'
-        if args.lc_chunk_size_left > 0 or args.lc_chunk_size_right > 0:
-            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
+    dir_name = _define_encoder_name(dir_name, args)
+
     if args.n_stacks > 1:
         dir_name += '_stack' + str(args.n_stacks)
     else:
@@ -59,71 +77,7 @@ def set_asr_model_name(args):
 
     # decoder
     if args.ctc_weight < 1:
-        dir_name += '_' + args.dec_type
-        if 'transformer' in args.dec_type:
-            dir_name += str(args.transformer_d_model) + 'dmodel'
-            dir_name += str(args.transformer_d_ff) + 'dff'
-            if args.transformer_d_ff_bottleneck_dim > 0:
-                dir_name += str(args.transformer_d_ff_bottleneck_dim) + 'bn'
-            dir_name += str(args.dec_n_layers) + 'L'
-            dir_name += str(args.transformer_n_heads) + 'H'
-            dir_name += 'pe' + str(args.transformer_dec_pe_type)
-            dir_name += args.transformer_attn_type
-            if 'mocha' in args.transformer_attn_type:
-                dir_name += '_ma' + str(args.mocha_n_heads_mono) + 'H'
-                dir_name += '_ca' + str(args.mocha_n_heads_chunk) + 'H'
-                dir_name += '_w' + str(args.mocha_chunk_size)
-                dir_name += '_bias' + str(args.mocha_init_r)
-                if args.mocha_no_denominator:
-                    dir_name += '_denom1'
-                if args.mocha_1dconv:
-                    dir_name += '_1dconv'
-                if args.mocha_quantity_loss_weight > 0:
-                    dir_name += '_qua' + str(args.mocha_quantity_loss_weight)
-                if args.mocha_head_divergence_loss_weight != 0:
-                    dir_name += '_headdiv' + str(args.mocha_head_divergence_loss_weight)
-                if args.mocha_latency_metric:
-                    dir_name += '_' + args.mocha_latency_metric
-                    dir_name += str(args.mocha_latency_loss_weight)
-                if args.share_chunkwise_attention:
-                    dir_name += '_share'
-            if args.mocha_first_layer > 1:
-                dir_name += '_from' + str(args.mocha_first_layer) + 'L'
-            if args.dropout_dec_layer > 0:
-                dir_name += 'droplayer' + str(args.dropout_dec_layer)
-            if args.dropout_head > 0:
-                dir_name += 'drophead' + str(args.dropout_head)
-        elif 'asg' not in args.dec_type:
-            dir_name += str(args.dec_n_units) + 'H'
-            if args.dec_n_projs > 0:
-                dir_name += str(args.dec_n_projs) + 'P'
-            dir_name += str(args.dec_n_layers) + 'L'
-            if 'transducer' not in args.dec_type:
-                dir_name += '_' + args.attn_type
-                if args.attn_sigmoid:
-                    dir_name += '_sig'
-                if 'mocha' in args.attn_type:
-                    dir_name += '_w' + str(args.mocha_chunk_size)
-                    if args.mocha_n_heads_mono > 1:
-                        dir_name += '_ma' + str(args.mocha_n_heads_mono) + 'H'
-                    if args.mocha_no_denominator:
-                        dir_name += '_denom1'
-                    if args.mocha_1dconv:
-                        dir_name += '_1dconv'
-                    if args.attn_sharpening_factor:
-                        dir_name += '_temp' + str(args.attn_sharpening_factor)
-                    if args.mocha_quantity_loss_weight > 0:
-                        dir_name += '_qua' + str(args.mocha_quantity_loss_weight)
-                elif args.attn_type == 'gmm':
-                    dir_name += '_mix' + str(args.gmm_attn_n_mixtures)
-                if args.mocha_latency_metric:
-                    dir_name += '_' + args.mocha_latency_metric
-                    dir_name += str(args.mocha_latency_loss_weight)
-                if args.attn_n_heads > 1:
-                    dir_name += '_head' + str(args.attn_n_heads)
-
-    if args.tie_embedding:
-        dir_name += '_tie'
+        dir_name = _define_decoder_name(dir_name, args)
 
     # optimization
     dir_name += '_' + args.optimizer
@@ -230,20 +184,8 @@ def set_asr_model_name(args):
 
 
 def set_lm_name(args):
-    dir_name = args.lm_type
-    if 'transformer' in args.lm_type:
-        dir_name += str(args.transformer_d_model) + 'dmodel'
-        dir_name += str(args.transformer_d_ff) + 'dff'
-        dir_name += str(args.n_layers) + 'L'
-        dir_name += str(args.transformer_n_heads) + 'H'
-        if getattr(args, 'transformer_pe_type', False):
-            dir_name += 'pe' + str(args.transformer_pe_type)
-    elif 'gated_conv' not in args.lm_type or args.lm_type == 'gated_conv_custom':
-        dir_name += str(args.n_units) + 'H'
-        dir_name += str(args.n_projs) + 'P'
-        dir_name += str(args.n_layers) + 'L'
-    if 'transformer' not in args.lm_type:
-        dir_name += '_emb' + str(args.emb_dim)
+    dir_name = ''
+    dir_name = _define_lm_name(dir_name, args)
 
     # optimization
     dir_name += '_' + args.optimizer
@@ -256,19 +198,6 @@ def set_lm_name(args):
         dir_name += '_' + args.train_dtype
 
     dir_name += '_bptt' + str(args.bptt)
-    if getattr(args, 'mem_len', 0) > 0:
-        dir_name += '_mem' + str(args.mem_len)
-    if getattr(args, 'zero_center_offset', False):
-        dir_name += '_zero_center'
-    if args.tie_embedding:
-        dir_name += '_tie'
-    if 'lstm' in args.lm_type or 'gru' in args.lm_type:
-        if args.residual:
-            dir_name += '_residual'
-        if args.use_glu:
-            dir_name += '_glu'
-    if args.n_units_null_context > 0:
-        dir_name += '_nullcv' + str(args.n_units_null_context)
 
     # regularization
     dir_name += '_dropI' + str(args.dropout_in) + 'H' + str(args.dropout_hidden)
@@ -287,8 +216,4 @@ def set_lm_name(args):
         dir_name += '_shuffle'
     if args.serialize:
         dir_name += '_serialize'
-    if args.min_n_tokens > 1:
-        dir_name += '_' + str(args.min_n_tokens) + 'tokens'
-    if args.adaptive_softmax:
-        dir_name += '_adaptiveSM'
     return dir_name
