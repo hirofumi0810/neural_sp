@@ -96,6 +96,7 @@ def make_args(**kwargs):
         ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'concat'}),
         ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
         ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'conv1d'}),
+        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'max_pool', 'pe_type': 'relative'}),
     ]
 )
 def test_forward(args):
