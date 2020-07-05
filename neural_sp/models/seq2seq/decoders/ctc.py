@@ -116,7 +116,7 @@ class CTC(DecoderBase):
 
         trigger_points = None
         if forced_align:
-            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
+            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device) for y in ys]
             ys_in_pad = pad_list(ys, 0)  # pad by zero
             trigger_points = self.forced_aligner.align(logits.clone(), elens, ys_in_pad, ylens)
 
@@ -128,11 +128,9 @@ class CTC(DecoderBase):
 
     def loss_fn(self, logits, ys_ctc, elens, ylens):
         loss = self.warpctc_loss(logits.transpose(1, 0),  # time-major
-                                 ys_ctc, elens.cpu(), ylens)
+                                 ys_ctc, elens.cpu(), ylens).to(self.device)
         # NOTE: ctc loss has already been normalized by bs
         # NOTE: index 0 is reserved for blank in warpctc_pytorch
-        if self.device_id >= 0:
-            loss = loss.cuda(self.device_id)
         return loss
 
     def trigger_points(self, eouts, elens):
@@ -336,7 +334,7 @@ class CTC(DecoderBase):
             if lm_second is not None:
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), self.device_id)]
+                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), self.device)]
                     ys_pad = pad_list(ys, lm_second.pad)
                     _, _, lm_log_probs = lm_second.predict(ys_pad, None)
                     score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
@@ -486,10 +484,10 @@ class CTCForcedAligner(object):
 
         """
         bs, xmax, vocab = logits.size()
+        device = logits.device
 
         # zero padding
-        device_id = torch.cuda.device_of(logits).idx
-        mask = make_pad_mask(elens, device_id)
+        mask = make_pad_mask(elens.to(device))
         mask = mask.unsqueeze(2).repeat([1, 1, vocab])
         logits = logits.masked_fill_(mask == 0, self.log0)
         log_probs = torch.log_softmax(logits, dim=-1).transpose(0, 1)  # `[T, B, vocab]`
