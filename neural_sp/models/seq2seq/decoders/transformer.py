@@ -29,6 +29,7 @@ from neural_sp.models.torch_utils import append_sos_eos
 from neural_sp.models.torch_utils import compute_accuracy
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
+from neural_sp.models.torch_utils import tensor2scalar
 
 random.seed(1)
 
@@ -403,7 +404,7 @@ class TransformerDecoder(DecoderBase):
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
             forced_align = (self.ctc_trigger and self.training) or self.attn_type == 'triggered_attention'
             loss_ctc, trigger_points = self.ctc(eouts, elens, ys, forced_align=forced_align)
-            observation['loss_ctc'] = loss_ctc.item()
+            observation['loss_ctc'] = tensor2scalar(loss_ctc)
             if self.mtl_per_batch:
                 loss += loss_ctc
             else:
@@ -419,12 +420,12 @@ class TransformerDecoder(DecoderBase):
             if self.attn_type == 'mocha':
                 if self._quantity_loss_weight > 0:
                     loss_att += losses_auxiliary['loss_quantity'] * self._quantity_loss_weight
-                observation['loss_quantity'] = losses_auxiliary['loss_quantity'].item()
+                observation['loss_quantity'] = tensor2scalar(losses_auxiliary['loss_quantity'])
             if self.headdiv_loss_weight > 0:
                 loss_att += losses_auxiliary['loss_headdiv'] * self.headdiv_loss_weight
-                observation['loss_headdiv'] = losses_auxiliary['loss_headdiv'].item()
+                observation['loss_headdiv'] = tensor2scalar(losses_auxiliary['loss_headdiv'])
             if self.latency_metric:
-                observation['loss_latency'] = losses_auxiliary['loss_latency'].item() if self.training else 0
+                observation['loss_latency'] = tensor2scalar(losses_auxiliary['loss_latency']) if self.training else 0
                 if self.latency_metric != 'decot' and self.latency_loss_weight > 0:
                     loss_att += losses_auxiliary['loss_latency'] * self.latency_loss_weight
             if self.mtl_per_batch:
@@ -432,7 +433,7 @@ class TransformerDecoder(DecoderBase):
             else:
                 loss += loss_att * self.att_weight
 
-        observation['loss'] = loss.item()
+        observation['loss'] = tensor2scalar(loss)
         return loss, observation
 
     def forward_att(self, eouts, elens, ys,
@@ -450,9 +451,7 @@ class TransformerDecoder(DecoderBase):
             loss (FloatTensor): `[1]`
             acc (float): accuracy for token prediction
             ppl (float): perplexity
-            loss_quantity (FloatTensor): `[1]`
-            loss_headdiv (FloatTensor): `[1]`
-            loss_latency (FloatTensor): `[1]`
+            losses_auxiliary (dict):
 
         """
         # Append <sos> and <eos>

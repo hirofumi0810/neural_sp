@@ -19,12 +19,24 @@ def tensor2np(x):
     """Convert torch.Tensor to np.ndarray.
 
     Args:
-        x (Tensor):
+        x (torch.Tensor):
     Returns:
         np.ndarray
 
     """
-    return x.cpu().numpy()
+    return x.cpu().detach().numpy()
+
+
+def tensor2scalar(x):
+    """Convert torch.Tensor to a scalar value.
+
+    Args:
+        x (torch.Tensor):
+    Returns:
+        scalar
+
+    """
+    return x.cpu().detach().item()
 
 
 def np2tensor(array, device_id=-1):
@@ -34,7 +46,7 @@ def np2tensor(array, device_id=-1):
         array (np.ndarray): A tensor of any sizes
         device_id (int): ht index of the device
     Returns:
-        tensor (FloatTensor/IntTensor/LongTensor):
+        tensor (torch.Tensor):
 
     """
     tensor = torch.from_numpy(array)
