@@ -512,10 +512,6 @@ class TransformerDecoder(DecoderBase):
                     self.aws_dict['yy_aws_lm_layer%d' % lth] = tensor2np(layer.yy_aws_lm)
         logits = self.output(self.norm_out(out))
 
-        # for knowledge distillation
-        if return_logits:
-            return logits
-
         # Compute XE loss (+ label smoothing)
         loss, ppl = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
         losses_auxiliary = {}
