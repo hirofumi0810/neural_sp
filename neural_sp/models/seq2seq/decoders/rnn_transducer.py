@@ -22,6 +22,7 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import tensor2np
+from neural_sp.models.torch_utils import tensor2scalar
 
 random.seed(1)
 
@@ -184,7 +185,7 @@ class RNNTransducer(DecoderBase):
 
     def forward(self, eouts, elens, ys, task='all',
                 teacher_logits=None, recog_params={}, idx2token=None):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
@@ -205,7 +206,7 @@ class RNNTransducer(DecoderBase):
         # CTC loss
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
             loss_ctc, _ = self.ctc(eouts, elens, ys)
-            observation['loss_ctc'] = loss_ctc.item()
+            observation['loss_ctc'] = tensor2scalar(loss_ctc)
             if self.mtl_per_batch:
                 loss += loss_ctc
             else:
@@ -214,13 +215,13 @@ class RNNTransducer(DecoderBase):
         # XE loss
         if self.rnnt_weight > 0 and (task == 'all' or 'ctc' not in task):
             loss_transducer = self.forward_transducer(eouts, elens, ys)
-            observation['loss_transducer'] = loss_transducer.item()
+            observation['loss_transducer'] = tensor2scalar(loss_transducer)
             if self.mtl_per_batch:
                 loss += loss_transducer
             else:
                 loss += loss_transducer * self.rnnt_weight
 
-        observation['loss'] = loss.item()
+        observation['loss'] = tensor2scalar(loss)
         return loss, observation
 
     def forward_transducer(self, eouts, elens, ys):
@@ -236,7 +237,7 @@ class RNNTransducer(DecoderBase):
         """
         # Append <sos> and <eos>
         eos = eouts.new_zeros(1).fill_(self.eos).long()
-        _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id) for y in ys]
+        _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
         ys_in = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)
         ys_out = pad_list(_ys, self.blank)
@@ -252,9 +253,9 @@ class RNNTransducer(DecoderBase):
         log_probs = torch.log_softmax(logits, dim=-1)
         assert log_probs.size(2) == ys_out.size(1) + 1
         if self.device_id >= 0:
-            ys_out = ys_out.cuda(self.device_id)
-            elens = elens.cuda(self.device_id)
-            ylens = ylens.cuda(self.device_id)
+            ys_out = ys_out.to(self.device)
+            elens = elens.to(self.device)
+            ylens = ylens.to(self.device)
             import warp_rnnt
             loss = warp_rnnt.rnnt_loss(log_probs, ys_out.int(), elens, ylens,
                                        average_frames=False,
@@ -469,7 +470,7 @@ class RNNTransducer(DecoderBase):
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
 
-            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id)
+            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device)
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],

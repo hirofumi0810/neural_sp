@@ -74,7 +74,7 @@ class PositionwiseFeedForward(nn.Module):
             init_with_xavier_uniform(n, p)
 
     def forward(self, xs):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`

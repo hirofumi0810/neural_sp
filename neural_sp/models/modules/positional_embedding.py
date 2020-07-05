@@ -66,12 +66,13 @@ class PositionalEncoding(nn.Module):
             pe[:, 1::2] = torch.cos(position * div_term)
             pe = pe.unsqueeze(0)  # for batch dimension
             self.register_buffer('pe', pe)
-            self.dropout = nn.Dropout(p=dropout)
+
+        self.dropout = nn.Dropout(p=dropout)
 
         logger.info('Positional encoding: %s' % pe_type)
 
     def forward(self, xs, scale=True):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
@@ -84,6 +85,7 @@ class PositionalEncoding(nn.Module):
         # NOTE: xs is an embedding without been scaled
 
         if self.pe_type == 'none':
+            xs = self.dropout(xs)
             return xs
         elif self.pe_type == 'add':
             xs = xs + self.pe[:, :xs.size(1)]
@@ -110,8 +112,8 @@ class XLPositionalEmbedding(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, positions, device_id):
-        """Forward computation.
+    def forward(self, positions):
+        """Forward pass.
 
         Args:
             positions (LongTensor): `[L]`
@@ -119,8 +121,6 @@ class XLPositionalEmbedding(nn.Module):
             pos_emb (LongTensor): `[L, 1, d_model]`
 
         """
-        if device_id >= 0:
-            positions = positions.cuda(device_id)
         # outer product
         sinusoid_inp = torch.einsum("i,j->ij", positions.float(), self.inv_freq)
         pos_emb = torch.cat([sinusoid_inp.sin(), sinusoid_inp.cos()], dim=-1)

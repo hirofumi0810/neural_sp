@@ -25,12 +25,13 @@ def test_chunkwise(N_l, N_c, N_r):
     batch_size = 4
     xmaxs = [800, 855]
     input_dim = 80
-    device_id = -1
+    device = "cpu"
+
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.utils')
 
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, input_dim).astype(np.float32)
-        xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
+        xs = pad_list([np2tensor(x, device).float() for x in xs], 0.)
 
         xs_chunk = module.chunkwise(xs, N_l, N_c, N_r)
 

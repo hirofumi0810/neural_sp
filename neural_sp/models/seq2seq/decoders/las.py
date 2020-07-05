@@ -344,8 +344,8 @@ class RNNDecoder(DecoderBase):
                             help='1dconv for MoChA')
         parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
                             help='quantity loss weight for MoChA')
-        parser.add_argument('--mocha_latency_metric', type=str, default=False,
-                            choices=[False, 'decot', 'minlt', 'ctc_sync',
+        parser.add_argument('--mocha_latency_metric', type=str, default='',
+                            choices=['', 'decot', 'minlt', 'ctc_sync',
                                      'interval', 'frame_dal', 'ctc_dal'],
                             help='differentiable latency metric for MoChA')
         parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
@@ -411,7 +411,7 @@ class RNNDecoder(DecoderBase):
 
     def forward(self, eouts, elens, ys, task='all',
                 teacher_logits=None, recog_params={}, idx2token=None):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
@@ -478,7 +478,7 @@ class RNNDecoder(DecoderBase):
                         eouts[b:b + 1], elens[b:b + 1], params=recog_params,
                         nbest=N_best, exclude_eos=True)
                 nbest_hyps_id_b = [np.fromiter(y, dtype=np.int64) for y in nbest_hyps_id[0]]
-                log_scores_b = np2tensor(np.array(log_scores[0], dtype=np.float32), self.device_id)
+                log_scores_b = np2tensor(np.array(log_scores[0], dtype=np.float32), self.device)
                 scores_b_norm = torch.softmax(alpha * log_scores_b, dim=-1)  # `[N_best]`
                 # print((scores_b_norm * 100).int())
 
@@ -486,7 +486,7 @@ class RNNDecoder(DecoderBase):
                 wers_b = np2tensor(np.array([
                     compute_wer(ref=idx2token(ys[b]).split(' '),
                                 hyp=idx2token(nbest_hyps_id_b[n]).split(' '))[0] / 100
-                    for n in range(N_best)], dtype=np.float32), self.device_id)
+                    for n in range(N_best)], dtype=np.float32), self.device)
                 exp_wer_b = (scores_b_norm * wers_b).sum()
                 grad_b = (scores_b_norm * (wers_b - exp_wer_b)).sum()
                 # print(wers_b)
@@ -503,7 +503,7 @@ class RNNDecoder(DecoderBase):
 
                 # 4. backward pass (attach gradient)
                 _eos = eouts.new_zeros(1).fill_(self.eos).long()
-                nbest_hyps_id_b_pad = pad_list([torch.cat([np2tensor(y, self.device_id), _eos], dim=0)
+                nbest_hyps_id_b_pad = pad_list([torch.cat([np2tensor(y, self.device), _eos], dim=0)
                                                 for y in nbest_hyps_id_b], self.pad)
                 loss_mbr += self.mbr(log_probs_b, nbest_hyps_id_b_pad, exp_wer_b, grad_b)
 
@@ -515,7 +515,7 @@ class RNNDecoder(DecoderBase):
                 # 5. CE loss regularization
                 loss_ce += self.forward_att(eouts[b:b + 1], elens[b:b + 1], ys[b:b + 1])[0]
 
-                # ys_out_b = append_sos_eos(eouts[b:b + 1], [ys[b]], self.eos, self.eos, self.pad)[1]
+                # ys_out_b = append_sos_eos([ys[b]], self.eos, self.eos, self.pad, self.device)[1]
                 # ys_out_b = ys_out_b.repeat([N_best, 1])
                 # # NOTE: truncate to match the lengths
                 # ymax = min(logits_b.size(1), ys_out_b.size(1))
@@ -547,7 +547,7 @@ class RNNDecoder(DecoderBase):
         bs, xmax = eouts.size()[:2]
 
         # Append <sos> and <eos>
-        ys_in, ys_out, ylens = append_sos_eos(eouts, ys_hyp, self.eos, self.eos, self.pad)
+        ys_in, ys_out, ylens = append_sos_eos(ys_hyp, self.eos, self.eos, self.pad, self.device)
 
         # Initialization
         dstates = self.zero_state(bs)
@@ -559,7 +559,7 @@ class RNNDecoder(DecoderBase):
         lmout, lmstate = None, None
 
         ys_emb = self.dropout_emb(self.embed(ys_in))
-        src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1)  # `[B, 1, T]`
+        src_mask = make_pad_mask(elens.to(self.device)).unsqueeze(1)  # `[B, 1, T]`
         logits = []
         for t in range(ys_in.size(1)):
             is_sample = t > 0 and self._ss_prob > 0 and random.random() < self._ss_prob
@@ -608,7 +608,7 @@ class RNNDecoder(DecoderBase):
             ys (list): length `B`, each of which contains a list of size `[L]`
             return_logits (bool): return logits for knowledge distillation
             teacher_logits (FloatTensor): `[B, L, vocab]`
-            trigger_points (IntTensor): `[B, T]`
+            trigger_points (IntTensor): `[B, L]`
         Returns:
             loss (FloatTensor): `[1]`
             acc (float): accuracy for token prediction
@@ -620,7 +620,7 @@ class RNNDecoder(DecoderBase):
         bs, xmax = eouts.size()[:2]
 
         # Append <sos> and <eos>
-        ys_in, ys_out, ylens = append_sos_eos(eouts, ys, self.eos, self.eos, self.pad, self.bwd)
+        ys_in, ys_out, ylens = append_sos_eos(ys, self.eos, self.eos, self.pad, self.device, self.bwd)
         ymax = ys_in.size(1)
 
         # Initialization
@@ -638,7 +638,7 @@ class RNNDecoder(DecoderBase):
         lmout, lmstate = None, None
 
         ys_emb = self.dropout_emb(self.embed(ys_in))
-        src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1)  # `[B, 1, T]`
+        src_mask = make_pad_mask(elens.to(self.device)).unsqueeze(1)  # `[B, 1, T]`
         tgt_mask = (ys_out != self.pad).unsqueeze(2)  # `[B, L, 1]`
         logits = []
         for t in range(ymax):
@@ -733,14 +733,11 @@ class RNNDecoder(DecoderBase):
             loss_latency = torch.pow((aws_mat * delay_mat).sum(-1), 2).sum(-1)
             loss_latency = torch.mean(loss_latency.squeeze(1))
         elif trigger_points is not None:
-            js = torch.arange(xmax, dtype=torch.float)
-            if self.device_id >= 0:
-                js = js.cuda(self.device_id)
+            js = torch.arange(xmax, dtype=torch.float, device=self.device)
             js = js.repeat([bs, n_heads, ymax, 1])
             exp_trigger_points = (js * aws).sum(3)  # `[B, H, L]`
-            trigger_points = trigger_points.float().unsqueeze(1)  # `[B, 1, L]`
-            if self.device_id >= 0:
-                trigger_points = trigger_points.cuda(self.device_id)
+            trigger_points = trigger_points.float().to(self.device).unsqueeze(1)  # `[B, 1, L]`
+            # TODO: inside CTC?
             if self.latency_metric == 'ctc_sync':
                 loss_latency = torch.abs(exp_trigger_points - trigger_points)  # `[B, H, L]`
             elif self.latency_metric == 'ctc_dal':
@@ -899,7 +896,7 @@ class RNNDecoder(DecoderBase):
         y = eouts.new_zeros(bs, 1).fill_(refs_id[0][0] if self.replace_sos else self.eos).long()
 
         # Create the attention mask
-        src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1)  # `[B, 1, T]`
+        src_mask = make_pad_mask(elens.to(self.device)).unsqueeze(1)  # `[B, 1, T]`
 
         if self.attn_type == 'triggered_attention':
             assert trigger_points is not None
@@ -1107,7 +1104,7 @@ class RNNDecoder(DecoderBase):
                     self.lmmemory = None  # reset
                 self.prev_spk = speakers[b]
 
-            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id)
+            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device)
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
@@ -1433,7 +1430,7 @@ class RNNDecoder(DecoderBase):
             if isinstance(lm, RNNLM):
                 lmstate = self.lmstate_final
 
-        helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id)
+        helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device)
 
         end_hyps = []
         hyps_nobd = []

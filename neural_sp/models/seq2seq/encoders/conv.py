@@ -159,14 +159,14 @@ class ConvEncoder(EncoderBase):
             init_with_lecun_normal(n, p, param_init)
 
     def forward(self, xs, xlens, lookback=False, lookahead=False):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, F]`
-            xlens (list): A list of length `[B]`
+            xlens (IntTenfor): `[B]` (on CPU)
         Returns:
             xs (FloatTensor): `[B, T', F']`
-            xlens (list): A list of length `[B]`
+            xlens (IntTenfor): `[B]` (on CPU)
 
         """
         B, T, F = xs.size()
@@ -237,18 +237,18 @@ class Conv1dBlock(EncoderBase):
                 # TODO(hirofumi0810): more efficient way?
 
     def forward(self, xs, xlens, lookback=False, lookahead=False):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, F]`
-            xlens (IntTensor): `[B]`
+            xlens (IntTensor): `[B]` (on CPU)
             lookback (bool): truncate the leftmost frames
                 because of lookback frames for context
             lookahead (bool): truncate the rightmost frames
                 because of lookahead frames for context
         Returns:
             xs (FloatTensor): `[B, T', F']`
-            xlens (IntTensor): `[B]`
+            xlens (IntTensor): `[B]` (on CPU)
 
         """
         residual = xs
@@ -330,18 +330,18 @@ class Conv2dBlock(EncoderBase):
             self._factor *= pooling[0]
 
     def forward(self, xs, xlens, lookback=False, lookahead=False):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, C_i, T, F]`
-            xlens (IntTensor): `[B]`
+            xlens (IntTensor): `[B]` (on CPU)
             lookback (bool): truncate the leftmost frames
                 because of lookback frames for context
             lookahead (bool): truncate the rightmost frames
                 because of lookahead frames for context
         Returns:
             xs (FloatTensor): `[B, C_o, T', F']`
-            xlens (IntTensor): `[B]`
+            xlens (IntTensor): `[B]` (on CPU)
 
         """
         residual = xs
@@ -386,7 +386,7 @@ class LayerNorm2D(nn.Module):
         self.norm = nn.LayerNorm([channel, idim], eps=eps)
 
     def forward(self, xs):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, C, T, F]`
@@ -401,13 +401,12 @@ class LayerNorm2D(nn.Module):
         return xs
 
 
-def update_lens_1d(seq_lens, layer, device_id=-1):
+def update_lens_1d(seq_lens, layer):
     """Update lenghts (frequency or time).
 
     Args:
         seq_lens (list or IntTensor):
         layer (nn.Conv1d or nn.MaxPool1d):
-        device_id (int):
     Returns:
         seq_lens (IntTensor):
 
@@ -417,8 +416,6 @@ def update_lens_1d(seq_lens, layer, device_id=-1):
     assert type(layer) in [nn.Conv1d, nn.MaxPool1d]
     seq_lens = [_update_1d(seq_len, layer) for seq_len in seq_lens]
     seq_lens = torch.IntTensor(seq_lens)
-    if device_id >= 0:
-        seq_lens = seq_lens.cuda(device_id)
     return seq_lens
 
 
@@ -431,14 +428,13 @@ def _update_1d(seq_len, layer):
             (seq_len + 2 * layer.padding[0] - (layer.kernel_size[0] - 1) - 1) / layer.stride[0] + 1)
 
 
-def update_lens_2d(seq_lens, layer, dim=0, device_id=-1):
+def update_lens_2d(seq_lens, layer, dim=0):
     """Update lenghts (frequency or time).
 
     Args:
         seq_lens (list or IntTensor):
         layer (nn.Conv2d or nn.MaxPool2d):
         dim (int):
-        device_id (int):
     Returns:
         seq_lens (IntTensor):
 
@@ -448,8 +444,6 @@ def update_lens_2d(seq_lens, layer, dim=0, device_id=-1):
     assert type(layer) in [nn.Conv2d, nn.MaxPool2d]
     seq_lens = [_update_2d(seq_len, layer, dim) for seq_len in seq_lens]
     seq_lens = torch.IntTensor(seq_lens)
-    if device_id >= 0:
-        seq_lens = seq_lens.cuda(device_id)
     return seq_lens
 
 

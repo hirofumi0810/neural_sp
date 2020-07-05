@@ -28,16 +28,12 @@ class LMBase(ModelBase):
         logger.info(self.__class__.__name__)
         logger.info('Overriding LMBase class.')
 
-    @staticmethod
-    def define_name(dir_name, args):
-        raise NotImplementedError
-
     def reset_parameters(self, param_init):
         raise NotImplementedError
 
     def forward(self, ys, state=None, is_eval=False, n_caches=0,
                 ylens=[], predict_last=False):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             ys (list): length `B`, each of which contains arrays of size `[L]`
@@ -63,7 +59,7 @@ class LMBase(ModelBase):
         return loss, state, observation
 
     def _forward(self, ys, state, n_caches=0, predict_last=False):
-        ys = [np2tensor(y, self.device_id) for y in ys]  # <eos> is included
+        ys = [np2tensor(y, self.device) for y in ys]  # <eos> is included
         ys = pad_list(ys, self.pad)
         ys_in, ys_out = ys[:, :-1], ys[:, 1:]
 

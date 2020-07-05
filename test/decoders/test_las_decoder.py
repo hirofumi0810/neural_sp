@@ -129,21 +129,23 @@ def test_forward(args):
 
     batch_size = 4
     emax = 40
-    device_id = -1
+    device = "cpu"
 
     eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
     elens = torch.IntTensor([len(x) for x in eouts])
-    eouts = pad_list([np2tensor(x, device_id).float() for x in eouts], 0.)
+    eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
 
     if args['lm_init'] or args['lm_fusion']:
         args_lm = make_args_rnnlm()
         module_rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
-        args['external_lm'] = module_rnnlm.RNNLM(args_lm)
+        args['external_lm'] = module_rnnlm.RNNLM(args_lm).to(device)
 
     module = importlib.import_module('neural_sp.models.seq2seq.decoders.las')
     dec = module.RNNDecoder(**args)
+    dec = dec.to(device)
+
     loss, observation = dec(eouts, elens, ys, task='all')
     assert loss.dim() == 1
     assert loss.size(0) == 1
@@ -279,17 +281,18 @@ def test_decoding(backward, lm_fusion, params):
 
     batch_size = params['recog_batch_size']
     emax = 40
-    device_id = -1
+    device = "cpu"
 
     eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
     elens = torch.IntTensor([len(x) for x in eouts])
-    eouts = pad_list([np2tensor(x, device_id).float() for x in eouts], 0.)
+    eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
 
     ctc_log_probs = None
     if params['recog_ctc_weight'] > 0:
-        ctc_log_probs = torch.softmax(torch.FloatTensor(batch_size, emax, VOCAB), dim=-1)
+        ctc_logits = torch.FloatTensor(batch_size, emax, VOCAB, device=device)
+        ctc_log_probs = torch.softmax(ctc_logits, dim=-1)
 
     args_lm = make_args_rnnlm()
     module_rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
@@ -297,22 +300,21 @@ def test_decoding(backward, lm_fusion, params):
     lm_second = None
     lm_second_bwd = None
     if params['recog_lm_weight'] > 0:
-        lm = module_rnnlm.RNNLM(args_lm)
+        lm = module_rnnlm.RNNLM(args_lm).to(device)
     if params['recog_lm_second_weight'] > 0:
-        lm_second = module_rnnlm.RNNLM(args_lm)
+        lm_second = module_rnnlm.RNNLM(args_lm).to(device)
     if params['recog_lm_bwd_weight'] > 0:
-        lm_second_bwd = module_rnnlm.RNNLM(args_lm)
+        lm_second_bwd = module_rnnlm.RNNLM(args_lm).to(device)
     if args['lm_fusion']:
-        args['external_lm'] = module_rnnlm.RNNLM(args_lm)
+        args['external_lm'] = module_rnnlm.RNNLM(args_lm).to(device)
 
     module = importlib.import_module('neural_sp.models.seq2seq.decoders.las')
     dec = module.RNNDecoder(**args)
+    dec = dec.to(device)
 
     # TODO(hirofumi0810):
     # recog_asr_state_carry_over
     # recog_lm_state_carry_over
-    # cold fusion + beam search + shallow fusion
-    # deep fusion + beam search + shallow fusion
 
     dec.eval()
     with torch.no_grad():

@@ -31,10 +31,11 @@ def test_forward(rnn_type, args):
 
     batch_size = 4
     cell_size = 32
+    device = "cpu"
 
-    xs = torch.FloatTensor(batch_size, cell_size)
-    hxs = torch.zeros(batch_size, cell_size)
-    cxs = torch.zeros(batch_size, cell_size) if rnn_type == 'lstm' else None
+    xs = torch.FloatTensor(batch_size, cell_size, device=device)
+    hxs = torch.zeros(batch_size, cell_size, device=device)
+    cxs = torch.zeros(batch_size, cell_size, device=device) if rnn_type == 'lstm' else None
 
     if rnn_type == 'lstm':
         cell = torch.nn.LSTMCell(cell_size, cell_size)
@@ -46,6 +47,7 @@ def test_forward(rnn_type, args):
 
     module = importlib.import_module('neural_sp.models.modules.zoneout')
     zoneout_cell = module.ZoneoutCell(**args)
+    zoneout_cell = zoneout_cell.to(device)
 
     for mode in ['train', 'eval']:
         if mode == 'train':

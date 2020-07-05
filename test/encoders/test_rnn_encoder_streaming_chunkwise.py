@@ -102,7 +102,8 @@ def test_forward_streaming_chunkwise(args):
 
     batch_size = 1
     xmaxs = [t for t in range(160, 192, 1)]
-    device_id = -1
+    device = "cpu"
+
     N_l = max(0, args['chunk_size_left']) // args['n_stacks']
     N_r = max(0, args['chunk_size_right']) // args['n_stacks']
     if unidir:
@@ -110,6 +111,7 @@ def test_forward_streaming_chunkwise(args):
         args['chunk_size_right'] = 0
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
     enc = module.RNNEncoder(**args)
+    enc = enc.to(device)
 
     factor = enc.subsampling_factor
     lookback = enc.conv.n_frames_context if enc.conv is not None else 0
@@ -132,7 +134,7 @@ def test_forward_streaming_chunkwise(args):
             xmax = xlens.max().item()
 
             # all inputs
-            xs_pad = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
+            xs_pad = pad_list([np2tensor(x, device).float() for x in xs], 0.)
 
             enc_out_dict = enc(xs_pad, xlens, task='all')
             assert enc_out_dict['ys']['xs'].size(0) == batch_size
@@ -149,7 +151,7 @@ def test_forward_streaming_chunkwise(args):
                 start = j - lookback
                 end = (j + N_l + N_r) + lookahead
                 xs_pad_stream = pad_list(
-                    [np2tensor(x[max(0, start):end], device_id).float() for x in xs], 0.)
+                    [np2tensor(x[max(0, start):end], device).float() for x in xs], 0.)
                 xlens_stream = torch.IntTensor([xs_pad_stream.size(1) for x in xs])
                 enc_out_dict_stream = enc(xs_pad_stream, xlens_stream, task='all',
                                           streaming=True,

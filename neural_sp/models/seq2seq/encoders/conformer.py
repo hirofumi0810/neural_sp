@@ -300,7 +300,7 @@ class ConformerEncoder(EncoderBase):
                 nn.init.constant_(self.bridge_sub2.bias, 0.)
 
     def forward(self, xs, xlens, task, use_cache=False, streaming=False):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
@@ -341,8 +341,8 @@ class ConformerEncoder(EncoderBase):
             emax = math.ceil(xmax / self.subsampling_factor)
 
             xs = xs * self.scale
-            pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float)
-            pos_embs = self.pos_emb(pos_idxs, self.device_id)
+            pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
+            pos_embs = self.pos_emb(pos_idxs)
 
             xx_mask = None  # NOTE: no mask
             for lth, layer in enumerate(self.layers):
@@ -363,8 +363,8 @@ class ConformerEncoder(EncoderBase):
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
                     # Create sinusoidal positional embeddings for relative positional encoding
-                    pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float)
-                    pos_embs = self.pos_emb(pos_idxs, self.device_id)
+                    pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
+                    pos_embs = self.pos_emb(pos_idxs)
 
             # Extract the center region
             xs = xs[:, _N_l:_N_l + _N_c]  # `[B * n_chunks, _N_c, d_model]`
@@ -374,11 +374,11 @@ class ConformerEncoder(EncoderBase):
         else:
             xs = xs * self.scale
             # Create sinusoidal positional embeddings for relative positional encoding
-            pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float)
-            pos_embs = self.pos_emb(pos_idxs, self.device_id)
+            pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
+            pos_embs = self.pos_emb(pos_idxs)
 
             # Create the self-attention mask
-            xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xs.size(1)])
+            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(2).repeat([1, 1, xs.size(1)])
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
@@ -401,10 +401,10 @@ class ConformerEncoder(EncoderBase):
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
                     # Create the self-attention mask
-                    xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(2).repeat([1, 1, xs.size(1)])
+                    xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(2).repeat([1, 1, xs.size(1)])
                     # Create sinusoidal positional embeddings for relative positional encoding
-                    pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float)
-                    pos_embs = self.pos_emb(pos_idxs, self.device_id)
+                    pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
+                    pos_embs = self.pos_emb(pos_idxs)
 
         xs = self.norm_out(xs)
 

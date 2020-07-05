@@ -38,36 +38,39 @@ def test_forward(args, learnable):
     args = make_args(**args)
 
     batch_size = 4
-    device_id = -1
     klen = 40
     mlen = 20
     qlen = 5
-    key = torch.FloatTensor(batch_size, klen, args['kdim'])
-    memory = torch.FloatTensor(batch_size, mlen, args['kdim'])
-    query = torch.FloatTensor(batch_size, qlen, args['qdim'])
+    device = "cpu"
+
+    key = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
+    memory = torch.FloatTensor(batch_size, mlen, args['kdim'], device=device)
+    query = torch.FloatTensor(batch_size, qlen, args['qdim'], device=device)
 
     # Create the self-attention mask
-    causal_mask = torch.ones(qlen, klen + mlen).byte()
+    causal_mask = torch.ones(qlen, klen + mlen, device=device).byte()
     causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
     causal_mask = causal_mask.repeat([batch_size, 1, 1])  # `[B, qlen, klen+mlen]`
-    # src_mask = torch.ones(batch_size, 1, klen + mlen).byte()
 
     module_embedding = importlib.import_module('neural_sp.models.modules.positional_embedding')
     pos_emb = module_embedding.XLPositionalEmbedding(args['kdim'], args['dropout'])
 
     if learnable:
         u = torch.nn.Parameter(torch.Tensor(args['n_heads'], args['adim'] // args['n_heads']))
+        u = u.to(device)
         v = torch.nn.Parameter(torch.Tensor(args['n_heads'], args['adim'] // args['n_heads']))
+        v = v.to(device)
     else:
         u, v = None, None
 
     module_mha = importlib.import_module('neural_sp.models.modules.relative_multihead_attention')
     attention = module_mha.RelativeMultiheadAttentionMechanism(**args)
+    attention = attention.to(device)
     attention.train()
     aws = None
     for i in range(qlen):
-        pos_idxs = torch.arange(klen + mlen - 1, -1, -1.0, dtype=torch.float)
-        pos_embs = pos_emb(pos_idxs, device_id)
+        pos_idxs = torch.arange(klen + mlen - 1, -1, -1.0, dtype=torch.float, device=device)
+        pos_embs = pos_emb(pos_idxs)
 
         out = attention(key, query[:, i:i + 1], memory, mask=causal_mask[:, i:i + 1],
                         pos_embs=pos_embs, u=u, v=v)

@@ -61,7 +61,7 @@ def make_args_2d(**kwargs):
         ({'batch_norm': True}),
         ({'layer_norm': True}),
         ({'residual': True}),
-        ({'bottleneck_dim': 64}),
+        ({'bottleneck_dim': 32}),
     ]
 )
 def test_forward_2d(args):
@@ -69,17 +69,20 @@ def test_forward_2d(args):
 
     batch_size = 4
     xmaxs = [40, 45]
-    device_id = -1
+    device = "cpu"
+
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.conv')
     (channels, kernel_sizes, strides, poolings), is_1dconv = module.parse_cnn_config(
         args['channels'], args['kernel_sizes'],
         args['strides'], args['poolings'])
     assert not is_1dconv
     enc = module.ConvEncoder(**args)
+    enc = enc.to(device)
+
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
         xlens = torch.IntTensor([len(x) for x in xs])
-        xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
+        xs = pad_list([np2tensor(x, device).float() for x in xs], 0.)
         xs, xlens = enc(xs, xlens)
 
         assert xs.size(0) == batch_size, xs.size()
@@ -126,7 +129,7 @@ def make_args_1d(**kwargs):
         ({'channels': "32_32_32", 'kernel_sizes': "3_3_3",
           'poolings': "1_1_1"}),
         # bottleneck
-        # ({'bottleneck_dim': 128}),
+        ({'bottleneck_dim': 32}),
     ]
 )
 def test_forward_1d(args):
@@ -134,17 +137,20 @@ def test_forward_1d(args):
 
     batch_size = 4
     xmaxs = [40, 45]
-    device_id = -1
+    device = "cpu"
+
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.conv')
     (channels, kernel_sizes, strides, poolings), is_1dconv = module.parse_cnn_config(
         args['channels'], args['kernel_sizes'],
         args['strides'], args['poolings'])
     assert is_1dconv
     enc = module.ConvEncoder(**args)
+    enc = enc.to(device)
+
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
-        xlens = torch.IntTensor([len(x) for x in xs])
-        xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
+        xlens = torch.IntTensor([len(x) - i * enc.subsampling_factor for i, x in enumerate(xs)])
+        xs = pad_list([np2tensor(x, device).float() for x in xs], 0.)
 
         xs, xlens = enc(xs, xlens)
         assert xs.size(0) == batch_size

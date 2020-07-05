@@ -24,6 +24,16 @@ class ConcatSubsampler(nn.Module):
             self.proj = nn.Linear(n_units * factor, n_units)
 
     def forward(self, xs, xlens):
+        """Forward pass.
+
+        Args:
+            xs (FloatTensor): `[B, T, F]`
+            xlens (IntTensor): `[B]` (on CPU)
+        Returns:
+            xs (FloatTensor): `[B, T', F']`
+            xlens (IntTensor): `[B]` (on CPU)
+
+        """
         if self.factor == 1:
             return xs, xlens
 
@@ -59,6 +69,16 @@ class Conv1dSubsampler(nn.Module):
                                      ceil_mode=True)
 
     def forward(self, xs, xlens):
+        """Forward pass.
+
+        Args:
+            xs (FloatTensor): `[B, T, F]`
+            xlens (IntTensor): `[B]` (on CPU)
+        Returns:
+            xs (FloatTensor): `[B, T', F']`
+            xlens (IntTensor): `[B]` (on CPU)
+
+        """
         if self.factor == 1:
             return xs, xlens
 
@@ -78,6 +98,16 @@ class DropSubsampler(nn.Module):
         self.factor = factor
 
     def forward(self, xs, xlens):
+        """Forward pass.
+
+        Args:
+            xs (FloatTensor): `[B, T, F]`
+            xlens (IntTensor): `[B]` (on CPU)
+        Returns:
+            xs (FloatTensor): `[B, T', F']`
+            xlens (IntTensor): `[B]` (on CPU)
+
+        """
         if self.factor == 1:
             return xs, xlens
 
@@ -102,6 +132,16 @@ class MaxpoolSubsampler(nn.Module):
                                      ceil_mode=True)
 
     def forward(self, xs, xlens):
+        """Forward pass.
+
+        Args:
+            xs (FloatTensor): `[B, T, F]`
+            xlens (IntTensor): `[B]` (on CPU)
+        Returns:
+            xs (FloatTensor): `[B, T', F']`
+            xlens (IntTensor): `[B]` (on CPU)
+
+        """
         if self.factor == 1:
             return xs, xlens
 

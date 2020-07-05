@@ -218,7 +218,7 @@ class Speech2Text(ModelBase):
                 getattr(self, 'dec_fwd_' + sub).reset_session()
 
     def forward(self, batch, task, is_eval=False, teacher=None, teacher_lm=None):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             batch (dict):
@@ -260,9 +260,7 @@ class Speech2Text(ModelBase):
             eout_dict = self.encode(batch['ys_sub1'])
 
         observation = {}
-        loss = torch.zeros((1,), dtype=torch.float32)
-        if self.device_id >= 0:
-            loss = loss.cuda(self.device_id)
+        loss = torch.zeros((1,), dtype=torch.float32, device=self.device)
 
         # for the forward decoder in the main task
         if (self.fwd_weight > 0 or (self.bwd_weight == 0 and self.ctc_weight > 0) or self.mbr_training) and task in ['all', 'ys', 'ys.ctc', 'ys.mbr']:
@@ -343,7 +341,7 @@ class Speech2Text(ModelBase):
     def generate_lm_logits(self, ys, lm, temperature=5.0):
         # Append <sos> and <eos>
         eos = next(lm.parameters()).new_zeros(1).fill_(self.eos).long()
-        ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device_id)for y in ys]
+        ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device)for y in ys]
         ys_in = pad_list([torch.cat([eos, y], dim=0) for y in ys], self.pad)
         lmout, _ = lm.decode(ys_in, None)
         logits = lm.output(lmout)
@@ -369,20 +367,21 @@ class Speech2Text(ModelBase):
             # Splicing
             if self.n_splices > 1:
                 xs = [splice(x, self.n_splices, self.n_stacks) for x in xs]
-            xlens = torch.IntTensor([len(x) for x in xs])
 
-            xs = pad_list([np2tensor(x, self.device_id).float() for x in xs], 0.)
+            xlens = torch.IntTensor([len(x) for x in xs])
+            xs = pad_list([np2tensor(x, self.device).float() for x in xs], 0.)
 
             # SpecAugment
             if self.specaug is not None and self.training:
                 xs = self.specaug(xs)
-                if self.weight_noise_std > 0:
-                    # self.add_weight_noise(std=0.075)
-                    self.add_weight_noise(std=0.01)
 
-            # Gaussian noise injection
+            # Weight noise injection
+            if self.weight_noise_std > 0:
+                self.add_weight_noise(std=self.weight_noise_std)
+
+            # Input Gaussian noise injection
             if self.input_noise_std > 0:
-                xs = add_input_noise(xs)
+                xs = add_input_noise(xs, std=self.input_noise_std)
 
             # Sequence summary network
             if self.ssn is not None:
@@ -390,7 +389,7 @@ class Speech2Text(ModelBase):
 
         elif self.input_type == 'text':
             xlens = torch.IntTensor([len(x) for x in xs])
-            xs = [np2tensor(np.fromiter(x, dtype=np.int64), self.device_id) for x in xs]
+            xs = [np2tensor(np.fromiter(x, dtype=np.int64), self.device) for x in xs]
             xs = pad_list(xs, self.pad)
             xs = self.dropout_emb(self.embed(xs))
             # TODO(hirofumi): fix for Transformer
@@ -573,8 +572,8 @@ class Speech2Text(ModelBase):
             if not params['recog_chunk_sync'] and len(streaming.eout_chunks) > 0:
                 eout = torch.cat(streaming.eout_chunks, dim=1)
                 elens = torch.IntTensor([eout.size(1)])
-                nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
-                    eout, elens, global_params, idx2token, lm, lm_second, None)
+                nbest_hyps_id_offline = self.dec_fwd.beam_search(
+                    eout, elens, global_params, idx2token, lm, lm_second)[0]
                 # print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
                 # print('*' * 50)
                 if len(nbest_hyps_id_offline[0][0]) > 0:

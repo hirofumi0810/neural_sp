@@ -31,17 +31,6 @@ class DecoderBase(ModelBase):
 
         logger.info('Overriding DecoderBase class.')
 
-    @property
-    def device_id(self):
-        return torch.cuda.device_of(next(self.parameters()).data).idx
-
-    @staticmethod
-    def define_name(dir_name, args):
-        raise NotImplementedError
-
-    def reset_parameters(self, param_init):
-        raise NotImplementedError
-
     def reset_session(self):
         self.new_session = True
 
@@ -211,7 +200,7 @@ class DecoderBase(ModelBase):
             if reverse:
                 ys = ys[::-1]
 
-            ys = [np2tensor(np.fromiter(ys, dtype=np.int64), self.device_id)]
+            ys = [np2tensor(np.fromiter(ys, dtype=np.int64), self.device)]
             ys_in = pad_list([y[:-1] for y in ys], -1)  # `[1, L-1]`
             ys_out = pad_list([y[1:] for y in ys], -1)  # `[1, L-1]`
 

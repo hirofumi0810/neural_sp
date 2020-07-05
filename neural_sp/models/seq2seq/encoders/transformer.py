@@ -324,12 +324,8 @@ class TransformerEncoder(EncoderBase):
 
     def init_memory(self):
         """Initialize memory."""
-        if self.device_id >= 0:
-            return [torch.empty(0, dtype=torch.float).cuda(self.device_id)
-                    for _ in range(self.n_layers)]
-        else:
-            return [torch.empty(0, dtype=torch.float)
-                    for _ in range(self.n_layers)]
+        return [torch.empty(0, dtype=torch.float, device=self.device)
+                for _ in range(self.n_layers)]
 
     def update_memory(self, memory_prev, hidden_states):
         """Update memory.
@@ -361,18 +357,18 @@ class TransformerEncoder(EncoderBase):
         return new_mems
 
     def forward(self, xs, xlens, task, use_cache=False, streaming=False):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
-            xlens (list): `[B]`
+            xlens (InteTensor): `[B]` (on CPU)
             task (str): not supported now
             use_cache (bool):
             streaming (bool): streaming encoding
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T, d_model]`
-                xlens (list): `[B]`
+                xlens (InteTensor): `[B]` (on CPU)
 
         """
         eouts = {'ys': {'xs': None, 'xlens': None},
@@ -405,8 +401,8 @@ class TransformerEncoder(EncoderBase):
             pos_embs = None
             if self.pe_type == 'relative':
                 xs = xs * self.scale
-                pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float)
-                pos_embs = self.pos_emb(pos_idxs, self.device_id)
+                pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
+                pos_embs = self.pos_emb(pos_idxs)
             else:
                 xs = self.pos_enc(xs, scale=True)
 
@@ -438,13 +434,13 @@ class TransformerEncoder(EncoderBase):
             if self.pe_type == 'relative':
                 xs = xs * self.scale
                 # Create sinusoidal positional embeddings for relative positional encoding
-                pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float)
-                pos_embs = self.pos_emb(pos_idxs, self.device_id)
+                pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
+                pos_embs = self.pos_emb(pos_idxs)
             else:
                 xs = self.pos_enc(xs, scale=True)
 
             # Create the self-attention mask
-            xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).repeat([1, xs.size(1), 1])
+            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
@@ -464,14 +460,14 @@ class TransformerEncoder(EncoderBase):
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens
                         return eouts
 
-        if self.subsample is not None:
-            xs, xlens = self.subsample[lth](xs, xlens)
-            # Create the self-attention mask
-            xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).repeat([1, xs.size(1), 1])
-            if self.pe_type == 'relative':
-                # Create sinusoidal positional embeddings for relative positional encoding
-                pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float)
-                pos_embs = self.pos_emb(pos_idxs, self.device_id)
+                if self.subsample is not None:
+                    xs, xlens = self.subsample[lth](xs, xlens)
+                    # Create the self-attention mask
+                    xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
+                    if self.pe_type == 'relative':
+                        # Create sinusoidal positional embeddings for relative positional encoding
+                        pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
+                        pos_embs = self.pos_emb(pos_idxs)
 
         xs = self.norm_out(xs)
 

@@ -70,7 +70,6 @@ class CIF(nn.Module):
 
         """
         bs, xmax, enc_dim = eouts.size()
-        device_id = torch.cuda.device_of(eouts).idx
 
         # 1d conv
         conv_feat = self.conv1d(eouts.transpose(2, 1)).transpose(2, 1)  # `[B, T, enc_dim]`
@@ -81,9 +80,9 @@ class CIF(nn.Module):
         if mode == 'parallel':
             # padding
             assert ylens is not None
-            if device_id >= 0:
-                ylens = ylens.cuda()
-            mask = make_pad_mask(elens, device_id)
+            device = eouts.device
+            ylens = ylens.to(device)
+            mask = make_pad_mask(elens.to(device))
             alpha = alpha.clone().masked_fill_(mask == 0, 0)
 
             alpha_norm = alpha / alpha.sum(1, keepdim=True) * ylens.float().unsqueeze(1)
