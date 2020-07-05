@@ -444,7 +444,7 @@ class TransformerEncoder(EncoderBase):
                 xs = self.pos_enc(xs, scale=True)
 
             # Create the self-attention mask
-            xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).repeat([1, xmax, 1])
+            xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).repeat([1, xs.size(1), 1])
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
@@ -467,11 +467,7 @@ class TransformerEncoder(EncoderBase):
         if self.subsample is not None:
             xs, xlens = self.subsample[lth](xs, xlens)
             # Create the self-attention mask
-            if self.funnel_donwsample:
-                xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(
-                    1).repeat([1, (xs.size(1) + 1) // 2, 1])
-            else:
-                xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).repeat([1, xs.size(1), 1])
+            xx_mask = make_pad_mask(xlens, self.device_id).unsqueeze(1).repeat([1, xs.size(1), 1])
             if self.pe_type == 'relative':
                 # Create sinusoidal positional embeddings for relative positional encoding
                 pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float)
