@@ -286,8 +286,8 @@ class TransformerEncoder(EncoderBase):
 
         dir_name += str(args.transformer_d_model) + 'dmodel'
         dir_name += str(args.transformer_d_ff) + 'dff'
-        if args.transformer_d_ff_bottleneck_dim > 0:
-            dir_name += str(args.transformer_d_ff_bottleneck_dim) + 'bn'
+        if args.transformer_ffn_bottleneck_dim > 0:
+            dir_name += str(args.transformer_ffn_bottleneck_dim) + 'bn'
         dir_name += str(args.enc_n_layers) + 'L'
         dir_name += str(args.transformer_n_heads) + 'H'
         dir_name += 'pe' + str(args.transformer_enc_pe_type)
