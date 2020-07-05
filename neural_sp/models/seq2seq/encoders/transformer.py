@@ -249,7 +249,7 @@ class TransformerEncoder(EncoderBase):
                                help='number of units in the MHA layer')
             group.add_argument('--transformer_d_ff', type=int, default=2048,
                                help='number of units in the FFN layer')
-            group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
+            group.add_argument('--transformer_ffn_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
             group.add_argument('--transformer_input_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
