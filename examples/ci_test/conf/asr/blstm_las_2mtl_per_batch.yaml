@@ -30,8 +30,8 @@ dec_n_layers: 1
 dec_bottleneck_dim: 32
 emb_dim: 32
 tie_embedding: false
-ctc_fc_list: "32"
-ctc_fc_list_sub1: "32"
+ctc_fc_list: "16"
+ctc_fc_list_sub1: "16"
 ### optimization
 batch_size: 1
 optimizer: adam
