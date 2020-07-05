@@ -24,7 +24,19 @@ def tensor2np(x):
         np.ndarray
 
     """
-    return x.cpu().numpy()
+    return x.cpu().detach().numpy()
+
+
+def tensor2scalar(x):
+    """Convert torch.Tensor to a scalar value.
+
+    Args:
+        x (Tensor):
+    Returns:
+        np.ndarray
+
+    """
+    return x.cpu().detach().item()
 
 
 def np2tensor(array, device_id=-1):

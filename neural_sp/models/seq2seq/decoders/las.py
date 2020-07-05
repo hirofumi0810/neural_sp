@@ -38,6 +38,7 @@ from neural_sp.models.torch_utils import repeat
 from neural_sp.models.torch_utils import pad_list
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import tensor2np
+from neural_sp.models.torch_utils import tensor2scalar
 
 random.seed(1)
 
@@ -434,7 +435,7 @@ class RNNDecoder(DecoderBase):
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
             forced_align = (self.ctc_trigger and self.training) or self.attn_type == 'triggered_attention'
             loss_ctc, trigger_points = self.ctc(eouts, elens, ys, forced_align=forced_align)
-            observation['loss_ctc'] = loss_ctc.item()
+            observation['loss_ctc'] = tensor2scalar(loss_ctc)
             if self.mtl_per_batch:
                 loss += loss_ctc
             else:
@@ -445,15 +446,15 @@ class RNNDecoder(DecoderBase):
             loss_att, acc_att, ppl_att, loss_quantity, loss_latency = self.forward_att(
                 eouts, elens, ys, teacher_logits=teacher_logits,
                 trigger_points=trigger_points)
-            observation['loss_att'] = loss_att.item()
+            observation['loss_att'] = tensor2scalar(loss_att)
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
             if self.attn_type == 'mocha':
                 if self._quantity_loss_weight > 0:
                     loss_att += loss_quantity * self._quantity_loss_weight
-                observation['loss_quantity'] = loss_quantity.item()
+                observation['loss_quantity'] = tensor2scalar(loss_quantity)
             if self.latency_metric:
-                observation['loss_latency'] = loss_latency.item() if self.training else 0
+                observation['loss_latency'] = tensor2scalar(loss_latency) if self.training else 0
                 if self.latency_metric != 'decot' and self.latency_loss_weight > 0:
                     loss_att += loss_latency * self.latency_loss_weight
             if self.mtl_per_batch:
@@ -526,10 +527,10 @@ class RNNDecoder(DecoderBase):
 
             # NOTE: MBR loss is accumlated over N-best and mini-batch
             loss = loss_mbr + loss_ce * self.mbr_ce_weight
-            observation['loss_mbr'] = loss_mbr.item()
-            observation['loss_att'] = loss_ce.item()
+            observation['loss_mbr'] = tensor2scalar(loss_mbr)
+            observation['loss_att'] = tensor2scalar(loss_ce)
 
-        observation['loss'] = loss.item()
+        observation['loss'] = tensor2scalar(loss)
         return loss, observation
 
     def forward_mbr(self, eouts, elens, ys_hyp):
