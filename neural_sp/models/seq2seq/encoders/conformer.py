@@ -230,7 +230,7 @@ class ConformerEncoder(EncoderBase):
                                help='number of units in the MHA layer')
             group.add_argument('--transformer_d_ff', type=int, default=2048,
                                help='number of units in the FFN layer')
-            group.add_argument('--transformer_d_ff_bottleneck_dim', type=int, default=0,
+            group.add_argument('--transformer_ffn_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
             group.add_argument('--transformer_n_heads', type=int, default=4,
                                help='number of heads in the MHA layer')
@@ -269,8 +269,8 @@ class ConformerEncoder(EncoderBase):
         dir_name += str(args.transformer_d_model) + 'dmodel'
         # dir_name += str(args.transformer_d_model * 4) + 'dff'
         dir_name += str(args.transformer_d_ff) + 'dff'
-        if args.transformer_d_ff_bottleneck_dim > 0:
-            dir_name += str(args.transformer_d_ff_bottleneck_dim) + 'bn'
+        if args.transformer_ffn_bottleneck_dim > 0:
+            dir_name += str(args.transformer_ffn_bottleneck_dim) + 'bn'
         dir_name += str(args.enc_n_layers) + 'L'
         dir_name += str(args.transformer_n_heads) + 'H'
         dir_name += 'kernel' + str(args.conformer_kernel_size)
@@ -338,7 +338,7 @@ class ConformerEncoder(EncoderBase):
             _N_l = max(0, N_l // self.subsampling_factor)
             _N_c = N_c // self.subsampling_factor
             n_chunks = xs.size(0) // bs
-            emax = math.ceil(xmax / self.subsampling_factor)
+            emax = xlens.max().item()
 
             xs = xs * self.scale
             pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
@@ -359,7 +359,6 @@ class ConformerEncoder(EncoderBase):
                         xx_aws_center[:, :, offset:offset + _N_c, offset:offset + _N_c] = xx_aws_chunk
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
-
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
                     # Create sinusoidal positional embeddings for relative positional encoding
