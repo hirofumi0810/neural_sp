@@ -18,10 +18,11 @@ from torch.nn.utils.rnn import pad_packed_sequence
 
 from neural_sp.models.modules.initialization import init_with_uniform
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
-from neural_sp.models.seq2seq.encoders.conv import update_lens_1d
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
-from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
-from neural_sp.models.seq2seq.encoders.tds import TDSEncoder
+from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import MaxpoolSubsampler
 
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ class RNNEncoder(EncoderBase):
         dropout (float): dropout probability for hidden-hidden connection
         subsample (list): subsample in the corresponding RNN layers
             ex.) [1, 2, 2, 1] means that subsample is conducted in the 2nd and 3rd layers.
-        subsample_type (str): drop/concat/max_pool
+        subsample_type (str): drop/concat/max_pool/1dconv
         n_stacks (int): number of frames to stack
         n_splices (int): number of frames to splice
         conv_in_channel (int): number of channels of input features
@@ -117,23 +118,7 @@ class RNNEncoder(EncoderBase):
         # Dropout for input-hidden connection
         self.dropout_in = nn.Dropout(p=dropout_in)
 
-        if rnn_type == 'tds':
-            self.conv = TDSEncoder(input_dim=input_dim * n_stacks,
-                                   in_channel=conv_in_channel,
-                                   channels=conv_channels,
-                                   kernel_sizes=conv_kernel_sizes,
-                                   dropout=dropout,
-                                   bottleneck_dim=last_proj_dim)
-        elif rnn_type == 'gated_conv':
-            self.conv = GatedConvEncoder(input_dim=input_dim * n_stacks,
-                                         in_channel=conv_in_channel,
-                                         channels=conv_channels,
-                                         kernel_sizes=conv_kernel_sizes,
-                                         dropout=dropout,
-                                         bottleneck_dim=last_proj_dim,
-                                         param_init=param_init)
-
-        elif 'conv' in rnn_type:
+        if 'conv' in rnn_type:
             assert n_stacks == 1 and n_splices == 1
             self.conv = ConvEncoder(input_dim,
                                     in_channel=conv_in_channel,
@@ -515,104 +500,6 @@ class Padding(nn.Module):
             half = xs.size(-1) // 2
             xs = xs[:, :, :half] + xs[:, :, half:]
         return xs, state
-
-
-class MaxpoolSubsampler(nn.Module):
-    """Subsample by max-pooling input frames."""
-
-    def __init__(self, factor):
-        super(MaxpoolSubsampler, self).__init__()
-
-        self.factor = factor
-        if factor > 1:
-            self.pool = nn.MaxPool1d(kernel_size=factor,
-                                     stride=factor,
-                                     padding=0,
-                                     ceil_mode=True)
-
-    def forward(self, xs, xlens):
-        if self.factor == 1:
-            return xs, xlens
-
-        xs = self.pool(xs.transpose(2, 1)).transpose(2, 1).contiguous()
-
-        xlens = update_lens_1d(xlens, self.pool)
-        return xs, xlens
-
-
-class Conv1dSubsampler(nn.Module):
-    """Subsample by 1d convolution and max-pooling."""
-
-    def __init__(self, factor, n_units, conv_kernel_size=5):
-        super(Conv1dSubsampler, self).__init__()
-
-        assert conv_kernel_size % 2 == 1, "Kernel size should be odd for 'same' conv."
-        self.factor = factor
-        if factor > 1:
-            self.conv1d = nn.Conv1d(in_channels=n_units,
-                                    out_channels=n_units,
-                                    kernel_size=conv_kernel_size,
-                                    stride=1,
-                                    padding=(conv_kernel_size - 1) // 2)
-            self.pool = nn.MaxPool1d(kernel_size=factor,
-                                     stride=factor,
-                                     padding=0,
-                                     ceil_mode=True)
-
-    def forward(self, xs, xlens):
-        if self.factor == 1:
-            return xs, xlens
-
-        xs = torch.relu(self.conv1d(xs.transpose(2, 1)))
-        xs = self.pool(xs).transpose(2, 1).contiguous()
-
-        xlens = update_lens_1d(xlens, self.pool)
-        return xs, xlens
-
-
-class DropSubsampler(nn.Module):
-    """Subsample by droping input frames."""
-
-    def __init__(self, factor):
-        super(DropSubsampler, self).__init__()
-
-        self.factor = factor
-
-    def forward(self, xs, xlens):
-        if self.factor == 1:
-            return xs, xlens
-
-        xs = xs[:, ::self.factor, :]
-
-        xlens = [max(1, math.floor(i // self.factor)) for i in xlens]
-        xlens = torch.IntTensor(xlens)
-        return xs, xlens
-
-
-class ConcatSubsampler(nn.Module):
-    """Subsample by concatenating successive input frames."""
-
-    def __init__(self, factor, n_units):
-        super(ConcatSubsampler, self).__init__()
-
-        self.factor = factor
-        if factor > 1:
-            self.proj = nn.Linear(n_units * factor, n_units)
-
-    def forward(self, xs, xlens):
-        if self.factor == 1:
-            return xs, xlens
-
-        xs = xs.transpose(1, 0).contiguous()
-        xs = [torch.cat([xs[t - r:t - r + 1] for r in range(self.factor - 1, -1, -1)], dim=-1)
-              for t in range(xs.size(0)) if (t + 1) % self.factor == 0]
-        xs = torch.cat(xs, dim=0).transpose(1, 0)
-        # NOTE: Exclude the last frames if the length is not divisible
-        xs = torch.relu(self.proj(xs))
-
-        xlens = [max(1, math.floor(i // self.factor)) for i in xlens]
-        xlens = torch.IntTensor(xlens)
-        return xs, xlens
 
 
 class NiN(nn.Module):
