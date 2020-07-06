@@ -389,14 +389,14 @@ class TransformerEncoder(EncoderBase):
         else:
             # Path through CNN blocks
             xs, xlens = self.conv(xs, xlens)
+            N_l = max(0, N_l // self.conv.subsampling_factor)
+            N_c = N_c // self.conv.subsampling_factor
+            N_r = N_r // self.conv.subsampling_factor
 
         if self.latency_controlled:
             # streaming Transformer encoder
-            _N_l = max(0, N_l // self.subsampling_factor)
-            _N_c = N_c // self.subsampling_factor
-
             n_chunks = xs.size(0) // bs
-            emax = math.ceil(xmax / self.subsampling_factor)
+            emax = xlens.max().item()
 
             pos_embs = None
             if self.pe_type == 'relative':
@@ -406,26 +406,30 @@ class TransformerEncoder(EncoderBase):
             else:
                 xs = self.pos_enc(xs, scale=True)
 
-            xx_mask = None  # NOTE: no mask
+            xx_mask = None  # NOTE: no mask to mask all masked region
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
                     n_heads = layer.xx_aws.size(1)
-                    xx_aws = layer.xx_aws[:, :, _N_l:_N_l + _N_c, _N_l:_N_l + _N_c]
-                    xx_aws = xx_aws.view(bs, n_chunks, n_heads, _N_c, _N_c)
+                    xx_aws = layer.xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
+                    xx_aws = xx_aws.view(bs, n_chunks, n_heads, N_c, N_c)
                     xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
                     for chunk_idx in range(n_chunks):
-                        offset = chunk_idx * _N_c
-                        emax_chunk = xx_aws_center[:, :, offset:offset + _N_c].size(2)
+                        offset = chunk_idx * N_c
+                        emax_chunk = xx_aws_center[:, :, offset:offset + N_c].size(2)
                         xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk, :emax_chunk]
-                        xx_aws_center[:, :, offset:offset + _N_c, offset:offset + _N_c] = xx_aws_chunk
+                        xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
+                    emax = xlens.max().item()
+                    N_l = max(0, N_l // self.subsample[lth].subsampling_factor)
+                    N_c = N_c // self.subsample[lth].subsampling_factor
+                    N_r = N_r // self.subsample[lth].subsampling_factor
 
             # Extract the center region
-            xs = xs[:, _N_l:_N_l + _N_c]  # `[B * n_chunks, _N_c, d_model]`
+            xs = xs[:, N_l:N_l + N_c]  # `[B * n_chunks, N_c, d_model]`
             xs = xs.contiguous().view(bs, -1, xs.size(2))
             xs = xs[:, :emax]
 
