@@ -68,7 +68,8 @@ def build_encoder(args):
             param_init=args.transformer_param_init,
             chunk_size_left=args.lc_chunk_size_left,
             chunk_size_current=args.lc_chunk_size_current,
-            chunk_size_right=args.lc_chunk_size_right)
+            chunk_size_right=args.lc_chunk_size_right,
+            latency_control_type=getattr(args, 'lc_type', 'reshape'))
 
     elif 'conformer' in args.enc_type:
         from neural_sp.models.seq2seq.encoders.conformer import ConformerEncoder
@@ -108,7 +109,8 @@ def build_encoder(args):
             param_init=args.transformer_param_init,
             chunk_size_left=args.lc_chunk_size_left,
             chunk_size_current=args.lc_chunk_size_current,
-            chunk_size_right=args.lc_chunk_size_right)
+            chunk_size_right=args.lc_chunk_size_right,
+            latency_control_type=getattr(args, 'lc_type', 'reshape'))
 
     else:
         from neural_sp.models.seq2seq.encoders.rnn import RNNEncoder
