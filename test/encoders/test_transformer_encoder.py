@@ -104,13 +104,16 @@ def test_forward(args):
 
     batch_size = 4
     xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [400, 455]
-    device_id = -1
+    device = "cpu"
+
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
     enc = module.TransformerEncoder(**args)
+    enc = enc.to(device)
+
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
         xlens = torch.IntTensor([len(x) - i * enc.subsampling_factor for i, x in enumerate(xs)])
-        xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
+        xs = pad_list([np2tensor(x, device).float() for x in xs], 0.)
 
         # for mode in ['train', 'eval']:  # too slow
         for mode in ['train']:

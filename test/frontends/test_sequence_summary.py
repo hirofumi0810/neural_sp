@@ -19,7 +19,7 @@ def make_args(**kwargs):
         n_layers=2,
         bottleneck_dim=0,
         dropout=0.1,
-        param_init=0.1
+        param_init=0.1,
     )
     args.update(kwargs)
     return args
@@ -39,14 +39,15 @@ def test_forward(args):
 
     batch_size = 4
     xmax = 40
-    device_id = -1
+    device = "cpu"
 
     xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
     xlens = torch.IntTensor([len(x) for x in xs])
-    xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
+    xs = pad_list([np2tensor(x, device).float() for x in xs], 0.)
 
     module = importlib.import_module('neural_sp.models.seq2seq.frontends.sequence_summary')
     ssn = module.SequenceSummaryNetwork(**args)
+    ssn = ssn.to(device)
 
     out = ssn(xs, xlens)
     assert out.size() == xs.size()

@@ -34,12 +34,15 @@ def test_forward_parallel(args):
     batch_size = 1
     xmax = 40
     ymax = 5
-    eouts = torch.FloatTensor(batch_size, xmax, args['enc_dim'])
-    elens = torch.IntTensor([len(x) for x in eouts])
+    device = "cpu"
+
+    eouts = torch.FloatTensor(batch_size, xmax, args['enc_dim'], device=device)
+    elens = torch.IntTensor([i for i in range(xmax, xmax - batch_size, -1)])
     ylens = torch.IntTensor([i for i in range(ymax, ymax - batch_size, -1)])
 
     module = importlib.import_module('neural_sp.models.modules.cif')
     cif = module.CIF(**args)
+    cif = cif.to(device)
     cif.train()
 
     out = cif(eouts, elens, ylens, mode='parallel')
@@ -63,11 +66,14 @@ def test_forward_incremental(args):
     batch_size = 1
     xmax = 40
     ymax = 5
-    eouts = torch.FloatTensor(batch_size, xmax, args['enc_dim'])
+    device = "cpu"
+
+    eouts = torch.FloatTensor(batch_size, xmax, args['enc_dim'], device=device)
     elens = torch.IntTensor([len(x) for x in eouts])
 
     module = importlib.import_module('neural_sp.models.modules.cif')
     cif = module.CIF(**args)
+    cif = cif.to(device)
     cif.eval()
 
     for i in range(ymax):

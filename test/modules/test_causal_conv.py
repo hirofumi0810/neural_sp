@@ -34,10 +34,13 @@ def test_forward(args):
 
     batch_size = 4
     max_len = 40
-    xs = torch.FloatTensor(batch_size, max_len, args['in_channels'])
+    device = "cpu"
+
+    xs = torch.FloatTensor(batch_size, max_len, args['in_channels'], device=device)
 
     module = importlib.import_module('neural_sp.models.modules.causal_conv')
     conv1d = module.CausalConv1d(**args)
+    conv1d = conv1d.to(device)
 
     out = conv1d(xs)
     assert out.size() == (batch_size, max_len, args['out_channels'])

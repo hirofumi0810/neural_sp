@@ -35,11 +35,14 @@ def test_forward(args):
 
     batch_size = 4
     xmaxs = [40, 45]
+    device = "cpu"
+
     module = importlib.import_module('neural_sp.models.modules.conformer_convolution')
     conv = module.ConformerConvBlock(**args)
+    conv = conv.to(device)
 
     for xmax in xmaxs:
-        xs = torch.FloatTensor(batch_size, xmax, args['d_model'])
+        xs = torch.FloatTensor(batch_size, xmax, args['d_model'], device=device)
         xs = conv(xs)
 
         assert xs.size() == (batch_size, xmax, args['d_model'])

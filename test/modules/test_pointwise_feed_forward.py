@@ -41,10 +41,13 @@ def test_forward(args):
 
     batch_size = 4
     max_len = 40
-    ffn_in = torch.FloatTensor(batch_size, max_len, args['d_model'])
+    device = "cpu"
+
+    ffn_in = torch.FloatTensor(batch_size, max_len, args['d_model'], device=device)
 
     module = importlib.import_module('neural_sp.models.modules.positionwise_feed_forward')
     ffn = module.PositionwiseFeedForward(**args)
+    ffn = ffn.to(device)
 
     ffn_out = ffn(ffn_in)
     assert ffn_in.size() == ffn_out.size()

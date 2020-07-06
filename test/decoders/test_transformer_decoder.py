@@ -123,10 +123,11 @@ def test_forward(args):
 
     batch_size = 4
     emax = 40
-    device_id = -1
+    device = "cpu"
+
     eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
     elens = torch.IntTensor([len(x) for x in eouts])
-    eouts = pad_list([np2tensor(x, device_id).float() for x in eouts], 0.)
+    eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
 
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
@@ -238,34 +239,37 @@ def test_decoding(backward, params):
 
     batch_size = params['recog_batch_size']
     emax = 40
-    device_id = -1
+    device = "cpu"
+
     eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
     elens = torch.IntTensor([len(x) for x in eouts])
-    eouts = pad_list([np2tensor(x, device_id).float() for x in eouts], 0.)
+    eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
     ctc_log_probs = None
     if params['recog_ctc_weight'] > 0:
-        ctc_log_probs = torch.softmax(torch.FloatTensor(batch_size, emax, VOCAB), dim=-1)
+        ctc_logits = torch.FloatTensor(batch_size, emax, VOCAB, device=device)
+        ctc_log_probs = torch.softmax(ctc_logits, dim=-1)
     lm = None
     if params['recog_lm_weight'] > 0:
         args_lm = make_args_rnnlm()
         module = importlib.import_module('neural_sp.models.lm.rnnlm')
-        lm = module.RNNLM(args_lm)
+        lm = module.RNNLM(args_lm).to(device)
     lm_second = None
     if params['recog_lm_second_weight'] > 0:
         args_lm = make_args_rnnlm()
         module = importlib.import_module('neural_sp.models.lm.rnnlm')
-        lm_second = module.RNNLM(args_lm)
+        lm_second = module.RNNLM(args_lm).to(device)
     lm_second_bwd = None
     if params['recog_lm_bwd_weight'] > 0:
         args_lm = make_args_rnnlm()
         module = importlib.import_module('neural_sp.models.lm.rnnlm')
-        lm_second_bwd = module.RNNLM(args_lm)
+        lm_second_bwd = module.RNNLM(args_lm).to(device)
 
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
 
     module = importlib.import_module('neural_sp.models.seq2seq.decoders.transformer')
     dec = module.TransformerDecoder(**args)
+    dec = dec.to(device)
 
     # TODO(hirofumi0810):
     # recog_lm_state_carry_over

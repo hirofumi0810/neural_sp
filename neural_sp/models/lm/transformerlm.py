@@ -151,12 +151,8 @@ class TransformerLM(LMBase):
 
     def init_memory(self):
         """Initialize memory."""
-        if self.device_id >= 0:
-            return [torch.empty(0, dtype=torch.float).cuda(self.device_id)
-                    for _ in range(self.n_layers)]
-        else:
-            return [torch.empty(0, dtype=torch.float)
-                    for _ in range(self.n_layers)]
+        return [torch.empty(0, dtype=torch.float).to(self.device)
+                for _ in range(self.n_layers)]
 
     def update_memory(self, memory_prev, hidden_states):
         """Update memory.

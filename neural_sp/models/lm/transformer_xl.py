@@ -158,12 +158,8 @@ class TransformerXL(LMBase):
 
     def init_memory(self):
         """Initialize memory."""
-        if self.device_id >= 0:
-            return [torch.empty(0, dtype=torch.float).cuda(self.device_id)
-                    for _ in range(self.n_layers)]
-        else:
-            return [torch.empty(0, dtype=torch.float)
-                    for _ in range(self.n_layers)]
+        return [torch.empty(0, dtype=torch.float).to(self.device)
+                for _ in range(self.n_layers)]
 
     def update_memory(self, memory_prev, hidden_states):
         """Update memory.
@@ -233,10 +229,10 @@ class TransformerXL(LMBase):
         out = self.dropout_emb(self.embed(ys.long()) * self.scale)
         # NOTE: TransformerXL does not use positional encoding in the token embedding
         if self.zero_center_offset:
-            pos_idxs = torch.arange(mlen - 1, -ylen - 1, -1.0, dtype=torch.float)
+            pos_idxs = torch.arange(mlen - 1, -ylen - 1, -1.0, dtype=torch.float, device=self.device)
         else:
-            pos_idxs = torch.arange(ylen + mlen - 1, -1, -1.0, dtype=torch.float)
-        pos_embs = self.pos_emb(pos_idxs, self.device_id)
+            pos_idxs = torch.arange(ylen + mlen - 1, -1, -1.0, dtype=torch.float, device=self.device)
+        pos_embs = self.pos_emb(pos_idxs)
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers

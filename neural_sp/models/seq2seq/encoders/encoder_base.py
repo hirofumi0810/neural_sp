@@ -28,23 +28,12 @@ class EncoderBase(ModelBase):
         logger.info('Overriding EncoderBase class.')
 
     @property
-    def device_id(self):
-        return torch.cuda.device_of(next(self.parameters()).data).idx
-
-    @property
     def output_dim(self):
         return self._odim
 
     @property
     def subsampling_factor(self):
         return self._factor
-
-    @staticmethod
-    def define_name(dir_name, args):
-        raise NotImplementedError
-
-    def reset_parameters(self, param_init):
-        raise NotImplementedError
 
     def forward(self, xs, xlens, task):
         raise NotImplementedError

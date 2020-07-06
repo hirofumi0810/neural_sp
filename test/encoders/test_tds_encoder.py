@@ -44,13 +44,16 @@ def test_forward(args):
 
     batch_size = 4
     xmaxs = [40, 45]
-    device_id = -1
+    device = "cpu"
+
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.tds')
     enc = module.TDSEncoder(**args)
+    enc = enc.to(device)
+
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim'] * args['in_channel']).astype(np.float32)
         xlens = torch.IntTensor([len(x) - i * enc.subsampling_factor for i, x in enumerate(xs)])
-        xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
+        xs = pad_list([np2tensor(x, device).float() for x in xs], 0.)
         enc_out_dict = enc(xs, xlens, task='all')
 
         assert enc_out_dict['ys']['xs'].size(0) == batch_size

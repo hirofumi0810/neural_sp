@@ -19,14 +19,14 @@ from neural_sp.models.torch_utils import tensor2np
 
 
 class BeamSearch(object):
-    def __init__(self, beam_width, eos, ctc_weight, device_id, beam_width_bwd=0):
+    def __init__(self, beam_width, eos, ctc_weight, device, beam_width_bwd=0):
 
         super(BeamSearch, self).__init__()
 
         self.beam_width = beam_width
         self.beam_width_bwd = beam_width_bwd
         self.eos = eos
-        self.device_id = device_id
+        self.device = device
 
         self.ctc_weight = ctc_weight
         # self.lm_weight = lm_weight
@@ -55,9 +55,7 @@ class BeamSearch(object):
 
         ctc_scores, new_ctc_states = ctc_prefix_scorer(hyp, tensor2np(topk_ids[0]), ctc_state,
                                                        new_chunk=new_chunk)
-        total_scores_ctc = torch.from_numpy(ctc_scores)
-        if self.device_id >= 0:
-            total_scores_ctc = total_scores_ctc.cuda(self.device_id)
+        total_scores_ctc = torch.from_numpy(ctc_scores).to(self.device)
         total_scores_topk += total_scores_ctc * self.ctc_weight
         # Sort again
         total_scores_topk, joint_ids_topk = torch.topk(

@@ -9,9 +9,7 @@
 import torch
 
 
-def add_input_noise(xs, std=0.075):
-    noise = torch.normal(torch.zeros(xs.shape[-1]), std)
-    if xs.is_cuda:
-        noise = noise.cuda()
+def add_input_noise(xs, std):
+    noise = torch.normal(torch.zeros(xs.shape[-1]), std).to(xs.device)
     xs.data += noise
     return xs

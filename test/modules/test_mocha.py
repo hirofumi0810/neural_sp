@@ -74,18 +74,21 @@ def test_forward_soft_parallel(args):
     batch_size = 4
     klen = 40
     qlen = 5
-    key = torch.FloatTensor(batch_size, klen, args['kdim'])
-    value = torch.FloatTensor(batch_size, klen, args['kdim'])
-    query = torch.FloatTensor(batch_size, qlen, args['qdim'])
-    src_mask = torch.ones(batch_size, 1, klen).byte()
+    device = "cpu"
+
+    key = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
+    value = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
+    query = torch.FloatTensor(batch_size, qlen, args['qdim'], device=device)
+    src_mask = torch.ones(batch_size, 1, klen, device=device).byte()
 
     module = importlib.import_module('neural_sp.models.modules.mocha')
-    attention = module.MoChA(**args)
-    attention.train()
+    mocha = module.MoChA(**args)
+    mocha = mocha.to(device)
+    mocha.train()
     alpha = None
     for i in range(qlen):
-        out = attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
-                        mode='parallel', cache=True)
+        out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
+                    mode='parallel', cache=True)
         assert len(out) == 4
         cv, alpha, beta, p_choose = out
         assert cv.size() == (batch_size, 1, value.size(2))
@@ -122,12 +125,15 @@ def test_forward_hard(args):
     batch_size = 4
     klen = 40
     qlen = 5
-    key = torch.FloatTensor(batch_size, klen, args['kdim'])
-    value = torch.FloatTensor(batch_size, klen, args['kdim'])
-    query = torch.FloatTensor(batch_size, qlen, args['qdim'])
+    device = "cpu"
+
+    key = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
+    value = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
+    query = torch.FloatTensor(batch_size, qlen, args['qdim'], device=device)
 
     module = importlib.import_module('neural_sp.models.modules.mocha')
     mocha = module.MoChA(**args)
+    mocha = mocha.to(device)
     mocha.eval()
     alpha = None
     for i in range(qlen):

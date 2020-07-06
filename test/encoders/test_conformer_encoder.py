@@ -93,13 +93,16 @@ def test_forward(args):
 
     batch_size = 4
     xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [400, 455]
-    device_id = -1
+    device = "cpu"
+
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.conformer')
     enc = module.ConformerEncoder(**args)
+    enc = enc.to(device)
+
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
         xlens = torch.IntTensor([len(x) - i * enc.subsampling_factor for i, x in enumerate(xs)])
-        xs = pad_list([np2tensor(x, device_id).float() for x in xs], 0.)
+        xs = pad_list([np2tensor(x, device).float() for x in xs], 0.)
 
         # for mode in ['train', 'eval']:  # too slow
         for mode in ['train']:
@@ -112,11 +115,11 @@ def test_forward(args):
                     enc_out_dict = enc(xs, xlens, task='all')
                     # enc._plot_attention()  # too slow
 
-            assert enc_out_dict['ys']['xs'].size(0) == batch_size, xs.size()
-            assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0], xs.size()
+            assert enc_out_dict['ys']['xs'].size(0) == batch_size
+            assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
             if args['n_layers_sub1'] > 0:
-                assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size, xs.size()
-                assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0], xs.size()
+                assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
+                assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0]
             if args['n_layers_sub2'] > 0:
-                assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size, xs.size()
-                assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0], xs.size()
+                assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
+                assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0]

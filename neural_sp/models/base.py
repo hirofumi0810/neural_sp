@@ -51,7 +51,24 @@ class ModelBase(nn.Module):
 
     @property
     def device_id(self):
-        return torch.cuda.device_of(next(self.parameters())).idx
+        if hasattr(self, '_device_id'):
+            return self._device_id
+        self._device_id = torch.cuda.device_of(next(self.parameters())).idx
+        return self._device_id
+
+    @property
+    def device(self):
+        if hasattr(self, '_device'):
+            return self._device
+        self._device = next(self.parameters()).device
+        return self._device
+
+    @staticmethod
+    def define_name(dir_name, args):
+        raise NotImplementedError
+
+    def reset_parameters(self, param_init):
+        raise NotImplementedError
 
     def init_forget_gate_bias_with_one(self):
         """Initialize bias in forget gate with 1. See detail in
@@ -66,8 +83,8 @@ class ModelBase(nn.Module):
                 p.data[start:end].fill_(1.)
                 logger.info('Initialize %s with 1 (bias in forget gate)' % (n))
 
-    def add_weight_noise(self, std=0.075):
-        """Add variational weight noise to weight parametesr.
+    def add_weight_noise(self, std):
+        """Add variational Gaussian noise to model parameters.
 
         Args:
             std (float): standard deviation

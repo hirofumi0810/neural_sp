@@ -234,7 +234,7 @@ class TransformerDecoder(DecoderBase):
                            choices=['scaled_dot', 'add', 'mocha'],
                            help='type of attention mechasnism for Transformer decoder')
         group.add_argument('--transformer_dec_pe_type', type=str, default='add',
-                           choices=['add', 'concat', 'none', '1dconv3L'],
+                           choices=['add', 'none', '1dconv3L'],
                            help='type of positional encoding for the Transformer decoder')
         group.add_argument('--dropout_dec_layer', type=float, default=0.0,
                            help='LayerDrop probability for Transformer decoder layers')
@@ -259,8 +259,8 @@ class TransformerDecoder(DecoderBase):
                             help='1dconv for MMA')
         parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
                             help='quantity loss weight for MMA')
-        parser.add_argument('--mocha_latency_metric', type=str, default=False,
-                            choices=[False, 'ctc_sync'],
+        parser.add_argument('--mocha_latency_metric', type=str, default='',
+                            choices=['', 'ctc_sync'],
                             help='differentiable latency metric for MMA')
         parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
                             help='latency loss weight for MMA')
@@ -280,8 +280,8 @@ class TransformerDecoder(DecoderBase):
 
         dir_name += str(args.transformer_d_model) + 'dmodel'
         dir_name += str(args.transformer_d_ff) + 'dff'
-        if args.transformer_d_ff_bottleneck_dim > 0:
-            dir_name += str(args.transformer_d_ff_bottleneck_dim) + 'bn'
+        if args.transformer_ffn_bottleneck_dim > 0:
+            dir_name += str(args.transformer_ffn_bottleneck_dim) + 'bn'
         dir_name += str(args.dec_n_layers) + 'L'
         dir_name += str(args.transformer_n_heads) + 'H'
         dir_name += 'pe' + str(args.transformer_dec_pe_type)
@@ -340,12 +340,8 @@ class TransformerDecoder(DecoderBase):
 
     def init_memory(self):
         """Initialize memory."""
-        if self.device_id >= 0:
-            return [torch.empty(0, dtype=torch.float).cuda(self.device_id)
-                    for _ in range(self.n_layers)]
-        else:
-            return [torch.empty(0, dtype=torch.float)
-                    for _ in range(self.n_layers)]
+        return [torch.empty(0, dtype=torch.float, device=self.device)
+                for _ in range(self.n_layers)]
 
     def update_memory(self, memory_prev, hidden_states):
         """Update memory.
@@ -380,7 +376,7 @@ class TransformerDecoder(DecoderBase):
 
     def forward(self, eouts, elens, ys, task='all',
                 teacher_logits=None, recog_params={}, idx2token=None):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
@@ -397,7 +393,7 @@ class TransformerDecoder(DecoderBase):
         """
         observation = {'loss': None, 'loss_att': None, 'loss_ctc': None, 'loss_mbr': None,
                        'acc_att': None, 'ppl_att': None}
-        loss = eouts.new_zeros((1,))
+        loss = eouts.new_zeros(1)
 
         # CTC loss
         trigger_points = None
@@ -436,17 +432,14 @@ class TransformerDecoder(DecoderBase):
         observation['loss'] = tensor2scalar(loss)
         return loss, observation
 
-    def forward_att(self, eouts, elens, ys,
-                    return_logits=False, teacher_logits=None, trigger_points=None):
+    def forward_att(self, eouts, elens, ys, trigger_points=None):
         """Compute XE loss for the Transformer decoder.
 
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
             ys (list): length `B`, each of which contains a list of size `[L]`
-            return_logits (bool): return logits for knowledge distillation
-            teacher_logits (FloatTensor): `[B, L, vocab]`
-            trigger_points (IntTensor): `[B, T]`
+            trigger_points (IntTensor): `[B, L]`
         Returns:
             loss (FloatTensor): `[1]`
             acc (float): accuracy for token prediction
@@ -455,7 +448,7 @@ class TransformerDecoder(DecoderBase):
 
         """
         # Append <sos> and <eos>
-        ys_in, ys_out, ylens = append_sos_eos(eouts, ys, self.eos, self.eos, self.pad, self.bwd)
+        ys_in, ys_out, ylens = append_sos_eos(ys, self.eos, self.eos, self.pad, self.device, self.bwd)
         if not self.training:
             self.data_dict['elens'] = tensor2np(elens)
             self.data_dict['ylens'] = tensor2np(ylens)
@@ -471,7 +464,7 @@ class TransformerDecoder(DecoderBase):
         tgt_mask = tgt_mask & causal_mask  # `[B, L (query), L (key)]`
 
         # Create source-target mask
-        src_mask = make_pad_mask(elens, self.device_id).unsqueeze(1).repeat([1, ymax, 1])  # `[B, L, T]`
+        src_mask = make_pad_mask(elens.to(self.device)).unsqueeze(1).repeat([1, ymax, 1])  # `[B, L, T]`
 
         # external LM integration
         lmout = None
@@ -481,16 +474,15 @@ class TransformerDecoder(DecoderBase):
                 lmout, lmstate, _ = self.lm.predict(ys_in, None)
             lmout = self.lm_output_proj(lmout)
 
-        out = self.pos_enc(self.embed(ys_in))  # scaled
+        out = self.pos_enc(self.embed(ys_in))  # scaled + dropout
 
         mems = self.init_memory()
         pos_embs = None
         if self.memory_transformer:
-            out = self.dropout_emb(out)
             # NOTE: TransformerXL does not use positional encoding in the token embedding
             # adopt zero-centered offset
-            pos_idxs = torch.arange(mlen - 1, -ymax - 1, -1.0, dtype=torch.float)
-            pos_embs = self.pos_emb(pos_idxs, self.device_id)
+            pos_idxs = torch.arange(mlen - 1, -ymax - 1, -1.0, dtype=torch.float, device=self.device)
+            pos_embs = self.pos_emb(pos_idxs)
 
         hidden_states = [out]
         xy_aws_layers = []
@@ -519,10 +511,6 @@ class TransformerDecoder(DecoderBase):
                 if layer.yy_aws_lm is not None:
                     self.aws_dict['yy_aws_lm_layer%d' % lth] = tensor2np(layer.yy_aws_lm)
         logits = self.output(self.norm_out(out))
-
-        # for knowledge distillation
-        if return_logits:
-            return logits
 
         # Compute XE loss (+ label smoothing)
         loss, ppl = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
@@ -580,7 +568,7 @@ class TransformerDecoder(DecoderBase):
 
             new_cache = [None] * self.n_layers
             xy_aws_layers = []
-            out = self.pos_enc(self.embed(ys))  # scaled
+            out = self.pos_enc(self.embed(ys))  # scaled + dropout
             for lth, layer in enumerate(self.layers):
                 out = layer(out, causal_mask, eouts, None, cache=cache[lth])
                 new_cache[lth] = out
@@ -734,7 +722,7 @@ class TransformerDecoder(DecoderBase):
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
 
-            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device_id)
+            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device)
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
@@ -780,16 +768,15 @@ class TransformerDecoder(DecoderBase):
                 causal_mask = eouts.new_ones(t + 1, t + 1).byte()
                 causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0).repeat([ys.size(0), 1, 1])
 
-                out = self.pos_enc(self.embed(ys))  # scaled
+                out = self.pos_enc(self.embed(ys))  # scaled + dropout
 
                 mlen = 0  # TODO: fix later
                 if self.memory_transformer:
                     # NOTE: TransformerXL does not use positional encoding in the token embedding
                     mems = self.init_memory()
                     # adopt zero-centered offset
-                    pos_idxs = torch.arange(mlen - 1, -(t + 1) - 1, -1.0, dtype=torch.float)
-                    pos_embs = self.pos_emb(pos_idxs, self.device_id)
-                    out = self.dropout_emb(out)
+                    pos_idxs = torch.arange(mlen - 1, -(t + 1) - 1, -1.0, dtype=torch.float, device=self.device)
+                    pos_embs = self.pos_emb(pos_idxs)
                     hidden_states = [out]
 
                 n_heads_total = 0
@@ -828,7 +815,7 @@ class TransformerDecoder(DecoderBase):
                 # for the ensemble
                 ensmbl_new_cache = [[None] * dec.n_layers for dec in ensmbl_decs]
                 for i_e, dec in enumerate(ensmbl_decs):
-                    out_e = dec.pos_enc(dec.embed(ys))  # scaled
+                    out_e = dec.pos_enc(dec.embed(ys))  # scaled + dropout
                     eouts_e = ensmbl_eouts[i_e][b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
                     for lth in range(dec.n_layers):
                         out_e = dec.layers[lth](out_e, causal_mask, eouts_e, None,
