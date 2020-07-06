@@ -49,7 +49,8 @@ def make_args(**kwargs):
         param_init='xavier_uniform',
         chunk_size_left=0,
         chunk_size_current=0,
-        chunk_size_right=0
+        chunk_size_right=0,
+        latency_control_type='reshape',
     )
     args.update(kwargs)
     return args
@@ -68,8 +69,10 @@ def make_args(**kwargs):
         # projection
         ({'last_proj_dim': 10}),
         # LC-Conformer
-        ({'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
+        ({'latency_control_type': 'reshape', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'latency_control_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
+        ({'latency_control_type': 'mask', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'latency_control_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
         # Multi-task
         ({'n_layers_sub1': 2}),
         ({'n_layers_sub1': 2, 'n_layers_sub2': 1}),
@@ -86,7 +89,10 @@ def make_args(**kwargs):
         ({'subsample': "1_2_1", 'subsample_type': 'concat'}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
         ({'subsample': "1_2_1", 'subsample_type': 'conv1d'}),
-
+        ({'subsample': "1_2_1", 'subsample_type': 'max_pool',
+          'latency_control_type': 'reshape', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'subsample': "1_2_1", 'subsample_type': 'max_pool',
+          'latency_control_type': 'mask', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
     ]
 )
 def test_forward(args):
