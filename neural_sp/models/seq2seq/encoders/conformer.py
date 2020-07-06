@@ -346,7 +346,7 @@ class ConformerEncoder(EncoderBase):
             pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
             pos_embs = self.pos_emb(pos_idxs)
 
-            xx_mask = None  # NOTE: no mask to mask all masked region
+            xx_mask = None  # NOTE: no mask to avoid all masked region
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:

@@ -407,7 +407,7 @@ class TransformerEncoder(EncoderBase):
             else:
                 xs = self.pos_enc(xs, scale=True)
 
-            xx_mask = None  # NOTE: no mask to mask all masked region
+            xx_mask = None  # NOTE: no mask to avoid all masked region
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
