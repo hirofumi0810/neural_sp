@@ -7,14 +7,12 @@
 """Transformer encoder."""
 
 import copy
-from distutils.util import strtobool
 import logging
 import math
 import numpy as np
 import random
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_sp.models.modules.initialization import init_like_transformer_xl
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
@@ -24,12 +22,10 @@ from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedF
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
-from neural_sp.models.seq2seq.encoders.rnn import Padding
 from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import MaxpoolSubsampler
-from neural_sp.models.seq2seq.encoders.utils import add_segment_embedding
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
@@ -52,7 +48,6 @@ class TransformerEncoder(EncoderBase):
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
-        input_bottleneck_dim (int):
         last_proj_dim (int): dimension of the last projection layer
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
@@ -81,22 +76,19 @@ class TransformerEncoder(EncoderBase):
         chunk_size_current (int): current chunk size for latency-controlled Transformer encoder
         chunk_size_right (int): right chunk size for latency-controlled Transformer encoder
         latency_control_type (str): implementation methods of latency-controlled Conformer encoder
-        segment_embedding (bool):
-        funnel_donwsample (bool):
 
     """
 
     def __init__(self, input_dim, enc_type, n_heads,
                  n_layers, n_layers_sub1, n_layers_sub2,
-                 d_model, d_ff, ffn_bottleneck_dim, input_bottleneck_dim, last_proj_dim,
+                 d_model, d_ff, ffn_bottleneck_dim, last_proj_dim,
                  pe_type, layer_norm_eps, ffn_activation,
                  dropout_in, dropout, dropout_att, dropout_layer,
                  subsample, subsample_type, n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init,
-                 chunk_size_left, chunk_size_current, chunk_size_right, latency_control_type,
-                 segment_embedding, funnel_donwsample, rnn_n_layers):
+                 chunk_size_left, chunk_size_current, chunk_size_right, latency_control_type):
 
         super(TransformerEncoder, self).__init__()
 
@@ -136,8 +128,6 @@ class TransformerEncoder(EncoderBase):
             assert pe_type == 'relative'
             assert chunk_size_left > 0
             assert chunk_size_current > 0
-
-        self.funnel_donwsample = funnel_donwsample
 
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -203,21 +193,6 @@ class TransformerEncoder(EncoderBase):
         if self.chunk_size_right > 0:
             assert self.chunk_size_right % self._factor == 0
 
-        # BLSTM layers before the first Transformer block
-        if rnn_n_layers > 0:
-            bidir_sum_fwd_bwd = True
-            self.rnn = nn.ModuleList()
-            self.dropout = nn.Dropout(p=dropout)
-            for lth in range(rnn_n_layers):
-                self.rnn += [nn.LSTM(self._odim, d_model, 1, batch_first=True,
-                                     bidirectional=True)]
-            self.padding = Padding(bidir_sum_fwd_bwd=bidir_sum_fwd_bwd)
-            self._odim = d_model if bidir_sum_fwd_bwd else d_model * 2
-            self.reset_rnn_parameters(param_init=0.1)
-        else:
-            self.rnn = None
-            self.padding = None
-
         self.pos_emb = None
         self.u = None
         self.v = None
@@ -231,20 +206,11 @@ class TransformerEncoder(EncoderBase):
         else:
             self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
 
-        self.segment_emb = None
-        if segment_embedding:
-            max_len = 5000
-            max_n_segments = math.ceil(max_len / chunk_size_current)
-            self.segment_emb = nn.Embedding(max_n_segments, d_model, padding_idx=None)
-            nn.init.normal_(self.segment_emb.weight, mean=0., std=d_model**-0.5)
-
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
             d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init,
             relative_attention=self.pos_emb is not None,
-            ffn_bottleneck_dim=ffn_bottleneck_dim,
-            input_bottleneck_dim=input_bottleneck_dim,
-            funnel_donwsample=funnel_donwsample))
+            ffn_bottleneck_dim=ffn_bottleneck_dim))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
@@ -319,14 +285,6 @@ class TransformerEncoder(EncoderBase):
         group.add_argument('--lc_type', type=str, default='reshape',
                            choices=['reshape', 'mask'],
                            help='implementation methods of latency-controlled Transformer encoder')
-        group.add_argument('--segment_embedding', type=strtobool, default=False,
-                           help='add segment embedding for each block in the chunk hopping mechanism')
-        group.add_argument('--funnel_donwsample', type=str, default=False,
-                           choices=['avg_pool', 'max_pool', False],
-                           help='Funnel Transformer')
-        # Hybrid BLSTM-Transformer
-        parser.add_argument('--enc_rnn_n_layers', type=int, default=0,
-                            help='number of encoder BLSTM layers before the first Transformer block')
         return parser
 
     @staticmethod
@@ -334,8 +292,6 @@ class TransformerEncoder(EncoderBase):
         if 'conv' in args.enc_type:
             dir_name = ConvEncoder.define_name(dir_name, args)
 
-        if getattr(args, 'enc_rnn_n_layers', 0) > 0:
-            dir_name += '_blstm' + str(args.enc_rnn_n_layers) + 'L'
         dir_name += str(args.transformer_d_model) + 'dmodel'
         dir_name += str(args.transformer_d_ff) + 'dff'
         if args.transformer_ffn_bottleneck_dim > 0:
@@ -343,16 +299,11 @@ class TransformerEncoder(EncoderBase):
         dir_name += str(args.enc_n_layers) + 'L'
         dir_name += str(args.transformer_n_heads) + 'H'
         dir_name += 'pe' + str(args.transformer_enc_pe_type)
-        if getattr(args, 'segment_embedding', False):
-            dir_name += '_segemb'
         if args.dropout_enc_layer > 0:
             dir_name += 'droplayer' + str(args.dropout_enc_layer)
         if args.lc_chunk_size_left > 0 or getattr(args, 'lc_chunk_size_current', 0) > 0 or args.lc_chunk_size_right > 0:
             dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
                 str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
-            dir_name += '_' + args.lc_type
-        if getattr(args, 'funnel_donwsample', False):
-            dir_name += '_funnel' + args.funnel_donwsample
         return dir_name
 
     def reset_parameters(self, param_init):
@@ -378,21 +329,6 @@ class TransformerEncoder(EncoderBase):
             if self.bridge_sub2 is not None:
                 nn.init.xavier_uniform_(self.bridge_sub2.weight)
                 nn.init.constant_(self.bridge_sub2.bias, 0.)
-
-    def reset_rnn_parameters(self, param_init):
-        """Initialize RNN parameters with uniform distribution."""
-        logger.info('===== Initialize RNN in %s with uniform distribution =====' % self.__class__.__name__)
-        for n, p in self.named_parameters():
-            if 'conv' in n or 'layers' in n:
-                continue  # for CNN layers before RNN layers/Transformer layers after RNN layers
-            if p.dim() == 1:
-                nn.init.constant_(p, 0.)  # bias
-                logger.info('Initialize %s with %s / %.3f' % (n, 'constant', 0.))
-            elif p.dim() == 2:
-                nn.init.uniform_(p, a=-param_init, b=param_init)
-                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
-            else:
-                raise ValueError(n)
 
     def init_memory(self):
         """Initialize memory."""
@@ -479,12 +415,6 @@ class TransformerEncoder(EncoderBase):
             xs = xs.contiguous().view(bs, -1, xs.size(2))
             xs = xs[:, :emax]  # `[B, emax, d_model]`
 
-        if self.rnn is not None:
-            for lth in range(len(self.rnn)):
-                self.rnn[lth].flatten_parameters()  # for multi-GPUs
-                xs, _ = self.padding(xs, None, self.rnn[lth])
-                xs = self.dropout(xs)
-
         if self.latency_controlled:
             # streaming Transformer encoder
             emax = xlens.max().item()
@@ -497,48 +427,20 @@ class TransformerEncoder(EncoderBase):
             else:
                 xs = self.pos_enc(xs, scale=True)
 
-            if self.segment_emb is not None:
-                xs = add_segment_embedding(xs.contiguous().view(bs, n_chunks, -1, xs.size(2)),
-                                           self.segment_emb)
-
-            if self.lc_type == 'reshape':
-                xx_mask = None  # NOTE: no mask to avoid all masked region
-            elif self.lc_type == 'mask':
-                xx_mask = make_pad_mask(xlens.to(self.device))
-                xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
-                for chunk_idx in range(n_chunks):
-                    offset = chunk_idx * N_c
-                    xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
-                    xx_mask[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
-            else:
-                raise ValueError
-
+            xx_mask = None  # NOTE: no mask to avoid all masked region
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
                     if self.lc_type == 'reshape':
                         n_heads = layer.xx_aws.size(1)
-                        if self.funnel_donwsample:
-                            xx_aws = layer.xx_aws[:, :, N_l // 2:N_l // 2 + N_c // 2, N_l:N_l + N_c]
-                            xx_aws = xx_aws.view(bs, n_chunks, n_heads, N_c // 2, N_c)
-                            xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax // 2, emax)
-                            for chunk_idx in range(n_chunks):
-                                offset = chunk_idx * N_c
-                                emax_chunk = xx_aws_center[:, :, :, offset:offset + N_c].size(3)
-                                xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk // 2, :emax_chunk]
-                                xx_aws_center[:, :,
-                                              offset // 2:offset // 2 + N_c // 2,
-                                              offset:offset + N_c] = xx_aws_chunk
-                        else:
-                            xx_aws = layer.xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
-                            xx_aws = xx_aws.view(bs, n_chunks, n_heads, N_c, N_c)
-                            xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
-                            for chunk_idx in range(n_chunks):
-                                offset = chunk_idx * N_c
-                                emax_chunk = xx_aws_center[:, :, offset:offset + N_c].size(2)
-                                xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk, :emax_chunk]
-                                xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
-                        self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
+                        xx_aws = layer.xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
+                        xx_aws = xx_aws.view(bs, n_chunks, n_heads, N_c, N_c)
+                        xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
+                        for chunk_idx in range(n_chunks):
+                            offset = chunk_idx * N_c
+                            emax_chunk = xx_aws_center[:, :, offset:offset + N_c].size(2)
+                            xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk, :emax_chunk]
+                            xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
                     elif self.lc_type == 'mask':
                         self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
                     else:
@@ -576,10 +478,7 @@ class TransformerEncoder(EncoderBase):
                 pos_embs = None
 
             # Create the self-attention mask
-            if self.funnel_donwsample:
-                xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, (xs.size(1) + 1) // 2, 1])
-            else:
-                xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
+            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
@@ -602,11 +501,7 @@ class TransformerEncoder(EncoderBase):
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
                     # Create the self-attention mask
-                    if self.funnel_donwsample:
-                        xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(
-                            1).repeat([1, (xs.size(1) + 1) // 2, 1])
-                    else:
-                        xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
+                    xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
                     if self.pe_type == 'relative':
                         # Create sinusoidal positional embeddings for relative positional encoding
                         pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
@@ -654,27 +549,17 @@ class TransformerEncoderBlock(nn.Module):
         param_init (str): parameter initialization method
         relative_attention (bool): relative postional encoding
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
-        input_bottleneck_dim (int): inter bottleneck dimension like MobileBERT
-        funnel_donwsample (bool):
 
     """
 
     def __init__(self, d_model, d_ff, n_heads,
                  dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init,
-                 relative_attention=False, ffn_bottleneck_dim=0,
-                 input_bottleneck_dim=0, funnel_donwsample=False):
+                 relative_attention=False, ffn_bottleneck_dim=0):
         super(TransformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
         self.relative_attention = relative_attention
-        self.input_bottleneck_dim = input_bottleneck_dim
-        self.funnel_donwsample = funnel_donwsample
-
-        output_dim = d_model
-        if input_bottleneck_dim > 0:
-            self.linear_in = nn.Linear(d_model, input_bottleneck_dim)
-            output_dim = input_bottleneck_dim
 
         # self-attention
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -682,18 +567,15 @@ class TransformerEncoderBlock(nn.Module):
         self.self_attn = mha(kdim=d_model,
                              qdim=d_model,
                              adim=d_model,
-                             odim=output_dim,
+                             odim=d_model,
                              n_heads=n_heads,
                              dropout=dropout_att,
                              param_init=param_init)
 
         # position-wise feed-forward
-        self.norm2 = nn.LayerNorm(output_dim, eps=layer_norm_eps)
-        self.feed_forward = FFN(output_dim, d_ff, dropout, ffn_activation, param_init,
+        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
                                 ffn_bottleneck_dim)
-
-        if input_bottleneck_dim > 0:
-            self.linear_out = nn.Linear(input_bottleneck_dim, d_model)
 
         self.dropout = nn.Dropout(dropout)
         self.dropout_layer = dropout_layer
@@ -728,31 +610,9 @@ class TransformerEncoderBlock(nn.Module):
             return xs
 
         # self-attention
-        if self.input_bottleneck_dim > 0:
-            residual = self.linear_in(xs)
-        else:
-            residual = xs
+        residual = xs
         xs = self.norm1(xs)
-        if self.funnel_donwsample:
-            xmax = xs.size(1)
-            if self.funnel_donwsample == 'avg_pool':
-                xs = F.avg_pool1d(xs.transpose(2, 1), kernel_size=1, stride=1,
-                                  padding=0, ceil_mode=True).transpose(2, 1)
-                q = F.avg_pool1d(xs.transpose(2, 1), kernel_size=2, stride=2,
-                                 padding=0, ceil_mode=True).transpose(2, 1)
-            elif self.funnel_donwsample == 'max_pool':
-                xs = F.max_pool1d(xs.transpose(2, 1), kernel_size=1, stride=1,
-                                  padding=0, ceil_mode=True).transpose(2, 1)
-                q = F.max_pool1d(xs.transpose(2, 1), kernel_size=2, stride=2,
-                                 padding=0, ceil_mode=True).transpose(2, 1)
-            if self.relative_attention:
-                xs_half, self._xx_aws = self.self_attn(xs, q, memory, pos_embs, xx_mask, u, v)  # k/q/m
-            else:
-                xs_half, self._xx_aws = self.self_attn(xs, xs, q, mask=xx_mask)[:2]  # k/v/q
-            # upsampling
-            xs = torch.cat([xs_half[:, t:t + 1].repeat(1, 2, 1)
-                            for t in range(xs_half.size(1))], dim=1)[:, :xmax]
-        elif self.relative_attention:
+        if self.relative_attention:
             xs, self._xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)  # k/q/m
         else:
             xs, self._xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)[:2]  # k/v/q
@@ -763,8 +623,5 @@ class TransformerEncoderBlock(nn.Module):
         xs = self.norm2(xs)
         xs = self.feed_forward(xs)
         xs = self.dropout(xs) + residual
-
-        if self.input_bottleneck_dim > 0:
-            xs = self.linear_out(xs)
 
         return xs
