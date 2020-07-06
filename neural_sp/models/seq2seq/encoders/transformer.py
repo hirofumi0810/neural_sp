@@ -103,6 +103,7 @@ class TransformerEncoder(EncoderBase):
             raise ValueError('Set n_layers_sub1 between 1 to n_layers.')
         if n_layers_sub2 < 0 or (n_layers_sub2 > 1 and n_layers_sub1 < n_layers_sub2):
             raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1.')
+        assert enc_type in ['transformer', 'conv_transformer']
 
         self.d_model = d_model
         self.n_layers = n_layers
