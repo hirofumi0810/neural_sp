@@ -15,7 +15,7 @@ from neural_sp.models.torch_utils import pad_list
 def make_args(**kwargs):
     args = dict(
         input_dim=80,
-        enc_type='transformer',
+        enc_type='conv_transformer',
         n_heads=4,
         n_layers=3,
         n_layers_sub1=0,
@@ -60,43 +60,44 @@ def make_args(**kwargs):
         ({'enc_type': 'transformer'}),
         # 2dCNN-Transformer
         ({'enc_type': 'conv_transformer'}),
-        ({'enc_type': 'conv_transformer', 'input_dim': 240, 'conv_in_channel': 3}),
+        ({'input_dim': 240, 'conv_in_channel': 3}),
         # 1dCNN-Transformer
-        ({'enc_type': 'conv_transformer',
-          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2"}),
-        ({'enc_type': 'conv_transformer',
-          'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2",
+        ({'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2"}),
+        ({'conv_kernel_sizes': "3_3", 'conv_strides': "1_1", 'conv_poolings': "2_2",
           'input_dim': 240, 'conv_in_channel': 3}),
         # positional encoding
         ({'pe_type': 'add'}),
         ({'pe_type': 'relative'}),
         # normalization
-        ({'enc_type': 'conv_transformer', 'conv_batch_norm': True}),
-        ({'enc_type': 'conv_transformer', 'conv_layer_norm': True}),
+        ({'conv_batch_norm': True}),
+        ({'conv_layer_norm': True}),
         # projection
-        ({'enc_type': 'conv_transformer', 'last_proj_dim': 10}),
+        ({'last_proj_dim': 10}),
         # LC-Transformer
-        ({'enc_type': 'transformer', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'enc_type': 'transformer', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
-        ({'enc_type': 'transformer', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64,
+        ({'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
+        ({'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64,
           'pe_type': 'relative'}),
         # Multi-task
-        ({'enc_type': 'transformer', 'n_layers_sub1': 2}),
-        ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1}),
-        ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'last_proj_dim': 10}),
-        ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True}),
-        ({'enc_type': 'transformer', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True,
+        ({'n_layers_sub1': 2}),
+        ({'n_layers_sub1': 2, 'n_layers_sub2': 1}),
+        ({'n_layers_sub1': 2, 'n_layers_sub2': 1, 'last_proj_dim': 10}),
+        ({'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True}),
+        ({'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True,
           'last_proj_dim': 10}),
         # bottleneck
         ({'ffn_bottleneck_dim': 16}),
         # subsampling
         ({'subsample': "1_2_1"}),
-        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1"}),
-        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'drop'}),
-        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'concat'}),
-        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
-        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'conv1d'}),
-        ({'enc_type': 'conv_transformer', 'subsample': "1_2_1", 'subsample_type': 'max_pool', 'pe_type': 'relative'}),
+        ({'subsample': "1_2_1"}),
+        ({'subsample': "1_2_1", 'subsample_type': 'drop'}),
+        ({'subsample': "1_2_1", 'subsample_type': 'concat'}),
+        ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
+        ({'subsample': "1_2_1", 'subsample_type': 'conv1d'}),
+        ({'subsample': "1_2_1", 'subsample_type': 'max_pool', 'pe_type': 'relative'}),
+        ({'subsample': "1_2_1", 'subsample_type': 'max_pool',
+          'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+
     ]
 )
 def test_forward(args):
