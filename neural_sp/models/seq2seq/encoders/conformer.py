@@ -71,9 +71,10 @@ class ConformerEncoder(EncoderBase):
         conv_param_init (float): only for CNN layers before Conformer layers
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (str): parameter initialization method
-        chunk_size_left (int): left chunk size for time-restricted Conformer encoder
-        chunk_size_current (int): current chunk size for time-restricted Conformer encoder
-        chunk_size_right (int): right chunk size for time-restricted Conformer encoder
+        chunk_size_left (int): left chunk size for latency-controlled Conformer encoder
+        chunk_size_current (int): current chunk size for latency-controlled Conformer encoder
+        chunk_size_right (int): right chunk size for latency-controlled Conformer encoder
+        latency_control_type (str): implementation methods of latency-controlled Conformer encoder
 
     """
 
@@ -86,7 +87,7 @@ class ConformerEncoder(EncoderBase):
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init,
-                 chunk_size_left, chunk_size_current, chunk_size_right):
+                 chunk_size_left, chunk_size_current, chunk_size_right, latency_control_type):
 
         super(ConformerEncoder, self).__init__()
 
@@ -115,6 +116,9 @@ class ConformerEncoder(EncoderBase):
         self.chunk_size_current = chunk_size_current
         self.chunk_size_right = chunk_size_right
         self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
+        self.lc_type = latency_control_type
+        # reshape) not lookahead frames in CNN layers, but requires some additional computations
+        # mask) there are some lookahead frames in CNN layers, no additional computations
 
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -242,7 +246,7 @@ class ConformerEncoder(EncoderBase):
                                help='nonlinear activation for the FFN layer')
             group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                                choices=['xavier_uniform', 'pytorch'],
-                               help='parameter initializatin')
+                               help='parameter initialization')
         # NOTE: These checks are important to avoid conflict with args in Transformer decoder
 
         # Conformer encoder specific
@@ -260,6 +264,9 @@ class ConformerEncoder(EncoderBase):
                            help='current chunk size (and hop size) for latency-controlled Conformer encoder')
         group.add_argument('--lc_chunk_size_right', type=int, default=0,
                            help='right chunk size for latency-controlled Conformer encoder')
+        group.add_argument('--lc_type', type=str, default='reshape',
+                           choices=['reshape', 'mask'],
+                           help='implementation methods of latency-controlled Conformer encoder')
         return parser
 
     @staticmethod
@@ -305,14 +312,14 @@ class ConformerEncoder(EncoderBase):
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
-            xlens (list): `[B]`
-            task (str): not supported now
+            xlens (InteTensor): `[B]` (on CPU)
+            task (str): ys/ys_sub1/ys_sub2
             use_cache (bool):
             streaming (bool): streaming encoding
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T, d_model]`
-                xlens (list): `[B]`
+                xlens (InteTensor): `[B]` (on CPU)
 
         """
         eouts = {'ys': {'xs': None, 'xlens': None},
@@ -322,11 +329,18 @@ class ConformerEncoder(EncoderBase):
         N_l = self.chunk_size_left
         N_c = self.chunk_size_current
         N_r = self.chunk_size_right
-
         bs, xmax, idim = xs.size()
+        n_chunks = 0
 
         if self.latency_controlled:
-            xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
+            if self.lc_type == 'reshape':
+                xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
+            elif self.lc_type == 'mask':
+                # xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
+                xs = chunkwise(xs, 0, N_c, 0)  # `[B * n_chunks, N_c, idim]`
+            else:
+                raise ValueError
+            n_chunks = xs.size(0) // bs
 
         if self.conv is None:
             xs = self.embed(xs)
@@ -337,30 +351,53 @@ class ConformerEncoder(EncoderBase):
             N_c = N_c // self.conv.subsampling_factor
             N_r = N_r // self.conv.subsampling_factor
 
+        if self.lc_type == 'mask':
+            # Extract the center region
+            emax = xlens.max().item()
+            # xs = xs[:, N_l:N_l + N_c]  # `[B * n_chunks, N_c, d_model]`
+            xs = xs.contiguous().view(bs, -1, xs.size(2))
+            xs = xs[:, :emax]  # `[B, emax, d_model]`
+
         if self.latency_controlled:
             # streaming Conformer encoder
-            n_chunks = xs.size(0) // bs
             emax = xlens.max().item()
 
             xs = xs * self.scale
             pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
             pos_embs = self.pos_emb(pos_idxs)
 
-            xx_mask = None  # NOTE: no mask to avoid all masked region
+            if self.lc_type == 'reshape':
+                xx_mask = None  # NOTE: no mask to avoid all masked region
+            elif self.lc_type == 'mask':
+                xx_mask = make_pad_mask(xlens.to(self.device))
+                xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
+                for chunk_idx in range(n_chunks):
+                    offset = chunk_idx * N_c
+                    xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
+                    xx_mask[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
+            else:
+                raise ValueError
+
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
-                    n_heads = layer.xx_aws.size(1)
-                    xx_aws = layer.xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
-                    xx_aws = xx_aws.view(bs, n_chunks, n_heads, N_c, N_c)
-                    xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
-                    for chunk_idx in range(n_chunks):
-                        offset = chunk_idx * N_c
-                        emax_chunk = xx_aws_center[:, :, offset:offset + N_c].size(2)
-                        xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk, :emax_chunk]
-                        xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
-                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
+                    if self.lc_type == 'reshape':
+                        n_heads = layer.xx_aws.size(1)
+                        xx_aws = layer.xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
+                        xx_aws = xx_aws.view(bs, n_chunks, n_heads, N_c, N_c)
+                        xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
+                        for chunk_idx in range(n_chunks):
+                            offset = chunk_idx * N_c
+                            emax_chunk = xx_aws_center[:, :, offset:offset + N_c].size(2)
+                            xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk, :emax_chunk]
+                            xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
+                        self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
+                    elif self.lc_type == 'mask':
+                        self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
+                    else:
+                        raise ValueError
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
+
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
                     emax = xlens.max().item()
@@ -370,11 +407,19 @@ class ConformerEncoder(EncoderBase):
                     # Create sinusoidal positional embeddings for relative positional encoding
                     pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
                     pos_embs = self.pos_emb(pos_idxs)
+                    if self.lc_type == 'mask':
+                        xx_mask = make_pad_mask(xlens.to(self.device))
+                        xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
+                        for chunk_idx in range(n_chunks):
+                            offset = chunk_idx * N_c
+                            xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
+                            xx_mask[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
 
             # Extract the center region
-            xs = xs[:, N_l:N_l + N_c]  # `[B * n_chunks, N_c, d_model]`
-            xs = xs.contiguous().view(bs, -1, xs.size(2))
-            xs = xs[:, :emax]
+            if self.lc_type == 'reshape':
+                xs = xs[:, N_l:N_l + N_c]  # `[B * n_chunks, N_c, d_model]`
+                xs = xs.contiguous().view(bs, -1, xs.size(2))
+                xs = xs[:, :emax]
 
         else:
             xs = xs * self.scale
