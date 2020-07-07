@@ -64,5 +64,15 @@ class BeamSearch(object):
         new_ctc_states = new_ctc_states[joint_ids_topk[0].cpu().numpy()]
         return new_ctc_states, total_scores_ctc, total_scores_topk
 
-    def add_lm_score(self):
+    def add_lm_score(self, after_topk=True):
         raise NotImplementedError
+
+    def update_rnnlm_state_batch(self, lm, hyps, y):
+        lmout, lmstate, scores_lm = None, None, None
+        if lm is not None:
+            if hyps[0]['lmstate'] is not None:
+                lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in hyps], dim=1)
+                lm_cxs = torch.cat([beam['lmstate']['cxs'] for beam in hyps], dim=1)
+                lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
+            lmout, lmstate, scores_lm = lm.predict(y, lmstate)
+        return lmout, lmstate, scores_lm
