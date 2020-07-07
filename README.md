@@ -123,7 +123,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### Librispeech (WER)
 | model         | dev-clean | dev-other | test-clean | test-other |
 | -----------   | --------- | --------- | ---------- | ---------- |
-| Transformer   | 2.3       | 5.8       | 2.5        | 6.1        |
+| Transformer   | 2.2       | 5.4       | 2.4        | 5.7        |
 | Streaming MMA | 2.5       | 6.9       | 2.7        | 7.1        |
 
 ### TEDLIUM2 (WER)

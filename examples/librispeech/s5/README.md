@@ -63,6 +63,24 @@
     - ctc_weight: 0.2
 
 
+### Transformer + speed perturb + SpecAugment, large size
+| Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
+| -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
+|dev-clean|2703|54402|98.1|1.8|0.2|0.2|**2.2**|27.5|
+|dev-other|2864|50948|95.3|4.3|0.4|0.7|**5.4**|43.0|
+|test-clean|2620|52576|97.9|1.9|0.2|0.3|**2.4**|29.0|
+|test-other|2939|52343|95.1|4.4|0.5|0.8|**5.7**|46.7|
+
+  - conf: `conf/asr/transformer/transformer_768dmodel_3072dff_8H.yaml`
+  - conf2: `conf/data/spec_augment_speed_perturb_transformer_subsample8.yaml`
+  - lm_conf: `conf/lm/rnnlm_6L.yaml`
+  - decoding parameters
+    - epoch: 35
+    - n_average: 10
+    - beam width: 10
+    - ctc_weight: 0.2
+
+
 ### Transformer, subsample1/8
 | Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
 | -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
