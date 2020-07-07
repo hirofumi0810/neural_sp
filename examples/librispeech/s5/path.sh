@@ -1,5 +1,4 @@
 export NEURALSP_ROOT=$PWD/../../..
-# export TOOL=/home/inaguma/tool/neural_sp
 export TOOL=/home/inaguma/tool/neural_sp_v2
 export CONDA=$TOOL/miniconda
 export KALDI_ROOT=$TOOL/kaldi

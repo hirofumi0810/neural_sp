@@ -125,7 +125,7 @@ for set in dev_clean dev_other test_clean test_other; do
         elif [ $(echo ${model} | grep '460') ]; then
             recog_set=${data}/dataset/${set}_sp_460_wpbpe10000.tsv
         elif [ $(echo ${model} | grep '100') ]; then
-            recog_set=${data}/dataset/${set}_sp_100_wpbpe1000.tsv
+            recog_set=${data}/dataset/${set}_sp_100_wpbpe10000.tsv
         fi
     else
         if [ $(echo ${model} | grep '960') ]; then
@@ -133,7 +133,7 @@ for set in dev_clean dev_other test_clean test_other; do
         elif [ $(echo ${model} | grep '460') ]; then
             recog_set=${data}/dataset/${set}_460_wpbpe10000.tsv
         elif [ $(echo ${model} | grep '100') ]; then
-            recog_set=${data}/dataset/${set}_100_wpbpe1000.tsv
+            recog_set=${data}/dataset/${set}_100_wpbpe10000.tsv
         fi
     fi
 
