@@ -44,12 +44,12 @@ def compute_susampling_factor(args):
         if 'conv' in args.enc_type and args.conv_poolings:
             args.subsample_factor_sub1 = args.subsample_factor * \
                 int(np.prod(subsample[:args.enc_n_layers_sub1 - 1]))
-        args.subsample_factor_sub1 *= args.subsample_factor
+        args.subsample_factor_sub1 *= int(np.prod(subsample[:args.enc_n_layers_sub1]))
     if args.train_set_sub2:
         if 'conv' in args.enc_type and args.conv_poolings:
             args.subsample_factor_sub2 = args.subsample_factor * \
                 int(np.prod(subsample[:args.enc_n_layers_sub2 - 1]))
-        args.subsample_factor_sub2 *= args.subsample_factor
+        args.subsample_factor_sub2 *= int(np.prod(subsample[:args.enc_n_layers_sub2]))
 
     return args
 
