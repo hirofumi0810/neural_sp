@@ -44,7 +44,7 @@ class ConcatSubsampler(nn.Module):
         # NOTE: Exclude the last frames if the length is not divisible
         xs = torch.relu(self.proj(xs))
 
-        xlens = [max(1, math.floor(i // self.subsampling_factor)) for i in xlens]
+        xlens = [max(1, i.item() // self.subsampling_factor) for i in xlens]
         xlens = torch.IntTensor(xlens)
         return xs, xlens
 
@@ -113,7 +113,7 @@ class DropSubsampler(nn.Module):
 
         xs = xs[:, ::self.subsampling_factor, :]
 
-        xlens = [max(1, math.floor(i // self.subsampling_factor)) for i in xlens]
+        xlens = [max(1, math.ceil(i.item() / self.subsampling_factor)) for i in xlens]
         xlens = torch.IntTensor(xlens)
         return xs, xlens
 
