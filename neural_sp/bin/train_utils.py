@@ -36,9 +36,6 @@ def compute_susampling_factor(args):
     if 'conv' in args.enc_type and args.conv_poolings:
         for p in args.conv_poolings.split('_'):
             args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
-        if 'former' in args.enc_type:
-            args.subsample_factor *= int(np.prod(subsample))
-            # NOTE: Transformer/Conformer can combine sunsampling in conv and SAN layers
     args.subsample_factor *= int(np.prod(subsample))
     if args.train_set_sub1:
         if 'conv' in args.enc_type and args.conv_poolings:
