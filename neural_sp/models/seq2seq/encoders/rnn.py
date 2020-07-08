@@ -48,13 +48,13 @@ class RNNEncoder(EncoderBase):
         n_stacks (int): number of frames to stack
         n_splices (int): number of frames to splice
         conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channles in the CNN blocks
-        conv_kernel_sizes (list): size of kernels in the CNN blocks
-        conv_strides (list): number of strides in the CNN blocks
-        conv_poolings (list): size of poolings in the CNN blocks
-        conv_batch_norm (bool): apply batch normalization only in the CNN blocks
-        conv_layer_norm (bool): apply layer normalization only in the CNN blocks
-        conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and RNN layers
+        conv_channels (int): number of channles in CNN blocks
+        conv_kernel_sizes (list): size of kernels in CNN blocks
+        conv_strides (list): number of strides in CNN blocks
+        conv_poolings (list): size of poolings in CNN blocks
+        conv_batch_norm (bool): apply batch normalization only in CNN blocks
+        conv_layer_norm (bool): apply layer normalization only in CNN blocks
+        conv_bottleneck_dim (int): dimension of bottleneck layer between CNN and RNN layers
         bidir_sum_fwd_bwd (bool): sum up forward and backward outputs for demiension reduction
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (float): model initialization parameter
@@ -139,8 +139,6 @@ class RNNEncoder(EncoderBase):
             self._odim = input_dim * n_splices * n_stacks
         else:
             self._odim = self.conv.output_dim
-            subsamples = [1] * self.n_layers
-            logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
 
         self.padding = Padding(bidir_sum_fwd_bwd=bidir_sum_fwd_bwd)
 
@@ -267,7 +265,7 @@ class RNNEncoder(EncoderBase):
 
     def forward(self, xs, xlens, task, use_cache=False, streaming=False,
                 lookback=False, lookahead=False):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
