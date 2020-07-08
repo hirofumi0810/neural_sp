@@ -101,7 +101,6 @@ class RNNEncoder(EncoderBase):
         self.chunk_size_right = chunk_size_right // n_stacks
         self.lc_bidir = self.chunk_size_left > 0 or self.chunk_size_right > 0
         if self.lc_bidir:
-            assert np.prod(subsamples) == 1
             assert rnn_type not in ['lstm', 'gru', 'conv_lstm', 'conv_gru']
             assert n_layers_sub2 == 0
 
