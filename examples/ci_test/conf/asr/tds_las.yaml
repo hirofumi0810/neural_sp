@@ -3,24 +3,22 @@ n_stacks: 1
 n_skips: 1
 max_n_frames: 1600
 conv_in_channel: 1
-# conv_channels: "10_10_14_14_14_18_18_18_18_18_18"
-# conv_kernel_sizes: "(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)_(21,1)"
 conv_channels: "3_3_5_5_5_7_7_7_7_7_7"
 conv_kernel_sizes: "(3,1)_(3,1)_(3,1)_(3,1)_(3,1)_(3,1)_(3,1)_(3,1)_(3,1)_(3,1)_(3,1)"
 enc_type: tds
 attn_type: location
 attn_conv_n_channels: 10
 attn_conv_width: 201
-attn_dim: 32
+attn_dim: 16
 attn_n_heads: 1
 dec_type: lstm
-dec_n_units: 32
-dec_n_projs: 16
+dec_n_units: 16
+dec_n_projs: 8
 dec_n_layers: 1
-dec_bottleneck_dim: 32
-emb_dim: 32
+dec_bottleneck_dim: 16
+emb_dim: 16
 tie_embedding: false
-ctc_fc_list: "16"
+ctc_fc_list: "8"
 ### optimization
 batch_size: 1
 optimizer: adam
