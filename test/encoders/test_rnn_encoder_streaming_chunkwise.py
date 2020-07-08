@@ -17,7 +17,7 @@ def make_args(**kwargs):
     args = dict(
         input_dim=80,
         rnn_type='blstm',
-        n_units=64,
+        n_units=16,
         n_projs=0,
         last_proj_dim=0,
         n_layers=2,
