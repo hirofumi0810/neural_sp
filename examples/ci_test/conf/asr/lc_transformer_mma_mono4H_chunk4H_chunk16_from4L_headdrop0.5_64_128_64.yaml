@@ -15,6 +15,7 @@ enc_n_layers: 2
 lc_chunk_size_left: 64  ###
 lc_chunk_size_current: 128  ###
 lc_chunk_size_right: 64  ###
+lc_type: mask
 dec_n_layers: 3
 transformer_attn_type: mocha
 mocha_n_heads_mono: 4

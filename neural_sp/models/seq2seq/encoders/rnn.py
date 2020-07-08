@@ -48,13 +48,13 @@ class RNNEncoder(EncoderBase):
         n_stacks (int): number of frames to stack
         n_splices (int): number of frames to splice
         conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channles in the CNN blocks
-        conv_kernel_sizes (list): size of kernels in the CNN blocks
-        conv_strides (list): number of strides in the CNN blocks
-        conv_poolings (list): size of poolings in the CNN blocks
-        conv_batch_norm (bool): apply batch normalization only in the CNN blocks
-        conv_layer_norm (bool): apply layer normalization only in the CNN blocks
-        conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and RNN layers
+        conv_channels (int): number of channles in CNN blocks
+        conv_kernel_sizes (list): size of kernels in CNN blocks
+        conv_strides (list): number of strides in CNN blocks
+        conv_poolings (list): size of poolings in CNN blocks
+        conv_batch_norm (bool): apply batch normalization only in CNN blocks
+        conv_layer_norm (bool): apply layer normalization only in CNN blocks
+        conv_bottleneck_dim (int): dimension of bottleneck layer between CNN and RNN layers
         bidir_sum_fwd_bwd (bool): sum up forward and backward outputs for demiension reduction
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (float): model initialization parameter
@@ -101,7 +101,6 @@ class RNNEncoder(EncoderBase):
         self.chunk_size_right = chunk_size_right // n_stacks
         self.lc_bidir = self.chunk_size_left > 0 or self.chunk_size_right > 0
         if self.lc_bidir:
-            assert np.prod(subsamples) == 1
             assert rnn_type not in ['lstm', 'gru', 'conv_lstm', 'conv_gru']
             assert n_layers_sub2 == 0
 
@@ -139,8 +138,6 @@ class RNNEncoder(EncoderBase):
             self._odim = input_dim * n_splices * n_stacks
         else:
             self._odim = self.conv.output_dim
-            subsamples = [1] * self.n_layers
-            logger.warning('Subsampling is automatically ignored because CNN layers are used before RNN layers.')
 
         self.padding = Padding(bidir_sum_fwd_bwd=bidir_sum_fwd_bwd)
 
@@ -267,7 +264,7 @@ class RNNEncoder(EncoderBase):
 
     def forward(self, xs, xlens, task, use_cache=False, streaming=False,
                 lookback=False, lookahead=False):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
@@ -400,24 +397,33 @@ class RNNEncoder(EncoderBase):
                     if task == 'ys_sub1':
                         return None, xlens, xs_sub1
 
-                # Projection layer (exclude the last layer)
+                # Projection layer
                 if self.proj is not None and lth != self.n_layers - 1:
                     xs = torch.tanh(self.proj[lth](xs))
+                # Subsampling layer
+                if self.subsample is not None:
+                    xs, xlens = self.subsample[lth](xs, xlens)
 
             return xs, xlens, xs_sub1
 
-        _N_l = self.chunk_size_left // self.subsampling_factor
-        _N_r = self.chunk_size_right // self.subsampling_factor
+        N_l = self.chunk_size_left
+        N_r = self.chunk_size_right
+
+        if self.conv is not None:
+            N_l = N_l // self.conv.subsampling_factor
+            N_r = N_r // self.conv.subsampling_factor
 
         bs, xmax, _ = xs.size()
-        n_chunks = math.ceil(xmax / _N_l)
+        n_chunks = math.ceil(xmax / N_l)
         if streaming:
             xlens = torch.IntTensor(bs).fill_(xs.size(1))
 
         xs_chunks = []
         xs_chunks_sub1 = []
-        for chunk_idx, t in enumerate(range(0, _N_l * n_chunks, _N_l)):
-            xs_chunk = xs[:, t:t + (_N_l + _N_r)]
+        for chunk_idx, t in enumerate(range(0, N_l * n_chunks, N_l)):
+            xs_chunk = xs[:, t:t + (N_l + N_r)]
+            _N_l = N_l
+
             for lth in range(self.n_layers):
                 self.rnn[lth].flatten_parameters()  # for multi-GPUs
                 self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
@@ -450,9 +456,15 @@ class RNNEncoder(EncoderBase):
                     if task == 'ys_sub1':
                         return None, xlens, xs_chunk_sub1
 
-                # Projection layer (exclude the last layer)
+                # Projection layer
                 if self.proj is not None and lth != self.n_layers - 1:
                     xs_chunk = torch.tanh(self.proj[lth](xs_chunk))
+                # Subsampling layer
+                if self.subsample is not None:
+                    xs_chunk, xlens_tmp = self.subsample[lth](xs_chunk, xlens)
+                    if chunk_idx == 0:
+                        xlens = xlens_tmp
+                    _N_l = _N_l // self.subsample[lth].subsampling_factor
 
             xs_chunks.append(xs_chunk[:, :_N_l])
             if self.n_layers_sub1 > 0:
