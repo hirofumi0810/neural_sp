@@ -269,7 +269,7 @@ class RNNEncoder(EncoderBase):
             use_cache (bool): use the cached forward encoder state in the previous chunk as the initial state
             streaming (bool): streaming encoding
             lookback (bool): truncate leftmost frames for lookback in CNN context
-            lookahead (bool): truncate rightmost frames for lookahead in CNN contexts
+            lookahead (bool): truncate rightmost frames for lookahead in CNN context
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T // prod(subsample), n_units (*2)]`
@@ -298,6 +298,10 @@ class RNNEncoder(EncoderBase):
         # Path through CNN blocks before RNN layers
         if self.conv is not None:
             xs, xlens = self.conv(xs, xlens, lookback=lookback, lookahead=lookahead)
+            if self.enc_type == 'conv':
+                eouts['ys']['xs'] = xs
+                eouts['ys']['xlens'] = xlens
+                return eouts
 
         if not use_cache and not streaming:
             self.reset_cache()
