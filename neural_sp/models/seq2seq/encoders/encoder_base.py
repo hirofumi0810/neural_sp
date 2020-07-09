@@ -38,6 +38,9 @@ class EncoderBase(ModelBase):
     def forward(self, xs, xlens, task):
         raise NotImplementedError
 
+    def reset_cache(self):
+        raise NotImplementedError
+
     def turn_on_ceil_mode(self, encoder):
         if isinstance(encoder, torch.nn.Module):
             for name, module in encoder.named_children():

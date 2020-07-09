@@ -365,15 +365,13 @@ class TransformerEncoder(EncoderBase):
 
         return new_mems
 
-    def forward(self, xs, xlens, task, use_cache=False, streaming=False,
-                lookback=False, lookahead=False):
+    def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
         """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
             xlens (InteTensor): `[B]` (on CPU)
             task (str): ys/ys_sub1/ys_sub2
-            use_cache (bool):
             streaming (bool): streaming encoding
             lookback (bool): truncate leftmost frames for lookback in CNN context
             lookahead (bool): truncate rightmost frames for lookahead in CNN context

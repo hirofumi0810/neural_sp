@@ -115,12 +115,15 @@ class TDSEncoder(EncoderBase):
             else:
                 raise ValueError(n)
 
-    def forward(self, xs, xlens, task, use_cache=False, streaming=False,):
+    def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
         """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, F]`
             xlens (IntTensor): `[B]`
+            streaming (bool): streaming encoding
+            lookback (bool): truncate leftmost frames for lookback in CNN context
+            lookahead (bool): truncate rightmost frames for lookahead in CNN context
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T', C_o * F]`

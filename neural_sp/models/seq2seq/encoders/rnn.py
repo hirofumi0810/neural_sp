@@ -258,15 +258,13 @@ class RNNEncoder(EncoderBase):
         self.hx_fwd = [None] * self.n_layers
         logger.debug('Reset cache.')
 
-    def forward(self, xs, xlens, task, use_cache=False, streaming=False,
-                lookback=False, lookahead=False):
+    def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
         """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
             xlens (list): A list of length `[B]`
             task (str): all or ys or ys_sub1 or ys_sub2
-            use_cache (bool): use the cached forward encoder state in the previous chunk as the initial state
             streaming (bool): streaming encoding
             lookback (bool): truncate leftmost frames for lookback in CNN context
             lookahead (bool): truncate rightmost frames for lookahead in CNN context
@@ -303,8 +301,9 @@ class RNNEncoder(EncoderBase):
                 eouts['ys']['xlens'] = xlens
                 return eouts
 
-        if not use_cache and not streaming:
+        if not streaming:
             self.reset_cache()
+            # NOTE: do not reset here for streaming inference
 
         if self.lc_bidir:
             # Flip the layer and time loop

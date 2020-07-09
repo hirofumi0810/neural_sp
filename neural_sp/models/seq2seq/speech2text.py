@@ -347,14 +347,12 @@ class Speech2Text(ModelBase):
         logits = lm.output(lmout)
         return logits
 
-    def encode(self, xs, task='all', use_cache=False, streaming=False,
-               lookback=False, lookahead=False):
+    def encode(self, xs, task='all', streaming=False, lookback=False, lookahead=False):
         """Encode acoustic or text features.
 
         Args:
             xs (list): A list of length `[B]`, which contains Tensor of size `[T, input_dim]`
             task (str): all/ys*/ys_sub1*/ys_sub2*
-            use_cache (bool): use the cached forward encoder state in the previous chunk as the initial state
             streaming (bool): streaming encoding
             lookback (bool): truncate leftmost frames for lookback in CNN context
             lookahead (bool): truncate rightmost frames for lookahead in CNN context
@@ -398,7 +396,7 @@ class Speech2Text(ModelBase):
             # TODO(hirofumi): fix for Transformer
 
         # encoder
-        eout_dict = self.enc(xs, xlens, task.split('.')[0], use_cache, streaming, lookback, lookahead)
+        eout_dict = self.enc(xs, xlens, task.split('.')[0], streaming, lookback, lookahead)
 
         if self.main_weight < 1 and self.enc_type in ['conv', 'tds', 'gated_conv']:
             for sub in ['sub1', 'sub2']:
@@ -463,7 +461,9 @@ class Speech2Text(ModelBase):
 
         hyps = None
         best_hyp_id_stream = []
-        is_reset = True   # for the first chunk
+        is_reset = True  # for the first chunk
+
+        stdout = False
 
         self.eval()
         with torch.no_grad():
@@ -473,8 +473,9 @@ class Speech2Text(ModelBase):
             while True:
                 # Encode input features chunk by chunk
                 x_chunk, is_last_chunk, lookback, lookahead = streaming.extract_feature()
+                if is_reset:
+                    self.enc.reset_cache()
                 eout_chunk = self.encode([x_chunk], task,
-                                         use_cache=not is_reset,
                                          streaming=True,
                                          lookback=lookback,
                                          lookahead=lookahead)[task]['xs']
@@ -486,11 +487,11 @@ class Speech2Text(ModelBase):
                     ctc_probs_chunk = self.dec_fwd.ctc_probs(eout_chunk)
                     if params['recog_ctc_weight'] > 0:
                         ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
-                    is_reset = streaming.ctc_vad(ctc_probs_chunk)
+                    is_reset = streaming.ctc_vad(ctc_probs_chunk, stdout=stdout)
 
                 # Truncate the most right frames
-                if is_reset and not is_last_chunk:
-                    eout_chunk = eout_chunk[:, :streaming.bd_offset + 1]
+                if is_reset and not is_last_chunk and streaming.bd_offset >= 0:
+                    eout_chunk = eout_chunk[:, :streaming.bd_offset]
                 streaming.eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
@@ -552,14 +553,13 @@ class Speech2Text(ModelBase):
                         # best_hyp_id_stream.extend(eos_hyp)
 
                     # reset
-                    streaming.reset()
+                    streaming.reset(stdout=stdout)
                     hyps = None
 
-                    # next chunk will start from the frame next to the boundary
-                    if not is_last_chunk:
-                        streaming.backoff(x_chunk, self.dec_fwd)
-
                 streaming.next_chunk()
+                # next chunk will start from the frame next to the boundary
+                if not is_last_chunk:
+                    streaming.backoff(x_chunk, self.dec_fwd, stdout=stdout)
                 if is_last_chunk:
                     break
 

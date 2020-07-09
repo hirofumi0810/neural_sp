@@ -307,15 +307,13 @@ class ConformerEncoder(EncoderBase):
                 nn.init.xavier_uniform_(self.bridge_sub2.weight)
                 nn.init.constant_(self.bridge_sub2.bias, 0.)
 
-    def forward(self, xs, xlens, task, use_cache=False, streaming=False,
-                lookback=False, lookahead=False):
+    def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
         """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
             xlens (InteTensor): `[B]` (on CPU)
             task (str): ys/ys_sub1/ys_sub2
-            use_cache (bool):
             streaming (bool): streaming encoding
             lookback (bool): truncate leftmost frames for lookback in CNN context
             lookahead (bool): truncate rightmost frames for lookahead in CNN context
