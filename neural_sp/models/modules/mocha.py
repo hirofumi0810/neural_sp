@@ -18,7 +18,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.causal_conv import CausalConv1d
-from neural_sp.models.modules.initialization import init_with_xavier_uniform
 
 random.seed(1)
 
@@ -387,8 +386,8 @@ class MoChA(nn.Module):
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             aw_prev (FloatTensor): `[B, H_ma, 1, klen]`
-            mode (str): recursive/parallel/hard
             cache (bool): cache key and mask
+            mode (str): recursive/parallel/hard
             trigger_point (IntTensor): `[B]`
             eps_wait (int): wait time delay for head-synchronous decoding in MMA
         Returns:
@@ -451,16 +450,7 @@ class MoChA(nn.Module):
 
             # mask out each head independently (HeadDrop)
             if self.dropout_head > 0 and self.training:
-                n_effective_heads = self.n_heads_ma
-                head_mask = alpha.new_ones(alpha.size()).byte()
-                for h in range(self.n_heads_ma):
-                    if random.random() < self.dropout_head:
-                        head_mask[:, h] = 0
-                        n_effective_heads -= 1
-                alpha_masked = alpha_masked.masked_fill_(head_mask == 0, 0)
-                # Normalization
-                if n_effective_heads > 0:
-                    alpha_masked = alpha_masked * (self.n_heads_ma / n_effective_heads)
+                alpha_masked = headdrop(alpha_masked, self.n_heads_ma, self.dropout_head)
 
         elif mode == 'hard':  # inference
             assert qlen == 1
@@ -587,14 +577,39 @@ class MoChA(nn.Module):
         return cv, alpha, beta, p_choose
 
 
+def headdrop(alpha, n_heads_mono, dropout):
+    """HeadDrop regularization.
+
+        Args:
+            alpha (FloatTensor): `[B, H_ma, qlen, klen]`
+            n_heads_mono (int): number of monotonic attention heads
+            dropout (float): HeadDrop probability
+        Returns:
+            alpha (FloatTensor): `[B, H_ma, qlen, klen]`
+
+    """
+    n_effective_heads = n_heads_mono
+    head_mask = alpha.new_ones(alpha.size()).byte()
+    for h in range(n_heads_mono):
+        if random.random() < dropout:
+            head_mask[:, h] = 0
+            n_effective_heads -= 1
+    alpha = alpha.masked_fill_(head_mask == 0, 0)
+    # Normalization
+    if n_effective_heads > 0:
+        alpha = alpha * (n_heads_mono / n_effective_heads)
+    return alpha
+
+
 def add_gaussian_noise(xs, std):
-    """Add Gaussian nosie to encourage discreteness."""
+    """Add Gaussian noise to encourage discreteness."""
     noise = xs.new_zeros(xs.size()).normal_(std=std)
     return xs + noise
 
 
 def safe_cumprod(x, eps):
     """Numerically stable cumulative product by cumulative sum in log-space.
+
         Args:
             x (FloatTensor): `[B, H, qlen, klen]`
         Returns:
