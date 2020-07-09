@@ -76,7 +76,7 @@
 
 
 ### Streaming Transformer-MMA, subsample1/8, 96/64/32
-- conf: `conf/asr/transformer_mma/lc_transformer_mma_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8_96_64_32.yaml`
+- conf: `conf/asr/transformer_mma/lc_transformer_mma_subsample8_mono4H_chunk4H_chunk16_from4L_headdrop0.5_96_64_32.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
   - n_average: 10
@@ -86,12 +86,12 @@
 
 | Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
 | -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
-|dev|14326|205341|93.6|6.0|0.4|0.1|**6.5**|42.0|
-|test|7176|104765|92.7|6.3|1.0|0.1|**7.5**|45.3|
+|dev|14326|205341|94.1|5.7|0.2|0.1|**6.0**|40.7|
+|test|7176|104765|93.6|6.2|0.3|0.1|**6.6**|42.8|
 
 
 ### Streaming Transformer-MMA, subsample1/8, 64/128/64
-- conf: `conf/asr/transformer_mma/lc_transformer_mma_mono4H_chunk4H_chunk16_from4L_headdrop0.5_subsample8_64_128_64.yaml`
+- conf: `conf/asr/transformer_mma/lc_transformer_mma_subsample8_mono4H_chunk4H_chunk16_from4L_headdrop0.5_64_128_64.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
   - n_average: 10
@@ -101,5 +101,5 @@
 
 | Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
 | -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
-|dev|14326|205341|94.1|5.8|0.2|0.1|**6.1**|41.1|
-|test|7176|104765|93.6|6.2|0.2|0.1|**6.6**|43.2|
+|dev|14326|205341|94.1|5.7|0.2|0.1|**6.0**|40.7|
+|test|7176|104765|93.6|6.1|0.3|0.1|**6.5**|42.3|
