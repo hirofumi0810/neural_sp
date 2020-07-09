@@ -6,15 +6,16 @@ conv_in_channel: 1
 conv_channels: "32_32_32"
 conv_kernel_sizes: "(3,3)_(3,3)_(3,3)"
 conv_strides: "(1,1)_(1,1)_(1,1)"
-conv_poolings: "(2,2)_(2,2)_(2,2)"  # (T,F)
+conv_poolings: "(2,2)_(2,2)_(2,2)"
 conv_batch_norm: false
 conv_layer_norm: false
 enc_type: conv_transformer
 dec_type: transformer
 enc_n_layers: 12
-lc_chunk_size_left: 64  ###
-lc_chunk_size_current: 128  ###
-lc_chunk_size_right: 64  ###
+lc_chunk_size_left: 96  ###
+lc_chunk_size_current: 64  ###
+lc_chunk_size_right: 32  ###
+lc_type: mask  ###
 dec_n_layers: 6
 transformer_attn_type: mocha
 mocha_n_heads_mono: 4

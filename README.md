@@ -103,7 +103,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | model         | dev | test |
 | -----------   | --- | ---- |
 | Transformer   | 5.0 | 5.4  |
-| Streaming MMA | 6.1 | 6.6  |
+| Streaming MMA | 6.0 | 6.5  |
 
 ### CSJ (WER)
 | model | eval1 | eval2 | eval3 |
