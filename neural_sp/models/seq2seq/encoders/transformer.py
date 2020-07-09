@@ -483,7 +483,7 @@ class TransformerEncoder(EncoderBase):
                 pos_embs = None
 
             # Create the self-attention mask
-            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, (xs.size(1) + 1) // 2, 1])
+            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
