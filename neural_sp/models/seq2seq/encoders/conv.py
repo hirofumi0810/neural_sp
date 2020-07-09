@@ -142,15 +142,15 @@ class ConvEncoder(EncoderBase):
 
     @property
     def n_frames_context(self):
-        n_frame = 0
+        n_frames = 0
         factor_tmp = self.subsampling_factor
         if factor_tmp > 1:
             for _ in range(int(math.log(factor_tmp, 2))):
-                n_frame += factor_tmp
+                n_frames += factor_tmp
                 factor_tmp //= 2
                 if factor_tmp < 2:
                     break
-        return n_frame
+        return n_frames
 
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""
@@ -335,10 +335,8 @@ class Conv2dBlock(EncoderBase):
         Args:
             xs (FloatTensor): `[B, C_i, T, F]`
             xlens (IntTensor): `[B]` (on CPU)
-            lookback (bool): truncate the leftmost frames
-                because of lookback frames for context
-            lookahead (bool): truncate the rightmost frames
-                because of lookahead frames for context
+            lookback (bool): truncate leftmost frames for lookback in CNN context
+            lookahead (bool): truncate rightmost frames for lookahead in CNN context
         Returns:
             xs (FloatTensor): `[B, C_o, T', F']`
             xlens (IntTensor): `[B]` (on CPU)
@@ -353,9 +351,13 @@ class Conv2dBlock(EncoderBase):
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv1, dim=0)
         if lookback and xs.size(2) > self.conv1.stride[0]:
+            xmax = xs.size(2)
             xs = xs[:, :, self.conv1.stride[0]:]
+            xlens = xlens - (xmax - xs.size(2))
         if lookahead and xs.size(2) > self.conv1.stride[0]:
+            xmax = xs.size(2)
             xs = xs[:, :, :xs.size(2) - self.conv1.stride[0]]
+            xlens = xlens - (xmax - xs.size(2))
 
         xs = self.conv2(xs)
         xs = self.batch_norm2(xs)
@@ -366,9 +368,13 @@ class Conv2dBlock(EncoderBase):
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv2, dim=0)
         if lookback and xs.size(2) > self.conv2.stride[0]:
+            xmax = xs.size(2)
             xs = xs[:, :, self.conv2.stride[0]:]
+            xlens = xlens - (xmax - xs.size(2))
         if lookahead and xs.size(2) > self.conv2.stride[0]:
+            xmax = xs.size(2)
             xs = xs[:, :, :xs.size(2) - self.conv2.stride[0]]
+            xlens = xlens - (xmax - xs.size(2))
 
         if self.pool is not None:
             xs = self.pool(xs)
@@ -405,10 +411,10 @@ def update_lens_1d(seq_lens, layer):
     """Update lenghts (frequency or time).
 
     Args:
-        seq_lens (list or IntTensor):
+        seq_lens (IntTensor): `[B]`
         layer (nn.Conv1d or nn.MaxPool1d):
     Returns:
-        seq_lens (IntTensor):
+        seq_lens (IntTensor): `[B]`
 
     """
     if seq_lens is None:
@@ -434,11 +440,11 @@ def update_lens_2d(seq_lens, layer, dim=0):
     """Update lenghts (frequency or time).
 
     Args:
-        seq_lens (list or IntTensor):
+        seq_lens (IntTensor): `[B]`
         layer (nn.Conv2d or nn.MaxPool2d):
         dim (int):
     Returns:
-        seq_lens (IntTensor):
+        seq_lens (IntTensor): `[B]`
 
     """
     if seq_lens is None:

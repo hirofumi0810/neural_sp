@@ -62,12 +62,12 @@ class TransformerEncoder(EncoderBase):
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channles in the CNN blocks
-        conv_kernel_sizes (list): size of kernels in the CNN blocks
-        conv_strides (list): number of strides in the CNN blocks
-        conv_poolings (list): size of poolings in the CNN blocks
-        conv_batch_norm (bool): apply batch normalization only in the CNN blocks
-        conv_layer_norm (bool): apply layer normalization only in the CNN blocks
+        conv_channels (int): number of channles in CNN blocks
+        conv_kernel_sizes (list): size of kernels in CNN blocks
+        conv_strides (list): number of strides in CNN blocks
+        conv_poolings (list): size of poolings in CNN blocks
+        conv_batch_norm (bool): apply batch normalization only in CNN blocks
+        conv_layer_norm (bool): apply layer normalization only in CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
         conv_param_init (float): only for CNN layers before Transformer layers
         task_specific_layer (bool): add a task specific layer for each sub task
@@ -304,6 +304,7 @@ class TransformerEncoder(EncoderBase):
         if args.lc_chunk_size_left > 0 or getattr(args, 'lc_chunk_size_current', 0) > 0 or args.lc_chunk_size_right > 0:
             dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
                 str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
+            dir_name += '_' + args.lc_type
         return dir_name
 
     def reset_parameters(self, param_init):
@@ -364,7 +365,8 @@ class TransformerEncoder(EncoderBase):
 
         return new_mems
 
-    def forward(self, xs, xlens, task, use_cache=False, streaming=False):
+    def forward(self, xs, xlens, task, use_cache=False, streaming=False,
+                lookback=False, lookahead=False):
         """Forward pass.
 
         Args:
@@ -373,6 +375,8 @@ class TransformerEncoder(EncoderBase):
             task (str): ys/ys_sub1/ys_sub2
             use_cache (bool):
             streaming (bool): streaming encoding
+            lookback (bool): truncate leftmost frames for lookback in CNN context
+            lookahead (bool): truncate rightmost frames for lookahead in CNN context
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T, d_model]`
@@ -441,6 +445,7 @@ class TransformerEncoder(EncoderBase):
                             emax_chunk = xx_aws_center[:, :, offset:offset + N_c].size(2)
                             xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk, :emax_chunk]
                             xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
+                        self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
                     elif self.lc_type == 'mask':
                         self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
                     else:
@@ -478,7 +483,7 @@ class TransformerEncoder(EncoderBase):
                 pos_embs = None
 
             # Create the self-attention mask
-            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
+            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, (xs.size(1) + 1) // 2, 1])
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)

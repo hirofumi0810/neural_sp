@@ -104,7 +104,10 @@ def make_args(**kwargs):
           'latency_control_type': 'reshape', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool',
           'latency_control_type': 'mask', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-
+        ({'subsample': "2_2_1", 'subsample_type': 'max_pool', 'conv_poolings': "(2,2)_(1,1)",
+          'latency_control_type': 'reshape', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'subsample': "2_2_1", 'subsample_type': 'max_pool', 'conv_poolings': "(2,2)_(1,1)",
+          'latency_control_type': 'mask', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
     ]
 )
 def test_forward(args):
