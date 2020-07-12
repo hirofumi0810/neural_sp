@@ -49,19 +49,25 @@ def make_args_2d(**kwargs):
           'poolings': "(2,2)_(2,2)_(2,2)"}),
         ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'poolings': "(2,2)_(2,2)_(2,1)"}),
+        # ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
+        #   'poolings': "(2,2)_(2,2)_(1,2)"}),
         ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'poolings': "(2,2)_(2,1)_(2,1)"}),
         # ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
-        #   'poolings': "(2,2)_(2,2)_(1,2)"}),
-        # ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
         #   'poolings': "(2,2)_(1,2)_(1,2)"}),
+        ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
+          'poolings': "(2,2)_(1,1)_(1,1)"}),
+        ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
+          'poolings': "(2,1)_(1,1)_(1,1)"}),
+        # ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
+        #   'poolings': "(1,2)_(1,1)_(1,1)"}),
         ({'channels': "32_32_32", 'kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'poolings': "(1,1)_(1,1)_(1,1)"}),
         # others
         ({'batch_norm': True}),
         ({'layer_norm': True}),
         ({'residual': True}),
-        ({'bottleneck_dim': 32}),
+        ({'bottleneck_dim': 8}),
     ]
 )
 def test_forward_2d(args):
@@ -81,12 +87,12 @@ def test_forward_2d(args):
 
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
-        xlens = torch.IntTensor([len(x) for x in xs])
+        xlens = torch.IntTensor([len(x) - i * enc.subsampling_factor for i, x in enumerate(xs)])
         xs = pad_list([np2tensor(x, device).float() for x in xs], 0.)
         xs, xlens = enc(xs, xlens)
 
-        assert xs.size(0) == batch_size, xs.size()
-        assert xs.size(1) == xlens[0], xs.size()
+        assert xs.size(0) == batch_size
+        assert xs.size(1) == xlens.max(), (xs.size(), xlens)
 
 
 def make_args_1d(**kwargs):
@@ -129,7 +135,7 @@ def make_args_1d(**kwargs):
         ({'channels': "32_32_32", 'kernel_sizes': "3_3_3",
           'poolings': "1_1_1"}),
         # bottleneck
-        ({'bottleneck_dim': 32}),
+        ({'bottleneck_dim': 8}),
     ]
 )
 def test_forward_1d(args):
@@ -154,4 +160,4 @@ def test_forward_1d(args):
 
         xs, xlens = enc(xs, xlens)
         assert xs.size(0) == batch_size
-        assert xs.size(1) == xlens[0]
+        assert xs.size(1) == xlens.max(), (xs.size(), xlens)

@@ -1407,7 +1407,7 @@ class RNNDecoder(DecoderBase):
             lm.eval()
 
         # Initialization per utterance
-        self.score.reset()
+        # self.score.reset()
         dstates = self.zero_state(1)
         lmstate = None
         ctc_state = None
@@ -1454,17 +1454,17 @@ class RNNDecoder(DecoderBase):
 
         ymax = math.ceil(eouts_c.size(1) * max_len_ratio)
         for i in range(ymax):
-            # finish if no additional decision boundary is found in all candidates
+            # finish if no additional decision boundary is found in the current chunk for all candidates
             if len(hyps) == 0:
                 break
             if i > 0 and sum([cand['no_boundary'] for cand in hyps]) == len(hyps):
                 break
 
-            # ignore hypotheses with no boundary from batch decoding
+            # ignore hypotheses with no boundary from batched hypotheses
             new_hyps = []
             hyps_filtered = []
             for j, beam in enumerate(hyps):
-                # no decision boundary found in this chunk
+                # no decision boundary found in the current chunk
                 if beam['no_boundary']:
                     new_hyps.append(beam.copy())
                 else:
@@ -1485,16 +1485,8 @@ class RNNDecoder(DecoderBase):
             dstates = {'dstate': (hxs, cxs)}
 
             # Update LM states for LM fusion
-            lmout, lmstate, scores_lm = None, None, None
-            if lm is not None or self.lm is not None:
-                if beam['lmstate'] is not None:
-                    lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in hyps], dim=1)
-                    lm_cxs = torch.cat([beam['lmstate']['cxs'] for beam in hyps], dim=1)
-                    lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
-                if self.lm is not None:  # cold/deep fusion
-                    lmout, lmstate, scores_lm = self.lm.predict(y, lmstate)
-                elif lm is not None:  # shallow fusion
-                    lmout, lmstate, scores_lm = lm.predict(y, lmstate)
+            lmout, lmstate, scores_lm = helper.update_rnnlm_state_batch(
+                self.lm if self.lm is not None else lm, hyps, y)
 
             dstates, cv, aw, attn_v, _, _ = self.decode_step(
                 eouts_c[0:1].repeat([cv.size(0), 1, 1]),
@@ -1502,7 +1494,7 @@ class RNNDecoder(DecoderBase):
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1), dim=1)
 
             for j, beam in enumerate(hyps):
-                # no decision boundary found in this chunk for j-th utterance
+                # no decision boundary found in the current chunk for j-th utterance
                 no_boundary = aw[j].sum().item() == 0
                 if no_boundary:
                     beam['aws'][-1] = eouts_c.new_zeros(eouts_c.size(0), 1, 1, eouts_c.size(1))
@@ -1589,6 +1581,7 @@ class RNNDecoder(DecoderBase):
             logger.info('=' * 200)
             for k in range(len(merged_hyps)):
                 logger.info('Hyp: %s' % idx2token(merged_hyps[k]['hyp'][1:]))
+                logger.info('no boundary: %s' % merged_hyps[k]['no_boundary'])
                 logger.info('log prob (hyp): %.7f' % merged_hyps[k]['score'])
                 logger.info('log prob (hyp, att): %.7f' % (merged_hyps[k]['score_att'] * (1 - ctc_weight)))
                 if self.ctc_prefix_scorer is not None:
@@ -1605,5 +1598,6 @@ class RNNDecoder(DecoderBase):
             self.lmstate_final = end_hyps[0]['lmstate']
 
         self.n_frames += eouts_c.size(1)
+        self.score.register_key_prev_tail(eouts_c)
 
         return end_hyps, hyps, aws

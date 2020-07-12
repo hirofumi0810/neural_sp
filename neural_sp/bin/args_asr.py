@@ -437,7 +437,7 @@ def build_parser():
                         help='')
     parser.add_argument('--recog_ctc_vad_spike_threshold', type=float, default=0.1,
                         help='')
-    parser.add_argument('--recog_ctc_vad_n_accum_frames', type=float, default=4000,
+    parser.add_argument('--recog_ctc_vad_n_accum_frames', type=int, default=4000,
                         help='')
     parser.add_argument('--recog_mma_delay_threshold', type=int, default=-1,
                         help='delay threshold for MMA decoder')

@@ -347,14 +347,15 @@ class Speech2Text(ModelBase):
         logits = lm.output(lmout)
         return logits
 
-    def encode(self, xs, task='all', use_cache=False, streaming=False):
+    def encode(self, xs, task='all', streaming=False, lookback=False, lookahead=False):
         """Encode acoustic or text features.
 
         Args:
             xs (list): A list of length `[B]`, which contains Tensor of size `[T, input_dim]`
             task (str): all/ys*/ys_sub1*/ys_sub2*
-            use_cache (bool): use the cached forward encoder state in the previous chunk as the initial state
             streaming (bool): streaming encoding
+            lookback (bool): truncate leftmost frames for lookback in CNN context
+            lookahead (bool): truncate rightmost frames for lookahead in CNN context
         Returns:
             eout_dict (dict):
 
@@ -395,9 +396,9 @@ class Speech2Text(ModelBase):
             # TODO(hirofumi): fix for Transformer
 
         # encoder
-        eout_dict = self.enc(xs, xlens, task.split('.')[0], use_cache, streaming)
+        eout_dict = self.enc(xs, xlens, task.split('.')[0], streaming, lookback, lookahead)
 
-        if self.main_weight < 1 and self.enc_type in ['conv', 'tds', 'gated_conv', 'transformer', 'conv_transformer']:
+        if self.main_weight < 1 and self.enc_type in ['conv', 'tds', 'gated_conv']:
             for sub in ['sub1', 'sub2']:
                 eout_dict['ys_' + sub]['xs'] = eout_dict['ys']['xs'].clone()
                 eout_dict['ys_' + sub]['xlens'] = eout_dict['ys']['xlens'][:]
@@ -460,7 +461,9 @@ class Speech2Text(ModelBase):
 
         hyps = None
         best_hyp_id_stream = []
-        is_reset = True   # for the first chunk
+        is_reset = True  # for the first chunk
+
+        stdout = False
 
         self.eval()
         with torch.no_grad():
@@ -469,10 +472,13 @@ class Speech2Text(ModelBase):
 
             while True:
                 # Encode input features chunk by chunk
-                x_chunk, is_last_chunk = streaming.extract_feature()
+                x_chunk, is_last_chunk, lookback, lookahead = streaming.extract_feature()
+                if is_reset:
+                    self.enc.reset_cache()
                 eout_chunk = self.encode([x_chunk], task,
-                                         use_cache=not is_reset,
-                                         streaming=True)[task]['xs']
+                                         streaming=True,
+                                         lookback=lookback,
+                                         lookahead=lookahead)[task]['xs']
                 is_reset = False  # detect the first boundary in the same chunk
 
                 # CTC-based VAD
@@ -481,11 +487,11 @@ class Speech2Text(ModelBase):
                     ctc_probs_chunk = self.dec_fwd.ctc_probs(eout_chunk)
                     if params['recog_ctc_weight'] > 0:
                         ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
-                    is_reset = streaming.ctc_vad(ctc_probs_chunk)
+                    is_reset = streaming.ctc_vad(ctc_probs_chunk, stdout=stdout)
 
                 # Truncate the most right frames
-                if is_reset and not is_last_chunk:
-                    eout_chunk = eout_chunk[:, :streaming.bd_offset + 1]
+                if is_reset and not is_last_chunk and streaming.bd_offset >= 0:
+                    eout_chunk = eout_chunk[:, :streaming.bd_offset]
                 streaming.eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
@@ -494,7 +500,7 @@ class Speech2Text(ModelBase):
                         eout_chunk, params, idx2token, lm,
                         ctc_log_probs=ctc_log_probs_chunk, hyps=hyps,
                         state_carry_over=False,
-                        ignore_eos=self.enc.rnn_type in ['lstm', 'conv_lstm'])
+                        ignore_eos=self.enc.enc_type in ['lstm', 'conv_lstm'])
                     merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)
                     best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
                     if len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos:
@@ -506,11 +512,13 @@ class Speech2Text(ModelBase):
                         if not is_reset:
                             streaming.bd_offset = eout_chunk.size(1) - 1
                             is_reset = True
-                    print('\rSync MoChA (T:%d, offset:%d, blank:%d frames): %s' %
-                          (streaming.offset + eout_chunk.size(1) * streaming.factor,
-                           self.dec_fwd.n_frames * streaming.factor,
-                           streaming.n_blanks * streaming.factor, idx2token(best_hyp_id_prefix)), end='')
-                    # print('-' * 50)
+                    if len(best_hyp_id_prefix) > 0:
+                        # print('\rStreaming (T:%d [frame], offset:%d [frame], blank:%d [frame]): %s' %
+                        #       (streaming.offset + eout_chunk.size(1) * streaming.factor,
+                        #        self.dec_fwd.n_frames * streaming.factor,
+                        #        streaming.n_blanks * streaming.factor,
+                        #        idx2token(best_hyp_id_prefix)))
+                        print('\r%s' % (idx2token(best_hyp_id_prefix)))
 
                 if is_reset:
                     # Global decoding over the segmented region
@@ -520,21 +528,12 @@ class Speech2Text(ModelBase):
                         ctc_log_probs = None
                         if params['recog_ctc_weight'] > 0:
                             ctc_log_probs = torch.log(self.dec_fwd.ctc_probs(eout))
-                        nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
+                        nbest_hyps_id_offline = self.dec_fwd.beam_search(
                             eout, elens, global_params, idx2token, lm, lm_second,
-                            ctc_log_probs=ctc_log_probs)
-                        # print('Offline MoChA (T:%d): %s' %
+                            ctc_log_probs=ctc_log_probs)[0]
+                        # print('Offline (T:%d [frame]): %s' %
                         #       (streaming.offset + eout_chunk.size(1) * streaming.factor,
                         #        idx2token(nbest_hyps_id_offline[0][0])))
-                    eout = torch.cat(streaming.eout_chunks, dim=1)
-                    elens = torch.IntTensor([eout.size(1)])
-                    ctc_log_probs = None
-                    nbest_hyps_id_offline, _, _ = self.dec_fwd.beam_search(
-                        eout, elens, global_params, idx2token, lm, lm_second,
-                        ctc_log_probs=ctc_log_probs)
-                    # print('Offline MoChA (T:%d): %s' %
-                    #       (streaming.offset + eout_chunk.size(1) * streaming.factor,
-                    #        idx2token(nbest_hyps_id_offline[0][0])))
 
                     # pick up the best hyp from ended and active hypotheses
                     if not params['recog_chunk_sync']:
@@ -543,7 +542,7 @@ class Speech2Text(ModelBase):
                     else:
                         if len(best_hyp_id_prefix) > 0:
                             best_hyp_id_stream.extend(best_hyp_id_prefix)
-                        # print('Final Sync MoChA (T:%d, segment:%d frames): %s' %
+                        # print('Final (T:%d [frame], offset:%d [frame]): %s' %
                         #       (streaming.offset + eout_chunk.size(1) * streaming.factor,
                         #        self.dec_fwd.n_frames * streaming.factor,
                         #        idx2token(best_hyp_id_prefix)))
@@ -554,17 +553,13 @@ class Speech2Text(ModelBase):
                         # best_hyp_id_stream.extend(eos_hyp)
 
                     # reset
-                    streaming.reset()
+                    streaming.reset(stdout=stdout)
                     hyps = None
 
-                    # next chunk will start from the frame next to the boundary
-                    if not is_last_chunk and 0 <= streaming.bd_offset * streaming.factor < streaming.N_l - 1:
-                        streaming.offset -= x_chunk[(streaming.bd_offset + 1) * streaming.factor:streaming.N_l].shape[0]
-                        self.dec_fwd.n_frames -= x_chunk[
-                            (streaming.bd_offset + 1) * streaming.factor:streaming.N_l].shape[0] // streaming.factor
-                        # print('Back %d frames' % (x_chunk[(streaming.bd_offset + 1) * streaming.factor:streaming.N_l].shape[0]))
-
                 streaming.next_chunk()
+                # next chunk will start from the frame next to the boundary
+                if not is_last_chunk:
+                    streaming.backoff(x_chunk, self.dec_fwd, stdout=stdout)
                 if is_last_chunk:
                     break
 

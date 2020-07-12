@@ -32,9 +32,9 @@ class Streaming(object):
         # self.N_c = getattr(encoder, 'chunk_size_current', -1)  # for Transformer
         self.N_c = encoder.chunk_size_left  # for Transformer
         self.N_r = encoder.chunk_size_right
-        if self.N_c == 0 and self.N_r == 0:
-            # self.N_c = params['lc_chunk_size_left']  # for unidirectional encoder
-            self.N_c = 40
+        if self.N_l == 0 and self.N_r == 0:
+            self.N_l = 40  # for unidirectional encoder
+            # TODO(hirofumi0810): make this hyper-parameters
 
         # threshold for CTC-VAD
         self.blank = 0
@@ -42,19 +42,28 @@ class Streaming(object):
         self.BLANK_THRESHOLD = params['recog_ctc_vad_blank_threshold']
         self.SPIKE_THRESHOLD = params['recog_ctc_vad_spike_threshold']
         self.MAX_N_ACCUM_FRAMES = params['recog_ctc_vad_n_accum_frames']
+        assert params['recog_ctc_vad_blank_threshold'] % self.factor == 0
+        assert params['recog_ctc_vad_n_accum_frames'] % self.factor == 0
+        # NOTE: these parameters are based on 10ms/frame
 
         self.offset = 0  # global time offset in the session
         self.n_blanks = 0  # number of blank frames
         self.n_accum_frames = 0
-        self.bd_offset = -1  # boudnary offset in each chunk (after subsampling)
+        self.bd_offset = -1  # boudnary offset in each chunk (AFTER subsampling)
+
+        # for CNN
+        self.conv_lookback_n_frames = encoder.conv.n_frames_context if encoder.conv is not None else 0
+        self.conv_lookahead_n_frames = encoder.conv.n_frames_context if encoder.conv is not None else 0
 
         # for test
         self.eout_chunks = []
 
-    def reset(self):
+    def reset(self, stdout=False):
         self.eout_chunks = []
         self.n_blanks = 0
         self.n_accum_frames = 0
+        if stdout:
+            print('Reset')
 
     def register(self):
         pass
@@ -64,23 +73,28 @@ class Streaming(object):
 
     def extract_feature(self):
         j = self.offset
-        c = self.N_c
+        l = self.N_l
         r = self.N_r
 
         # Encode input features chunk by chunk
         if getattr(self.encoder, 'conv', None) is not None:
             context = self.encoder.conv.n_frames_context
-            x_chunk = self.x_whole[max(0, j - context):j + (c + r) + context]
+            x_chunk = self.x_whole[max(0, j - context):j + (l + r) + context]
         else:
-            x_chunk = self.x_whole[j:j + (c + r)]
+            x_chunk = self.x_whole[j:j + (l + r)]
 
-        is_last_chunk = (j + c - 1) >= len(self.x_whole) - 1
+        is_last_chunk = (j + l - 1) >= len(self.x_whole) - 1
         self.bd_offset = -1  # reset
-        self.n_accum_frames += x_chunk.shape[1]
+        self.n_accum_frames += min(self.N_l, x_chunk.shape[1])
 
-        return x_chunk, is_last_chunk
+        start = j - self.conv_lookback_n_frames
+        end = j + (l + r) + self.conv_lookahead_n_frames
+        lookback = start >= 0
+        lookahead = end <= self.x_whole.shape[0] - 1
 
-    def ctc_vad(self, ctc_probs_chunk):
+        return x_chunk, is_last_chunk, lookback, lookahead
+
+    def ctc_vad(self, ctc_probs_chunk, stdout=False):
         """Voice activity detection with CTC posterior probabilities.
 
         Args:
@@ -92,32 +106,63 @@ class Streaming(object):
         """
         is_reset = False  # detect the first boundary in the same chunk
 
+        if self.n_accum_frames < self.MAX_N_ACCUM_FRAMES:
+            return is_reset
+
         # Segmentation strategy 1:
         # If any segmentation points are not found in the current chunk,
         # encoder states will be carried over to the next chunk.
         # Otherwise, the current chunk is segmented at the point where
         # n_blanks surpasses the threshold.
-        if self.n_accum_frames >= self.MAX_N_ACCUM_FRAMES:
-            _, topk_ids_chunk = torch.topk(
-                ctc_probs_chunk, k=1, dim=-1, largest=True, sorted=True)
+        topk_ids_chunk = torch.topk(ctc_probs_chunk, k=1, dim=-1, largest=True, sorted=True)[1]
+        topk_ids_chunk = topk_ids_chunk[0, :, 0]  # `[T_chunk]`
+        bs, xmax_chunk, vocab = ctc_probs_chunk.size()
 
-            for j in range(ctc_probs_chunk.size(1)):
-                if topk_ids_chunk[0, j, 0] == self.blank:
+        # skip all blank segments
+        if (topk_ids_chunk == self.blank).sum() == xmax_chunk:
+            self.n_blanks += xmax_chunk
+            if stdout:
+                for j in range(xmax_chunk):
+                    print('CTC (T:%d): <blank>' % (self.offset + (j + 1) * self.factor))
+                print('All blank segments')
+            if self.n_blanks * self.factor >= self.BLANK_THRESHOLD:
+                is_reset = True
+            return is_reset
+
+        n_blanks_tmp = self.n_blanks
+        for j in range(xmax_chunk):
+            if topk_ids_chunk[j] == self.blank:
+                self.n_blanks += 1
+                if stdout:
+                    print('CTC (T:%d): <blank>' % (self.offset + (j + 1) * self.factor))
+
+            else:
+                if ctc_probs_chunk[0, j, topk_ids_chunk[j]] < self.SPIKE_THRESHOLD:
                     self.n_blanks += 1
-                    # print('CTC (T:%d): <blank>' % (self.offset + j * self.factor))
-
-                elif ctc_probs_chunk[0, j, topk_ids_chunk[0, j, 0]] < self.SPIKE_THRESHOLD:
-                    self.n_blanks += 1
-                    # print('CTC (T:%d): <blank>' % (self.offset + j * self.factor))
-
                 else:
                     self.n_blanks = 0
-                    # print('CTC (T:%d): %s' % (self.offset + j * self.factor,
-                    #                           self.idx2token([topk_ids_chunk[0, j, 0].item()])))
+                if stdout:
+                    print('CTC (T:%d): %s' % (self.offset + (j + 1) * self.factor,
+                                              self.idx2token([topk_ids_chunk[j].item()])))
 
-                if not is_reset and self.n_blanks > self.BLANK_THRESHOLD:
-                    self.bd_offset = j  # select the most right blank offset
-                    self.next_start_offset = self.offset + j
-                    is_reset = True
+            # if not is_reset and (self.n_blanks * self.factor >= self.BLANK_THRESHOLD):# NOTE: select the leftmost blank offset
+            if self.n_blanks * self.factor >= self.BLANK_THRESHOLD:  # NOTE: select the rightmost blank offset
+                self.bd_offset = j
+                is_reset = True
+                n_blanks_tmp = self.n_blanks
+
+        if stdout and is_reset:
+            print('--- Segment (%d >= %d) ---' % (n_blanks_tmp * self.factor, self.BLANK_THRESHOLD))
 
         return is_reset
+
+    def backoff(self, x_chunk, decoder, stdout=False):
+        if 0 <= self.bd_offset * self.factor < self.N_l - 1:
+            # boundary located in the middle of the current chunk
+            decoder.n_frames = 0
+            offset_prev = self.offset
+            self.offset = self.offset - x_chunk[(self.bd_offset + 1) * self.factor:self.N_l].shape[0]
+            if stdout:
+                print('Back %d frames (%d -> %d)' %
+                      (x_chunk[(self.bd_offset + 1) * self.factor:self.N_l].shape[0],
+                       offset_prev, self.offset))

@@ -61,12 +61,12 @@ class ConformerEncoder(EncoderBase):
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channles in the CNN blocks
-        conv_kernel_sizes (list): size of kernels in the CNN blocks
-        conv_strides (list): number of strides in the CNN blocks
-        conv_poolings (list): size of poolings in the CNN blocks
-        conv_batch_norm (bool): apply batch normalization only in the CNN blocks
-        conv_layer_norm (bool): apply layer normalization only in the CNN blocks
+        conv_channels (int): number of channles in CNN blocks
+        conv_kernel_sizes (list): size of kernels in CNN blocks
+        conv_strides (list): number of strides in CNN blocks
+        conv_poolings (list): size of poolings in CNN blocks
+        conv_batch_norm (bool): apply batch normalization only in CNN blocks
+        conv_layer_norm (bool): apply layer normalization only in CNN blocks
         conv_bottleneck_dim (int): dimension of the bottleneck layer between CNN and self-attention layers
         conv_param_init (float): only for CNN layers before Conformer layers
         task_specific_layer (bool): add a task specific layer for each sub task
@@ -307,15 +307,16 @@ class ConformerEncoder(EncoderBase):
                 nn.init.xavier_uniform_(self.bridge_sub2.weight)
                 nn.init.constant_(self.bridge_sub2.bias, 0.)
 
-    def forward(self, xs, xlens, task, use_cache=False, streaming=False):
+    def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
         """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, input_dim]`
             xlens (InteTensor): `[B]` (on CPU)
             task (str): ys/ys_sub1/ys_sub2
-            use_cache (bool):
             streaming (bool): streaming encoding
+            lookback (bool): truncate leftmost frames for lookback in CNN context
+            lookahead (bool): truncate rightmost frames for lookahead in CNN context
         Returns:
             eouts (dict):
                 xs (FloatTensor): `[B, T, d_model]`
