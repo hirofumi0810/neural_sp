@@ -20,16 +20,16 @@ class ConformerConvBlock(nn.Module):
     """A single convolution block for the Conformer encoder.
 
     Args:
-        d_model (int): hidden dimension
-        kernel_size (int): kernel size for depthwise convolution
+        d_model (int): input/output dimension
+        kernel_size (int): kernel size in depthwise convolution
         param_init (str): parameter initialization method
 
     """
 
     def __init__(self, d_model, kernel_size, param_init):
-        super(ConformerConvBlock, self).__init__()
 
-        self.d_model = d_model
+        super().__init__()
+
         assert (kernel_size - 1) % 2 == 0, 'kernel_size must be the odd number.'
 
         self.pointwise_conv1 = nn.Conv1d(in_channels=d_model,
@@ -73,7 +73,6 @@ class ConformerConvBlock(nn.Module):
 
         """
         B, T, d_model = xs.size()
-        assert d_model == self.d_model
 
         xs = xs.transpose(2, 1).contiguous()  # `[B, C, T]`
         xs = self.pointwise_conv1(xs)  # `[B, 2 * C, T]`

@@ -33,7 +33,8 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
 
     def __init__(self, kdim, qdim, adim, odim, n_heads, dropout,
                  bias=True, param_init=''):
-        super(RelativeMultiheadAttentionMechanism, self).__init__()
+
+        super().__init__()
 
         assert adim % n_heads == 0
         self.d_k = adim // n_heads

@@ -34,7 +34,8 @@ class PositionwiseFeedForward(nn.Module):
 
     def __init__(self, d_model, d_ff, dropout, activation, param_init,
                  bottleneck_dim=0):
-        super(PositionwiseFeedForward, self).__init__()
+
+        super().__init__()
 
         self.bottleneck_dim = bottleneck_dim
         if bottleneck_dim > 0:

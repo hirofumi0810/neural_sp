@@ -30,7 +30,8 @@ class CIF(nn.Module):
 
     def __init__(self, enc_dim, window, threshold=1.0,
                  param_init='', layer_norm_eps=1e-12):
-        super(CIF, self).__init__()
+
+        super().__init__()
 
         self.enc_dim = enc_dim
         self.beta = threshold

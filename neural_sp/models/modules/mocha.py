@@ -25,9 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class MonotonicEnergy(nn.Module):
-    def __init__(self, kdim, qdim, adim, atype, n_heads, init_r,
-                 bias=True, param_init='', conv1d=False, conv_kernel_size=5):
-        """Energy function for the monotonic attenion.
+    """Energy function for the monotonic attenion.
 
         Args:
             kdim (int): dimension of key
@@ -41,7 +39,11 @@ class MonotonicEnergy(nn.Module):
             conv1d (bool): use 1D causal convolution for energy calculation
             conv_kernel_size (int): kernel size for 1D convolution
 
-        """
+    """
+
+    def __init__(self, kdim, qdim, adim, atype, n_heads, init_r,
+                 bias=True, param_init='', conv1d=False, conv_kernel_size=5):
+
         super().__init__()
 
         assert conv_kernel_size % 2 == 1, "Kernel size should be odd for 'same' conv."
@@ -155,9 +157,7 @@ class MonotonicEnergy(nn.Module):
 
 
 class ChunkEnergy(nn.Module):
-    def __init__(self, kdim, qdim, adim, atype, n_heads=1,
-                 bias=True, param_init=''):
-        """Energy function for the chunkwise attention.
+    """Energy function for the chunkwise attention.
 
         Args:
             kdim (int): dimension of key
@@ -168,7 +168,11 @@ class ChunkEnergy(nn.Module):
             bias (bool): use bias term in linear layers
             param_init (str): parameter initialization method
 
-        """
+    """
+
+    def __init__(self, kdim, qdim, adim, atype, n_heads=1,
+                 bias=True, param_init=''):
+
         super().__init__()
 
         self.key = None
@@ -260,55 +264,57 @@ class ChunkEnergy(nn.Module):
 
 
 class MoChA(nn.Module):
+    """Monotonic (multihead) chunkwise attention.
+
+        if chunk_size == 1, this is equivalent to Hard monotonic attention
+            "Online and Linear-Time Attention by Enforcing Monotonic Alignment" (ICML 2017)
+                https://arxiv.org/abs/1704.00784
+        if chunk_size > 1, this is equivalent to monotonic chunkwise attention (MoChA)
+            "Monotonic Chunkwise Attention" (ICLR 2018)
+                https://openreview.net/forum?id=Hko85plCW
+        if chunk_size == -1, this is equivalent to Monotonic infinite lookback attention (Milk)
+            "Monotonic Infinite Lookback Attention for Simultaneous Machine Translation" (ACL 2019)
+                https://arxiv.org/abs/1906.05218
+        if chunk_size == 1 and n_heads_mono>1, this is equivalent to Monotonic Multihead Attention (MMA)-hard
+            "Monotonic Multihead Attention" (ICLR 2020)
+                https://openreview.net/forum?id=Hyg96gBKPS
+        if chunk_size == -1 and n_heads_mono>1, this is equivalent to Monotonic Multihead Attention (MMA)-Ilk
+            "Monotonic Multihead Attention" (ICLR 2020)
+                https://openreview.net/forum?id=Hyg96gBKPS
+
+    Args:
+        kdim (int): dimension of key
+        qdim (int): dimension of query
+        adim: (int) dimension of the attention layer
+        odim: (int) dimension of output
+        atype (str): type of attention mechanism
+        chunk_size (int): window size for chunkwise attention
+        n_heads_mono (int): number of heads for monotonic attention
+        n_heads_chunk (int): number of heads for chunkwise attention
+        conv1d (bool): apply 1d convolution for energy calculation
+        init_r (int): initial value for parameter 'r' used for monotonic attention
+        eps (float): epsilon parameter to avoid zero division
+        noise_std (float): standard deviation for input noise
+        no_denominator (bool): set the denominator to 1 in the alpha recurrence
+        sharpening_factor (float): sharping factor for beta calculation
+        dropout (float): dropout probability for attention weights
+        dropout_head (float): HeadDrop probability
+        bias (bool): use bias term in linear layers
+        param_init (str): parameter initialization method
+        decot (bool): delay constrainted training (DeCoT)
+        lookahead (int): lookahead frames for DeCoT
+        share_chunkwise_attention (int): share CA heads among MA heads
+
+    """
+
     def __init__(self, kdim, qdim, adim, odim, atype, chunk_size,
                  n_heads_mono=1, n_heads_chunk=1,
                  conv1d=False, init_r=-4, eps=1e-6, noise_std=1.0,
                  no_denominator=False, sharpening_factor=1.0,
                  dropout=0., dropout_head=0., bias=True, param_init='',
                  decot=False, lookahead=2, share_chunkwise_attention=False):
-        """Monotonic (multihead) chunkwise attention.
 
-            if chunk_size == 1, this is equivalent to Hard monotonic attention
-                "Online and Linear-Time Attention by Enforcing Monotonic Alignment" (ICML 2017)
-                    https://arxiv.org/abs/1704.00784
-            if chunk_size > 1, this is equivalent to monotonic chunkwise attention (MoChA)
-                "Monotonic Chunkwise Attention" (ICLR 2018)
-                    https://openreview.net/forum?id=Hko85plCW
-            if chunk_size == -1, this is equivalent to Monotonic infinite lookback attention (Milk)
-                "Monotonic Infinite Lookback Attention for Simultaneous Machine Translation" (ACL 2019)
-                    https://arxiv.org/abs/1906.05218
-            if chunk_size == 1 and n_heads_mono>1, this is equivalent to Monotonic Multihead Attention (MMA)-hard
-                "Monotonic Multihead Attention" (ICLR 2020)
-                    https://openreview.net/forum?id=Hyg96gBKPS
-            if chunk_size == -1 and n_heads_mono>1, this is equivalent to Monotonic Multihead Attention (MMA)-Ilk
-                "Monotonic Multihead Attention" (ICLR 2020)
-                    https://openreview.net/forum?id=Hyg96gBKPS
-
-        Args:
-            kdim (int): dimension of key
-            qdim (int): dimension of query
-            adim: (int) dimension of the attention layer
-            odim: (int) dimension of output
-            atype (str): type of attention mechanism
-            chunk_size (int): window size for chunkwise attention
-            n_heads_mono (int): number of heads for monotonic attention
-            n_heads_chunk (int): number of heads for chunkwise attention
-            conv1d (bool): apply 1d convolution for energy calculation
-            init_r (int): initial value for parameter 'r' used for monotonic attention
-            eps (float): epsilon parameter to avoid zero division
-            noise_std (float): standard deviation for input noise
-            no_denominator (bool): set the denominator to 1 in the alpha recurrence
-            sharpening_factor (float): sharping factor for beta calculation
-            dropout (float): dropout probability for attention weights
-            dropout_head (float): HeadDrop probability
-            bias (bool): use bias term in linear layers
-            param_init (str): parameter initialization method
-            decot (bool): delay constrainted training (DeCoT)
-            lookahead (int): lookahead frames for DeCoT
-            share_chunkwise_attention (int): share CA heads among MA heads
-
-        """
-        super(MoChA, self).__init__()
+        super().__init__()
 
         self.atype = atype
         assert adim % (n_heads_mono * n_heads_chunk) == 0

@@ -13,6 +13,8 @@ import random
 import torch
 import torch.nn as nn
 
+from neural_sp.models.modules.mocha import headdrop
+
 random.seed(1)
 
 logger = logging.getLogger(__name__)
@@ -37,7 +39,8 @@ class MultiheadAttentionMechanism(nn.Module):
 
     def __init__(self, kdim, qdim, adim, odim, n_heads, dropout, dropout_head=0.,
                  atype='scaled_dot', bias=True, param_init=''):
-        super(MultiheadAttentionMechanism, self).__init__()
+
+        super().__init__()
 
         self.atype = atype
         assert adim % n_heads == 0
@@ -89,7 +92,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value = None
         self.mask = None
 
-    def forward(self, key, value, query, mask, aw_prev=None,
+    def forward(self, key, value, query, mask, aw_prev=None, aw_lower=None,
                 cache=False, mode='', trigger_point=None, eps_wait=-1):
         """Forward pass.
 
@@ -100,14 +103,14 @@ class MultiheadAttentionMechanism(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             aw_prev: dummy interface
             cache (bool): cache key, value, and mask
-            mode: dummy interface for MoChA
+            mode: dummy interface for MoChA/MMA
             trigger_point: dummy interface for MoChA
             eps_wait: dummy interface for MMA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, H, qlen, klen]`
-            beta: dummy interface for MoChA
-            p_choose: dummy interface for MoChA
+            beta: dummy interface for MoChA/MMA
+            p_choose: dummy interface for MoChA/MMA
 
         """
         bs, klen = key.size()[: 2]
@@ -142,16 +145,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # mask out each head independently (HeadDrop)
         if self.dropout_head > 0 and self.training:
-            n_effective_heads = self.n_heads
-            head_mask = aw.new_ones(aw.size()).byte()  # `[B, qlen, klen, H]`
-            for h in range(self.n_heads):
-                if random.random() < self.dropout_head:
-                    head_mask[:, :, :, h] = 0
-                    n_effective_heads -= 1
-            aw_masked = aw_masked.masked_fill_(head_mask == 0, 0)
-            # Normalization
-            if n_effective_heads > 0:
-                aw_masked = aw_masked * (self.n_heads / n_effective_heads)
+            aw_masked = headdrop(aw_masked, self.n_heads_ma, self.dropout_head)
 
         cv = torch.einsum("bijh,bjhd->bihd", (aw_masked, self.value))  # `[B, qlen, H, d_k]`
         cv = cv.contiguous().view(bs, -1, self.n_heads * self.d_k)  # `[B, qlen, H * d_k]`

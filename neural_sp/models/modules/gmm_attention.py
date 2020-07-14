@@ -18,20 +18,22 @@ logger = logging.getLogger(__name__)
 
 
 class GMMAttention(nn.Module):
+    """GMM attention.
+
+    Args:
+        kdim (int): dimension of key
+        qdim (int): dimension of query
+        adim: (int) dimension of attention space
+        n_mixtures (int): number of mixtures
+        vfloor (float): parameter for numerical stability
+        param_init (str): parameter initialization method
+
+    """
+
     def __init__(self, kdim, qdim, adim, n_mixtures, vfloor=1e-6,
                  param_init=''):
-        """GMM attention.
 
-        Args:
-            kdim (int): dimension of key
-            qdim (int): dimension of query
-            adim: (int) dimension of attention space
-            n_mixtures (int): number of mixtures
-            vfloor (float): parameter for numerical stability
-            param_init (str): parameter initialization method
-
-        """
-        super(GMMAttention, self).__init__()
+        super().__init__()
 
         self.n_mix = n_mixtures
         self.n_heads = 1  # dummy for attention plot
@@ -69,12 +71,12 @@ class GMMAttention(nn.Module):
             mask (ByteTensor): `[B, qmax, klen]`
             aw_prev (FloatTensor): `[B, klen, 1]`
             cache (bool): cache key and mask
-            mode: dummy interface for MoChA
+            mode: dummy interface for MoChA/MMA
             trigger_point: dummy interface for MoChA
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             alpha (FloatTensor): `[B, klen, 1]`
-            beta: dummy interface for MoChA
+            beta: dummy interface for MoChA/MMA
             p_choose_i: dummy interface for MoChA
 
         """

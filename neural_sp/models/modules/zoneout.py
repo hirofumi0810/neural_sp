@@ -12,7 +12,9 @@ import torch.nn as nn
 class ZoneoutCell(nn.Module):
 
     def __init__(self, cell, zoneout_prob_h, zoneout_prob_c):
-        super(ZoneoutCell, self).__init__()
+
+        super().__init__()
+
         self.cell = cell
         self.hidden_size = cell.hidden_size
 

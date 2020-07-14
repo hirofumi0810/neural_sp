@@ -37,7 +37,8 @@ class PositionalEncoding(nn.Module):
 
     def __init__(self, d_model, dropout, pe_type, param_init, max_len=5000,
                  conv_kernel_size=3, layer_norm_eps=1e-12):
-        super(PositionalEncoding, self).__init__()
+
+        super().__init__()
 
         self.d_model = d_model
         self.pe_type = pe_type
@@ -103,9 +104,12 @@ class PositionalEncoding(nn.Module):
 
 
 class XLPositionalEmbedding(nn.Module):
+    """Positional embedding for TransformerXL."""
+
     def __init__(self, d_model, dropout):
-        """Positional embedding for TransformerXL."""
+
         super().__init__()
+
         self.d_model = d_model
         inv_freq = 1 / (10000 ** (torch.arange(0.0, d_model, 2.0) / d_model))
         self.register_buffer("inv_freq", inv_freq)
