@@ -104,7 +104,7 @@ class MultiheadAttentionMechanism(nn.Module):
             aw_prev: dummy interface
             cache (bool): cache key, value, and mask
             mode: dummy interface for MoChA/MMA
-            trigger_point: dummy interface for MoChA
+            trigger_point: dummy interface for MoChA/MMA
             eps_wait: dummy interface for MMA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`

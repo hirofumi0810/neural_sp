@@ -112,7 +112,7 @@ class AttentionMechanism(nn.Module):
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
             beta: dummy interface for MoChA/MMA
-            p_choose_i: dummy interface for MoChA
+            p_choose_i: dummy interface for MoChA/MMA
 
         """
         bs, klen = key.size()[:2]

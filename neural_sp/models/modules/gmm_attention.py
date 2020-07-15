@@ -72,12 +72,12 @@ class GMMAttention(nn.Module):
             aw_prev (FloatTensor): `[B, klen, 1]`
             cache (bool): cache key and mask
             mode: dummy interface for MoChA/MMA
-            trigger_point: dummy interface for MoChA
+            trigger_point: dummy interface for MoChA/MMA
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             alpha (FloatTensor): `[B, klen, 1]`
             beta: dummy interface for MoChA/MMA
-            p_choose_i: dummy interface for MoChA
+            p_choose_i: dummy interface for MoChA/MMA
 
         """
         bs, klen = key.size()[:2]
