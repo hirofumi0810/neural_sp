@@ -145,7 +145,7 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # mask out each head independently (HeadDrop)
         if self.dropout_head > 0 and self.training:
-            aw_masked = headdrop(aw_masked, self.n_heads_ma, self.dropout_head)
+            aw_masked = headdrop(aw_masked, self.n_heads, self.dropout_head)
 
         cv = torch.einsum("bijh,bjhd->bihd", (aw_masked, self.value))  # `[B, qlen, H, d_k]`
         cv = cv.contiguous().view(bs, -1, self.n_heads * self.d_k)  # `[B, qlen, H * d_k]`
