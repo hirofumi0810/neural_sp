@@ -387,6 +387,100 @@ class MoChA(nn.Module):
         # for chunkwise attention during streaming decoding
         self.key_prev_tail = key[:, -(self.w - 1):]
 
+    def recursive(self, e_ma, aw_prev):
+        bs, n_heads_ma, qlen, klen = e_ma.size()
+        p_choose = torch.sigmoid(add_gaussian_noise(e_ma, self.noise_std))  # `[B, H_ma, qlen, klen]`
+        alpha = []
+        for i in range(qlen):
+            # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
+            shifted_1mp_choose = torch.cat([e_ma.new_ones(bs, self.n_heads_ma, 1, 1),
+                                            1 - p_choose[:, :, i:i + 1, :-1]], dim=-1)
+            # Compute attention distribution recursively as
+            # q_j = (1 - p_choose_j) * q_(j-1) + aw_prev_j
+            # alpha_j = p_choose_j * q_j
+            q = e_ma.new_zeros(bs, self.n_heads_ma, 1, klen + 1)
+            for j in range(klen):
+                q[:, :, i:i + 1, j + 1] = shifted_1mp_choose[:, :, i:i + 1, j].clone() * q[:, :, i:i + 1, j].clone() + \
+                    aw_prev[:, :, :, j].clone()
+            aw_prev = p_choose[:, :, i:i + 1] * q[:, :, i:i + 1, 1:]  # `[B, H_ma, 1, klen]`
+            alpha.append(aw_prev)
+        alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_ma, qlen, klen]`
+        return alpha, p_choose
+
+    def parallel(self, e_ma, aw_prev, trigger_point):
+        bs, n_heads_ma, qlen, klen = e_ma.size()
+        p_choose = torch.sigmoid(add_gaussian_noise(e_ma, self.noise_std))  # `[B, H_ma, qlen, klen]`
+        alpha = []
+
+        # safe_cumprod computes cumprod in logspace with numeric checks
+        cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, H_ma, qlen, klen]`
+        # Compute recurrence relation solution
+        for i in range(qlen):
+            denom = 1 if self.no_denom else torch.clamp(
+                cumprod_1mp_choose[:, :, i:i + 1], min=self.eps, max=1.0)
+            aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
+                aw_prev / denom, dim=-1)  # `[B, H_ma, 1, klen]`
+            # Mask the right part from the trigger point
+            if self.decot and trigger_point is not None:
+                for b in range(bs):
+                    aw_prev[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
+            alpha.append(aw_prev)
+
+        alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_ma, qlen, klen]`
+        return alpha, p_choose
+
+    def hard(self, e_ma, aw_prev, eps_wait):
+        bs, n_heads_ma, qlen, klen = e_ma.size()
+        assert qlen == 1
+        assert not self.training
+        if self.n_heads_ma == 1:
+            # assert aw_prev.sum() > 0
+            p_choose_i = (torch.sigmoid(e_ma) >= 0.5).float()[:, :, 0:1]
+            # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
+            # Remove any probabilities before the index chosen at the last time step
+            p_choose_i *= torch.cumsum(
+                aw_prev[:, :, 0:1, -e_ma.size(3):], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
+            # Now, use exclusive cumprod to remove probabilities after the first
+            # chosen index, like so:
+            # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
+            # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
+            # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
+            # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
+            alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_ma, 1 (qlen), klen]`
+        else:
+            p_choose_i = (torch.sigmoid(e_ma) >= 0.5).float()[:, :, 0:1]
+            # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
+            # Remove any probabilities before the index chosen at the last time step
+            p_choose_i *= torch.cumsum(aw_prev[:, :, 0:1], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
+            # Now, use exclusive cumprod to remove probabilities after the first
+            # chosen index, like so:
+            # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
+            # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
+            # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
+            # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
+            alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_ma, 1 (qlen), klen]`
+
+        if eps_wait > 0:
+            for b in range(bs):
+                # no boundary until the last frame for all heads
+                if alpha[b].sum() == 0:
+                    continue
+
+                leftmost = alpha[b, :, 0].nonzero()[:, -1].min().item()
+                rightmost = alpha[b, :, 0].nonzero()[:, -1].max().item()
+                for h in range(self.n_heads_ma):
+                    # no bondary at the h-th head
+                    if alpha[b, h, 0].sum().item() == 0:
+                        alpha[b, h, 0, min(rightmost, leftmost + eps_wait)] = 1
+                        continue
+
+                    # surpass acceptable latency
+                    if alpha[b, h, 0].nonzero()[:, -1].min().item() >= leftmost + eps_wait:
+                        alpha[b, h, 0, :] = 0  # reset
+                        alpha[b, h, 0, leftmost + eps_wait] = 1
+
+        return alpha, None
+
     def forward(self, key, value, query, mask=None, aw_prev=None,
                 cache=False, mode='hard', trigger_point=None, eps_wait=-1,
                 efficient_decoding=False):
@@ -424,41 +518,11 @@ class MoChA(nn.Module):
         assert e_ma.size(3) + self.bd_offset == key.size(1)
 
         if mode == 'recursive':  # training
-            p_choose = torch.sigmoid(add_gaussian_noise(e_ma, self.noise_std))  # `[B, H_ma, qlen, klen]`
-            alpha = []
-            for i in range(qlen):
-                # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
-                shifted_1mp_choose = torch.cat([key.new_ones(bs, self.n_heads_ma, 1, 1),
-                                                1 - p_choose[:, :, i:i + 1, :-1]], dim=-1)
-                # Compute attention distribution recursively as
-                # q_j = (1 - p_choose_j) * q_(j-1) + aw_prev_j
-                # alpha_j = p_choose_j * q_j
-                q = key.new_zeros(bs, self.n_heads_ma, 1, klen + 1)
-                for j in range(klen):
-                    q[:, :, i:i + 1, j + 1] = shifted_1mp_choose[:, :, i:i + 1, j].clone() * q[:, :, i:i + 1, j].clone() + \
-                        aw_prev[:, :, :, j].clone()
-                aw_prev = p_choose[:, :, i:i + 1] * q[:, :, i:i + 1, 1:]  # `[B, H_ma, 1, klen]`
-                alpha.append(aw_prev)
-            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_ma, qlen, klen]`
+            alpha, p_choose = self.recursive(e_ma, aw_prev)
             alpha_masked = alpha.clone()
 
-        elif mode == 'parallel':  # training
-            p_choose = torch.sigmoid(add_gaussian_noise(e_ma, self.noise_std))  # `[B, H_ma, qlen, klen]`
-            # safe_cumprod computes cumprod in logspace with numeric checks
-            cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, H_ma, qlen, klen]`
-            # Compute recurrence relation solution
-            alpha = []
-            for i in range(qlen):
-                denom = 1 if self.no_denom else torch.clamp(cumprod_1mp_choose[:, :, i:i + 1], min=self.eps, max=1.0)
-                aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
-                    aw_prev / denom, dim=-1)  # `[B, H_ma, 1, klen]`
-                # Mask the right part from the trigger point
-                if self.decot and trigger_point is not None:
-                    for b in range(bs):
-                        aw_prev[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
-                alpha.append(aw_prev)
-
-            alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_ma, qlen, klen]`
+        elif mode == 'parallel':  # training (efficient)
+            palpha, p_choose = self.parallel(e_ma, aw_prev, trigger_point)
             alpha_masked = alpha.clone()
 
             # mask out each head independently (HeadDrop)
@@ -466,55 +530,7 @@ class MoChA(nn.Module):
                 alpha_masked = headdrop(alpha_masked, self.n_heads_ma, self.dropout_head)
 
         elif mode == 'hard':  # inference
-            assert qlen == 1
-            assert not self.training
-            p_choose = None
-            if self.n_heads_ma == 1:
-                # assert aw_prev.sum() > 0
-                p_choose_i = (torch.sigmoid(e_ma) >= 0.5).float()[:, :, 0:1]
-                # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
-                # Remove any probabilities before the index chosen at the last time step
-                p_choose_i *= torch.cumsum(
-                    aw_prev[:, :, 0:1, -e_ma.size(3):], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
-                # Now, use exclusive cumprod to remove probabilities after the first
-                # chosen index, like so:
-                # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
-                # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
-                # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
-                # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
-                alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_ma, 1 (qlen), klen]`
-            else:
-                p_choose_i = (torch.sigmoid(e_ma) >= 0.5).float()[:, :, 0:1]
-                # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
-                # Remove any probabilities before the index chosen at the last time step
-                p_choose_i *= torch.cumsum(aw_prev[:, :, 0:1], dim=-1)  # `[B, H_ma, 1 (qlen), klen]`
-                # Now, use exclusive cumprod to remove probabilities after the first
-                # chosen index, like so:
-                # p_choose_i                        = [0, 0, 0, 1, 1, 0, 1, 1]
-                # 1 - p_choose_i                    = [1, 1, 1, 0, 0, 1, 0, 0]
-                # exclusive_cumprod(1 - p_choose_i) = [1, 1, 1, 1, 0, 0, 0, 0]
-                # alpha: product of above           = [0, 0, 0, 1, 0, 0, 0, 0]
-                alpha = p_choose_i * exclusive_cumprod(1 - p_choose_i)  # `[B, H_ma, 1 (qlen), klen]`
-
-            if eps_wait > 0:
-                for b in range(bs):
-                    # no boundary until the last frame for all heads
-                    if alpha[b].sum() == 0:
-                        continue
-
-                    leftmost = alpha[b, :, 0].nonzero()[:, -1].min().item()
-                    rightmost = alpha[b, :, 0].nonzero()[:, -1].max().item()
-                    for h in range(self.n_heads_ma):
-                        # no bondary at the h-th head
-                        if alpha[b, h, 0].sum().item() == 0:
-                            alpha[b, h, 0, min(rightmost, leftmost + eps_wait)] = 1
-                            continue
-
-                        # surpass acceptable latency
-                        if alpha[b, h, 0].nonzero()[:, -1].min().item() >= leftmost + eps_wait:
-                            alpha[b, h, 0, :] = 0  # reset
-                            alpha[b, h, 0, leftmost + eps_wait] = 1
-
+            alpha, p_choose = self.hard(e_ma, aw_prev, eps_wait)
             alpha_masked = alpha.clone()
 
         else:
