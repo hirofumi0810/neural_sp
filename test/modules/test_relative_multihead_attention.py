@@ -66,6 +66,7 @@ def test_forward(args, learnable):
     module_mha = importlib.import_module('neural_sp.models.modules.relative_multihead_attention')
     attention = module_mha.RelativeMultiheadAttentionMechanism(**args)
     attention = attention.to(device)
+
     attention.train()
     aws = None
     for i in range(qlen):

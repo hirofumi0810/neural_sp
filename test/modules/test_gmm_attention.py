@@ -45,6 +45,7 @@ def test_forward(args):
     module = importlib.import_module('neural_sp.models.modules.gmm_attention')
     attention = module.GMMAttention(**args)
     attention = attention.to(device)
+
     attention.train()
     aws = None
     for i in range(qlen):

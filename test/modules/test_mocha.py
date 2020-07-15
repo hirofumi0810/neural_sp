@@ -84,6 +84,7 @@ def test_forward_soft_parallel(args):
     module = importlib.import_module('neural_sp.models.modules.mocha')
     mocha = module.MoChA(**args)
     mocha = mocha.to(device)
+
     mocha.train()
     alpha = None
     for i in range(qlen):
@@ -134,6 +135,7 @@ def test_forward_hard(args):
     module = importlib.import_module('neural_sp.models.modules.mocha')
     mocha = module.MoChA(**args)
     mocha = mocha.to(device)
+
     mocha.eval()
     alpha = None
     for i in range(qlen):

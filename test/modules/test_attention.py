@@ -57,6 +57,7 @@ def test_forward(args):
     module = importlib.import_module('neural_sp.models.modules.attention')
     attention = module.AttentionMechanism(**args)
     attention = attention.to(device)
+
     attention.train()
     aws = None
     for i in range(qlen):
