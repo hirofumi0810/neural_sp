@@ -28,7 +28,9 @@ class CausalConv1d(nn.Module):
 
     def __init__(self, in_channels, out_channels, kernel_size, dilation=1,
                  param_init=''):
-        super(CausalConv1d, self).__init__()
+
+        super().__init__()
+
         self.padding = (kernel_size - 1) * dilation
         self.conv1d = nn.Conv1d(in_channels, out_channels, kernel_size,
                                 padding=self.padding, dilation=dilation)
@@ -48,9 +50,9 @@ class CausalConv1d(nn.Module):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, in_channels]`
+            xs (FloatTensor): `[B, T, C_in]`
         Returns:
-            xs (FloatTensor): `[B, T, out_channels]`
+            xs (FloatTensor): `[B, T, C_out]`
 
         """
         xs = xs.transpose(2, 1)

@@ -44,8 +44,10 @@ def make_args(**kwargs):
         ({'n_heads_mono': 1, 'chunk_size': 1, 'conv1d': True}),
         ({'n_heads_mono': 1, 'chunk_size': 1, 'no_denominator': True}),
         ({'n_heads_mono': 1, 'chunk_size': 1, 'bias': False}),
-        # mocha
+        # MoChA
         ({'n_heads_mono': 1, 'chunk_size': 4}),
+        # Milk
+        ({'n_heads_mono': 1, 'chunk_size': -1}),
         # MMA
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 1, 'atype': 'scaled_dot'}),
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot'}),
@@ -84,8 +86,25 @@ def test_forward_soft_parallel(args):
     module = importlib.import_module('neural_sp.models.modules.mocha')
     mocha = module.MoChA(**args)
     mocha = mocha.to(device)
+
     mocha.train()
+    # recursive
     alpha = None
+    for i in range(qlen):
+        out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
+                    mode='recursive', cache=True)
+        assert len(out) == 4
+        cv, alpha, beta, p_choose = out
+        assert cv.size() == (batch_size, 1, value.size(2))
+        assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
+        assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
+        if args['chunk_size'] > 1:
+            assert beta is not None
+            assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
+
+    # parallel
+    alpha = None
+    mocha.reset()
     for i in range(qlen):
         out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
                     mode='parallel', cache=True)
@@ -106,8 +125,10 @@ def test_forward_soft_parallel(args):
         ({'n_heads_mono': 1, 'chunk_size': 1, 'conv1d': True}),
         ({'n_heads_mono': 1, 'chunk_size': 1, 'no_denominator': True}),
         ({'n_heads_mono': 1, 'chunk_size': 1, 'bias': False}),
-        # mocha
+        # MoChA
         ({'n_heads_mono': 1, 'chunk_size': 4}),
+        # Milk
+        ({'n_heads_mono': 1, 'chunk_size': -1}),
         # MMA
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 1, 'atype': 'scaled_dot'}),
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot'}),
@@ -134,6 +155,7 @@ def test_forward_hard(args):
     module = importlib.import_module('neural_sp.models.modules.mocha')
     mocha = module.MoChA(**args)
     mocha = mocha.to(device)
+
     mocha.eval()
     alpha = None
     for i in range(qlen):

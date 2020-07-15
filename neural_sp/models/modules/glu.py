@@ -15,14 +15,15 @@ class LinearGLUBlock(nn.Module):
     """A linear GLU block.
 
     Args:
-        size (int): input and output dimension
+        idim (int): input and output dimension
 
     """
 
-    def __init__(self, size):
+    def __init__(self, idim):
+
         super().__init__()
 
-        self.fc = nn.Linear(size, size * 2)
+        self.fc = nn.Linear(idim, idim * 2)
 
     def forward(self, xs):
         return F.glu(self.fc(xs), dim=-1)
@@ -41,6 +42,7 @@ class ConvGLUBlock(nn.Module):
     """
 
     def __init__(self, kernel_size, in_ch, out_ch, bottlececk_dim=0, dropout=0.):
+
         super().__init__()
 
         self.conv_residual = None
@@ -84,7 +86,7 @@ class ConvGLUBlock(nn.Module):
         self.layers = nn.Sequential(layers)
 
     def forward(self, xs):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, in_ch, T, feat_dim]`

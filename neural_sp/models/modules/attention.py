@@ -37,7 +37,7 @@ class AttentionMechanism(nn.Module):
                  conv_out_channels=10, conv_kernel_size=201, dropout=0.,
                  lookahead=2):
 
-        super(AttentionMechanism, self).__init__()
+        super().__init__()
 
         assert conv_kernel_size % 2 == 1, "Kernel size should be odd for 'same' conv."
         self.atype = atype
@@ -106,13 +106,13 @@ class AttentionMechanism(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             aw_prev (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
             cache (bool): cache key and mask
-            mode: dummy interface for MoChA
+            mode: dummy interface for MoChA/MMA
             trigger_point (IntTensor): `[B]`
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
-            beta: dummy interface for MoChA
-            p_choose_i: dummy interface for MoChA
+            beta: dummy interface for MoChA/MMA
+            p_choose_i: dummy interface for MoChA/MMA
 
         """
         bs, klen = key.size()[:2]
