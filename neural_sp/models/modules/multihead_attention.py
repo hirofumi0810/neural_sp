@@ -92,7 +92,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value = None
         self.mask = None
 
-    def forward(self, key, value, query, mask, aw_prev=None, aw_lower=None,
+    def forward(self, key, value, query, mask, aw_prev=None,
                 cache=False, mode='', trigger_point=None, eps_wait=-1):
         """Forward pass.
 
