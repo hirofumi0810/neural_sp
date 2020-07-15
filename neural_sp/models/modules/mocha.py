@@ -522,7 +522,7 @@ class MoChA(nn.Module):
             alpha_masked = alpha.clone()
 
         elif mode == 'parallel':  # training (efficient)
-            palpha, p_choose = self.parallel(e_ma, aw_prev, trigger_point)
+            alpha, p_choose = self.parallel(e_ma, aw_prev, trigger_point)
             alpha_masked = alpha.clone()
 
             # mask out each head independently (HeadDrop)
