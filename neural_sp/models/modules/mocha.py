@@ -27,17 +27,17 @@ logger = logging.getLogger(__name__)
 class MonotonicEnergy(nn.Module):
     """Energy function for the monotonic attenion.
 
-        Args:
-            kdim (int): dimension of key
-            qdim (int): dimension of quary
-            adim (int): dimension of attention space
-            atype (str): type of attention mechanism
-            n_heads (int): number of monotonic attention heads
-            init_r (int): initial value for offset r
-            bias (bool): use bias term in linear layers
-            param_init (str): parameter initialization method
-            conv1d (bool): use 1D causal convolution for energy calculation
-            conv_kernel_size (int): kernel size for 1D convolution
+    Args:
+        kdim (int): dimension of key
+        qdim (int): dimension of quary
+        adim (int): dimension of attention space
+        atype (str): type of attention mechanism
+        n_heads (int): number of monotonic attention heads
+        init_r (int): initial value for offset r
+        bias (bool): use bias term in linear layers
+        param_init (str): parameter initialization method
+        conv1d (bool): use 1D causal convolution for energy calculation
+        conv_kernel_size (int): kernel size for 1D convolution
 
     """
 
@@ -159,14 +159,14 @@ class MonotonicEnergy(nn.Module):
 class ChunkEnergy(nn.Module):
     """Energy function for the chunkwise attention.
 
-        Args:
-            kdim (int): dimension of key
-            qdim (int): dimension of quary
-            adim (int): dimension of attention space
-            atype (str): type of attention mechanism
-            n_heads (int): number of chunkwise attention heads
-            bias (bool): use bias term in linear layers
-            param_init (str): parameter initialization method
+    Args:
+        kdim (int): dimension of key
+        qdim (int): dimension of quary
+        adim (int): dimension of attention space
+        atype (str): type of attention mechanism
+        n_heads (int): number of chunkwise attention heads
+        bias (bool): use bias term in linear layers
+        param_init (str): parameter initialization method
 
     """
 

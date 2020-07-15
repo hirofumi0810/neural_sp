@@ -45,34 +45,34 @@ class TransformerDecoder(DecoderBase):
             unk (int): index for <unk>
             pad (int): index for <pad>
             blank (int): index for <blank>
-        enc_n_units (int): number of units of the encoder outputs
+        enc_n_units (int): number of units of encoder outputs
         attn_type (str): type of attention mechanism
         n_heads (int): number of attention heads
         n_layers (int): number of self-attention layers
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
-        ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
+        ffn_bottleneck_dim (int): bottleneck dimension for light-weight FFN layer
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         vocab (int): number of nodes in softmax layer
-        tie_embedding (bool): tie parameters of the embedding and output layers
+        tie_embedding (bool): tie parameters of embedding and output layers
         dropout (float): dropout probability for linear layers
-        dropout_emb (float): dropout probability for the embedding layer
+        dropout_emb (float): dropout probability for embedding layer
         dropout_att (float): dropout probability for attention distributions
         dropout_layer (float): LayerDrop probability for layers
         dropout_head (float): HeadDrop probability for attention heads
         lsm_prob (float): label smoothing probability
         ctc_weight (float): CTC loss weight
         ctc_lsm_prob (float): label smoothing probability for CTC
-        ctc_fc_list (list): Fully-connected layer configuration before the CTC softmax
+        ctc_fc_list (list): fully-connected layer configuration before the CTC softmax
         backward (bool): decode in the backward order
         global_weight (float): global loss weight for multi-task learning
         mtl_per_batch (bool): change mini-batch per task for multi-task training
         param_init (str): parameter initialization method
         memory_transformer (bool): TransformerXL decoder
         mem_len (int):
-        mocha_chunk_size (int): chunk size for MMA
+        mocha_chunk_size (int): chunk size for chunkwise attention. -1 means infinite lookback.
         mocha_n_heads_mono (int): number of hard monotonic attention head
         mocha_n_heads_chunk (int): number of hard chunkwise attention head
         mocha_init_r (int): initial bias value for hard monotonic attention
@@ -231,7 +231,7 @@ class TransformerDecoder(DecoderBase):
                                help='parameter initialization')
         # Transformer decoder specific
         group.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
-                           choices=['scaled_dot', 'add', 'mocha'],
+                           choices=['scaled_dot', 'mocha'],
                            help='type of attention mechasnism for Transformer decoder')
         group.add_argument('--transformer_dec_pe_type', type=str, default='add',
                            choices=['add', 'none', '1dconv3L'],
@@ -240,7 +240,7 @@ class TransformerDecoder(DecoderBase):
                            help='LayerDrop probability for Transformer decoder layers')
         group.add_argument('--dropout_head', type=float, default=0.0,
                            help='HeadDrop probability for masking out a head in the Transformer decoder')
-        # streaming
+        # MMA specific
         parser.add_argument('--mocha_n_heads_mono', type=int, default=1,
                             help='number of heads for monotonic attention')
         parser.add_argument('--mocha_n_heads_chunk', type=int, default=1,
@@ -264,7 +264,6 @@ class TransformerDecoder(DecoderBase):
                             help='differentiable latency metric for MMA')
         parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
                             help='latency loss weight for MMA')
-        # MMA specific
         group.add_argument('--mocha_first_layer', type=int, default=1,
                            help='the initial layer to have a MMA function')
         group.add_argument('--mocha_head_divergence_loss_weight', type=float, default=0.0,
