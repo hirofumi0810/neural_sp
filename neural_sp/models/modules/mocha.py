@@ -211,7 +211,7 @@ class ChunkEnergy(nn.Module):
         self.mask = None
 
     def forward(self, key, query, mask, cache=False,
-                boundary_leftmost=0, boundary_rightmost=10e6):
+                boundary_leftmost=0, boundary_rightmost=100000):
         """Compute chunkwise energy.
 
         Args:
@@ -555,12 +555,11 @@ class MoChA(nn.Module):
                 else:
                     key_ = key
                 e_ca = self.chunk_energy(key_, query, mask, cache=cache,
-                                         boundary_leftmost=max(0, self.bd_offset + bd_leftmost - self.w + 1),
+                                         boundary_leftmost=0 if self.milk else max(
+                                             0, self.bd_offset + bd_leftmost - self.w + 1),
                                          boundary_rightmost=self.bd_offset + bd_rightmost + 1 + tail_len)  # `[B, (H_ma*)H_ca, qlen, ken]`
             else:
-                e_ca = self.chunk_energy(key, query, mask, cache=cache,
-                                         boundary_leftmost=max(0, self.bd_offset + bd_leftmost - self.w + 1),
-                                         boundary_rightmost=self.bd_offset + bd_rightmost + 1)  # `[B, (H_ma*)H_ca, qlen, ken]`
+                e_ca = self.chunk_energy(key, query, mask, cache=cache)  # `[B, (H_ma*)H_ca, qlen, ken]`
 
             # padding
             additional = e_ca.size(3) - alpha_masked.size(3)
@@ -611,13 +610,13 @@ class MoChA(nn.Module):
 
         assert alpha.size() == (bs, self.n_heads_ma, qlen, klen), \
             (alpha.size(), (bs, self.n_heads_ma, qlen, klen))
-        if self.w > 1 or self.milk:
+        if self.w > 1:
             _w = max(1, (bd_offset_old + bd_rightmost + 1) - max(0, bd_offset_old + bd_leftmost - self.w + 1))
-            # assert beta.size() == (bs, self.n_heads_ma * self.n_heads_ca, qlen, e_ca.size(3) + additional), \
-            #     (beta.size(), (bs, self.n_heads_ma * self.n_heads_ca, qlen, e_ca.size(3) + additional))
             assert beta.size() == (bs, self.n_heads_ma * self.n_heads_ca, qlen, _w + tail_len), \
                 (beta.size(), (bs, self.n_heads_ma * self.n_heads_ca, qlen, _w + tail_len))
-            # TODO: padding for beta
+        elif self.milk:
+            assert beta.size() == (bs, self.n_heads_ma * self.n_heads_ca, qlen, klen), \
+                (beta.size(), (bs, self.n_heads_ma * self.n_heads_ca, qlen, klen))
 
         return cv, alpha, beta, p_choose
 
