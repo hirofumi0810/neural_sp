@@ -28,11 +28,13 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         dropout (float): dropout probability for attenion weights
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
+        xl_like (bool): use TransformerXL like relative positional encoding.
+            Otherwise, use relative positional encoding like Shaw et al. 2018
 
     """
 
     def __init__(self, kdim, qdim, adim, odim, n_heads, dropout,
-                 bias=True, param_init=''):
+                 bias=False, param_init='', xl_like=False):
 
         super().__init__()
 
@@ -40,16 +42,20 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         self.d_k = adim // n_heads
         self.n_heads = n_heads
         self.scale = math.sqrt(self.d_k)
+        self.xl_like = xl_like
 
         # attention dropout applied AFTER the softmax layer
         self.dropout = nn.Dropout(p=dropout)
 
+        assert kdim == qdim
+        # NOTE: relative attention is supprted for self-attention only
         self.w_key = nn.Linear(kdim, adim, bias=bias)
         self.w_value = nn.Linear(kdim, adim, bias=bias)
         self.w_query = nn.Linear(qdim, adim, bias=bias)
-        self.w_position = nn.Linear(qdim, adim, bias=bias)
-        # TODO: fix later
         self.w_out = nn.Linear(adim, odim, bias=bias)
+
+        if xl_like:
+            self.w_pos = nn.Linear(qdim, adim, bias=bias)
 
         if param_init == 'xavier_uniform':
             self.reset_parameters(bias)
@@ -72,6 +78,11 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         if bias:
             nn.init.constant_(self.w_out.bias, 0.)
 
+        if self.xl_like:
+            nn.init.xavier_uniform_(self.w_pos.weight)
+            if bias:
+                nn.init.constant_(self.w_pos.bias, 0.)
+
     def _rel_shift(self, xs):
         """Calculate relative positional attention efficiently.
 
@@ -91,66 +102,68 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
                       .view_as(xs))
         return xs_shifted.view(qlen, klen, bs, n_heads).permute(2, 0, 1, 3)
 
-    def forward(self, key, query, memory, pos_embs, mask, u=None, v=None):
+    def forward(self, key, query, pos_embs, mask, u_bias=None, v_bias=None):
         """Forward pass.
 
         Args:
-            key (FloatTensor): `[B, klen, kdim]`
-            query (FloatTensor): `[B, qlen, qdim]`
-            memory (FloatTensor): `[B, mlen, d_model]`
-            mask (ByteTensor): `[B, qlen, klen+mlen]`
+            cat (FloatTensor): `[B, mlen+qlen, kdim]`
+            mask (ByteTensor): `[B, qlen, mlen+qlen]`
             pos_embs (LongTensor): `[qlen, 1, d_model]`
-            u (nn.Parameter): `[H, d_k]`
-            v (nn.Parameter): `[H, d_k]`
+            u_bias (nn.Parameter): `[H, d_k]`
+            v_bias (nn.Parameter): `[H, d_k]`
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
-            aw (FloatTensor): `[B, H, qlen, klen+mlen]`
+            aw (FloatTensor): `[B, H, qlen, mlen+qlen]`
 
         """
-        bs, qlen = query.size()[: 2]
-        klen = key.size(1)
-        mlen = memory.size(1) if memory is not None and memory.dim() > 1 else 0
-        if mlen > 0:
-            key = torch.cat([memory, key], dim=1)
+        bs, qlen = query.size()[:2]
+        mlen = key.size(1) - qlen
+        # NOTE: cat already includes memory, i.e., klen=mlen+qlen
 
-        value = self.w_value(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen+mlen, H, d_k]`
-        key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen+mlen, H, d_k]`
         if mask is not None:
             mask = mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])
-            assert mask.size() == (bs, qlen, mlen + klen, self.n_heads), \
-                (mask.size(), (bs, qlen, klen + mlen, self.n_heads))
+            assert mask.size() == (bs, qlen, mlen + qlen, self.n_heads), \
+                (mask.size(), (bs, qlen, mlen + qlen, self.n_heads))
 
-        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H, d_k]`
-        pos_embs = self.w_position(pos_embs)
-        pos_embs = pos_embs.view(-1, self.n_heads, self.d_k)  # `[qlen, H, d_k]`
+        k = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, mlen+qlen, H, d_k]`
+        v = self.w_value(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, mlen+qlen, H, d_k]`
+        q = self.w_query(key[:, -qlen:]).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H, d_k]`
+
+        if self.xl_like:
+            _pos_embs = self.w_pos(pos_embs)
+        else:
+            _pos_embs = self.w_value(pos_embs)
+        _pos_embs = _pos_embs.view(-1, self.n_heads, self.d_k)  # `[mlen+qlen, H, d_k]`
 
         # content-based attention term: (a) + (c)
-        if u is not None:
-            AC = torch.einsum("bihd,bjhd->bijh", ((query + u[None, None]), key))  # `[B, qlen, klen+mlen, H]`
+        if u_bias is not None:
+            assert self.xl_like
+            AC = torch.einsum("bihd,bjhd->bijh", ((q + u_bias[None, None]), k))  # `[B, qlen, mlen+qlen, H]`
         else:
-            AC = torch.einsum("bihd,bjhd->bijh", (query, key))  # `[B, qlen, klen+mlen, H]`
+            AC = torch.einsum("bihd,bjhd->bijh", (q, k))  # `[B, qlen, mlen+qlen, H]`
 
         # position-based attention term: (b) + (d)
-        if v is not None:
-            BD = torch.einsum("bihd,jhd->bijh", ((query + v[None, None]), pos_embs))  # `[B, qlen, klen+mlen, H]`
+        if v_bias is not None:
+            assert self.xl_like
+            BD = torch.einsum("bihd,jhd->bijh", ((q + v_bias[None, None]), _pos_embs))  # `[B, qlen, mlen+qlen, H]`
         else:
-            BD = torch.einsum("bihd,jhd->bijh", (query, pos_embs))  # `[B, qlen, klen+mlen, H]`
+            BD = torch.einsum("bihd,jhd->bijh", (q, _pos_embs))  # `[B, qlen, mlen+qlen, H]`
 
         # Compute positional attention efficiently
         BD = self._rel_shift(BD)
 
         # the attention is the sum of content-based and position-based attention
-        e = (AC + BD) / self.scale  # `[B, qlen, klen+mlen, H]`
+        e = (AC + BD) / self.scale  # `[B, qlen, mlen+qlen, H]`
 
         # Compute attention weights
         if mask is not None:
             NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
-            e = e.masked_fill_(mask == 0, NEG_INF)  # `[B, qlen, klen+mlen, H]`
+            e = e.masked_fill_(mask == 0, NEG_INF)  # `[B, qlen, mlen+qlen, H]`
         aw = torch.softmax(e, dim=2)
-        aw = self.dropout(aw)  # `[B, qlen, klen+mlen, H]`
-        cv = torch.einsum("bijh,bjhd->bihd", (aw, value))  # `[B, qlen, H, d_k]`
+        aw = self.dropout(aw)  # `[B, qlen, mlen+qlen, H]`
+        cv = torch.einsum("bijh,bjhd->bihd", (aw, v))  # `[B, qlen, H, d_k]`
         cv = cv.contiguous().view(bs, -1, self.n_heads * self.d_k)  # `[B, qlen, H * d_k]`
         cv = self.w_out(cv)
-        aw = aw.permute(0, 3, 1, 2)  # `[B, H, qlen, klen+mlen]`
+        aw = aw.permute(0, 3, 1, 2)  # `[B, H, qlen, mlen+qlen]`
 
         return cv, aw
