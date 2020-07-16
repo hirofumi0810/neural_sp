@@ -88,8 +88,8 @@ class MultiheadAttentionMechanism(nn.Module):
             nn.init.constant_(self.w_out.bias, 0.)
 
     def reset(self):
-        self.key = None
-        self.value = None
+        self.k = None
+        self.v = None
         self.mask = None
 
     def forward(self, key, value, query, mask, aw_prev=None,
@@ -116,23 +116,23 @@ class MultiheadAttentionMechanism(nn.Module):
         bs, klen = key.size()[: 2]
         qlen = query.size(1)
 
-        if self.key is None or not cache:
-            self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
-            self.value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
+        if self.k is None or not cache:
+            self.k = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
+            self.v = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
             self.mask = mask
             if self.mask is not None:
                 self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])
                 assert self.mask.size() == (bs, qlen, klen, self.n_heads), \
                     (self.mask.size(), (bs, qlen, klen, self.n_heads))
 
-        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H, d_k]`
+        q = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H, d_k]`
 
         if self.atype == 'scaled_dot':
-            e = torch.einsum("bihd,bjhd->bijh", (query, self.key)) / self.scale  # `[B, qlen, klen, H]`
+            e = torch.einsum("bihd,bjhd->bijh", (q, self.k)) / self.scale  # `[B, qlen, klen, H]`
         elif self.atype == 'add':
-            key = self.key.unsqueeze(1)  # `[B, 1, klen, H, d_k]`
-            query = query.unsqueeze(2)  # `[B, qlen, 1, H, d_k]`
-            tmp = torch.tanh(key + query).view(bs, qlen, klen, -1)  # `[B, qlen, klen, H, d_k]`
+            k = self.k.unsqueeze(1)  # `[B, 1, klen, H, d_k]`
+            q = q.unsqueeze(2)  # `[B, qlen, 1, H, d_k]`
+            tmp = torch.tanh(k + q).view(bs, qlen, klen, -1)  # `[B, qlen, klen, H, d_k]`
             e = self.v(tmp)  # `[B, qlen, klen, H]`
 
         # Compute attention weights
@@ -149,7 +149,7 @@ class MultiheadAttentionMechanism(nn.Module):
             aw_masked = headdrop(aw_masked, self.n_heads, self.dropout_head)  # `[B, H, qlen, klen]`
             aw_masked = aw_masked.permute(0, 2, 3, 1)
 
-        cv = torch.einsum("bijh,bjhd->bihd", (aw_masked, self.value))  # `[B, qlen, H, d_k]`
+        cv = torch.einsum("bijh,bjhd->bihd", (aw_masked, self.v))  # `[B, qlen, H, d_k]`
         cv = cv.contiguous().view(bs, -1, self.n_heads * self.d_k)  # `[B, qlen, H * d_k]`
         cv = self.w_out(cv)
         aw = aw.permute(0, 3, 1, 2)  # `[B, H, qlen, klen]`

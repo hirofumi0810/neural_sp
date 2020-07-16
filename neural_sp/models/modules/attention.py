@@ -91,7 +91,7 @@ class AttentionMechanism(nn.Module):
             raise ValueError(atype)
 
     def reset(self):
-        self.key = None
+        self.k = None
         self.mask = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
@@ -124,42 +124,42 @@ class AttentionMechanism(nn.Module):
             aw_prev = aw_prev.squeeze(1)  # remove head dimension
 
         # Pre-computation of encoder-side features for computing scores
-        if self.key is None or not cache:
+        if self.k is None or not cache:
             if self.atype in ['add', 'trigerred_attention',
                               'location', 'dot', 'luong_general']:
-                self.key = self.w_key(key)
+                self.k = self.w_key(key)
             else:
-                self.key = key
+                self.k = key
             self.mask = mask
             if mask is not None:
                 assert self.mask.size() == (bs, 1, klen), (self.mask.size(), (bs, 1, klen))
 
         # for batch beam search decoding
-        if self.key.size(0) != query.size(0):
-            self.key = self.key[0: 1, :, :].repeat([query.size(0), 1, 1])
+        if self.k.size(0) != query.size(0):
+            self.k = self.k[0: 1, :, :].repeat([query.size(0), 1, 1])
 
         if self.atype == 'no':
             raise NotImplementedError
 
         elif self.atype in ['add', 'triggered_attention']:
-            tmp = self.key.unsqueeze(1) + self.w_query(query).unsqueeze(2)
+            tmp = self.k.unsqueeze(1) + self.w_query(query).unsqueeze(2)
             e = self.v(torch.tanh(tmp)).squeeze(3)
 
         elif self.atype == 'location':
             conv_feat = self.conv(aw_prev.unsqueeze(1)).squeeze(2)  # `[B, ch, klen]`
             conv_feat = conv_feat.transpose(2, 1).contiguous().unsqueeze(1)  # `[B, 1, klen, ch]`
-            tmp = self.key.unsqueeze(1) + self.w_query(query).unsqueeze(2)
+            tmp = self.k.unsqueeze(1) + self.w_query(query).unsqueeze(2)
             e = self.v(torch.tanh(tmp + self.w_conv(conv_feat))).squeeze(3)
 
         elif self.atype == 'dot':
-            e = torch.bmm(self.w_query(query), self.key.transpose(2, 1))
+            e = torch.bmm(self.w_query(query), self.k.transpose(2, 1))
 
         elif self.atype in ['luong_dot', 'luong_general']:
-            e = torch.bmm(query, self.key.transpose(2, 1))
+            e = torch.bmm(query, self.k.transpose(2, 1))
 
         elif self.atype == 'luong_concat':
             query = query.repeat([1, klen, 1])
-            e = self.v(torch.tanh(self.w(torch.cat([self.key, query], dim=-1)))).transpose(2, 1)
+            e = self.v(torch.tanh(self.w(torch.cat([self.k, query], dim=-1)))).transpose(2, 1)
         assert e.size() == (bs, qlen, klen), (e.size(), (bs, qlen, klen))
 
         NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
