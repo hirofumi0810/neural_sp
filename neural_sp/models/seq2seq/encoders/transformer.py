@@ -14,7 +14,6 @@ import random
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.initialization import init_like_transformer_xl
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
 from neural_sp.models.modules.positional_embedding import PositionalEncoding
 from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
@@ -121,14 +120,6 @@ class TransformerEncoder(EncoderBase):
         # reshape) not lookahead frames in CNN layers, but requires some additional computations
         # mask) there are some lookahead frames in CNN layers, no additional computations
 
-        # TransformerXL like streaming encoder
-        self.memory_transformer = ('transformer_xl' in enc_type)
-        self.mem_len = chunk_size_left
-        if self.memory_transformer:
-            assert pe_type == 'relative'
-            assert chunk_size_left > 0
-            assert chunk_size_current > 0
-
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
         self.n_layers_sub2 = n_layers_sub2
@@ -196,7 +187,7 @@ class TransformerEncoder(EncoderBase):
         self.pos_emb = None
         self.u_bias = None
         self.v_bias = None
-        if self.memory_transformer:
+        if pe_type == 'relative_xl':
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
             self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
             self.v_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
@@ -208,9 +199,8 @@ class TransformerEncoder(EncoderBase):
 
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
             d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
-            layer_norm_eps, ffn_activation, param_init,
-            relative_attention=self.pos_emb is not None,
-            ffn_bottleneck_dim=ffn_bottleneck_dim))
+            layer_norm_eps, ffn_activation, param_init, pe_type,
+            ffn_bottleneck_dim))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self._odim = d_model
@@ -219,8 +209,8 @@ class TransformerEncoder(EncoderBase):
             if task_specific_layer:
                 self.layer_sub1 = TransformerEncoderBlock(
                     d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
-                    layer_norm_eps, ffn_activation, param_init,
-                    ffn_bottleneck_dim=ffn_bottleneck_dim)
+                    layer_norm_eps, ffn_activation, param_init, pe_type,
+                    ffn_bottleneck_dim)
             self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
@@ -229,8 +219,8 @@ class TransformerEncoder(EncoderBase):
             if task_specific_layer:
                 self.layer_sub2 = TransformerEncoderBlock(
                     d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
-                    layer_norm_eps, ffn_activation, param_init,
-                    ffn_bottleneck_dim=ffn_bottleneck_dim)
+                    layer_norm_eps, ffn_activation, param_init, pe_type,
+                    ffn_bottleneck_dim)
             self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
@@ -270,7 +260,7 @@ class TransformerEncoder(EncoderBase):
 
         # Transformer encoder specific
         group.add_argument('--transformer_enc_pe_type', type=str, default='add',
-                           choices=['add', 'concat', 'none', 'relative'],
+                           choices=['add', 'none', 'relative', 'relative_xl'],
                            help='type of positional encoding for the Transformer encoder')
         group.add_argument('--dropout_enc_layer', type=float, default=0.0,
                            help='LayerDrop probability for Transformer encoder layers')
@@ -308,14 +298,7 @@ class TransformerEncoder(EncoderBase):
 
     def reset_parameters(self, param_init):
         """Initialize parameters."""
-        if self.memory_transformer:
-            logger.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
-            for n, p in self.named_parameters():
-                if 'conv' in n:
-                    continue
-                init_like_transformer_xl(n, p, std=0.02)
-
-        elif param_init == 'xavier_uniform':
+        if param_init == 'xavier_uniform':
             logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
             if self.conv is None:
                 nn.init.xavier_uniform_(self.embed.weight)
@@ -329,40 +312,6 @@ class TransformerEncoder(EncoderBase):
             if self.bridge_sub2 is not None:
                 nn.init.xavier_uniform_(self.bridge_sub2.weight)
                 nn.init.constant_(self.bridge_sub2.bias, 0.)
-
-    def init_memory(self):
-        """Initialize memory."""
-        return [torch.empty(0, dtype=torch.float, device=self.device)
-                for _ in range(self.n_layers)]
-
-    def update_memory(self, memory_prev, hidden_states):
-        """Update memory.
-
-        Args:
-            memory_prev (list): length `n_layers`, each of which contains [B, L_prev, d_model]`
-            hidden_states (list): length `n_layers`, each of which contains [B, L, d_model]`
-        Returns:
-            new_mems (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
-
-        """
-        assert len(hidden_states) == len(memory_prev)
-        mlen = memory_prev[0].size(1) if memory_prev[0].dim() > 1 else 0
-        qlen = hidden_states[0].size(1)
-
-        # There are `mlen + qlen` steps that can be cached into mems
-        # For the next step, the last `ext_len` of the `qlen` tokens
-        # will be used as the extended context. Hence, we only cache
-        # the tokens from `mlen + qlen - self.ext_len - self.mem_len`
-        # to `mlen + qlen - self.ext_len`.
-        with torch.no_grad():
-            new_mems = []
-            end_idx = mlen + qlen
-            start_idx = max(0, end_idx - (self.mem_len // self.subsampling_factor))
-            for m, h in zip(memory_prev, hidden_states):
-                cat = torch.cat([m, h], dim=1)  # `[B, mlen + qlen, d_model]`
-                new_mems.append(cat[:, start_idx:end_idx].detach())  # `[B, self.mem_len, d_model]`
-
-        return new_mems
 
     def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
         """Forward pass.
@@ -419,10 +368,10 @@ class TransformerEncoder(EncoderBase):
             emax = xlens.max().item()
 
             pos_embs = None
-            if self.pe_type == 'relative':
+            if self.pe_type in ['relative', 'relative_xl']:
                 xs = xs * self.scale
                 pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-                pos_embs = self.pos_emb(pos_idxs)
+                pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
             else:
                 xs = self.pos_enc(xs, scale=True)
 
@@ -439,7 +388,7 @@ class TransformerEncoder(EncoderBase):
                 raise ValueError
 
             for lth, layer in enumerate(self.layers):
-                xs = layer(xs, xx_mask, pos_embs=pos_embs)
+                xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
                     if self.lc_type == 'reshape':
                         n_heads = layer.xx_aws.size(1)
@@ -464,6 +413,10 @@ class TransformerEncoder(EncoderBase):
                     N_l = max(0, N_l // self.subsample[lth].subsampling_factor)
                     N_c = N_c // self.subsample[lth].subsampling_factor
                     N_r = N_r // self.subsample[lth].subsampling_factor
+                    if self.pe_type in ['relative', 'relative_xl']:
+                        # Create sinusoidal positional embeddings for relative positional encoding
+                        pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
+                        pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
                     if self.lc_type == 'mask':
                         xx_mask = make_pad_mask(xlens.to(self.device))
                         xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
@@ -479,11 +432,11 @@ class TransformerEncoder(EncoderBase):
                 xs = xs[:, :emax]
 
         else:
-            if self.pe_type == 'relative':
+            if self.pe_type in ['relative', 'relative_xl']:
                 xs = xs * self.scale
                 # Create sinusoidal positional embeddings for relative positional encoding
                 pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-                pos_embs = self.pos_emb(pos_idxs)
+                pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
             else:
                 xs = self.pos_enc(xs, scale=True)
                 pos_embs = None
@@ -492,7 +445,7 @@ class TransformerEncoder(EncoderBase):
             xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
 
             for lth, layer in enumerate(self.layers):
-                xs = layer(xs, xx_mask, pos_embs=pos_embs)
+                xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
@@ -513,10 +466,10 @@ class TransformerEncoder(EncoderBase):
                     xs, xlens = self.subsample[lth](xs, xlens)
                     # Create the self-attention mask
                     xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
-                    if self.pe_type == 'relative':
+                    if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
                         pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-                        pos_embs = self.pos_emb(pos_idxs)
+                        pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
 
         xs = self.norm_out(xs)
 
@@ -558,30 +511,31 @@ class TransformerEncoderBlock(nn.Module):
         layer_norm_eps (float): epsilon parameter for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
-        relative_attention (bool): relative postional encoding
+        pe_type (str): type of positional encoding
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
 
     """
 
     def __init__(self, d_model, d_ff, n_heads,
                  dropout, dropout_att, dropout_layer,
-                 layer_norm_eps, ffn_activation, param_init,
+                 layer_norm_eps, ffn_activation, param_init, pe_type,
                  relative_attention=False, ffn_bottleneck_dim=0):
         super(TransformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
-        self.relative_attention = relative_attention
+        self.relative_attention = pe_type in ['relaive', 'relative_xl']
 
         # self-attention
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        mha = RelMHA if relative_attention else MHA
+        mha = RelMHA if self.relative_attention else MHA
         self.self_attn = mha(kdim=d_model,
                              qdim=d_model,
                              adim=d_model,
                              odim=d_model,
                              n_heads=n_heads,
                              dropout=dropout_att,
-                             param_init=param_init)
+                             param_init=param_init,
+                             xl_like=pe_type == 'relative_xl')
 
         # position-wise feed-forward
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -600,14 +554,13 @@ class TransformerEncoderBlock(nn.Module):
     def reset_visualization(self):
         self._xx_aws = None
 
-    def forward(self, xs, xx_mask=None, pos_embs=None, memory=None, u_bias=None, v_bias=None):
+    def forward(self, xs, xx_mask=None, pos_embs=None, u_bias=None, v_bias=None):
         """Transformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
             xx_mask (ByteTensor): `[B, T (query), T (key)]`
             pos_embs (LongTensor): `[L, 1, d_model]`
-            memory (FloatTensor): `[B, mlen, d_model]`
             u_bias (FloatTensor): global parameter for relative positional encoding
             v_bias (FloatTensor): global parameter for relative positional encoding
         Returns:
@@ -624,7 +577,6 @@ class TransformerEncoderBlock(nn.Module):
         residual = xs
         xs = self.norm1(xs)
         if self.relative_attention:
-            # NOTE: memory is not available now
             xs, self._xx_aws = self.self_attn(xs, xs, pos_embs, xx_mask, u_bias, v_bias)  # k/q/m
         else:
             xs, self._xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)[:2]  # k/v/q

@@ -184,7 +184,6 @@ class ConformerEncoder(EncoderBase):
         if self.chunk_size_right > 0:
             assert self.chunk_size_right % self._factor == 0
 
-        assert pe_type in ['relative', 'relative_xl']
         self.pos_emb = XLPositionalEmbedding(d_model, dropout)
         if pe_type == 'relative_xl':
             self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
@@ -198,9 +197,8 @@ class ConformerEncoder(EncoderBase):
 
         self.layers = nn.ModuleList([copy.deepcopy(ConformerEncoderBlock(
             d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
-            layer_norm_eps, ffn_activation, param_init,
-            xl_like=(pe_type == 'relative_xl'),
-            ffn_bottleneck_dim=ffn_bottleneck_dim))
+            layer_norm_eps, ffn_activation, param_init, pe_type,
+            ffn_bottleneck_dim))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self._odim = d_model
@@ -209,9 +207,8 @@ class ConformerEncoder(EncoderBase):
             if task_specific_layer:
                 self.layer_sub1 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
-                    layer_norm_eps, ffn_activation, param_init,
-                    xl_like=(pe_type == 'relative_xl'),
-                    ffn_bottleneck_dim=ffn_bottleneck_dim)
+                    layer_norm_eps, ffn_activation, param_init, pe_type,
+                    ffn_bottleneck_dim)
             self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
@@ -220,9 +217,8 @@ class ConformerEncoder(EncoderBase):
             if task_specific_layer:
                 self.layer_sub2 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
-                    layer_norm_eps, ffn_activation, param_init,
-                    xl_like=(pe_type == 'relative_xl'),
-                    ffn_bottleneck_dim=ffn_bottleneck_dim)
+                    layer_norm_eps, ffn_activation, param_init, pe_type,
+                    ffn_bottleneck_dim)
             self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
@@ -285,7 +281,6 @@ class ConformerEncoder(EncoderBase):
             dir_name = ConvEncoder.define_name(dir_name, args)
 
         dir_name += str(args.transformer_d_model) + 'dmodel'
-        # dir_name += str(args.transformer_d_model * 4) + 'dff'
         dir_name += str(args.transformer_d_ff) + 'dff'
         if args.transformer_ffn_bottleneck_dim > 0:
             dir_name += str(args.transformer_ffn_bottleneck_dim) + 'bn'
@@ -294,7 +289,7 @@ class ConformerEncoder(EncoderBase):
         dir_name += 'kernel' + str(args.conformer_kernel_size)
         if args.dropout_enc_layer > 0:
             dir_name += 'droplayer' + str(args.dropout_enc_layer)
-        if args.lc_chunk_size_left > 0 or getattr(args, 'lc_chunk_size_current', 0) > 0 or args.lc_chunk_size_right > 0:
+        if args.lc_chunk_size_left > 0 or args.lc_chunk_size_current > 0 or args.lc_chunk_size_right > 0:
             dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
                 str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
 
@@ -365,9 +360,7 @@ class ConformerEncoder(EncoderBase):
         if self.lc_type == 'mask':
             # Extract the center region
             emax = xlens.max().item()
-            # xs = xs[:, N_l:N_l + N_c]  # `[B * n_chunks, N_c, d_model]`
-            xs = xs.contiguous().view(bs, -1, xs.size(2))
-            xs = xs[:, :emax]  # `[B, emax, d_model]`
+            xs = xs.contiguous().view(bs, -1, xs.size(2))[:, :emax]  # `[B, emax, d_model]`
 
         if self.latency_controlled:
             # streaming Conformer encoder
@@ -375,7 +368,7 @@ class ConformerEncoder(EncoderBase):
 
             xs = xs * self.scale
             pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-            pos_embs = self.pos_emb(pos_idxs)
+            pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
 
             if self.lc_type == 'reshape':
                 xx_mask = None  # NOTE: no mask to avoid all masked region
@@ -417,7 +410,7 @@ class ConformerEncoder(EncoderBase):
                     N_r = N_r // self.subsample[lth].subsampling_factor
                     # Create sinusoidal positional embeddings for relative positional encoding
                     pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-                    pos_embs = self.pos_emb(pos_idxs)
+                    pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
                     if self.lc_type == 'mask':
                         xx_mask = make_pad_mask(xlens.to(self.device))
                         xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
@@ -436,10 +429,10 @@ class ConformerEncoder(EncoderBase):
             xs = xs * self.scale
             # Create sinusoidal positional embeddings for relative positional encoding
             pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-            pos_embs = self.pos_emb(pos_idxs)
+            pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
 
             # Create the self-attention mask
-            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(2).repeat([1, 1, xs.size(1)])
+            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
@@ -462,10 +455,10 @@ class ConformerEncoder(EncoderBase):
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
                     # Create the self-attention mask
-                    xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(2).repeat([1, 1, xs.size(1)])
+                    xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
                     # Create sinusoidal positional embeddings for relative positional encoding
                     pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-                    pos_embs = self.pos_emb(pos_idxs)
+                    pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
 
         xs = self.norm_out(xs)
 
@@ -508,16 +501,15 @@ class ConformerEncoderBlock(nn.Module):
         layer_norm_eps (float): epsilon parameter for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
-        xl_like (bool): use TransformerXL like relative positional encoding.
-            Otherwise, use relative positional encoding like Shaw et al. 2018
+        pe_type (str): type of positional encoding
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
 
     """
 
     def __init__(self, d_model, d_ff, n_heads, kernel_size,
                  dropout, dropout_att, dropout_layer,
-                 layer_norm_eps, ffn_activation, param_init, xl_like,
-                 ffn_bottleneck_dim=0):
+                 layer_norm_eps, ffn_activation, param_init, pe_type,
+                 ffn_bottleneck_dim):
         super(ConformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
@@ -541,7 +533,7 @@ class ConformerEncoderBlock(nn.Module):
                                 n_heads=n_heads,
                                 dropout=dropout_att,
                                 param_init=param_init,
-                                xl_like=xl_like)
+                                xl_like=pe_type == 'relative_xl')
 
         # second half position-wise feed-forward
         self.norm4 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -565,10 +557,10 @@ class ConformerEncoderBlock(nn.Module):
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
-            xx_mask (ByteTensor): `[B, T, T]`
+            xx_mask (ByteTensor): `[B, T (query), T (key)]`
             pos_embs (LongTensor): `[L, 1, d_model]`
-            u_bias (FloatTensor): global parameter for relative positinal encoding
-            v_bias (FloatTensor): global parameter for relative positinal encoding
+            u_bias (FloatTensor): global parameter for relative positional encoding
+            v_bias (FloatTensor): global parameter for relative positional encoding
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
 
