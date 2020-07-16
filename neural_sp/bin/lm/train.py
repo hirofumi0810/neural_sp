@@ -149,7 +149,7 @@ def main():
                             model_size=getattr(args, 'transformer_d_model', 0),
                             factor=args.lr_factor,
                             noam=args.optimizer == 'noam',
-                            save_checkpoints_topk=1)
+                            save_checkpoints_topk=is_transformer)
 
     if args.resume:
         # Restore the last saved model
