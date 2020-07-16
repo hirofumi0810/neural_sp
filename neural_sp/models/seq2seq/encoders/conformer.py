@@ -184,13 +184,22 @@ class ConformerEncoder(EncoderBase):
         if self.chunk_size_right > 0:
             assert self.chunk_size_right % self._factor == 0
 
+        assert pe_type in ['relative', 'relative_xl']
         self.pos_emb = XLPositionalEmbedding(d_model, dropout)
-        assert pe_type == 'relative'
-        # TODO(hirofumi0810): try other positional encodings
+        if pe_type == 'relative_xl':
+            self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+            self.v_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+            # NOTE: u_bias and v_bias are global parameters
+        elif pe_type == 'relative':
+            self.u_bias = None
+            self.v_bias = None
+        else:
+            raise ValueError(pe_type)
 
         self.layers = nn.ModuleList([copy.deepcopy(ConformerEncoderBlock(
             d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init,
+            xl_like=(pe_type == 'relative_xl'),
             ffn_bottleneck_dim=ffn_bottleneck_dim))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -201,6 +210,7 @@ class ConformerEncoder(EncoderBase):
                 self.layer_sub1 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init,
+                    xl_like=(pe_type == 'relative_xl'),
                     ffn_bottleneck_dim=ffn_bottleneck_dim)
             self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
@@ -211,6 +221,7 @@ class ConformerEncoder(EncoderBase):
                 self.layer_sub2 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init,
+                    xl_like=(pe_type == 'relative_xl'),
                     ffn_bottleneck_dim=ffn_bottleneck_dim)
             self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
@@ -250,7 +261,7 @@ class ConformerEncoder(EncoderBase):
 
         # Conformer encoder specific
         group.add_argument('--transformer_enc_pe_type', type=str, default='relative',
-                           choices=['relative'],
+                           choices=['relative', 'relative_xl'],
                            help='type of positional encoding for the Transformer encoder')
         group.add_argument('--conformer_kernel_size', type=int, default=32,
                            help='kernel size for depthwise convolution in convolution module for Conformer encoder layers')
@@ -379,7 +390,7 @@ class ConformerEncoder(EncoderBase):
                 raise ValueError
 
             for lth, layer in enumerate(self.layers):
-                xs = layer(xs, xx_mask, pos_embs=pos_embs)
+                xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
                     if self.lc_type == 'reshape':
                         n_heads = layer.xx_aws.size(1)
@@ -431,7 +442,7 @@ class ConformerEncoder(EncoderBase):
             xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(2).repeat([1, 1, xs.size(1)])
 
             for lth, layer in enumerate(self.layers):
-                xs = layer(xs, xx_mask, pos_embs=pos_embs)
+                xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
@@ -497,13 +508,15 @@ class ConformerEncoderBlock(nn.Module):
         layer_norm_eps (float): epsilon parameter for layer normalization
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
+        xl_like (bool): use TransformerXL like relative positional encoding.
+            Otherwise, use relative positional encoding like Shaw et al. 2018
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
 
     """
 
     def __init__(self, d_model, d_ff, n_heads, kernel_size,
                  dropout, dropout_att, dropout_layer,
-                 layer_norm_eps, ffn_activation, param_init,
+                 layer_norm_eps, ffn_activation, param_init, xl_like,
                  ffn_bottleneck_dim=0):
         super(ConformerEncoderBlock, self).__init__()
 
@@ -527,7 +540,8 @@ class ConformerEncoderBlock(nn.Module):
                                 odim=d_model,
                                 n_heads=n_heads,
                                 dropout=dropout_att,
-                                param_init=param_init)
+                                param_init=param_init,
+                                xl_like=xl_like)
 
         # second half position-wise feed-forward
         self.norm4 = nn.LayerNorm(d_model, eps=layer_norm_eps)

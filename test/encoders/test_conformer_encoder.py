@@ -63,6 +63,8 @@ def make_args(**kwargs):
         ({'enc_type': 'conformer'}),
         ({'enc_type': 'conv_conformer'}),
         ({'input_dim': 240, 'conv_in_channel': 3}),
+        # PE type
+        ({'pe_type': 'relative_xl'}),
         # normalization
         ({'conv_batch_norm': True}),
         ({'conv_layer_norm': True}),
