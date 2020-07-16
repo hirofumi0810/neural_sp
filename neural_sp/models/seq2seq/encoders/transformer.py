@@ -194,13 +194,13 @@ class TransformerEncoder(EncoderBase):
             assert self.chunk_size_right % self._factor == 0
 
         self.pos_emb = None
-        self.u = None
-        self.v = None
+        self.u_bias = None
+        self.v_bias = None
         if self.memory_transformer:
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
-            self.u = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-            self.v = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-            # NOTE: u and v are global parameters
+            self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+            self.v_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+            # NOTE: u_bias and v_bias are global parameters
         elif pe_type == 'relative':
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
         else:
@@ -213,7 +213,6 @@ class TransformerEncoder(EncoderBase):
             ffn_bottleneck_dim=ffn_bottleneck_dim))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
-
         self._odim = d_model
 
         if n_layers_sub1 > 0:
@@ -301,7 +300,7 @@ class TransformerEncoder(EncoderBase):
         dir_name += 'pe' + str(args.transformer_enc_pe_type)
         if args.dropout_enc_layer > 0:
             dir_name += 'droplayer' + str(args.dropout_enc_layer)
-        if args.lc_chunk_size_left > 0 or getattr(args, 'lc_chunk_size_current', 0) > 0 or args.lc_chunk_size_right > 0:
+        if args.lc_chunk_size_left > 0 or args.lc_chunk_size_current > 0 or args.lc_chunk_size_right > 0:
             dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
                 str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
             dir_name += '_' + args.lc_type
@@ -413,9 +412,7 @@ class TransformerEncoder(EncoderBase):
         if self.lc_type == 'mask':
             # Extract the center region
             emax = xlens.max().item()
-            # xs = xs[:, N_l:N_l + N_c]  # `[B * n_chunks, N_c, d_model]`
-            xs = xs.contiguous().view(bs, -1, xs.size(2))
-            xs = xs[:, :emax]  # `[B, emax, d_model]`
+            xs = xs.contiguous().view(bs, -1, xs.size(2))[:, :emax]  # `[B, emax, d_model]`
 
         if self.latency_controlled:
             # streaming Transformer encoder
@@ -429,7 +426,18 @@ class TransformerEncoder(EncoderBase):
             else:
                 xs = self.pos_enc(xs, scale=True)
 
-            xx_mask = None  # NOTE: no mask to avoid all masked region
+            if self.lc_type == 'reshape':
+                xx_mask = None  # NOTE: no mask to avoid all masked region
+            elif self.lc_type == 'mask':
+                xx_mask = make_pad_mask(xlens.to(self.device))
+                xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
+                for chunk_idx in range(n_chunks):
+                    offset = chunk_idx * N_c
+                    xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
+                    xx_mask[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
+            else:
+                raise ValueError
+
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs)
                 if not self.training:
@@ -592,7 +600,7 @@ class TransformerEncoderBlock(nn.Module):
     def reset_visualization(self):
         self._xx_aws = None
 
-    def forward(self, xs, xx_mask=None, pos_embs=None, memory=None, u=None, v=None):
+    def forward(self, xs, xx_mask=None, pos_embs=None, memory=None, u_bias=None, v_bias=None):
         """Transformer encoder layer definition.
 
         Args:
@@ -600,8 +608,8 @@ class TransformerEncoderBlock(nn.Module):
             xx_mask (ByteTensor): `[B, T (query), T (key)]`
             pos_embs (LongTensor): `[L, 1, d_model]`
             memory (FloatTensor): `[B, mlen, d_model]`
-            u (FloatTensor): global parameter for relative positional embedding
-            v (FloatTensor): global parameter for relative positional embedding
+            u_bias (FloatTensor): global parameter for relative positional encoding
+            v_bias (FloatTensor): global parameter for relative positional encoding
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
 
@@ -616,7 +624,8 @@ class TransformerEncoderBlock(nn.Module):
         residual = xs
         xs = self.norm1(xs)
         if self.relative_attention:
-            xs, self._xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)  # k/q/m
+            # NOTE: memory is not available now
+            xs, self._xx_aws = self.self_attn(xs, xs, pos_embs, xx_mask, u_bias, v_bias)  # k/q/m
         else:
             xs, self._xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)[:2]  # k/v/q
         xs = self.dropout(xs) + residual
