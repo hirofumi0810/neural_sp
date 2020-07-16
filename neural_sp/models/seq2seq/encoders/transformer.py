@@ -119,6 +119,9 @@ class TransformerEncoder(EncoderBase):
         self.lc_type = latency_control_type
         # reshape) not lookahead frames in CNN layers, but requires some additional computations
         # mask) there are some lookahead frames in CNN layers, no additional computations
+        if self.latency_controlled:
+            assert n_layers_sub1 == 0
+            assert n_layers_sub2 == 0
 
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -271,7 +274,7 @@ class TransformerEncoder(EncoderBase):
                            help='current chunk size (and hop size) for latency-controlled Transformer encoder')
         group.add_argument('--lc_chunk_size_right', type=int, default=0,
                            help='right chunk size for latency-controlled Transformer encoder')
-        group.add_argument('--lc_type', type=str, default='reshape',
+        group.add_argument('--lc_type', type=str, default='mask',
                            choices=['reshape', 'mask'],
                            help='implementation methods of latency-controlled Transformer encoder')
         return parser
