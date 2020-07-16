@@ -92,8 +92,6 @@ def make_args(**kwargs):
           'last_proj_dim': 10}),
         # bottleneck
         ({'ffn_bottleneck_dim': 16}),
-        ({'input_bottleneck_dim': 16}),
-        ({'ffn_bottleneck_dim': 16, 'input_bottleneck_dim': 16}),
         # subsampling
         ({'subsample': "1_2_1"}),
         ({'subsample': "1_2_1"}),
