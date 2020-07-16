@@ -12,6 +12,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from neural_sp.models.modules.mocha import headdrop
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         odim: (int) dimension of output
         n_heads (int): number of heads
         dropout (float): dropout probability for attenion weights
+        dropout_head (float): HeadDrop probability
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
         xl_like (bool): use TransformerXL like relative positional encoding.
@@ -33,7 +36,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
 
     """
 
-    def __init__(self, kdim, qdim, adim, odim, n_heads, dropout,
+    def __init__(self, kdim, qdim, adim, odim, n_heads, dropout, dropout_head=0.,
                  bias=False, param_init='', xl_like=False):
 
         super().__init__()
@@ -44,8 +47,8 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         self.scale = math.sqrt(self.d_k)
         self.xl_like = xl_like
 
-        # attention dropout applied AFTER the softmax layer
-        self.dropout = nn.Dropout(p=dropout)
+        self.dropout_attn = nn.Dropout(p=dropout)
+        self.dropout_head = dropout_head
 
         assert kdim == qdim
         # NOTE: relative attention is supprted for self-attention only
@@ -160,7 +163,15 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
             NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
             e = e.masked_fill_(mask == 0, NEG_INF)  # `[B, qlen, mlen+qlen, H]`
         aw = torch.softmax(e, dim=2)
-        aw = self.dropout(aw)  # `[B, qlen, mlen+qlen, H]`
+        aw = self.dropout_attn(aw)  # `[B, qlen, mlen+qlen, H]`
+        aw_masked = aw.clone()
+
+        # mask out each head independently (HeadDrop)
+        if self.dropout_head > 0 and self.training:
+            aw_masked = aw_masked.permute(0, 3, 1, 2)
+            aw_masked = headdrop(aw_masked, self.n_heads, self.dropout_head)  # `[B, H, qlen, klen]`
+            aw_masked = aw_masked.permute(0, 2, 3, 1)
+
         cv = torch.einsum("bijh,bjhd->bihd", (aw, v))  # `[B, qlen, H, d_k]`
         cv = cv.contiguous().view(bs, -1, self.n_heads * self.d_k)  # `[B, qlen, H * d_k]`
         cv = self.w_out(cv)

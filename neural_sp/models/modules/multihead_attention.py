@@ -9,13 +9,10 @@
 import logging
 import math
 import numpy as np
-import random
 import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.mocha import headdrop
-
-random.seed(1)
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +31,12 @@ class MultiheadAttentionMechanism(nn.Module):
         atype (str): type of attention mechanism
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
+        xl_like: dummy argument for compabibility with relative multihead attention
 
     """
 
     def __init__(self, kdim, qdim, adim, odim, n_heads, dropout, dropout_head=0.,
-                 atype='scaled_dot', bias=True, param_init=''):
+                 atype='scaled_dot', bias=True, param_init='', xl_like=False):
 
         super().__init__()
 
