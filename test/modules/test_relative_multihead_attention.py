@@ -75,8 +75,7 @@ def test_forward(args):
 
     attention.train()
     aws = None
-    pos_idxs = torch.arange(qlen + mlen - 1, -1, -1.0, dtype=torch.float, device=device)
-    pos_embs = pos_emb(pos_idxs)
+    pos_embs = pos_emb(query, mlen=mlen)
 
     out = attention(cat, query, pos_embs, causal_mask, u_bias=u_bias, v_bias=v_bias)
     assert len(out) == 2

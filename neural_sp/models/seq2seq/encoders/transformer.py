@@ -187,6 +187,7 @@ class TransformerEncoder(EncoderBase):
         if self.chunk_size_right > 0:
             assert self.chunk_size_right % self._factor == 0
 
+        self.clamp_len = 40  # TODO: make this option
         self.pos_emb = None
         self.u_bias = None
         self.v_bias = None
@@ -315,6 +316,9 @@ class TransformerEncoder(EncoderBase):
             if self.bridge_sub2 is not None:
                 nn.init.xavier_uniform_(self.bridge_sub2.weight)
                 nn.init.constant_(self.bridge_sub2.bias, 0.)
+            if self.pe_type == 'relative_xl':
+                nn.init.xavier_uniform_(self.u_bias)
+                nn.init.xavier_uniform_(self.v_bias)
 
     def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
         """Forward pass.
@@ -341,6 +345,7 @@ class TransformerEncoder(EncoderBase):
         N_r = self.chunk_size_right
         bs, xmax, idim = xs.size()
         n_chunks = 0
+        clamp_len = self.clamp_len
 
         if self.latency_controlled:
             if self.lc_type == 'reshape':
@@ -348,8 +353,6 @@ class TransformerEncoder(EncoderBase):
             elif self.lc_type == 'mask':
                 # xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
                 xs = chunkwise(xs, 0, N_c, 0)  # `[B * n_chunks, N_c, idim]`
-            else:
-                raise ValueError
             n_chunks = xs.size(0) // bs
 
         if self.conv is None:
@@ -373,13 +376,12 @@ class TransformerEncoder(EncoderBase):
             pos_embs = None
             if self.pe_type in ['relative', 'relative_xl']:
                 xs = xs * self.scale
-                pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-                pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
+                pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: including dropout
             else:
                 xs = self.pos_enc(xs, scale=True)
 
             if self.lc_type == 'reshape':
-                xx_mask = None  # NOTE: no mask to avoid all masked region
+                xx_mask = None  # NOTE: no mask to avoid masking all frames in a chunk
             elif self.lc_type == 'mask':
                 xx_mask = make_pad_mask(xlens.to(self.device))
                 xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
@@ -387,8 +389,6 @@ class TransformerEncoder(EncoderBase):
                     offset = chunk_idx * N_c
                     xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
                     xx_mask[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
-            else:
-                raise ValueError
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
@@ -406,8 +406,6 @@ class TransformerEncoder(EncoderBase):
                         self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
                     elif self.lc_type == 'mask':
                         self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
-                    else:
-                        raise ValueError
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
 
                 if self.subsample is not None:
@@ -418,8 +416,7 @@ class TransformerEncoder(EncoderBase):
                     N_r = N_r // self.subsample[lth].subsampling_factor
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
-                        pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-                        pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
+                        pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: including dropout
                     if self.lc_type == 'mask':
                         xx_mask = make_pad_mask(xlens.to(self.device))
                         xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
@@ -438,8 +435,8 @@ class TransformerEncoder(EncoderBase):
             if self.pe_type in ['relative', 'relative_xl']:
                 xs = xs * self.scale
                 # Create sinusoidal positional embeddings for relative positional encoding
-                pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-                pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
+                clamp_len = clamp_len // self.conv.subsampling_factor
+                pos_embs = self.pos_emb(xs, clamp_len=clamp_len)  # NOTE: including dropout
             else:
                 xs = self.pos_enc(xs, scale=True)
                 pos_embs = None
@@ -471,8 +468,8 @@ class TransformerEncoder(EncoderBase):
                     xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
-                        pos_idxs = torch.arange(xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=self.device)
-                        pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
+                        clamp_len = clamp_len // self.subsample[lth].subsampling_factor
+                        pos_embs = self.pos_emb(xs, clamp_len=clamp_len)  # NOTE: including dropout
 
         xs = self.norm_out(xs)
 

@@ -108,17 +108,29 @@ class XLPositionalEmbedding(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, positions):
+    def forward(self, xs, mlen=0, clamp_len=-1, zero_center_offset=False):
         """Forward pass.
 
         Args:
-            positions (FloatTensor): `[L]`
+            xs (FloatTensor): `[B, L, d_model]`
+            mlen (int); length of memory
+            clamp_len (int):
+            zero_center_offset (bool):
         Returns:
             pos_emb (LongTensor): `[L, 1, d_model]`
 
         """
+        if zero_center_offset:
+            pos_idxs = torch.arange(mlen - 1, -xs.size(1) - 1, -1.0, dtype=torch.float, device=xs.device)
+        else:
+            pos_idxs = torch.arange(mlen + xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=xs.device)
+
+        # truncate by maximum length
+        if clamp_len > 0:
+            pos_idxs.clamp_(max=clamp_len)
+
         # outer product
-        sinusoid_inp = torch.einsum("i,j->ij", positions, self.inv_freq)
+        sinusoid_inp = torch.einsum("i,j->ij", pos_idxs, self.inv_freq)
         pos_emb = torch.cat([sinusoid_inp.sin(), sinusoid_inp.cos()], dim=-1)
         pos_emb = self.dropout(pos_emb)
         return pos_emb.unsqueeze(1)

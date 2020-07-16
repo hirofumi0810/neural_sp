@@ -226,13 +226,8 @@ class TransformerXL(LMBase):
         causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
         causal_mask = causal_mask.repeat([bs, 1, 1])  # `[B, L, L+mlen]`
 
-        out = self.dropout_emb(self.embed(ys.long()) * self.scale)
-        # NOTE: TransformerXL does not use positional encoding in the token embedding
-        if self.zero_center_offset:
-            pos_idxs = torch.arange(mlen - 1, -ylen - 1, -1.0, dtype=torch.float, device=self.device)
-        else:
-            pos_idxs = torch.arange(ylen + mlen - 1, -1, -1.0, dtype=torch.float, device=self.device)
-        pos_embs = self.pos_emb(pos_idxs)  # NOTE: including dropout
+        pos_embs = self.pos_emb(ys, mlen=mlen,
+                                zero_center_offset=self.zero_center_offset)  # NOTE: including dropout
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
