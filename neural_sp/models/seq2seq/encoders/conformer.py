@@ -194,7 +194,6 @@ class ConformerEncoder(EncoderBase):
             ffn_bottleneck_dim=ffn_bottleneck_dim))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
-
         self._odim = d_model
 
         if n_layers_sub1 > 0:
@@ -547,15 +546,15 @@ class ConformerEncoderBlock(nn.Module):
     def reset_visualization(self):
         self._xx_aws = None
 
-    def forward(self, xs, xx_mask=None, pos_embs=None, u=None, v=None):
+    def forward(self, xs, xx_mask=None, pos_embs=None, u_bias=None, v_bias=None):
         """Conformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`
             xx_mask (ByteTensor): `[B, T, T]`
             pos_embs (LongTensor): `[L, 1, d_model]`
-            u (FloatTensor): global parameter for relative positinal embedding
-            v (FloatTensor): global parameter for relative positinal embedding
+            u_bias (FloatTensor): global parameter for relative positinal encoding
+            v_bias (FloatTensor): global parameter for relative positinal encoding
         Returns:
             xs (FloatTensor): `[B, T, d_model]`
 
@@ -578,12 +577,10 @@ class ConformerEncoderBlock(nn.Module):
         xs = self.conv(xs)
         xs = self.dropout(xs) + residual
 
-        # self-attention
+        # self-attention w/ relative positional encoding
         residual = xs
         xs = self.norm3(xs)
-        # relative positional encoding
-        memory = None
-        xs, self._xx_aws = self.self_attn(xs, xs, memory, pos_embs, xx_mask, u, v)
+        xs, self._xx_aws = self.self_attn(xs, xs, pos_embs, xx_mask, u_bias, v_bias)
         xs = self.dropout(xs) + residual
 
         # second half FFN
@@ -591,5 +588,6 @@ class ConformerEncoderBlock(nn.Module):
         xs = self.norm4(xs)
         xs = self.feed_forward2(xs)
         xs = self.fc_factor * self.dropout(xs) + residual  # Macaron FFN
+        # TODO(hirofumi0810): additional layer normalization here?
 
         return xs
