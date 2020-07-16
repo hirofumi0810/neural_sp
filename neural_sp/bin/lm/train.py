@@ -149,7 +149,7 @@ def main():
                             model_size=getattr(args, 'transformer_d_model', 0),
                             factor=args.lr_factor,
                             noam=args.optimizer == 'noam',
-                            save_checkpoints_topk=is_transformer)
+                            save_checkpoints_topk=10 if is_transformer else 1)
 
     if args.resume:
         # Restore the last saved model
@@ -165,7 +165,7 @@ def main():
     amp = None
     if args.n_gpus >= 1:
         model.cudnn_setting(deterministic=not (is_transformer or args.cudnn_benchmark),
-                            benchmark=args.cudnn_benchmark)
+                            benchmark=not is_transformer and args.cudnn_benchmark)
         model.cuda()
 
         # Mix precision training setting
