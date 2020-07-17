@@ -168,16 +168,16 @@ class TransformerDecoder(DecoderBase):
             self.embed = nn.Embedding(self.vocab, d_model, padding_idx=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type, param_init)
             # positional embedding
-            self.u = None
-            self.v = None
+            self.u_bias = None
+            self.v_bias = None
             if memory_transformer:
                 self.scale = math.sqrt(d_model)  # for token embedding
                 self.dropout_emb = nn.Dropout(p=dropout_emb)  # for token embedding
                 self.pos_emb = XLPositionalEmbedding(d_model, dropout_emb)
                 if self.mem_len > 0:
-                    self.u = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-                    self.v = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-                    # NOTE: u and v are global parameters
+                    self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+                    self.v_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+                    # NOTE: u_bias and v_bias are global parameters
             # self-attention
             self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
                 d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
@@ -478,16 +478,13 @@ class TransformerDecoder(DecoderBase):
         mems = self.init_memory()
         pos_embs = None
         if self.memory_transformer:
-            # NOTE: TransformerXL does not use positional encoding in the token embedding
-            # adopt zero-centered offset
-            pos_idxs = torch.arange(mlen - 1, -ymax - 1, -1.0, dtype=torch.float, device=self.device)
-            pos_embs = self.pos_emb(pos_idxs)
+            pos_embs = self.pos_emb(ys_in, mlen=mlen, zero_center_offset=True)
 
         hidden_states = [out]
         xy_aws_layers = []
         for lth, (mem, layer) in enumerate(zip(mems, self.layers)):
             out = layer(out, tgt_mask, eouts, src_mask, mode='parallel', lmout=lmout,
-                        pos_embs=pos_embs, memory=mem, u=self.u, v=self.v)
+                        pos_embs=pos_embs, memory=mem, u_bias=self.u_bias, v_bias=self.v_bias)
             if lth < self.n_layers - 1:
                 hidden_states.append(out)
                 # NOTE: outputs from the last layer is not used for momory
@@ -765,11 +762,8 @@ class TransformerDecoder(DecoderBase):
 
                 mlen = 0  # TODO: fix later
                 if self.memory_transformer:
-                    # NOTE: TransformerXL does not use positional encoding in the token embedding
                     mems = self.init_memory()
-                    # adopt zero-centered offset
-                    pos_idxs = torch.arange(mlen - 1, -(i + 1) - 1, -1.0, dtype=torch.float, device=self.device)
-                    pos_embs = self.pos_emb(pos_idxs)
+                    pos_embs = self.pos_emb(ys, mlen=mlen, zero_center_offset=True)
                     hidden_states = [out]
 
                 n_heads_total = 0
@@ -782,7 +776,7 @@ class TransformerDecoder(DecoderBase):
                         out = layer(
                             out, causal_mask, eouts_b, None,
                             cache=cache[lth],
-                            pos_embs=pos_embs, memory=mems[lth], u=self.u, v=self.v)
+                            pos_embs=pos_embs, memory=mems[lth], u_bias=self.u_bias, v_bias=self.v_bias)
                         hidden_states.append(out)
                     else:
                         out = layer(

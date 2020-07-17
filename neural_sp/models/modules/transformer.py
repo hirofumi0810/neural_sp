@@ -78,7 +78,9 @@ class TransformerDecoderBlock(nn.Module):
                              odim=d_model,
                              n_heads=n_heads,
                              dropout=dropout_att,
-                             param_init=param_init)
+                             dropout_head=dropout_head,
+                             param_init=param_init,
+                             xl_like=memory_transformer)
 
         # attention over encoder stacks
         if src_tgt_attention:
@@ -166,8 +168,9 @@ class TransformerDecoderBlock(nn.Module):
         self._yy_aws_lm = None
 
     def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
-                xy_aws_prev=None, mode='hard', eps_wait=-1, lmout=None,
-                pos_embs=None, memory=None, u=None, v=None):
+                xy_aws_prev=None,
+                mode='hard', eps_wait=-1, lmout=None,
+                pos_embs=None, memory=None, u_bias=None, v_bias=None):
         """Transformer decoder forward pass.
 
         Args:
@@ -182,8 +185,8 @@ class TransformerDecoderBlock(nn.Module):
             lmout (FloatTensor): `[B, L, d_model]`
             pos_embs (LongTensor): `[L, 1, d_model]`
             memory (FloatTensor): `[B, L_prev, d_model]`
-            u (FloatTensor): global parameter for TransformerXL
-            v (FloatTensor): global parameter for TransformerXL
+            u_bias (FloatTensor): global parameter for TransformerXL
+            v_bias (FloatTensor): global parameter for TransformerXL
         Returns:
             out (FloatTensor): `[B, L, d_model]`
 
@@ -195,7 +198,17 @@ class TransformerDecoderBlock(nn.Module):
             return ys
 
         residual = ys
-        ys = self.norm1(ys)
+        if self.memory_transformer:
+            if cache is not None:
+                pos_embs = pos_embs[-ys.size(1):]
+            if memory is not None and memory.dim() > 1:
+                cat = self.norm1(torch.cat([memory, ys], dim=1))
+                ys = cat[:, memory.size(1):]
+            else:
+                ys = self.norm1(ys)
+                cat = ys
+        else:
+            ys = self.norm1(ys)
 
         if cache is not None:
             ys_q = ys[:, -1:]
@@ -206,9 +219,7 @@ class TransformerDecoderBlock(nn.Module):
 
         # self-attention
         if self.memory_transformer:
-            if cache is not None:
-                pos_embs = pos_embs[-ys_q.size(1):]
-            out, self._yy_aws = self.self_attn(ys, ys_q, memory, pos_embs, yy_mask, u, v)
+            out, self._yy_aws = self.self_attn(cat, ys_q, pos_embs, yy_mask, u_bias, v_bias)
         else:
             out, self._yy_aws = self.self_attn(ys, ys, ys_q, mask=yy_mask)[:2]  # k/v/q
         out = self.dropout(out) + residual

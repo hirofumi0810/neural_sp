@@ -46,10 +46,11 @@ def make_args(**kwargs):
         conv_param_init=0.1,
         task_specific_layer=False,
         param_init='xavier_uniform',
+        clamp_len=-1,
         chunk_size_left=0,
         chunk_size_current=0,
         chunk_size_right=0,
-        latency_control_type='reshape',
+        latency_control_type='mask',
     )
     args.update(kwargs)
     return args
@@ -69,17 +70,20 @@ def make_args(**kwargs):
         # positional encoding
         ({'pe_type': 'add'}),
         ({'pe_type': 'relative'}),
+        ({'pe_type': 'relative_xl'}),
+        ({'pe_type': 'relative', 'clamp_len': 10}),
+        ({'pe_type': 'relative_xl', 'clamp_len': 10}),
         # normalization
         ({'conv_batch_norm': True}),
         ({'conv_layer_norm': True}),
         # projection
         ({'last_proj_dim': 10}),
         # LC-Transformer
-        ({'latency_control_type': 'reshape', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'latency_control_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         ({'latency_control_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
         ({'latency_control_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64,
           'pe_type': 'relative'}),
-        ({'latency_control_type': 'mask', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'latency_control_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         ({'latency_control_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
         ({'latency_control_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64,
           'pe_type': 'relative'}),
@@ -100,14 +104,20 @@ def make_args(**kwargs):
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
         ({'subsample': "1_2_1", 'subsample_type': 'conv1d'}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool', 'pe_type': 'relative'}),
-        ({'subsample': "1_2_1", 'subsample_type': 'max_pool',
-          'latency_control_type': 'reshape', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'subsample': "1_2_1", 'subsample_type': 'max_pool',
-          'latency_control_type': 'mask', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'subsample': "2_2_1", 'subsample_type': 'max_pool', 'conv_poolings': "(2,2)_(1,1)",
-          'latency_control_type': 'reshape', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'subsample': "2_2_1", 'subsample_type': 'max_pool', 'conv_poolings': "(2,2)_(1,1)",
-          'latency_control_type': 'mask', 'chunk_size_left': 96, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'subsample': "1_2_1", 'latency_control_type': 'reshape',
+          'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'subsample': "2_2_1", 'latency_control_type': 'reshape',
+          'conv_poolings': "(1,1)_(2,2)",
+          'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        # mask
+        ({'subsample': "1_2_1", 'latency_control_type': 'mask',
+          'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'subsample': "2_2_1", 'latency_control_type': 'mask',
+          'conv_poolings': "(1,1)_(2,2)",
+          'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'subsample': "2_2_1", 'latency_control_type': 'mask',
+          'pe_type': "relative",
+          'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
     ]
 )
 def test_forward(args):

@@ -69,9 +69,9 @@ class TransformerXL(LMBase):
 
         # positional embedding
         self.pos_emb = XLPositionalEmbedding(self.d_model, args.dropout_in)
-        self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
-        self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
-        # NOTE: u and v are global parameters
+        self.u_bias = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+        self.v_bias = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+        # NOTE: u_bias and v_bias are global parameters
 
         self.embed = nn.Embedding(self.vocab, self.d_model, padding_idx=self.pad)
         self.scale = math.sqrt(self.d_model)  # for token embedding
@@ -121,7 +121,7 @@ class TransformerXL(LMBase):
                            help='nonlinear activation for the FFN layer')
         group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                            choices=['xavier_uniform', 'pytorch'],
-                           help='parameter initializatin')
+                           help='parameter initialization')
         group.add_argument('--dropout_att', type=float, default=0.1,
                            help='dropout probability for the attention weights')
         group.add_argument('--dropout_layer', type=float, default=0.0,
@@ -227,12 +227,7 @@ class TransformerXL(LMBase):
         causal_mask = causal_mask.repeat([bs, 1, 1])  # `[B, L, L+mlen]`
 
         out = self.dropout_emb(self.embed(ys.long()) * self.scale)
-        # NOTE: TransformerXL does not use positional encoding in the token embedding
-        if self.zero_center_offset:
-            pos_idxs = torch.arange(mlen - 1, -ylen - 1, -1.0, dtype=torch.float, device=self.device)
-        else:
-            pos_idxs = torch.arange(ylen + mlen - 1, -1, -1.0, dtype=torch.float, device=self.device)
-        pos_embs = self.pos_emb(pos_idxs)
+        pos_embs = self.pos_emb(ys, mlen=mlen, zero_center_offset=self.zero_center_offset)
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
@@ -241,7 +236,7 @@ class TransformerXL(LMBase):
             if incremental and mlen > 0 and mem.size(0) != bs:
                 mem = mem.repeat([bs, 1, 1])
             out = layer(out, causal_mask, cache=cache[lth],
-                        pos_embs=pos_embs, memory=mem, u=self.u, v=self.v)
+                        pos_embs=pos_embs, memory=mem, u_bias=self.u_bias, v_bias=self.v_bias)
             if incremental:
                 new_cache[lth] = out
             elif lth < self.n_layers - 1:

@@ -16,52 +16,58 @@ def make_args(**kwargs):
         odim=32,
         n_heads=4,
         dropout=0.1,
-        bias=True,
+        bias=False,
         param_init='',
+        xl_like=False,
     )
     args.update(kwargs)
     return args
 
 
 @pytest.mark.parametrize(
-    "args, learnable",
+    "args",
     [
-        ({'n_heads': 1}, False),
-        ({'n_heads': 1}, True),
-        ({'n_heads': 4}, False),
-        ({'n_heads': 4}, True),
-        ({'bias': False}, False),
-        ({'param_init': 'xavier_uniform'}, False),
+        ({'n_heads': 1}),
+        ({'n_heads': 4}),
+        ({'bias': True}),
+        ({'param_init': 'xavier_uniform'}),
+        # TransformerXL like
+        ({'n_heads': 1, 'xl_like': True}),
+        ({'n_heads': 4, 'xl_like': True}),
+        ({'bias': True, 'xl_like': True}),
+        ({'param_init': 'xavier_uniform', 'xl_like': True}),
     ]
 )
-def test_forward(args, learnable):
+def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    klen = 40
-    mlen = 20
+    mlen = 20 if args['xl_like'] else 0
     qlen = 5
     device = "cpu"
 
-    key = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
-    memory = torch.FloatTensor(batch_size, mlen, args['kdim'], device=device)
     query = torch.FloatTensor(batch_size, qlen, args['qdim'], device=device)
+    if mlen > 0:
+        memory = torch.FloatTensor(batch_size, mlen, args['kdim'], device=device)
+        cat = torch.cat([memory, query], dim=1)
+    else:
+        cat = query
 
     # Create the self-attention mask
-    causal_mask = torch.ones(qlen, klen + mlen, device=device).byte()
+    causal_mask = torch.ones(qlen, qlen + mlen, device=device).byte()
     causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
-    causal_mask = causal_mask.repeat([batch_size, 1, 1])  # `[B, qlen, klen+mlen]`
+    causal_mask = causal_mask.repeat([batch_size, 1, 1])  # `[B, qlen, mlen+qlen]`
 
     module_embedding = importlib.import_module('neural_sp.models.modules.positional_embedding')
     pos_emb = module_embedding.XLPositionalEmbedding(args['kdim'], args['dropout'])
 
-    if learnable:
-        u = torch.nn.Parameter(torch.Tensor(args['n_heads'], args['adim'] // args['n_heads']))
-        u = u.to(device)
-        v = torch.nn.Parameter(torch.Tensor(args['n_heads'], args['adim'] // args['n_heads']))
-        v = v.to(device)
+    if args['xl_like']:
+        u_bias = torch.nn.Parameter(torch.Tensor(args['n_heads'], args['adim'] // args['n_heads']))
+        u_bias = u_bias.to(device)
+        v_bias = torch.nn.Parameter(torch.Tensor(args['n_heads'], args['adim'] // args['n_heads']))
+        v_bias = v_bias.to(device)
     else:
-        u, v = None, None
+        u_bias, v_bias = None, None
 
     module_mha = importlib.import_module('neural_sp.models.modules.relative_multihead_attention')
     attention = module_mha.RelativeMultiheadAttentionMechanism(**args)
@@ -69,13 +75,10 @@ def test_forward(args, learnable):
 
     attention.train()
     aws = None
-    for i in range(qlen):
-        pos_idxs = torch.arange(klen + mlen - 1, -1, -1.0, dtype=torch.float, device=device)
-        pos_embs = pos_emb(pos_idxs)
+    pos_embs = pos_emb(query, mlen=mlen)
 
-        out = attention(key, query[:, i:i + 1], memory, mask=causal_mask[:, i:i + 1],
-                        pos_embs=pos_embs, u=u, v=v)
-        assert len(out) == 2
-        cv, aws = out
-        assert cv.size() == (batch_size, 1, memory.size(2))
-        assert aws.size() == (batch_size, args['n_heads'], 1, klen + mlen)
+    out = attention(cat, query, pos_embs, causal_mask, u_bias=u_bias, v_bias=v_bias)
+    assert len(out) == 2
+    cv, aws = out
+    assert cv.size() == (batch_size, qlen, args['kdim'])
+    assert aws.size() == (batch_size, args['n_heads'], qlen, qlen + mlen)
