@@ -226,8 +226,8 @@ class TransformerXL(LMBase):
         causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
         causal_mask = causal_mask.repeat([bs, 1, 1])  # `[B, L, L+mlen]`
 
-        pos_embs = self.pos_emb(ys, mlen=mlen,
-                                zero_center_offset=self.zero_center_offset)  # NOTE: including dropout
+        out = self.dropout_emb(self.embed(ys.long()) * self.scale)
+        pos_embs = self.pos_emb(ys, mlen=mlen, zero_center_offset=self.zero_center_offset)
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
