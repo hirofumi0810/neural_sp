@@ -21,6 +21,7 @@ pip install -e ".[test]"  # install test dependencies
 # [FIXME] hacking==1.1.0 requires flake8<2.7.0,>=2.6.0, but that version has a problem around fstring
 # pip install -U flake8 flake8-docstrings
 
+pip install numpy --upgrade
 # install matplotlib
 # pip install matplotlib
 
