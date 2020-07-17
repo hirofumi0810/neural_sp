@@ -574,7 +574,7 @@ class ConformerEncoderBlock(nn.Module):
         self.reset_visualization()
 
         # LayerDrop
-        if self.dropout_layer > 0 and self.training and random.random() >= self.dropout_layer:
+        if self.dropout_layer > 0 and self.training and random.random() < self.dropout_layer:
             return xs
 
         # first half FFN
