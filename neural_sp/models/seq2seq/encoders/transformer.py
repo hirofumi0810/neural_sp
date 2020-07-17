@@ -71,6 +71,7 @@ class TransformerEncoder(EncoderBase):
         conv_param_init (float): only for CNN layers before Transformer layers
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (str): parameter initialization method
+        clamp_len (int): maximum length for relative positional encoding
         chunk_size_left (int): left chunk size for latency-controlled Transformer encoder
         chunk_size_current (int): current chunk size for latency-controlled Transformer encoder
         chunk_size_right (int): right chunk size for latency-controlled Transformer encoder
@@ -86,7 +87,7 @@ class TransformerEncoder(EncoderBase):
                  subsample, subsample_type, n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
-                 task_specific_layer, param_init,
+                 task_specific_layer, param_init, clamp_len,
                  chunk_size_left, chunk_size_current, chunk_size_right, latency_control_type):
 
         super(TransformerEncoder, self).__init__()
@@ -187,7 +188,7 @@ class TransformerEncoder(EncoderBase):
         if self.chunk_size_right > 0:
             assert self.chunk_size_right % self._factor == 0
 
-        self.clamp_len = 40  # TODO: make this option
+        self.clamp_len = clamp_len
         self.pos_emb = None
         self.u_bias = None
         self.v_bias = None
@@ -268,6 +269,8 @@ class TransformerEncoder(EncoderBase):
                            help='type of positional encoding for the Transformer encoder')
         group.add_argument('--dropout_enc_layer', type=float, default=0.0,
                            help='LayerDrop probability for Transformer encoder layers')
+        group.add_argument('--transformer_enc_clamp_len', type=int, default=-1,
+                           help='maximum length for relative positional encoding. -1 means infinite length.')
         # streaming
         group.add_argument('--lc_chunk_size_left', type=int, default=0,
                            help='left chunk size for latency-controlled Transformer encoder')
@@ -292,6 +295,8 @@ class TransformerEncoder(EncoderBase):
         dir_name += str(args.enc_n_layers) + 'L'
         dir_name += str(args.transformer_n_heads) + 'H'
         dir_name += 'pe' + str(args.transformer_enc_pe_type)
+        if args.transformer_enc_clamp_len > 0:
+            dir_name += '_clamp' + str(args.transformer_enc_clamp_len)
         if args.dropout_enc_layer > 0:
             dir_name += 'droplayer' + str(args.dropout_enc_layer)
         if args.lc_chunk_size_left > 0 or args.lc_chunk_size_current > 0 or args.lc_chunk_size_right > 0:
@@ -363,6 +368,7 @@ class TransformerEncoder(EncoderBase):
             N_l = max(0, N_l // self.conv.subsampling_factor)
             N_c = N_c // self.conv.subsampling_factor
             N_r = N_r // self.conv.subsampling_factor
+            clamp_len = clamp_len // self.conv.subsampling_factor
 
         if self.lc_type == 'mask':
             # Extract the center region
@@ -376,7 +382,7 @@ class TransformerEncoder(EncoderBase):
             pos_embs = None
             if self.pe_type in ['relative', 'relative_xl']:
                 xs = xs * self.scale
-                pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: including dropout
+                pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
             else:
                 xs = self.pos_enc(xs, scale=True)
 
@@ -416,7 +422,7 @@ class TransformerEncoder(EncoderBase):
                     N_r = N_r // self.subsample[lth].subsampling_factor
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
-                        pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: including dropout
+                        pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
                     if self.lc_type == 'mask':
                         xx_mask = make_pad_mask(xlens.to(self.device))
                         xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
@@ -435,8 +441,7 @@ class TransformerEncoder(EncoderBase):
             if self.pe_type in ['relative', 'relative_xl']:
                 xs = xs * self.scale
                 # Create sinusoidal positional embeddings for relative positional encoding
-                clamp_len = clamp_len // self.conv.subsampling_factor
-                pos_embs = self.pos_emb(xs, clamp_len=clamp_len)  # NOTE: including dropout
+                pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
             else:
                 xs = self.pos_enc(xs, scale=True)
                 pos_embs = None
@@ -469,7 +474,7 @@ class TransformerEncoder(EncoderBase):
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
                         clamp_len = clamp_len // self.subsample[lth].subsampling_factor
-                        pos_embs = self.pos_emb(xs, clamp_len=clamp_len)  # NOTE: including dropout
+                        pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
 
         xs = self.norm_out(xs)
 

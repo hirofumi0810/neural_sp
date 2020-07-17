@@ -46,6 +46,7 @@ def make_args(**kwargs):
         conv_param_init=0.1,
         task_specific_layer=False,
         param_init='xavier_uniform',
+        clamp_len=-1,
         chunk_size_left=0,
         chunk_size_current=0,
         chunk_size_right=0,
@@ -69,6 +70,9 @@ def make_args(**kwargs):
         # positional encoding
         ({'pe_type': 'add'}),
         ({'pe_type': 'relative'}),
+        ({'pe_type': 'relative_xl'}),
+        ({'pe_type': 'relative', 'clamp_len': 10}),
+        ({'pe_type': 'relative_xl', 'clamp_len': 10}),
         # normalization
         ({'conv_batch_norm': True}),
         ({'conv_layer_norm': True}),
@@ -114,7 +118,6 @@ def make_args(**kwargs):
         ({'subsample': "2_2_1", 'latency_control_type': 'mask',
           'pe_type': "relative",
           'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-
     ]
 )
 def test_forward(args):

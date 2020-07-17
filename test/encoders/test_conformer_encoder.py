@@ -47,6 +47,7 @@ def make_args(**kwargs):
         conv_param_init=0.1,
         task_specific_layer=False,
         param_init='xavier_uniform',
+        clamp_len=-1,
         chunk_size_left=0,
         chunk_size_current=0,
         chunk_size_right=0,
@@ -65,6 +66,8 @@ def make_args(**kwargs):
         ({'input_dim': 240, 'conv_in_channel': 3}),
         # PE type
         ({'pe_type': 'relative_xl'}),
+        ({'pe_type': 'relative', 'clamp_len': 10}),
+        ({'pe_type': 'relative_xl', 'clamp_len': 10}),
         # normalization
         ({'conv_batch_norm': True}),
         ({'conv_layer_norm': True}),
