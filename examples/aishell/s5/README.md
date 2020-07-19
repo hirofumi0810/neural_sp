@@ -88,6 +88,40 @@
 |dev|7176|104765|94.2|5.6|0.2|0.1|**5.9**|40.7|
 
 
+### Streaming Transformer-MMA, hierarchical subsample1/8, chunk-hop: 32/32/32
+- conf: `conf/asr/transformer_mma/lc_transformer_mma_subsample8_ma4H_ca4H_chunk16_from4L_32_32_32.yaml`
+- lm_conf: `conf/lm/rnnlm.yaml`
+- decoding parameters
+  - epoch: 25
+  - n_average: 10
+  - beam width: 10
+  - lm_weight: 0.3
+  - length_penalty: 2.0
+  - mma_delay_threshold: 8
+
+| Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
+| -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
+|dev|14326|205341|94.3|5.5|0.2|0.2|**5.8**|39.9|
+|test|7176|104765|93.7|6.1|0.3|0.2|**6.5**|42.8|
+
+
+### Streaming Transformer-MMA, hierarchical subsample1/8, chunk-hop: 64/32/32
+- conf: `conf/asr/transformer_mma/lc_transformer_mma_subsample8_ma4H_ca4H_chunk16_from4L_64_32_32.yaml`
+- lm_conf: `conf/lm/rnnlm.yaml`
+- decoding parameters
+  - epoch: 25
+  - n_average: 10
+  - beam width: 10
+  - lm_weight: 0.3
+  - length_penalty: 2.0
+  - mma_delay_threshold: 8
+
+| Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
+| -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
+|dev|14326|205341|94.4|5.4|0.2|0.2|**5.8**|39.8|
+|test|7176|104765|93.8|6.0|0.3|0.2|**6.4**|42.1|
+
+
 ### Streaming Transformer-MMA, hierarchical subsample1/8, chunk-hop: 40/40/40
 - conf: `conf/asr/transformer_mma/lc_transformer_mma_subsample8_ma4H_ca4H_chunk16_from4L_40_40_40.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
