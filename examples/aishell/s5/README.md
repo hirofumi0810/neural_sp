@@ -3,6 +3,7 @@
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
   - beam width: 5
+  - lm_weight: 0.3
 
 | Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
 | -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
@@ -14,8 +15,10 @@
 - conf: `conf/asr/transformer.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
+  - epoch: 30
   - n_average: 10
   - beam width: 5
+  - lm_weight: 0.3
 
 | Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
 | -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
@@ -27,8 +30,10 @@
 - conf: `conf/asr/transformer.yaml`
 - conf2: `conf/data/spec_augment_speed_perturb_transformer.yaml`
 - decoding parameters
+  - epoch: 35
   - n_average: 10
   - beam width: 5
+  - lm_weight: 0.0
 
 | Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
 | -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
@@ -40,8 +45,10 @@
 - conf: `conf/asr/transformer_subsample8.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
+  - epoch: 30
   - n_average: 10
   - beam width: 5
+  - lm_weight: 0.3
 
 | Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
 | -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
@@ -53,8 +60,10 @@
 - conf: `conf/asr/transformer.yaml`
 - conf2: `conf/data/spec_augment_speed_perturb_transformer_subsample8.yaml`
 - decoding parameters
+  - epoch: 40
   - n_average: 10
   - beam width: 5
+  - lm_weight: 0.0
 
 | Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
 | -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
@@ -66,8 +75,10 @@
 - conf: `conf/asr/transformer_mma/transformer_mma_ma4H_ca4H_chunk16_from4L_subsample8.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
+  - epoch: 25
   - n_average: 10
   - beam width: 10
+  - lm_weight: 0.3
   - length_penalty: 2.0
   - mma_delay_threshold: 8
 
@@ -81,8 +92,10 @@
 - conf: `conf/asr/transformer_mma/lc_transformer_mma_subsample8_ma4H_ca4H_chunk16_from4L_40_40_40.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
+  - epoch: 25
   - n_average: 10
   - beam width: 10
+  - lm_weight: 0.3
   - length_penalty: 2.0
   - mma_delay_threshold: 8
 
@@ -96,8 +109,10 @@
 - conf: `conf/asr/transformer_mma/lc_transformer_mma_subsample8_ma4H_ca4H_chunk16_from4L_96_64_32.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
+  - epoch: 25
   - n_average: 10
   - beam width: 10
+  - lm_weight: 0.3
   - length_penalty: 2.0
   - mma_delay_threshold: 8
 
@@ -111,8 +126,10 @@
 - conf: `conf/asr/transformer_mma/lc_transformer_mma_subsample8_ma4H_ca4H_chunk16_from4L_64_128_64.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
 - decoding parameters
+  - epoch: 25
   - n_average: 10
   - beam width: 10
+  - lm_weight: 0.3
   - length_penalty: 2.0
   - mma_delay_threshold: 8
 
