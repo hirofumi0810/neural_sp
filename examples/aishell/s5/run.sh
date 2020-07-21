@@ -37,7 +37,7 @@ resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/aishell1
+export data=/n/work2/inaguma/corpus/aishell1
 
 # Base url for downloads.
 data_url=www.openslr.org/resources/33
@@ -63,6 +63,7 @@ test_set="test_sp"
 
 if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
     echo "stage -1: Data Download"
+    mkdir -p ${data}
     local/download_and_untar.sh ${data} ${data_url} data_aishell
     local/download_and_untar.sh ${data} ${data_url} resource_aishell
 fi
