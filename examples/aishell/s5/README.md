@@ -41,6 +41,21 @@
 |test|7176|104765|94.7|5.1|0.2|0.1|**5.4**|37.7|
 
 
+### Conformer + SpecAugment (no LM)
+- conf: `conf/asr/conformer_m.yaml`
+- conf2: `conf/data/spec_augment_speed_perturb_transformer.yaml`
+- decoding parameters
+  - epoch: 35
+  - n_average: 10
+  - beam width: 5
+  - lm_weight: 0.0
+
+| Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
+| -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
+|dev|14326|205341|95.2|4.7|0.1|0.1|**4.9**|36.0|
+|test|7176|104765|94.6|5.0|0.3|0.1|**5.5**|38.0|
+
+
 ### Transformer, hierarchical subsample1/8
 - conf: `conf/asr/transformer_subsample8.yaml`
 - lm_conf: `conf/lm/rnnlm.yaml`
@@ -69,6 +84,21 @@
 | -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
 |dev|14326|205341|95.1|4.8|0.1|0.1|**5.0**|35.9|
 |test|7176|104765|94.6|5.2|0.2|0.1|**5.5**|38.3|
+
+
+### Conformer + SpecAugment (no LM), hierarchical subsample1/8
+- conf: `conf/asr/conformer_m_subsample8.yaml`
+- conf2: `conf/data/spec_augment_speed_perturb_transformer_subsample8.yaml`
+- decoding parameters
+  - epoch: 40
+  - n_average: 10
+  - beam width: 5
+  - lm_weight: 0.0
+
+| Eval Set | # Snt | # Wrd | Corr | Sub | Del | Ins | Err | S.Err |
+| -------- | ----- | ----- | ---- | --- | --- | --- | --- | ----- |
+|dev|14326|205341|95.4|4.5|0.2|0.1|**4.7**|34.9|
+|test|7176|104765|94.9|4.7|0.3|0.1|**5.2**|36.5|
 
 
 ### Offline Transformer-MMA, hierarchical subsample1/8
