@@ -3,20 +3,25 @@ n_stacks: 1
 n_skips: 1
 max_n_frames: 1600
 conv_in_channel: 1
-conv_channels: "32_32_32"
-conv_kernel_sizes: "(3,3)_(3,3)_(3,3)"
-conv_strides: "(1,1)_(1,1)_(1,1)"
-conv_poolings: "(2,2)_(2,2)_(2,2)"  # (T,F)
+conv_channels: "32_32"
+conv_kernel_sizes: "(3,3)_(3,3)"
+conv_strides: "(1,1)_(1,1)"
+conv_poolings: "(1,1)_(2,2)"
 conv_batch_norm: false
 conv_layer_norm: false
+subsample: "1_1_1_2_1_1_1_2_1_1_1_1"
+subsample_type: max_pool
 enc_type: conv_conformer
 conformer_kernel_size: 3
-dec_type: transformer
 enc_n_layers: 12
-dec_n_layers: 6
-transformer_attn_type: scaled_dot
 transformer_enc_pe_type: relative  ###
+# transformer_enc_pe_type: relative_xl  ###
+# transformer_enc_clamp_len: -1
+transformer_enc_clamp_len: 40
+dec_type: transformer
+dec_n_layers: 6
 transformer_dec_pe_type: 1dconv3L  ### this is effective
+transformer_attn_type: scaled_dot
 transformer_d_model: 256
 transformer_d_ff: 1024  ###
 transformer_ffn_activation: relu
@@ -29,7 +34,7 @@ batch_size: 32
 optimizer: noam
 n_epochs: 30  # 35->30
 convert_to_sgd_epoch: 100
-print_step: 600  ### 200->600
+print_step: 600  # 200->600
 metric: accuracy
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5
