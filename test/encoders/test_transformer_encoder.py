@@ -50,7 +50,7 @@ def make_args(**kwargs):
         chunk_size_left=0,
         chunk_size_current=0,
         chunk_size_right=0,
-        latency_control_type='mask',
+        streaming_type='mask',
     )
     args.update(kwargs)
     return args
@@ -79,13 +79,13 @@ def make_args(**kwargs):
         # projection
         ({'last_proj_dim': 10}),
         # LC-Transformer
-        ({'latency_control_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'latency_control_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
-        ({'latency_control_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64,
+        ({'streaming_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'streaming_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
+        ({'streaming_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64,
           'pe_type': 'relative'}),
-        ({'latency_control_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'latency_control_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
-        ({'latency_control_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64,
+        ({'streaming_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+        ({'streaming_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
+        ({'streaming_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64,
           'pe_type': 'relative'}),
         # Multi-task
         ({'n_layers_sub1': 2}),
@@ -104,18 +104,18 @@ def make_args(**kwargs):
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
         ({'subsample': "1_2_1", 'subsample_type': 'conv1d'}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool', 'pe_type': 'relative'}),
-        ({'subsample': "1_2_1", 'latency_control_type': 'reshape',
+        ({'subsample': "1_2_1", 'streaming_type': 'reshape',
           'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'subsample': "2_2_1", 'latency_control_type': 'reshape',
+        ({'subsample': "2_2_1", 'streaming_type': 'reshape',
           'conv_poolings': "(1,1)_(2,2)",
           'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         # mask
-        ({'subsample': "1_2_1", 'latency_control_type': 'mask',
+        ({'subsample': "1_2_1", 'streaming_type': 'mask',
           'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'subsample': "2_2_1", 'latency_control_type': 'mask',
+        ({'subsample': "2_2_1", 'streaming_type': 'mask',
           'conv_poolings': "(1,1)_(2,2)",
           'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'subsample': "2_2_1", 'latency_control_type': 'mask',
+        ({'subsample': "2_2_1", 'streaming_type': 'mask',
           'pe_type': "relative",
           'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
     ]
