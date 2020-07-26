@@ -387,20 +387,10 @@ class TransformerEncoder(EncoderBase):
                 xs = self.pos_enc(xs, scale=True)
 
             if self.streaming_type == 'reshape':
-                xx_mask_first = None  # NOTE: no mask to avoid masking all frames in a chunk
+                xx_mask_first = None
                 xx_mask = None  # NOTE: no mask to avoid masking all frames in a chunk
             elif self.streaming_type == 'mask':
-                xx_mask = make_pad_mask(xlens.to(self.device))
-                xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
-                xx_mask_first = xx_mask.clone()
-                for chunk_idx in range(n_chunks):
-                    offset = chunk_idx * N_c
-                    # for first layer
-                    xx_mask_first[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
-                    xx_mask_first[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
-                    # for upper layers
-                    xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
-                    xx_mask[:, offset:offset + N_c, offset + N_c:] = 0
+                xx_mask_first, xx_mask = time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask if lth >= 1 else xx_mask_first,
@@ -431,17 +421,7 @@ class TransformerEncoder(EncoderBase):
                         # Create sinusoidal positional embeddings for relative positional encoding
                         pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
                     if self.streaming_type == 'mask':
-                        xx_mask = make_pad_mask(xlens.to(self.device))
-                        xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
-                        xx_mask_first = xx_mask.clone()
-                        for chunk_idx in range(n_chunks):
-                            offset = chunk_idx * N_c
-                            # for first layer
-                            xx_mask_first[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
-                            xx_mask_first[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
-                            # for upper layers
-                            xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
-                            xx_mask[:, offset:offset + N_c, offset + N_c:] = 0
+                        xx_mask_first, xx_mask = time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
 
             # Extract the center region
             if self.streaming_type == 'reshape':
@@ -606,3 +586,18 @@ class TransformerEncoderBlock(nn.Module):
         xs = self.dropout(xs) + residual
 
         return xs
+
+
+def time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks):
+    xx_mask = make_pad_mask(xlens.to(xs.device))
+    xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
+    xx_mask_first = xx_mask.clone()
+    for chunk_idx in range(n_chunks):
+        offset = chunk_idx * N_c
+        # for first layer
+        xx_mask_first[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
+        xx_mask_first[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
+        # for upper layers
+        xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
+        xx_mask[:, offset:offset + N_c, offset + N_c:] = 0
+    return xx_mask_first, xx_mask
