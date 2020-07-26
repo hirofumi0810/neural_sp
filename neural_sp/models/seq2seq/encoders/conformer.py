@@ -428,10 +428,15 @@ class ConformerEncoder(EncoderBase):
                     if self.streaming_type == 'mask':
                         xx_mask = make_pad_mask(xlens.to(self.device))
                         xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
+                        xx_mask_first = xx_mask.clone()
                         for chunk_idx in range(n_chunks):
                             offset = chunk_idx * N_c
+                            # for first layer
+                            xx_mask_first[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
+                            xx_mask_first[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
+                            # for upper layers
                             xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
-                            xx_mask[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
+                            xx_mask[:, offset:offset + N_c, offset + N_c:] = 0
 
             # Extract the center region
             if self.streaming_type == 'reshape':
