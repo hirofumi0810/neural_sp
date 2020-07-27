@@ -75,7 +75,7 @@ class TransformerEncoder(EncoderBase):
         chunk_size_left (int): left chunk size for latency-controlled Transformer encoder
         chunk_size_current (int): current chunk size for latency-controlled Transformer encoder
         chunk_size_right (int): right chunk size for latency-controlled Transformer encoder
-        latency_control_type (str): implementation methods of latency-controlled Conformer encoder
+        streaming_type (str): implementation methods of latency-controlled Transformer encoder
 
     """
 
@@ -88,7 +88,7 @@ class TransformerEncoder(EncoderBase):
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init, clamp_len,
-                 chunk_size_left, chunk_size_current, chunk_size_right, latency_control_type):
+                 chunk_size_left, chunk_size_current, chunk_size_right, streaming_type):
 
         super(TransformerEncoder, self).__init__()
 
@@ -117,7 +117,7 @@ class TransformerEncoder(EncoderBase):
         self.chunk_size_current = chunk_size_current
         self.chunk_size_right = chunk_size_right
         self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
-        self.lc_type = latency_control_type
+        self.streaming_type = streaming_type
         # reshape) not lookahead frames in CNN layers, but requires some additional computations
         # mask) there are some lookahead frames in CNN layers, no additional computations
         if self.latency_controlled:
@@ -353,9 +353,9 @@ class TransformerEncoder(EncoderBase):
         clamp_len = self.clamp_len
 
         if self.latency_controlled:
-            if self.lc_type == 'reshape':
+            if self.streaming_type == 'reshape':
                 xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
-            elif self.lc_type == 'mask':
+            elif self.streaming_type == 'mask':
                 # xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
                 xs = chunkwise(xs, 0, N_c, 0)  # `[B * n_chunks, N_c, idim]`
             n_chunks = xs.size(0) // bs
@@ -370,7 +370,7 @@ class TransformerEncoder(EncoderBase):
             N_r = N_r // self.conv.subsampling_factor
             clamp_len = clamp_len // self.conv.subsampling_factor
 
-        if self.lc_type == 'mask':
+        if self.streaming_type == 'mask':
             # Extract the center region
             emax = xlens.max().item()
             xs = xs.contiguous().view(bs, -1, xs.size(2))[:, :emax]  # `[B, emax, d_model]`
@@ -386,20 +386,17 @@ class TransformerEncoder(EncoderBase):
             else:
                 xs = self.pos_enc(xs, scale=True)
 
-            if self.lc_type == 'reshape':
+            if self.streaming_type == 'reshape':
+                xx_mask_first = None
                 xx_mask = None  # NOTE: no mask to avoid masking all frames in a chunk
-            elif self.lc_type == 'mask':
-                xx_mask = make_pad_mask(xlens.to(self.device))
-                xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
-                for chunk_idx in range(n_chunks):
-                    offset = chunk_idx * N_c
-                    xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
-                    xx_mask[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
+            elif self.streaming_type == 'mask':
+                xx_mask_first, xx_mask = time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
 
             for lth, layer in enumerate(self.layers):
-                xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
+                xs = layer(xs, xx_mask if lth >= 1 else xx_mask_first,
+                           pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
-                    if self.lc_type == 'reshape':
+                    if self.streaming_type == 'reshape':
                         n_heads = layer.xx_aws.size(1)
                         xx_aws = layer.xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
                         xx_aws = xx_aws.view(bs, n_chunks, n_heads, N_c, N_c)
@@ -410,7 +407,7 @@ class TransformerEncoder(EncoderBase):
                             xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk, :emax_chunk]
                             xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
                         self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
-                    elif self.lc_type == 'mask':
+                    elif self.streaming_type == 'mask':
                         self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
 
@@ -423,16 +420,11 @@ class TransformerEncoder(EncoderBase):
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
                         pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
-                    if self.lc_type == 'mask':
-                        xx_mask = make_pad_mask(xlens.to(self.device))
-                        xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
-                        for chunk_idx in range(n_chunks):
-                            offset = chunk_idx * N_c
-                            xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
-                            xx_mask[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
+                    if self.streaming_type == 'mask':
+                        xx_mask_first, xx_mask = time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
 
             # Extract the center region
-            if self.lc_type == 'reshape':
+            if self.streaming_type == 'reshape':
                 xs = xs[:, N_l:N_l + N_c]  # `[B * n_chunks, N_c, d_model]`
                 xs = xs.contiguous().view(bs, -1, xs.size(2))
                 xs = xs[:, :emax]
@@ -594,3 +586,18 @@ class TransformerEncoderBlock(nn.Module):
         xs = self.dropout(xs) + residual
 
         return xs
+
+
+def time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks):
+    xx_mask = make_pad_mask(xlens.to(xs.device))
+    xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
+    xx_mask_first = xx_mask.clone()
+    for chunk_idx in range(n_chunks):
+        offset = chunk_idx * N_c
+        # for first layer
+        xx_mask_first[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
+        xx_mask_first[:, offset:offset + N_c, offset + (N_c + N_r):] = 0
+        # for upper layers
+        xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
+        xx_mask[:, offset:offset + N_c, offset + N_c:] = 0
+    return xx_mask_first, xx_mask
