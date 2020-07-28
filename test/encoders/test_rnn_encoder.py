@@ -88,6 +88,7 @@ def make_args(**kwargs):
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat'}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'max_pool'}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv'}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'add'}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop',
           'bidir_sum_fwd_bwd': True}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat',
@@ -96,6 +97,8 @@ def make_args(**kwargs):
           'bidir_sum_fwd_bwd': True}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv',
           'bidir_sum_fwd_bwd': True}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'add',
+          'bidir_sum_fwd_bwd': True}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop',
           'n_projs': 8}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat',
@@ -103,6 +106,8 @@ def make_args(**kwargs):
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'max_pool',
           'n_projs': 8}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv',
+          'n_projs': 8}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'add',
           'n_projs': 8}),
         # LC-BLSTM
         ({'enc_type': 'blstm', 'chunk_size_right': 40}),  # for PT
