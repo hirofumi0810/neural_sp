@@ -111,7 +111,44 @@ class DropSubsampler(nn.Module):
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        xs = xs[:, ::self.subsampling_factor, :]
+        xs = xs[:, ::self.subsampling_factor]
+
+        xlens = [max(1, math.ceil(i.item() / self.subsampling_factor)) for i in xlens]
+        xlens = torch.IntTensor(xlens)
+        return xs, xlens
+
+
+class AddSubsampler(nn.Module):
+    """Subsample by summing input frames."""
+
+    def __init__(self, subsampling_factor):
+        super(AddSubsampler, self).__init__()
+
+        self.subsampling_factor = subsampling_factor
+        assert subsampling_factor <= 2
+
+    def forward(self, xs, xlens):
+        """Forward pass.
+
+        Args:
+            xs (FloatTensor): `[B, T, F]`
+            xlens (IntTensor): `[B]` (on CPU)
+        Returns:
+            xs (FloatTensor): `[B, T', F']`
+            xlens (IntTensor): `[B]` (on CPU)
+
+        """
+        if self.subsampling_factor == 1:
+            return xs, xlens
+
+        bs, xmax, idim = xs.size()
+
+        xs_even = xs[:, ::self.subsampling_factor]
+        if xmax % 2 == 0:
+            xs_odd = xs[:, 1::self.subsampling_factor]
+        else:
+            xs_odd = torch.cat([xs, xs.new_zeros(bs, 1, idim)], dim=1)[:, 1::self.subsampling_factor]
+        xs = xs_odd + xs_even
 
         xlens = [max(1, math.ceil(i.item() / self.subsampling_factor)) for i in xlens]
         xlens = torch.IntTensor(xlens)

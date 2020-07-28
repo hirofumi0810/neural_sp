@@ -21,6 +21,7 @@ from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedF
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
+from neural_sp.models.seq2seq.encoders.subsampling import AddSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
@@ -179,6 +180,9 @@ class TransformerEncoder(EncoderBase):
                                                 for factor in subsamples])
             elif subsample_type == '1dconv':
                 self.subsample = nn.ModuleList([Conv1dSubsampler(factor, self._odim)
+                                                for factor in subsamples])
+            elif subsample_type == 'add':
+                self.subsample = nn.ModuleList([AddSubsampler(factor)
                                                 for factor in subsamples])
 
         if self.chunk_size_left > 0:
@@ -421,7 +425,7 @@ class TransformerEncoder(EncoderBase):
                         # Create sinusoidal positional embeddings for relative positional encoding
                         pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
                     if self.streaming_type == 'mask':
-                        xx_mask_first, xx_mask = time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
+                        _, xx_mask = time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
 
             # Extract the center region
             if self.streaming_type == 'reshape':
