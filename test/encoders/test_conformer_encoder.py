@@ -94,6 +94,7 @@ def make_args(**kwargs):
         ({'subsample': "1_2_1", 'subsample_type': 'concat'}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
         ({'subsample': "1_2_1", 'subsample_type': 'conv1d'}),
+        ({'subsample': "1_2_1", 'subsample_type': 'add'}),
         ({'subsample': "1_2_1", 'streaming_type': 'reshape',
           'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         ({'subsample': "1_2_1", 'streaming_type': 'mask',

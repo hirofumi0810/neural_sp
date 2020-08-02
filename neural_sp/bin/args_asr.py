@@ -182,12 +182,12 @@ def build_parser():
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
-                        choices=['drop', 'concat', 'max_pool', '1dconv'],
+                        choices=['drop', 'concat', 'max_pool', '1dconv', 'add'],
                         help='type of subsampling in the encoder')
     # topology (decoder)
     parser.add_argument('--dec_type', type=str, default='lstm',
                         choices=['lstm', 'gru', 'transformer', 'transformer_xl',
-                                 'lstm_transducer', 'gru_transducer', 'transformer_transducer',
+                                 'lstm_transducer', 'gru_transducer',
                                  'asg'],
                         help='type of the decoder')
     parser.add_argument('--dec_n_layers', type=int, default=1,

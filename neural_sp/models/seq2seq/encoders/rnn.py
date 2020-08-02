@@ -19,6 +19,7 @@ from torch.nn.utils.rnn import pad_packed_sequence
 from neural_sp.models.modules.initialization import init_with_uniform
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
+from neural_sp.models.seq2seq.encoders.subsampling import AddSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
@@ -177,6 +178,8 @@ class RNNEncoder(EncoderBase):
                         self.subsample += [DropSubsampler(subsamples[lth])]
                     elif subsample_type == '1dconv':
                         self.subsample += [Conv1dSubsampler(subsamples[lth], self._odim)]
+                    elif subsample_type == 'add':
+                        self.subsample += [AddSubsampler(subsamples[lth])]
 
                 # Task specific layer
                 if lth == n_layers_sub1 - 1 and task_specific_layer:

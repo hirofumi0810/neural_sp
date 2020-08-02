@@ -88,6 +88,7 @@ def make_args(**kwargs):
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat'}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'max_pool'}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv'}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'add'}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop',
           'bidir_sum_fwd_bwd': True}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat',
@@ -96,6 +97,8 @@ def make_args(**kwargs):
           'bidir_sum_fwd_bwd': True}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv',
           'bidir_sum_fwd_bwd': True}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'add',
+          'bidir_sum_fwd_bwd': True}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop',
           'n_projs': 8}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat',
@@ -103,6 +106,8 @@ def make_args(**kwargs):
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'max_pool',
           'n_projs': 8}),
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv',
+          'n_projs': 8}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'add',
           'n_projs': 8}),
         # LC-BLSTM
         ({'enc_type': 'blstm', 'chunk_size_right': 40}),  # for PT
@@ -145,7 +150,7 @@ def test_forward(args):
         assert enc_out_dict['ys']['xs'].size(0) == batch_size
         assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'].max()
         for b in range(batch_size):
-            if 'conv' in args['enc_type'] or args['subsample_type'] in ['max_pool', '1dconv', 'drop']:
+            if 'conv' in args['enc_type'] or args['subsample_type'] in ['max_pool', '1dconv', 'drop', 'add']:
                 assert enc_out_dict['ys']['xlens'][b].item() == math.ceil(xlens[b].item() / enc.subsampling_factor)
             else:
                 assert enc_out_dict['ys']['xlens'][b].item() == xlens[b].item() // enc.subsampling_factor
@@ -155,7 +160,7 @@ def test_forward(args):
             assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
             assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'].max()
             for b in range(batch_size):
-                if 'conv' in args['enc_type'] or args['subsample_type'] in ['max_pool', '1dconv', 'drop']:
+                if 'conv' in args['enc_type'] or args['subsample_type'] in ['max_pool', '1dconv', 'drop', 'add']:
                     assert enc_out_dict['ys_sub1']['xlens'][b].item() == math.ceil(
                         xlens[b].item() / enc.subsampling_factor)
                 else:
@@ -170,7 +175,7 @@ def test_forward(args):
             assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
             assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'].max()
             for b in range(batch_size):
-                if 'conv' in args['enc_type'] or args['subsample_type'] in ['max_pool', '1dconv', 'drop']:
+                if 'conv' in args['enc_type'] or args['subsample_type'] in ['max_pool', '1dconv', 'drop', 'add']:
                     assert enc_out_dict['ys_sub2']['xlens'][b].item() == math.ceil(
                         xlens[b].item() / enc.subsampling_factor)
                 else:
