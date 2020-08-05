@@ -6,6 +6,7 @@
 
 """Evaluate the character-level model by WER & CER."""
 
+import codecs
 import logging
 from tqdm import tqdm
 
@@ -70,7 +71,7 @@ def eval_char(models, dataset, recog_params, epoch,
     elif task_idx == 3:
         task = 'ys_sub3'
 
-    with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
+    with codecs.open(hyp_trn_save_path, 'w', encoding='utf-8') as f_hyp, codecs.open(ref_trn_save_path, 'w', encoding='utf-8') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
             if streaming or recog_params['recog_chunk_sync']:
