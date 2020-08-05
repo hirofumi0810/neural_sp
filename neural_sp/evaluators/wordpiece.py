@@ -6,6 +6,7 @@
 
 """Evaluate the wordpiece-level model by WER."""
 
+import codecs
 import logging
 from tqdm import tqdm
 
@@ -62,7 +63,7 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
     # calculate WER distribution based on input lengths
     wer_dist = {}
 
-    with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
+    with codecs.open(hyp_trn_save_path, 'w', encoding='utf-8') as f_hyp, codecs.open(ref_trn_save_path, 'w', encoding='utf-8') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
             if streaming or recog_params['recog_chunk_sync']:
