@@ -72,7 +72,7 @@ def load_config(config_path):
 
     """
     if not os.path.isfile(config_path):
-        raise ValueError('There is no checkpoint.')
+        raise ValueError("No configuration found at %s" % config_path)
 
     with codecs.open(config_path, "r", encoding='utf-8') as f:
         conf = yaml.load(f, Loader=yaml.FullLoader)
