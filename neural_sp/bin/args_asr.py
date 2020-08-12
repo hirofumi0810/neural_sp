@@ -105,6 +105,8 @@ def build_parser():
                         help='job name')
     parser.add_argument('--stdout', type=strtobool, default=False,
                         help='print to standard output during training')
+    parser.add_argument('--remove_old_checkpoints', type=strtobool, default=True,
+                        help='remove old checkpoints to save disk (turned off when training Transformer')
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')
