@@ -186,7 +186,6 @@ def main():
         # Initialize with pre-trained model's parameters
         if args.asr_init:
             # Load the ASR model (full model)
-            assert os.path.isfile(args.asr_init), 'There is no checkpoint.'
             conf_init = load_config(os.path.join(os.path.dirname(args.asr_init), 'conf.yml'))
             for k, v in conf_init.items():
                 setattr(args_init, k, v)
@@ -212,7 +211,7 @@ def main():
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
     # Wrap optimizer by learning rate scheduler
-    is_transformer = 'former' in args.enc_type or args.dec_type == 'former'
+    is_transformer = 'former' in args.enc_type or 'former' in args.dec_type
     optimizer = LRScheduler(optimizer, args.lr,
                             decay_type=args.lr_decay_type,
                             decay_start_epoch=args.lr_decay_start_epoch,
@@ -265,7 +264,7 @@ def main():
     amp = None
     if args.n_gpus >= 1:
         model.cudnn_setting(deterministic=not (is_transformer or args.cudnn_benchmark),
-                            benchmark=args.cudnn_benchmark)
+                            benchmark=not is_transformer and args.cudnn_benchmark)
         model.cuda()
 
         # Mix precision training setting
@@ -420,7 +419,7 @@ def main():
 
                 # Save the model
                 optimizer.save_checkpoint(
-                    model, save_path, remove_old=not is_transformer, amp=amp)
+                    model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
             else:
                 start_time_eval = time.time()
                 # dev
@@ -432,7 +431,7 @@ def main():
                 if optimizer.is_topk or is_transformer:
                     # Save the model
                     optimizer.save_checkpoint(
-                        model, save_path, remove_old=not is_transformer, amp=amp)
+                        model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
 
                     # test
                     if optimizer.is_topk:
