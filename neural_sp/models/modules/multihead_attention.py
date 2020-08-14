@@ -125,15 +125,13 @@ class MultiheadAttentionMechanism(nn.Module):
                 mask_size = (bs, qlen, klen, self.n_heads)
                 assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
+        key = self.key
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H, d_k]`
 
         if self.atype == 'scaled_dot':
-            e = torch.einsum("bihd,bjhd->bijh", (query, self.key)) / self.scale
+            e = torch.einsum("bihd,bjhd->bijh", (query, key)) / self.scale
         elif self.atype == 'add':
-            key = self.key.unsqueeze(1)  # `[B, 1, klen, H, d_k]`
-            query = query.unsqueeze(2)  # `[B, qlen, 1, H, d_k]`
-            tmp = torch.tanh(key + query).view(bs, qlen, klen, -1)  # `[B, qlen, klen, H * d_k]`
-            e = self.v(tmp)
+            e = self.v(torch.tanh(key[:, None] + query[:, :, None]).view(bs, qlen, klen, -1))
         # e: `[B, qlen, klen, H]`
 
         # Compute attention weights

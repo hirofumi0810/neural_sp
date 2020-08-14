@@ -113,7 +113,6 @@ class MonotonicEnergy(nn.Module):
         """
         bs, klen, kdim = key.size()
         qlen = query.size(1)
-        size = (bs, qlen, klen, self.n_heads)
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
@@ -124,7 +123,8 @@ class MonotonicEnergy(nn.Module):
             self.mask = mask
             if mask is not None:
                 self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ca]`
-                assert self.mask.size() == size, (self.mask.size(), size)
+                mask_size = (bs, qlen, klen, self.n_heads)
+                assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         m = self.mask
@@ -146,7 +146,6 @@ class MonotonicEnergy(nn.Module):
             e = self.v(tmp)
         # e: `[B, qlen, klen, H_ma]`
 
-        assert e.size() == size, (e.size(), size)
         if self.r is not None:
             e = e + self.r
         if m is not None:
@@ -226,7 +225,6 @@ class ChunkEnergy(nn.Module):
         """
         bs, klen, kdim = key.size()
         qlen = query.size(1)
-        size = (bs, qlen, klen, self.n_heads)
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
@@ -234,7 +232,8 @@ class ChunkEnergy(nn.Module):
             self.mask = mask
             if mask is not None:
                 self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ca]`
-                assert self.mask.size() == size, (self.mask.size(), size)
+                mask_size = (bs, qlen, klen, self.n_heads)
+                assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H_ca, d_k]`
         m = self.mask
@@ -255,7 +254,6 @@ class ChunkEnergy(nn.Module):
             e = self.v(tmp)
         # e: `[B, qlen, klen, H_ca]`
 
-        assert e.size() == size, (e.size(), size)
         if m is not None:
             NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
             e = e.masked_fill_(m == 0, NEG_INF)
