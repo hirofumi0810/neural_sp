@@ -113,46 +113,47 @@ class MonotonicEnergy(nn.Module):
         """
         bs, klen, kdim = key.size()
         qlen = query.size(1)
+        size = (bs, qlen, klen, self.n_heads)
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
             # 1d conv
             if self.conv1d is not None:
                 key = torch.relu(self.conv1d(key))
-            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-            self.key = key.transpose(2, 1).contiguous()  # `[B, H_ma, klen, d_k]`
+            self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H_ma, d_k]`
             self.mask = mask
             if mask is not None:
-                self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H_ma, qlen, klen]`
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen), \
-                    (self.mask.size(), (bs, self.n_heads, qlen, klen))
+                self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ca]`
+                assert self.mask.size() == size, (self.mask.size(), size)
 
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-        query = query.transpose(2, 1).contiguous()  # `[B, H_ma, qlen, d_k]`
         m = self.mask
 
-        if self.atype == 'add':
-            k = self.key.unsqueeze(2)  # `[B, H_ma, 1, klen, d_k]`
+        if self.atype == 'scaled_dot':
+            e = torch.einsum("bihd,bjhd->bijh", (query, self.key)) / self.scale
+        elif self.atype == 'add':
+            key = self.key.unsqueeze(2)   # `[B, 1, klen, H_ma, d_k]`
+            query = query.unsqueeze(2)  # `[B, qlen, 1, H_ma, d_k]`
+
             # Truncate encoder memories
             if boundary_leftmost > 0:
-                k = k[:, :, :, boundary_leftmost:]
-                klen = k.size(3)
+                key = key[:, :, boundary_leftmost:]
+                klen = key.size(2)
                 if m is not None:
-                    m = m[:, :, :, boundary_leftmost:]
-            e = torch.relu(k + query.unsqueeze(3))  # `[B, H_ma, qlen, klen, d_k]`
-            e = e.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
-            e = self.v(e).permute(0, 3, 1, 2)  # `[B, qlen, klen, H_ma]`
-        elif self.atype == 'scaled_dot':
-            k = self.key.transpose(3, 2)
-            e = torch.matmul(query, k) / self.scale
+                    m = m[:, :, boundary_leftmost:]
 
+            tmp = torch.relu(key + query).view(bs, qlen, klen, -1)  # `[B, qlen, klen, H_ma * d_k]`
+            e = self.v(tmp)
+        # e: `[B, qlen, klen, H_ma]`
+
+        assert e.size() == size, (e.size(), size)
         if self.r is not None:
             e = e + self.r
         if m is not None:
             NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
             e = e.masked_fill_(m == 0, NEG_INF)
-        assert e.size() == (bs, self.n_heads, qlen, klen), \
-            (e.size(), (bs, self.n_heads, qlen, klen))
+        e = e.permute(0, 3, 1, 2)  # `[B, H_ma, qlen, klen]`
+
         return e
 
 
@@ -225,42 +226,42 @@ class ChunkEnergy(nn.Module):
         """
         bs, klen, kdim = key.size()
         qlen = query.size(1)
+        size = (bs, qlen, klen, self.n_heads)
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
-            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-            self.key = key.transpose(2, 1).contiguous()  # `[B, H_ca, klen, d_k]`
+            self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H_ca, d_k]`
             self.mask = mask
             if mask is not None:
-                self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H_ca, qlen, klen]`
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen), \
-                    (self.mask.size(), (bs, self.n_heads, qlen, klen))
+                self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ca]`
+                assert self.mask.size() == size, (self.mask.size(), size)
 
-        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-        query = query.transpose(2, 1).contiguous()  # `[B, H_ca, qlen, d_k]`
+        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H_ca, d_k]`
         m = self.mask
 
-        if self.atype == 'add':
-            k = self.key.unsqueeze(2)  # `[B, H_ca, 1, klen, d_k]`
-            # Truncate
-            k = k[:, :, :, boundary_leftmost:boundary_rightmost]
-            klen = k.size(3)
-            if m is not None:
-                m = m[:, :, :, boundary_leftmost:boundary_rightmost]
+        if self.atype == 'scaled_dot':
+            e = torch.einsum("bihd,bjhd->bijh", (query, self.key)) / self.scale
+        elif self.atype == 'add':
+            key = self.key.unsqueeze(1)  # `[B, 1, klen, H_ca, d_k]`
+            query = query.unsqueeze(2)  # `[B, qlen, 1, H_ca, d_k]`
 
-            r = torch.relu(k + query.unsqueeze(3))  # `[B, H_ca, qlen, klen, d_k]`
-            r = r.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)  # `[B, qlen, klen, H_ca * d_k]`
-            r = self.v(r).permute(0, 3, 1, 2).contiguous()  # `[B, H_ca, qlen, klen]`
-        elif self.atype == 'scaled_dot':
-            k = self.key.transpose(3, 2)
-            r = torch.matmul(query, k) / self.scale
+            # Truncate encoder memories
+            key = key[:, :, boundary_leftmost:boundary_rightmost]
+            klen = key.size(2)
+            if m is not None and (boundary_leftmost > 0 or boundary_rightmost < klen):
+                m = m[:, :, boundary_leftmost:boundary_rightmost]
 
+            tmp = torch.relu(key + query).view(bs, qlen, klen, -1)  # `[B, qlen, klen, H_ca * d_k]`
+            e = self.v(tmp)
+        # e: `[B, qlen, klen, H_ca]`
+
+        assert e.size() == size, (e.size(), size)
         if m is not None:
-            NEG_INF = float(np.finfo(torch.tensor(0, dtype=r.dtype).numpy().dtype).min)
-            r = r.masked_fill_(m == 0, NEG_INF)
-        assert r.size() == (bs, self.n_heads, qlen, klen), \
-            (r.size(), (bs, self.n_heads, qlen, klen))
-        return r
+            NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
+            e = e.masked_fill_(m == 0, NEG_INF)
+        e = e.permute(0, 3, 1, 2)  # `[B, H_ca, qlen, klen]`
+
+        return e
 
 
 class MoChA(nn.Module):
@@ -576,7 +577,6 @@ class MoChA(nn.Module):
                 beta = hard_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
                                                 self.n_heads_ca, self.sharpening_factor,
                                                 self.share_ca)
-
             else:
                 beta = efficient_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
                                                      self.n_heads_ca, self.sharpening_factor,
@@ -694,8 +694,8 @@ def moving_sum(x, back, forward):
 
     Args:
         x (FloatTensor): `[B, H_ma, H_ca, qlen, klen]`
-        back (int):
-        forward (int):
+        back (int): number of lookback frames
+        forward (int): number of lookahead frames
 
     Returns:
         x_sum (FloatTensor): `[B, H_ma, H_ca, qlen, klen]`
