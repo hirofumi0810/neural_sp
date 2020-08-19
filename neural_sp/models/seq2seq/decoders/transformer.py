@@ -309,9 +309,9 @@ class TransformerDecoder(DecoderBase):
                 dir_name += '_from' + str(args.mocha_first_layer) + 'L'
 
         if args.dropout_dec_layer > 0:
-            dir_name += 'droplayer' + str(args.dropout_dec_layer)
+            dir_name += '_LD' + str(args.dropout_dec_layer)
         if args.dropout_head > 0:
-            dir_name += 'drophead' + str(args.dropout_head)
+            dir_name += '_HD' + str(args.dropout_head)
         if args.tie_embedding:
             dir_name += '_tie'
 
@@ -446,6 +446,8 @@ class TransformerDecoder(DecoderBase):
             losses_auxiliary (dict):
 
         """
+        losses_auxiliary = {}
+
         # Append <sos> and <eos>
         ys_in, ys_out, ylens = append_sos_eos(ys, self.eos, self.eos, self.pad, self.device, self.bwd)
         if not self.training:
@@ -457,7 +459,7 @@ class TransformerDecoder(DecoderBase):
         xmax = eouts.size(1)
         bs, ymax = ys_in.size()[:2]
         mlen = 0
-        tgt_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ymax, 1])
+        tgt_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ymax, 1]).byte()
         causal_mask = tgt_mask.new_ones(ymax, ymax).byte()
         causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
         tgt_mask = tgt_mask & causal_mask  # `[B, L (query), L (key)]`
@@ -510,7 +512,6 @@ class TransformerDecoder(DecoderBase):
 
         # Compute XE loss (+ label smoothing)
         loss, ppl = cross_entropy_lsm(logits, ys_out, self.lsm_prob, self.pad, self.training)
-        losses_auxiliary = {}
 
         # Quantity loss
         losses_auxiliary['loss_quantity'] = 0.
@@ -732,6 +733,7 @@ class TransformerDecoder(DecoderBase):
                      'lmstate': lmstate,
                      'ensmbl_cache': [[None] * dec.n_layers for dec in ensmbl_decs] if n_models > 1 else None,
                      'ctc_state': ctc_prefix_scorer.initial_state() if ctc_prefix_scorer is not None else None,
+                     'quantity_rate': 1.,
                      'streamable': True,
                      'streaming_failed_point': 1000}]
             streamable_global = True
