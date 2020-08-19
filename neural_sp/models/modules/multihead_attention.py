@@ -31,7 +31,7 @@ class MultiheadAttentionMechanism(nn.Module):
         atype (str): type of attention mechanism
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
-        xl_like: dummy argument for compabibility with relative multihead attention
+        xl_like: dummy argument for compabibility with relative MHA
 
     """
 
@@ -114,24 +114,24 @@ class MultiheadAttentionMechanism(nn.Module):
         bs, klen = key.size()[: 2]
         qlen = query.size(1)
 
+        # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
             self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
             self.value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
             self.mask = mask
             if self.mask is not None:
                 self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])
-                assert self.mask.size() == (bs, qlen, klen, self.n_heads), \
-                    (self.mask.size(), (bs, qlen, klen, self.n_heads))
+                mask_size = (bs, qlen, klen, self.n_heads)
+                assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
+        key = self.key
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H, d_k]`
 
         if self.atype == 'scaled_dot':
-            e = torch.einsum("bihd,bjhd->bijh", (query, self.key)) / self.scale  # `[B, qlen, klen, H]`
+            e = torch.einsum("bihd,bjhd->bijh", (query, key)) / self.scale
         elif self.atype == 'add':
-            key = self.key.unsqueeze(1)  # `[B, 1, klen, H, d_k]`
-            query = query.unsqueeze(2)  # `[B, qlen, 1, H, d_k]`
-            tmp = torch.tanh(key + query).view(bs, qlen, klen, -1)  # `[B, qlen, klen, H, d_k]`
-            e = self.v(tmp)  # `[B, qlen, klen, H]`
+            e = self.v(torch.tanh(key[:, None] + query[:, :, None]).view(bs, qlen, klen, -1))
+        # e: `[B, qlen, klen, H]`
 
         # Compute attention weights
         if self.mask is not None:

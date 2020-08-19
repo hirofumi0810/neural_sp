@@ -119,40 +119,37 @@ class MonotonicEnergy(nn.Module):
             # 1d conv
             if self.conv1d is not None:
                 key = torch.relu(self.conv1d(key))
-            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-            self.key = key.transpose(2, 1).contiguous()  # `[B, H_ma, klen, d_k]`
+            self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H_ma, d_k]`
             self.mask = mask
             if mask is not None:
-                self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H_ma, qlen, klen]`
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen), \
-                    (self.mask.size(), (bs, self.n_heads, qlen, klen))
+                self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ma]`
+                mask_size = (bs, qlen, klen, self.n_heads)
+                assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
+        key = self.key
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-        query = query.transpose(2, 1).contiguous()  # `[B, H_ma, qlen, d_k]`
         m = self.mask
 
-        if self.atype == 'add':
-            k = self.key.unsqueeze(2)  # `[B, H_ma, 1, klen, d_k]`
-            # Truncate encoder memories
-            if boundary_leftmost > 0:
-                k = k[:, :, :, boundary_leftmost:]
-                klen = k.size(3)
-                if m is not None:
-                    m = m[:, :, :, boundary_leftmost:]
-            e = torch.relu(k + query.unsqueeze(3))  # `[B, H_ma, qlen, klen, d_k]`
-            e = e.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)
-            e = self.v(e).permute(0, 3, 1, 2)  # `[B, qlen, klen, H_ma]`
-        elif self.atype == 'scaled_dot':
-            k = self.key.transpose(3, 2)
-            e = torch.matmul(query, k) / self.scale
+        # Truncate encoder memories for efficient decoding
+        if boundary_leftmost > 0:
+            key = key[:, boundary_leftmost:]
+            klen = key.size(1)
+            if m is not None:
+                m = m[:, :, boundary_leftmost:]
+
+        if self.atype == 'scaled_dot':
+            e = torch.einsum("bihd,bjhd->bijh", (query, key)) / self.scale
+        elif self.atype == 'add':
+            e = self.v(torch.relu(key[:, None] + query[:, :, None]).view(bs, qlen, klen, -1))
+        # e: `[B, qlen, klen, H_ma]`
 
         if self.r is not None:
             e = e + self.r
         if m is not None:
             NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
             e = e.masked_fill_(m == 0, NEG_INF)
-        assert e.size() == (bs, self.n_heads, qlen, klen), \
-            (e.size(), (bs, self.n_heads, qlen, klen))
+        e = e.permute(0, 3, 1, 2)  # `[B, H_ma, qlen, klen]`
+
         return e
 
 
@@ -228,39 +225,36 @@ class ChunkEnergy(nn.Module):
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
-            key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)
-            self.key = key.transpose(2, 1).contiguous()  # `[B, H_ca, klen, d_k]`
+            self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H_ca, d_k]`
             self.mask = mask
             if mask is not None:
-                self.mask = self.mask.unsqueeze(1).repeat([1, self.n_heads, 1, 1])  # `[B, H_ca, qlen, klen]`
-                assert self.mask.size() == (bs, self.n_heads, qlen, klen), \
-                    (self.mask.size(), (bs, self.n_heads, qlen, klen))
+                self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ca]`
+                mask_size = (bs, qlen, klen, self.n_heads)
+                assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
-        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
-        query = query.transpose(2, 1).contiguous()  # `[B, H_ca, qlen, d_k]`
+        key = self.key
+        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H_ca, d_k]`
         m = self.mask
 
-        if self.atype == 'add':
-            k = self.key.unsqueeze(2)  # `[B, H_ca, 1, klen, d_k]`
-            # Truncate
-            k = k[:, :, :, boundary_leftmost:boundary_rightmost]
-            klen = k.size(3)
+        # Truncate encoder memories for efficient decoding
+        if boundary_leftmost > 0 or boundary_rightmost < klen:
+            key = key[:, boundary_leftmost:boundary_rightmost]
+            klen = key.size(1)
             if m is not None:
-                m = m[:, :, :, boundary_leftmost:boundary_rightmost]
+                m = m[:, :, boundary_leftmost:boundary_rightmost]
 
-            r = torch.relu(k + query.unsqueeze(3))  # `[B, H_ca, qlen, klen, d_k]`
-            r = r.permute(0, 2, 3, 1, 4).contiguous().view(bs, qlen, klen, -1)  # `[B, qlen, klen, H_ca * d_k]`
-            r = self.v(r).permute(0, 3, 1, 2).contiguous()  # `[B, H_ca, qlen, klen]`
-        elif self.atype == 'scaled_dot':
-            k = self.key.transpose(3, 2)
-            r = torch.matmul(query, k) / self.scale
+        if self.atype == 'scaled_dot':
+            e = torch.einsum("bihd,bjhd->bijh", (query, key)) / self.scale
+        elif self.atype == 'add':
+            e = self.v(torch.relu(key[:, None] + query[:, :, None]).view(bs, qlen, klen, -1))
+        # e: `[B, qlen, klen, H_ca]`
 
         if m is not None:
-            NEG_INF = float(np.finfo(torch.tensor(0, dtype=r.dtype).numpy().dtype).min)
-            r = r.masked_fill_(m == 0, NEG_INF)
-        assert r.size() == (bs, self.n_heads, qlen, klen), \
-            (r.size(), (bs, self.n_heads, qlen, klen))
-        return r
+            NEG_INF = float(np.finfo(torch.tensor(0, dtype=e.dtype).numpy().dtype).min)
+            e = e.masked_fill_(m == 0, NEG_INF)
+        e = e.permute(0, 3, 1, 2)  # `[B, H_ca, qlen, klen]`
+
+        return e
 
 
 class MoChA(nn.Module):
@@ -466,18 +460,18 @@ class MoChA(nn.Module):
                 if alpha[b].sum() == 0:
                     continue
 
-                leftmost = alpha[b, :, 0].nonzero()[:, -1].min().item()
-                rightmost = alpha[b, :, 0].nonzero()[:, -1].max().item()
+                leftmost = alpha[b, :, -1].nonzero()[:, -1].min().item()
+                rightmost = alpha[b, :, -1].nonzero()[:, -1].max().item()
                 for h in range(self.n_heads_ma):
                     # no bondary at the h-th head
-                    if alpha[b, h, 0].sum().item() == 0:
-                        alpha[b, h, 0, min(rightmost, leftmost + eps_wait)] = 1
+                    if alpha[b, h, -1].sum().item() == 0:
+                        alpha[b, h, -1, min(rightmost, leftmost + eps_wait)] = 1
                         continue
 
                     # surpass acceptable latency
-                    if alpha[b, h, 0].nonzero()[:, -1].min().item() >= leftmost + eps_wait:
-                        alpha[b, h, 0, :] = 0  # reset
-                        alpha[b, h, 0, leftmost + eps_wait] = 1
+                    if alpha[b, h, -1].nonzero()[:, -1].min().item() >= leftmost + eps_wait:
+                        alpha[b, h, -1, :] = 0  # reset
+                        alpha[b, h, -1, leftmost + eps_wait] = 1
 
         return alpha, None
 
@@ -523,11 +517,12 @@ class MoChA(nn.Module):
 
         elif mode == 'parallel':  # training (efficient)
             alpha, p_choose = self.parallel(e_ma, aw_prev, trigger_point)
-            alpha_masked = alpha.clone()
 
             # mask out each head independently (HeadDrop)
             if self.dropout_head > 0 and self.training:
-                alpha_masked = headdrop(alpha_masked, self.n_heads_ma, self.dropout_head)
+                alpha_masked = headdrop(alpha.clone(), self.n_heads_ma, self.dropout_head)
+            else:
+                alpha_masked = alpha.clone()
 
         elif mode == 'hard':  # inference
             alpha, p_choose = self.hard(e_ma, aw_prev, eps_wait)
@@ -561,7 +556,7 @@ class MoChA(nn.Module):
             else:
                 e_ca = self.chunk_energy(key, query, mask, cache=cache)  # `[B, (H_ma*)H_ca, qlen, ken]`
 
-            # padding
+            # padding for chunkwise attention over adjacent input segments
             additional = e_ca.size(3) - alpha_masked.size(3)
             if efficient_decoding and mode == 'hard':
                 alpha = torch.cat([alpha.new_zeros(bs, alpha.size(1), 1, klen - alpha.size(3)), alpha], dim=3)
@@ -576,7 +571,6 @@ class MoChA(nn.Module):
                 beta = hard_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
                                                 self.n_heads_ca, self.sharpening_factor,
                                                 self.share_ca)
-
             else:
                 beta = efficient_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
                                                      self.n_heads_ca, self.sharpening_factor,
@@ -587,7 +581,7 @@ class MoChA(nn.Module):
                 value = value[:, max(0, self.bd_offset + bd_leftmost - self.w + 1):self.bd_offset + bd_rightmost + 1]
 
         # Update after calculating beta
-        bd_offset_old = self.bd_offset
+        bd_offset_prev = self.bd_offset
         if efficient_decoding and mode == 'hard' and alpha.sum() > 0:
             self.bd_offset += alpha[:, :, 0, self.bd_offset:].nonzero()[:, -1].min().item()
 
@@ -611,7 +605,7 @@ class MoChA(nn.Module):
         assert alpha.size() == (bs, self.n_heads_ma, qlen, klen), \
             (alpha.size(), (bs, self.n_heads_ma, qlen, klen))
         if self.w > 1:
-            _w = max(1, (bd_offset_old + bd_rightmost + 1) - max(0, bd_offset_old + bd_leftmost - self.w + 1))
+            _w = max(1, (bd_offset_prev + bd_rightmost + 1) - max(0, bd_offset_prev + bd_leftmost - self.w + 1))
             assert beta.size() == (bs, self.n_heads_ma * self.n_heads_ca, qlen, _w + tail_len), \
                 (beta.size(), (bs, self.n_heads_ma * self.n_heads_ca, qlen, _w + tail_len))
         elif self.milk:
@@ -694,8 +688,8 @@ def moving_sum(x, back, forward):
 
     Args:
         x (FloatTensor): `[B, H_ma, H_ca, qlen, klen]`
-        back (int):
-        forward (int):
+        back (int): number of lookback frames
+        forward (int): number of lookahead frames
 
     Returns:
         x_sum (FloatTensor): `[B, H_ma, H_ca, qlen, klen]`
