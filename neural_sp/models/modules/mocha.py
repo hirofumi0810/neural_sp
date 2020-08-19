@@ -126,24 +126,21 @@ class MonotonicEnergy(nn.Module):
                 mask_size = (bs, qlen, klen, self.n_heads)
                 assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
+        key = self.key
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         m = self.mask
 
+        # Truncate encoder memories for efficient decoding
+        if boundary_leftmost > 0:
+            key = key[:, boundary_leftmost:]
+            klen = key.size(1)
+            if m is not None:
+                m = m[:, :, boundary_leftmost:]
+
         if self.atype == 'scaled_dot':
-            e = torch.einsum("bihd,bjhd->bijh", (query, self.key)) / self.scale
+            e = torch.einsum("bihd,bjhd->bijh", (query, key)) / self.scale
         elif self.atype == 'add':
-            key = self.key.unsqueeze(2)   # `[B, 1, klen, H_ma, d_k]`
-            query = query.unsqueeze(2)  # `[B, qlen, 1, H_ma, d_k]`
-
-            # Truncate encoder memories
-            if boundary_leftmost > 0:
-                key = key[:, :, boundary_leftmost:]
-                klen = key.size(2)
-                if m is not None:
-                    m = m[:, :, boundary_leftmost:]
-
-            tmp = torch.relu(key + query).view(bs, qlen, klen, -1)  # `[B, qlen, klen, H_ma * d_k]`
-            e = self.v(tmp)
+            e = self.v(torch.relu(key[:, None] + query[:, :, None]).view(bs, qlen, klen, -1))
         # e: `[B, qlen, klen, H_ma]`
 
         if self.r is not None:
@@ -235,23 +232,21 @@ class ChunkEnergy(nn.Module):
                 mask_size = (bs, qlen, klen, self.n_heads)
                 assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
+        key = self.key
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H_ca, d_k]`
         m = self.mask
 
-        if self.atype == 'scaled_dot':
-            e = torch.einsum("bihd,bjhd->bijh", (query, self.key)) / self.scale
-        elif self.atype == 'add':
-            key = self.key.unsqueeze(1)  # `[B, 1, klen, H_ca, d_k]`
-            query = query.unsqueeze(2)  # `[B, qlen, 1, H_ca, d_k]`
-
-            # Truncate encoder memories
-            key = key[:, :, boundary_leftmost:boundary_rightmost]
-            klen = key.size(2)
-            if m is not None and (boundary_leftmost > 0 or boundary_rightmost < klen):
+        # Truncate encoder memories for efficient decoding
+        if boundary_leftmost > 0 or boundary_rightmost < klen:
+            key = key[:, boundary_leftmost:boundary_rightmost]
+            klen = key.size(1)
+            if m is not None:
                 m = m[:, :, boundary_leftmost:boundary_rightmost]
 
-            tmp = torch.relu(key + query).view(bs, qlen, klen, -1)  # `[B, qlen, klen, H_ca * d_k]`
-            e = self.v(tmp)
+        if self.atype == 'scaled_dot':
+            e = torch.einsum("bihd,bjhd->bijh", (query, key)) / self.scale
+        elif self.atype == 'add':
+            e = self.v(torch.relu(key[:, None] + query[:, :, None]).view(bs, qlen, klen, -1))
         # e: `[B, qlen, klen, H_ca]`
 
         if m is not None:
@@ -465,18 +460,18 @@ class MoChA(nn.Module):
                 if alpha[b].sum() == 0:
                     continue
 
-                leftmost = alpha[b, :, 0].nonzero()[:, -1].min().item()
-                rightmost = alpha[b, :, 0].nonzero()[:, -1].max().item()
+                leftmost = alpha[b, :, -1].nonzero()[:, -1].min().item()
+                rightmost = alpha[b, :, -1].nonzero()[:, -1].max().item()
                 for h in range(self.n_heads_ma):
                     # no bondary at the h-th head
-                    if alpha[b, h, 0].sum().item() == 0:
-                        alpha[b, h, 0, min(rightmost, leftmost + eps_wait)] = 1
+                    if alpha[b, h, -1].sum().item() == 0:
+                        alpha[b, h, -1, min(rightmost, leftmost + eps_wait)] = 1
                         continue
 
                     # surpass acceptable latency
-                    if alpha[b, h, 0].nonzero()[:, -1].min().item() >= leftmost + eps_wait:
-                        alpha[b, h, 0, :] = 0  # reset
-                        alpha[b, h, 0, leftmost + eps_wait] = 1
+                    if alpha[b, h, -1].nonzero()[:, -1].min().item() >= leftmost + eps_wait:
+                        alpha[b, h, -1, :] = 0  # reset
+                        alpha[b, h, -1, leftmost + eps_wait] = 1
 
         return alpha, None
 
@@ -522,11 +517,12 @@ class MoChA(nn.Module):
 
         elif mode == 'parallel':  # training (efficient)
             alpha, p_choose = self.parallel(e_ma, aw_prev, trigger_point)
-            alpha_masked = alpha.clone()
 
             # mask out each head independently (HeadDrop)
             if self.dropout_head > 0 and self.training:
-                alpha_masked = headdrop(alpha_masked, self.n_heads_ma, self.dropout_head)
+                alpha_masked = headdrop(alpha.clone(), self.n_heads_ma, self.dropout_head)
+            else:
+                alpha_masked = alpha.clone()
 
         elif mode == 'hard':  # inference
             alpha, p_choose = self.hard(e_ma, aw_prev, eps_wait)
@@ -560,7 +556,7 @@ class MoChA(nn.Module):
             else:
                 e_ca = self.chunk_energy(key, query, mask, cache=cache)  # `[B, (H_ma*)H_ca, qlen, ken]`
 
-            # padding
+            # padding for chunkwise attention over adjacent input segments
             additional = e_ca.size(3) - alpha_masked.size(3)
             if efficient_decoding and mode == 'hard':
                 alpha = torch.cat([alpha.new_zeros(bs, alpha.size(1), 1, klen - alpha.size(3)), alpha], dim=3)
@@ -585,7 +581,7 @@ class MoChA(nn.Module):
                 value = value[:, max(0, self.bd_offset + bd_leftmost - self.w + 1):self.bd_offset + bd_rightmost + 1]
 
         # Update after calculating beta
-        bd_offset_old = self.bd_offset
+        bd_offset_prev = self.bd_offset
         if efficient_decoding and mode == 'hard' and alpha.sum() > 0:
             self.bd_offset += alpha[:, :, 0, self.bd_offset:].nonzero()[:, -1].min().item()
 
@@ -609,7 +605,7 @@ class MoChA(nn.Module):
         assert alpha.size() == (bs, self.n_heads_ma, qlen, klen), \
             (alpha.size(), (bs, self.n_heads_ma, qlen, klen))
         if self.w > 1:
-            _w = max(1, (bd_offset_old + bd_rightmost + 1) - max(0, bd_offset_old + bd_leftmost - self.w + 1))
+            _w = max(1, (bd_offset_prev + bd_rightmost + 1) - max(0, bd_offset_prev + bd_leftmost - self.w + 1))
             assert beta.size() == (bs, self.n_heads_ma * self.n_heads_ca, qlen, _w + tail_len), \
                 (beta.size(), (bs, self.n_heads_ma * self.n_heads_ca, qlen, _w + tail_len))
         elif self.milk:
