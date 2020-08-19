@@ -17,9 +17,7 @@ import torch.nn as nn
 
 from neural_sp.models.criterion import cross_entropy_lsm
 from neural_sp.models.lm.rnnlm import RNNLM
-from neural_sp.models.modules.initialization import init_like_transformer_xl
 from neural_sp.models.modules.positional_embedding import PositionalEncoding
-from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.ctc import CTC
@@ -70,8 +68,6 @@ class TransformerDecoder(DecoderBase):
         global_weight (float): global loss weight for multi-task learning
         mtl_per_batch (bool): change mini-batch per task for multi-task training
         param_init (str): parameter initialization method
-        memory_transformer (bool): TransformerXL decoder
-        mem_len (int):
         mocha_chunk_size (int): chunk size for chunkwise attention. -1 means infinite lookback.
         mocha_n_heads_mono (int): number of hard monotonic attention head
         mocha_n_heads_chunk (int): number of hard chunkwise attention head
@@ -99,7 +95,6 @@ class TransformerDecoder(DecoderBase):
                  dropout, dropout_emb, dropout_att, dropout_layer, dropout_head,
                  lsm_prob, ctc_weight, ctc_lsm_prob, ctc_fc_list, backward,
                  global_weight, mtl_per_batch, param_init,
-                 memory_transformer, mem_len,
                  mocha_chunk_size, mocha_n_heads_mono, mocha_n_heads_chunk,
                  mocha_init_r, mocha_eps, mocha_std,
                  mocha_no_denominator, mocha_1dconv,
@@ -128,12 +123,6 @@ class TransformerDecoder(DecoderBase):
 
         self.prev_spk = ''
         self.lmstate_final = None
-
-        # for TransformerXL decoder
-        self.memory_transformer = memory_transformer
-        self.mem_len = mem_len
-        if memory_transformer:
-            assert pe_type == 'none'
 
         # for attention plot
         self.aws_dict = {}
@@ -167,23 +156,11 @@ class TransformerDecoder(DecoderBase):
             # token embedding
             self.embed = nn.Embedding(self.vocab, d_model, padding_idx=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type, param_init)
-            # positional embedding
-            self.u_bias = None
-            self.v_bias = None
-            if memory_transformer:
-                self.scale = math.sqrt(d_model)  # for token embedding
-                self.dropout_emb = nn.Dropout(p=dropout_emb)  # for token embedding
-                self.pos_emb = XLPositionalEmbedding(d_model, dropout_emb)
-                if self.mem_len > 0:
-                    self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-                    self.v_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-                    # NOTE: u_bias and v_bias are global parameters
             # self-attention
             self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
                 d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
                 layer_norm_eps, ffn_activation, param_init,
                 src_tgt_attention=False if lth < mocha_first_layer - 1 else True,
-                memory_transformer=memory_transformer,
                 mocha_chunk_size=mocha_chunk_size,
                 mocha_n_heads_mono=mocha_n_heads_mono,
                 mocha_n_heads_chunk=mocha_n_heads_chunk,
@@ -319,14 +296,7 @@ class TransformerDecoder(DecoderBase):
 
     def reset_parameters(self, param_init):
         """Initialize parameters."""
-        if self.memory_transformer:
-            logger.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
-            for n, p in self.named_parameters():
-                if 'conv' in n:
-                    continue
-                init_like_transformer_xl(n, p, std=0.02)
-
-        elif param_init == 'xavier_uniform':
+        if param_init == 'xavier_uniform':
             logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
             # see https://github.com/pytorch/fairseq/blob/master/fairseq/models/transformer.py
             # embedding
@@ -336,42 +306,6 @@ class TransformerDecoder(DecoderBase):
             nn.init.xavier_uniform_(self.output.weight)
             # nn.init.normal_(self.output.weight, mean=0., std=self.d_model**-0.5)
             nn.init.constant_(self.output.bias, 0.)
-
-    def init_memory(self):
-        """Initialize memory."""
-        return [torch.empty(0, dtype=torch.float, device=self.device)
-                for _ in range(self.n_layers)]
-
-    def update_memory(self, memory_prev, hidden_states):
-        """Update memory.
-
-        Args:
-            memory_prev (list): length `n_layers`, each of which contains [B, L_prev, d_model]`
-            hidden_states (list): length `n_layers`, each of which contains [B, L, d_model]`
-        Returns:
-            new_mems (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
-
-        """
-        # if memory_prev is None:
-        #     memory_prev = self.init_memory()  # 0-th to L-1-th layer
-        assert len(hidden_states) == len(memory_prev)
-        mlen = memory_prev[0].size(1) if memory_prev[0].dim() > 1 else 0
-        qlen = hidden_states[0].size(1)
-
-        # There are `mlen + qlen` steps that can be cached into mems
-        # For the next step, the last `ext_len` of the `qlen` tokens
-        # will be used as the extended context. Hence, we only cache
-        # the tokens from `mlen + qlen - self.ext_len - self.mem_len`
-        # to `mlen + qlen - self.ext_len`.
-        with torch.no_grad():
-            new_mems = []
-            end_idx = mlen + qlen
-            start_idx = max(0, end_idx - self.mem_len)
-            for m, h in zip(memory_prev, hidden_states):
-                cat = torch.cat([m, h], dim=1)  # `[B, mlen + qlen, d_model]`
-                new_mems.append(cat[:, start_idx:end_idx].detach())  # `[B, self.mem_len, d_model]`
-
-        return new_mems
 
     def forward(self, eouts, elens, ys, task='all',
                 teacher_logits=None, recog_params={}, idx2token=None):
@@ -409,7 +343,7 @@ class TransformerDecoder(DecoderBase):
         if self.att_weight > 0 and (task == 'all' or 'ctc' not in task):
             loss_att, acc_att, ppl_att, losses_auxiliary = self.forward_att(
                 eouts, elens, ys, trigger_points=trigger_points)
-            observation['loss_att'] = loss_att.item()
+            observation['loss_att'] = tensor2scalar(loss_att)
             observation['acc_att'] = acc_att
             observation['ppl_att'] = ppl_att
             if self.attn_type == 'mocha':
@@ -458,10 +392,9 @@ class TransformerDecoder(DecoderBase):
         # Create target self-attention mask
         xmax = eouts.size(1)
         bs, ymax = ys_in.size()[:2]
-        mlen = 0
         tgt_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ymax, 1]).byte()
         causal_mask = tgt_mask.new_ones(ymax, ymax).byte()
-        causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
+        causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
         tgt_mask = tgt_mask & causal_mask  # `[B, L (query), L (key)]`
 
         # Create source-target mask
@@ -477,19 +410,9 @@ class TransformerDecoder(DecoderBase):
 
         out = self.pos_enc(self.embed(ys_in))  # scaled + dropout
 
-        mems = self.init_memory()
-        pos_embs = None
-        if self.memory_transformer:
-            pos_embs = self.pos_emb(ys_in, mlen=mlen, zero_center_offset=True)
-
-        hidden_states = [out]
         xy_aws_layers = []
-        for lth, (mem, layer) in enumerate(zip(mems, self.layers)):
-            out = layer(out, tgt_mask, eouts, src_mask, mode='parallel', lmout=lmout,
-                        pos_embs=pos_embs, memory=mem, u_bias=self.u_bias, v_bias=self.v_bias)
-            if lth < self.n_layers - 1:
-                hidden_states.append(out)
-                # NOTE: outputs from the last layer is not used for momory
+        for lth, layer in enumerate(self.layers):
+            out = layer(out, tgt_mask, eouts, src_mask, mode='parallel', lmout=lmout)
             # Attention padding
             xy_aws = layer.xy_aws
             if xy_aws is not None and self.attn_type == 'mocha':
@@ -762,30 +685,17 @@ class TransformerDecoder(DecoderBase):
 
                 out = self.pos_enc(self.embed(ys))  # scaled + dropout
 
-                mlen = 0  # TODO: fix later
-                if self.memory_transformer:
-                    mems = self.init_memory()
-                    pos_embs = self.pos_emb(ys, mlen=mlen, zero_center_offset=True)
-                    hidden_states = [out]
-
                 n_heads_total = 0
                 eouts_b = eouts[b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
                 new_cache = [None] * self.n_layers
                 xy_aws_layers = []
                 lth_s = self.mocha_first_layer - 1
                 for lth, layer in enumerate(self.layers):
-                    if self.memory_transformer:
-                        out = layer(
-                            out, causal_mask, eouts_b, None,
-                            cache=cache[lth],
-                            pos_embs=pos_embs, memory=mems[lth], u_bias=self.u_bias, v_bias=self.v_bias)
-                        hidden_states.append(out)
-                    else:
-                        out = layer(
-                            out, causal_mask, eouts_b, None,
-                            cache=cache[lth],
-                            xy_aws_prev=xy_aws_prev[:, lth - lth_s] if lth >= lth_s and i > 0 else None,
-                            eps_wait=eps_wait)
+                    out = layer(
+                        out, causal_mask, eouts_b, None,
+                        cache=cache[lth],
+                        xy_aws_prev=xy_aws_prev[:, lth - lth_s] if lth >= lth_s and i > 0 else None,
+                        eps_wait=eps_wait)
 
                     new_cache[lth] = out
                     if layer.xy_aws is not None:

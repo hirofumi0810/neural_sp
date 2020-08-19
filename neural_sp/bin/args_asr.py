@@ -67,7 +67,7 @@ def register_args_encoder(parser, args):
 
 
 def register_args_decoder(parser, args):
-    if args.dec_type in ['transformer', 'transformer_xl']:
+    if args.dec_type in ['transformer']:
         from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder as module
     elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
         from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer as module
@@ -188,7 +188,7 @@ def build_parser():
                         help='type of subsampling in the encoder')
     # topology (decoder)
     parser.add_argument('--dec_type', type=str, default='lstm',
-                        choices=['lstm', 'gru', 'transformer', 'transformer_xl',
+                        choices=['lstm', 'gru', 'transformer',
                                  'lstm_transducer', 'gru_transducer',
                                  'asg'],
                         help='type of the decoder')
