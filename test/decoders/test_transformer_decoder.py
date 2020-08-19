@@ -13,7 +13,7 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
-ENC_N_UNITS = 32
+ENC_N_UNITS = 16
 VOCAB = 10
 
 
@@ -24,8 +24,8 @@ def make_args(**kwargs):
         attn_type='scaled_dot',
         n_heads=4,
         n_layers=2,
-        d_model=32,
-        d_ff=128,
+        d_model=16,
+        d_ff=64,
         ffn_bottleneck_dim=0,
         pe_type='add',
         layer_norm_eps=1e-12,
@@ -40,13 +40,11 @@ def make_args(**kwargs):
         lsm_prob=0.0,
         ctc_weight=0.0,
         ctc_lsm_prob=0.1,
-        ctc_fc_list='32_32',
+        ctc_fc_list='16_16',
         backward=False,
         global_weight=1.0,
         mtl_per_batch=False,
         param_init='xavier_uniform',
-        memory_transformer=False,
-        mem_len=0,
         mocha_chunk_size=4,
         mocha_n_heads_mono=1,
         mocha_n_heads_chunk=1,
@@ -113,7 +111,7 @@ def make_args(**kwargs):
         ({'backward': True, 'ctc_weight': 0.5}),
         ({'backward': True, 'ctc_weight': 1.0}),
         # bottleneck
-        ({'ffn_bottleneck_dim': 32}),
+        ({'ffn_bottleneck_dim': 16}),
         # TransformerLM init
         # LM integration
     ]
@@ -171,13 +169,13 @@ def make_decode_params(**kwargs):
 def make_args_rnnlm(**kwargs):
     args = dict(
         lm_type='lstm',
-        n_units=32,
+        n_units=16,
         n_projs=0,
         n_layers=2,
         residual=False,
         use_glu=False,
         n_units_null_context=0,
-        bottleneck_dim=32,
+        bottleneck_dim=16,
         emb_dim=16,
         vocab=VOCAB,
         dropout_in=0.1,
