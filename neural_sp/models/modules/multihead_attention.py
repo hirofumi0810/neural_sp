@@ -31,7 +31,7 @@ class MultiheadAttentionMechanism(nn.Module):
         atype (str): type of attention mechanism
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
-        xl_like: dummy argument for compabibility with relative multihead attention
+        xl_like: dummy argument for compabibility with relative MHA
 
     """
 
@@ -90,9 +90,8 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value = None
         self.mask = None
 
-    def forward(self, key, value, query, mask, aw_prev=None, aw_lower=None,
-                cache=False, mode='', trigger_point=None, eps_wait=-1,
-                reverse=False, xlens=None, ylens=None):
+    def forward(self, key, value, query, mask, aw_prev=None,
+                cache=False, mode='', trigger_point=None, eps_wait=-1):
         """Forward pass.
 
         Args:
