@@ -33,9 +33,6 @@ def eval_wordpiece_bleu(models, dataset, recog_params, epoch,
         bleu (float): 4-gram BLEU
 
     """
-    # Reset data counter
-    dataset.reset(recog_params['recog_batch_size'])
-
     if recog_dir is None:
         recog_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
         recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
@@ -43,23 +40,25 @@ def eval_wordpiece_bleu(models, dataset, recog_params, epoch,
         recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
         recog_dir += '_lm' + str(recog_params['recog_lm_weight'])
 
-        ref_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
     else:
-        ref_trn_save_path = mkdir_join(recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(recog_dir, 'hyp.trn')
 
     s_bleu = 0
     n_sentence = 0
+    s_bleu_dist = {}  # calculate sentence-level BLEU distribution based on input lengths
+
+    # Reset data counter
+    dataset.reset(recog_params['recog_batch_size'])
+
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
-    # calculate sentence-level BLEU distribution based on input lengths
-    s_bleu_dist = {}
-
     list_of_references = []
     hypotheses = []
-    with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
+    with open(hyp_trn_path, 'w') as f_hyp, open(ref_trn_path, 'w') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
             if streaming or recog_params['recog_chunk_sync']:

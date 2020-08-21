@@ -47,15 +47,17 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
         loss (float): Average loss
 
     """
-    # Reset data counter
-    dataset.reset()
-
     is_lm = check_lm(models[0])
     total_loss = 0
     n_tokens = 0
     hidden = None  # for RNNLM
+
+    # Reset data counter
+    dataset.reset()
+
     if progressbar:
         pbar = tqdm(total=len(dataset))
+
     while True:
         if is_lm:
             ys, is_new_epoch = dataset.next(batch_size, bptt)
