@@ -37,9 +37,6 @@ def eval_word(models, dataset, recog_params, epoch,
         n_oov_total (int): totol number of OOV
 
     """
-    # Reset data counter
-    dataset.reset(recog_params['recog_batch_size'])
-
     if recog_dir is None:
         recog_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
         recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
@@ -47,21 +44,26 @@ def eval_word(models, dataset, recog_params, epoch,
         recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
         recog_dir += '_lm' + str(recog_params['recog_lm_weight'])
 
-        ref_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
     else:
-        ref_trn_save_path = mkdir_join(recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(recog_dir, 'hyp.trn')
 
     wer, cer = 0, 0
     n_sub_w, n_ins_w, n_del_w = 0, 0, 0
     n_sub_c, n_ins_c, n_del_c = 0, 0, 0
     n_word, n_char = 0, 0
     n_oov_total = 0
+
+    # Reset data counter
+    dataset.reset(recog_params['recog_batch_size'])
+
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
-    with codecs.open(hyp_trn_save_path, 'w', encoding='utf-8') as f_hyp, codecs.open(ref_trn_save_path, 'w', encoding='utf-8') as f_ref:
+    with codecs.open(hyp_trn_path, 'w', encoding='utf-8') as f_hyp, \
+            codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
             if streaming or recog_params['recog_chunk_sync']:

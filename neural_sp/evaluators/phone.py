@@ -32,28 +32,30 @@ def eval_phone(models, dataset, recog_params, epoch,
         per (float): Phone error rate
 
     """
-    # Reset data counter
-    dataset.reset()
-
     if recog_dir is None:
         recog_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
         recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
         recog_dir += '_cp' + str(recog_params['recog_coverage_penalty'])
         recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
 
-        ref_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
     else:
-        ref_trn_save_path = mkdir_join(recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(recog_dir, 'hyp.trn')
 
     per = 0
     n_sub, n_ins, n_del = 0, 0, 0
     n_phone = 0
+
+    # Reset data counter
+    dataset.reset()
+
     if progressbar:
         pbar = tqdm(total=len(dataset))
 
-    with codecs.open(hyp_trn_save_path, 'w', encoding='utf-8') as f_hyp, codecs.open(ref_trn_save_path, 'w', encoding='utf-8') as f_ref:
+    with codecs.open(hyp_trn_path, 'w', encoding='utf-8') as f_hyp, \
+            codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
         while True:
             batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
             if streaming or recog_params['recog_chunk_sync']:

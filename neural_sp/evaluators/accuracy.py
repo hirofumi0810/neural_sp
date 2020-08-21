@@ -25,13 +25,15 @@ def eval_accuracy(models, dataset, batch_size=1, progressbar=False):
         accuracy (float): Average accuracy
 
     """
+    total_acc = 0
+    n_tokens = 0
+
     # Reset data counter
     dataset.reset()
 
-    total_acc = 0
-    n_tokens = 0
     if progressbar:
         pbar = tqdm(total=len(dataset))
+
     while True:
         batch, is_new_epoch = dataset.next(batch_size)
         bs = len(batch['ys'])
