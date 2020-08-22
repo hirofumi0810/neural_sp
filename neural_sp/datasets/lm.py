@@ -162,8 +162,11 @@ class Dataset(object):
     def __len__(self):
         return len(self.concat_ids.reshape((-1,)))
 
-    def next(self, batch_size, bptt):
-        return self.__next__(batch_size)
+    def __iter__(self):
+        return self
+
+    def next(self, batch_size=None, bptt=None):
+        return self.__next__(batch_size, bptt)
 
     def __next__(self, batch_size=None, bptt=None):
         """Generate each mini-batch.
