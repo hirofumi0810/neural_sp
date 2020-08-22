@@ -319,140 +319,140 @@ def main():
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    pbar_epoch = tqdm(total=len(train_set))
     accum_n_steps = 0
     n_steps = optimizer.n_steps * args.accum_grad_n_steps
     epoch_detail_prev = 0
-    session_prev = None
-    while True:
-        # Compute loss in the training set
-        batch_train, is_new_epoch = train_set.next()
-        if args.discourse_aware and batch_train['sessions'][0] != session_prev:
-            model.module.reset_session()
-        session_prev = batch_train['sessions'][0]
-        accum_n_steps += 1
+    for ep in range(resume_epoch, args.n_epochs):
+        pbar_epoch = tqdm(total=len(train_set))
+        session_prev = None
 
-        # Change mini-batch depending on task
-        if accum_n_steps == 1:
-            loss_train = 0  # moving average over gradient accumulation
-        for task in tasks:
-            loss, observation = model(batch_train, task,
-                                      teacher=teacher, teacher_lm=teacher_lm)
-            reporter.add(observation)
-            if use_apex:
-                with amp.scale_loss(loss, optimizer.optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
-            loss.detach()  # Trancate the graph
-            loss_train = (loss_train * (accum_n_steps - 1) + loss.item()) / accum_n_steps
-            if accum_n_steps >= args.accum_grad_n_steps or is_new_epoch:
-                if args.clip_grad_norm > 0:
-                    total_norm = torch.nn.utils.clip_grad_norm_(
-                        model.module.parameters(), args.clip_grad_norm)
-                    reporter.add_tensorboard_scalar('total_norm', total_norm)
-                optimizer.step()
-                optimizer.zero_grad()
-                accum_n_steps = 0
-                # NOTE: parameters are forcibly updated at the end of every epoch
-            del loss
+        for batch_train, is_new_epoch in train_set:
+            # Compute loss in the training set
+            if args.discourse_aware and batch_train['sessions'][0] != session_prev:
+                model.module.reset_session()
+            session_prev = batch_train['sessions'][0]
+            accum_n_steps += 1
 
-        pbar_epoch.update(len(batch_train['utt_ids']))
-        reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
-        # NOTE: loss/acc/ppl are already added in the model
-        reporter.step()
-        n_steps += 1
-        # NOTE: n_steps is different from the step counter in Noam Optimizer
-
-        if n_steps % args.print_step == 0:
-            # Compute loss in the dev set
-            batch_dev = dev_set.next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
             # Change mini-batch depending on task
+            if accum_n_steps == 1:
+                loss_train = 0  # moving average over gradient accumulation
             for task in tasks:
-                loss, observation = model(batch_dev, task, is_eval=True)
-                reporter.add(observation, is_eval=True)
-                loss_dev = loss.item()
+                loss, observation = model(batch_train, task,
+                                          teacher=teacher, teacher_lm=teacher_lm)
+                reporter.add(observation)
+                if use_apex:
+                    with amp.scale_loss(loss, optimizer.optimizer) as scaled_loss:
+                        scaled_loss.backward()
+                else:
+                    loss.backward()
+                loss.detach()  # Trancate the graph
+                loss_train = (loss_train * (accum_n_steps - 1) + loss.item()) / accum_n_steps
+                if accum_n_steps >= args.accum_grad_n_steps or is_new_epoch:
+                    if args.clip_grad_norm > 0:
+                        total_norm = torch.nn.utils.clip_grad_norm_(
+                            model.module.parameters(), args.clip_grad_norm)
+                        reporter.add_tensorboard_scalar('total_norm', total_norm)
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    accum_n_steps = 0
+                    # NOTE: parameters are forcibly updated at the end of every epoch
                 del loss
-            reporter.step(is_eval=True)
 
-            duration_step = time.time() - start_time_step
-            if args.input_type == 'speech':
-                xlen = max(len(x) for x in batch_train['xs'])
-                ylen = max(len(y) for y in batch_train['ys'])
-            elif args.input_type == 'text':
-                xlen = max(len(x) for x in batch_train['ys'])
-                ylen = max(len(y) for y in batch_train['ys_sub1'])
-            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.7f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
-                        (n_steps, optimizer.n_epochs + train_set.epoch_detail,
-                         loss_train, loss_dev,
-                         optimizer.lr, len(batch_train['utt_ids']),
-                         xlen, ylen, duration_step / 60))
-            start_time_step = time.time()
+            pbar_epoch.update(len(batch_train['utt_ids']))
+            reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
+            # NOTE: loss/acc/ppl are already added in the model
+            reporter.step()
+            n_steps += 1
+            # NOTE: n_steps is different from the step counter in Noam Optimizer
 
-        # Save fugures of loss and accuracy
-        if n_steps % (args.print_step * 10) == 0:
-            reporter.snapshot()
-            model.module.plot_attention()
-            model.module.plot_ctc()
+            if n_steps % args.print_step == 0:
+                # Compute loss in the dev set
+                batch_dev = iter(dev_set).next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
+                # Change mini-batch depending on task
+                for task in tasks:
+                    loss, observation = model(batch_dev, task, is_eval=True)
+                    reporter.add(observation, is_eval=True)
+                    loss_dev = loss.item()
+                    del loss
+                reporter.step(is_eval=True)
 
-        # Ealuate model every 0.1 epoch during MBR training
-        if args.mbr_training:
-            if int(train_set.epoch_detail * 10) != int(epoch_detail_prev * 10):
-                # dev
-                evaluate([model.module], dev_set, recog_params, args,
-                         int(train_set.epoch_detail * 10) / 10, logger)
-                # Save the model
-                optimizer.save_checkpoint(
-                    model, save_path, remove_old=False, amp=amp,
-                    epoch_detail=train_set.epoch_detail)
-            epoch_detail_prev = train_set.epoch_detail
+                duration_step = time.time() - start_time_step
+                if args.input_type == 'speech':
+                    xlen = max(len(x) for x in batch_train['xs'])
+                    ylen = max(len(y) for y in batch_train['ys'])
+                elif args.input_type == 'text':
+                    xlen = max(len(x) for x in batch_train['ys'])
+                    ylen = max(len(y) for y in batch_train['ys_sub1'])
+                logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.7f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
+                            (n_steps, optimizer.n_epochs + train_set.epoch_detail,
+                             loss_train, loss_dev,
+                             optimizer.lr, len(batch_train['utt_ids']),
+                             xlen, ylen, duration_step / 60))
+                start_time_step = time.time()
+
+            # Save fugures of loss and accuracy
+            if n_steps % (args.print_step * 10) == 0:
+                reporter.snapshot()
+                model.module.plot_attention()
+                model.module.plot_ctc()
+
+            # Ealuate model every 0.1 epoch during MBR training
+            if args.mbr_training:
+                if int(train_set.epoch_detail * 10) != int(epoch_detail_prev * 10):
+                    # dev
+                    evaluate([model.module], dev_set, recog_params, args,
+                             int(train_set.epoch_detail * 10) / 10, logger)
+                    # Save the model
+                    optimizer.save_checkpoint(
+                        model, save_path, remove_old=False, amp=amp,
+                        epoch_detail=train_set.epoch_detail)
+                epoch_detail_prev = train_set.epoch_detail
+
+            if is_new_epoch:
+                break
 
         # Save checkpoint and evaluate model per epoch
-        if is_new_epoch:
-            duration_epoch = time.time() - start_time_epoch
-            logger.info('========== EPOCH:%d (%.2f min) ==========' %
-                        (optimizer.n_epochs + 1, duration_epoch / 60))
+        duration_epoch = time.time() - start_time_epoch
+        logger.info('========== EPOCH:%d (%.2f min) ==========' %
+                    (optimizer.n_epochs + 1, duration_epoch / 60))
 
-            if optimizer.n_epochs + 1 < args.eval_start_epoch:
-                optimizer.epoch()  # lr decay
-                reporter.epoch()  # plot
+        if optimizer.n_epochs + 1 < args.eval_start_epoch:
+            optimizer.epoch()  # lr decay
+            reporter.epoch()  # plot
 
+            # Save the model
+            optimizer.save_checkpoint(
+                model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
+        else:
+            start_time_eval = time.time()
+            # dev
+            metric_dev = evaluate([model.module], dev_set, recog_params, args,
+                                  optimizer.n_epochs + 1, logger)
+            optimizer.epoch(metric_dev)  # lr decay
+            reporter.epoch(metric_dev, name=args.metric)  # plot
+
+            if optimizer.is_topk or is_transformer:
                 # Save the model
                 optimizer.save_checkpoint(
                     model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
-            else:
-                start_time_eval = time.time()
-                # dev
-                metric_dev = evaluate([model.module], dev_set, recog_params, args,
-                                      optimizer.n_epochs + 1, logger)
-                optimizer.epoch(metric_dev)  # lr decay
-                reporter.epoch(metric_dev, name=args.metric)  # plot
 
-                if optimizer.is_topk or is_transformer:
-                    # Save the model
-                    optimizer.save_checkpoint(
-                        model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
+                # test
+                if optimizer.is_topk:
+                    for eval_set in eval_sets:
+                        evaluate([model.module], eval_set, recog_params, args,
+                                 optimizer.n_epochs, logger)
 
-                    # test
-                    if optimizer.is_topk:
-                        for eval_set in eval_sets:
-                            evaluate([model.module], eval_set, recog_params, args,
-                                     optimizer.n_epochs, logger)
+            duration_eval = time.time() - start_time_eval
+            logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
-                duration_eval = time.time() - start_time_eval
-                logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
+            # Early stopping
+            if optimizer.is_early_stop:
+                break
 
-                # Early stopping
-                if optimizer.is_early_stop:
-                    break
-
-                # Convert to fine-tuning stage
-                if optimizer.n_epochs == args.convert_to_sgd_epoch:
-                    optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
-                                             decay_type='always', decay_rate=0.5)
-
-            pbar_epoch = tqdm(total=len(train_set))
-            session_prev = None
+            # Convert to fine-tuning stage
+            if optimizer.n_epochs == args.convert_to_sgd_epoch:
+                optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
+                                         decay_type='always', decay_rate=0.5)
 
             if optimizer.n_epochs >= args.n_epochs:
                 break
