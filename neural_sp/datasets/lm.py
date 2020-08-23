@@ -147,9 +147,6 @@ class Dataset(object):
 
         return concat_ids
 
-    def __len__(self):
-        return len(self.concat_ids.reshape((-1,)))
-
     @property
     def epoch_detail(self):
         """Percentage of the current epoch."""
@@ -162,7 +159,16 @@ class Dataset(object):
             self.concat_ids = self.concat_utterances(self.df)
         self.offset = 0
 
+    def __len__(self):
+        return len(self.concat_ids.reshape((-1,)))
+
+    def __iter__(self):
+        return self
+
     def next(self, batch_size=None, bptt=None):
+        return self.__next__(batch_size, bptt)
+
+    def __next__(self, batch_size=None, bptt=None):
         """Generate each mini-batch.
 
         Args:
