@@ -60,8 +60,15 @@ def main():
 
     args = compute_susampling_factor(args)
 
+    # for multi-GPUs
+    if args.n_gpus >= 1:
+        batch_size = args.batch_size * args.n_gpus
+        accum_grad_n_steps = max(1, args.accum_grad_n_steps // args.n_gpus)
+    else:
+        batch_size = args.batch_size
+        accum_grad_n_steps = args.accum_grad_n_steps
+
     # Load dataset
-    batch_size = args.batch_size * args.n_gpus if args.n_gpus >= 1 else args.batch_size
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
                         tsv_path_sub1=args.train_set_sub1,
@@ -320,7 +327,7 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     accum_n_steps = 0
-    n_steps = optimizer.n_steps * args.accum_grad_n_steps
+    n_steps = optimizer.n_steps * accum_grad_n_steps
     epoch_detail_prev = 0
     for ep in range(resume_epoch, args.n_epochs):
         pbar_epoch = tqdm(total=len(train_set))
@@ -337,7 +344,7 @@ def main():
             if accum_n_steps == 1:
                 loss_train = 0  # moving average over gradient accumulation
             for task in tasks:
-                loss, observation = model(batch_train, task,
+                loss, observation = model(batch_train, task=task,
                                           teacher=teacher, teacher_lm=teacher_lm)
                 reporter.add(observation)
                 if use_apex:
@@ -347,7 +354,7 @@ def main():
                     loss.backward()
                 loss.detach()  # Trancate the graph
                 loss_train = (loss_train * (accum_n_steps - 1) + loss.item()) / accum_n_steps
-                if accum_n_steps >= args.accum_grad_n_steps or is_new_epoch:
+                if accum_n_steps >= accum_grad_n_steps or is_new_epoch:
                     if args.clip_grad_norm > 0:
                         total_norm = torch.nn.utils.clip_grad_norm_(
                             model.module.parameters(), args.clip_grad_norm)
@@ -370,7 +377,7 @@ def main():
                 batch_dev = iter(dev_set).next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
                 # Change mini-batch depending on task
                 for task in tasks:
-                    loss, observation = model(batch_dev, task, is_eval=True)
+                    loss, observation = model(batch_dev, task=task, is_eval=True)
                     reporter.add(observation, is_eval=True)
                     loss_dev = loss.item()
                     del loss
@@ -454,13 +461,13 @@ def main():
                 optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
                                          decay_type='always', decay_rate=0.5)
 
-            if optimizer.n_epochs >= args.n_epochs:
-                break
-            # if args.ss_prob > 0:
-            #     model.module.scheduled_sampling_trigger()
+        if optimizer.n_epochs >= args.n_epochs:
+            break
+        # if args.ss_prob > 0:
+        #     model.module.scheduled_sampling_trigger()
 
-            start_time_step = time.time()
-            start_time_epoch = time.time()
+        start_time_step = time.time()
+        start_time_epoch = time.time()
 
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.2f hour' % (duration_train / 3600))
