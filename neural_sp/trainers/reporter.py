@@ -127,7 +127,7 @@ class Reporter(object):
         plt.legend(loc="upper right", fontsize=12)
         if os.path.isfile(os.path.join(self.save_path, name + ".png")):
             os.remove(os.path.join(self.save_path, name + ".png"))
-        plt.savefig(os.path.join(self.save_path, name + ".png"), dvi=500)
+        plt.savefig(os.path.join(self.save_path, name + ".png"))
 
     def snapshot(self):
         # linestyles = ['solid', 'dashed', 'dotted', 'dashdotdotted']
@@ -163,4 +163,4 @@ class Reporter(object):
             plt.legend(loc="upper right", fontsize=12)
             if os.path.isfile(os.path.join(self.save_path, metric + ".png")):
                 os.remove(os.path.join(self.save_path, metric + ".png"))
-            plt.savefig(os.path.join(self.save_path, metric + ".png"), dvi=500)
+            plt.savefig(os.path.join(self.save_path, metric + ".png"))

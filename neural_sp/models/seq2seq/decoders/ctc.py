@@ -7,6 +7,7 @@
 """CTC decoder."""
 
 from collections import OrderedDict
+from distutils.version import LooseVersion
 from itertools import groupby
 import logging
 import numpy as np
@@ -84,8 +85,12 @@ class CTC(DecoderBase):
         else:
             self.output = nn.Linear(enc_n_units, vocab)
 
-        import warpctc_pytorch
-        self.warpctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
+        self.use_warpctc = LooseVersion(torch.__version__) < LooseVersion("1.2.0")
+        if self.use_warpctc:
+            import warpctc_pytorch
+            self.ctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
+        else:
+            self.ctc_loss = nn.CTCLoss(reduction="sum")
 
         self.forced_aligner = CTCForcedAligner()
 
@@ -108,7 +113,7 @@ class CTC(DecoderBase):
 
         # Compute CTC loss
         logits = self.output(eouts)
-        loss = self.loss_fn(logits, ys_ctc, elens, ylens)
+        loss = self.loss_fn(logits.transpose(1, 0), ys_ctc, elens, ylens)
 
         # Label smoothing for CTC
         if self.lsm_prob > 0:
@@ -127,10 +132,16 @@ class CTC(DecoderBase):
         return loss, trigger_points
 
     def loss_fn(self, logits, ys_ctc, elens, ylens):
-        loss = self.warpctc_loss(logits.transpose(1, 0),  # time-major
-                                 ys_ctc, elens.cpu(), ylens).to(self.device)
-        # NOTE: ctc loss has already been normalized by bs
-        # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        if self.use_warpctc:
+            loss = self.ctc_loss(logits, ys_ctc, elens.cpu(), ylens).to(self.device)
+            # NOTE: ctc loss has already been normalized by bs
+            # NOTE: index 0 is reserved for blank in warpctc_pytorch
+        else:
+            # Use the deterministic CuDNN implementation of CTC loss to avoid
+            #  [issue#17798](https://github.com/pytorch/pytorch/issues/17798)
+            with torch.backends.cudnn.flags(deterministic=True):
+                loss = self.ctc_loss(logits.log_softmax(2),
+                                     ys_ctc, elens, ylens) / logits.size(1)
         return loss
 
     def trigger_points(self, eouts, elens):
