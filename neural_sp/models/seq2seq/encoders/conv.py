@@ -77,9 +77,9 @@ class ConvEncoder(EncoderBase):
                 block = Conv2dBlock(input_dim=in_freq,
                                     in_channel=C_i,
                                     out_channel=channels[lth],
-                                    kernel_size=kernel_sizes[lth],  # (T,F)
-                                    stride=strides[lth],  # (T,F)
-                                    pooling=poolings[lth],  # (T,F)
+                                    kernel_size=kernel_sizes[lth],
+                                    stride=strides[lth],
+                                    pooling=poolings[lth],
                                     dropout=dropout,
                                     batch_norm=batch_norm,
                                     layer_norm=layer_norm,
@@ -430,10 +430,10 @@ def update_lens_1d(seq_lens, layer):
 def _update_1d(seq_len, layer):
     if type(layer) == nn.MaxPool1d and layer.ceil_mode:
         return math.ceil(
-            (seq_len + 1 + 2 * layer.padding - (layer.kernel_size - 1) - 1) / layer.stride + 1)
+            (seq_len + 1 + 2 * layer.padding - (layer.kernel_size - 1) - 1) // layer.stride + 1)
     else:
         return math.floor(
-            (seq_len + 2 * layer.padding[0] - (layer.kernel_size[0] - 1) - 1) / layer.stride[0] + 1)
+            (seq_len + 2 * layer.padding[0] - (layer.kernel_size[0] - 1) - 1) // layer.stride[0] + 1)
 
 
 def update_lens_2d(seq_lens, layer, dim=0):
@@ -460,10 +460,10 @@ def update_lens_2d(seq_lens, layer, dim=0):
 def _update_2d(seq_len, layer, dim):
     if type(layer) == nn.MaxPool2d and layer.ceil_mode:
         return math.ceil(
-            (seq_len + 1 + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
+            (seq_len + 1 + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) // layer.stride[dim] + 1)
     else:
         return math.floor(
-            (seq_len + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) / layer.stride[dim] + 1)
+            (seq_len + 2 * layer.padding[dim] - (layer.kernel_size[dim] - 1) - 1) // layer.stride[dim] + 1)
 
 
 def parse_cnn_config(channels, kernel_sizes, strides, poolings):

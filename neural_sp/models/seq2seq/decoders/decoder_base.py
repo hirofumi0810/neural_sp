@@ -82,7 +82,7 @@ class DecoderBase(ModelBase):
 
             fig.tight_layout()
             if save_path is not None:
-                fig.savefig(os.path.join(save_path, '%s.png' % k), dvi=500)
+                fig.savefig(os.path.join(save_path, '%s.png' % k))
             plt.close()
 
     def _plot_ctc(self, save_path=None, topk=10):
@@ -120,7 +120,7 @@ class DecoderBase(ModelBase):
 
         plt.tight_layout()
         if save_path is not None:
-            plt.savefig(os.path.join(save_path, 'prob.png'), dvi=500)
+            plt.savefig(os.path.join(save_path, 'prob.png'))
         plt.close()
 
     def decode_ctc(self, eouts, elens, params, idx2token,
