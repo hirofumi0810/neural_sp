@@ -6,10 +6,15 @@
 
 """Custom class for data parallel training."""
 
+import numpy as np
+
+import torch
 import torch.nn as nn
 
 from torch.nn import DataParallel
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.parallel.scatter_gather import gather
+from torch.nn.parallel._functions import Scatter
 
 
 class CustomDataParallel(DataParallel):
@@ -17,20 +22,13 @@ class CustomDataParallel(DataParallel):
     def __init__(self, module, device_ids=None, output_device=None, dim=0):
         super(CustomDataParallel, self).__init__(module, device_ids, output_device, dim)
 
-    def scatter(self, inputs, target_gpus, dim=0):
+    def scatter(self, inputs, target_gpus, device_ids):
+        if len(self.device_ids) <= 1:
+            return [inputs], [target_gpus]
+
         def scatter_map(obj, i):
-            # if isinstance(obj, torch.Tensor):
-            #     return Scatter.apply(target_gpus, None, dim, obj)
-            # if isinstance(obj, tuple) and len(obj) > 0:
-            #     return list(zip(*map(scatter_map, obj)))
-            # if isinstance(obj, list) and len(obj) > 0:
-            #     return list(map(list, zip(*map(scatter_map, obj))))
             if isinstance(obj, list) and len(obj) > 0:
-                # return list(map(list, zip(*map(scatter_map, obj))))
                 return [a[i] for a in zip(*[iter(obj)] * len(self.device_ids))]
-            # if isinstance(obj, dict) and len(obj) > 0:
-            #     return list(map(type(obj), zip(*map(scatter_map, obj.items()))))
-            # return [obj for targets in target_gpus]
 
         # assert len(inputs) == 1  # (batch,)
         inputs = inputs[0]
@@ -41,7 +39,6 @@ class CustomDataParallel(DataParallel):
         # fn is recursive). To avoid this reference cycle, we set the function to
         # None, clearing the cell
         try:
-            # res = scatter_map(inputs)
             res = [{k: scatter_map(v, i) for k, v in inputs.items()} for i in range(len(self.device_ids))]
         finally:
             scatter_map = None
@@ -60,8 +57,6 @@ class CustomDataParallel(DataParallel):
                            for k, v in outputs[0][1].items() if v is not None}
 
         return gather(losses, output_device, dim=self.dim).mean(), observation_avg
-
-        n_gpus = len(outputs)
 
 
 class CPUWrapperASR(nn.Module):
