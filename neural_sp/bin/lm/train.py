@@ -52,8 +52,15 @@ def main():
             if k != 'resume':
                 setattr(args, k, v)
 
+    # for multi-GPUs
+    if args.n_gpus >= 1:
+        batch_size = args.batch_size * args.n_gpus
+        accum_grad_n_steps = max(1, args.accum_grad_n_steps // args.n_gpus)
+    else:
+        batch_size = args.batch_size
+        accum_grad_n_steps = args.accum_grad_n_steps
+
     # Load dataset
-    batch_size = args.batch_size * args.n_gpus if args.n_gpus >= 1 else args.batch_size
     train_set = Dataset(corpus=args.corpus,
                         tsv_path=args.train_set,
                         dict_path=args.dict,
@@ -130,8 +137,8 @@ def main():
     # Set optimizer
     resume_epoch = 0
     if args.resume:
-        epoch = int(args.resume.split('-')[-1])
-        optimizer = set_optimizer(model, 'sgd' if epoch > args.convert_to_sgd_epoch else args.optimizer,
+        resume_epoch = int(args.resume.split('-')[-1])
+        optimizer = set_optimizer(model, 'sgd' if resume_epoch > args.convert_to_sgd_epoch else args.optimizer,
                                   args.lr, args.weight_decay)
     else:
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
@@ -194,7 +201,7 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     accum_n_steps = 0
-    n_steps = optimizer.n_steps * args.accum_grad_n_steps
+    n_steps = optimizer.n_steps * accum_grad_n_steps
     for ep in range(resume_epoch, args.n_epochs):
         pbar_epoch = tqdm(total=len(train_set))
 
@@ -204,7 +211,7 @@ def main():
 
             if accum_n_steps == 1:
                 loss_train = 0  # moving average over gradient accumulation
-            loss, hidden, observation = model(ys_train, hidden)
+            loss, hidden, observation = model(ys_train, state=hidden)
             reporter.add(observation)
             if use_apex:
                 with amp.scale_loss(loss, optimizer.optimizer) as scaled_loss:
@@ -213,7 +220,7 @@ def main():
                 loss.backward()
             loss.detach()  # Trancate the graph
             loss_train = (loss_train * (accum_n_steps - 1) + loss.item()) / accum_n_steps
-            if accum_n_steps >= args.accum_grad_n_steps or is_new_epoch:
+            if accum_n_steps >= accum_grad_n_steps or is_new_epoch:
                 if args.clip_grad_norm > 0:
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         model.module.parameters(), args.clip_grad_norm)
@@ -235,7 +242,7 @@ def main():
             if n_steps % args.print_step == 0:
                 # Compute loss in the dev set
                 ys_dev = iter(dev_set).next(bptt=args.bptt)[0]
-                loss, _, observation = model(ys_dev, None, is_eval=True)
+                loss, _, observation = model(ys_dev, state=None, is_eval=True)
                 reporter.add(observation, is_eval=True)
                 loss_dev = loss.item()
                 del loss

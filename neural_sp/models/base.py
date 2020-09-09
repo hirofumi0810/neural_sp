@@ -51,17 +51,11 @@ class ModelBase(nn.Module):
 
     @property
     def device_id(self):
-        if hasattr(self, '_device_id'):
-            return self._device_id
-        self._device_id = torch.cuda.device_of(next(self.parameters())).idx
-        return self._device_id
+        return torch.cuda.device_of(next(self.parameters())).idx
 
     @property
     def device(self):
-        if hasattr(self, '_device'):
-            return self._device
-        self._device = next(self.parameters()).device
-        return self._device
+        return next(self.parameters()).device
 
     @staticmethod
     def define_name(dir_name, args):
