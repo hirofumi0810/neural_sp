@@ -18,7 +18,7 @@ from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.train_utils import load_checkpoint
 from neural_sp.bin.train_utils import load_config
 from neural_sp.bin.train_utils import set_logger
-from neural_sp.datasets.asr import Dataset
+from neural_sp.datasets.asr import build_dataloader
 from neural_sp.evaluators.accuracy import eval_accuracy
 from neural_sp.evaluators.character import eval_char
 from neural_sp.evaluators.phone import eval_phone
@@ -47,24 +47,11 @@ def main():
     acc_avg = 0
     bleu_avg = 0
     for i, s in enumerate(args.recog_sets):
-        # Load dataset
-        dataset = Dataset(corpus=args.corpus,
-                          tsv_path=s,
-                          dict_path=os.path.join(dir_name, 'dict.txt'),
-                          dict_path_sub1=os.path.join(dir_name, 'dict_sub1.txt') if os.path.isfile(
-                              os.path.join(dir_name, 'dict_sub1.txt')) else False,
-                          dict_path_sub2=os.path.join(dir_name, 'dict_sub2.txt') if os.path.isfile(
-                              os.path.join(dir_name, 'dict_sub2.txt')) else False,
-                          nlsyms=os.path.join(dir_name, 'nlsyms.txt'),
-                          wp_model=os.path.join(dir_name, 'wp.model'),
-                          wp_model_sub1=os.path.join(dir_name, 'wp_sub1.model'),
-                          wp_model_sub2=os.path.join(dir_name, 'wp_sub2.model'),
-                          unit=args.unit,
-                          unit_sub1=args.unit_sub1,
-                          unit_sub2=args.unit_sub2,
-                          batch_size=args.recog_batch_size,
-                          first_n_utterances=args.recog_first_n_utt,
-                          is_test=True)
+        # Load dataloader
+        dataloader = build_dataloader(args=args,
+                                      tsv_path=s,
+                                      batch_size=1,
+                                      is_test=True)
 
         if i == 0:
             # Load the ASR model
@@ -173,14 +160,14 @@ def main():
 
         if args.recog_metric == 'edit_distance':
             if args.recog_unit in ['word', 'word_char']:
-                wer, cer, _ = eval_word(ensemble_models, dataset, recog_params,
+                wer, cer, _ = eval_word(ensemble_models, dataloader, recog_params,
                                         epoch=epoch - 1,
                                         recog_dir=args.recog_dir,
                                         progressbar=True)
                 wer_avg += wer
                 cer_avg += cer
             elif args.recog_unit == 'wp':
-                wer, cer = eval_wordpiece(ensemble_models, dataset, recog_params,
+                wer, cer = eval_wordpiece(ensemble_models, dataloader, recog_params,
                                           epoch=epoch - 1,
                                           recog_dir=args.recog_dir,
                                           streaming=args.recog_streaming,
@@ -189,7 +176,7 @@ def main():
                 wer_avg += wer
                 cer_avg += cer
             elif 'char' in args.recog_unit:
-                wer, cer = eval_char(ensemble_models, dataset, recog_params,
+                wer, cer = eval_char(ensemble_models, dataloader, recog_params,
                                      epoch=epoch - 1,
                                      recog_dir=args.recog_dir,
                                      progressbar=True,
@@ -198,7 +185,7 @@ def main():
                 wer_avg += wer
                 cer_avg += cer
             elif 'phone' in args.recog_unit:
-                per = eval_phone(ensemble_models, dataset, recog_params,
+                per = eval_phone(ensemble_models, dataloader, recog_params,
                                  epoch=epoch - 1,
                                  recog_dir=args.recog_dir,
                                  progressbar=True)
@@ -206,13 +193,13 @@ def main():
             else:
                 raise ValueError(args.recog_unit)
         elif args.recog_metric in ['ppl', 'loss']:
-            ppl, loss = eval_ppl(ensemble_models, dataset, progressbar=True)
+            ppl, loss = eval_ppl(ensemble_models, dataloader, progressbar=True)
             ppl_avg += ppl
             loss_avg += loss
         elif args.recog_metric == 'accuracy':
-            acc_avg += eval_accuracy(ensemble_models, dataset, progressbar=True)
+            acc_avg += eval_accuracy(ensemble_models, dataloader, progressbar=True)
         elif args.recog_metric == 'bleu':
-            bleu = eval_wordpiece_bleu(ensemble_models, dataset, recog_params,
+            bleu = eval_wordpiece_bleu(ensemble_models, dataloader, recog_params,
                                        epoch=epoch - 1,
                                        recog_dir=args.recog_dir,
                                        streaming=args.recog_streaming,
@@ -223,7 +210,7 @@ def main():
             raise NotImplementedError(args.recog_metric)
         elasped_time = time.time() - start_time
         logger.info('Elasped time: %.3f [sec]' % elasped_time)
-        logger.info('RTF: %.3f' % (elasped_time / (dataset.n_frames * 0.01)))
+        logger.info('RTF: %.3f' % (elasped_time / (dataloader.n_frames * 0.01)))
 
     if args.recog_metric == 'edit_distance':
         if 'phone' in args.recog_unit:

@@ -21,7 +21,7 @@ from neural_sp.bin.train_utils import (
     load_config,
     set_logger
 )
-from neural_sp.datasets.asr import Dataset
+from neural_sp.datasets.asr import build_dataloader
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.utils import mkdir_join
@@ -40,18 +40,11 @@ def main():
     set_logger(os.path.join(args.recog_dir, 'plot.log'), stdout=args.recog_stdout)
 
     for i, s in enumerate(args.recog_sets):
-        # Load dataset
-        dataset = Dataset(corpus=args.corpus,
-                          tsv_path=s,
-                          dict_path=os.path.join(dir_name, 'dict.txt'),
-                          dict_path_sub1=os.path.join(dir_name, 'dict_sub1.txt') if os.path.isfile(
-                              os.path.join(dir_name, 'dict_sub1.txt')) else False,
-                          nlsyms=args.nlsyms,
-                          wp_model=os.path.join(dir_name, 'wp.model'),
-                          unit=args.unit,
-                          unit_sub1=args.unit_sub1,
-                          batch_size=args.recog_batch_size,
-                          is_test=True)
+        # Load dataloader
+        dataloader = build_dataloader(args=args,
+                                      tsv_path=s,
+                                      batch_size=1,
+                                      is_test=True)
 
         if i == 0:
             # Load the ASR model
@@ -133,13 +126,13 @@ def main():
             os.mkdir(save_path)
 
         while True:
-            batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
+            batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
             best_hyps_id, aws = model.decode(
-                batch['xs'], recog_params, dataset.idx2token[0],
+                batch['xs'], recog_params, dataloader.idx2token[0],
                 exclude_eos=False,
                 refs_id=batch['ys'],
                 ensemble_models=ensemble_models[1:] if len(ensemble_models) > 1 else [],
-                speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'])
+                speakers=batch['sessions'] if dataloader.corpus == 'swbd' else batch['speakers'])
 
             # Get CTC probs
             ctc_probs, topk_ids = None, None
@@ -151,15 +144,15 @@ def main():
             if model.bwd_weight > 0.5:
                 # Reverse the order
                 best_hyps_id = [hyp[::-1] for hyp in best_hyps_id]
-                aws = [aw[:, ::-1] for aw in aws]
+                aws = [[aw[0][:, ::-1]] for aw in aws]
 
             for b in range(len(batch['xs'])):
-                tokens = dataset.idx2token[0](best_hyps_id[b], return_list=True)
+                tokens = dataloader.idx2token[0](best_hyps_id[b], return_list=True)
                 spk = batch['speakers'][b]
 
                 plot_attention_weights(
-                    aws[b][:, :len(tokens)], tokens,
-                    spectrogram=batch['xs'][b][:, :dataset.input_dim] if args.input_type == 'speech' else None,
+                    aws[b][0][:, :len(tokens)], tokens,
+                    spectrogram=batch['xs'][b][:, :dataloader.input_dim] if args.input_type == 'speech' else None,
                     ref=batch['text'][b].lower(),
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8),
