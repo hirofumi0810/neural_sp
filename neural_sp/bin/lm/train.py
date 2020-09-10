@@ -135,17 +135,17 @@ def main():
         logger.info(model)
 
     # Set optimizer
-    resume_epoch = 0
     if args.resume:
         resume_epoch = int(args.resume.split('-')[-1])
         optimizer = set_optimizer(model, 'sgd' if resume_epoch > args.convert_to_sgd_epoch else args.optimizer,
                                   args.lr, args.weight_decay)
     else:
+        resume_epoch = 0
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
     # Wrap optimizer by learning rate scheduler
     is_transformer = args.lm_type in ['transformer', 'transformer_xl']
-    optimizer = LRScheduler(optimizer, args.lr,
+    scheduler = LRScheduler(optimizer, args.lr,
                             decay_type=args.lr_decay_type,
                             decay_start_epoch=args.lr_decay_start_epoch,
                             decay_rate=args.lr_decay_rate,
@@ -160,11 +160,11 @@ def main():
 
     if args.resume:
         # Restore the last saved model
-        load_checkpoint(args.resume, model, optimizer)
+        load_checkpoint(args.resume, model, scheduler)
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if resume_epoch == args.convert_to_sgd_epoch:
-            optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
+            scheduler.convert_to_sgd(model, args.lr, args.weight_decay,
                                      decay_type='always', decay_rate=0.5)
 
     # GPU setting
@@ -178,7 +178,7 @@ def main():
         # Mix precision training setting
         if use_apex:
             from apex import amp
-            model, optimizer.optimizer = amp.initialize(model, optimizer.optimizer,
+            model, scheduler.optimizer = amp.initialize(model, scheduler.optimizer,
                                                         opt_level=args.train_dtype)
             amp.init()
             if args.resume:
@@ -201,7 +201,7 @@ def main():
     start_time_epoch = time.time()
     start_time_step = time.time()
     accum_n_steps = 0
-    n_steps = optimizer.n_steps * accum_grad_n_steps
+    n_steps = scheduler.n_steps * accum_grad_n_steps
     for ep in range(resume_epoch, args.n_epochs):
         pbar_epoch = tqdm(total=len(train_set))
 
@@ -212,28 +212,29 @@ def main():
             if accum_n_steps == 1:
                 loss_train = 0  # moving average over gradient accumulation
             loss, hidden, observation = model(ys_train, state=hidden)
+            loss = loss / accum_n_steps
             reporter.add(observation)
             if use_apex:
-                with amp.scale_loss(loss, optimizer.optimizer) as scaled_loss:
+                with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
                     scaled_loss.backward()
             else:
                 loss.backward()
             loss.detach()  # Trancate the graph
-            loss_train = (loss_train * (accum_n_steps - 1) + loss.item()) / accum_n_steps
             if accum_n_steps >= accum_grad_n_steps or is_new_epoch:
                 if args.clip_grad_norm > 0:
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         model.module.parameters(), args.clip_grad_norm)
                     reporter.add_tensorboard_scalar('total_norm', total_norm)
-                optimizer.step()
-                optimizer.zero_grad()
+                scheduler.step()
+                scheduler.zero_grad()
                 accum_n_steps = 0
                 # NOTE: parameters are forcibly updated at the end of every epoch
+            loss_train += loss.item()
             del loss
             hidden = model.module.repackage_state(hidden)
 
             pbar_epoch.update(ys_train.shape[0] * (ys_train.shape[1] - 1))
-            reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
+            reporter.add_tensorboard_scalar('learning_rate', scheduler.lr)
             # NOTE: loss/acc/ppl are already added in the model
             reporter.step()
             n_steps += 1
@@ -250,9 +251,9 @@ def main():
 
                 duration_step = time.time() - start_time_step
                 logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.5f/bs:%d (%.2f min)" %
-                            (n_steps, optimizer.n_epochs + train_set.epoch_detail,
+                            (n_steps, scheduler.n_epochs + train_set.epoch_detail,
                              loss_train, loss_dev,
-                             optimizer.lr, ys_train.shape[0], duration_step / 60))
+                             scheduler.lr, ys_train.shape[0], duration_step / 60))
                 start_time_step = time.time()
 
             # Save fugures of loss and accuracy
@@ -266,14 +267,14 @@ def main():
         # Save checkpoint and evaluate model per epoch
         duration_epoch = time.time() - start_time_epoch
         logger.info('========== EPOCH:%d (%.2f min) ==========' %
-                    (optimizer.n_epochs + 1, duration_epoch / 60))
+                    (scheduler.n_epochs + 1, duration_epoch / 60))
 
-        if optimizer.n_epochs + 1 < args.eval_start_epoch:
-            optimizer.epoch()  # lr decay
+        if scheduler.n_epochs + 1 < args.eval_start_epoch:
+            scheduler.epoch()  # lr decay
             reporter.epoch()  # plot
 
             # Save the model
-            optimizer.save_checkpoint(
+            scheduler.save_checkpoint(
                 model, save_path, remove_old=not is_transformer, amp=amp)
         else:
             start_time_eval = time.time()
@@ -282,14 +283,14 @@ def main():
             ppl_dev, _ = eval_ppl([model.module], dev_set,
                                   batch_size=1, bptt=args.bptt)
             model.module.reset_length(args.bptt)
-            optimizer.epoch(ppl_dev)  # lr decay
+            scheduler.epoch(ppl_dev)  # lr decay
             reporter.epoch(ppl_dev, name='perplexity')  # plot
             logger.info('PPL (%s, ep:%d): %.2f' %
-                        (dev_set.set, optimizer.n_epochs, ppl_dev))
+                        (dev_set.set, scheduler.n_epochs, ppl_dev))
 
-            if optimizer.is_topk or is_transformer:
+            if scheduler.is_topk or is_transformer:
                 # Save the model
-                optimizer.save_checkpoint(
+                scheduler.save_checkpoint(
                     model, save_path, remove_old=not is_transformer, amp=amp)
 
                 # test
@@ -300,25 +301,25 @@ def main():
                                            batch_size=1, bptt=args.bptt)
                     model.module.reset_length(args.bptt)
                     logger.info('PPL (%s, ep:%d): %.2f' %
-                                (eval_set.set, optimizer.n_epochs, ppl_test))
+                                (eval_set.set, scheduler.n_epochs, ppl_test))
                     ppl_test_avg += ppl_test
                 if len(eval_sets) > 0:
                     logger.info('PPL (avg., ep:%d): %.2f' %
-                                (optimizer.n_epochs, ppl_test_avg / len(eval_sets)))
+                                (scheduler.n_epochs, ppl_test_avg / len(eval_sets)))
 
             duration_eval = time.time() - start_time_eval
             logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
             # Early stopping
-            if optimizer.is_early_stop:
+            if scheduler.is_early_stop:
                 break
 
             # Convert to fine-tuning stage
-            if optimizer.n_epochs == args.convert_to_sgd_epoch:
-                optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
+            if scheduler.n_epochs == args.convert_to_sgd_epoch:
+                scheduler.convert_to_sgd(model, args.lr, args.weight_decay,
                                          decay_type='always', decay_rate=0.5)
 
-        if optimizer.n_epochs >= args.n_epochs:
+        if scheduler.n_epochs >= args.n_epochs:
             break
 
         start_time_step = time.time()
