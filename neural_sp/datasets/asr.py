@@ -41,6 +41,7 @@ np.random.seed(1)
 def build_dataloader(args, tsv_path, batch_size, n_epochs=1e10, is_test=False,
                      sort_by='utt_id', short2long=False, sort_stop_epoch=1e10,
                      tsv_path_sub1=False, tsv_path_sub2=False,
+                     num_workers=1, pin_memory=False,
                      first_n_utterances=-1):
 
     dataset = CustomDataset(corpus=args.corpus,
@@ -82,11 +83,8 @@ def build_dataloader(args, tsv_path, batch_size, n_epochs=1e10, is_test=False,
                                   batch_sampler=batch_sampler,
                                   n_epochs=n_epochs,
                                   collate_fn=lambda x: x[0],
-                                  num_workers=1,
-                                  #   num_workers=2,
-                                  pin_memory=False,
-                                  #   pin_memory=True,
-                                  )
+                                  num_workers=num_workers,
+                                  pin_memory=pin_memory)
 
     return dataloader
 
@@ -118,8 +116,8 @@ class CustomDataLoader(DataLoader):
         self.unit = dataset._unit
         self.unit_sub1 = dataset._unit_sub1
         self.unit_sub2 = dataset._unit_sub2
-        self.idx2token = dataset.idx2token
-        self.token2idx = dataset.token2idx
+        self.idx2token = dataset._idx2token
+        self.token2idx = dataset._token2idx
 
         self.epoch = 0
         self.n_epochs = n_epochs
@@ -248,22 +246,22 @@ class CustomDataset(Dataset):
 
         self.subsample_factor = subsample_factor
 
-        self.idx2token = []
-        self.token2idx = []
+        self._idx2token = []
+        self._token2idx = []
 
         # Set index converter
         if unit in ['word', 'word_char']:
-            self.idx2token += [Idx2word(dict_path)]
-            self.token2idx += [Word2idx(dict_path, word_char_mix=(unit == 'word_char'))]
+            self._idx2token += [Idx2word(dict_path)]
+            self._token2idx += [Word2idx(dict_path, word_char_mix=(unit == 'word_char'))]
         elif unit == 'wp':
-            self.idx2token += [Idx2wp(dict_path, wp_model)]
-            self.token2idx += [Wp2idx(dict_path, wp_model)]
+            self._idx2token += [Idx2wp(dict_path, wp_model)]
+            self._token2idx += [Wp2idx(dict_path, wp_model)]
         elif unit in ['char']:
-            self.idx2token += [Idx2char(dict_path)]
-            self.token2idx += [Char2idx(dict_path, nlsyms=nlsyms)]
+            self._idx2token += [Idx2char(dict_path)]
+            self._token2idx += [Char2idx(dict_path, nlsyms=nlsyms)]
         elif 'phone' in unit:
-            self.idx2token += [Idx2phone(dict_path)]
-            self.token2idx += [Phone2idx(dict_path)]
+            self._idx2token += [Idx2phone(dict_path)]
+            self._token2idx += [Phone2idx(dict_path)]
         else:
             raise ValueError(unit)
 
@@ -277,14 +275,14 @@ class CustomDataset(Dataset):
                 # Set index converter
                 if unit_sub:
                     if unit_sub == 'wp':
-                        self.idx2token += [Idx2wp(dict_path_sub, wp_model_sub)]
-                        self.token2idx += [Wp2idx(dict_path_sub, wp_model_sub)]
+                        self._idx2token += [Idx2wp(dict_path_sub, wp_model_sub)]
+                        self._token2idx += [Wp2idx(dict_path_sub, wp_model_sub)]
                     elif unit_sub == 'char':
-                        self.idx2token += [Idx2char(dict_path_sub)]
-                        self.token2idx += [Char2idx(dict_path_sub, nlsyms=nlsyms)]
+                        self._idx2token += [Idx2char(dict_path_sub)]
+                        self._token2idx += [Char2idx(dict_path_sub, nlsyms=nlsyms)]
                     elif 'phone' in unit_sub:
-                        self.idx2token += [Idx2phone(dict_path_sub)]
-                        self.token2idx += [Phone2idx(dict_path_sub)]
+                        self._idx2token += [Idx2phone(dict_path_sub)]
+                        self._token2idx += [Phone2idx(dict_path_sub)]
                     else:
                         raise ValueError(unit_sub)
             else:
@@ -439,7 +437,7 @@ class CustomDataset(Dataset):
 
         # main outputs
         if self.is_test:
-            ys = [self.token2idx[0](self.df['text'][i]) for i in indices]
+            ys = [self._token2idx[0](self.df['text'][i]) for i in indices]
         else:
             ys = [list(map(int, str(self.df['token_id'][i]).split())) for i in indices]
 
@@ -448,14 +446,14 @@ class CustomDataset(Dataset):
         if self.df_sub1 is not None:
             ys_sub1 = [list(map(int, str(self.df_sub1['token_id'][i]).split())) for i in indices]
         elif self._vocab_sub1 > 0 and not self.is_test:
-            ys_sub1 = [self.token2idx[1](self.df['text'][i]) for i in indices]
+            ys_sub1 = [self._token2idx[1](self.df['text'][i]) for i in indices]
 
         # sub2 outputs
         ys_sub2 = []
         if self.df_sub2 is not None:
             ys_sub2 = [list(map(int, str(self.df_sub2['token_id'][i]).split())) for i in indices]
         elif self._vocab_sub2 > 0 and not self.is_test:
-            ys_sub2 = [self.token2idx[2](self.df['text'][i]) for i in indices]
+            ys_sub2 = [self._token2idx[2](self.df['text'][i]) for i in indices]
 
         mini_batch_dict = {
             'xs': xs,
