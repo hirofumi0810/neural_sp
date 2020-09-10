@@ -31,13 +31,13 @@ def check_lm(model):
         return False
 
 
-def eval_ppl(models, dataset, batch_size=1, bptt=None,
+def eval_ppl(models, dataloader, batch_size=1, bptt=None,
              n_caches=0, progressbar=False):
     """Evaluate a Seq2seq or (RNN/GatedConv)LM by perprexity and loss.
 
     Args:
         models (list): models to evaluate
-        dataset (Dataset): evaluation dataset
+        dataloader (torch.utils.data.DataLoader): evaluation dataloader
         batch_size (int): batch size
         bptt (int): BPTT length
         n_caches (int):
@@ -53,14 +53,14 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
     hidden = None  # for RNNLM
 
     # Reset data counter
-    dataset.reset()
+    dataloader.reset()
 
     if progressbar:
-        pbar = tqdm(total=len(dataset))
+        pbar = tqdm(total=len(dataloader))
 
     while True:
         if is_lm:
-            ys, is_new_epoch = dataset.next(batch_size, bptt)
+            ys, is_new_epoch = dataloader.next(batch_size, bptt)
             bs, time = ys.shape[:2]
             if n_caches > 0:
                 assert isinstance(models[0], RNNLM)
@@ -80,7 +80,7 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
                 if progressbar:
                     pbar.update(bs * (time - 1))
         else:
-            batch, is_new_epoch = dataset.next(batch_size)
+            batch, is_new_epoch = dataloader.next(batch_size)
             bs = len(batch['ys'])
             loss, _ = models[0](batch, task='all', is_eval=True)
             total_loss += loss.item() * bs
@@ -97,12 +97,12 @@ def eval_ppl(models, dataset, batch_size=1, bptt=None,
         pbar.close()
 
     # Reset data counters
-    dataset.reset()
+    dataloader.reset()
 
     avg_loss = total_loss / n_tokens
     ppl = np.exp(avg_loss)
 
-    logger.debug('PPL (%s): %.2f %%' % (dataset.set, ppl))
-    logger.debug('Loss (%s): %.2f %%' % (dataset.set, avg_loss))
+    logger.debug('PPL (%s): %.2f %%' % (dataloader.set, ppl))
+    logger.debug('Loss (%s): %.2f %%' % (dataloader.set, avg_loss))
 
     return ppl, avg_loss

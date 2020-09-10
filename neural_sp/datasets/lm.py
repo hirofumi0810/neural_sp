@@ -15,7 +15,7 @@ import os
 import pandas as pd
 import random
 
-from neural_sp.datasets.asr import count_vocab_size
+from neural_sp.datasets.utils import count_vocab_size
 from neural_sp.datasets.token_converter.character import Char2idx
 from neural_sp.datasets.token_converter.character import Idx2char
 from neural_sp.datasets.token_converter.phone import Idx2phone

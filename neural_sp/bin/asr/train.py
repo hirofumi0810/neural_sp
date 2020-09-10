@@ -28,7 +28,7 @@ from neural_sp.bin.train_utils import (
     set_logger,
     set_save_path
 )
-from neural_sp.datasets.asr import Dataset
+from neural_sp.datasets.asr import build_dataloader
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.data_parallel import CPUWrapperASR
 from neural_sp.models.lm.build import build_lm
@@ -68,68 +68,29 @@ def main():
         batch_size = args.batch_size
         accum_grad_n_steps = args.accum_grad_n_steps
 
-    # Load dataset
-    train_set = Dataset(corpus=args.corpus,
-                        tsv_path=args.train_set,
-                        tsv_path_sub1=args.train_set_sub1,
-                        tsv_path_sub2=args.train_set_sub2,
-                        dict_path=args.dict,
-                        dict_path_sub1=args.dict_sub1,
-                        dict_path_sub2=args.dict_sub2,
-                        nlsyms=args.nlsyms,
-                        unit=args.unit,
-                        unit_sub1=args.unit_sub1,
-                        unit_sub2=args.unit_sub2,
-                        wp_model=args.wp_model,
-                        wp_model_sub1=args.wp_model_sub1,
-                        wp_model_sub2=args.wp_model_sub2,
-                        batch_size=batch_size,
-                        n_epochs=args.n_epochs,
-                        min_n_frames=args.min_n_frames,
-                        max_n_frames=args.max_n_frames,
-                        shuffle_bucket=args.shuffle_bucket,
-                        sort_by='input',
-                        short2long=args.sort_short2long,
-                        sort_stop_epoch=args.sort_stop_epoch,
-                        dynamic_batching=args.dynamic_batching,
-                        ctc=args.ctc_weight > 0,
-                        ctc_sub1=args.ctc_weight_sub1 > 0,
-                        ctc_sub2=args.ctc_weight_sub2 > 0,
-                        subsample_factor=args.subsample_factor,
-                        subsample_factor_sub1=args.subsample_factor_sub1,
-                        subsample_factor_sub2=args.subsample_factor_sub2,
-                        discourse_aware=args.discourse_aware)
-    dev_set = Dataset(corpus=args.corpus,
-                      tsv_path=args.dev_set,
-                      tsv_path_sub1=args.dev_set_sub1,
-                      tsv_path_sub2=args.dev_set_sub2,
-                      dict_path=args.dict,
-                      dict_path_sub1=args.dict_sub1,
-                      dict_path_sub2=args.dict_sub2,
-                      nlsyms=args.nlsyms,
-                      unit=args.unit,
-                      unit_sub1=args.unit_sub1,
-                      unit_sub2=args.unit_sub2,
-                      wp_model=args.wp_model,
-                      wp_model_sub1=args.wp_model_sub1,
-                      wp_model_sub2=args.wp_model_sub2,
-                      batch_size=batch_size,
-                      min_n_frames=args.min_n_frames,
-                      max_n_frames=args.max_n_frames,
-                      ctc=args.ctc_weight > 0,
-                      ctc_sub1=args.ctc_weight_sub1 > 0,
-                      ctc_sub2=args.ctc_weight_sub2 > 0,
-                      subsample_factor=args.subsample_factor,
-                      subsample_factor_sub1=args.subsample_factor_sub1,
-                      subsample_factor_sub2=args.subsample_factor_sub2)
-    eval_sets = [Dataset(corpus=args.corpus,
-                         tsv_path=s,
-                         dict_path=args.dict,
-                         nlsyms=args.nlsyms,
-                         unit=args.unit,
-                         wp_model=args.wp_model,
-                         batch_size=1,
-                         is_test=True) for s in args.eval_sets]
+    # Load dataloader
+    train_set = build_dataloader(args=args,
+                                 tsv_path=args.train_set,
+                                 tsv_path_sub1=args.train_set_sub1,
+                                 tsv_path_sub2=args.train_set_sub2,
+                                 batch_size=batch_size,
+                                 n_epochs=args.n_epochs,
+                                 sort_by='input',
+                                 short2long=args.sort_short2long,
+                                 sort_stop_epoch=args.sort_stop_epoch,
+                                 num_workers=args.n_gpus,
+                                 pin_memory=True)
+    dev_set = build_dataloader(args=args,
+                               tsv_path=args.dev_set,
+                               tsv_path_sub1=args.dev_set_sub1,
+                               tsv_path_sub2=args.dev_set_sub2,
+                               batch_size=batch_size,
+                               num_workers=args.n_gpus,
+                               pin_memory=True)
+    eval_sets = [build_dataloader(args=args,
+                                  tsv_path=s,
+                                  batch_size=1,
+                                  is_test=True) for s in args.eval_sets]
 
     args.vocab = train_set.vocab
     args.vocab_sub1 = train_set.vocab_sub1
@@ -478,54 +439,54 @@ def main():
     return save_path
 
 
-def evaluate(models, dataset, recog_params, args, epoch, logger):
+def evaluate(models, dataloader, recog_params, args, epoch, logger):
 
     if args.metric == 'edit_distance':
         if args.unit in ['word', 'word_char']:
             from neural_sp.evaluators.word import eval_word
-            metric = eval_word(models, dataset, recog_params, epoch=epoch)[0]
-            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
+            metric = eval_word(models, dataloader, recog_params, epoch=epoch)[0]
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
 
         elif args.unit == 'wp':
             from neural_sp.evaluators.wordpiece import eval_wordpiece
-            metric, cer = eval_wordpiece(models, dataset, recog_params, epoch=epoch)
-            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
-            logger.info('CER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, cer))
+            metric, cer = eval_wordpiece(models, dataloader, recog_params, epoch=epoch)
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
+            logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
 
         elif 'char' in args.unit:
             from neural_sp.evaluators.character import eval_char
-            wer, cer = eval_char(models, dataset, recog_params, epoch=epoch)
-            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, wer))
-            logger.info('CER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, cer))
-            if dataset.corpus in ['aishell1']:
+            wer, cer = eval_char(models, dataloader, recog_params, epoch=epoch)
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, wer))
+            logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
+            if dataloader.corpus in ['aishell1']:
                 metric = cer
             else:
                 metric = wer
 
         elif 'phone' in args.unit:
             from neural_sp.evaluators.phone import eval_phone
-            metric = eval_phone(models, dataset, recog_params, epoch=epoch)
-            logger.info('PER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
+            metric = eval_phone(models, dataloader, recog_params, epoch=epoch)
+            logger.info('PER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'ppl':
         from neural_sp.evaluators.ppl import eval_ppl
-        metric = eval_ppl(models, dataset, batch_size=args.batch_size)[0]
-        logger.info('PPL (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+        metric = eval_ppl(models, dataloader, batch_size=args.batch_size)[0]
+        logger.info('PPL (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'loss':
         from neural_sp.evaluators.ppl import eval_ppl
-        metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
-        logger.info('Loss (%s, ep:%d): %.5f' % (dataset.set, epoch, metric))
+        metric = eval_ppl(models, dataloader, batch_size=args.batch_size)[1]
+        logger.info('Loss (%s, ep:%d): %.5f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'accuracy':
         from neural_sp.evaluators.accuracy import eval_accuracy
-        metric = eval_accuracy(models, dataset, batch_size=args.batch_size)
-        logger.info('Accuracy (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+        metric = eval_accuracy(models, dataloader, batch_size=args.batch_size)
+        logger.info('Accuracy (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'bleu':
         from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
-        metric = eval_wordpiece_bleu(models, dataset, recog_params, epoch=epoch)
-        logger.info('BLEU (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+        metric = eval_wordpiece_bleu(models, dataloader, recog_params, epoch=epoch)
+        logger.info('BLEU (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     else:
         raise NotImplementedError(args.metric)
