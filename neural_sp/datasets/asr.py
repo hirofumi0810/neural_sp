@@ -178,6 +178,10 @@ class CustomDataLoader(DataLoader):
         return epoch_ratio
         # return self.batch_sampler.iteration / len(self.batch_sampler)
 
+    @property
+    def n_frames(self):
+        return self.batch_sampler.df['xlen'].sum()
+
     def reset(self, batch_size=None):
         """Reset data counter and offset.
 
