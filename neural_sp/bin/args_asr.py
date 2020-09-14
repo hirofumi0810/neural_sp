@@ -235,7 +235,7 @@ def build_parser():
     parser.add_argument('--early_stop_patient_n_epochs', type=int, default=5,
                         help='number of epochs to tolerate stopping training when validation perfomance is not improved')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
-                        help='epoch to stop soring utterances by length')
+                        help='epoch to stop sorting utterances by length')
     parser.add_argument('--sort_short2long', type=strtobool, default=True,
                         help='sort utterances in the ascending order')
     parser.add_argument('--shuffle_bucket', type=strtobool, default=False,
@@ -315,7 +315,7 @@ def build_parser():
                         help='insert a task-specific encoder layer per task')
     # foroward-backward
     parser.add_argument('--bwd_weight', type=float, default=0.0,
-                        help='cross etnropy loss weight for the backward decoder in the main task')
+                        help='cross entropy loss weight for the backward decoder in the main task')
     # cold fusion, LM initialization
     parser.add_argument('--external_lm', type=str, default=False, nargs='?',
                         help='LM path')
