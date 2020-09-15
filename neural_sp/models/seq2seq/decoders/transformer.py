@@ -704,6 +704,7 @@ class TransformerDecoder(DecoderBase):
                         cache=cache[lth],
                         xy_aws_prev=xy_aws_prev[:, lth - lth_s] if lth >= lth_s and i > 0 else None,
                         eps_wait=eps_wait)
+                    xy_aws = layer.xy_aws
 
                     new_cache[lth] = out
                     if xy_aws is not None:
