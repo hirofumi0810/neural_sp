@@ -401,6 +401,12 @@ class TransformerDecoder(DecoderBase):
         # Create source-target mask
         src_mask = make_pad_mask(elens.to(self.device)).unsqueeze(1).repeat([1, ymax, 1])  # `[B, L, T]`
 
+        # Create attention padding mask for quantity loss
+        if self.attn_type == 'mocha':
+            attn_mask = (ys_out != self.pad).unsqueeze(1).unsqueeze(3)  # `[B, 1, L, 1]`
+        else:
+            attn_mask = None
+
         # external LM integration
         lmout = None
         if self.lm is not None:
