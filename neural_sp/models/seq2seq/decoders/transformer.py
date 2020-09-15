@@ -156,7 +156,7 @@ class TransformerDecoder(DecoderBase):
             # token embedding
             self.embed = nn.Embedding(self.vocab, d_model, padding_idx=self.pad)
             self.pos_enc = PositionalEncoding(d_model, dropout_emb, pe_type, param_init)
-            # self-attention
+            # decoder
             self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
                 d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
                 layer_norm_eps, ffn_activation, param_init,
@@ -392,7 +392,8 @@ class TransformerDecoder(DecoderBase):
         # Create target self-attention mask
         xmax = eouts.size(1)
         bs, ymax = ys_in.size()[:2]
-        tgt_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ymax, 1]).byte()
+        tgt_mask_tmp = (ys_out != self.pad).unsqueeze(1).repeat([1, ymax, 1]).byte()
+        tgt_mask = tgt_mask_tmp & tgt_mask_tmp.transpose(2, 1)
         causal_mask = tgt_mask.new_ones(ymax, ymax).byte()
         causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
         tgt_mask = tgt_mask & causal_mask  # `[B, L (query), L (key)]`
@@ -411,13 +412,13 @@ class TransformerDecoder(DecoderBase):
         out = self.pos_enc(self.embed(ys_in))  # scaled + dropout
 
         xy_aws_layers = []
+        xy_aws = None
         for lth, layer in enumerate(self.layers):
             out = layer(out, tgt_mask, eouts, src_mask, mode='parallel', lmout=lmout)
             # Attention padding
             xy_aws = layer.xy_aws
             if xy_aws is not None and self.attn_type == 'mocha':
-                tgt_mask_v2 = (ys_out != self.pad).unsqueeze(1).unsqueeze(3)  # `[B, 1, L, 1]`
-                xy_aws_masked = xy_aws.masked_fill_(tgt_mask_v2.repeat([1, xy_aws.size(1), 1, xmax]) == 0, 0)
+                xy_aws_masked = xy_aws.masked_fill_(attn_mask.expand_as(xy_aws) == 0, 0)
                 # NOTE: attention padding is quite effective for quantity loss
                 xy_aws_layers.append(xy_aws_masked.clone())
             if not self.training:
@@ -689,6 +690,7 @@ class TransformerDecoder(DecoderBase):
                 eouts_b = eouts[b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
                 new_cache = [None] * self.n_layers
                 xy_aws_layers = []
+                xy_aws = None
                 lth_s = self.mocha_first_layer - 1
                 for lth, layer in enumerate(self.layers):
                     out = layer(
@@ -698,8 +700,8 @@ class TransformerDecoder(DecoderBase):
                         eps_wait=eps_wait)
 
                     new_cache[lth] = out
-                    if layer.xy_aws is not None:
-                        xy_aws_layers.append(layer.xy_aws)
+                    if xy_aws is not None:
+                        xy_aws_layers.append(xy_aws)
                 logits = self.output(self.norm_out(out))
                 probs = torch.softmax(logits[:, -1] * softmax_smoothing, dim=1)
                 xy_aws_layers = torch.stack(xy_aws_layers, dim=1)  # `[B, H, n_layers, L, T]`
