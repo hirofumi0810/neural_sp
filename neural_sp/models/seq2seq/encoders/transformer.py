@@ -394,7 +394,7 @@ class TransformerEncoder(EncoderBase):
                 xx_mask_first = None
                 xx_mask = None  # NOTE: no mask to avoid masking all frames in a chunk
             elif self.streaming_type == 'mask':
-                xx_mask_first, xx_mask = time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
+                xx_mask_first, xx_mask = make_time_restricted_san_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask if lth >= 1 else xx_mask_first,
@@ -425,7 +425,7 @@ class TransformerEncoder(EncoderBase):
                         # Create sinusoidal positional embeddings for relative positional encoding
                         pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
                     if self.streaming_type == 'mask':
-                        _, xx_mask = time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
+                        _, xx_mask = make_time_restricted_san_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
 
             # Extract the center region
             if self.streaming_type == 'reshape':
@@ -442,8 +442,7 @@ class TransformerEncoder(EncoderBase):
                 xs = self.pos_enc(xs, scale=True)
                 pos_embs = None
 
-            # Create the self-attention mask
-            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
+            xx_mask = make_san_mask(xs, xlens)
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
@@ -465,8 +464,7 @@ class TransformerEncoder(EncoderBase):
 
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
-                    # Create the self-attention mask
-                    xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
+                    xx_mask = make_san_mask(xs, xlens)
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
                         clamp_len = clamp_len // self.subsample[lth].subsampling_factor
@@ -592,9 +590,37 @@ class TransformerEncoderBlock(nn.Module):
         return xs
 
 
-def time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks):
+def make_san_mask(xs, xlens):
+    """Mask self-attention mask.
+
+    Args:
+        xs (FloatTensor): `[B, T, d_model]`
+        xlens (InteTensor): `[B]` (on CPU)
+    Returns:
+        xx_mask (ByteTensor): `[B, T (query), T (key)]`
+
+    """
     xx_mask = make_pad_mask(xlens.to(xs.device))
-    xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
+    xx_mask_tmp = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
+    xx_mask = xx_mask_tmp & xx_mask_tmp.transpose(2, 1)
+    return xx_mask
+
+
+def make_time_restricted_san_mask(xs, xlens, N_l, N_c, N_r, n_chunks):
+    """Mask self-attention mask.
+
+    Args:
+        xs (FloatTensor): `[B, T, d_model]`
+        xlens (InteTensor): `[B]` (on CPU)
+        N_l (int): number of frames for left context
+        N_c (int): number of frames for current context
+        N_r (int): number of frames for right context
+        n_chunks (int): number of chunks
+    Returns:
+        xx_mask (ByteTensor): `[B, T (query), T (key)]`
+
+    """
+    xx_mask = make_san_mask(xs, xlens)
     xx_mask_first = xx_mask.clone()
     for chunk_idx in range(n_chunks):
         offset = chunk_idx * N_c

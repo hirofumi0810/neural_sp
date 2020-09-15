@@ -25,7 +25,8 @@ from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import MaxpoolSubsampler
-from neural_sp.models.seq2seq.encoders.transformer import time_restricted_mask
+from neural_sp.models.seq2seq.encoders.transformer import make_san_mask
+from neural_sp.models.seq2seq.encoders.transformer import make_time_restricted_san_mask
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
@@ -282,7 +283,7 @@ class ConformerEncoder(EncoderBase):
                            help='current chunk size (and hop size) for latency-controlled Conformer encoder')
         group.add_argument('--lc_chunk_size_right', type=int, default=0,
                            help='right chunk size for latency-controlled Conformer encoder')
-        group.add_argument('--lc_type', type=str, default='mask',
+        group.add_argument('--lc_type', type=str, default='reshape',
                            choices=['reshape', 'mask'],
                            help='implementation methods of latency-controlled Conformer encoder')
         return parser
@@ -391,7 +392,7 @@ class ConformerEncoder(EncoderBase):
                 xx_mask_first = None
                 xx_mask = None  # NOTE: no mask to avoid masking all frames in a chunk
             elif self.streaming_type == 'mask':
-                xx_mask_first, xx_mask = time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
+                xx_mask_first, xx_mask = make_time_restricted_san_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask if lth >= 1 else xx_mask_first,
@@ -421,7 +422,7 @@ class ConformerEncoder(EncoderBase):
                     # Create sinusoidal positional embeddings for relative positional encoding
                     pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
                     if self.streaming_type == 'mask':
-                        _, xx_mask = time_restricted_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
+                        _, xx_mask = make_time_restricted_san_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
 
             # Extract the center region
             if self.streaming_type == 'reshape':
@@ -434,8 +435,7 @@ class ConformerEncoder(EncoderBase):
             # Create sinusoidal positional embeddings for relative positional encoding
             pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
 
-            # Create the self-attention mask
-            xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
+            xx_mask = make_san_mask(xs, xlens)
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
@@ -457,8 +457,7 @@ class ConformerEncoder(EncoderBase):
 
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
-                    # Create the self-attention mask
-                    xx_mask = make_pad_mask(xlens.to(self.device)).unsqueeze(1).repeat([1, xs.size(1), 1])
+                    xx_mask = make_san_mask(xs, xlens)
                     # Create sinusoidal positional embeddings for relative positional encoding
                     clamp_len = clamp_len // self.subsample[lth].subsampling_factor
                     pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
