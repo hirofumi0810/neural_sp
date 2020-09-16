@@ -105,13 +105,14 @@ class TransformerEncoder(EncoderBase):
             raise ValueError('Set n_layers_sub1 between 1 to n_layers.')
         if n_layers_sub2 < 0 or (n_layers_sub2 > 1 and n_layers_sub1 < n_layers_sub2):
             raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1.')
-        assert enc_type in ['transformer', 'conv_transformer']
+        assert enc_type in ['transformer', 'conv_transformer', 'conv_uni_transformer']
 
         self.d_model = d_model
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.pe_type = pe_type
         self.scale = math.sqrt(d_model)
+        self.unidirectional = 'uni' in enc_type
 
         # for streaming encoder
         self.chunk_size_left = chunk_size_left
@@ -124,6 +125,7 @@ class TransformerEncoder(EncoderBase):
         if self.latency_controlled:
             assert n_layers_sub1 == 0
             assert n_layers_sub2 == 0
+            assert not self.unidirectional
 
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
