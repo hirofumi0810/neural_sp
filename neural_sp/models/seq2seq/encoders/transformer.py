@@ -352,7 +352,7 @@ class TransformerEncoder(EncoderBase):
         N_l = self.chunk_size_left
         N_c = self.chunk_size_current
         N_r = self.chunk_size_right
-        bs, xmax, idim = xs.size()
+        bs = xs.size(0)
         n_chunks = 0
         clamp_len = self.clamp_len
 
@@ -443,6 +443,8 @@ class TransformerEncoder(EncoderBase):
                 pos_embs = None
 
             xx_mask = make_san_mask(xs, xlens)
+            if self.unidirectional:
+                xx_mask = causal(xx_mask)
 
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
@@ -465,6 +467,8 @@ class TransformerEncoder(EncoderBase):
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
                     xx_mask = make_san_mask(xs, xlens)
+                    if self.unidirectional:
+                        xx_mask = causal(xx_mask)
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
                         clamp_len = clamp_len // self.subsample[lth].subsampling_factor
@@ -631,3 +635,10 @@ def make_time_restricted_san_mask(xs, xlens, N_l, N_c, N_r, n_chunks):
         xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
         xx_mask[:, offset:offset + N_c, offset + N_c:] = 0
     return xx_mask_first, xx_mask
+
+
+def causal(xx_mask):
+    causal_mask = xx_mask.new_ones(xx_mask.size(1), xx_mask.size(1)).byte()
+    causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
+    xx_mask = xx_mask & causal_mask  # `[B, L (query), L (key)]`
+    return xx_mask

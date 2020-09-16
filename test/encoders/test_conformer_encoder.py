@@ -73,6 +73,8 @@ def make_args(**kwargs):
         ({'conv_layer_norm': True}),
         # projection
         ({'last_proj_dim': 10}),
+        # unidirectional
+        ({'enc_type': 'conv_uni_conformer'}),
         # LC-Conformer
         ({'streaming_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         ({'streaming_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
@@ -88,13 +90,12 @@ def make_args(**kwargs):
         # bottleneck
         ({'ffn_bottleneck_dim': 16}),
         # subsampling
-        ({'subsample': "1_2_1"}),
-        ({'subsample': "1_2_1"}),
         ({'subsample': "1_2_1", 'subsample_type': 'drop'}),
         ({'subsample': "1_2_1", 'subsample_type': 'concat'}),
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool'}),
         ({'subsample': "1_2_1", 'subsample_type': 'conv1d'}),
         ({'subsample': "1_2_1", 'subsample_type': 'add'}),
+        ({'subsample': "1_2_1", 'enc_type': 'conv_uni_conformer'}),
         ({'subsample': "1_2_1", 'streaming_type': 'reshape',
           'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
         ({'subsample': "1_2_1", 'streaming_type': 'mask',
