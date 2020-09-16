@@ -171,8 +171,8 @@ def build_parser():
     parser.add_argument('--enc_type', type=str, default='blstm',
                         choices=['blstm', 'lstm', 'bgru', 'gru',
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
-                                 'transformer', 'conv_transformer',
-                                 'conformer', 'conv_conformer',
+                                 'transformer', 'conv_transformer', 'conv_uni_transformer',
+                                 'conformer', 'conv_conformer', 'conv_uni_conformer',
                                  'tds', 'gated_conv'],
                         help='type of the encoder')
     parser.add_argument('--enc_n_layers', type=int, default=5,
