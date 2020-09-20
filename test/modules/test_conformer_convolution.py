@@ -12,7 +12,8 @@ def make_args(**kwargs):
     args = dict(
         d_model=256,
         kernel_size=3,
-        param_init=''
+        param_init='',
+        causal=False,
     )
     args.update(kwargs)
     return args
@@ -28,6 +29,7 @@ def make_args(**kwargs):
         ({'kernel_size': 33}),
         ({'kernel_size': 65}),
         ({'param_init': 'xavier_uniform'}),
+        ({'kernel_size': 7, 'causal': True}),
     ]
 )
 def test_forward(args):
@@ -42,7 +44,7 @@ def test_forward(args):
     conv = conv.to(device)
 
     for xmax in xmaxs:
-        xs = torch.FloatTensor(batch_size, xmax, args['d_model'], device=device)
+        xs = torch.randn(batch_size, xmax, args['d_model'], device=device)
         xs = conv(xs)
 
         assert xs.size() == (batch_size, xmax, args['d_model'])
