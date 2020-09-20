@@ -221,7 +221,7 @@ class ConformerEncoder(EncoderBase):
                 self.layer_sub1 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
-                    ffn_bottleneck_dim)
+                    ffn_bottleneck_dim, self.unidirectional)
             self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
@@ -231,7 +231,7 @@ class ConformerEncoder(EncoderBase):
                 self.layer_sub2 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
-                    ffn_bottleneck_dim)
+                    ffn_bottleneck_dim, self.unidirectional)
             self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
