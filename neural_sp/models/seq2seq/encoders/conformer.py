@@ -29,7 +29,6 @@ from neural_sp.models.seq2seq.encoders.transformer import causal
 from neural_sp.models.seq2seq.encoders.transformer import make_san_mask
 from neural_sp.models.seq2seq.encoders.transformer import make_time_restricted_san_mask
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
-from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
 
 random.seed(1)
@@ -212,7 +211,7 @@ class ConformerEncoder(EncoderBase):
         self.layers = nn.ModuleList([copy.deepcopy(ConformerEncoderBlock(
             d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init, pe_type,
-            ffn_bottleneck_dim))
+            ffn_bottleneck_dim, self.unidirectional))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self._odim = d_model
@@ -222,7 +221,7 @@ class ConformerEncoder(EncoderBase):
                 self.layer_sub1 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
-                    ffn_bottleneck_dim)
+                    ffn_bottleneck_dim, self.unidirectional)
             self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
@@ -232,7 +231,7 @@ class ConformerEncoder(EncoderBase):
                 self.layer_sub2 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
-                    ffn_bottleneck_dim)
+                    ffn_bottleneck_dim, self.unidirectional)
             self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
@@ -273,8 +272,8 @@ class ConformerEncoder(EncoderBase):
         group.add_argument('--transformer_enc_pe_type', type=str, default='relative',
                            choices=['relative', 'relative_xl'],
                            help='type of positional encoding for the Transformer encoder')
-        group.add_argument('--conformer_kernel_size', type=int, default=32,
-                           help='kernel size for depthwise convolution in convolution module for Conformer encoder layers')
+        group.add_argument('--conformer_kernel_size', type=int, default=31,
+                           help='kernel size for depthwise convolution in convolution module for Conformer encoder')
         group.add_argument('--dropout_enc_layer', type=float, default=0.0,
                            help='LayerDrop probability for Conformer encoder layers')
         group.add_argument('--transformer_enc_clamp_len', type=int, default=-1,
@@ -512,13 +511,14 @@ class ConformerEncoderBlock(nn.Module):
         param_init (str): parameter initialization method
         pe_type (str): type of positional encoding
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
+        unidirectional (bool): pad right context for unidirectional encoding
 
     """
 
     def __init__(self, d_model, d_ff, n_heads, kernel_size,
                  dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init, pe_type,
-                 ffn_bottleneck_dim):
+                 ffn_bottleneck_dim, unidirectional):
         super(ConformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
@@ -531,7 +531,8 @@ class ConformerEncoderBlock(nn.Module):
 
         # conv module
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.conv = ConformerConvBlock(d_model, kernel_size, param_init)
+        self.conv = ConformerConvBlock(d_model, kernel_size, param_init,
+                                       causal=unidirectional)
 
         # self-attention
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
