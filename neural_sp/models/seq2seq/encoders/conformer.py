@@ -25,7 +25,6 @@ from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
 from neural_sp.models.seq2seq.encoders.subsampling import MaxpoolSubsampler
-from neural_sp.models.seq2seq.encoders.transformer import causal
 from neural_sp.models.seq2seq.encoders.transformer import make_san_mask
 from neural_sp.models.seq2seq.encoders.transformer import make_time_restricted_san_mask
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
@@ -437,10 +436,7 @@ class ConformerEncoder(EncoderBase):
             # Create sinusoidal positional embeddings for relative positional encoding
             pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
 
-            xx_mask = make_san_mask(xs, xlens)
-            if self.unidirectional:
-                xx_mask = causal(xx_mask)
-
+            xx_mask = make_san_mask(xs, xlens, self.unidirectional)
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
@@ -461,9 +457,7 @@ class ConformerEncoder(EncoderBase):
 
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
-                    xx_mask = make_san_mask(xs, xlens)
-                    if self.unidirectional:
-                        xx_mask = causal(xx_mask)
+                    xx_mask = make_san_mask(xs, xlens, self.unidirectional)
                     # Create sinusoidal positional embeddings for relative positional encoding
                     clamp_len = clamp_len // self.subsample[lth].subsampling_factor
                     pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
@@ -526,16 +520,11 @@ class ConformerEncoderBlock(nn.Module):
 
         # first half position-wise feed-forward
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.feed_forward1 = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
-                                 ffn_bottleneck_dim)
-
-        # conv module
-        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.conv = ConformerConvBlock(d_model, kernel_size, param_init,
-                                       causal=unidirectional)
+        self.feed_forward_macaron = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
+                                        ffn_bottleneck_dim)
 
         # self-attention
-        self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.self_attn = RelMHA(kdim=d_model,
                                 qdim=d_model,
                                 adim=d_model,
@@ -545,10 +534,15 @@ class ConformerEncoderBlock(nn.Module):
                                 param_init=param_init,
                                 xl_like=pe_type == 'relative_xl')
 
+        # conv module
+        self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.conv = ConformerConvBlock(d_model, kernel_size, param_init,
+                                       causal=unidirectional)
+
         # second half position-wise feed-forward
         self.norm4 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.feed_forward2 = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
-                                 ffn_bottleneck_dim)
+        self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
+                                ffn_bottleneck_dim)
 
         self.dropout = nn.Dropout(dropout)
         self.dropout_layer = dropout_layer
@@ -584,26 +578,25 @@ class ConformerEncoderBlock(nn.Module):
         # first half FFN
         residual = xs
         xs = self.norm1(xs)
-        xs = self.feed_forward1(xs)
+        xs = self.feed_forward_macaron(xs)
         xs = self.fc_factor * self.dropout(xs) + residual  # Macaron FFN
-
-        # conv
-        residual = xs
-        xs = self.norm2(xs)
-        xs = self.conv(xs)
-        xs = self.dropout(xs) + residual
 
         # self-attention w/ relative positional encoding
         residual = xs
-        xs = self.norm3(xs)
+        xs = self.norm2(xs)
         xs, self._xx_aws = self.self_attn(xs, xs, pos_embs, xx_mask, u_bias, v_bias)
+        xs = self.dropout(xs) + residual
+
+        # conv
+        residual = xs
+        xs = self.norm3(xs)
+        xs = self.conv(xs)
         xs = self.dropout(xs) + residual
 
         # second half FFN
         residual = xs
         xs = self.norm4(xs)
-        xs = self.feed_forward2(xs)
+        xs = self.feed_forward(xs)
         xs = self.fc_factor * self.dropout(xs) + residual  # Macaron FFN
-        # TODO(hirofumi0810): additional layer normalization here?
 
         return xs

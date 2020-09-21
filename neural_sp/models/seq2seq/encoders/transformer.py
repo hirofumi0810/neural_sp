@@ -444,10 +444,7 @@ class TransformerEncoder(EncoderBase):
                 xs = self.pos_enc(xs, scale=True)
                 pos_embs = None
 
-            xx_mask = make_san_mask(xs, xlens)
-            if self.unidirectional:
-                xx_mask = causal(xx_mask)
-
+            xx_mask = make_san_mask(xs, xlens, self.unidirectional)
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
@@ -468,9 +465,7 @@ class TransformerEncoder(EncoderBase):
 
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
-                    xx_mask = make_san_mask(xs, xlens)
-                    if self.unidirectional:
-                        xx_mask = causal(xx_mask)
+                    xx_mask = make_san_mask(xs, xlens, self.unidirectional)
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
                         clamp_len = clamp_len // self.subsample[lth].subsampling_factor
@@ -596,19 +591,21 @@ class TransformerEncoderBlock(nn.Module):
         return xs
 
 
-def make_san_mask(xs, xlens):
+def make_san_mask(xs, xlens, unidirectional=False):
     """Mask self-attention mask.
 
     Args:
         xs (FloatTensor): `[B, T, d_model]`
         xlens (InteTensor): `[B]` (on CPU)
+        unidirectional (bool): pad future context
     Returns:
         xx_mask (ByteTensor): `[B, T (query), T (key)]`
 
     """
     xx_mask = make_pad_mask(xlens.to(xs.device))
-    xx_mask_tmp = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
-    xx_mask = xx_mask_tmp & xx_mask_tmp.transpose(2, 1)
+    xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
+    if unidirectional:
+        xx_mask = causal(xx_mask)
     return xx_mask
 
 
