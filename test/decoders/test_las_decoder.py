@@ -13,7 +13,7 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
-ENC_N_UNITS = 32
+ENC_N_UNITS = 16
 VOCAB = 10
 
 
@@ -23,14 +23,14 @@ def make_args(**kwargs):
         enc_n_units=ENC_N_UNITS,
         attn_type='location',
         rnn_type='lstm',
-        n_units=32,
+        n_units=16,
         n_projs=0,
         n_layers=2,
-        bottleneck_dim=16,
-        emb_dim=16,
+        bottleneck_dim=8,
+        emb_dim=8,
         vocab=VOCAB,
         tie_embedding=False,
-        attn_dim=32,
+        attn_dim=16,
         attn_sharpening_factor=1.0,
         attn_sigmoid_smoothing=False,
         attn_conv_out_channels=10,
@@ -44,7 +44,7 @@ def make_args(**kwargs):
         ss_type='constant',
         ctc_weight=0.0,
         ctc_lsm_prob=0.1,
-        ctc_fc_list='32_32',
+        ctc_fc_list='16_16',
         mbr_training=False,
         mbr_ce_weight=0.01,
         external_lm=None,
@@ -61,8 +61,9 @@ def make_args(**kwargs):
         mocha_std=1.0,
         mocha_no_denominator=False,
         mocha_1dconv=False,
-        mocha_quantity_loss_weight=0.0,
-        latency_metric=False,
+        mocha_decot_lookahead=0,
+        quantity_loss_weight=0.0,
+        latency_metric='',
         latency_loss_weight=0.0,
         gmm_attn_n_mixtures=1,
         replace_sos=False,
@@ -89,7 +90,7 @@ def make_args(**kwargs):
         ({'attn_type': 'luong_concat'}),
         ({'attn_type': 'gmm', 'gmm_attn_n_mixtures': 5}),
         # projection
-        ({'n_projs': 16}),
+        ({'n_projs': 8}),
         # multihead attention
         ({'attn_type': 'add', 'attn_n_heads': 4}),
         # MoChA
@@ -97,10 +98,14 @@ def make_args(**kwargs):
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_no_denominator': True}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_1dconv': True}),
-        ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_quantity_loss_weight': 1.0}),
+        ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'quantity_loss_weight': 1.0}),
+        ({'attn_type': 'mocha', 'mocha_chunk_size': 4,
+          'latency_metric': 'minlt', 'latency_loss_weight': 1.0}),
+        ({'attn_type': 'mocha', 'mocha_chunk_size': 4,
+          'latency_metric': 'decot', 'mocha_decot_lookahead': 2}),
         # ({'attn_type': 'mocha', 'mocha_chunk_size': 4,
         #   'ctc_weight': 0.5, 'latency_metric': 'ctc_sync', 'latency_loss_weight': 1.0}),
-        # ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_quantity_loss_weight': 1.0,
+        # ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'quantity_loss_weight': 1.0,
         #   'ctc_weight': 0.5, 'latency_metric': 'ctc_sync', 'latency_loss_weight': 1.0}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 1, 'mocha_n_heads_mono': 4}),
         ({'attn_type': 'mocha', 'mocha_chunk_size': 4, 'mocha_n_heads_mono': 4}),
@@ -113,7 +118,7 @@ def make_args(**kwargs):
         ({'backward': True, 'ctc_weight': 0.5}),
         ({'backward': True, 'ctc_weight': 1.0}),
         # others
-        ({'tie_embedding': True, 'bottleneck_dim': 32, 'emb_dim': 32}),
+        ({'tie_embedding': True, 'bottleneck_dim': 16, 'emb_dim': 16}),
         ({'lsm_prob': 0.1}),
         ({'ss_prob': 0.2}),
         # RNNLM init
@@ -136,6 +141,10 @@ def test_forward(args):
     eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
     ylens = [4, 5, 3, 7]
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int32) for ylen in ylens]
+    trigger_points = None
+    if args['latency_metric'] in ['minlt', 'decot']:
+        trigger_points = torch.arange(max(ylens) + 1, dtype=torch.int32,
+                                      device=device).unsqueeze(0).repeat(batch_size, 1)
 
     if args['lm_init'] or args['lm_fusion']:
         args_lm = make_args_rnnlm()
@@ -146,7 +155,7 @@ def test_forward(args):
     dec = module.RNNDecoder(**args)
     dec = dec.to(device)
 
-    loss, observation = dec(eouts, elens, ys, task='all')
+    loss, observation = dec(eouts, elens, ys, task='all', trigger_points=trigger_points)
     assert loss.dim() == 1
     assert loss.size(0) == 1
     assert loss.item() >= 0
@@ -193,14 +202,14 @@ def make_decode_params(**kwargs):
 def make_args_rnnlm(**kwargs):
     args = dict(
         lm_type='lstm',
-        n_units=32,
+        n_units=16,
         n_projs=0,
         n_layers=2,
         residual=False,
         use_glu=False,
-        n_units_null_context=32,
-        bottleneck_dim=16,
-        emb_dim=16,
+        n_units_null_context=16,
+        bottleneck_dim=8,
+        emb_dim=8,
         vocab=VOCAB,
         dropout_in=0.1,
         dropout_hidden=0.1,

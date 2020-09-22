@@ -61,7 +61,7 @@ class GMMAttention(nn.Module):
         self.myu = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                cache=False, mode='', trigger_point=None):
+                cache=False, mode='', trigger_points=None):
         """Forward pass.
 
         Args:
@@ -72,7 +72,7 @@ class GMMAttention(nn.Module):
             aw_prev (FloatTensor): `[B, klen, 1]`
             cache (bool): cache key and mask
             mode: dummy interface for MoChA/MMA
-            trigger_point: dummy interface for MoChA/MMA
+            trigger_points: dummy interface for MoChA/MMA
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             alpha (FloatTensor): `[B, klen, 1]`

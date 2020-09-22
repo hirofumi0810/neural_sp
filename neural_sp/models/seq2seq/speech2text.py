@@ -275,7 +275,8 @@ class Speech2Text(ModelBase):
 
             loss_fwd, obs_fwd = self.dec_fwd(eout_dict['ys']['xs'], eout_dict['ys']['xlens'],
                                              batch['ys'], task,
-                                             teacher_logits, self.recog_params, self.idx2token)
+                                             teacher_logits, self.recog_params, self.idx2token,
+                                             batch['trigger_points'])
             loss += loss_fwd
             if isinstance(self.dec_fwd, RNNTransducer):
                 observation['loss.transducer'] = obs_fwd['loss_transducer']
@@ -377,11 +378,11 @@ class Speech2Text(ModelBase):
                 xs = self.specaug(xs)
 
             # Weight noise injection
-            if self.weight_noise_std > 0:
+            if self.weight_noise_std > 0 and self.training:
                 self.add_weight_noise(std=self.weight_noise_std)
 
             # Input Gaussian noise injection
-            if self.input_noise_std > 0:
+            if self.input_noise_std > 0 and self.training:
                 xs = add_input_noise(xs, std=self.input_noise_std)
 
             # Sequence summary network
@@ -458,6 +459,7 @@ class Speech2Text(ModelBase):
         global_params['recog_max_len_ratio'] = 1.0
 
         streaming = Streaming(xs[0], params, self.enc, idx2token)
+        chunk_sync = params['recog_chunk_sync']
 
         hyps = None
         best_hyp_id_stream = []
@@ -495,7 +497,7 @@ class Speech2Text(ModelBase):
                 streaming.eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
-                if params['recog_chunk_sync']:
+                if chunk_sync:
                     end_hyps, hyps, aws_seg = self.dec_fwd.beam_search_chunk_sync(
                         eout_chunk, params, idx2token, lm,
                         ctc_log_probs=ctc_log_probs_chunk, hyps=hyps,
@@ -522,7 +524,7 @@ class Speech2Text(ModelBase):
 
                 if is_reset:
                     # Global decoding over the segmented region
-                    if not params['recog_chunk_sync']:
+                    if not chunk_sync:
                         eout = torch.cat(streaming.eout_chunks, dim=1)
                         elens = torch.IntTensor([eout.size(1)])
                         ctc_log_probs = None
@@ -536,7 +538,7 @@ class Speech2Text(ModelBase):
                         #        idx2token(nbest_hyps_id_offline[0][0])))
 
                     # pick up the best hyp from ended and active hypotheses
-                    if not params['recog_chunk_sync']:
+                    if not chunk_sync:
                         if len(nbest_hyps_id_offline[0][0]) > 0:
                             best_hyp_id_stream.extend(nbest_hyps_id_offline[0][0])
                     else:
@@ -564,7 +566,7 @@ class Speech2Text(ModelBase):
                     break
 
             # Global decoding over the last chunk
-            if not params['recog_chunk_sync'] and len(streaming.eout_chunks) > 0:
+            if not chunk_sync and len(streaming.eout_chunks) > 0:
                 eout = torch.cat(streaming.eout_chunks, dim=1)
                 elens = torch.IntTensor([eout.size(1)])
                 nbest_hyps_id_offline = self.dec_fwd.beam_search(
@@ -575,7 +577,7 @@ class Speech2Text(ModelBase):
                     best_hyp_id_stream.extend(nbest_hyps_id_offline[0][0])
 
             # pick up the best hyp
-            if not is_reset and params['recog_chunk_sync'] and len(best_hyp_id_prefix) > 0:
+            if not is_reset and chunk_sync and len(best_hyp_id_prefix) > 0:
                 best_hyp_id_stream.extend(best_hyp_id_prefix)
 
             if len(best_hyp_id_stream) > 0:
@@ -595,7 +597,7 @@ class Speech2Text(ModelBase):
     def decode(self, xs, params, idx2token, exclude_eos=False,
                refs_id=None, refs=None, utt_ids=None, speakers=None,
                task='ys', ensemble_models=[]):
-        """Decoding in the inference stage.
+        """Decode in the inference stage.
 
         Args:
             xs (list): A list of length `[B]`, which contains arrays of size `[T, input_dim]`

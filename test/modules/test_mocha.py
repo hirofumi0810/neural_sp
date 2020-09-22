@@ -29,7 +29,7 @@ def make_args(**kwargs):
         bias=True,
         param_init='',
         decot=False,
-        lookahead=2,
+        lookahead=0,
         share_chunkwise_attention=True,
     )
     args.update(kwargs)
@@ -78,10 +78,10 @@ def test_forward_soft_parallel(args):
     qlen = 5
     device = "cpu"
 
-    key = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
-    value = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
-    query = torch.FloatTensor(batch_size, qlen, args['qdim'], device=device)
-    src_mask = torch.ones(batch_size, 1, klen, device=device).byte()
+    key = torch.randn(batch_size, klen, args['kdim'], device=device)
+    value = torch.randn(batch_size, klen, args['kdim'], device=device)
+    query = torch.randn(batch_size, qlen, args['qdim'], device=device)
+    src_mask = key.new_ones(batch_size, 1, klen).byte()
 
     module = importlib.import_module('neural_sp.models.modules.mocha')
     mocha = module.MoChA(**args)
@@ -127,6 +127,7 @@ def test_forward_soft_parallel(args):
         ({'n_heads_mono': 1, 'chunk_size': 1, 'bias': False}),
         # MoChA
         ({'n_heads_mono': 1, 'chunk_size': 4}),
+        ({'n_heads_mono': 1, 'chunk_size': 4, 'decot': True, 'lookahead': 2}),
         # Milk
         ({'n_heads_mono': 1, 'chunk_size': -1}),
         # MMA
@@ -148,9 +149,9 @@ def test_forward_hard(args):
     qlen = 5
     device = "cpu"
 
-    key = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
-    value = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
-    query = torch.FloatTensor(batch_size, qlen, args['qdim'], device=device)
+    key = torch.randn(batch_size, klen, args['kdim'], device=device)
+    value = torch.randn(batch_size, klen, args['kdim'], device=device)
+    query = torch.randn(batch_size, qlen, args['qdim'], device=device)
 
     module = importlib.import_module('neural_sp.models.modules.mocha')
     mocha = module.MoChA(**args)
@@ -158,10 +159,13 @@ def test_forward_hard(args):
 
     mocha.eval()
     alpha = None
+    trigger_points = None
+    if args['decot']:
+        trigger_points = torch.arange(qlen).unsqueeze(0).repeat(batch_size, 1)
     for i in range(qlen):
         out = mocha(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
-                    mode='hard', cache=False, eps_wait=-1,
-                    efficient_decoding=False)
+                    mode='hard', cache=False, trigger_points=trigger_points,
+                    eps_wait=-1, efficient_decoding=False)
         assert len(out) == 4
         cv, alpha, beta, p_choose = out
         assert cv.size() == (batch_size, 1, value.size(2))
