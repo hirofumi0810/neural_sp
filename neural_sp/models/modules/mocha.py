@@ -122,7 +122,7 @@ class MonotonicEnergy(nn.Module):
             self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H_ma, d_k]`
             self.mask = mask
             if mask is not None:
-                self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ma]`
+                self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ca]`
                 mask_size = (bs, qlen, klen, self.n_heads)
                 assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
@@ -401,11 +401,10 @@ class MoChA(nn.Module):
         alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_ma, qlen, klen]`
         return alpha, p_choose
 
-    def parallel(self, e_ma, aw_prev, trigger_point):
+    def parallel(self, e_ma, aw_prev, trigger_points):
         bs, n_heads_ma, qlen, klen = e_ma.size()
         p_choose = torch.sigmoid(add_gaussian_noise(e_ma, self.noise_std))  # `[B, H_ma, qlen, klen]`
         alpha = []
-
         # safe_cumprod computes cumprod in logspace with numeric checks
         cumprod_1mp_choose = safe_cumprod(1 - p_choose, eps=self.eps)  # `[B, H_ma, qlen, klen]`
         # Compute recurrence relation solution
@@ -415,9 +414,9 @@ class MoChA(nn.Module):
             aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
                 aw_prev / denom, dim=-1)  # `[B, H_ma, 1, klen]`
             # Mask the right part from the trigger point
-            if self.decot and trigger_point is not None:
+            if self.decot and trigger_points is not None:
                 for b in range(bs):
-                    aw_prev[b, :, :, trigger_point[b] + self.lookahead + 1:] = 0
+                    aw_prev[b, :, :, trigger_points[b, i:i + 1] + self.lookahead + 1:] = 0
             alpha.append(aw_prev)
 
         alpha = torch.cat(alpha, dim=2) if qlen > 1 else alpha[-1]  # `[B, H_ma, qlen, klen]`
@@ -427,6 +426,9 @@ class MoChA(nn.Module):
         bs, n_heads_ma, qlen, klen = e_ma.size()
         assert qlen == 1
         assert not self.training
+
+        aw_prev = aw_prev[:, :, :, -klen:]
+
         if self.n_heads_ma == 1:
             # assert aw_prev.sum() > 0
             p_choose_i = (torch.sigmoid(e_ma) >= 0.5).float()[:, :, 0:1]
@@ -476,7 +478,7 @@ class MoChA(nn.Module):
         return alpha, None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                cache=False, mode='hard', trigger_point=None, eps_wait=-1,
+                cache=False, mode='hard', trigger_points=None, eps_wait=-1,
                 efficient_decoding=False):
         """Forward pass.
 
@@ -488,7 +490,7 @@ class MoChA(nn.Module):
             aw_prev (FloatTensor): `[B, H_ma, 1, klen]`
             cache (bool): cache key and mask
             mode (str): recursive/parallel/hard
-            trigger_point (IntTensor): `[B]`
+            trigger_points (IntTensor): `[B]`
             eps_wait (int): wait time delay for head-synchronous decoding in MMA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
@@ -516,7 +518,7 @@ class MoChA(nn.Module):
             alpha_masked = alpha.clone()
 
         elif mode == 'parallel':  # training (efficient)
-            alpha, p_choose = self.parallel(e_ma, aw_prev, trigger_point)
+            alpha, p_choose = self.parallel(e_ma, aw_prev, trigger_points)
 
             # mask out each head independently (HeadDrop)
             if self.dropout_head > 0 and self.training:
