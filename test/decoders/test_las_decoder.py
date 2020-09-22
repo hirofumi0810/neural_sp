@@ -65,7 +65,6 @@ def make_args(**kwargs):
         quantity_loss_weight=0.0,
         latency_metric='',
         latency_loss_weight=0.0,
-        latency_loss_prob=0.0,
         gmm_attn_n_mixtures=1,
         replace_sos=False,
         distillation_weight=0.0,
