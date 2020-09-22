@@ -41,23 +41,23 @@ class RNNTransducer(DecoderBase):
             unk (int): index for <unk>
             pad (int): index for <pad>
             blank (int): index for <blank>
-        enc_n_units (int):
-        rnn_type (str): lstm_transducer or gru_transducer
+        enc_n_units (int): number of units of encoder outputs
+        rnn_type (str): lstm_transducer/gru_transducer
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of RNN layers
-        bottleneck_dim (int): dimension of the bottleneck layer before the softmax layer for label generation
-        emb_dim (int): dimension of the embedding in target spaces.
+        bottleneck_dim (int): dimension of bottleneck layer before softmax layer for label generation
+        emb_dim (int): dimension of embedding in target spaces.
         vocab (int): number of nodes in softmax layer
-        dropout (float): dropout probability for the RNN layer
-        dropout_emb (float): dropout probability for the embedding layer
-        ctc_weight (float):
+        dropout (float): dropout probability for RNN layer
+        dropout_emb (float): dropout probability for embedding layer
+        ctc_weight (float): CTC loss weight
         ctc_lsm_prob (float): label smoothing probability for CTC
-        ctc_fc_list (list):
-        global_weight (float):
-        mtl_per_batch (bool):
-        param_init (str): parameter initialization method
+        ctc_fc_list (list): fully-connected layer configuration before the CTC softmax
         external_lm (RNNLM): external RNNLM for prediction network initialization
+        global_weight (float): global loss weight for multi-task learning
+        mtl_per_batch (bool): change mini-batch per task for multi-task training
+        param_init (float): parameter initialization method
 
     """
 
@@ -66,7 +66,7 @@ class RNNTransducer(DecoderBase):
                  bottleneck_dim, emb_dim, vocab,
                  dropout, dropout_emb,
                  ctc_weight, ctc_lsm_prob, ctc_fc_list,
-                 global_weight, mtl_per_batch, param_init, external_lm):
+                 external_lm, global_weight, mtl_per_batch, param_init):
 
         super(RNNTransducer, self).__init__()
 
@@ -112,9 +112,7 @@ class RNNTransducer(DecoderBase):
             self.dropout = nn.Dropout(p=dropout)
             for _ in range(n_layers):
                 self.rnn += [rnn(dec_odim, n_units, 1, batch_first=True)]
-                dec_odim = n_units
-                if n_projs > 0:
-                    dec_odim = n_projs
+                dec_odim = n_projs if n_projs > 0 else n_units
 
             self.embed = nn.Embedding(vocab, emb_dim, padding_idx=self.pad)
             self.dropout_emb = nn.Dropout(p=dropout_emb)
@@ -184,7 +182,7 @@ class RNNTransducer(DecoderBase):
         self._ss_prob = 0.
 
     def forward(self, eouts, elens, ys, task='all',
-                teacher_logits=None, recog_params={}, idx2token=None):
+                teacher_logits=None, recog_params={}, idx2token=None, trigger_points=None):
         """Forward pass.
 
         Args:
@@ -195,6 +193,7 @@ class RNNTransducer(DecoderBase):
             teacher_logits (FloatTensor): `[B, L, vocab]`
             recog_params (dict): parameters for MBR training
             idx2token ():
+            trigger_points (np.ndarray): `[B, L]`
         Returns:
             loss (FloatTensor): `[1]`
             observation (dict):
@@ -236,8 +235,8 @@ class RNNTransducer(DecoderBase):
 
         """
         # Append <sos> and <eos>
-        eos = eouts.new_zeros(1).fill_(self.eos).long()
-        _ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device) for y in ys]
+        eos = eouts.new_zeros((1,), dtype=torch.int64).fill_(self.eos)
+        _ys = [np2tensor(np.fromiter(y, dtype=np.int64), eouts.device) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
         ys_in = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)
         ys_out = pad_list(_ys, self.blank)
@@ -253,9 +252,9 @@ class RNNTransducer(DecoderBase):
         log_probs = torch.log_softmax(logits, dim=-1)
         assert log_probs.size(2) == ys_out.size(1) + 1
         if self.device_id >= 0:
-            ys_out = ys_out.to(self.device)
-            elens = elens.to(self.device)
-            ylens = ylens.to(self.device)
+            ys_out = ys_out.to(eouts.device)
+            elens = elens.to(eouts.device)
+            ylens = ylens.to(eouts.device)
             import warp_rnnt
             loss = warp_rnnt.rnnt_loss(log_probs, ys_out.int(), elens, ylens,
                                        average_frames=False,
@@ -367,7 +366,7 @@ class RNNTransducer(DecoderBase):
         for b in range(bs):
             hyp_b = []
             # Initialization
-            y = eouts.new_zeros(1, 1).fill_(self.eos).long()
+            y = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(self.eos)
             y_emb = self.dropout_emb(self.embed(y))
             dout, dstate = self.recurrency(y_emb, None)
 
@@ -454,7 +453,7 @@ class RNNTransducer(DecoderBase):
         eos_flags = []
         for b in range(bs):
             # Initialization per utterance
-            y = eouts.new_zeros(bs, 1).fill_(self.eos).long()
+            y = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(self.eos)
             y_emb = self.dropout_emb(self.embed(y))
             dout, dstate = self.recurrency(y_emb, None)
             lmstate = None
@@ -470,7 +469,7 @@ class RNNTransducer(DecoderBase):
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
 
-            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device)
+            helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
@@ -507,7 +506,7 @@ class RNNTransducer(DecoderBase):
                     dstate = beam['dstate']
                     lmstate = beam['lmstate']
 
-                    # Attention scores
+                    # Transducer scores
                     total_scores_rnnt = beam['score_rnnt'] + scores_rnnt[j:j + 1]
                     total_scores = total_scores_rnnt * (1 - ctc_weight)
 
@@ -539,15 +538,15 @@ class RNNTransducer(DecoderBase):
                         #     continue
 
                         # Update prediction network only when predicting non-blank labels
-                        hyp_id = beam['hyp'] + [idx]
-                        hyp_str = ' '.join(list(map(str, hyp_id)))
+                        hyp_ids = beam['hyp'] + [idx]
+                        hyp_str = ' '.join(list(map(str, hyp_ids)))
                         # if hyp_str in self.state_cache.keys():
                         #     # from cache
                         #     dout = self.state_cache[hyp_str]['dout']
                         #     new_dstate = self.state_cache[hyp_str]['dstate']
                         #     lmstate = self.state_cache[hyp_str]['lmstate']
                         # else:
-                        y = eouts.new_zeros(1, 1).fill_(idx).long()
+                        y = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(idx)
                         y_emb = self.dropout_emb(self.embed(y))
                         dout, new_dstate = self.recurrency(y_emb, dstate)
 
@@ -559,7 +558,7 @@ class RNNTransducer(DecoderBase):
                                         'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                         }
 
-                        new_hyps.append({'hyp': hyp_id,
+                        new_hyps.append({'hyp': hyp_ids,
                                          'score': total_scores_topk[0, k].item(),
                                          'score_rnnt': total_scores_rnnt[0, idx].item(),
                                          'score_ctc': total_scores_ctc[k].item(),
