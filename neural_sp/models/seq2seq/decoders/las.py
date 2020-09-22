@@ -157,7 +157,6 @@ class RNNDecoder(DecoderBase):
         self._quantity_loss_weight = quantity_loss_weight  # for curriculum
         self.latency_metric = latency_metric
         self.latency_loss_weight = latency_loss_weight
-        self.ctc_trigger = (self.latency_metric in ['ctc_sync', 'ctc_dal'] or attn_type == 'triggered_attention')
         if 'ctc_sync' in self.latency_metric or attn_type == 'triggered_attention':
             assert 0 < self.ctc_weight < 1
 
@@ -384,8 +383,6 @@ class RNNDecoder(DecoderBase):
                 dir_name += str(args.mocha_decot_lookahead)
             else:
                 dir_name += str(args.mocha_latency_loss_weight)
-            if args.mocha_latency_loss_prob < 1:
-                dir_name += '_p' + str(args.mocha_latency_loss_prob)
         if args.attn_n_heads > 1:
             dir_name += '_head' + str(args.attn_n_heads)
         if args.tie_embedding:
@@ -440,8 +437,6 @@ class RNNDecoder(DecoderBase):
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
             ctc_forced_align = (
                 'ctc_sync' in self.latency_metric and self.training) or self.attn_type == 'triggered_attention'
-            if self.latency_loss_prob < 1:
-                ctc_forced_align = ctc_forced_align and random.random() < self.latency_loss_prob
             loss_ctc, ctc_trigger_points = self.ctc(eouts, elens, ys, forced_align=ctc_forced_align)
             observation['loss_ctc'] = tensor2scalar(loss_ctc)
             if self.mtl_per_batch:
