@@ -9,7 +9,6 @@
    You can use the multi-GPU version.
 """
 
-import codecs
 import kaldiio
 import numpy as np
 import os
@@ -29,6 +28,7 @@ from neural_sp.datasets.token_converter.word import Word2idx
 from neural_sp.datasets.token_converter.wordpiece import Idx2wp
 from neural_sp.datasets.token_converter.wordpiece import Wp2idx
 
+from neural_sp.datasets.alignment import WordAlignmentConverter
 from neural_sp.datasets.utils import count_vocab_size
 from neural_sp.datasets.utils import discourse_bucketing
 from neural_sp.datasets.utils import set_batch_size
@@ -42,7 +42,7 @@ def build_dataloader(args, tsv_path, batch_size, n_epochs=1e10, is_test=False,
                      sort_by='utt_id', short2long=False, sort_stop_epoch=1e10,
                      tsv_path_sub1=False, tsv_path_sub2=False,
                      num_workers=1, pin_memory=False,
-                     first_n_utterances=-1):
+                     first_n_utterances=-1, alignment_dir=None):
 
     dataset = CustomDataset(corpus=args.corpus,
                             tsv_path=tsv_path,
@@ -68,16 +68,17 @@ def build_dataloader(args, tsv_path, batch_size, n_epochs=1e10, is_test=False,
                             ctc_sub2=args.ctc_weight_sub2 > 0,
                             sort_by=sort_by,
                             short2long=short2long,
-                            is_test=is_test)
+                            is_test=is_test,
+                            alignment_dir=alignment_dir)
 
     batch_sampler = CustomBatchSampler(df=dataset.df,  # filtered
                                        df_sub1=dataset.df_sub1,  # filtered
                                        df_sub2=dataset.df_sub2,  # filtered
                                        batch_size=args.batch_size,
                                        dynamic_batching=args.dynamic_batching,
-                                       shuffle_bucket=args.shuffle_bucket,
+                                       shuffle_bucket=args.shuffle_bucket and not is_test,
                                        sort_stop_epoch=args.sort_stop_epoch,
-                                       discourse_aware=args.discourse_aware,)
+                                       discourse_aware=args.discourse_aware)
 
     dataloader = CustomDataLoader(dataset=dataset,
                                   batch_sampler=batch_sampler,
@@ -200,7 +201,7 @@ class CustomDataset(Dataset):
                  dict_path_sub1, dict_path_sub2,
                  unit_sub1, unit_sub2,
                  wp_model_sub1, wp_model_sub2,
-                 discourse_aware=False, first_n_utterances=-1):
+                 discourse_aware=False, first_n_utterances=-1, alignment_dir=None):
         """Custom Dataset class.
 
         Args:
@@ -222,6 +223,7 @@ class CustomDataset(Dataset):
             subsample_factor (int):
             discourse_aware (bool): sort in the discourse order
             first_n_utterances (int): evaluate the first N utterances
+            alignment_dir (str): path to alignment directory
 
         """
         super(Dataset, self).__init__()
@@ -245,6 +247,9 @@ class CustomDataset(Dataset):
             assert not is_test
 
         self.subsample_factor = subsample_factor
+        self.alignment_dir = alignment_dir
+        if alignment_dir is not None:
+            self.alignment2boundary = WordAlignmentConverter(dict_path, wp_model)
 
         self._idx2token = []
         self._token2idx = []
@@ -388,6 +393,15 @@ class CustomDataset(Dataset):
             elif sort_by == 'shuffle':
                 df = df.reindex(np.random.permutation(self.df.index))
 
+        # Fit word alignment to vocabylary
+        if alignment_dir is not None:
+            n_utts = len(df)
+            df['trigger_points'] = df.apply(lambda x: self.alignment2boundary(
+                self.alignment_dir, x['speaker'], x['utt_id'], x['text']), axis=1)
+            # remove utterances which do not have the alignment
+            df = df[df.apply(lambda x: x['trigger_points'] is not None, axis=1)]
+            print('Removed %d utterances (for alignment)' % (n_utts - len(df)))
+
         # Re-indexing
         if discourse_aware:
             self.df = df
@@ -426,6 +440,18 @@ class CustomDataset(Dataset):
                 sessions (list): name of each session
 
         """
+        # external alignment
+        trigger_points = None
+        if self.alignment_dir is not None:
+            trigger_points = np.zeros(
+                (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
+            for b, i in enumerate(indices):
+                p = self.df['trigger_points'][i]
+                trigger_points[b, :len(p)] = (p - 1)
+                trigger_points[b, len(p)] = self.df['xlen'][i] - 1  # for <eos>
+                # NOTE: 0-indexed
+            trigger_points //= self.subsample_factor
+
         # inputs
         xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in indices]
         xlens = [self.df['xlen'][i] for i in indices]
@@ -466,6 +492,7 @@ class CustomDataset(Dataset):
             'sessions': sessions,
             'text': texts,
             'feat_path': feat_paths,  # for plot
+            'trigger_points': trigger_points,
         }
         return mini_batch_dict
 
