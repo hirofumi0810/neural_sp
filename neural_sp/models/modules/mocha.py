@@ -414,7 +414,8 @@ class MoChA(nn.Module):
             aw_prev = p_choose[:, :, i:i + 1] * cumprod_1mp_choose[:, :, i:i + 1] * torch.cumsum(
                 aw_prev / denom, dim=-1)  # `[B, H_ma, 1, klen]`
             # Mask the right part from the trigger point
-            if self.decot and trigger_points is not None:
+            if self.decot:
+                assert trigger_points is not None
                 for b in range(bs):
                     aw_prev[b, :, :, trigger_points[b, i:i + 1] + self.lookahead + 1:] = 0
             alpha.append(aw_prev)
@@ -490,7 +491,7 @@ class MoChA(nn.Module):
             aw_prev (FloatTensor): `[B, H_ma, 1, klen]`
             cache (bool): cache key and mask
             mode (str): recursive/parallel/hard
-            trigger_points (IntTensor): `[B]`
+            trigger_points (IntTensor): `[B, qlen]`
             eps_wait (int): wait time delay for head-synchronous decoding in MMA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
