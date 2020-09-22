@@ -95,7 +95,7 @@ class AttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                cache=False, mode='', trigger_point=None):
+                cache=False, mode='', trigger_points=None):
         """Forward pass.
 
         Args:
@@ -107,7 +107,7 @@ class AttentionMechanism(nn.Module):
             aw_prev (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
             cache (bool): cache key and mask
             mode: dummy interface for MoChA/MMA
-            trigger_point (IntTensor): `[B]`
+            trigger_points (IntTensor): `[B]`
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
@@ -166,9 +166,9 @@ class AttentionMechanism(nn.Module):
 
         # Mask the right part from the trigger point
         if self.atype == 'triggered_attention':
-            assert trigger_point is not None
+            assert trigger_points is not None
             for b in range(bs):
-                e[b, :, trigger_point[b] + self.lookahead + 1:] = NEG_INF
+                e[b, :, trigger_points[b] + self.lookahead + 1:] = NEG_INF
 
         # Compute attention weights, context vector
         if self.mask is not None:
