@@ -308,7 +308,7 @@ class TransformerDecoder(DecoderBase):
             nn.init.constant_(self.output.bias, 0.)
 
     def forward(self, eouts, elens, ys, task='all',
-                teacher_logits=None, recog_params={}, idx2token=None):
+                teacher_logits=None, recog_params={}, idx2token=None, trigger_points=None):
         """Forward pass.
 
         Args:
@@ -319,6 +319,7 @@ class TransformerDecoder(DecoderBase):
             teacher_logits (FloatTensor): `[B, L, vocab]`
             recog_params (dict): parameters for MBR training
             idx2token ():
+            trigger_points (np.ndarray): `[B, L]`
         Returns:
             loss (FloatTensor): `[1]`
             observation (dict):
@@ -390,10 +391,8 @@ class TransformerDecoder(DecoderBase):
             self.data_dict['ys'] = tensor2np(ys_out)
 
         # Create target self-attention mask
-        xmax = eouts.size(1)
         bs, ymax = ys_in.size()[:2]
-        tgt_mask_tmp = (ys_out != self.pad).unsqueeze(1).repeat([1, ymax, 1]).byte()
-        tgt_mask = tgt_mask_tmp & tgt_mask_tmp.transpose(2, 1)
+        tgt_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ymax, 1])
         causal_mask = tgt_mask.new_ones(ymax, ymax).byte()
         causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
         tgt_mask = tgt_mask & causal_mask  # `[B, L (query), L (key)]`
