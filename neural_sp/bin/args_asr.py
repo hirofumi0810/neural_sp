@@ -114,12 +114,16 @@ def build_parser():
                         help='tsv file path for the training set for the 1st auxiliary task')
     parser.add_argument('--train_set_sub2', type=str, default=False,
                         help='tsv file path for the training set for the 2nd auxiliary task')
+    parser.add_argument('--train_alignment', type=str,
+                        help='forced alignment directory path for the training set')
     parser.add_argument('--dev_set', type=str,
                         help='tsv file path for the development set')
     parser.add_argument('--dev_set_sub1', type=str, default=False,
                         help='tsv file path for the development set for the 1st auxiliary task')
     parser.add_argument('--dev_set_sub2', type=str, default=False,
                         help='tsv file path for the development set for the 2nd auxiliary task')
+    parser.add_argument('--dev_alignment', type=str,
+                        help='forced alignment directory path for the development set')
     parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
                         help='tsv file paths for the evaluation sets')
     parser.add_argument('--nlsyms', type=str, default=False, nargs='?',

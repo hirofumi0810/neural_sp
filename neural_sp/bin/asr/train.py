@@ -79,14 +79,16 @@ def main():
                                  short2long=args.sort_short2long,
                                  sort_stop_epoch=args.sort_stop_epoch,
                                  num_workers=args.n_gpus,
-                                 pin_memory=True)
+                                 pin_memory=True,
+                                 alignment_dir=args.train_alignment)
     dev_set = build_dataloader(args=args,
                                tsv_path=args.dev_set,
                                tsv_path_sub1=args.dev_set_sub1,
                                tsv_path_sub2=args.dev_set_sub2,
                                batch_size=batch_size,
                                num_workers=args.n_gpus,
-                               pin_memory=True)
+                               pin_memory=True,
+                               alignment_dir=args.dev_alignment)
     eval_sets = [build_dataloader(args=args,
                                   tsv_path=s,
                                   batch_size=1,
