@@ -54,7 +54,7 @@ class Reporter(object):
 
         Args:
             observation (dict):
-            is_eval (bool):
+            is_eval (bool): True for dev, False for train
 
         """
         for k, v in observation.items():
@@ -84,9 +84,9 @@ class Reporter(object):
                 logger.info('%s (dev): %.3f' % (k, v))
 
             if is_eval:
-                self.add_tensorboard_scalar('train' + '/' + metric + '/' + name, v)
-            else:
                 self.add_tensorboard_scalar('dev' + '/' + metric + '/' + name, v)
+            else:
+                self.add_tensorboard_scalar('train' + '/' + metric + '/' + name, v)
 
     def add_tensorboard_scalar(self, key, value):
         """Add scalar value to tensorboard."""
