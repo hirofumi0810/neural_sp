@@ -126,6 +126,7 @@ def make_args(**kwargs):
           'chunk_size_left': 40, 'chunk_size_right': 40}),
         # Multi-task
         ({'enc_type': 'blstm', 'n_layers_sub1': 3}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'chunk_size_right': 40}),
         ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2}),
         ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2, 'task_specific_layer': True}),
     ]

@@ -320,9 +320,10 @@ class RNNEncoder(EncoderBase):
                 xs, xlens, xs_sub1 = self._forward_full_context(xs, xlens)
             else:
                 xs, xlens, xs_sub1 = self._forward_latency_contolled(xs, xlens, N_l, N_r, streaming)
+            xs_sub1 = xs_sub1.transpose(1, 0)
             xlens_sub1 = xlens.clone()
             if task == 'ys_sub1':
-                eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1.transpose(1, 0), xlens_sub1
+                eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens_sub1
                 return eouts
         else:
             for lth in range(self.n_layers):
