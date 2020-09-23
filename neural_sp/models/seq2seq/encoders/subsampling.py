@@ -23,7 +23,7 @@ class ConcatSubsampler(nn.Module):
         if subsampling_factor > 1:
             self.proj = nn.Linear(n_units * subsampling_factor, n_units)
 
-    def forward(self, xs, xlens, batch_first=False):
+    def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
 
         Args:
@@ -74,7 +74,7 @@ class Conv1dSubsampler(nn.Module):
                                      padding=0,
                                      ceil_mode=True)
 
-    def forward(self, xs, xlens, batch_first=False):
+    def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
 
         Args:
@@ -108,7 +108,7 @@ class DropSubsampler(nn.Module):
 
         self.subsampling_factor = subsampling_factor
 
-    def forward(self, xs, xlens, batch_first=False):
+    def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
 
         Args:
@@ -141,7 +141,7 @@ class AddSubsampler(nn.Module):
         self.subsampling_factor = subsampling_factor
         assert subsampling_factor <= 2
 
-    def forward(self, xs, xlens, batch_first=False):
+    def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
 
         Args:
@@ -156,15 +156,15 @@ class AddSubsampler(nn.Module):
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        xmax, bs, idim = xs.size()
-
         if batch_first:
+            bs, xmax, idim = xs.size()
             xs_even = xs[:, ::self.subsampling_factor]
             if xmax % 2 == 0:
                 xs_odd = xs[:, 1::self.subsampling_factor]
             else:
                 xs_odd = torch.cat([xs, xs.new_zeros(bs, 1, idim)], dim=1)[:, 1::self.subsampling_factor]
         else:
+            xmax, bs, idim = xs.size()
             xs_even = xs[::self.subsampling_factor]
             if xmax % 2 == 0:
                 xs_odd = xs[1::self.subsampling_factor]
@@ -191,7 +191,7 @@ class MaxpoolSubsampler(nn.Module):
                                      padding=0,
                                      ceil_mode=True)
 
-    def forward(self, xs, xlens, batch_first=False):
+    def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
 
         Args:

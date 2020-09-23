@@ -415,7 +415,7 @@ class ConformerEncoder(EncoderBase):
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
 
                 if self.subsample is not None:
-                    xs, xlens = self.subsample[lth](xs, xlens, batch_first=True)
+                    xs, xlens = self.subsample[lth](xs, xlens)
                     emax = xlens.max().item()
                     N_l = max(0, N_l // self.subsample[lth].subsampling_factor)
                     N_c = N_c // self.subsample[lth].subsampling_factor
@@ -456,7 +456,7 @@ class ConformerEncoder(EncoderBase):
                         return eouts
 
                 if self.subsample is not None:
-                    xs, xlens = self.subsample[lth](xs, xlens, batch_first=True)
+                    xs, xlens = self.subsample[lth](xs, xlens)
                     xx_mask = make_san_mask(xs, xlens, self.unidirectional)
                     # Create sinusoidal positional embeddings for relative positional encoding
                     clamp_len = clamp_len // self.subsample[lth].subsampling_factor

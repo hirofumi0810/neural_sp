@@ -155,10 +155,10 @@ class RNNEncoder(EncoderBase):
                     raise ValueError('enc_type must be "(conv_)(b)lstm" or "(conv_)(b)gru".')
 
                 if self.lc_bidir:
-                    self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=False)]
-                    self.rnn_bwd += [rnn_i(self._odim, n_units, 1, batch_first=False)]
+                    self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=True)]
+                    self.rnn_bwd += [rnn_i(self._odim, n_units, 1, batch_first=True)]
                 else:
-                    self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=False,
+                    self.rnn += [rnn_i(self._odim, n_units, 1, batch_first=True,
                                        bidirectional=self.bidirectional)]
                 self._odim = n_units if bidir_sum_fwd_bwd else n_units * self.n_dirs
 
@@ -184,14 +184,14 @@ class RNNEncoder(EncoderBase):
                 # Task specific layer
                 if lth == n_layers_sub1 - 1 and task_specific_layer:
                     self.rnn_sub1 = rnn_i(self._odim, n_units, 1,
-                                          batch_first=False,
+                                          batch_first=True,
                                           bidirectional=self.bidirectional)
                     if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                         self.bridge_sub1 = nn.Linear(n_units, last_proj_dim)
                 if lth == n_layers_sub2 - 1 and task_specific_layer:
                     assert not self.lc_bidir
                     self.rnn_sub2 = rnn_i(self._odim, n_units, 1,
-                                          batch_first=False,
+                                          batch_first=True,
                                           bidirectional=self.bidirectional)
                     if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                         self.bridge_sub2 = nn.Linear(n_units, last_proj_dim)
@@ -312,8 +312,6 @@ class RNNEncoder(EncoderBase):
             self.reset_cache()
             # NOTE: do not reset here for streaming inference
 
-        xs = xs.transpose(1, 0)  # time-first
-
         if self.lc_bidir:
             # Flip the layer and time loop
             if self.chunk_size_left <= 0:
@@ -321,7 +319,6 @@ class RNNEncoder(EncoderBase):
             else:
                 xs, xlens, xs_sub1 = self._forward_latency_contolled(xs, xlens, N_l, N_r, streaming)
             if xs_sub1 is not None:
-                xs_sub1 = xs_sub1.transpose(1, 0)
                 xlens_sub1 = xlens.clone()
             if task == 'ys_sub1':
                 eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens_sub1
@@ -359,7 +356,6 @@ class RNNEncoder(EncoderBase):
             xs = self.bridge(xs)
 
         if task in ['all', 'ys']:
-            xs = xs.transpose(1, 0)  # batch-first
             if not self.lc_bidir:
                 xs = xs[perm_ids_unsort]
                 xlens = xlens[perm_ids_unsort]
@@ -374,20 +370,16 @@ class RNNEncoder(EncoderBase):
         """Full context BPTT encoding. This is used for pre-training latency-controlled bidirectional encoder.
 
         Args:
-            xs (FloatTensor): `[T, B, n_units]`
+            xs (FloatTensor): `[B, T, n_units]`
         Returns:
-            xs (FloatTensor): `[T, B, n_units]`
+            xs (FloatTensor): `[B, T, n_units]`
 
         """
         xs_sub1 = None
         for lth in range(self.n_layers):
             self.rnn[lth].flatten_parameters()  # for multi-GPUs
             self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
-            # bwd
-            xs_bwd = torch.flip(xs, dims=[0])
-            xs_bwd, _ = self.rnn_bwd[lth](xs_bwd)
-            xs_bwd = torch.flip(xs_bwd, dims=[0])
-            # fwd
+            xs_bwd = torch.flip(self.rnn_bwd[lth](torch.flip(xs, dims=[1]))[0], dims=[1])
             xs_fwd, _ = self.rnn[lth](xs)
             if self.bidir_sum:
                 xs = xs_fwd + xs_bwd
@@ -416,14 +408,12 @@ class RNNEncoder(EncoderBase):
         """Streaming encoding for the conventional latency-controlled bidirectional encoder.
 
         Args:
-            xs (FloatTensor): `[T, B, n_units]`
+            xs (FloatTensor): `[B, T, n_units]`
         Returns:
-            xs (FloatTensor): `[T, B, n_units]`
+            xs (FloatTensor): `[B, T, n_units]`
 
         """
-        xs_sub1 = None
-
-        xmax, bs, _ = xs.size()
+        bs, xmax, _ = xs.size()
         n_chunks = math.ceil(xmax / N_l)
 
         if streaming:
@@ -432,26 +422,25 @@ class RNNEncoder(EncoderBase):
         xs_chunks = []
         xs_chunks_sub1 = []
         for chunk_idx, t in enumerate(range(0, N_l * n_chunks, N_l)):
-            xs_chunk = xs[t:t + (N_l + N_r)]
+            xs_chunk = xs[:, t:t + (N_l + N_r)]
             _N_l = N_l
 
             for lth in range(self.n_layers):
                 self.rnn[lth].flatten_parameters()  # for multi-GPUs
                 self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
                 # bwd
-                xs_chunk_bwd = torch.flip(xs_chunk, dims=[0])
-                xs_chunk_bwd, _ = self.rnn_bwd[lth](xs_chunk_bwd)
-                xs_chunk_bwd = torch.flip(xs_chunk_bwd, dims=[0])  # `[B, _N_l+_N_r, n_units]`
+                xs_chunk_bwd = torch.flip(self.rnn_bwd[lth](
+                    torch.flip(xs_chunk, dims=[1]))[0], dims=[1])  # `[B, _N_l+_N_r, n_units]`
                 # fwd
-                if xs_chunk.size(0) <= _N_l:
+                if xs_chunk.size(1) <= _N_l:
                     xs_chunk_fwd, self.hx_fwd[lth] = self.rnn[lth](xs_chunk,
                                                                    hx=self.hx_fwd[lth])
                 else:
-                    xs_chunk_fwd1, self.hx_fwd[lth] = self.rnn[lth](xs_chunk[:_N_l],
+                    xs_chunk_fwd1, self.hx_fwd[lth] = self.rnn[lth](xs_chunk[:, :_N_l],
                                                                     hx=self.hx_fwd[lth])
-                    xs_chunk_fwd2, _ = self.rnn[lth](xs_chunk[_N_l:],
+                    xs_chunk_fwd2, _ = self.rnn[lth](xs_chunk[:, _N_l:],
                                                      hx=self.hx_fwd[lth])
-                    xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=0)  # `[_N_l+_N_r, B, n_units]`
+                    xs_chunk_fwd = torch.cat([xs_chunk_fwd1, xs_chunk_fwd2], dim=1)  # `[B, _N_l+_N_r, n_units]`
                     # NOTE: xs_chunk_fwd2 is used for xs_chunk_bwd in the next layer
                 if self.bidir_sum:
                     xs_chunk = xs_chunk_fwd + xs_chunk_bwd
@@ -477,16 +466,18 @@ class RNNEncoder(EncoderBase):
                         xlens = xlens_tmp
                     _N_l = _N_l // self.subsample[lth].subsampling_factor
 
-            xs_chunks.append(xs_chunk[:_N_l])
+            xs_chunks.append(xs_chunk[:, :_N_l])
             if self.n_layers_sub1 > 0:
-                xs_chunks_sub1.append(xs_chunk_sub1[:_N_l])
+                xs_chunks_sub1.append(xs_chunk_sub1[:, :_N_l])
 
             if streaming:
                 break
 
-        xs = torch.cat(xs_chunks, dim=0)
+        xs = torch.cat(xs_chunks, dim=1)
         if self.n_layers_sub1 > 0:
-            xs_sub1 = torch.cat(xs_chunks_sub1, dim=0)
+            xs_sub1 = torch.cat(xs_chunks_sub1, dim=1)
+        else:
+            xs_sub1 = None
 
         return xs, xlens, xs_sub1
 
@@ -500,7 +491,6 @@ class RNNEncoder(EncoderBase):
             xs_sub = xs.clone()
         if getattr(self, 'bridge_' + module) is not None:
             xs_sub = getattr(self, 'bridge_' + module)(xs_sub)
-        xs_sub = xs_sub.transpose(1, 0)  # batch-first
         xs_sub = xs_sub[perm_ids_unsort]
         xlens_sub = xlens[perm_ids_unsort]
         return xs_sub, xlens_sub
@@ -515,9 +505,9 @@ class Padding(nn.Module):
 
     def forward(self, xs, xlens, rnn, prev_state=None, streaming=False):
         if not streaming and xlens is not None:
-            xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=False)
+            xs = pack_padded_sequence(xs, xlens.tolist(), batch_first=True)
             xs, state = rnn(xs, hx=prev_state)
-            xs = pad_packed_sequence(xs, batch_first=False)[0]
+            xs = pad_packed_sequence(xs, batch_first=True)[0]
         else:
             xs, state = rnn(xs, hx=prev_state)
 

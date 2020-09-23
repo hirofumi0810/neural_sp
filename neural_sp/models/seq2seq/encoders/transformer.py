@@ -284,7 +284,7 @@ class TransformerEncoder(EncoderBase):
                            help='current chunk size (and hop size) for latency-controlled Transformer encoder')
         group.add_argument('--lc_chunk_size_right', type=int, default=0,
                            help='right chunk size for latency-controlled Transformer encoder')
-        group.add_argument('--lc_type', type=str, default='mask',
+        group.add_argument('--lc_type', type=str, default='reshape',
                            choices=['reshape', 'mask'],
                            help='implementation methods of latency-controlled Transformer encoder')
         return parser
@@ -418,7 +418,7 @@ class TransformerEncoder(EncoderBase):
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
 
                 if self.subsample is not None:
-                    xs, xlens = self.subsample[lth](xs, xlens, batch_first=True)
+                    xs, xlens = self.subsample[lth](xs, xlens)
                     emax = xlens.max().item()
                     N_l = max(0, N_l // self.subsample[lth].subsampling_factor)
                     N_c = N_c // self.subsample[lth].subsampling_factor
@@ -464,7 +464,7 @@ class TransformerEncoder(EncoderBase):
                         return eouts
 
                 if self.subsample is not None:
-                    xs, xlens = self.subsample[lth](xs, xlens, batch_first=True)
+                    xs, xlens = self.subsample[lth](xs, xlens)
                     xx_mask = make_san_mask(xs, xlens, self.unidirectional)
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
