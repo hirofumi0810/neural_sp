@@ -23,26 +23,32 @@ class ConcatSubsampler(nn.Module):
         if subsampling_factor > 1:
             self.proj = nn.Linear(n_units * subsampling_factor, n_units)
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, F]`
+            xs (FloatTensor): `[B, T, F]` or `[T, B, F]`
             xlens (IntTensor): `[B]` (on CPU)
+            batch_first (bool): operate batch-first tensor
         Returns:
-            xs (FloatTensor): `[B, T', F']`
+            xs (FloatTensor): `[B, T', F']` or `[T', B, F']`
             xlens (IntTensor): `[B]` (on CPU)
 
         """
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        xs = xs.transpose(1, 0).contiguous()
+        if batch_first:
+            xs = xs.transpose(1, 0).contiguous()
+
         xs = [torch.cat([xs[t - r:t - r + 1] for r in range(self.subsampling_factor - 1, -1, -1)], dim=-1)
               for t in range(xs.size(0)) if (t + 1) % self.subsampling_factor == 0]
-        xs = torch.cat(xs, dim=0).transpose(1, 0)
+        xs = torch.cat(xs, dim=0)
         # NOTE: Exclude the last frames if the length is not divisible
         xs = torch.relu(self.proj(xs))
+
+        if batch_first:
+            xs = xs.transpose(1, 0)
 
         xlens = [max(1, i.item() // self.subsampling_factor) for i in xlens]
         xlens = torch.IntTensor(xlens)
@@ -68,22 +74,27 @@ class Conv1dSubsampler(nn.Module):
                                      padding=0,
                                      ceil_mode=True)
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, F]`
+            xs (FloatTensor): `[B, T, F]` or `[T, B, F]`
             xlens (IntTensor): `[B]` (on CPU)
+            batch_first (bool): operate batch-first tensor
         Returns:
-            xs (FloatTensor): `[B, T', F']`
+            xs (FloatTensor): `[B, T', F']` or `[T', B, F']`
             xlens (IntTensor): `[B]` (on CPU)
 
         """
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        xs = torch.relu(self.conv1d(xs.transpose(2, 1)))
-        xs = self.pool(xs).transpose(2, 1).contiguous()
+        if batch_first:
+            xs = torch.relu(self.conv1d(xs.transpose(2, 1)))
+            xs = self.pool(xs).transpose(2, 1).contiguous()
+        else:
+            xs = torch.relu(self.conv1d(xs.permute(1, 2, 0)))
+            xs = self.pool(xs).permute(2, 0, 1).contiguous()
 
         xlens = update_lens_1d(xlens, self.pool)
         return xs, xlens
@@ -97,21 +108,24 @@ class DropSubsampler(nn.Module):
 
         self.subsampling_factor = subsampling_factor
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, F]`
+            xs (FloatTensor): `[B, T, F]` or `[T, B, F]`
             xlens (IntTensor): `[B]` (on CPU)
         Returns:
-            xs (FloatTensor): `[B, T', F']`
+            xs (FloatTensor): `[B, T', F']` or `[T', B, F']`
             xlens (IntTensor): `[B]` (on CPU)
 
         """
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        xs = xs[:, ::self.subsampling_factor]
+        if batch_first:
+            xs = xs[:, ::self.subsampling_factor]
+        else:
+            xs = xs[::self.subsampling_factor]
 
         xlens = [max(1, math.ceil(i.item() / self.subsampling_factor)) for i in xlens]
         xlens = torch.IntTensor(xlens)
@@ -127,27 +141,36 @@ class AddSubsampler(nn.Module):
         self.subsampling_factor = subsampling_factor
         assert subsampling_factor <= 2
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, F]`
+            xs (FloatTensor): `[B, T, F]` or `[T, B, F]`
             xlens (IntTensor): `[B]` (on CPU)
+            batch_first (bool): operate batch-first tensor
         Returns:
-            xs (FloatTensor): `[B, T', F']`
+            xs (FloatTensor): `[B, T', F']` or `[T', B, F']`
             xlens (IntTensor): `[B]` (on CPU)
 
         """
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        bs, xmax, idim = xs.size()
-
-        xs_even = xs[:, ::self.subsampling_factor]
-        if xmax % 2 == 0:
-            xs_odd = xs[:, 1::self.subsampling_factor]
+        if batch_first:
+            bs, xmax, idim = xs.size()
+            xs_even = xs[:, ::self.subsampling_factor]
+            if xmax % 2 == 0:
+                xs_odd = xs[:, 1::self.subsampling_factor]
+            else:
+                xs_odd = torch.cat([xs, xs.new_zeros(bs, 1, idim)], dim=1)[:, 1::self.subsampling_factor]
         else:
-            xs_odd = torch.cat([xs, xs.new_zeros(bs, 1, idim)], dim=1)[:, 1::self.subsampling_factor]
+            xmax, bs, idim = xs.size()
+            xs_even = xs[::self.subsampling_factor]
+            if xmax % 2 == 0:
+                xs_odd = xs[1::self.subsampling_factor]
+            else:
+                xs_odd = torch.cat([xs, xs.new_zeros(1, bs, idim)], dim=0)[1::self.subsampling_factor]
+
         xs = xs_odd + xs_even
 
         xlens = [max(1, math.ceil(i.item() / self.subsampling_factor)) for i in xlens]
@@ -168,21 +191,25 @@ class MaxpoolSubsampler(nn.Module):
                                      padding=0,
                                      ceil_mode=True)
 
-    def forward(self, xs, xlens):
+    def forward(self, xs, xlens, batch_first=True):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, F]`
+            xs (FloatTensor): `[B, T, F]` or `[T, B, F]`
             xlens (IntTensor): `[B]` (on CPU)
+            batch_first (bool): operate batch-first tensor
         Returns:
-            xs (FloatTensor): `[B, T', F']`
+            xs (FloatTensor): `[B, T', F']` or `[T', B, F']`
             xlens (IntTensor): `[B]` (on CPU)
 
         """
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        xs = self.pool(xs.transpose(2, 1)).transpose(2, 1).contiguous()
+        if batch_first:
+            xs = self.pool(xs.transpose(2, 1)).transpose(2, 1).contiguous()
+        else:
+            xs = self.pool(xs.permute(1, 2, 0)).permute(2, 0, 1).contiguous()
 
         xlens = update_lens_1d(xlens, self.pool)
         return xs, xlens

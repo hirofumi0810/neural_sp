@@ -284,7 +284,7 @@ class TransformerEncoder(EncoderBase):
                            help='current chunk size (and hop size) for latency-controlled Transformer encoder')
         group.add_argument('--lc_chunk_size_right', type=int, default=0,
                            help='right chunk size for latency-controlled Transformer encoder')
-        group.add_argument('--lc_type', type=str, default='mask',
+        group.add_argument('--lc_type', type=str, default='reshape',
                            choices=['reshape', 'mask'],
                            help='implementation methods of latency-controlled Transformer encoder')
         return parser
