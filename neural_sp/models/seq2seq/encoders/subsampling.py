@@ -27,20 +27,19 @@ class ConcatSubsampler(nn.Module):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, F]`
+            xs (FloatTensor): `[T, B, F]`
             xlens (IntTensor): `[B]` (on CPU)
         Returns:
-            xs (FloatTensor): `[B, T', F']`
+            xs (FloatTensor): `[T', B, F']`
             xlens (IntTensor): `[B]` (on CPU)
 
         """
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        xs = xs.transpose(1, 0).contiguous()
         xs = [torch.cat([xs[t - r:t - r + 1] for r in range(self.subsampling_factor - 1, -1, -1)], dim=-1)
               for t in range(xs.size(0)) if (t + 1) % self.subsampling_factor == 0]
-        xs = torch.cat(xs, dim=0).transpose(1, 0)
+        xs = torch.cat(xs, dim=0)
         # NOTE: Exclude the last frames if the length is not divisible
         xs = torch.relu(self.proj(xs))
 
@@ -72,18 +71,19 @@ class Conv1dSubsampler(nn.Module):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, F]`
+            xs (FloatTensor): `[T, B, F]`
             xlens (IntTensor): `[B]` (on CPU)
         Returns:
-            xs (FloatTensor): `[B, T', F']`
+            xs (FloatTensor): `[T', B, F']`
             xlens (IntTensor): `[B]` (on CPU)
 
         """
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        xs = torch.relu(self.conv1d(xs.transpose(2, 1)))
-        xs = self.pool(xs).transpose(2, 1).contiguous()
+        xs = xs.permute(1, 2, 0)  # `[B, F, T]`
+        xs = torch.relu(self.conv1d(xs))
+        xs = self.pool(xs).permute(2, 0, 1).contiguous()
 
         xlens = update_lens_1d(xlens, self.pool)
         return xs, xlens
@@ -101,17 +101,17 @@ class DropSubsampler(nn.Module):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, F]`
+            xs (FloatTensor): `[T, B, F]`
             xlens (IntTensor): `[B]` (on CPU)
         Returns:
-            xs (FloatTensor): `[B, T', F']`
+            xs (FloatTensor): `[T', B, F']`
             xlens (IntTensor): `[B]` (on CPU)
 
         """
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        xs = xs[:, ::self.subsampling_factor]
+        xs = xs[::self.subsampling_factor]
 
         xlens = [max(1, math.ceil(i.item() / self.subsampling_factor)) for i in xlens]
         xlens = torch.IntTensor(xlens)
@@ -131,23 +131,23 @@ class AddSubsampler(nn.Module):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, F]`
+            xs (FloatTensor): `[T, B, F]`
             xlens (IntTensor): `[B]` (on CPU)
         Returns:
-            xs (FloatTensor): `[B, T', F']`
+            xs (FloatTensor): `[T', B, F']`
             xlens (IntTensor): `[B]` (on CPU)
 
         """
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        bs, xmax, idim = xs.size()
+        xmax, bs, idim = xs.size()
 
-        xs_even = xs[:, ::self.subsampling_factor]
+        xs_even = xs[::self.subsampling_factor]
         if xmax % 2 == 0:
-            xs_odd = xs[:, 1::self.subsampling_factor]
+            xs_odd = xs[1::self.subsampling_factor]
         else:
-            xs_odd = torch.cat([xs, xs.new_zeros(bs, 1, idim)], dim=1)[:, 1::self.subsampling_factor]
+            xs_odd = torch.cat([xs, xs.new_zeros(1, bs, idim)], dim=0)[1::self.subsampling_factor]
         xs = xs_odd + xs_even
 
         xlens = [max(1, math.ceil(i.item() / self.subsampling_factor)) for i in xlens]
@@ -172,17 +172,18 @@ class MaxpoolSubsampler(nn.Module):
         """Forward pass.
 
         Args:
-            xs (FloatTensor): `[B, T, F]`
+            xs (FloatTensor): `[T, B, F]`
             xlens (IntTensor): `[B]` (on CPU)
         Returns:
-            xs (FloatTensor): `[B, T', F']`
+            xs (FloatTensor): `[T', B, F']`
             xlens (IntTensor): `[B]` (on CPU)
 
         """
         if self.subsampling_factor == 1:
             return xs, xlens
 
-        xs = self.pool(xs.transpose(2, 1)).transpose(2, 1).contiguous()
+        xs = xs.permute(1, 2, 0)  # `[B, F, T]`
+        xs = self.pool(xs).permute(2, 0, 1).contiguous()
 
         xlens = update_lens_1d(xlens, self.pool)
         return xs, xlens
