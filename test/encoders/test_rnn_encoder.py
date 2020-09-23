@@ -144,6 +144,12 @@ def test_forward(args):
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
         xlens = torch.IntTensor([len(x) - i * enc.subsampling_factor for i, x in enumerate(xs)])
+
+        # shuffle
+        perm_ids = torch.randperm(batch_size)
+        xs = xs[perm_ids]
+        xlens = xlens[perm_ids]
+
         xs = pad_list([np2tensor(x, device).float() for x in xs], 0.)
         enc_out_dict = enc(xs, xlens, task='all')
 
