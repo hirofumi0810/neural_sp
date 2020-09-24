@@ -48,10 +48,10 @@ class TransformerEncoder(EncoderBase):
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
-        last_proj_dim (int): dimension of the last projection layer
+        ffn_activation (str): nonolinear function for PositionwiseFeedForward
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
-        ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        last_proj_dim (int): dimension of the last projection layer
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
@@ -381,7 +381,7 @@ class TransformerEncoder(EncoderBase):
             xs = xs.contiguous().view(bs, -1, xs.size(2))[:, :emax]  # `[B, emax, d_model]`
 
         if self.latency_controlled:
-            # streaming Transformer encoder
+            # streaming encoder
             emax = xlens.max().item()
 
             pos_embs = None
