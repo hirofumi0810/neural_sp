@@ -82,8 +82,8 @@ class TransformerEncoder(EncoderBase):
 
     def __init__(self, input_dim, enc_type, n_heads,
                  n_layers, n_layers_sub1, n_layers_sub2,
-                 d_model, d_ff, ffn_bottleneck_dim, last_proj_dim,
-                 pe_type, layer_norm_eps, ffn_activation,
+                 d_model, d_ff, ffn_bottleneck_dim, ffn_activation,
+                 pe_type, layer_norm_eps, last_proj_dim,
                  dropout_in, dropout, dropout_att, dropout_layer,
                  subsample, subsample_type, n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
@@ -105,7 +105,6 @@ class TransformerEncoder(EncoderBase):
             raise ValueError('Set n_layers_sub1 between 1 to n_layers.')
         if n_layers_sub2 < 0 or (n_layers_sub2 > 1 and n_layers_sub1 < n_layers_sub2):
             raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1.')
-        assert enc_type in ['transformer', 'conv_transformer', 'conv_uni_transformer']
 
         self.d_model = d_model
         self.n_layers = n_layers
