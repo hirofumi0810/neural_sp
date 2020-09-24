@@ -8,8 +8,6 @@
 
 import copy
 import logging
-import math
-import numpy as np
 import random
 import torch
 import torch.nn as nn
@@ -19,23 +17,14 @@ from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
-from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
-from neural_sp.models.seq2seq.encoders.subsampling import AddSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import MaxpoolSubsampler
-from neural_sp.models.seq2seq.encoders.transformer import make_san_mask
-from neural_sp.models.seq2seq.encoders.transformer import make_time_restricted_san_mask
-from neural_sp.models.seq2seq.encoders.utils import chunkwise
-from neural_sp.models.torch_utils import tensor2np
+from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
 
 random.seed(1)
 
 logger = logging.getLogger(__name__)
 
 
-class ConformerEncoder(EncoderBase):
+class ConformerEncoder(TransformerEncoder):
     """Conformer encoder.
 
     Args:
@@ -49,10 +38,10 @@ class ConformerEncoder(EncoderBase):
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
-        last_proj_dim (int): dimension of the last projection layer
+        ffn_activation (str): nonolinear function for PositionwiseFeedForward
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
-        ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        last_proj_dim (int): dimension of the last projection layer
         dropout_in (float): dropout probability for input-hidden connection
         dropout (float): dropout probabilities for linear layers
         dropout_att (float): dropout probabilities for attention distributions
@@ -83,8 +72,8 @@ class ConformerEncoder(EncoderBase):
 
     def __init__(self, input_dim, enc_type, n_heads, kernel_size,
                  n_layers, n_layers_sub1, n_layers_sub2,
-                 d_model, d_ff, ffn_bottleneck_dim, last_proj_dim,
-                 pe_type, layer_norm_eps, ffn_activation,
+                 d_model, d_ff, ffn_bottleneck_dim, ffn_activation,
+                 pe_type, layer_norm_eps, last_proj_dim,
                  dropout_in, dropout, dropout_att, dropout_layer,
                  subsample, subsample_type, n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
@@ -92,128 +81,23 @@ class ConformerEncoder(EncoderBase):
                  task_specific_layer, param_init, clamp_len,
                  chunk_size_left, chunk_size_current, chunk_size_right, streaming_type):
 
-        super(ConformerEncoder, self).__init__()
-
-        # parse subsample
-        subsamples = [1] * n_layers
-        for lth, s in enumerate(list(map(int, subsample.split('_')[:n_layers]))):
-            subsamples[lth] = s
-
-        if len(subsamples) > 0 and len(subsamples) != n_layers:
-            raise ValueError('subsample must be the same size as n_layers. n_layers: %d, subsample: %s' %
-                             (n_layers, subsamples))
-        if n_layers_sub1 < 0 or (n_layers_sub1 > 1 and n_layers < n_layers_sub1):
-            raise ValueError('Set n_layers_sub1 between 1 to n_layers.')
-        if n_layers_sub2 < 0 or (n_layers_sub2 > 1 and n_layers_sub1 < n_layers_sub2):
-            raise ValueError('Set n_layers_sub2 between 1 to n_layers_sub1.')
-        assert enc_type in ['conformer', 'conv_conformer', 'conv_uni_conformer']
-
-        self.d_model = d_model
-        self.n_layers = n_layers
-        self.n_heads = n_heads
-        self.pe_type = pe_type
-        self.scale = math.sqrt(d_model)
-        self.unidirectional = 'uni' in enc_type
-
-        # for streaming encoder
-        self.chunk_size_left = chunk_size_left
-        self.chunk_size_current = chunk_size_current
-        self.chunk_size_right = chunk_size_right
-        self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
-        self.streaming_type = streaming_type
-        # reshape) not lookahead frames in CNN layers, but requires some additional computations
-        # mask) there are some lookahead frames in CNN layers, no additional computations
-        if self.latency_controlled:
-            assert n_layers_sub1 == 0
-            assert n_layers_sub2 == 0
-            assert not self.unidirectional
-
-        # for hierarchical encoder
-        self.n_layers_sub1 = n_layers_sub1
-        self.n_layers_sub2 = n_layers_sub2
-        self.task_specific_layer = task_specific_layer
-
-        # for bridge layers
-        self.bridge = None
-        self.bridge_sub1 = None
-        self.bridge_sub2 = None
-
-        # for attention plot
-        self.aws_dict = {}
-        self.data_dict = {}
-
-        # Setting for CNNs
-        if 'conv' in enc_type:
-            assert conv_channels
-            assert n_stacks == 1 and n_splices == 1
-            self.conv = ConvEncoder(input_dim,
-                                    in_channel=conv_in_channel,
-                                    channels=conv_channels,
-                                    kernel_sizes=conv_kernel_sizes,
-                                    strides=conv_strides,
-                                    poolings=conv_poolings,
-                                    dropout=0.,
-                                    batch_norm=conv_batch_norm,
-                                    layer_norm=conv_layer_norm,
-                                    layer_norm_eps=layer_norm_eps,
-                                    residual=False,
-                                    bottleneck_dim=d_model,
-                                    param_init=conv_param_init)
-            self._odim = self.conv.output_dim
-        else:
-            self.conv = None
-            self._odim = input_dim * n_splices * n_stacks
-            self.embed = nn.Linear(self._odim, d_model)
-
-        # calculate subsampling factor
-        self._factor = 1
-        if self.conv is not None:
-            self._factor *= self.conv.subsampling_factor
-        self.subsample = None
-        if np.prod(subsamples) > 1:
-            self._factor *= np.prod(subsamples)
-            if subsample_type == 'max_pool':
-                self.subsample = nn.ModuleList([MaxpoolSubsampler(factor)
-                                                for factor in subsamples])
-            elif subsample_type == 'concat':
-                self.subsample = nn.ModuleList([ConcatSubsampler(factor, self._odim)
-                                                for factor in subsamples])
-            elif subsample_type == 'drop':
-                self.subsample = nn.ModuleList([DropSubsampler(factor)
-                                                for factor in subsamples])
-            elif subsample_type == '1dconv':
-                self.subsample = nn.ModuleList([Conv1dSubsampler(factor, self._odim)
-                                                for factor in subsamples])
-            elif subsample_type == 'add':
-                self.subsample = nn.ModuleList([AddSubsampler(factor)
-                                                for factor in subsamples])
-
-        if self.chunk_size_left > 0:
-            assert self.chunk_size_left % self._factor == 0
-        if self.chunk_size_current > 0:
-            assert self.chunk_size_current % self._factor == 0
-        if self.chunk_size_right > 0:
-            assert self.chunk_size_right % self._factor == 0
-
-        self.clamp_len = clamp_len
-        self.pos_emb = XLPositionalEmbedding(d_model, dropout)
-        if pe_type == 'relative_xl':
-            self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-            self.v_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-            # NOTE: u_bias and v_bias are global parameters
-        elif pe_type == 'relative':
-            self.u_bias = None
-            self.v_bias = None
-        else:
-            raise ValueError(pe_type)
+        super(ConformerEncoder, self).__init__(
+            input_dim, enc_type, n_heads,
+            n_layers, n_layers_sub1, n_layers_sub2,
+            d_model, d_ff, ffn_bottleneck_dim, ffn_activation,
+            pe_type, layer_norm_eps, last_proj_dim,
+            dropout_in, dropout, dropout_att, dropout_layer,
+            subsample, subsample_type, n_stacks, n_splices,
+            conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
+            conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
+            task_specific_layer, param_init, clamp_len,
+            chunk_size_left, chunk_size_current, chunk_size_right, streaming_type)
 
         self.layers = nn.ModuleList([copy.deepcopy(ConformerEncoderBlock(
             d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init, pe_type,
             ffn_bottleneck_dim, self.unidirectional))
             for _ in range(n_layers)])
-        self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self._odim = d_model
 
         if n_layers_sub1 > 0:
             if task_specific_layer:
@@ -221,9 +105,6 @@ class ConformerEncoder(EncoderBase):
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
                     ffn_bottleneck_dim, self.unidirectional)
-            self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-            if last_proj_dim > 0 and last_proj_dim != self.output_dim:
-                self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
 
         if n_layers_sub2 > 0:
             if task_specific_layer:
@@ -231,13 +112,6 @@ class ConformerEncoder(EncoderBase):
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
                     ffn_bottleneck_dim, self.unidirectional)
-            self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-            if last_proj_dim > 0 and last_proj_dim != self.output_dim:
-                self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
-
-        if last_proj_dim > 0 and last_proj_dim != self.output_dim:
-            self.bridge = nn.Linear(self._odim, last_proj_dim)
-            self._odim = last_proj_dim
 
         self.reset_parameters(param_init)
 
@@ -311,182 +185,6 @@ class ConformerEncoder(EncoderBase):
             dir_name += '_' + args.lc_type
 
         return dir_name
-
-    def reset_parameters(self, param_init):
-        """Initialize parameters."""
-        if param_init == 'xavier_uniform':
-            logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
-            if self.conv is None:
-                nn.init.xavier_uniform_(self.embed.weight)
-                nn.init.constant_(self.embed.bias, 0.)
-            if self.bridge is not None:
-                nn.init.xavier_uniform_(self.bridge.weight)
-                nn.init.constant_(self.bridge.bias, 0.)
-            if self.bridge_sub1 is not None:
-                nn.init.xavier_uniform_(self.bridge_sub1.weight)
-                nn.init.constant_(self.bridge_sub1.bias, 0.)
-            if self.bridge_sub2 is not None:
-                nn.init.xavier_uniform_(self.bridge_sub2.weight)
-                nn.init.constant_(self.bridge_sub2.bias, 0.)
-            if self.pe_type == 'relative_xl':
-                nn.init.xavier_uniform_(self.u_bias)
-                nn.init.xavier_uniform_(self.v_bias)
-
-    def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
-        """Forward pass.
-
-        Args:
-            xs (FloatTensor): `[B, T, input_dim]`
-            xlens (InteTensor): `[B]` (on CPU)
-            task (str): ys/ys_sub1/ys_sub2
-            streaming (bool): streaming encoding
-            lookback (bool): truncate leftmost frames for lookback in CNN context
-            lookahead (bool): truncate rightmost frames for lookahead in CNN context
-        Returns:
-            eouts (dict):
-                xs (FloatTensor): `[B, T, d_model]`
-                xlens (InteTensor): `[B]` (on CPU)
-
-        """
-        eouts = {'ys': {'xs': None, 'xlens': None},
-                 'ys_sub1': {'xs': None, 'xlens': None},
-                 'ys_sub2': {'xs': None, 'xlens': None}}
-
-        N_l = self.chunk_size_left
-        N_c = self.chunk_size_current
-        N_r = self.chunk_size_right
-        bs = xs.size(0)
-        n_chunks = 0
-        clamp_len = self.clamp_len
-
-        if self.latency_controlled:
-            if self.streaming_type == 'reshape':
-                xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
-            elif self.streaming_type == 'mask':
-                # xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
-                xs = chunkwise(xs, 0, N_c, 0)  # `[B * n_chunks, N_c, idim]`
-            n_chunks = xs.size(0) // bs
-
-        if self.conv is None:
-            xs = self.embed(xs)
-        else:
-            # Path through CNN blocks
-            xs, xlens = self.conv(xs, xlens)
-            N_l = max(0, N_l // self.conv.subsampling_factor)
-            N_c = N_c // self.conv.subsampling_factor
-            N_r = N_r // self.conv.subsampling_factor
-            clamp_len = clamp_len // self.conv.subsampling_factor
-
-        if self.streaming_type == 'mask':
-            # Extract the center region
-            emax = xlens.max().item()
-            xs = xs.contiguous().view(bs, -1, xs.size(2))[:, :emax]  # `[B, emax, d_model]`
-
-        if self.latency_controlled:
-            # streaming Conformer encoder
-            emax = xlens.max().item()
-
-            xs = xs * self.scale
-            pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
-
-            if self.streaming_type == 'reshape':
-                xx_mask_first = None
-                xx_mask = None  # NOTE: no mask to avoid masking all frames in a chunk
-            elif self.streaming_type == 'mask':
-                xx_mask_first, xx_mask = make_time_restricted_san_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
-
-            for lth, layer in enumerate(self.layers):
-                xs = layer(xs, xx_mask if lth >= 1 else xx_mask_first,
-                           pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
-                if not self.training:
-                    if self.streaming_type == 'reshape':
-                        n_heads = layer.xx_aws.size(1)
-                        xx_aws = layer.xx_aws[:, :, N_l:N_l + N_c, N_l:N_l + N_c]
-                        xx_aws = xx_aws.view(bs, n_chunks, n_heads, N_c, N_c)
-                        xx_aws_center = xx_aws.new_zeros(bs, n_heads, emax, emax)
-                        for chunk_idx in range(n_chunks):
-                            offset = chunk_idx * N_c
-                            emax_chunk = xx_aws_center[:, :, offset:offset + N_c].size(2)
-                            xx_aws_chunk = xx_aws[:, chunk_idx, :, :emax_chunk, :emax_chunk]
-                            xx_aws_center[:, :, offset:offset + N_c, offset:offset + N_c] = xx_aws_chunk
-                        self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(xx_aws_center)
-                    elif self.streaming_type == 'mask':
-                        self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
-                    self.data_dict['elens%d' % lth] = tensor2np(xlens)
-
-                if self.subsample is not None:
-                    xs, xlens = self.subsample[lth](xs, xlens)
-                    emax = xlens.max().item()
-                    N_l = max(0, N_l // self.subsample[lth].subsampling_factor)
-                    N_c = N_c // self.subsample[lth].subsampling_factor
-                    N_r = N_r // self.subsample[lth].subsampling_factor
-                    # Create sinusoidal positional embeddings for relative positional encoding
-                    pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
-                    if self.streaming_type == 'mask':
-                        _, xx_mask = make_time_restricted_san_mask(xs, xlens, N_l, N_c, N_r, n_chunks)
-
-            # Extract the center region
-            if self.streaming_type == 'reshape':
-                xs = xs[:, N_l:N_l + N_c]  # `[B * n_chunks, N_c, d_model]`
-                xs = xs.contiguous().view(bs, -1, xs.size(2))
-                xs = xs[:, :emax]
-
-        else:
-            xs = xs * self.scale
-            # Create sinusoidal positional embeddings for relative positional encoding
-            pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
-
-            xx_mask = make_san_mask(xs, xlens, self.unidirectional)
-            for lth, layer in enumerate(self.layers):
-                xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
-                if not self.training:
-                    self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
-                    self.data_dict['elens%d' % lth] = tensor2np(xlens)
-
-                # Pick up outputs in the sub task before the projection layer
-                if lth == self.n_layers_sub1 - 1:
-                    xs_sub1 = self.sub_module(xs, xx_mask, lth, pos_embs, 'sub1')
-                    if task == 'ys_sub1':
-                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
-                        return eouts
-                if lth == self.n_layers_sub2 - 1:
-                    xs_sub2 = self.sub_module(xs, xx_mask, lth, pos_embs, 'sub2')
-                    if task == 'ys_sub2':
-                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens
-                        return eouts
-
-                if self.subsample is not None:
-                    xs, xlens = self.subsample[lth](xs, xlens)
-                    xx_mask = make_san_mask(xs, xlens, self.unidirectional)
-                    # Create sinusoidal positional embeddings for relative positional encoding
-                    clamp_len = clamp_len // self.subsample[lth].subsampling_factor
-                    pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
-
-        xs = self.norm_out(xs)
-
-        # Bridge layer
-        if self.bridge is not None:
-            xs = self.bridge(xs)
-
-        if task in ['all', 'ys']:
-            eouts['ys']['xs'], eouts['ys']['xlens'] = xs, xlens
-        if self.n_layers_sub1 >= 1 and task == 'all':
-            eouts['ys_sub1']['xs'], eouts['ys_sub1']['xlens'] = xs_sub1, xlens
-        if self.n_layers_sub2 >= 1 and task == 'all':
-            eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens
-        return eouts
-
-    def sub_module(self, xs, xx_mask, lth, pos_embs=None, module='sub1'):
-        if self.task_specific_layer:
-            xs_sub = getattr(self, 'layer_' + module)(xs, xx_mask, pos_embs=pos_embs)
-        else:
-            xs_sub = xs.clone()
-        xs_sub = getattr(self, 'norm_out_' + module)(xs_sub)
-        if getattr(self, 'bridge_' + module) is not None:
-            xs_sub = getattr(self, 'bridge_' + module)(xs_sub)
-        if not self.training:
-            self.aws_dict['xx_aws_%s_layer%d' % (module, lth)] = tensor2np(getattr(self, 'layer_' + module).xx_aws)
-        return xs_sub
 
 
 class ConformerEncoderBlock(nn.Module):
