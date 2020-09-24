@@ -73,7 +73,7 @@ class ConformerEncoder(TransformerEncoder):
     def __init__(self, input_dim, enc_type, n_heads, kernel_size,
                  n_layers, n_layers_sub1, n_layers_sub2,
                  d_model, d_ff, ffn_bottleneck_dim, ffn_activation,
-                 pe_type, layer_norm_eps, last_proj_dim
+                 pe_type, layer_norm_eps, last_proj_dim,
                  dropout_in, dropout, dropout_att, dropout_layer,
                  subsample, subsample_type, n_stacks, n_splices,
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
@@ -93,30 +93,11 @@ class ConformerEncoder(TransformerEncoder):
             task_specific_layer, param_init, clamp_len,
             chunk_size_left, chunk_size_current, chunk_size_right, streaming_type)
 
-        # parse subsample
-        subsamples = [1] * n_layers
-        for lth, s in enumerate(list(map(int, subsample.split('_')[:n_layers]))):
-            subsamples[lth] = s
-
-        self.clamp_len = clamp_len
-        self.pos_emb = XLPositionalEmbedding(d_model, dropout)
-        if pe_type == 'relative_xl':
-            self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-            self.v_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-            # NOTE: u_bias and v_bias are global parameters
-        elif pe_type == 'relative':
-            self.u_bias = None
-            self.v_bias = None
-        else:
-            raise ValueError(pe_type)
-
         self.layers = nn.ModuleList([copy.deepcopy(ConformerEncoderBlock(
             d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init, pe_type,
             ffn_bottleneck_dim, self.unidirectional))
             for _ in range(n_layers)])
-        self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self._odim = d_model
 
         if n_layers_sub1 > 0:
             if task_specific_layer:
@@ -124,9 +105,6 @@ class ConformerEncoder(TransformerEncoder):
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
                     ffn_bottleneck_dim, self.unidirectional)
-            self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-            if last_proj_dim > 0 and last_proj_dim != self.output_dim:
-                self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
 
         if n_layers_sub2 > 0:
             if task_specific_layer:
@@ -134,13 +112,6 @@ class ConformerEncoder(TransformerEncoder):
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
                     ffn_bottleneck_dim, self.unidirectional)
-            self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-            if last_proj_dim > 0 and last_proj_dim != self.output_dim:
-                self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
-
-        if last_proj_dim > 0 and last_proj_dim != self.output_dim:
-            self.bridge = nn.Linear(self._odim, last_proj_dim)
-            self._odim = last_proj_dim
 
         self.reset_parameters(param_init)
 
