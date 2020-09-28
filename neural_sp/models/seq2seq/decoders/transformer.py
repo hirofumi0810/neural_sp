@@ -265,25 +265,25 @@ class TransformerDecoder(DecoderBase):
 
         # streaming
         if args.transformer_attn_type == 'mocha':
-            dir_name += '_ma' + str(args.mma_n_heads_mono) + 'H'
-            dir_name += '_ca' + str(args.mma_n_heads_chunk) + 'H'
-            dir_name += '_w' + str(args.mma_chunk_size)
-            dir_name += '_bias' + str(args.mma_init_r)
-            if args.mma_no_denominator:
+            dir_name += '_ma' + str(args.mocha_n_heads_mono) + 'H'
+            dir_name += '_ca' + str(args.mocha_n_heads_chunk) + 'H'
+            dir_name += '_w' + str(args.mocha_chunk_size)
+            dir_name += '_bias' + str(args.mocha_init_r)
+            if args.mocha_no_denominator:
                 dir_name += '_denom1'
-            if args.mma_1dconv:
+            if args.mocha_1dconv:
                 dir_name += '_1dconv'
-            if args.mma_quantity_loss_weight > 0:
-                dir_name += '_qua' + str(args.mma_quantity_loss_weight)
-            if args.mma_headdiv_loss_weight != 0:
-                dir_name += '_headdiv' + str(args.mma_headdiv_loss_weight)
-            if args.mma_latency_metric:
-                dir_name += '_' + args.mma_latency_metric
-                dir_name += str(args.mma_latency_loss_weight)
+            if args.mocha_quantity_loss_weight > 0:
+                dir_name += '_qua' + str(args.mocha_quantity_loss_weight)
+            if args.mocha_head_divergence_loss_weight != 0:
+                dir_name += '_headdiv' + str(args.mocha_head_divergence_loss_weight)
+            if args.mocha_latency_metric:
+                dir_name += '_' + args.mocha_latency_metric
+                dir_name += str(args.mocha_latency_loss_weight)
             if args.share_chunkwise_attention:
                 dir_name += '_share'
-            if args.mma_first_layer > 1:
-                dir_name += '_from' + str(args.mma_first_layer) + 'L'
+            if args.mocha_first_layer > 1:
+                dir_name += '_from' + str(args.mocha_first_layer) + 'L'
 
         if args.dropout_dec_layer > 0:
             dir_name += '_LD' + str(args.dropout_dec_layer)
