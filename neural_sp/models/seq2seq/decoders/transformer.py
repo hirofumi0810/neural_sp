@@ -68,19 +68,19 @@ class TransformerDecoder(DecoderBase):
         global_weight (float): global loss weight for multi-task learning
         mtl_per_batch (bool): change mini-batch per task for multi-task training
         param_init (str): parameter initialization method
-        mocha_chunk_size (int): chunk size for chunkwise attention. -1 means infinite lookback.
-        mocha_n_heads_mono (int): number of hard monotonic attention head
-        mocha_n_heads_chunk (int): number of hard chunkwise attention head
-        mocha_init_r (int): initial bias value for hard monotonic attention
-        mocha_eps (float): epsilon value for hard monotonic attention
-        mocha_std (float): standard deviation of Gaussian noise for hard monotonic attention
-        mocha_no_denominator (bool): remove demominator in hard monotonic attention
-        mocha_1dconv (bool): 1dconv for MMA
-        mocha_quantity_loss_weight (float): quantity loss weight for MMA
-        mocha_head_divergence_loss_weight (float): head divergence loss for MMA
+        mma_chunk_size (int): chunk size for chunkwise attention. -1 means infinite lookback.
+        mma_n_heads_mono (int): number of MMA head
+        mma_n_heads_chunk (int): number of hard chunkwise attention head
+        mma_init_r (int): initial bias value for MMA
+        mma_eps (float): epsilon value for MMA
+        mma_std (float): standard deviation of Gaussian noise for MMA
+        mma_no_denominator (bool): remove demominator in MMA
+        mma_1dconv (bool): 1dconv for MMA
+        mma_quantity_loss_weight (float): quantity loss weight for MMA
+        mma_headdiv_loss_weight (float): head divergence loss for MMA
         latency_metric (str): latency metric
         latency_loss_weight (float): latency loss weight for MMA
-        mocha_first_layer (int): first layer to enable source-target attention (start from idx:1)
+        mma_first_layer (int): first layer to enable source-target attention (start from idx:1)
         share_chunkwise_attention (bool): share chunkwise attention in the same layer of MMA
         external_lm (RNNLM): external RNNLM for LM fusion
         lm_fusion (str): type of LM fusion
@@ -95,12 +95,12 @@ class TransformerDecoder(DecoderBase):
                  dropout, dropout_emb, dropout_att, dropout_layer, dropout_head,
                  lsm_prob, ctc_weight, ctc_lsm_prob, ctc_fc_list, backward,
                  global_weight, mtl_per_batch, param_init,
-                 mocha_chunk_size, mocha_n_heads_mono, mocha_n_heads_chunk,
-                 mocha_init_r, mocha_eps, mocha_std,
-                 mocha_no_denominator, mocha_1dconv,
-                 mocha_quantity_loss_weight, mocha_head_divergence_loss_weight,
+                 mma_chunk_size, mma_n_heads_mono, mma_n_heads_chunk,
+                 mma_init_r, mma_eps, mma_std,
+                 mma_no_denominator, mma_1dconv,
+                 mma_quantity_loss_weight, mma_headdiv_loss_weight,
                  latency_metric, latency_loss_weight,
-                 mocha_first_layer, share_chunkwise_attention,
+                 mma_first_layer, share_chunkwise_attention,
                  external_lm, lm_fusion):
 
         super(TransformerDecoder, self).__init__()
@@ -130,10 +130,10 @@ class TransformerDecoder(DecoderBase):
 
         # for MMA
         self.attn_type = attn_type
-        self.quantity_loss_weight = mocha_quantity_loss_weight
-        self._quantity_loss_weight = mocha_quantity_loss_weight  # for curriculum
-        self.mocha_first_layer = max(1, mocha_first_layer)
-        self.headdiv_loss_weight = mocha_head_divergence_loss_weight
+        self.quantity_loss_weight = mma_quantity_loss_weight
+        self._quantity_loss_weight = mma_quantity_loss_weight  # for curriculum
+        self.mma_first_layer = max(1, mma_first_layer)
+        self.headdiv_loss_weight = mma_headdiv_loss_weight
 
         self.latency_metric = latency_metric
         self.latency_loss_weight = latency_loss_weight
@@ -160,15 +160,15 @@ class TransformerDecoder(DecoderBase):
             self.layers = nn.ModuleList([copy.deepcopy(TransformerDecoderBlock(
                 d_model, d_ff, attn_type, n_heads, dropout, dropout_att, dropout_layer,
                 layer_norm_eps, ffn_activation, param_init,
-                src_tgt_attention=False if lth < mocha_first_layer - 1 else True,
-                mocha_chunk_size=mocha_chunk_size,
-                mocha_n_heads_mono=mocha_n_heads_mono,
-                mocha_n_heads_chunk=mocha_n_heads_chunk,
-                mocha_init_r=mocha_init_r,
-                mocha_eps=mocha_eps,
-                mocha_std=mocha_std,
-                mocha_no_denominator=mocha_no_denominator,
-                mocha_1dconv=mocha_1dconv,
+                src_tgt_attention=False if lth < mma_first_layer - 1 else True,
+                mma_chunk_size=mma_chunk_size,
+                mma_n_heads_mono=mma_n_heads_mono,
+                mma_n_heads_chunk=mma_n_heads_chunk,
+                mma_init_r=mma_init_r,
+                mma_eps=mma_eps,
+                mma_std=mma_std,
+                mma_no_denominator=mma_no_denominator,
+                mma_1dconv=mma_1dconv,
                 dropout_head=dropout_head,
                 lm_fusion=lm_fusion,
                 ffn_bottleneck_dim=ffn_bottleneck_dim,
@@ -332,8 +332,8 @@ class TransformerDecoder(DecoderBase):
         # CTC loss
         trigger_points = None
         if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
-            forced_align = (self.ctc_trigger and self.training) or self.attn_type == 'triggered_attention'
-            loss_ctc, trigger_points = self.ctc(eouts, elens, ys, forced_align=forced_align)
+            ctc_forced_align = (self.ctc_trigger and self.training) or self.attn_type == 'triggered_attention'
+            loss_ctc, trigger_points = self.ctc(eouts, elens, ys, forced_align=ctc_forced_align)
             observation['loss_ctc'] = tensor2scalar(loss_ctc)
             if self.mtl_per_batch:
                 loss += loss_ctc
@@ -691,7 +691,7 @@ class TransformerDecoder(DecoderBase):
                 new_cache = [None] * self.n_layers
                 xy_aws_layers = []
                 xy_aws = None
-                lth_s = self.mocha_first_layer - 1
+                lth_s = self.mma_first_layer - 1
                 for lth, layer in enumerate(self.layers):
                     out = layer(
                         out, causal_mask, eouts_b, None,
