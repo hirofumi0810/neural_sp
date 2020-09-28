@@ -38,14 +38,14 @@ class TransformerDecoderBlock(nn.Module):
         param_init (str): parameter initialization method
         src_tgt_attention (bool): use source-target attention
         memory_transformer (bool): TransformerXL decoder
-        mocha_chunk_size (int): chunk size for chunkwise attention. -1 means infinite lookback.
-        mocha_n_heads_mono (int): number of hard monotonic attention head
-        mocha_n_heads_chunk (int): number of hard chunkwise attention head
-        mocha_init_r (int): initial bias value for hard monotonic attention
-        mocha_eps (float): epsilon value for hard monotonic attention
-        mocha_std (float): standard deviation of Gaussian noise for hard monotonic attention
-        mocha_no_denominator (bool): remove demominator in hard monotonic attention
-        mocha_1dconv (bool): 1dconv for MMA
+        mma_chunk_size (int): chunk size for chunkwise attention. -1 means infinite lookback.
+        mma_n_heads_mono (int): number of MMA head
+        mma_n_heads_chunk (int): number of hard chunkwise attention head
+        mma_init_r (int): initial bias value for MMA
+        mma_eps (float): epsilon value for MMA
+        mma_std (float): standard deviation of Gaussian noise for MMA
+        mma_no_denominator (bool): remove demominator in MMA
+        mma_1dconv (bool): 1dconv for MMA
         share_chunkwise_attention (bool): share chunkwise attention in the same layer of MMA
         lm_fusion (str): type of LM fusion
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
@@ -56,9 +56,9 @@ class TransformerDecoderBlock(nn.Module):
                  dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init,
                  src_tgt_attention=True, memory_transformer=False,
-                 mocha_chunk_size=0, mocha_n_heads_mono=1, mocha_n_heads_chunk=1,
-                 mocha_init_r=2, mocha_eps=1e-6, mocha_std=1.0,
-                 mocha_no_denominator=False, mocha_1dconv=False,
+                 mma_chunk_size=0, mma_n_heads_mono=1, mma_n_heads_chunk=1,
+                 mma_init_r=2, mma_eps=1e-6, mma_std=1.0,
+                 mma_no_denominator=False, mma_1dconv=False,
                  dropout_head=0, share_chunkwise_attention=False,
                  lm_fusion='', ffn_bottleneck_dim=0):
 
@@ -86,20 +86,20 @@ class TransformerDecoderBlock(nn.Module):
         if src_tgt_attention:
             self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if 'mocha' in atype:
-                self.n_heads = mocha_n_heads_mono
+                self.n_heads = mma_n_heads_mono
                 self.src_attn = MoChA(kdim=d_model,
                                       qdim=d_model,
                                       adim=d_model,
                                       odim=d_model,
                                       atype='scaled_dot',
-                                      chunk_size=mocha_chunk_size,
-                                      n_heads_mono=mocha_n_heads_mono,
-                                      n_heads_chunk=mocha_n_heads_chunk,
-                                      init_r=mocha_init_r,
-                                      eps=mocha_eps,
-                                      noise_std=mocha_std,
-                                      no_denominator=mocha_no_denominator,
-                                      conv1d=mocha_1dconv,
+                                      chunk_size=mma_chunk_size,
+                                      n_heads_mono=mma_n_heads_mono,
+                                      n_heads_chunk=mma_n_heads_chunk,
+                                      init_r=mma_init_r,
+                                      eps=mma_eps,
+                                      noise_std=mma_std,
+                                      no_denominator=mma_no_denominator,
+                                      conv1d=mma_1dconv,
                                       dropout=dropout_att,
                                       dropout_head=dropout_head,
                                       param_init=param_init,
@@ -208,7 +208,7 @@ class TransformerDecoderBlock(nn.Module):
                 ys = self.norm1(ys)
                 cat = ys
         else:
-            ys = self.norm1(ys)
+            ys = self.norm1(ys)  # pre-norm
 
         if cache is not None:
             ys_q = ys[:, -1:]
@@ -339,7 +339,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
         residual = ys
         residual_bwd = ys_bwd
-        ys = self.norm1(ys)
+        ys = self.norm1(ys)  # pre-norm
         ys_bwd = self.norm1(ys_bwd)
 
         if cache is not None:
