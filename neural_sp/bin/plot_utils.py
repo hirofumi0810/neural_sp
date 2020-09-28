@@ -87,7 +87,7 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, ref=None,
 
     # Save as a png file
     if save_path is not None:
-        plt.savefig(save_path, dvi=100)
+        plt.savefig(save_path)
 
     plt.close()
 
@@ -152,7 +152,7 @@ def plot_hierarchical_attention_weights(aw, aw_sub, tokens=[], tokens_sub=[],
 
     # Save as a png file
     if save_path is not None:
-        plt.savefig(save_path, dvi=100)
+        plt.savefig(save_path)
 
     plt.close()
 
@@ -220,7 +220,7 @@ def plot_ctc_probs(ctc_probs, topk_ids, subsample_factor, space=-1, hyp='',
 
     # Save as a png file
     if save_path is not None:
-        plt.savefig(save_path, dvi=100)
+        plt.savefig(save_path)
 
     plt.close()
 
@@ -289,6 +289,6 @@ def plot_hierarchical_ctc_probs(ctc_probs, topk_ids, ctc_probs_sub, topk_ids_sub
 
     # Save as a png file
     if save_path is not None:
-        plt.savefig(save_path, dvi=100)
+        plt.savefig(save_path)
 
     plt.close()
