@@ -427,16 +427,11 @@ class TransformerDecoder(DecoderBase):
                 # NOTE: attention padding is quite effective for quantity loss
                 xy_aws_layers.append(xy_aws_masked.clone())
             if not self.training:
-                if layer.yy_aws is not None:
-                    self.aws_dict['yy_aws_layer%d' % lth] = tensor2np(layer.yy_aws)
-                if layer.xy_aws is not None:
-                    self.aws_dict['xy_aws_layer%d' % lth] = tensor2np(layer.xy_aws)
-                if layer.xy_aws_beta is not None:
-                    self.aws_dict['xy_aws_beta_layer%d' % lth] = tensor2np(layer.xy_aws_beta)
-                if layer.xy_aws_p_choose is not None:
-                    self.aws_dict['xy_aws_p_choose%d' % lth] = tensor2np(layer.xy_aws_p_choose)
-                if layer.yy_aws_lm is not None:
-                    self.aws_dict['yy_aws_lm_layer%d' % lth] = tensor2np(layer.yy_aws_lm)
+                self.aws_dict['yy_aws_layer%d' % lth] = tensor2np(layer.yy_aws)
+                self.aws_dict['xy_aws_layer%d' % lth] = tensor2np(layer.xy_aws)
+                self.aws_dict['xy_aws_beta_layer%d' % lth] = tensor2np(layer.xy_aws_beta)
+                self.aws_dict['xy_aws_p_choose%d' % lth] = tensor2np(layer.xy_aws_p_choose)
+                self.aws_dict['yy_aws_lm_layer%d' % lth] = tensor2np(layer.yy_aws_lm)
         logits = self.output(self.norm_out(out))
 
         # Compute XE loss (+ label smoothing)

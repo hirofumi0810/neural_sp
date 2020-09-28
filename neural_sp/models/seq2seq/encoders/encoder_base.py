@@ -73,6 +73,9 @@ class EncoderBase(ModelBase):
             return
 
         for k, aw in self.aws_dict.items():
+            if aw is None:
+                continue
+
             lth = k.split('_')[-1].replace('layer', '')
             elens_l = self.data_dict['elens' + lth]
 
@@ -92,5 +95,5 @@ class EncoderBase(ModelBase):
 
             fig.tight_layout()
             if save_path is not None:
-                fig.savefig(os.path.join(save_path, '%s.png' % k), dvi=500)
+                fig.savefig(os.path.join(save_path, '%s.png' % k))
             plt.close()

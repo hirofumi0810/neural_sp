@@ -24,6 +24,8 @@ def tensor2np(x):
         np.ndarray
 
     """
+    if x is None:
+        return x
     return x.cpu().detach().numpy()
 
 
@@ -36,6 +38,8 @@ def tensor2scalar(x):
         scaler
 
     """
+    if isinstance(x, float):
+        return x
     return x.cpu().detach().item()
 
 
@@ -86,12 +90,10 @@ def make_pad_mask(seq_lens):
 
     """
     bs = seq_lens.size(0)
-    max_time = max(seq_lens)
-    device = seq_lens.device
-    seq_range = torch.arange(0, max_time, dtype=torch.int32, device=device)
-    seq_range_expand = seq_range.unsqueeze(0).expand(bs, max_time)
-    seq_length_expand = seq_range_expand.new(seq_lens).unsqueeze(-1)
-    mask = seq_range_expand < seq_length_expand
+    max_time = seq_lens.max()
+    seq_range = torch.arange(0, max_time, dtype=torch.int32, device=seq_lens.device)
+    seq_range = seq_range.unsqueeze(0).expand(bs, max_time)
+    mask = seq_range < seq_lens.unsqueeze(-1)
     return mask
 
 
