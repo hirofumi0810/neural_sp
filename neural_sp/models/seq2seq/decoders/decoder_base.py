@@ -59,6 +59,9 @@ class DecoderBase(ModelBase):
         # ys = self.data_dict['ys']
 
         for k, aw in self.aws_dict.items():
+            if aw is None:
+                continue
+
             plt.clf()
             n_heads = aw.shape[1]
             n_cols_tmp = 1 if n_heads == 1 else n_cols * max(1, n_heads // 4)
