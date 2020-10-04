@@ -189,15 +189,9 @@ class TransformerDecoder(DecoderBase):
         """Add arguments."""
         group = parser.add_argument_group("Transformer decoder")
         # Transformer common
-        if not hasattr(args, 'transformer_d_model'):
-            group.add_argument('--transformer_d_model', type=int, default=256,
-                               help='number of units in the MHA layer')
-            group.add_argument('--transformer_d_ff', type=int, default=2048,
-                               help='number of units in the FFN layer')
+        if not hasattr(args, 'transformer_layer_norm_eps'):
             group.add_argument('--transformer_ffn_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
-            group.add_argument('--transformer_n_heads', type=int, default=4,
-                               help='number of heads in the MHA layer')
             group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                                help='epsilon value for layer normalization')
             group.add_argument('--transformer_ffn_activation', type=str, default='relu',
@@ -207,6 +201,12 @@ class TransformerDecoder(DecoderBase):
                                choices=['xavier_uniform', 'pytorch'],
                                help='parameter initialization')
         # Transformer decoder specific
+        group.add_argument('--transformer_dec_d_model', type=int, default=256,
+                           help='number of units in the MHA layer for Transformer decoder')
+        group.add_argument('--transformer_dec_d_ff', type=int, default=2048,
+                           help='number of units in the FFN layer for Transformer decoder')
+        group.add_argument('--transformer_dec_n_heads', type=int, default=4,
+                           help='number of heads in the MHA layer for Transformer decoder')
         group.add_argument('--transformer_attn_type', type=str, default='scaled_dot',
                            choices=['scaled_dot', 'mocha'],
                            help='type of attention mechasnism for Transformer decoder')
@@ -254,12 +254,12 @@ class TransformerDecoder(DecoderBase):
     def define_name(dir_name, args):
         dir_name += '_' + args.dec_type
 
-        dir_name += str(args.transformer_d_model) + 'dmodel'
-        dir_name += str(args.transformer_d_ff) + 'dff'
+        dir_name += str(args.transformer_dec_d_model) + 'dmodel'
+        dir_name += str(args.transformer_dec_d_ff) + 'dff'
         if args.transformer_ffn_bottleneck_dim > 0:
             dir_name += str(args.transformer_ffn_bottleneck_dim) + 'bn'
         dir_name += str(args.dec_n_layers) + 'L'
-        dir_name += str(args.transformer_n_heads) + 'H'
+        dir_name += str(args.transformer_dec_n_heads) + 'H'
         dir_name += 'pe' + str(args.transformer_dec_pe_type)
         dir_name += args.transformer_attn_type
 

@@ -122,15 +122,9 @@ class ConformerEncoder(TransformerEncoder):
         if 'conv' in args.enc_type:
             parser = ConvEncoder.add_args(parser, args)
         # Transformer common
-        if not hasattr(args, 'transformer_d_model'):
-            group.add_argument('--transformer_d_model', type=int, default=256,
-                               help='number of units in the MHA layer')
-            group.add_argument('--transformer_d_ff', type=int, default=2048,
-                               help='number of units in the FFN layer')
+        if not hasattr(args, 'transformer_layer_norm_eps'):
             group.add_argument('--transformer_ffn_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
-            group.add_argument('--transformer_n_heads', type=int, default=4,
-                               help='number of heads in the MHA layer')
             group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                                help='epsilon value for layer normalization')
             group.add_argument('--transformer_ffn_activation', type=str, default='relu',
@@ -142,9 +136,15 @@ class ConformerEncoder(TransformerEncoder):
         # NOTE: These checks are important to avoid conflict with args in Transformer decoder
 
         # Conformer encoder specific
+        group.add_argument('--transformer_enc_d_model', type=int, default=256,
+                           help='number of units in the MHA layer for Conformer encoder')
+        group.add_argument('--transformer_enc_d_ff', type=int, default=2048,
+                           help='number of units in the FFN layer for Conformer encoder')
+        group.add_argument('--transformer_enc_n_heads', type=int, default=4,
+                           help='number of heads in the MHA layer for Conformer encoder')
         group.add_argument('--transformer_enc_pe_type', type=str, default='relative',
                            choices=['relative', 'relative_xl'],
-                           help='type of positional encoding for the Transformer encoder')
+                           help='type of positional encoding for Conformer encoder')
         group.add_argument('--conformer_kernel_size', type=int, default=31,
                            help='kernel size for depthwise convolution in convolution module for Conformer encoder')
         group.add_argument('--dropout_enc_layer', type=float, default=0.0,
@@ -168,12 +168,12 @@ class ConformerEncoder(TransformerEncoder):
         if 'conv' in args.enc_type:
             dir_name = ConvEncoder.define_name(dir_name, args)
 
-        dir_name += str(args.transformer_d_model) + 'dmodel'
-        dir_name += str(args.transformer_d_ff) + 'dff'
+        dir_name += str(args.transformer_enc_d_model) + 'dmodel'
+        dir_name += str(args.transformer_enc_d_ff) + 'dff'
         if args.transformer_ffn_bottleneck_dim > 0:
             dir_name += str(args.transformer_ffn_bottleneck_dim) + 'bn'
         dir_name += str(args.enc_n_layers) + 'L'
-        dir_name += str(args.transformer_n_heads) + 'H'
+        dir_name += str(args.transformer_enc_n_heads) + 'H'
         dir_name += 'kernel' + str(args.conformer_kernel_size)
         if args.transformer_enc_clamp_len > 0:
             dir_name += '_clamp' + str(args.transformer_enc_clamp_len)
