@@ -2,10 +2,8 @@
 lm_type: transformer_xl
 transformer_d_model: 8
 transformer_d_ff: 32
-transformer_ffn_activation: relu
 n_layers: 2
 transformer_n_heads: 4
-transformer_param_init: xavier_uniform
 tie_embedding: true
 # optimization
 batch_size: 1

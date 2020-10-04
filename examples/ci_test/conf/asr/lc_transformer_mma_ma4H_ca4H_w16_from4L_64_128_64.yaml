@@ -10,14 +10,18 @@ conv_poolings: "(2,2)_(2,2)"
 conv_batch_norm: false
 conv_layer_norm: false
 enc_type: conv_transformer
-dec_type: transformer
-enc_n_layers: 2
+enc_n_layers: 1
+transformer_enc_pe_type: none
 lc_chunk_size_left: 64  ###
 lc_chunk_size_current: 128  ###
 lc_chunk_size_right: 64  ###
-lc_type: mask
+lc_type: reshape
+transformer_enc_d_model: 8
+transformer_enc_d_ff: 32
+transformer_enc_n_heads: 4
+dec_type: transformer
 dec_n_layers: 3
-transformer_attn_type: mocha
+transformer_dec_attn_type: mocha
 mocha_n_heads_mono: 4
 mocha_n_heads_chunk: 4  ###
 mocha_chunk_size: 16  ###
@@ -27,13 +31,10 @@ mocha_std: 1.0
 mocha_quantity_loss_weight: 0.0
 mocha_first_layer: 2  ###
 share_chunkwise_attention: true  ###
-transformer_enc_pe_type: none
 transformer_dec_pe_type: 1dconv3L
-transformer_d_model: 16
-transformer_d_ff: 64
-transformer_ffn_activation: relu
-transformer_n_heads: 4
-transformer_param_init: xavier_uniform
+transformer_dec_d_model: 16
+transformer_dec_d_ff: 64
+transformer_dec_n_heads: 4
 tie_embedding: false
 ctc_fc_list: "16"
 ### optimization

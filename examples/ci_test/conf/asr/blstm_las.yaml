@@ -13,7 +13,7 @@ enc_type: conv_blstm
 bidirectional_sum_fwd_bwd: true
 enc_n_units: 16
 enc_n_projs: 8
-enc_n_layers: 2
+enc_n_layers: 1
 subsample_type: drop
 lc_chunk_size_left: -1  ### offline
 lc_chunk_size_right: 40
