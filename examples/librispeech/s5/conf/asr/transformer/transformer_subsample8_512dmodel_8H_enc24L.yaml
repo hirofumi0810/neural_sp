@@ -19,9 +19,9 @@ dec_type: transformer
 dec_n_layers: 6
 transformer_dec_pe_type: 1dconv3L  ### this is effective
 transformer_dec_attn_type: scaled_dot
-transformer_dec_d_model: 256
+transformer_dec_d_model: 512  ###
 transformer_dec_d_ff: 2048
-transformer_dec_n_heads: 4
+transformer_dec_n_heads: 8  ###
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
