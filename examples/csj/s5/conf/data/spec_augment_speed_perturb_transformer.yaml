@@ -1,6 +1,6 @@
 # optimization
-n_epochs: 55
-print_step: 800
+n_epochs: 45  # 25->45
+print_step: 2400  # 400->2400
 
 # mask
 freq_width: 27
