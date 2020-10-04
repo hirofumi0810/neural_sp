@@ -12,6 +12,7 @@ def build_encoder(args):
     # safeguard
     if not hasattr(args, 'transformer_enc_d_model') and hasattr(args, 'transformer_d_model'):
         args.transformer_enc_d_model = args.transformer_d_model
+        args.transformer_dec_d_model = args.transformer_d_model
     if not hasattr(args, 'transformer_enc_d_ff') and hasattr(args, 'transformer_d_ff'):
         args.transformer_enc_d_ff = args.transformer_d_ff
     if not hasattr(args, 'transformer_enc_n_heads') and hasattr(args, 'transformer_n_heads'):
@@ -25,7 +26,7 @@ def build_encoder(args):
             channels=args.conv_channels,
             kernel_sizes=args.conv_kernel_sizes,
             dropout=args.dropout_enc,
-            last_proj_dim=args.transformer_enc_d_model if 'transformer' in args.dec_type else args.dec_n_units)
+            last_proj_dim=args.transformer_dec_d_model if 'transformer' in args.dec_type else args.dec_n_units)
 
     elif args.enc_type == 'gated_conv':
         from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
@@ -36,7 +37,7 @@ def build_encoder(args):
             channels=args.conv_channels,
             kernel_sizes=args.conv_kernel_sizes,
             dropout=args.dropout_enc,
-            last_proj_dim=args.transformer_enc_d_model if 'transformer' in args.dec_type else args.dec_n_units,
+            last_proj_dim=args.transformer_dec_d_model if 'transformer' in args.dec_type else args.dec_n_units,
             param_init=args.param_init)
 
     elif 'transformer' in args.enc_type:
@@ -54,7 +55,7 @@ def build_encoder(args):
             ffn_activation=args.transformer_ffn_activation,
             pe_type=args.transformer_enc_pe_type,
             layer_norm_eps=args.transformer_layer_norm_eps,
-            last_proj_dim=args.transformer_enc_d_model if 'transformer' in args.dec_type else 0,
+            last_proj_dim=args.transformer_dec_d_model if 'transformer' in args.dec_type else 0,
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
             dropout_att=args.dropout_att,
@@ -93,10 +94,10 @@ def build_encoder(args):
             d_model=args.transformer_enc_d_model,
             d_ff=args.transformer_enc_d_ff,
             ffn_bottleneck_dim=args.transformer_ffn_bottleneck_dim,
-            last_proj_dim=args.transformer_enc_d_model if 'transformer' in args.dec_type else 0,
+            ffn_activation='swish',
             pe_type=args.transformer_enc_pe_type,
             layer_norm_eps=args.transformer_layer_norm_eps,
-            ffn_activation='swish',
+            last_proj_dim=args.transformer_dec_d_model if 'transformer' in args.dec_type else 0,
             dropout_in=args.dropout_in,
             dropout=args.dropout_enc,
             dropout_att=args.dropout_att,
@@ -129,7 +130,7 @@ def build_encoder(args):
             enc_type=args.enc_type,
             n_units=args.enc_n_units,
             n_projs=args.enc_n_projs,
-            last_proj_dim=args.transformer_enc_d_model if 'transformer' in args.dec_type else 0,
+            last_proj_dim=args.transformer_dec_d_model if 'transformer' in args.dec_type else 0,
             n_layers=args.enc_n_layers,
             n_layers_sub1=args.enc_n_layers_sub1,
             n_layers_sub2=args.enc_n_layers_sub2,
