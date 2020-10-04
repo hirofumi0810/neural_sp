@@ -10,11 +10,11 @@
 def build_encoder(args):
 
     # safeguard
-    if not hasattr(args, 'transformer_enc_d_model'):
+    if not hasattr(args, 'transformer_enc_d_model') and hasattr(args, 'transformer_d_model'):
         args.transformer_enc_d_model = args.transformer_d_model
-    if not hasattr(args, 'transformer_enc_d_ff'):
+    if not hasattr(args, 'transformer_enc_d_ff') and hasattr(args, 'transformer_d_ff'):
         args.transformer_enc_d_ff = args.transformer_d_ff
-    if not hasattr(args, 'transformer_enc_n_heads'):
+    if not hasattr(args, 'transformer_enc_n_heads') and hasattr(args, 'transformer_n_heads'):
         args.transformer_enc_n_heads = args.transformer_n_heads
 
     if args.enc_type == 'tds':
