@@ -17,13 +17,15 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
         args.transformer_dec_d_ff = args.transformer_d_ff
     if not hasattr(args, 'transformer_dec_n_heads'):
         args.transformer_dec_n_heads = args.transformer_n_heads
+    if not hasattr(args, 'transformer_dec_attn_type'):
+        args.transformer_dec_attn_type = args.transformer_attn_type
 
     if args.dec_type in ['transformer', 'transformer_xl']:
         from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
         decoder = TransformerDecoder(
             special_symbols=special_symbols,
             enc_n_units=enc_n_units,
-            attn_type=args.transformer_attn_type,
+            attn_type=args.transformer_dec_attn_type,
             n_heads=args.transformer_dec_n_heads,
             n_layers=args.dec_n_layers,
             d_model=args.transformer_dec_d_model,
