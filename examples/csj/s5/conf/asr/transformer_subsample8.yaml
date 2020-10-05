@@ -14,36 +14,24 @@ subsample_type: max_pool
 enc_type: conv_transformer
 enc_n_layers: 12
 transformer_enc_pe_type: add
-lc_chunk_size_left: 96  ###
-lc_chunk_size_current: 64  ###
-lc_chunk_size_right: 32  ###
-lc_type: mask  ###
+transformer_enc_d_model: 256
+transformer_enc_d_ff: 2048
+transformer_enc_n_heads: 4
 dec_type: transformer
 dec_n_layers: 6
 transformer_dec_pe_type: 1dconv3L  ### this is effective
-transformer_attn_type: mocha
-mocha_n_heads_mono: 4
-mocha_n_heads_chunk: 4  ###
-mocha_chunk_size: 16  ###
-mocha_init_r: -2.0
-mocha_eps: 1e-6
-mocha_std: 1.0
-mocha_quantity_loss_weight: 0.0
-mocha_first_layer: 4  ###
-share_chunkwise_attention: true  ###
-transformer_d_model: 256
-transformer_d_ff: 2048
-transformer_ffn_activation: relu
-transformer_n_heads: 4
-transformer_param_init: xavier_uniform
+transformer_dec_attn_type: scaled_dot
+transformer_dec_d_model: 256
+transformer_dec_d_ff: 2048
+transformer_dec_n_heads: 4
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
 batch_size: 32
 optimizer: noam
-n_epochs: 25
+n_epochs: 45  ### 40->45
 convert_to_sgd_epoch: 100
-print_step: 600  # 200->600
+print_step: 400
 metric: accuracy
 lr_factor: 5.0
 early_stop_patient_n_epochs: 5
@@ -59,7 +47,6 @@ dropout_enc: 0.1
 dropout_dec: 0.1
 dropout_emb: 0.1
 dropout_att: 0.0
-dropout_head: 0.5  ###
 weight_decay: 1e-6
 lsm_prob: 0.1
 ### MTL

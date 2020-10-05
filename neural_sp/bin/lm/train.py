@@ -132,6 +132,7 @@ def main():
             n_params = model.num_params_dict[n]
             logger.info("%s %d" % (n, n_params))
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
+        logger.info('torch version: %s' % str(torch.__version__))
         logger.info(model)
 
     # Set optimizer

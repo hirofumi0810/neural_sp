@@ -1,8 +1,6 @@
 # optimization
-n_epochs: 30  # 15->30
-print_step: 2400  # 1200->2400
-lr_decay_start_epoch: 5
-lr_decay_rate: 0.9
+n_epochs: 45  # 25->45
+print_step: 2400  # 400->2400
 
 # mask
 freq_width: 27

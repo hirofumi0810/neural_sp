@@ -9,16 +9,27 @@
 
 def build_decoder(args, special_symbols, enc_n_units, vocab,
                   ctc_weight, ctc_fc_list, global_weight, external_lm=None):
+
+    # safeguard
+    if not hasattr(args, 'transformer_dec_d_model') and hasattr(args, 'transformer_d_model'):
+        args.transformer_dec_d_model = args.transformer_d_model
+    if not hasattr(args, 'transformer_dec_d_ff') and hasattr(args, 'transformer_d_ff'):
+        args.transformer_dec_d_ff = args.transformer_d_ff
+    if not hasattr(args, 'transformer_dec_n_heads') and hasattr(args, 'transformer_n_heads'):
+        args.transformer_dec_n_heads = args.transformer_n_heads
+    if not hasattr(args, 'transformer_dec_attn_type') and hasattr(args, 'transformer_attn_type'):
+        args.transformer_dec_attn_type = args.transformer_attn_type
+
     if args.dec_type in ['transformer', 'transformer_xl']:
         from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
         decoder = TransformerDecoder(
             special_symbols=special_symbols,
             enc_n_units=enc_n_units,
-            attn_type=args.transformer_attn_type,
-            n_heads=args.transformer_n_heads,
+            attn_type=args.transformer_dec_attn_type,
+            n_heads=args.transformer_dec_n_heads,
             n_layers=args.dec_n_layers,
-            d_model=args.transformer_d_model,
-            d_ff=args.transformer_d_ff,
+            d_model=args.transformer_dec_d_model,
+            d_ff=args.transformer_dec_d_ff,
             ffn_bottleneck_dim=args.transformer_ffn_bottleneck_dim,
             pe_type=args.transformer_dec_pe_type,
             layer_norm_eps=args.transformer_layer_norm_eps,

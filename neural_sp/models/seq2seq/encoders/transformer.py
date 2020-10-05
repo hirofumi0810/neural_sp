@@ -248,17 +248,11 @@ class TransformerEncoder(EncoderBase):
         if 'conv' in args.enc_type:
             parser = ConvEncoder.add_args(parser, args)
         # Transformer common
-        if not hasattr(args, 'transformer_d_model'):
-            group.add_argument('--transformer_d_model', type=int, default=256,
-                               help='number of units in the MHA layer')
-            group.add_argument('--transformer_d_ff', type=int, default=2048,
-                               help='number of units in the FFN layer')
+        if not hasattr(args, 'transformer_layer_norm_eps'):
             group.add_argument('--transformer_ffn_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
             group.add_argument('--transformer_input_bottleneck_dim', type=int, default=0,
                                help='bottleneck dimension in the FFN layer')
-            group.add_argument('--transformer_n_heads', type=int, default=4,
-                               help='number of heads in the MHA layer')
             group.add_argument('--transformer_layer_norm_eps', type=float, default=1e-12,
                                help='epsilon value for layer normalization')
             group.add_argument('--transformer_ffn_activation', type=str, default='relu',
@@ -269,9 +263,15 @@ class TransformerEncoder(EncoderBase):
                                help='parameter initialization')
 
         # Transformer encoder specific
+        group.add_argument('--transformer_enc_d_model', type=int, default=256,
+                           help='number of units in the MHA layer for Transformer encoder')
+        group.add_argument('--transformer_enc_d_ff', type=int, default=2048,
+                           help='number of units in the FFN layer for Transformer encoder')
+        group.add_argument('--transformer_enc_n_heads', type=int, default=4,
+                           help='number of heads in the MHA layer for Transformer encoder')
         group.add_argument('--transformer_enc_pe_type', type=str, default='add',
                            choices=['add', 'none', 'relative', 'relative_xl'],
-                           help='type of positional encoding for the Transformer encoder')
+                           help='type of positional encoding for Transformer encoder')
         group.add_argument('--dropout_enc_layer', type=float, default=0.0,
                            help='LayerDrop probability for Transformer encoder layers')
         group.add_argument('--transformer_enc_clamp_len', type=int, default=-1,
@@ -293,12 +293,12 @@ class TransformerEncoder(EncoderBase):
         if 'conv' in args.enc_type:
             dir_name = ConvEncoder.define_name(dir_name, args)
 
-        dir_name += str(args.transformer_d_model) + 'dmodel'
-        dir_name += str(args.transformer_d_ff) + 'dff'
+        dir_name += str(args.transformer_enc_d_model) + 'dmodel'
+        dir_name += str(args.transformer_enc_d_ff) + 'dff'
         if args.transformer_ffn_bottleneck_dim > 0:
             dir_name += str(args.transformer_ffn_bottleneck_dim) + 'bn'
         dir_name += str(args.enc_n_layers) + 'L'
-        dir_name += str(args.transformer_n_heads) + 'H'
+        dir_name += str(args.transformer_enc_n_heads) + 'H'
         dir_name += 'pe' + str(args.transformer_enc_pe_type)
         if args.transformer_enc_clamp_len > 0:
             dir_name += '_clamp' + str(args.transformer_enc_clamp_len)
@@ -608,6 +608,13 @@ def make_san_mask(xs, xlens, unidirectional=False):
     return xx_mask
 
 
+def causal(xx_mask):
+    causal_mask = xx_mask.new_ones(xx_mask.size(1), xx_mask.size(1)).byte()
+    causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
+    xx_mask = xx_mask & causal_mask  # `[B, L (query), L (key)]`
+    return xx_mask
+
+
 def make_time_restricted_san_mask(xs, xlens, N_l, N_c, N_r, n_chunks):
     """Mask self-attention mask.
 
@@ -633,10 +640,3 @@ def make_time_restricted_san_mask(xs, xlens, N_l, N_c, N_r, n_chunks):
         xx_mask[:, offset:offset + N_c, :max(0, offset - N_l)] = 0
         xx_mask[:, offset:offset + N_c, offset + N_c:] = 0
     return xx_mask_first, xx_mask
-
-
-def causal(xx_mask):
-    causal_mask = xx_mask.new_ones(xx_mask.size(1), xx_mask.size(1)).byte()
-    causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
-    xx_mask = xx_mask & causal_mask  # `[B, L (query), L (key)]`
-    return xx_mask

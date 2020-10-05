@@ -151,6 +151,7 @@ def main():
             n_params = model.num_params_dict[n]
             logger.info("%s %d" % (n, n_params))
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
+        logger.info('torch version: %s' % str(torch.__version__))
         logger.info(model)
 
         # Initialize with pre-trained model's parameters
@@ -191,7 +192,10 @@ def main():
                             lower_better=args.metric not in ['accuracy', 'bleu'],
                             warmup_start_lr=args.warmup_start_lr,
                             warmup_n_steps=args.warmup_n_steps,
-                            model_size=getattr(args, 'transformer_d_model', 0),
+                            peak_lr=0.05 / (getattr(args, 'transformer_enc_d_model', 0) **
+                                            0.5) if 'conformer' in args.enc_type else 1e6,
+                            model_size=getattr(args, 'transformer_enc_d_model',
+                                               getattr(args, 'transformer_dec_d_model', 0)),
                             factor=args.lr_factor,
                             noam=args.optimizer == 'noam',
                             save_checkpoints_topk=10 if is_transformer else 1)

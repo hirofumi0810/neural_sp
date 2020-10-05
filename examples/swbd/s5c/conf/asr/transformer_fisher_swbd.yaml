@@ -10,23 +10,24 @@ conv_poolings: "(2,2)_(2,2)"
 conv_batch_norm: false
 conv_layer_norm: false
 enc_type: conv_transformer
-dec_type: transformer
 enc_n_layers: 12
-dec_n_layers: 6
-transformer_attn_type: scaled_dot
 transformer_enc_pe_type: add
+transformer_enc_d_model: 256
+transformer_enc_d_ff: 2048
+transformer_enc_n_heads: 4
+dec_type: transformer
+dec_n_layers: 6
 transformer_dec_pe_type: 1dconv3L  ### this is effective
-transformer_d_model: 256
-transformer_d_ff: 2048
-transformer_ffn_activation: relu
-transformer_n_heads: 4
-transformer_param_init: xavier_uniform
+transformer_dec_attn_type: scaled_dot
+transformer_dec_d_model: 256
+transformer_dec_d_ff: 2048
+transformer_dec_n_heads: 4
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
 batch_size: 32
 optimizer: noam
-n_epochs: 40  ###
+n_epochs: 40
 convert_to_sgd_epoch: 100
 print_step: 1000
 metric: accuracy

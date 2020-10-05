@@ -1,4 +1,3 @@
 # optimization
-# n_epochs: 20
-n_epochs: 25
+n_epochs: 20
 print_step: 1200
