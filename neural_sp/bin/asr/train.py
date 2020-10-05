@@ -194,7 +194,8 @@ def main():
                             warmup_n_steps=args.warmup_n_steps,
                             peak_lr=0.05 / (getattr(args, 'transformer_enc_d_model', 0) **
                                             0.5) if 'conformer' in args.enc_type else 1e6,
-                            model_size=getattr(args, 'transformer_enc_d_model', 0),
+                            model_size=getattr(args, 'transformer_enc_d_model',
+                                               getattr(args, 'transformer_dec_d_model', 0)),
                             factor=args.lr_factor,
                             noam=args.optimizer == 'noam',
                             save_checkpoints_topk=10 if is_transformer else 1)
