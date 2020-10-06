@@ -241,6 +241,7 @@ class ConformerEncoderBlock(nn.Module):
         self.norm4 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
                                 ffn_bottleneck_dim)
+        self.norm5 = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
         self.dropout = nn.Dropout(dropout)
         self.dropout_layer = dropout_layer
@@ -296,5 +297,6 @@ class ConformerEncoderBlock(nn.Module):
         xs = self.norm4(xs)
         xs = self.feed_forward(xs)
         xs = self.fc_factor * self.dropout(xs) + residual  # Macaron FFN
+        xs = self.norm5(xs)  # this is important for perfomrance
 
         return xs
