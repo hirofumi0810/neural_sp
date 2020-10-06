@@ -297,6 +297,6 @@ class ConformerEncoderBlock(nn.Module):
         xs = self.norm4(xs)
         xs = self.feed_forward(xs)
         xs = self.fc_factor * self.dropout(xs) + residual  # Macaron FFN
-        xs = self.norm5(xs)  # this is important for perfomrance
+        xs = self.norm5(xs)  # this is important for performance
 
         return xs
