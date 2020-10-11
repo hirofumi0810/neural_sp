@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -54,6 +51,9 @@ class DecoderBase(ModelBase):
             shutil.rmtree(save_path)
             os.mkdir(save_path)
 
+        if len(self.aws_dict.keys()) == 0:
+            return
+
         elens = self.data_dict['elens']
         ylens = self.data_dict['ylens']
         # ys = self.data_dict['ys']
@@ -98,6 +98,9 @@ class DecoderBase(ModelBase):
         if save_path is not None and os.path.isdir(save_path):
             shutil.rmtree(save_path)
             os.mkdir(save_path)
+
+        if len(self.ctc.prob_dict.keys()) == 0:
+            return
 
         elen = self.ctc.data_dict['elens'][-1]
         probs = self.ctc.prob_dict['probs'][-1, :elen]  # `[T, vocab]`
@@ -196,6 +199,22 @@ class DecoderBase(ModelBase):
             topk = probs.size(-1)
         _, topk_ids = torch.topk(probs, k=topk, dim=-1, largest=True, sorted=True)
         return probs, topk_ids
+
+    def ctc_forced_align(self, eouts, elens, ys):
+        """CTC-based forced alignment with references.
+
+        Args:
+            logits (FloatTensor): `[B, T, vocab]`
+            elens (list): length `B`
+            ys (list): length `B`, each of which contains a list of size `[L]`
+        Returns:
+            trigger_points (IntTensor): `[B, L]`
+
+        """
+        logits = self.ctc.output(eouts)
+        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
+        trigger_points = self.ctc.forced_align(logits, elens, ys, ylens)
+        return trigger_points
 
     def lm_rescoring(self, hyps, lm, lm_weight, reverse=False, tag=''):
         for i in range(len(hyps)):

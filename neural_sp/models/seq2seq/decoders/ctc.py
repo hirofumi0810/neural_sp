@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -85,7 +82,7 @@ class CTC(DecoderBase):
         else:
             self.output = nn.Linear(enc_n_units, vocab)
 
-        self.use_warpctc = LooseVersion(torch.__version__) < LooseVersion("1.2.0")
+        self.use_warpctc = LooseVersion(torch.__version__) < LooseVersion("1.4.0")
         if self.use_warpctc:
             import warpctc_pytorch
             self.ctc_loss = warpctc_pytorch.CTCLoss(size_average=True)
@@ -103,6 +100,7 @@ class CTC(DecoderBase):
             ys (list): length `B`, each of which contains a list of size `[L]`
         Returns:
             loss (FloatTensor): `[1]`
+            trigger_points (IntTensor): `[B, L]`
 
         """
         # Concatenate all elements in ys for warpctc_pytorch
@@ -119,11 +117,7 @@ class CTC(DecoderBase):
         if self.lsm_prob > 0:
             loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits, elens) * self.lsm_prob
 
-        trigger_points = None
-        if forced_align:
-            ys = [np2tensor(np.fromiter(y, dtype=np.int64), self.device) for y in ys]
-            ys_in_pad = pad_list(ys, 0)  # pad by zero
-            trigger_points = self.forced_aligner.align(logits.clone(), elens, ys_in_pad, ylens)
+        trigger_points = self.forced_align(logits, elens, ys, ylens) if forced_align else None
 
         if not self.training:
             self.data_dict['elens'] = tensor2np(elens)
@@ -133,7 +127,7 @@ class CTC(DecoderBase):
 
     def loss_fn(self, logits, ys_ctc, elens, ylens):
         if self.use_warpctc:
-            loss = self.ctc_loss(logits, ys_ctc, elens.cpu(), ylens).to(self.device)
+            loss = self.ctc_loss(logits, ys_ctc, elens.cpu(), ylens).to(logits.device)
             # NOTE: ctc loss has already been normalized by bs
             # NOTE: index 0 is reserved for blank in warpctc_pytorch
         else:
@@ -144,14 +138,32 @@ class CTC(DecoderBase):
                                      ys_ctc, elens, ylens) / logits.size(1)
         return loss
 
+    def forced_align(self, logits, elens, ys, ylens):
+        """Forced alignment with references.
+
+        Args:
+            logits (FloatTensor): `[B, T, vocab]`
+            elens (list): length `B`
+            ys (list): length `B`, each of which contains a list of size `[L]`
+            ylens (list): length `B`
+        Returns:
+            trigger_points (IntTensor): `[B, L]`
+
+        """
+        with torch.no_grad():
+            ys = [np2tensor(np.fromiter(y, dtype=np.int64), logits.device) for y in ys]
+            ys_in_pad = pad_list(ys, 0)
+            trigger_points = self.forced_aligner.align(logits.clone(), elens, ys_in_pad, ylens)
+        return trigger_points
+
     def trigger_points(self, eouts, elens):
-        """Extract trigger points.
+        """Extract trigger points for inference.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (IntTensor): `[B]`
         Returns:
-            hyps (IntTensor): `[B, L]`
+            trigger_points_pred (IntTensor): `[B, L]`
 
         """
         bs, xmax, _ = eouts.size()
@@ -172,7 +184,7 @@ class CTC(DecoderBase):
         ymax = max([len(h) for h in hyps])
 
         # pick up trigger points
-        trigger_points = log_probs.new_zeros((bs, ymax + 1), dtype=torch.int32)  # +1 for <eos>
+        trigger_points_pred = log_probs.new_zeros((bs, ymax + 1), dtype=torch.int32)  # +1 for <eos>
         for b in range(bs):
             n_triggers = 0
             for t in range(elens[b]):
@@ -184,10 +196,10 @@ class CTC(DecoderBase):
                     continue
 
                 # NOTE: select the most left trigger points
-                trigger_points[b, n_triggers] = t
+                trigger_points_pred[b, n_triggers] = t
                 n_triggers += 1
 
-        return trigger_points
+        return trigger_points_pred
 
     def greedy(self, eouts, elens):
         """Greedy decoding.
@@ -345,7 +357,7 @@ class CTC(DecoderBase):
             if lm_second is not None:
                 new_beam = []
                 for i_beam in range(len(beam)):
-                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), self.device)]
+                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), eouts.device)]
                     ys_pad = pad_list(ys, lm_second.pad)
                     _, _, lm_log_probs = lm_second.predict(ys_pad, None)
                     score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
@@ -575,10 +587,6 @@ class CTCForcedAligner(object):
                 trigger_aligns[b, t] = token_idx
                 trigger_points[b, n_triggers] = t
                 n_triggers += 1
-
-        # print(trigger_points[0])
-        # print(trigger_aligns[0])
-        # print(ys[0])
 
         assert ylens.sum() == (trigger_aligns != 0).sum()
         return trigger_points
