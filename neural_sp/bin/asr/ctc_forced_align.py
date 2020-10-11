@@ -40,8 +40,7 @@ def main():
         # Load dataloader
         dataloader = build_dataloader(args=args,
                                       tsv_path=s,
-                                      batch_size=1,
-                                      is_test=True)
+                                      batch_size=recog_params['recog_batch_size'])
 
         if i == 0:
             # Load the ASR model
@@ -75,7 +74,7 @@ def main():
 
         pbar = tqdm(total=len(dataloader))
         while True:
-            batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
+            batch, is_new_epoch = dataloader.next()
             trigger_points = model.ctc_forced_align(batch['xs'], batch['ys'])  # `[B, L]`
 
             for b in range(len(batch['xs'])):
