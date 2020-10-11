@@ -66,11 +66,7 @@ class Reporter(object):
             if v == float("inf") or v == -float("inf"):
                 logger.warning("WARNING: received an inf %s for %s." % (metric, k))
 
-            if not is_eval:
-                if name not in self.obsv_train_local[metric].keys():
-                    self.obsv_train_local[metric][name] = []
-                self.obsv_train_local[metric][name].append(v)
-            else:
+            if is_eval:
                 # avarage for training
                 if name not in self.obsv_train[metric].keys():
                     self.obsv_train[metric][name] = []
@@ -82,11 +78,12 @@ class Reporter(object):
                     self.obsv_dev[metric][name] = []
                 self.obsv_dev[metric][name].append(v)
                 logger.info('%s (dev): %.3f' % (k, v))
-
-            if is_eval:
-                self.add_tensorboard_scalar('train' + '/' + metric + '/' + name, v)
-            else:
                 self.add_tensorboard_scalar('dev' + '/' + metric + '/' + name, v)
+            else:
+                if name not in self.obsv_train_local[metric].keys():
+                    self.obsv_train_local[metric][name] = []
+                self.obsv_train_local[metric][name].append(v)
+                self.add_tensorboard_scalar('train' + '/' + metric + '/' + name, v)
 
     def add_tensorboard_scalar(self, key, value):
         """Add scalar value to tensorboard."""
