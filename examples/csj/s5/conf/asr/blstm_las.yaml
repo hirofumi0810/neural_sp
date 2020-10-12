@@ -35,7 +35,7 @@ batch_size: 30
 optimizer: adam
 n_epochs: 25
 convert_to_sgd_epoch: 100
-print_step: 400
+print_step: 800
 metric: edit_distance
 lr: 1e-3
 lr_decay_type: always
@@ -58,7 +58,6 @@ dropout_emb: 0.4
 dropout_att: 0.0
 weight_decay: 1e-6
 ss_prob: 0.2
-ss_type: constant
 lsm_prob: 0.1
 ### MTL
 ctc_weight: 0.3

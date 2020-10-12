@@ -42,13 +42,7 @@ param_init: 0.1
 clip_grad_norm: 5.0
 dropout_in: 0.1
 dropout_enc: 0.1
-dropout_dec: 0.1
-dropout_emb: 0.1
-dropout_att: 0.1
 weight_decay: 1e-6
-ss_prob: 0.1
-ss_type: constant
-lsm_prob: 0.1
 ### MTL
 ctc_weight: 1.0
 ctc_lsm_prob: 0.1
