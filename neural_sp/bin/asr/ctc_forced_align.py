@@ -37,6 +37,10 @@ def main():
     set_logger(os.path.join(args.recog_dir, 'align.log'), stdout=args.recog_stdout)
 
     for i, s in enumerate(args.recog_sets):
+        # Align all utterances
+        args.min_n_frames = 0
+        args.max_n_frames = 1e5
+
         # Load dataloader
         dataloader = build_dataloader(args=args,
                                       tsv_path=s,
