@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -201,7 +198,8 @@ class CustomDataset(Dataset):
                  dict_path_sub1, dict_path_sub2,
                  unit_sub1, unit_sub2,
                  wp_model_sub1, wp_model_sub2,
-                 discourse_aware=False, first_n_utterances=-1, alignment_dir=None):
+                 discourse_aware=False, first_n_utterances=-1,
+                 alignment_dir=None):
         """Custom Dataset class.
 
         Args:
@@ -599,13 +597,13 @@ class CustomBatchSampler(BatchSampler):
             if batch_size is None:
                 batch_size = self.batch_size
 
-            if len(self.indices) > batch_size:
-                # Change batch size dynamically
-                min_xlen = self.df[self._offset:self._offset + 1]['xlen'].values[0]
-                min_ylen = self.df[self._offset:self._offset + 1]['ylen'].values[0]
-                batch_size = set_batch_size(batch_size, min_xlen, min_ylen,
-                                            self.dynamic_batching)
+            # Change batch size dynamically
+            min_xlen = self.df[self._offset:self._offset + 1]['xlen'].values[0]
+            min_ylen = self.df[self._offset:self._offset + 1]['ylen'].values[0]
+            batch_size = set_batch_size(batch_size, min_xlen, min_ylen,
+                                        self.dynamic_batching)
 
+            if len(self.indices) > batch_size:
                 indices = list(self.df[self._offset:self._offset + batch_size].index)
                 self._offset += len(indices)
             else:
@@ -613,15 +611,6 @@ class CustomBatchSampler(BatchSampler):
                 indices = self.indices[:]
                 self._offset = len(self.df)
                 is_new_epoch = True
-
-                # Change batch size dynamically
-                min_xlen = self.df[indices[0]:indices[0] + 1]['xlen'].values[0]
-                min_ylen = self.df[indices[0]:indices[0] + 1]['ylen'].values[0]
-                batch_size = set_batch_size(batch_size, min_xlen, min_ylen,
-                                            self.dynamic_batching)
-
-                # Remove the rest
-                indices = indices[:batch_size]
 
             # Shuffle uttrances in mini-batch
             indices = random.sample(indices, len(indices))

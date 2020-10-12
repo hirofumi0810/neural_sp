@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -46,7 +43,7 @@ def shuffle_bucketing(df, batch_size, dynamic_batching):
         indices = list(df[offset:offset + _batch_size].index)
         indices_buckets.append(indices)
         offset += len(indices)
-        if offset + _batch_size >= len(df):
+        if offset >= len(df):
             break
 
     # shuffle buckets

@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -128,6 +125,13 @@ class Speech2Text(ModelBase):
                 p.requires_grad = False
                 logger.info('freeze %s' % n)
 
+        special_symbols = {
+            'blank': self.blank,
+            'unk': self.unk,
+            'eos': self.eos,
+            'pad': self.pad,
+        }
+
         # main task
         external_lm = None
         directions = []
@@ -135,6 +139,7 @@ class Speech2Text(ModelBase):
             directions.append('fwd')
         if self.bwd_weight > 0:
             directions.append('bwd')
+
         for dir in directions:
             # Load the LM for LM fusion and decoder initialization
             if args.external_lm and dir == 'fwd':
@@ -145,13 +150,8 @@ class Speech2Text(ModelBase):
                     p.requires_grad = False
 
             # Decoder
-            special_symbols = {
-                'blank': self.blank,
-                'unk': self.unk,
-                'eos': self.eos,
-                'pad': self.pad,
-            }
-            dec = build_decoder(args, special_symbols, self.enc.output_dim,
+            dec = build_decoder(args, special_symbols,
+                                self.enc.output_dim,
                                 args.vocab,
                                 self.ctc_weight,
                                 args.ctc_fc_list,
@@ -162,7 +162,8 @@ class Speech2Text(ModelBase):
         # sub task
         for sub in ['sub1', 'sub2']:
             if getattr(self, sub + '_weight') > 0:
-                dec_sub = build_decoder(args, special_symbols, self.enc.output_dim,
+                dec_sub = build_decoder(args, special_symbols,
+                                        self.enc.output_dim,
                                         getattr(self, 'vocab_' + sub),
                                         getattr(self, 'ctc_weight_' + sub),
                                         getattr(args, 'ctc_fc_list_' + sub),
@@ -425,6 +426,24 @@ class Speech2Text(ModelBase):
             ctc_probs, indices_topk = getattr(self, 'dec_' + dir).ctc_probs_topk(
                 eout_dict[task]['xs'], temperature, topk)
             return tensor2np(ctc_probs), tensor2np(indices_topk), eout_dict[task]['xlens']
+
+    def ctc_forced_align(self, xs, ys, task='ys'):
+        """CTC-based forced alignment.
+
+        Args:
+            xs (FloatTensor): `[B, T, idim]`
+            ys (list): length `B`, each of which contains a list of size `[L]`
+        Returns:
+            trigger_points (np.ndarray): `[B, L]`
+
+        """
+        self.eval()
+        with torch.no_grad():
+            eout_dict = self.encode(xs, 'ys')
+            # NOTE: support the main task only
+            trigger_points = getattr(self, 'dec_fwd').ctc_forced_align(
+                eout_dict[task]['xs'], eout_dict[task]['xlens'], ys)
+        return tensor2np(trigger_points)
 
     def plot_attention(self):
         """Plot attention weights during training."""
