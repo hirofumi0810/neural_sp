@@ -31,6 +31,12 @@ class DecoderBase(ModelBase):
     def reset_session(self):
         self.new_session = True
 
+    def trigger_scheduled_sampling(self):
+        self._ss_prob = getattr(self, 'ss_prob', 0)
+
+    def trigger_quantity_loss(self):
+        self._quantity_loss_weight = getattr(self, 'quantity_loss_weight', 0)
+
     def greedy(self, eouts, elens, max_len_ratio):
         raise NotImplementedError
 

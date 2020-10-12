@@ -191,21 +191,24 @@ class Speech2Text(ModelBase):
                 else:
                     p.requires_grad = False
 
-    def scheduled_sampling_trigger(self):
+    def trigger_scheduled_sampling(self):
         # main task
         for dir in ['fwd', 'bwd']:
             if hasattr(self, 'dec_' + dir):
-                getattr(self, 'dec_' + dir).start_scheduled_sampling()
+                logging.info('Activate scheduled sampling (main)')
+                getattr(self, 'dec_' + dir).trigger_scheduled_sampling()
 
         # sub task
         for sub in ['sub1', 'sub2']:
             if hasattr(self, 'dec_fwd_' + sub):
-                getattr(self, 'dec_fwd_' + sub).start_scheduled_sampling()
+                logging.info('Activate scheduled sampling (%s)' % sub)
+                getattr(self, 'dec_fwd_' + sub).trigger_scheduled_sampling()
 
-    def mocha_quantity_loss_trigger(self):
+    def trigger_quantity_loss(self):
         # main task only now
         if hasattr(self, 'dec_fwd'):
-            getattr(self, 'dec_fwd').start_mocha_quantity_loss()
+            logging.info('Activate quantity loss')
+            getattr(self, 'dec_fwd').trigger_quantity_loss()
 
     def reset_session(self):
         # main task

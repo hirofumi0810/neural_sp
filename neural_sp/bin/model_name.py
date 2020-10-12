@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -94,8 +91,6 @@ def set_asr_model_name(args):
     #     dir_name += '_' + args.transformer_param_init
 
     # regularization
-    if args.ctc_weight < 1 and args.ss_prob > 0:
-        dir_name += '_ss' + str(args.ss_prob)
     if args.lsm_prob > 0:
         dir_name += '_ls' + str(args.lsm_prob)
     if args.warmup_n_steps > 0:
@@ -146,9 +141,9 @@ def set_asr_model_name(args):
         if args.adaptive_size_ratio > 0:
             dir_name += '_psize' + str(args.adaptive_size_ratio)
     if args.input_noise_std > 0:
-        dir_name += '_inputnoisestd'
+        dir_name += '_Inoise'
     if args.weight_noise_std > 0:
-        dir_name += '_weightnoisestd'
+        dir_name += '_Wnoise'
 
     # contextualization
     if args.discourse_aware:

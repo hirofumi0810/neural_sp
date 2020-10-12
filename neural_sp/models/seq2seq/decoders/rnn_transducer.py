@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -177,9 +174,6 @@ class RNNTransducer(DecoderBase):
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', param_init))
             else:
                 raise ValueError(n)
-
-    def start_scheduled_sampling(self):
-        self._ss_prob = 0.
 
     def forward(self, eouts, elens, ys, task='all',
                 teacher_logits=None, recog_params={}, idx2token=None, trigger_points=None):

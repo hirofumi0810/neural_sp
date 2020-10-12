@@ -290,6 +290,11 @@ def main():
     else:
         tasks = ['all']
 
+    if getattr(args, 'ss_start_epoch', 0) <= resume_epoch:
+        model.module.trigger_scheduled_sampling()
+    if getattr(args, 'mocha_quantity_loss_start_epoch', 0) <= resume_epoch:
+        model.module.trigger_quantity_loss()
+
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
@@ -431,8 +436,10 @@ def main():
 
         if scheduler.n_epochs >= args.n_epochs:
             break
-        # if args.ss_prob > 0:
-        #     model.module.scheduled_sampling_trigger()
+        if getattr(args, 'ss_start_epoch', 0) == (ep + 1):
+            model.module.trigger_scheduled_sampling()
+        if getattr(args, 'mocha_quantity_loss_start_epoch', 0) == (ep + 1):
+            model.module.trigger_quantity_loss()
 
         start_time_step = time.time()
         start_time_epoch = time.time()
