@@ -41,7 +41,6 @@ def make_args(**kwargs):
         dropout_att=0.1,
         lsm_prob=0.0,
         ss_prob=0.0,
-        ss_type='constant',
         ctc_weight=0.0,
         ctc_lsm_prob=0.1,
         ctc_fc_list='16_16',

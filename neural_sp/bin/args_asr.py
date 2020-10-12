@@ -276,11 +276,6 @@ def build_parser():
                         help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='weight decay parameter')
-    parser.add_argument('--ss_prob', type=float, default=0.0,
-                        help='probability of scheduled sampling')
-    parser.add_argument('--ss_type', type=str, default='constant',
-                        choices=['constant', 'ramp'],
-                        help='type of scheduled sampling')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
                         help='probability of label smoothing')
     parser.add_argument('--ctc_lsm_prob', type=float, default=0.0,

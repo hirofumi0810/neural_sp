@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -75,7 +72,6 @@ class RNNDecoder(DecoderBase):
         dropout_att (float): dropout probability for attention distributions
         lsm_prob (float): label smoothing probability
         ss_prob (float): scheduled sampling probability
-        ss_type (str): constant/ramp
         ctc_weight (float): CTC loss weight
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (list): fully-connected layer configuration before the CTC softmax
@@ -89,11 +85,11 @@ class RNNDecoder(DecoderBase):
         mtl_per_batch (bool): change mini-batch per task for multi-task training
         param_init (float): parameter initialization
         mocha_chunk_size (int): chunk size for MoChA
-        mocha_n_heads_mono (int): number of hard monotonic attention head
-        mocha_init_r (int): initial bias value for hard monotonic attention
-        mocha_eps (float): epsilon value for hard monotonic attention
-        mocha_std (float): standard deviation of Gaussian noise for hard monotonic attention
-        mocha_no_denominator (bool): remove demominator in hard monotonic attention
+        mocha_n_heads_mono (int): number of monotonic head for MoChA
+        mocha_init_r (int): initial bias value for MoChA
+        mocha_eps (float): epsilon value for MoChA
+        mocha_std (float): standard deviation of Gaussian noise for MoChA
+        mocha_no_denominator (bool): remove demominator in MoChA
         mocha_1dconv (bool): 1dconv for MoChA
         mocha_decot_lookahead (int): lookahead frames of DeCoT for MoChA
         quantity_loss_weight (float): quantity loss weight for MoChA
@@ -101,7 +97,7 @@ class RNNDecoder(DecoderBase):
         latency_loss_weight (float): latency loss weight for MoChA
         gmm_attn_n_mixtures (int): number of mixtures for GMM attention
         replace_sos (bool): replace <sos> with special tokens
-        distillation_weight (float): soft label weight for knowledge distillation
+        distil_weight (float): soft label weight for knowledge distillation
         discourse_aware (str): state_carry_over
 
     """
@@ -112,7 +108,7 @@ class RNNDecoder(DecoderBase):
                  attn_dim, attn_sharpening_factor, attn_sigmoid_smoothing,
                  attn_conv_out_channels, attn_conv_kernel_size, attn_n_heads,
                  dropout, dropout_emb, dropout_att,
-                 lsm_prob, ss_prob, ss_type,
+                 lsm_prob, ss_prob,
                  ctc_weight, ctc_lsm_prob, ctc_fc_list,
                  mbr_training, mbr_ce_weight,
                  external_lm, lm_fusion, lm_init,
@@ -139,25 +135,21 @@ class RNNDecoder(DecoderBase):
         self.n_layers = n_layers
         self.lsm_prob = lsm_prob
         self.ss_prob = ss_prob
-        self.ss_type = ss_type
-        if ss_type == 'constant':
-            self._ss_prob = ss_prob
-        elif ss_type == 'ramp':
-            self._ss_prob = 0  # for curriculum
+        self._ss_prob = 0  # for curriculum
         self.att_weight = global_weight - ctc_weight
         self.ctc_weight = ctc_weight
         self.lm_fusion = lm_fusion
         self.bwd = backward
         self.mtl_per_batch = mtl_per_batch
         self.replace_sos = replace_sos
-        self.distillation_weight = distillation_weight
+        self.distil_weight = distillation_weight
 
         # for mocha and triggered attention
         self.quantity_loss_weight = quantity_loss_weight
-        self._quantity_loss_weight = quantity_loss_weight  # for curriculum
+        self._quantity_loss_weight = 0  # for curriculum
         self.latency_metric = latency_metric
         self.latency_loss_weight = latency_loss_weight
-        if 'ctc_sync' in self.latency_metric or attn_type == 'triggered_attention':
+        if ('ctc_sync' in latency_metric) or attn_type == 'triggered_attention':
             assert 0 < self.ctc_weight < 1
 
         # for MBR training
@@ -323,6 +315,11 @@ class RNNDecoder(DecoderBase):
                            help='')
         group.add_argument('--gmm_attn_n_mixtures', type=int, default=5,
                            help='number of mixtures for GMM attention')
+        # other
+        parser.add_argument('--ss_prob', type=float, default=0.0,
+                            help='probability of scheduled sampling')
+        parser.add_argument('--ss_start_epoch', type=int, default=0,
+                            help='epoch to turn on scheduled sampling')
         # streaming
         parser.add_argument('--mocha_n_heads_mono', type=int, default=1,
                             help='number of heads for monotonic attention')
@@ -342,12 +339,14 @@ class RNNDecoder(DecoderBase):
                             help='1dconv for MoChA')
         parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
                             help='quantity loss weight for MoChA')
+        parser.add_argument('--mocha_quantity_loss_start_epoch', type=int, default=0,
+                            help='epoch to turn on quantity loss')
         parser.add_argument('--mocha_latency_metric', type=str, default='',
                             choices=['', 'decot', 'minlt', 'ctc_sync', 'decot_ctc_sync', 'interval'],
                             help='differentiable latency metric for MoChA')
         parser.add_argument('--mocha_latency_loss_weight', type=float, default=0.0,
                             help='latency loss weight for MoChA')
-        parser.add_argument('--mocha_decot_lookahead', type=int, default=16,
+        parser.add_argument('--mocha_decot_lookahead', type=int, default=-1,
                             help='tolerance frames in DeCoT')
         return parser
 
@@ -388,6 +387,9 @@ class RNNDecoder(DecoderBase):
         if args.tie_embedding:
             dir_name += '_tie'
 
+        if args.ctc_weight < 1 and args.ss_prob > 0:
+            dir_name += '_ss' + str(args.ss_prob)
+
         return dir_name
 
     def reset_parameters(self, param_init):
@@ -407,9 +409,6 @@ class RNNDecoder(DecoderBase):
                 continue
 
             init_with_uniform(n, p, param_init)
-
-    def start_scheduled_sampling(self):
-        self._ss_prob = self.ss_prob
 
     def forward(self, eouts, elens, ys, task='all',
                 teacher_logits=None, recog_params={}, idx2token=None, trigger_points=None):
@@ -757,7 +756,7 @@ class RNNDecoder(DecoderBase):
         # Knowledge distillation
         if teacher_logits is not None:
             kl_loss = distillation(logits, teacher_logits, ylens, temperature=5.0)
-            loss = loss * (1 - self.distillation_weight) + kl_loss * self.distillation_weight
+            loss = loss * (1 - self.distil_weight) + kl_loss * self.distil_weight
 
         # Compute token-level accuracy in teacher-forcing
         acc = compute_accuracy(logits, ys_out, self.pad)

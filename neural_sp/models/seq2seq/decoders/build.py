@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -113,7 +110,6 @@ def build_decoder(args, special_symbols, enc_n_units, vocab,
             dropout_att=args.dropout_att,
             lsm_prob=args.lsm_prob,
             ss_prob=args.ss_prob,
-            ss_type=args.ss_type,
             ctc_weight=ctc_weight,
             ctc_lsm_prob=args.ctc_lsm_prob,
             ctc_fc_list=ctc_fc_list,
