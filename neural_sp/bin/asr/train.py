@@ -318,7 +318,7 @@ def main():
             for task in tasks:
                 loss, observation = model(batch_train, task=task,
                                           teacher=teacher, teacher_lm=teacher_lm)
-                loss = loss / accum_n_steps
+                loss = loss / accum_grad_n_steps
                 reporter.add(observation)
                 if use_apex:
                     with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
