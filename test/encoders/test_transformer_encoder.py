@@ -108,6 +108,8 @@ def make_args(**kwargs):
           'last_proj_dim': 10}),
         # bottleneck
         ({'ffn_bottleneck_dim': 16}),
+        ({'input_bottleneck_dim': 16}),
+        ({'ffn_bottleneck_dim': 16, 'input_bottleneck_dim': 16}),
         # subsampling
         ({'subsample': "1_2_1", 'subsample_type': 'drop'}),
         ({'subsample': "1_2_1", 'subsample_type': 'concat'}),
@@ -118,10 +120,11 @@ def make_args(**kwargs):
         ({'subsample': "1_2_1", 'enc_type': 'conv_uni_transformer'}),
         ({'subsample': "1_2_1", 'streaming_type': 'reshape',
           'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
-        ({'subsample': "2_2_1", 'streaming_type': 'reshape',
+        ({'subsample': "1_2_1", 'streaming_type': 'mask',
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+        ({'subsample': "1_2_1", 'streaming_type': 'reshape',
           'conv_poolings': "(1,1)_(2,2)",
           'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
-        # mask
         ({'subsample': "1_2_1", 'streaming_type': 'mask',
           'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
         ({'subsample': "2_2_1", 'streaming_type': 'mask',
@@ -136,7 +139,7 @@ def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [400, 455]
+    xmaxs = [40, 45] if int(args['chunk_size_left'].split('_')[0]) == -1 else [400, 455]
     device = "cpu"
 
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
@@ -159,11 +162,11 @@ def test_forward(args):
                     enc_out_dict = enc(xs, xlens, task='all')
                     # enc._plot_attention()  # too slow
 
-            assert enc_out_dict['ys']['xs'].size(0) == batch_size, xs.size()
-            assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0], xs.size()
+            assert enc_out_dict['ys']['xs'].size(0) == batch_size
+            assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
             if args['n_layers_sub1'] > 0:
-                assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size, xs.size()
-                assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0], xs.size()
+                assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
+                assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0]
             if args['n_layers_sub2'] > 0:
-                assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size, xs.size()
-                assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0], xs.size()
+                assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
+                assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0]

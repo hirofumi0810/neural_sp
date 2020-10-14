@@ -112,7 +112,12 @@ def make_args(**kwargs):
           'conv_poolings': "(1,1)_(2,2)",
           'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
         ({'subsample': "1_2_1", 'streaming_type': 'mask',
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+        ({'subsample': "2_2_1", 'streaming_type': 'mask',
           'conv_poolings': "(1,1)_(2,2)",
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+        ({'subsample': "2_2_1", 'streaming_type': 'mask',
+          'pe_type': "relative",
           'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
     ]
 )
@@ -120,7 +125,7 @@ def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [400, 455]
+    xmaxs = [40, 45] if int(args['chunk_size_left'].split('_')[0]) == -1 else [400, 455]
     device = "cpu"
 
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.conformer')

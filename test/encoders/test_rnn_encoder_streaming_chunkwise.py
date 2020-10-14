@@ -53,7 +53,7 @@ def make_args(**kwargs):
         # no CNN
         ({'enc_type': 'blstm', 'chunk_size_left': "20", 'chunk_size_right': "20"}),
         ({'enc_type': 'blstm', 'chunk_size_left': "32", 'chunk_size_right': "16"}),
-        ({'enc_type': 'lstm', 'chunk_size_left': 1}),
+        ({'enc_type': 'lstm', 'chunk_size_left': "1"}),
         # no CNN, frame stacking
         ({'enc_type': 'blstm', 'n_stacks': 2,
           'chunk_size_left': "20", 'chunk_size_right': "20"}),
@@ -99,21 +99,22 @@ def make_args(**kwargs):
 )
 def test_forward_streaming_chunkwise(args):
     args = make_args(**args)
-    assert int(args['chunk_size_left']) > 0
     unidir = args['enc_type'] in ['conv_lstm', 'conv_gru', 'lstm', 'gru']
 
     batch_size = 1
     xmaxs = [t for t in range(160, 192, 1)]
     device = "cpu"
 
-    N_l = max(0, int(args['chunk_size_left'])) // args['n_stacks']
-    N_r = max(0, int(args['chunk_size_right'])) // args['n_stacks']
+    N_l = max(0, int(args['chunk_size_left'].split('_')[0])) // args['n_stacks']
+    N_r = max(0, int(args['chunk_size_right'].split('_')[0])) // args['n_stacks']
     if unidir:
         args['chunk_size_left'] = "0"
         args['chunk_size_right'] = "0"
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
     enc = module.RNNEncoder(**args)
     enc = enc.to(device)
+    if enc.lc_bidir:
+        assert N_l > 0
 
     factor = enc.subsampling_factor
     conv_lookback = enc.conv.n_frames_context if enc.conv is not None else 0

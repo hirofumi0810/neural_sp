@@ -138,7 +138,7 @@ def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [40, 45] if int(args['chunk_size_left']) == -1 else [400, 455]
+    xmaxs = [40, 45] if int(args['chunk_size_left'].split('_')[0]) == -1 else [400, 455]
     device = "cpu"
 
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
