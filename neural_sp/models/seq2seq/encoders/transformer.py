@@ -96,7 +96,7 @@ class TransformerEncoder(EncoderBase):
         for lth, s in enumerate(list(map(int, subsample.split('_')[:n_layers]))):
             subsamples[lth] = s
         # parse lookahead
-        lookaheads = [1] * n_layers
+        lookaheads = [0] * n_layers
         for lth, s in enumerate(list(map(int, lookahead.split('_')[:n_layers]))):
             lookaheads[lth] = s
 
