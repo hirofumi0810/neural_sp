@@ -213,7 +213,7 @@ def main():
             if accum_n_steps == 1:
                 loss_train = 0  # moving average over gradient accumulation
             loss, hidden, observation = model(ys_train, state=hidden)
-            loss = loss / accum_n_steps
+            loss = loss / accum_grad_n_steps
             reporter.add(observation)
             if use_apex:
                 with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
