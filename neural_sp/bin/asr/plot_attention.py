@@ -153,6 +153,7 @@ def main():
                 plot_attention_weights(
                     aws[b][0][:, :len(tokens)], tokens,
                     spectrogram=batch['xs'][b][:, :dataloader.input_dim] if args.input_type == 'speech' else None,
+                    factor=args.subsample_factor,
                     ref=batch['text'][b].lower(),
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8),
