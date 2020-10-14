@@ -113,15 +113,20 @@ class TransformerEncoder(EncoderBase):
         self.scale = math.sqrt(d_model)
         self.unidir = 'uni' in enc_type
 
+        # for compatiblity
+        chunk_size_left = str(chunk_size_left)
+        chunk_size_current = str(chunk_size_current)
+        chunk_size_right = str(chunk_size_right)
+
         # for streaming encoder
-        self.chunk_size_left = chunk_size_left
-        self.chunk_size_current = chunk_size_current
-        self.chunk_size_right = chunk_size_right
-        self.latency_controlled = chunk_size_left > 0 or chunk_size_current > 0 or chunk_size_right > 0
+        self.chunk_size_left = int(chunk_size_left.split('_')[-1]) // n_stacks
+        self.chunk_size_current = int(chunk_size_current.split('_')[-1]) // n_stacks
+        self.chunk_size_right = int(chunk_size_right.split('_')[-1]) // n_stacks
+        self.lc_bidir = self.chunk_size_left > 0 or self.chunk_size_current > 0 or self.chunk_size_right > 0
         self.streaming_type = streaming_type
         # reshape) not lookahead frames in CNN layers, but requires some additional computations
         # mask) there are some lookahead frames in CNN layers, no additional computations
-        if self.latency_controlled:
+        if self.lc_bidir:
             assert n_layers_sub1 == 0
             assert n_layers_sub2 == 0
             assert not self.unidir
@@ -277,11 +282,11 @@ class TransformerEncoder(EncoderBase):
         group.add_argument('--transformer_enc_clamp_len', type=int, default=-1,
                            help='maximum length for relative positional encoding. -1 means infinite length.')
         # streaming
-        group.add_argument('--lc_chunk_size_left', type=int, default=0,
+        group.add_argument('--lc_chunk_size_left', type=str, default="0",
                            help='left chunk size for latency-controlled Transformer encoder')
-        group.add_argument('--lc_chunk_size_current', type=int, default=0,
+        group.add_argument('--lc_chunk_size_current', type=str, default="0",
                            help='current chunk size (and hop size) for latency-controlled Transformer encoder')
-        group.add_argument('--lc_chunk_size_right', type=int, default=0,
+        group.add_argument('--lc_chunk_size_right', type=str, default="0",
                            help='right chunk size for latency-controlled Transformer encoder')
         group.add_argument('--lc_type', type=str, default='reshape',
                            choices=['reshape', 'mask'],
@@ -304,9 +309,10 @@ class TransformerEncoder(EncoderBase):
             dir_name += '_clamp' + str(args.transformer_enc_clamp_len)
         if args.dropout_enc_layer > 0:
             dir_name += 'droplayer' + str(args.dropout_enc_layer)
-        if args.lc_chunk_size_left > 0 or args.lc_chunk_size_current > 0 or args.lc_chunk_size_right > 0:
-            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
-                str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
+        if int(args.lc_chunk_size_left.split('_')[-1]) > 0 or int(args.lc_chunk_size_current.split('_')[-1]) > 0 \
+                or int(args.lc_chunk_size_right.split('_')[-1]) > 0:
+            dir_name += '_chunkL' + args.lc_chunk_size_left + 'C' + \
+                args.lc_chunk_size_current + 'R' + args.lc_chunk_size_right
             dir_name += '_' + args.lc_type
         return dir_name
 
@@ -350,19 +356,16 @@ class TransformerEncoder(EncoderBase):
                  'ys_sub1': {'xs': None, 'xlens': None},
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
-        N_l = self.chunk_size_left
-        N_c = self.chunk_size_current
-        N_r = self.chunk_size_right
         bs = xs.size(0)
         n_chunks = 0
         clamp_len = self.clamp_len
+        lc_bidir = self.lc_bidir
 
-        if self.latency_controlled:
-            if self.streaming_type == 'reshape':
-                xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
-            elif self.streaming_type == 'mask':
-                # xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
-                xs = chunkwise(xs, 0, N_c, 0)  # `[B * n_chunks, N_c, idim]`
+        # latency_controllable
+        N_l, N_c, N_r = self.chunk_size_left, self.chunk_size_current, self.chunk_size_right
+
+        if lc_bidir:
+            xs = chunkwise(xs, 0, N_c, 0)  # `[B * n_chunks, N_c, idim]`
             n_chunks = xs.size(0) // bs
 
         if self.conv is None:
@@ -370,17 +373,22 @@ class TransformerEncoder(EncoderBase):
         else:
             # Path through CNN blocks
             xs, xlens = self.conv(xs, xlens)
-            N_l = max(0, N_l // self.conv.subsampling_factor)
-            N_c = N_c // self.conv.subsampling_factor
-            N_r = N_r // self.conv.subsampling_factor
             clamp_len = clamp_len // self.conv.subsampling_factor
+            if lc_bidir:
+                N_l = max(0, N_l // self.conv.subsampling_factor)
+                N_c = N_c // self.conv.subsampling_factor
+                N_r = N_r // self.conv.subsampling_factor
 
-        if self.streaming_type == 'mask':
-            # Extract the center region
-            emax = xlens.max().item()
-            xs = xs.contiguous().view(bs, -1, xs.size(2))[:, :emax]  # `[B, emax, d_model]`
+        if lc_bidir:
+            if self.streaming_type == 'mask':
+                # Extract the center region
+                emax = xlens.max().item()
+                xs = xs.contiguous().view(bs, -1, xs.size(2))[:, :emax]  # `[B, emax, d_model]`
+            elif self.streaming_type == 'reshape':
+                xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
+                assert n_chunks == (xs.size(0) // bs)
 
-        if self.latency_controlled:
+        if lc_bidir:
             # streaming encoder
             emax = xlens.max().item()
 
@@ -419,9 +427,9 @@ class TransformerEncoder(EncoderBase):
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
                     emax = xlens.max().item()
-                    N_l = max(0, N_l // self.subsample[lth].subsampling_factor)
-                    N_c = N_c // self.subsample[lth].subsampling_factor
-                    N_r = N_r // self.subsample[lth].subsampling_factor
+                    N_l = max(0, N_l // self.subsample[lth].factor)
+                    N_c = N_c // self.subsample[lth].factor
+                    N_r = N_r // self.subsample[lth].factor
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
                         pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
