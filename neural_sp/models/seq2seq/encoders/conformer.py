@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -9,11 +6,9 @@
 import copy
 import logging
 import random
-import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.conformer_convolution import ConformerConvBlock
-from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
@@ -63,6 +58,7 @@ class ConformerEncoder(TransformerEncoder):
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (str): parameter initialization method
         clamp_len (int): maximum length for relative positional encoding
+        lookahead (int): lookahead frames per layer for unidirectional Transformer encoder
         chunk_size_left (int): left chunk size for latency-controlled Conformer encoder
         chunk_size_current (int): current chunk size for latency-controlled Conformer encoder
         chunk_size_right (int): right chunk size for latency-controlled Conformer encoder
@@ -79,7 +75,7 @@ class ConformerEncoder(TransformerEncoder):
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init, clamp_len,
-                 chunk_size_left, chunk_size_current, chunk_size_right, streaming_type):
+                 lookahead, chunk_size_left, chunk_size_current, chunk_size_right, streaming_type):
 
         super(ConformerEncoder, self).__init__(
             input_dim, enc_type, n_heads,
@@ -91,12 +87,12 @@ class ConformerEncoder(TransformerEncoder):
             conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
             conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
             task_specific_layer, param_init, clamp_len,
-            chunk_size_left, chunk_size_current, chunk_size_right, streaming_type)
+            lookahead, chunk_size_left, chunk_size_current, chunk_size_right, streaming_type)
 
         self.layers = nn.ModuleList([copy.deepcopy(ConformerEncoderBlock(
             d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init, pe_type,
-            ffn_bottleneck_dim, self.unidirectional))
+            ffn_bottleneck_dim, self.unidir))
             for _ in range(n_layers)])
 
         if n_layers_sub1 > 0:
@@ -104,14 +100,14 @@ class ConformerEncoder(TransformerEncoder):
                 self.layer_sub1 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
-                    ffn_bottleneck_dim, self.unidirectional)
+                    ffn_bottleneck_dim, self.unidir)
 
         if n_layers_sub2 > 0:
             if task_specific_layer:
                 self.layer_sub2 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
-                    ffn_bottleneck_dim, self.unidirectional)
+                    ffn_bottleneck_dim, self.unidir)
 
         self.reset_parameters(param_init)
 
@@ -152,11 +148,13 @@ class ConformerEncoder(TransformerEncoder):
         group.add_argument('--transformer_enc_clamp_len', type=int, default=-1,
                            help='maximum length for relative positional encoding. -1 means infinite length.')
         # streaming
-        group.add_argument('--lc_chunk_size_left', type=int, default=0,
+        group.add_argument('--transformer_enc_lookaheads', type=str, default="0_0_0_0_0_0_0_0_0_0_0_0",
+                           help='lookahead frames per layer for unidirectional Conformer encoder')
+        group.add_argument('--lc_chunk_size_left', type=str, default="0",
                            help='left chunk size for latency-controlled Conformer encoder')
-        group.add_argument('--lc_chunk_size_current', type=int, default=0,
+        group.add_argument('--lc_chunk_size_current', type=str, default="0",
                            help='current chunk size (and hop size) for latency-controlled Conformer encoder')
-        group.add_argument('--lc_chunk_size_right', type=int, default=0,
+        group.add_argument('--lc_chunk_size_right', type=str, default="0",
                            help='right chunk size for latency-controlled Conformer encoder')
         group.add_argument('--lc_type', type=str, default='reshape',
                            choices=['reshape', 'mask'],
@@ -179,10 +177,13 @@ class ConformerEncoder(TransformerEncoder):
             dir_name += '_clamp' + str(args.transformer_enc_clamp_len)
         if args.dropout_enc_layer > 0:
             dir_name += 'droplayer' + str(args.dropout_enc_layer)
-        if args.lc_chunk_size_left > 0 or args.lc_chunk_size_current > 0 or args.lc_chunk_size_right > 0:
-            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'C' + \
-                str(args.lc_chunk_size_current) + 'R' + str(args.lc_chunk_size_right)
+        if int(args.lc_chunk_size_left.split('_')[-1]) > 0 or int(args.lc_chunk_size_current.split('_')[-1]) > 0 \
+                or int(args.lc_chunk_size_right.split('_')[-1]) > 0:
+            dir_name += '_chunkL' + args.lc_chunk_size_left + 'C' + \
+                args.lc_chunk_size_current + 'R' + args.lc_chunk_size_right
             dir_name += '_' + args.lc_type
+        elif sum(list(map(int, args.transformer_enc_lookaheads.split('_')))) > 0:
+            dir_name += '_LA' + str(sum(list(map(int, args.transformer_enc_lookaheads.split('_')))))
 
         return dir_name
 
