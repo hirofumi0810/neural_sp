@@ -470,13 +470,14 @@ class TransformerEncoder(EncoderBase):
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens
                         return eouts
 
-                if self.subsample is not None:
-                    xs, xlens = self.subsample[lth](xs, xlens)
-                    xx_mask = make_san_mask(xs, xlens, self.unidir)
-                    if self.pe_type in ['relative', 'relative_xl']:
-                        # Create sinusoidal positional embeddings for relative positional encoding
-                        clamp_len = clamp_len // self.subsample[lth].subsampling_factor
-                        pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
+                if lth < len(self.layers) - 1:
+                    if self.subsample is not None and self.subsample[lth].factor > 1:
+                        xs, xlens = self.subsample[lth](xs, xlens)
+                        xx_mask = make_san_mask(xs, xlens, self.unidir)
+                        if self.pe_type in ['relative', 'relative_xl']:
+                            # Create sinusoidal positional embeddings for relative positional encoding
+                            clamp_len = clamp_len // self.subsample[lth].factor
+                            pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
 
         xs = self.norm_out(xs)
 
