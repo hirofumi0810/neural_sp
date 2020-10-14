@@ -74,7 +74,7 @@ def main():
 
         while True:
             batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
-            best_hyps_id, _ = model.decode(batch['xs'], recog_params)
+            best_hyps_id, _ = model.decode(batch['xs'], recog_params, dataloader.idx2token[0])
 
             # Get CTC probs
             ctc_probs, topk_ids, xlens = model.get_ctc_probs(
@@ -87,7 +87,7 @@ def main():
 
                 plot_ctc_probs(
                     ctc_probs[b, :xlens[b]], topk_ids[b],
-                    subsample_factor=args.subsample_factor,
+                    factor=args.subsample_factor,
                     spectrogram=batch['xs'][b][:, :dataloader.input_dim],
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8))
