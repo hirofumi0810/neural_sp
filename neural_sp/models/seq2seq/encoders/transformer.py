@@ -111,7 +111,7 @@ class TransformerEncoder(EncoderBase):
         self.n_heads = n_heads
         self.pe_type = pe_type
         self.scale = math.sqrt(d_model)
-        self.unidirectional = 'uni' in enc_type
+        self.unidir = 'uni' in enc_type
 
         # for streaming encoder
         self.chunk_size_left = chunk_size_left
@@ -124,7 +124,7 @@ class TransformerEncoder(EncoderBase):
         if self.latency_controlled:
             assert n_layers_sub1 == 0
             assert n_layers_sub2 == 0
-            assert not self.unidirectional
+            assert not self.unidir
 
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -443,7 +443,7 @@ class TransformerEncoder(EncoderBase):
                 xs = self.pos_enc(xs, scale=True)
                 pos_embs = None
 
-            xx_mask = make_san_mask(xs, xlens, self.unidirectional)
+            xx_mask = make_san_mask(xs, xlens, self.unidir)
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
@@ -464,7 +464,7 @@ class TransformerEncoder(EncoderBase):
 
                 if self.subsample is not None:
                     xs, xlens = self.subsample[lth](xs, xlens)
-                    xx_mask = make_san_mask(xs, xlens, self.unidirectional)
+                    xx_mask = make_san_mask(xs, xlens, self.unidir)
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
                         clamp_len = clamp_len // self.subsample[lth].subsampling_factor
