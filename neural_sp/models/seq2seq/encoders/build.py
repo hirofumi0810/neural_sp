@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -76,6 +73,7 @@ def build_encoder(args):
             task_specific_layer=args.task_specific_layer,
             param_init=args.transformer_param_init,
             clamp_len=args.transformer_enc_clamp_len,
+            lookahead=args.transformer_enc_lookaheads,
             chunk_size_left=args.lc_chunk_size_left,
             chunk_size_current=args.lc_chunk_size_current,
             chunk_size_right=args.lc_chunk_size_right,
@@ -118,6 +116,7 @@ def build_encoder(args):
             task_specific_layer=args.task_specific_layer,
             param_init=args.transformer_param_init,
             clamp_len=args.transformer_enc_clamp_len,
+            lookahead=args.transformer_enc_lookaheads,
             chunk_size_left=args.lc_chunk_size_left,
             chunk_size_current=args.lc_chunk_size_current,
             chunk_size_right=args.lc_chunk_size_right,
@@ -153,6 +152,5 @@ def build_encoder(args):
             param_init=args.param_init,
             chunk_size_left=args.lc_chunk_size_left,
             chunk_size_right=args.lc_chunk_size_right)
-        # NOTE: pure Conv/TDS/GatedConv encoders are also included
 
     return encoder

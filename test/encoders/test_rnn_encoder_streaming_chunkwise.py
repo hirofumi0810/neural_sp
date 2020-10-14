@@ -40,8 +40,8 @@ def make_args(**kwargs):
         bidir_sum_fwd_bwd=False,
         task_specific_layer=False,
         param_init=0.1,
-        chunk_size_left=0,
-        chunk_size_right=0,
+        chunk_size_left="0",
+        chunk_size_right="0",
     )
     args.update(kwargs)
     return args
@@ -51,67 +51,70 @@ def make_args(**kwargs):
     "args",
     [
         # no CNN
-        ({'enc_type': 'blstm', 'chunk_size_left': 20, 'chunk_size_right': 20}),
-        ({'enc_type': 'blstm', 'chunk_size_left': 32, 'chunk_size_right': 16}),
-        ({'enc_type': 'lstm', 'chunk_size_left': 1}),
+        ({'enc_type': 'blstm', 'chunk_size_left': "20", 'chunk_size_right': "20"}),
+        ({'enc_type': 'blstm', 'chunk_size_left': "32", 'chunk_size_right': "16"}),
+        ({'enc_type': 'lstm', 'chunk_size_left': "1"}),
         # no CNN, frame stacking
         ({'enc_type': 'blstm', 'n_stacks': 2,
-          'chunk_size_left': 20, 'chunk_size_right': 20}),
+          'chunk_size_left': "20", 'chunk_size_right': "20"}),
         ({'enc_type': 'blstm', 'n_stacks': 2,
-          'chunk_size_left': 32, 'chunk_size_right': 16}),
-        ({'enc_type': 'lstm', 'n_stacks': 2, 'chunk_size_left': 2}),
-        ({'enc_type': 'lstm', 'n_stacks': 3, 'chunk_size_left': 3}),
+          'chunk_size_left': "32", 'chunk_size_right': "16"}),
+        ({'enc_type': 'lstm', 'n_stacks': 2, 'chunk_size_left': "2"}),
+        ({'enc_type': 'lstm', 'n_stacks': 3, 'chunk_size_left': "3"}),
         # subsample: 1/2
         ({'enc_type': 'conv',
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
           'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
-          'chunk_size_left': 4}),
+          'chunk_size_left': "4"}),
         ({'enc_type': 'conv',
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
           'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
-          'chunk_size_left': 32}),
+          'chunk_size_left': "32"}),
         # subsample: 1/4
-        ({'enc_type': 'conv', 'chunk_size_left': 8}),
-        ({'enc_type': 'conv', 'chunk_size_left': 32}),
-        ({'enc_type': 'conv_blstm', 'chunk_size_left': 20, 'chunk_size_right': 20}),
-        ({'enc_type': 'conv_blstm', 'chunk_size_left': 32, 'chunk_size_right': 16}),
-        # ({'enc_type': 'conv_lstm', 'chunk_size_left': 8}),  # problem at the last frame
+        ({'enc_type': 'conv', 'chunk_size_left': "8"}),
+        ({'enc_type': 'conv', 'chunk_size_left': "32"}),
+        ({'enc_type': 'conv_blstm',
+          'chunk_size_left': "20", 'chunk_size_right': "20"}),
+        ({'enc_type': 'conv_blstm',
+          'chunk_size_left': "32", 'chunk_size_right': "16"}),
+        # ({'enc_type': 'conv_lstm', 'chunk_size_left': "8"}),  # problem at the last frame
         # subsample: 1/8
         ({'enc_type': 'conv',
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
-          'chunk_size_left': 16}),
+          'chunk_size_left': "16"}),
         ({'enc_type': 'conv',
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
-          'chunk_size_left': 32}),
+          'chunk_size_left': "32"}),
         ({'enc_type': 'conv_blstm',
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
-          'chunk_size_left': 32, 'chunk_size_right': 16}),
+          'chunk_size_left': "32", 'chunk_size_right': "16"}),
         ({'enc_type': 'conv_blstm',
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
-          'chunk_size_left': 64, 'chunk_size_right': 32}),
+          'chunk_size_left': "64", 'chunk_size_right': "32"}),
     ]
 )
 def test_forward_streaming_chunkwise(args):
     args = make_args(**args)
-    assert args['chunk_size_left'] > 0
     unidir = args['enc_type'] in ['conv_lstm', 'conv_gru', 'lstm', 'gru']
 
     batch_size = 1
     xmaxs = [t for t in range(160, 192, 1)]
     device = "cpu"
 
-    N_l = max(0, args['chunk_size_left']) // args['n_stacks']
-    N_r = max(0, args['chunk_size_right']) // args['n_stacks']
+    N_l = max(0, int(args['chunk_size_left'].split('_')[0])) // args['n_stacks']
+    N_r = max(0, int(args['chunk_size_right'].split('_')[0])) // args['n_stacks']
     if unidir:
-        args['chunk_size_left'] = 0
-        args['chunk_size_right'] = 0
+        args['chunk_size_left'] = "0"
+        args['chunk_size_right'] = "0"
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
     enc = module.RNNEncoder(**args)
     enc = enc.to(device)
+    if enc.lc_bidir:
+        assert N_l > 0
 
     factor = enc.subsampling_factor
     conv_lookback = enc.conv.n_frames_context if enc.conv is not None else 0

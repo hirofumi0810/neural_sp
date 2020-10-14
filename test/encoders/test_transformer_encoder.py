@@ -23,10 +23,10 @@ def make_args(**kwargs):
         d_model=16,
         d_ff=64,
         ffn_bottleneck_dim=0,
-        last_proj_dim=0,
+        ffn_activation='relu',
         pe_type='none',
         layer_norm_eps=1e-12,
-        ffn_activation='relu',
+        last_proj_dim=0,
         dropout_in=0.1,
         dropout=0.1,
         dropout_att=0.1,
@@ -47,9 +47,10 @@ def make_args(**kwargs):
         task_specific_layer=False,
         param_init='xavier_uniform',
         clamp_len=-1,
-        chunk_size_left=0,
-        chunk_size_current=0,
-        chunk_size_right=0,
+        lookahead="0",
+        chunk_size_left="0",
+        chunk_size_current="0",
+        chunk_size_right="0",
         streaming_type='mask',
     )
     args.update(kwargs)
@@ -80,14 +81,23 @@ def make_args(**kwargs):
         ({'last_proj_dim': 10}),
         # unidirectional
         ({'enc_type': 'conv_uni_transformer'}),
+        ({'enc_type': 'conv_uni_transformer', 'lookahead': "1_1_1"}),
+        ({'enc_type': 'conv_uni_transformer', 'lookahead': "1_0_1"}),
+        ({'enc_type': 'conv_uni_transformer', 'lookahead': "0_1_0"}),
         # LC-Transformer
-        ({'streaming_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'streaming_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
-        ({'streaming_type': 'reshape', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64,
+        ({'streaming_type': 'reshape',
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+        ({'streaming_type': 'reshape',
+          'chunk_size_left': "64", 'chunk_size_current': "128", 'chunk_size_right': "64"}),
+        ({'streaming_type': 'reshape',
+          'chunk_size_left': "64", 'chunk_size_current': "128", 'chunk_size_right': "64",
           'pe_type': 'relative'}),
-        ({'streaming_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'streaming_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64}),
-        ({'streaming_type': 'mask', 'chunk_size_left': 64, 'chunk_size_current': 128, 'chunk_size_right': 64,
+        ({'streaming_type': 'mask',
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+        ({'streaming_type': 'mask',
+          'chunk_size_left': "64", 'chunk_size_current': "128", 'chunk_size_right': "64"}),
+        ({'streaming_type': 'mask',
+          'chunk_size_left': "64", 'chunk_size_current': "128", 'chunk_size_right': "64",
           'pe_type': 'relative'}),
         # Multi-task
         ({'n_layers_sub1': 2}),
@@ -107,26 +117,27 @@ def make_args(**kwargs):
         ({'subsample': "1_2_1", 'subsample_type': 'max_pool', 'pe_type': 'relative'}),
         ({'subsample': "1_2_1", 'enc_type': 'conv_uni_transformer'}),
         ({'subsample': "1_2_1", 'streaming_type': 'reshape',
-          'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        ({'subsample': "2_2_1", 'streaming_type': 'reshape',
-          'conv_poolings': "(1,1)_(2,2)",
-          'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
-        # mask
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
         ({'subsample': "1_2_1", 'streaming_type': 'mask',
-          'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+        ({'subsample': "1_2_1", 'streaming_type': 'reshape',
+          'conv_poolings': "(1,1)_(2,2)",
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
+        ({'subsample': "1_2_1", 'streaming_type': 'mask',
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
         ({'subsample': "2_2_1", 'streaming_type': 'mask',
           'conv_poolings': "(1,1)_(2,2)",
-          'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
         ({'subsample': "2_2_1", 'streaming_type': 'mask',
           'pe_type': "relative",
-          'chunk_size_left': 64, 'chunk_size_current': 64, 'chunk_size_right': 32}),
+          'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
     ]
 )
 def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [400, 455]
+    xmaxs = [40, 45] if int(args['chunk_size_left'].split('_')[0]) == -1 else [400, 455]
     device = "cpu"
 
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
@@ -149,11 +160,11 @@ def test_forward(args):
                     enc_out_dict = enc(xs, xlens, task='all')
                     # enc._plot_attention()  # too slow
 
-            assert enc_out_dict['ys']['xs'].size(0) == batch_size, xs.size()
-            assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0], xs.size()
+            assert enc_out_dict['ys']['xs'].size(0) == batch_size
+            assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
             if args['n_layers_sub1'] > 0:
-                assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size, xs.size()
-                assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0], xs.size()
+                assert enc_out_dict['ys_sub1']['xs'].size(0) == batch_size
+                assert enc_out_dict['ys_sub1']['xs'].size(1) == enc_out_dict['ys_sub1']['xlens'][0]
             if args['n_layers_sub2'] > 0:
-                assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size, xs.size()
-                assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0], xs.size()
+                assert enc_out_dict['ys_sub2']['xs'].size(0) == batch_size
+                assert enc_out_dict['ys_sub2']['xs'].size(1) == enc_out_dict['ys_sub2']['xlens'][0]

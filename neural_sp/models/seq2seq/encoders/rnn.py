@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -98,8 +95,8 @@ class RNNEncoder(EncoderBase):
         self.bidir_sum = bidir_sum_fwd_bwd
 
         # for latency-controlled
-        self.chunk_size_left = chunk_size_left // n_stacks
-        self.chunk_size_right = chunk_size_right // n_stacks
+        self.chunk_size_left = int(chunk_size_left.split('_')[0]) // n_stacks
+        self.chunk_size_right = int(chunk_size_right.split('_')[0]) // n_stacks
         self.lc_bidir = self.chunk_size_left > 0 or self.chunk_size_right > 0
         if self.lc_bidir:
             assert enc_type not in ['lstm', 'gru', 'conv_lstm', 'conv_gru']
@@ -228,9 +225,9 @@ class RNNEncoder(EncoderBase):
         group.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
                            help='sum forward and backward RNN outputs for dimension reduction')
         # streaming
-        group.add_argument('--lc_chunk_size_left', type=int, default=0,
+        group.add_argument('--lc_chunk_size_left', type=str, default="0",
                            help='left chunk size for latency-controlled RNN encoder')
-        group.add_argument('--lc_chunk_size_right', type=int, default=0,
+        group.add_argument('--lc_chunk_size_right', type=str, default="0",
                            help='right chunk size for latency-controlled RNN encoder')
         return parser
 
@@ -245,8 +242,8 @@ class RNNEncoder(EncoderBase):
         dir_name += str(args.enc_n_layers) + 'L'
         if args.bidirectional_sum_fwd_bwd:
             dir_name += '_sumfwdbwd'
-        if args.lc_chunk_size_left > 0 or args.lc_chunk_size_right > 0:
-            dir_name += '_chunkL' + str(args.lc_chunk_size_left) + 'R' + str(args.lc_chunk_size_right)
+        if int(args.lc_chunk_size_left.split('_')[0]) > 0 or int(args.lc_chunk_size_right.split('_')[0]) > 0:
+            dir_name += '_chunkL' + args.lc_chunk_size_left + 'R' + args.lc_chunk_size_right
         return dir_name
 
     def reset_parameters(self, param_init):
@@ -464,7 +461,7 @@ class RNNEncoder(EncoderBase):
                     xs_chunk, xlens_tmp = self.subsample[lth](xs_chunk, xlens)
                     if chunk_idx == 0:
                         xlens = xlens_tmp
-                    _N_l = _N_l // self.subsample[lth].subsampling_factor
+                    _N_l = _N_l // self.subsample[lth].factor
 
             xs_chunks.append(xs_chunk[:, :_N_l])
             if self.n_layers_sub1 > 0:
