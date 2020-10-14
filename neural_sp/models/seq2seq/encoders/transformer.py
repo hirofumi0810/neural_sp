@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -73,6 +70,7 @@ class TransformerEncoder(EncoderBase):
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (str): parameter initialization method
         clamp_len (int): maximum length for relative positional encoding
+        lookahead (int): lookahead frames per layer for unidirectional Transformer encoder
         chunk_size_left (int): left chunk size for latency-controlled Transformer encoder
         chunk_size_current (int): current chunk size for latency-controlled Transformer encoder
         chunk_size_right (int): right chunk size for latency-controlled Transformer encoder
@@ -89,7 +87,7 @@ class TransformerEncoder(EncoderBase):
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim, conv_param_init,
                  task_specific_layer, param_init, clamp_len,
-                 chunk_size_left, chunk_size_current, chunk_size_right, streaming_type):
+                 lookahead, chunk_size_left, chunk_size_current, chunk_size_right, streaming_type):
 
         super(TransformerEncoder, self).__init__()
 
@@ -97,6 +95,10 @@ class TransformerEncoder(EncoderBase):
         subsamples = [1] * n_layers
         for lth, s in enumerate(list(map(int, subsample.split('_')[:n_layers]))):
             subsamples[lth] = s
+        # parse lookahead
+        lookaheads = [1] * n_layers
+        for lth, s in enumerate(list(map(int, lookahead.split('_')[:n_layers]))):
+            lookaheads[lth] = s
 
         if len(subsamples) > 0 and len(subsamples) != n_layers:
             raise ValueError('subsample must be the same size as n_layers. n_layers: %d, subsample: %s' %
@@ -119,6 +121,9 @@ class TransformerEncoder(EncoderBase):
         chunk_size_right = str(chunk_size_right)
 
         # for streaming encoder
+        self.lookaheads = lookaheads
+        if sum(lookaheads) > 0:
+            assert self.unidir
         self.chunk_size_left = int(chunk_size_left.split('_')[-1]) // n_stacks
         self.chunk_size_current = int(chunk_size_current.split('_')[-1]) // n_stacks
         self.chunk_size_right = int(chunk_size_right.split('_')[-1]) // n_stacks
@@ -282,6 +287,8 @@ class TransformerEncoder(EncoderBase):
         group.add_argument('--transformer_enc_clamp_len', type=int, default=-1,
                            help='maximum length for relative positional encoding. -1 means infinite length.')
         # streaming
+        group.add_argument('--transformer_enc_lookaheads', type=str, default="0_0_0_0_0_0_0_0_0_0_0_0",
+                           help='lookahead frames per layer for unidirectional Transformer encoder')
         group.add_argument('--lc_chunk_size_left', type=str, default="0",
                            help='left chunk size for latency-controlled Transformer encoder')
         group.add_argument('--lc_chunk_size_current', type=str, default="0",
@@ -314,6 +321,8 @@ class TransformerEncoder(EncoderBase):
             dir_name += '_chunkL' + args.lc_chunk_size_left + 'C' + \
                 args.lc_chunk_size_current + 'R' + args.lc_chunk_size_right
             dir_name += '_' + args.lc_type
+        elif sum(list(map(int, args.transformer_enc_lookaheads.split('_')))) > 0:
+            dir_name += '_LA' + str(sum(list(map(int, args.transformer_enc_lookaheads.split('_')))))
         return dir_name
 
     def reset_parameters(self, param_init):
@@ -451,7 +460,7 @@ class TransformerEncoder(EncoderBase):
                 xs = self.pos_enc(xs, scale=True)
                 pos_embs = None
 
-            xx_mask = make_san_mask(xs, xlens, self.unidir)
+            xx_mask = make_san_mask(xs, xlens, self.unidir, self.lookaheads[0])
             for lth, layer in enumerate(self.layers):
                 xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
@@ -473,11 +482,13 @@ class TransformerEncoder(EncoderBase):
                 if lth < len(self.layers) - 1:
                     if self.subsample is not None and self.subsample[lth].factor > 1:
                         xs, xlens = self.subsample[lth](xs, xlens)
-                        xx_mask = make_san_mask(xs, xlens, self.unidir)
+                        xx_mask = make_san_mask(xs, xlens, self.unidir, self.lookaheads[lth + 1])
                         if self.pe_type in ['relative', 'relative_xl']:
                             # Create sinusoidal positional embeddings for relative positional encoding
                             clamp_len = clamp_len // self.subsample[lth].factor
                             pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
+                    elif self.lookaheads[lth] != self.lookaheads[lth + 1]:
+                        xx_mask = make_san_mask(xs, xlens, self.unidir, self.lookaheads[lth + 1])
 
         xs = self.norm_out(xs)
 
@@ -599,13 +610,14 @@ class TransformerEncoderBlock(nn.Module):
         return xs
 
 
-def make_san_mask(xs, xlens, unidirectional=False):
+def make_san_mask(xs, xlens, unidirectional=False, lookahead=0):
     """Mask self-attention mask.
 
     Args:
         xs (FloatTensor): `[B, T, d_model]`
         xlens (InteTensor): `[B]` (on CPU)
         unidirectional (bool): pad future context
+        lookahead (int): lookahead frame
     Returns:
         xx_mask (ByteTensor): `[B, T (query), T (key)]`
 
@@ -613,13 +625,22 @@ def make_san_mask(xs, xlens, unidirectional=False):
     xx_mask = make_pad_mask(xlens.to(xs.device))
     xx_mask = xx_mask.unsqueeze(1).repeat([1, xs.size(1), 1])  # `[B, emax (query), emax (key)]`
     if unidirectional:
-        xx_mask = causal(xx_mask)
+        xx_mask = causal(xx_mask, lookahead)
     return xx_mask
 
 
-def causal(xx_mask):
-    causal_mask = xx_mask.new_ones(xx_mask.size(1), xx_mask.size(1)).byte()
-    causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
+def causal(xx_mask, lookahead):
+    """Causal masking.
+
+    Args:
+        xx_mask (ByteTensor): `[B, T (query), T (key)]`
+        lookahead (int): lookahead frame
+    Returns:
+        xx_mask (ByteTensor): `[B, T (query), T (key)]`
+
+    """
+    causal_mask = xx_mask.new_ones(xx_mask.size(1), xx_mask.size(1), dtype=xx_mask.dtype)
+    causal_mask = torch.tril(causal_mask, diagonal=lookahead, out=causal_mask).unsqueeze(0)
     xx_mask = xx_mask & causal_mask  # `[B, L (query), L (key)]`
     return xx_mask
 
