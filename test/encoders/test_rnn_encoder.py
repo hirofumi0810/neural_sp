@@ -40,8 +40,8 @@ def make_args(**kwargs):
         bidir_sum_fwd_bwd=False,
         task_specific_layer=False,
         param_init=0.1,
-        chunk_size_left=0,
-        chunk_size_right=0,
+        chunk_size_left="0",
+        chunk_size_right="0",
     )
     args.update(kwargs)
     return args
@@ -110,23 +110,26 @@ def make_args(**kwargs):
         ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'add',
           'n_projs': 8}),
         # LC-BLSTM
-        ({'enc_type': 'blstm', 'chunk_size_right': 40}),  # for PT
-        ({'enc_type': 'blstm', 'chunk_size_left': 40, 'chunk_size_right': 40}),
+        ({'enc_type': 'blstm', 'chunk_size_right': "40"}),  # for PT
+        ({'enc_type': 'blstm', 'chunk_size_left': "40", 'chunk_size_right': "40"}),
         ({'enc_type': 'blstm', 'bidir_sum_fwd_bwd': True,
-          'chunk_size_right': 40}),  # for PT
+          'chunk_size_right': "40"}),  # for PT
         ({'enc_type': 'blstm', 'bidir_sum_fwd_bwd': True,
-          'chunk_size_left': 40, 'chunk_size_right': 40}),
-        ({'enc_type': 'conv_blstm', 'bidir_sum_fwd_bwd': True, 'chunk_size_left': 40, 'chunk_size_right': 40}),
+          'chunk_size_left': "40", 'chunk_size_right': "40"}),
+        ({'enc_type': 'conv_blstm', 'bidir_sum_fwd_bwd': True,
+          'chunk_size_left': "40", 'chunk_size_right': "40"}),
         # LC-BLSTM + subsampling
-        ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1", 'chunk_size_right': 40}),  # for PT
-        ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1", 'chunk_size_left': 40, 'chunk_size_right': 40}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1",
+          'chunk_size_right': "40"}),  # for PT
+        ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1",
+          'chunk_size_left': "40", 'chunk_size_right': "40"}),
         ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1", 'bidir_sum_fwd_bwd': True,
-          'chunk_size_right': 40}),  # for PT
+          'chunk_size_right': "40"}),  # for PT
         ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1", 'bidir_sum_fwd_bwd': True,
-          'chunk_size_left': 40, 'chunk_size_right': 40}),
+          'chunk_size_left': "40", 'chunk_size_right': "40"}),
         # Multi-task
         ({'enc_type': 'blstm', 'n_layers_sub1': 3}),
-        ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'chunk_size_right': 40}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'chunk_size_right': "40"}),
         ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2}),
         ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2, 'task_specific_layer': True}),
     ]
@@ -135,7 +138,7 @@ def test_forward(args):
     args = make_args(**args)
 
     batch_size = 4
-    xmaxs = [40, 45] if args['chunk_size_left'] == -1 else [400, 455]
+    xmaxs = [40, 45] if int(args['chunk_size_left']) == -1 else [400, 455]
     device = "cpu"
 
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
