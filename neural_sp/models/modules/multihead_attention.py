@@ -4,31 +4,26 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Multi-head attention layer."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+"""Multi-head attention (MHA) layer."""
 
 import logging
 import math
 import numpy as np
-import random
 import torch
 import torch.nn as nn
 
-random.seed(1)
+from neural_sp.models.modules.mocha import headdrop
 
 logger = logging.getLogger(__name__)
 
 
 class MultiheadAttentionMechanism(nn.Module):
-    """Multi-headed attention layer.
+    """Multi-headed attention (MHA) layer.
 
     Args:
         kdim (int): dimension of key
         qdim (int): dimension of query
-        adim: (int) dimension of the attention space
+        adim: (int) dimension of attention space
         odim: (int) dimension of output
         n_heads (int): number of heads
         dropout (float): dropout probability for attenion weights
@@ -36,12 +31,14 @@ class MultiheadAttentionMechanism(nn.Module):
         atype (str): type of attention mechanism
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
+        xl_like: dummy argument for compabibility with relative MHA
 
     """
 
     def __init__(self, kdim, qdim, adim, odim, n_heads, dropout, dropout_head=0.,
-                 atype='scaled_dot', bias=True, param_init=''):
-        super(MultiheadAttentionMechanism, self).__init__()
+                 atype='scaled_dot', bias=True, param_init='', xl_like=False):
+
+        super().__init__()
 
         self.atype = atype
         assert adim % n_heads == 0
@@ -94,7 +91,7 @@ class MultiheadAttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask, aw_prev=None,
-                cache=False, mode='', trigger_point=None, eps_wait=-1):
+                cache=False, mode='', trigger_points=None, eps_wait=-1):
         """Forward pass.
 
         Args:
@@ -104,37 +101,37 @@ class MultiheadAttentionMechanism(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             aw_prev: dummy interface
             cache (bool): cache key, value, and mask
-            mode: dummy interface for MoChA
-            trigger_point: dummy interface for MoChA
+            mode: dummy interface for MoChA/MMA
+            trigger_points: dummy interface for MoChA/MMA
             eps_wait: dummy interface for MMA
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, H, qlen, klen]`
-            beta: dummy interface for MoChA
-            p_choose: dummy interface for MoChA
+            beta: dummy interface for MoChA/MMA
+            p_choose: dummy interface for MoChA/MMA
 
         """
         bs, klen = key.size()[: 2]
         qlen = query.size(1)
 
+        # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
             self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
             self.value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
             self.mask = mask
             if self.mask is not None:
                 self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])
-                assert self.mask.size() == (bs, qlen, klen, self.n_heads), \
-                    (self.mask.size(), (bs, qlen, klen, self.n_heads))
+                mask_size = (bs, qlen, klen, self.n_heads)
+                assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
+        key = self.key
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H, d_k]`
 
         if self.atype == 'scaled_dot':
-            e = torch.einsum("bihd,bjhd->bijh", (query, self.key)) / self.scale  # `[B, qlen, klen, H]`
+            e = torch.einsum("bihd,bjhd->bijh", (query, key)) / self.scale
         elif self.atype == 'add':
-            key = self.key.unsqueeze(1)  # `[B, 1, klen, H, d_k]`
-            query = query.unsqueeze(2)  # `[B, qlen, 1, H, d_k]`
-            tmp = torch.tanh(key + query).view(bs, qlen, klen, -1)  # `[B, qlen, klen, H, d_k]`
-            e = self.v(tmp)  # `[B, qlen, klen, H]`
+            e = self.v(torch.tanh(key[:, None] + query[:, :, None]).view(bs, qlen, klen, -1))
+        # e: `[B, qlen, klen, H]`
 
         # Compute attention weights
         if self.mask is not None:
@@ -146,16 +143,9 @@ class MultiheadAttentionMechanism(nn.Module):
 
         # mask out each head independently (HeadDrop)
         if self.dropout_head > 0 and self.training:
-            n_effective_heads = self.n_heads
-            head_mask = aw.new_ones(aw.size()).byte()  # `[B, qlen, klen, H]`
-            for h in range(self.n_heads):
-                if random.random() < self.dropout_head:
-                    head_mask[:, :, :, h] = 0
-                    n_effective_heads -= 1
-            aw_masked = aw_masked.masked_fill_(head_mask == 0, 0)
-            # Normalization
-            if n_effective_heads > 0:
-                aw_masked = aw_masked * (self.n_heads / n_effective_heads)
+            aw_masked = aw_masked.permute(0, 3, 1, 2)
+            aw_masked = headdrop(aw_masked, self.n_heads, self.dropout_head)  # `[B, H, qlen, klen]`
+            aw_masked = aw_masked.permute(0, 2, 3, 1)
 
         cv = torch.einsum("bijh,bjhd->bihd", (aw_masked, self.value))  # `[B, qlen, H, d_k]`
         cv = cv.contiguous().view(bs, -1, self.n_heads * self.d_k)  # `[B, qlen, H * d_k]`

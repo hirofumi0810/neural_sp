@@ -6,10 +6,7 @@
 
 """Evaluate the word-level model by WER."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
+import codecs
 import copy
 import logging
 import numpy as np
@@ -22,13 +19,13 @@ from neural_sp.utils import mkdir_join
 logger = logging.getLogger(__name__)
 
 
-def eval_word(models, dataset, recog_params, epoch,
+def eval_word(models, dataloader, recog_params, epoch,
               recog_dir=None, streaming=False, progressbar=False):
     """Evaluate the word-level model by WER.
 
     Args:
         models (list): models to evaluate
-        dataset (Dataset): evaluation dataset
+        dataloader (torch.utils.data.DataLoader): evaluation dataloader
         recog_params (dict):
         epoch (int):
         recog_dir (str):
@@ -40,50 +37,52 @@ def eval_word(models, dataset, recog_params, epoch,
         n_oov_total (int): totol number of OOV
 
     """
-    # Reset data counter
-    dataset.reset(recog_params['recog_batch_size'])
-
     if recog_dir is None:
-        recog_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
+        recog_dir = 'decode_' + dataloader.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
         recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
         recog_dir += '_cp' + str(recog_params['recog_coverage_penalty'])
         recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
         recog_dir += '_lm' + str(recog_params['recog_lm_weight'])
 
-        ref_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
     else:
-        ref_trn_save_path = mkdir_join(recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(recog_dir, 'hyp.trn')
 
     wer, cer = 0, 0
     n_sub_w, n_ins_w, n_del_w = 0, 0, 0
     n_sub_c, n_ins_c, n_del_c = 0, 0, 0
     n_word, n_char = 0, 0
     n_oov_total = 0
-    if progressbar:
-        pbar = tqdm(total=len(dataset))
 
-    with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
+    # Reset data counter
+    dataloader.reset(recog_params['recog_batch_size'])
+
+    if progressbar:
+        pbar = tqdm(total=len(dataloader))
+
+    with codecs.open(hyp_trn_path, 'w', encoding='utf-8') as f_hyp, \
+            codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
         while True:
-            batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
+            batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
             if streaming or recog_params['recog_chunk_sync']:
                 best_hyps_id, _ = models[0].decode_streaming(
-                    batch['xs'], recog_params, dataset.idx2token[0],
+                    batch['xs'], recog_params, dataloader.idx2token[0],
                     exclude_eos=True)
             else:
                 best_hyps_id, aws = models[0].decode(
                     batch['xs'], recog_params,
-                    idx2token=dataset.idx2token[0] if progressbar else None,
+                    idx2token=dataloader.idx2token[0] if progressbar else None,
                     exclude_eos=True,
                     refs_id=batch['ys'],
                     utt_ids=batch['utt_ids'],
-                    speakers=batch['sessions' if dataset.corpus == 'swbd' else 'speakers'],
+                    speakers=batch['sessions' if dataloader.corpus == 'swbd' else 'speakers'],
                     ensemble_models=models[1:] if len(models) > 1 else [])
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
-                hyp = dataset.idx2token[0](best_hyps_id[b])
+                hyp = dataloader.idx2token[0](best_hyps_id[b])
 
                 n_oov_total += hyp.count('<unk>')
 
@@ -94,18 +93,18 @@ def eval_word(models, dataset, recog_params, epoch,
                     recog_params_char['recog_beam_width'] = 1
                     best_hyps_id_char, aw_char = models[0].decode(
                         batch['xs'][b:b + 1], recog_params_char,
-                        idx2token=dataset.idx2token[1] if progressbar else None,
+                        idx2token=dataloader.idx2token[1] if progressbar else None,
                         exclude_eos=True,
                         refs_id=batch['ys_sub1'],
                         utt_ids=batch['utt_ids'],
-                        speakers=batch['sessions'] if dataset.corpus == 'swbd' else batch['speakers'],
+                        speakers=batch['sessions'] if dataloader.corpus == 'swbd' else batch['speakers'],
                         task='ys_sub1')
                     # TODO(hirofumi): support ys_sub2 and ys_sub3
 
                     assert not streaming
 
                     hyp = resolve_unk(
-                        hyp, best_hyps_id_char[0], aws[b], aw_char[0], dataset.idx2token[1],
+                        hyp, best_hyps_id_char[0], aws[b], aw_char[0], dataloader.idx2token[1],
                         subsample_factor_word=np.prod(models[0].subsample),
                         subsample_factor_char=np.prod(models[0].subsample[:models[0].enc_n_layers_sub1 - 1]))
                     logger.debug('Hyp (after OOV resolution): %s' % hyp)
@@ -114,7 +113,7 @@ def eval_word(models, dataset, recog_params, epoch,
                     # Compute CER
                     ref_char = ref
                     hyp_char = hyp
-                    if dataset.corpus == 'csj':
+                    if dataloader.corpus == 'csj':
                         ref_char = ref.replace(' ', '')
                         hyp_char = hyp.replace(' ', '')
                     cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref_char),
@@ -160,7 +159,7 @@ def eval_word(models, dataset, recog_params, epoch,
         pbar.close()
 
     # Reset data counters
-    dataset.reset()
+    dataloader.reset()
 
     if not streaming:
         wer /= n_word
@@ -174,9 +173,9 @@ def eval_word(models, dataset, recog_params, epoch,
             n_ins_c /= n_char
             n_del_c /= n_char
 
-    logger.debug('WER (%s): %.2f %%' % (dataset.set, wer))
+    logger.debug('WER (%s): %.2f %%' % (dataloader.set, wer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
-    logger.debug('CER (%s): %.2f %%' % (dataset.set, cer))
+    logger.debug('CER (%s): %.2f %%' % (dataloader.set, cer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
     logger.debug('OOV (total): %d' % (n_oov_total))
 

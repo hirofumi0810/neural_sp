@@ -6,10 +6,6 @@
 
 """Train the ASR model."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import argparse
 import copy
 import cProfile
@@ -32,7 +28,7 @@ from neural_sp.bin.train_utils import (
     set_logger,
     set_save_path
 )
-from neural_sp.datasets.asr import Dataset
+from neural_sp.datasets.asr import build_dataloader
 from neural_sp.models.data_parallel import CustomDataParallel
 from neural_sp.models.data_parallel import CPUWrapperASR
 from neural_sp.models.lm.build import build_lm
@@ -64,69 +60,39 @@ def main():
 
     args = compute_susampling_factor(args)
 
-    # Load dataset
-    batch_size = args.batch_size * args.n_gpus if args.n_gpus >= 1 else args.batch_size
-    train_set = Dataset(corpus=args.corpus,
-                        tsv_path=args.train_set,
-                        tsv_path_sub1=args.train_set_sub1,
-                        tsv_path_sub2=args.train_set_sub2,
-                        dict_path=args.dict,
-                        dict_path_sub1=args.dict_sub1,
-                        dict_path_sub2=args.dict_sub2,
-                        nlsyms=args.nlsyms,
-                        unit=args.unit,
-                        unit_sub1=args.unit_sub1,
-                        unit_sub2=args.unit_sub2,
-                        wp_model=args.wp_model,
-                        wp_model_sub1=args.wp_model_sub1,
-                        wp_model_sub2=args.wp_model_sub2,
-                        batch_size=batch_size,
-                        n_epochs=args.n_epochs,
-                        min_n_frames=args.min_n_frames,
-                        max_n_frames=args.max_n_frames,
-                        shuffle_bucket=args.shuffle_bucket,
-                        sort_by='input',
-                        short2long=args.sort_short2long,
-                        sort_stop_epoch=args.sort_stop_epoch,
-                        dynamic_batching=args.dynamic_batching,
-                        ctc=args.ctc_weight > 0,
-                        ctc_sub1=args.ctc_weight_sub1 > 0,
-                        ctc_sub2=args.ctc_weight_sub2 > 0,
-                        subsample_factor=args.subsample_factor,
-                        subsample_factor_sub1=args.subsample_factor_sub1,
-                        subsample_factor_sub2=args.subsample_factor_sub2,
-                        discourse_aware=args.discourse_aware)
-    dev_set = Dataset(corpus=args.corpus,
-                      tsv_path=args.dev_set,
-                      tsv_path_sub1=args.dev_set_sub1,
-                      tsv_path_sub2=args.dev_set_sub2,
-                      dict_path=args.dict,
-                      dict_path_sub1=args.dict_sub1,
-                      dict_path_sub2=args.dict_sub2,
-                      nlsyms=args.nlsyms,
-                      unit=args.unit,
-                      unit_sub1=args.unit_sub1,
-                      unit_sub2=args.unit_sub2,
-                      wp_model=args.wp_model,
-                      wp_model_sub1=args.wp_model_sub1,
-                      wp_model_sub2=args.wp_model_sub2,
-                      batch_size=batch_size,
-                      min_n_frames=args.min_n_frames,
-                      max_n_frames=args.max_n_frames,
-                      ctc=args.ctc_weight > 0,
-                      ctc_sub1=args.ctc_weight_sub1 > 0,
-                      ctc_sub2=args.ctc_weight_sub2 > 0,
-                      subsample_factor=args.subsample_factor,
-                      subsample_factor_sub1=args.subsample_factor_sub1,
-                      subsample_factor_sub2=args.subsample_factor_sub2)
-    eval_sets = [Dataset(corpus=args.corpus,
-                         tsv_path=s,
-                         dict_path=args.dict,
-                         nlsyms=args.nlsyms,
-                         unit=args.unit,
-                         wp_model=args.wp_model,
-                         batch_size=1,
-                         is_test=True) for s in args.eval_sets]
+    # for multi-GPUs
+    if args.n_gpus >= 1:
+        batch_size = args.batch_size * args.n_gpus
+        accum_grad_n_steps = max(1, args.accum_grad_n_steps // args.n_gpus)
+    else:
+        batch_size = args.batch_size
+        accum_grad_n_steps = args.accum_grad_n_steps
+
+    # Load dataloader
+    train_set = build_dataloader(args=args,
+                                 tsv_path=args.train_set,
+                                 tsv_path_sub1=args.train_set_sub1,
+                                 tsv_path_sub2=args.train_set_sub2,
+                                 batch_size=batch_size,
+                                 n_epochs=args.n_epochs,
+                                 sort_by='input',
+                                 short2long=args.sort_short2long,
+                                 sort_stop_epoch=args.sort_stop_epoch,
+                                 num_workers=args.n_gpus,
+                                 pin_memory=True,
+                                 alignment_dir=args.train_alignment)
+    dev_set = build_dataloader(args=args,
+                               tsv_path=args.dev_set,
+                               tsv_path_sub1=args.dev_set_sub1,
+                               tsv_path_sub2=args.dev_set_sub2,
+                               batch_size=batch_size,
+                               num_workers=args.n_gpus,
+                               pin_memory=True,
+                               alignment_dir=args.dev_alignment)
+    eval_sets = [build_dataloader(args=args,
+                                  tsv_path=s,
+                                  batch_size=1,
+                                  is_test=True) for s in args.eval_sets]
 
     args.vocab = train_set.vocab
     args.vocab_sub1 = train_set.vocab_sub1
@@ -168,7 +134,7 @@ def main():
         if args.external_lm:
             save_config(args.lm_conf, os.path.join(save_path, 'conf_lm.yml'))
 
-        # Save the nlsyms, dictionar, and wp_model
+        # Save the nlsyms, dictionary, and wp_model
         if args.nlsyms:
             shutil.copy(args.nlsyms, os.path.join(save_path, 'nlsyms.txt'))
         for sub in ['', '_sub1', '_sub2']:
@@ -185,12 +151,12 @@ def main():
             n_params = model.num_params_dict[n]
             logger.info("%s %d" % (n, n_params))
         logger.info("Total %.2f M parameters" % (model.total_parameters / 1000000))
+        logger.info('torch version: %s' % str(torch.__version__))
         logger.info(model)
 
         # Initialize with pre-trained model's parameters
         if args.asr_init:
             # Load the ASR model (full model)
-            assert os.path.isfile(args.asr_init), 'There is no checkpoint.'
             conf_init = load_config(os.path.join(os.path.dirname(args.asr_init), 'conf.yml'))
             for k, v in conf_init.items():
                 setattr(args_init, k, v)
@@ -207,17 +173,17 @@ def main():
                     logger.info('Overwrite %s' % n)
 
     # Set optimizer
-    resume_epoch = 0
     if args.resume:
         resume_epoch = int(args.resume.split('-')[-1])
         optimizer = set_optimizer(model, 'sgd' if resume_epoch > args.convert_to_sgd_epoch else args.optimizer,
                                   args.lr, args.weight_decay)
     else:
+        resume_epoch = 0
         optimizer = set_optimizer(model, args.optimizer, args.lr, args.weight_decay)
 
     # Wrap optimizer by learning rate scheduler
-    is_transformer = 'former' in args.enc_type or args.dec_type == 'former'
-    optimizer = LRScheduler(optimizer, args.lr,
+    is_transformer = 'former' in args.enc_type or 'former' in args.dec_type
+    scheduler = LRScheduler(optimizer, args.lr,
                             decay_type=args.lr_decay_type,
                             decay_start_epoch=args.lr_decay_start_epoch,
                             decay_rate=args.lr_decay_rate,
@@ -226,18 +192,21 @@ def main():
                             lower_better=args.metric not in ['accuracy', 'bleu'],
                             warmup_start_lr=args.warmup_start_lr,
                             warmup_n_steps=args.warmup_n_steps,
-                            model_size=getattr(args, 'transformer_d_model', 0),
+                            peak_lr=0.05 / (getattr(args, 'transformer_enc_d_model', 0) **
+                                            0.5) if 'conformer' in args.enc_type else 1e6,
+                            model_size=getattr(args, 'transformer_enc_d_model',
+                                               getattr(args, 'transformer_dec_d_model', 0)),
                             factor=args.lr_factor,
-                            noam=is_transformer,
+                            noam=args.optimizer == 'noam',
                             save_checkpoints_topk=10 if is_transformer else 1)
 
     if args.resume:
         # Restore the last saved model
-        load_checkpoint(args.resume, model, optimizer)
+        load_checkpoint(args.resume, model, scheduler)
 
         # Resume between convert_to_sgd_epoch -1 and convert_to_sgd_epoch
         if resume_epoch == args.convert_to_sgd_epoch:
-            optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
+            scheduler.convert_to_sgd(model, args.lr, args.weight_decay,
                                      decay_type='always', decay_rate=0.5)
 
     # Load the teacher ASR model
@@ -269,13 +238,13 @@ def main():
     amp = None
     if args.n_gpus >= 1:
         model.cudnn_setting(deterministic=not (is_transformer or args.cudnn_benchmark),
-                            benchmark=args.cudnn_benchmark)
+                            benchmark=not is_transformer and args.cudnn_benchmark)
         model.cuda()
 
-        # Mix precision training setting
+        # Mixed precision training setting
         if use_apex:
             from apex import amp
-            model, optimizer.optimizer = amp.initialize(model, optimizer.optimizer,
+            model, scheduler.optimizer = amp.initialize(model, scheduler.optimizer,
                                                         opt_level=args.train_dtype)
             from neural_sp.models.seq2seq.decoders.ctc import CTC
             amp.register_float_function(CTC, "loss_fn")
@@ -310,7 +279,7 @@ def main():
             tasks = ['ys.bwd'] + tasks
         if args.ctc_weight > 0:
             tasks = ['ys.ctc'] + tasks
-        if args.mbr_weight > 0:
+        if args.mbr_ce_weight > 0:
             tasks = ['ys.mbr'] + tasks
         for sub in ['sub1', 'sub2']:
             if getattr(args, 'train_set_' + sub):
@@ -321,148 +290,159 @@ def main():
     else:
         tasks = ['all']
 
+    if getattr(args, 'ss_start_epoch', 0) <= resume_epoch:
+        model.module.trigger_scheduled_sampling()
+    if getattr(args, 'mocha_quantity_loss_start_epoch', 0) <= resume_epoch:
+        model.module.trigger_quantity_loss()
+
     start_time_train = time.time()
     start_time_epoch = time.time()
     start_time_step = time.time()
-    pbar_epoch = tqdm(total=len(train_set))
     accum_n_steps = 0
-    n_steps = optimizer.n_steps * args.accum_grad_n_steps
+    n_steps = scheduler.n_steps * accum_grad_n_steps
     epoch_detail_prev = 0
-    session_prev = None
-    while True:
-        # Compute loss in the training set
-        batch_train, is_new_epoch = train_set.next()
-        if args.discourse_aware and batch_train['sessions'][0] != session_prev:
-            model.module.reset_session()
-        session_prev = batch_train['sessions'][0]
-        accum_n_steps += 1
+    for ep in range(resume_epoch, args.n_epochs):
+        pbar_epoch = tqdm(total=len(train_set))
+        session_prev = None
 
-        # Change mini-batch depending on task
-        for task in tasks:
-            loss, observation = model(batch_train, task,
-                                      teacher=teacher, teacher_lm=teacher_lm)
-            reporter.add(observation)
-            if use_apex:
-                with amp.scale_loss(loss, optimizer.optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
-            loss.detach()  # Trancate the graph
-            if accum_n_steps >= args.accum_grad_n_steps:
-                if args.clip_grad_norm > 0:
-                    total_norm = torch.nn.utils.clip_grad_norm_(
-                        model.module.parameters(), args.clip_grad_norm)
-                    reporter.add_tensorboard_scalar('total_norm', total_norm)
-                optimizer.step()
-                optimizer.zero_grad()
-                accum_n_steps = 0
-            loss_train = loss.item()
-            del loss
+        for batch_train, is_new_epoch in train_set:
+            # Compute loss in the training set
+            if args.discourse_aware and batch_train['sessions'][0] != session_prev:
+                model.module.reset_session()
+            session_prev = batch_train['sessions'][0]
+            accum_n_steps += 1
 
-        reporter.add_tensorboard_scalar('learning_rate', optimizer.lr)
-        # NOTE: loss/acc/ppl are already added in the model
-        reporter.step()
-        pbar_epoch.update(len(batch_train['utt_ids']))
-        n_steps += 1
-        # NOTE: n_steps is different from the step counter in Noam Optimizer
-
-        if n_steps % args.print_step == 0:
-            # Compute loss in the dev set
-            batch_dev = dev_set.next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
             # Change mini-batch depending on task
+            if accum_n_steps == 1:
+                loss_train = 0  # average over gradient accumulation
             for task in tasks:
-                loss, observation = model(batch_dev, task, is_eval=True)
-                reporter.add(observation, is_eval=True)
-                loss_dev = loss.item()
+                loss, observation = model(batch_train, task=task,
+                                          teacher=teacher, teacher_lm=teacher_lm)
+                loss = loss / accum_grad_n_steps
+                reporter.add(observation)
+                if use_apex:
+                    with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
+                        scaled_loss.backward()
+                else:
+                    loss.backward()
+                loss.detach()  # Trancate the graph
+                if accum_n_steps >= accum_grad_n_steps or is_new_epoch:
+                    if args.clip_grad_norm > 0:
+                        total_norm = torch.nn.utils.clip_grad_norm_(
+                            model.module.parameters(), args.clip_grad_norm)
+                        reporter.add_tensorboard_scalar('total_norm', total_norm)
+                    scheduler.step()
+                    scheduler.zero_grad()
+                    accum_n_steps = 0
+                    # NOTE: parameters are forcibly updated at the end of every epoch
+                loss_train += loss.item()
                 del loss
-            reporter.step(is_eval=True)
 
-            duration_step = time.time() - start_time_step
-            if args.input_type == 'speech':
-                xlen = max(len(x) for x in batch_train['xs'])
-                ylen = max(len(y) for y in batch_train['ys'])
-            elif args.input_type == 'text':
-                xlen = max(len(x) for x in batch_train['ys'])
-                ylen = max(len(y) for y in batch_train['ys_sub1'])
-            logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.7f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
-                        (n_steps, optimizer.n_epochs + train_set.epoch_detail,
-                         loss_train, loss_dev,
-                         optimizer.lr, len(batch_train['utt_ids']),
-                         xlen, ylen, duration_step / 60))
-            start_time_step = time.time()
+            pbar_epoch.update(len(batch_train['utt_ids']))
+            reporter.add_tensorboard_scalar('learning_rate', scheduler.lr)
+            # NOTE: loss/acc/ppl are already added in the model
+            reporter.step()
+            n_steps += 1
+            # NOTE: n_steps is different from the step counter in Noam Optimizer
 
-        # Save fugures of loss and accuracy
-        if n_steps % (args.print_step * 10) == 0:
-            reporter.snapshot()
-            model.module.plot_attention()
-            model.module.plot_ctc()
+            if n_steps % args.print_step == 0:
+                # Compute loss in the dev set
+                batch_dev = iter(dev_set).next(batch_size=1 if 'transducer' in args.dec_type else None)[0]
+                # Change mini-batch depending on task
+                for task in tasks:
+                    loss, observation = model(batch_dev, task=task, is_eval=True)
+                    reporter.add(observation, is_eval=True)
+                    loss_dev = loss.item()
+                    del loss
+                reporter.step(is_eval=True)
 
-        # Ealuate model every 0.1 epoch during MBR training
-        if args.mbr_training:
-            if int(train_set.epoch_detail * 10) != int(epoch_detail_prev * 10):
-                # dev
-                evaluate([model.module], dev_set, recog_params, args,
-                         int(train_set.epoch_detail * 10) / 10, logger)
-                # Save the model
-                optimizer.save_checkpoint(
-                    model, save_path, remove_old=False, amp=amp,
-                    epoch_detail=train_set.epoch_detail)
-            epoch_detail_prev = train_set.epoch_detail
+                duration_step = time.time() - start_time_step
+                if args.input_type == 'speech':
+                    xlen = max(len(x) for x in batch_train['xs'])
+                    ylen = max(len(y) for y in batch_train['ys'])
+                elif args.input_type == 'text':
+                    xlen = max(len(x) for x in batch_train['ys'])
+                    ylen = max(len(y) for y in batch_train['ys_sub1'])
+                logger.info("step:%d(ep:%.2f) loss:%.3f(%.3f)/lr:%.7f/bs:%d/xlen:%d/ylen:%d (%.2f min)" %
+                            (n_steps, scheduler.n_epochs + train_set.epoch_detail,
+                             loss_train, loss_dev,
+                             scheduler.lr, len(batch_train['utt_ids']),
+                             xlen, ylen, duration_step / 60))
+                start_time_step = time.time()
+
+            # Save fugures of loss and accuracy
+            if n_steps % (args.print_step * 10) == 0:
+                reporter.snapshot()
+                model.module.plot_attention()
+                model.module.plot_ctc()
+
+            # Ealuate model every 0.1 epoch during MBR training
+            if args.mbr_training:
+                if int(train_set.epoch_detail * 10) != int(epoch_detail_prev * 10):
+                    # dev
+                    evaluate([model.module], dev_set, recog_params, args,
+                             int(train_set.epoch_detail * 10) / 10, logger)
+                    # Save the model
+                    scheduler.save_checkpoint(
+                        model, save_path, remove_old=False, amp=amp,
+                        epoch_detail=train_set.epoch_detail)
+                epoch_detail_prev = train_set.epoch_detail
+
+            if is_new_epoch:
+                break
 
         # Save checkpoint and evaluate model per epoch
-        if is_new_epoch:
-            duration_epoch = time.time() - start_time_epoch
-            logger.info('========== EPOCH:%d (%.2f min) ==========' %
-                        (optimizer.n_epochs + 1, duration_epoch / 60))
+        duration_epoch = time.time() - start_time_epoch
+        logger.info('========== EPOCH:%d (%.2f min) ==========' %
+                    (scheduler.n_epochs + 1, duration_epoch / 60))
 
-            if optimizer.n_epochs + 1 < args.eval_start_epoch:
-                optimizer.epoch()  # lr decay
-                reporter.epoch()  # plot
+        if scheduler.n_epochs + 1 < args.eval_start_epoch:
+            scheduler.epoch()  # lr decay
+            reporter.epoch()  # plot
 
+            # Save the model
+            scheduler.save_checkpoint(
+                model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
+        else:
+            start_time_eval = time.time()
+            # dev
+            metric_dev = evaluate([model.module], dev_set, recog_params, args,
+                                  scheduler.n_epochs + 1, logger)
+            scheduler.epoch(metric_dev)  # lr decay
+            reporter.epoch(metric_dev, name=args.metric)  # plot
+
+            if scheduler.is_topk or is_transformer:
                 # Save the model
-                optimizer.save_checkpoint(
-                    model, save_path, remove_old=not is_transformer, amp=amp)
-            else:
-                start_time_eval = time.time()
-                # dev
-                metric_dev = evaluate([model.module], dev_set, recog_params, args,
-                                      optimizer.n_epochs + 1, logger)
-                optimizer.epoch(metric_dev)  # lr decay
-                reporter.epoch(metric_dev, name=args.metric)  # plot
+                scheduler.save_checkpoint(
+                    model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
 
-                if optimizer.is_topk or is_transformer:
-                    # Save the model
-                    optimizer.save_checkpoint(
-                        model, save_path, remove_old=not is_transformer, amp=amp)
+                # test
+                if scheduler.is_topk:
+                    for eval_set in eval_sets:
+                        evaluate([model.module], eval_set, recog_params, args,
+                                 scheduler.n_epochs, logger)
 
-                    # test
-                    if optimizer.is_topk:
-                        for eval_set in eval_sets:
-                            evaluate([model.module], eval_set, recog_params, args,
-                                     optimizer.n_epochs, logger)
+            duration_eval = time.time() - start_time_eval
+            logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
 
-                duration_eval = time.time() - start_time_eval
-                logger.info('Evaluation time: %.2f min' % (duration_eval / 60))
-
-                # Early stopping
-                if optimizer.is_early_stop:
-                    break
-
-                # Convert to fine-tuning stage
-                if optimizer.n_epochs == args.convert_to_sgd_epoch:
-                    optimizer.convert_to_sgd(model, args.lr, args.weight_decay,
-                                             decay_type='always', decay_rate=0.5)
-
-            pbar_epoch = tqdm(total=len(train_set))
-            session_prev = None
-
-            if optimizer.n_epochs >= args.n_epochs:
+            # Early stopping
+            if scheduler.is_early_stop:
                 break
-            # if args.ss_prob > 0:
-            #     model.module.scheduled_sampling_trigger()
 
-            start_time_step = time.time()
-            start_time_epoch = time.time()
+            # Convert to fine-tuning stage
+            if scheduler.n_epochs == args.convert_to_sgd_epoch:
+                scheduler.convert_to_sgd(model, args.lr, args.weight_decay,
+                                         decay_type='always', decay_rate=0.5)
+
+        if scheduler.n_epochs >= args.n_epochs:
+            break
+        if getattr(args, 'ss_start_epoch', 0) == (ep + 1):
+            model.module.trigger_scheduled_sampling()
+        if getattr(args, 'mocha_quantity_loss_start_epoch', 0) == (ep + 1):
+            model.module.trigger_quantity_loss()
+
+        start_time_step = time.time()
+        start_time_epoch = time.time()
 
     duration_train = time.time() - start_time_train
     logger.info('Total time: %.2f hour' % (duration_train / 3600))
@@ -473,54 +453,54 @@ def main():
     return save_path
 
 
-def evaluate(models, dataset, recog_params, args, epoch, logger):
+def evaluate(models, dataloader, recog_params, args, epoch, logger):
 
     if args.metric == 'edit_distance':
         if args.unit in ['word', 'word_char']:
             from neural_sp.evaluators.word import eval_word
-            metric = eval_word(models, dataset, recog_params, epoch=epoch)[0]
-            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
+            metric = eval_word(models, dataloader, recog_params, epoch=epoch)[0]
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
 
         elif args.unit == 'wp':
             from neural_sp.evaluators.wordpiece import eval_wordpiece
-            metric, cer = eval_wordpiece(models, dataset, recog_params, epoch=epoch)
-            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
-            logger.info('CER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, cer))
+            metric, cer = eval_wordpiece(models, dataloader, recog_params, epoch=epoch)
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
+            logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
 
         elif 'char' in args.unit:
             from neural_sp.evaluators.character import eval_char
-            wer, cer = eval_char(models, dataset, recog_params, epoch=epoch)
-            logger.info('WER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, wer))
-            logger.info('CER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, cer))
-            if dataset.corpus in ['aishell1']:
+            wer, cer = eval_char(models, dataloader, recog_params, epoch=epoch)
+            logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, wer))
+            logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
+            if dataloader.corpus in ['aishell1']:
                 metric = cer
             else:
                 metric = wer
 
         elif 'phone' in args.unit:
             from neural_sp.evaluators.phone import eval_phone
-            metric = eval_phone(models, dataset, recog_params, epoch=epoch)
-            logger.info('PER (%s, ep:%d): %.2f %%' % (dataset.set, epoch, metric))
+            metric = eval_phone(models, dataloader, recog_params, epoch=epoch)
+            logger.info('PER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'ppl':
         from neural_sp.evaluators.ppl import eval_ppl
-        metric = eval_ppl(models, dataset, batch_size=args.batch_size)[0]
-        logger.info('PPL (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+        metric = eval_ppl(models, dataloader, batch_size=args.batch_size)[0]
+        logger.info('PPL (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'loss':
         from neural_sp.evaluators.ppl import eval_ppl
-        metric = eval_ppl(models, dataset, batch_size=args.batch_size)[1]
-        logger.info('Loss (%s, ep:%d): %.5f' % (dataset.set, epoch, metric))
+        metric = eval_ppl(models, dataloader, batch_size=args.batch_size)[1]
+        logger.info('Loss (%s, ep:%d): %.5f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'accuracy':
         from neural_sp.evaluators.accuracy import eval_accuracy
-        metric = eval_accuracy(models, dataset, batch_size=args.batch_size)
-        logger.info('Accuracy (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+        metric = eval_accuracy(models, dataloader, batch_size=args.batch_size)
+        logger.info('Accuracy (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'bleu':
         from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
-        metric = eval_wordpiece_bleu(models, dataset, recog_params, epoch=epoch)
-        logger.info('BLEU (%s, ep:%d): %.3f' % (dataset.set, epoch, metric))
+        metric = eval_wordpiece_bleu(models, dataloader, recog_params, epoch=epoch)
+        logger.info('BLEU (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     else:
         raise NotImplementedError(args.metric)

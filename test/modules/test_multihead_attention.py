@@ -19,20 +19,22 @@ def make_args(**kwargs):
         dropout=0.1,
         dropout_head=0.,
         bias=True,
-        param_init='xavier_uniform'
+        param_init='',
     )
     args.update(kwargs)
     return args
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         ({'n_heads': 1}),
         ({'n_heads': 1, 'atype': 'add'}),
         ({'n_heads': 4}),
         ({'n_heads': 4, 'atype': 'add'}),
         ({'dropout_head': 0.5}),
         ({'bias': False}),
+        ({'param_init': 'xavier_uniform'}),
     ]
 )
 def test_forward(args):
@@ -41,13 +43,17 @@ def test_forward(args):
     batch_size = 4
     klen = 40
     qlen = 5
-    key = torch.FloatTensor(batch_size, klen, args['kdim'])
-    value = torch.FloatTensor(batch_size, klen, args['kdim'])
-    query = torch.FloatTensor(batch_size, qlen, args['qdim'])
-    src_mask = torch.ones(batch_size, 1, klen).byte()
+    device = "cpu"
+
+    key = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
+    value = torch.FloatTensor(batch_size, klen, args['kdim'], device=device)
+    query = torch.FloatTensor(batch_size, qlen, args['qdim'], device=device)
+    src_mask = torch.ones(batch_size, 1, klen, device=device).byte()
 
     module = importlib.import_module('neural_sp.models.modules.multihead_attention')
     attention = module.MultiheadAttentionMechanism(**args)
+    attention = attention.to(device)
+
     attention.train()
     aws = None
     for i in range(qlen):

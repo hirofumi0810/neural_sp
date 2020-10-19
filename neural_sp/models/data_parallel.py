@@ -6,14 +6,15 @@
 
 """Custom class for data parallel training."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+import numpy as np
 
+import torch
 import torch.nn as nn
 
 from torch.nn import DataParallel
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.parallel.scatter_gather import gather
+from torch.nn.parallel._functions import Scatter
 
 
 class CustomDataParallel(DataParallel):
@@ -21,24 +22,41 @@ class CustomDataParallel(DataParallel):
     def __init__(self, module, device_ids=None, output_device=None, dim=0):
         super(CustomDataParallel, self).__init__(module, device_ids, output_device, dim)
 
+    def scatter(self, inputs, target_gpus, device_ids):
+        if len(self.device_ids) <= 1:
+            return [inputs], [target_gpus]
+
+        def scatter_map(obj, i):
+            if isinstance(obj, list) and len(obj) > 0:
+                return [a[i] for a in zip(*[iter(obj)] * len(self.device_ids))]
+
+        # assert len(inputs) == 1  # (batch,)
+        inputs = inputs[0]
+
+        # After scatter_map is called, a scatter_map cell will exist. This cell
+        # has a reference to the actual function scatter_map, which has references
+        # to a closure that has a reference to the scatter_map cell (because the
+        # fn is recursive). To avoid this reference cycle, we set the function to
+        # None, clearing the cell
+        try:
+            res = [{k: scatter_map(v, i) for k, v in inputs.items()} for i in range(len(self.device_ids))]
+        finally:
+            scatter_map = None
+
+        target_gpus = [target_gpus for _ in range(len(self.device_ids))]
+
+        return res, target_gpus
+
     def gather(self, outputs, output_device):
         n_returns = len(outputs[0])
+        assert n_returns == 2
         n_gpus = len(outputs)
-        if n_returns == 2:
-            losses = [output[0] for output in outputs]
-            observation_mean = {}
-            for output in outputs:
-                for k, v in output[1].items():
-                    if v is None:
-                        continue
-                    if k not in observation_mean.keys():
-                        observation_mean[k] = v
-                    else:
-                        observation_mean[k] += v
-                observation_mean = {k: v / n_gpus for k, v in observation_mean.items()}
-            return gather(losses, output_device, dim=self.dim).mean(), observation_mean
-        else:
-            raise ValueError(n_returns)
+
+        losses = [output[0] for output in outputs]
+        observation_avg = {k: sum([output[1][k] for output in outputs]) / n_gpus
+                           for k, v in outputs[0][1].items() if v is not None}
+
+        return gather(losses, output_device, dim=self.dim).mean(), observation_avg
 
 
 class CPUWrapperASR(nn.Module):

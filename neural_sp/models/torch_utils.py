@@ -6,10 +6,6 @@
 
 """Utility functions."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 import numpy as np
 import torch
@@ -23,27 +19,40 @@ def tensor2np(x):
     """Convert torch.Tensor to np.ndarray.
 
     Args:
-        x (Tensor):
+        x (torch.Tensor):
     Returns:
         np.ndarray
 
     """
-    return x.cpu().numpy()
+    if x is None:
+        return x
+    return x.cpu().detach().numpy()
 
 
-def np2tensor(array, device_id=-1):
+def tensor2scalar(x):
+    """Convert torch.Tensor to a scalar value.
+
+    Args:
+        x (torch.Tensor):
+    Returns:
+        scaler
+
+    """
+    if isinstance(x, float):
+        return x
+    return x.cpu().detach().item()
+
+
+def np2tensor(array, device=None):
     """Convert form np.ndarray to torch.Tensor.
 
     Args:
         array (np.ndarray): A tensor of any sizes
-        device_id (int): ht index of the device
     Returns:
-        tensor (FloatTensor/IntTensor/LongTensor):
+        tensor (torch.Tensor):
 
     """
-    tensor = torch.from_numpy(array)
-    if device_id >= 0:
-        tensor = tensor.cuda(device_id)
+    tensor = torch.from_numpy(array).to(device)
     return tensor
 
 
@@ -71,56 +80,49 @@ def pad_list(xs, pad_value=0., pad_left=False):
     return xs_pad
 
 
-def make_pad_mask(seq_lens, device_id=-1):
+def make_pad_mask(seq_lens):
     """Make mask for padding.
 
     Args:
         seq_lens (IntTensor): `[B]`
-        device_id (int):
     Returns:
         mask (IntTensor): `[B, T]`
 
     """
     bs = seq_lens.size(0)
-    max_time = max(seq_lens)
-
-    seq_range = torch.arange(0, max_time, dtype=torch.int32)
-    seq_range_expand = seq_range.unsqueeze(0).expand(bs, max_time)
-    seq_length_expand = seq_range_expand.new(seq_lens).unsqueeze(-1)
-    mask = seq_range_expand < seq_length_expand
-
-    if device_id >= 0:
-        mask = mask.cuda(device_id)
+    max_time = seq_lens.max()
+    seq_range = torch.arange(0, max_time, dtype=torch.int32, device=seq_lens.device)
+    seq_range = seq_range.unsqueeze(0).expand(bs, max_time)
+    mask = seq_range < seq_lens.unsqueeze(-1)
     return mask
 
 
-def append_sos_eos(xs, ys, sos, eos, pad, bwd=False, replace_sos=False):
+def append_sos_eos(ys, sos, eos, pad, device, bwd=False, replace_sos=False):
     """Append <sos> and <eos> and return padded sequences.
 
     Args:
-        xs (Tensor): for GPU id extraction
         ys (list): A list of length `[B]`, which contains a list of size `[L]`
-        sos (int):
-        eos (int):
-        pad (int):
-        bwd (bool):
-        replace_sos (bool):
+        sos (int): index for <sos>
+        eos (int): index for <eos>
+        pad (int): index for <pad>
+
+        bwd (bool): reverse ys for backward reference
+        replace_sos (bool): replace <sos> with the special token
     Returns:
         ys_in (LongTensor): `[B, L]`
         ys_out (LongTensor): `[B, L]`
         ylens (IntTensor): `[B]`
 
     """
-    device_id = torch.cuda.device_of(xs.data).idx
-    _eos = xs.new_zeros(1).fill_(eos).long()
+    _eos = torch.zeros(1, dtype=torch.int64, device=device).fill_(eos)
     ys = [np2tensor(np.fromiter(y[::-1] if bwd else y, dtype=np.int64),
-                    device_id) for y in ys]
+                    device) for y in ys]
     if replace_sos:
         ylens = np2tensor(np.fromiter([y[1:].size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
         ys_in = pad_list([y for y in ys], pad)
         ys_out = pad_list([torch.cat([y[1:], _eos], dim=0) for y in ys], pad)
     else:
-        _sos = xs.new_zeros(1).fill_(sos).long()
+        _sos = torch.zeros(1, dtype=torch.int64, device=device).fill_(sos)
         ylens = np2tensor(np.fromiter([y.size(0) + 1 for y in ys], dtype=np.int32))  # +1 for <eos>
         ys_in = pad_list([torch.cat([_sos, y], dim=0) for y in ys], pad)
         ys_out = pad_list([torch.cat([y, _eos], dim=0) for y in ys], pad)

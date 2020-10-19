@@ -6,10 +6,6 @@
 
 """Frame stacking."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 
@@ -30,7 +26,7 @@ def stack_frame(feat, n_stacks, n_skips, dtype=np.float32):
         stacked_feat (np.ndarray): `[floor(T / n_skips), input_dim * n_stacks]`
 
     """
-    if n_stacks == 1 and n_stacks == 1:
+    if n_stacks == 1 and n_skips == 1:
         return feat
 
     if n_stacks < n_skips:

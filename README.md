@@ -49,7 +49,7 @@ make KALDI=/path/to/kaldi
     - (CNN-)Transformer
     - Chunk hopping mechanism [[link](https://arxiv.org/abs/1902.06450)]
     - Relative positional encoding [[link](https://arxiv.org/abs/1901.02860)]
-  - Time-Depth Seprarabel (TDS) convolutional encoder [[link](https://arxiv.org/abs/1904.02619)]
+  - Time-depth separable (TDS) convolution encoder [[link](https://arxiv.org/abs/1904.02619)] [[line](https://arxiv.org/abs/2001.09727)]
   - Gated CNN encoder (GLU) [[link](https://openreview.net/forum?id=Hyig0zb0Z)]
   - Conformer encoder [[link](https://arxiv.org/abs/2005.08100)]
 
@@ -103,7 +103,8 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | model         | dev | test |
 | -----------   | --- | ---- |
 | Transformer   | 5.0 | 5.4  |
-| Streaming MMA | 6.1 | 6.6  |
+| Conformer     | 4.7 | 5.2  |
+| Streaming MMA | 5.5 | 6.1  |
 
 ### CSJ (WER)
 | model | eval1 | eval2 | eval3 |
@@ -123,7 +124,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### Librispeech (WER)
 | model         | dev-clean | dev-other | test-clean | test-other |
 | -----------   | --------- | --------- | ---------- | ---------- |
-| Transformer   | 2.3       | 5.8       | 2.5        | 6.1        |
+| Transformer   | 2.1       | 5.3       | 2.4        | 5.7        |
 | Streaming MMA | 2.5       | 6.9       | 2.7        | 7.1        |
 
 ### TEDLIUM2 (WER)

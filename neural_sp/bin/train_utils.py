@@ -6,10 +6,7 @@
 
 """Utility functions for training."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
+import codecs
 import functools
 import logging
 import numpy as np
@@ -40,20 +37,17 @@ def compute_susampling_factor(args):
     if 'conv' in args.enc_type and args.conv_poolings:
         for p in args.conv_poolings.split('_'):
             args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
-    else:
-        args.subsample_factor = int(np.prod(subsample))
+    args.subsample_factor *= int(np.prod(subsample))
     if args.train_set_sub1:
         if 'conv' in args.enc_type and args.conv_poolings:
             args.subsample_factor_sub1 = args.subsample_factor * \
                 int(np.prod(subsample[:args.enc_n_layers_sub1 - 1]))
-        else:
-            args.subsample_factor_sub1 = args.subsample_factor
+        args.subsample_factor_sub1 *= int(np.prod(subsample[:args.enc_n_layers_sub1]))
     if args.train_set_sub2:
         if 'conv' in args.enc_type and args.conv_poolings:
             args.subsample_factor_sub2 = args.subsample_factor * \
                 int(np.prod(subsample[:args.enc_n_layers_sub2 - 1]))
-        else:
-            args.subsample_factor_sub2 = args.subsample_factor
+        args.subsample_factor_sub2 *= int(np.prod(subsample[:args.enc_n_layers_sub2]))
 
     return args
 
@@ -77,7 +71,10 @@ def load_config(config_path):
         params (dict):
 
     """
-    with open(config_path, "r") as f:
+    if not os.path.isfile(config_path):
+        raise ValueError("No configuration found at %s" % config_path)
+
+    with codecs.open(config_path, "r", encoding='utf-8') as f:
         conf = yaml.load(f, Loader=yaml.FullLoader)
 
     params = conf['param']
@@ -91,7 +88,7 @@ def save_config(conf, save_path):
         conf (dict):
 
     """
-    with open(os.path.join(save_path), "w") as f:
+    with codecs.open(os.path.join(save_path), "w", encoding='utf-8') as f:
         f.write(yaml.dump({'param': conf}, default_flow_style=False))
 
 
@@ -145,9 +142,6 @@ def load_checkpoint(checkpoint_path, model=None, optimizer=None, amp=None):
         topk_list (list): list of (epoch, metric)
 
     """
-    if not os.path.isfile(checkpoint_path):
-        raise ValueError('There is no checkpoint')
-
     if os.path.isfile(checkpoint_path):
         checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
     else:

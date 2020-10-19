@@ -6,11 +6,6 @@
 
 """Functions for computing edit distance."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-# import Levenshtein as lev  # TODO(hirofumi): install
 import numpy as np
 
 
@@ -34,6 +29,8 @@ def compute_per(ref, hyp, normalize=False):
     phones_ref = [chr(phone2char[p]) for p in ref]
     phones_hyp = [chr(phone2char[p]) for p in hyp]
 
+    import Levenshtein as lev
+    # TODO(hirofumi): install
     per = lev.distance(''.join(phones_ref), ''.join(phones_hyp))
     if normalize:
         per /= len(ref)
@@ -51,6 +48,8 @@ def compute_cer(ref, hyp, normalize=False):
         cer (float): Character Error Rate between ref and hyp
 
     """
+    import Levenshtein as lev
+    # TODO(hirofumi): install
     cer = lev.distance(hyp, ref)
     if normalize:
         cer /= len(list(ref))

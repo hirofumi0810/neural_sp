@@ -9,17 +9,13 @@
    You can use the multi-GPU version.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 import numpy as np
 import os
 import pandas as pd
 import random
 
-from neural_sp.datasets.asr import count_vocab_size
+from neural_sp.datasets.utils import count_vocab_size
 from neural_sp.datasets.token_converter.character import Char2idx
 from neural_sp.datasets.token_converter.character import Idx2char
 from neural_sp.datasets.token_converter.phone import Idx2phone
@@ -151,9 +147,6 @@ class Dataset(object):
 
         return concat_ids
 
-    def __len__(self):
-        return len(self.concat_ids.reshape((-1,)))
-
     @property
     def epoch_detail(self):
         """Percentage of the current epoch."""
@@ -166,7 +159,16 @@ class Dataset(object):
             self.concat_ids = self.concat_utterances(self.df)
         self.offset = 0
 
+    def __len__(self):
+        return len(self.concat_ids.reshape((-1,)))
+
+    def __iter__(self):
+        return self
+
     def next(self, batch_size=None, bptt=None):
+        return self.__next__(batch_size, bptt)
+
+    def __next__(self, batch_size=None, bptt=None):
         """Generate each mini-batch.
 
         Args:

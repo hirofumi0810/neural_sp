@@ -6,17 +6,12 @@
 
 """Base class for encoders."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 import os
 import shutil
 import torch
 
 from neural_sp.models.base import ModelBase
-from neural_sp.utils import mkdir_join
 
 import matplotlib
 matplotlib.use('Agg')
@@ -33,10 +28,6 @@ class EncoderBase(ModelBase):
         logger.info('Overriding EncoderBase class.')
 
     @property
-    def device_id(self):
-        return torch.cuda.device_of(next(self.parameters()).data).idx
-
-    @property
     def output_dim(self):
         return self._odim
 
@@ -44,10 +35,10 @@ class EncoderBase(ModelBase):
     def subsampling_factor(self):
         return self._factor
 
-    def reset_parameters(self, param_init):
+    def forward(self, xs, xlens, task):
         raise NotImplementedError
 
-    def forward(self, xs, xlens, task):
+    def reset_cache(self):
         raise NotImplementedError
 
     def turn_on_ceil_mode(self, encoder):
@@ -68,21 +59,26 @@ class EncoderBase(ModelBase):
                 else:
                     self.turn_off_ceil_mode(module)
 
-    def _plot_attention(self, save_path, n_cols=2):
+    def _plot_attention(self, save_path=None, n_cols=2):
         """Plot attention for each head in all encoder layers."""
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
-        _save_path = mkdir_join(save_path, 'enc_att_weights')
-
         # Clean directory
-        if _save_path is not None and os.path.isdir(_save_path):
-            shutil.rmtree(_save_path)
-            os.mkdir(_save_path)
+        if save_path is not None and os.path.isdir(save_path):
+            shutil.rmtree(save_path)
+            os.mkdir(save_path)
 
-        elens = self.data_dict['elens']
+        if not hasattr(self, 'aws_dict'):
+            return
 
         for k, aw in self.aws_dict.items():
+            if aw is None:
+                continue
+
+            lth = k.split('_')[-1].replace('layer', '')
+            elens_l = self.data_dict['elens' + lth]
+
             plt.clf()
             n_heads = aw.shape[1]
             n_cols_tmp = 1 if n_heads == 1 else n_cols
@@ -90,7 +86,7 @@ class EncoderBase(ModelBase):
                                      figsize=(20, 8), squeeze=False)
             for h in range(n_heads):
                 ax = axes[h // n_cols_tmp, h % n_cols_tmp]
-                ax.imshow(aw[-1, h, :elens[-1], :elens[-1]], aspect="auto")
+                ax.imshow(aw[-1, h, :elens_l[-1], :elens_l[-1]], aspect="auto")
                 ax.grid(False)
                 ax.set_xlabel("Input (head%d)" % h)
                 ax.set_ylabel("Output (head%d)" % h)
@@ -98,23 +94,6 @@ class EncoderBase(ModelBase):
                 ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
             fig.tight_layout()
-            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
+            if save_path is not None:
+                fig.savefig(os.path.join(save_path, '%s.png' % k))
             plt.close()
-
-
-def blockwise(xs, N_l, N_c, N_r):
-    bs, xmax, idim = xs.size()
-
-    n_blocks = xmax // N_c
-    if xmax % N_c != 0:
-        n_blocks += 1
-    xs_tmp = xs.new_zeros(bs, n_blocks, N_l + N_c + N_r, idim)
-    xs_pad = torch.cat([xs.new_zeros(bs, N_l, idim),
-                        xs,
-                        xs.new_zeros(bs, N_r, idim)], dim=1)
-    for blc_id, t in enumerate(range(N_l, N_l + xmax, N_c)):
-        xs_chunk = xs_pad[:, t - N_l:t + (N_c + N_r)]
-        xs_tmp[:, blc_id, :xs_chunk.size(1), :] = xs_chunk
-    xs = xs_tmp.view(bs * n_blocks, N_l + N_c + N_r, idim)
-
-    return xs

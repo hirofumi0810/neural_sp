@@ -1,5 +1,5 @@
 # optimization
 n_epochs: 15  # 20->15
-print_step: 1200
+print_step: 1200  # 600->1200
 lr_decay_start_epoch: 5
 lr_decay_rate: 0.8

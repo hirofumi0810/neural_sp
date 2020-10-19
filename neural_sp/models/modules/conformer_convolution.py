@@ -6,10 +6,6 @@
 
 """Convolution block for Conformer encoder."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,17 +20,23 @@ class ConformerConvBlock(nn.Module):
     """A single convolution block for the Conformer encoder.
 
     Args:
-        d_model (int): hidden dimension
-        kernel_size (int): kernel size for depthwise convolution
+        d_model (int): input/output dimension
+        kernel_size (int): kernel size in depthwise convolution
         param_init (str): parameter initialization method
 
     """
 
-    def __init__(self, d_model, kernel_size, param_init):
-        super(ConformerConvBlock, self).__init__()
+    def __init__(self, d_model, kernel_size, param_init, causal=False):
 
-        self.d_model = d_model
-        assert kernel_size % 2 == 1
+        super().__init__()
+
+        assert (kernel_size - 1) % 2 == 0, 'kernel_size must be the odd number.'
+
+        self.kernel_size = kernel_size
+        if causal:
+            self.causal = nn.ConstantPad1d((kernel_size - 1, 0), 0)
+        else:
+            self.causal = None
 
         self.pointwise_conv1 = nn.Conv1d(in_channels=d_model,
                                          out_channels=d_model * 2,  # for GLU
@@ -45,8 +47,7 @@ class ConformerConvBlock(nn.Module):
                                         out_channels=d_model,
                                         kernel_size=kernel_size,
                                         stride=1,
-                                        # padding=kernel_size // 2 - 1,
-                                        padding=kernel_size // 2,
+                                        padding=(kernel_size - 1) // 2,
                                         groups=d_model)  # depthwise
         self.batch_norm = nn.BatchNorm1d(d_model)
         self.activation = Swish()
@@ -58,6 +59,8 @@ class ConformerConvBlock(nn.Module):
 
         if param_init == 'xavier_uniform':
             self.reset_parameters()
+        else:
+            logger.info('Parameter initialization is skipped.')
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
@@ -75,10 +78,10 @@ class ConformerConvBlock(nn.Module):
             xs (FloatTensor): `[B, T, d_model]`
 
         """
-        B, T, d_model = xs.size()
-        assert d_model == self.d_model
-
         xs = xs.transpose(2, 1).contiguous()  # `[B, C, T]`
+        if self.causal is not None:
+            xs = self.causal(xs)
+            xs = xs[:, :, :-(self.kernel_size - 1)]
         xs = self.pointwise_conv1(xs)  # `[B, 2 * C, T]`
         xs = xs.transpose(2, 1)  # `[B, T, 2 * C]`
         xs = F.glu(xs)  # `[B, T, C]`

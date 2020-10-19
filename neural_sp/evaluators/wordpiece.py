@@ -6,10 +6,7 @@
 
 """Evaluate the wordpiece-level model by WER."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
+import codecs
 import logging
 from tqdm import tqdm
 
@@ -19,14 +16,14 @@ from neural_sp.utils import mkdir_join
 logger = logging.getLogger(__name__)
 
 
-def eval_wordpiece(models, dataset, recog_params, epoch,
+def eval_wordpiece(models, dataloader, recog_params, epoch,
                    recog_dir=None, streaming=False, progressbar=False,
                    fine_grained=False):
     """Evaluate the wordpiece-level model by WER.
 
     Args:
         models (list): models to evaluate
-        dataset (Dataset): evaluation dataset
+        dataloader (torch.utils.data.DataLoader): evaluation dataloader
         recog_params (dict):
         epoch (int):
         recog_dir (str):
@@ -38,56 +35,56 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
         cer (float): Character error rate
 
     """
-    # Reset data counter
-    dataset.reset(recog_params['recog_batch_size'])
-
     if recog_dir is None:
-        recog_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
+        recog_dir = 'decode_' + dataloader.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
         recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
         recog_dir += '_cp' + str(recog_params['recog_coverage_penalty'])
         recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
         recog_dir += '_lm' + str(recog_params['recog_lm_weight'])
 
-        ref_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
     else:
-        ref_trn_save_path = mkdir_join(recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(recog_dir, 'hyp.trn')
 
     wer, cer = 0, 0
     n_sub_w, n_ins_w, n_del_w = 0, 0, 0
     n_sub_c, n_ins_c, n_del_c = 0, 0, 0
     n_word, n_char = 0, 0
+    wer_dist = {}  # calculate WER distribution based on input lengths
     n_streamable, quantity_rate, n_utt = 0, 0, 0
     last_success_frame_ratio = 0
+
+    # Reset data counter
+    dataloader.reset(recog_params['recog_batch_size'])
+
     if progressbar:
-        pbar = tqdm(total=len(dataset))
+        pbar = tqdm(total=len(dataloader))
 
-    # calculate WER distribution based on input lengths
-    wer_dist = {}
-
-    with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
+    with codecs.open(hyp_trn_path, 'w', encoding='utf-8') as f_hyp, \
+            codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
         while True:
-            batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
+            batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
             if streaming or recog_params['recog_chunk_sync']:
                 best_hyps_id, _ = models[0].decode_streaming(
-                    batch['xs'], recog_params, dataset.idx2token[0],
+                    batch['xs'], recog_params, dataloader.idx2token[0],
                     exclude_eos=True)
             else:
                 best_hyps_id, _ = models[0].decode(
                     batch['xs'], recog_params,
-                    idx2token=dataset.idx2token[0] if progressbar else None,
+                    idx2token=dataloader.idx2token[0] if progressbar else None,
                     exclude_eos=True,
                     refs_id=batch['ys'],
                     utt_ids=batch['utt_ids'],
-                    speakers=batch['sessions' if dataset.corpus == 'swbd' else 'speakers'],
+                    speakers=batch['sessions' if dataloader.corpus == 'swbd' else 'speakers'],
                     ensemble_models=models[1:] if len(models) > 1 else [])
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
                 if ref[0] == '<':
                     ref = ref.split('>')[1]
-                hyp = dataset.idx2token[0](best_hyps_id[b])
+                hyp = dataloader.idx2token[0](best_hyps_id[b])
 
                 # Write to trn
                 speaker = str(batch['speakers'][b]).replace('-', '_')
@@ -121,7 +118,7 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
                             wer_dist[xlen_bin] = [wer_b / 100]
 
                     # Compute CER
-                    if dataset.corpus == 'csj':
+                    if dataloader.corpus == 'csj':
                         ref = ref.replace(' ', '')
                         hyp = hyp.replace(' ', '')
                     cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref),
@@ -149,7 +146,7 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
         pbar.close()
 
     # Reset data counters
-    dataset.reset()
+    dataloader.reset()
 
     if not streaming:
         wer /= n_word
@@ -169,15 +166,15 @@ def eval_wordpiece(models, dataset, recog_params, epoch,
 
         if fine_grained:
             for len_bin, wers in sorted(wer_dist.items(), key=lambda x: x[0]):
-                logger.info('  WER (%s): %.2f %% (%d)' % (dataset.set, sum(wers) / len(wers), len_bin))
+                logger.info('  WER (%s): %.2f %% (%d)' % (dataloader.set, sum(wers) / len(wers), len_bin))
 
-    logger.debug('WER (%s): %.2f %%' % (dataset.set, wer))
+    logger.debug('WER (%s): %.2f %%' % (dataloader.set, wer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
-    logger.debug('CER (%s): %.2f %%' % (dataset.set, cer))
+    logger.debug('CER (%s): %.2f %%' % (dataloader.set, cer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
 
-    logger.info('Streamablility (%s): %.2f %%' % (dataset.set, n_streamable * 100))
-    logger.info('Quantity rate (%s): %.2f %%' % (dataset.set, quantity_rate * 100))
-    logger.info('Last success frame ratio (%s): %.2f %%' % (dataset.set, last_success_frame_ratio))
+    logger.info('Streamablity (%s): %.2f %%' % (dataloader.set, n_streamable * 100))
+    logger.info('Quantity rate (%s): %.2f %%' % (dataloader.set, quantity_rate * 100))
+    logger.info('Last success frame ratio (%s): %.2f %%' % (dataloader.set, last_success_frame_ratio))
 
     return wer, cer

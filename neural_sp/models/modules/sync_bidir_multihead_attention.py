@@ -6,10 +6,6 @@
 
 """Synchronous bidirectional multi-head attention layer."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 import math
 import numpy as np
@@ -26,19 +22,22 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
     Args:
         kdim (int): dimension of key
         qdim (int): dimension of query
-        adim: (int) dimension of the attention space
+        adim: (int) dimension of attention space
+        odim: (int) dimension of output
         n_heads (int): number of heads
         dropout (float): dropout probability
-        bias (bool): use bias term in linear layers
         atype (str): type of attention mechanisms
+        bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
         future_weight (float):
 
     """
 
-    def __init__(self, kdim, qdim, adim, n_heads, dropout,
-                 atype='scaled_dot', bias=True, param_init='', future_weight=0.1):
-        super(SyncBidirMultiheadAttentionMechanism, self).__init__()
+    def __init__(self, kdim, qdim, adim, odim, n_heads, dropout,
+                 atype='scaled_dot', bias=True, param_init='',
+                 future_weight=0.1):
+
+        super().__init__()
 
         self.atype = atype
         assert adim % n_heads == 0
@@ -48,7 +47,6 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
         self.future_weight = future_weight
         self.reset()
 
-        # attention dropout applied AFTER the softmax layer
         self.dropout = nn.Dropout(p=dropout)
 
         if atype == 'scaled_dot':
@@ -65,7 +63,7 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
         else:
             raise NotImplementedError(atype)
 
-        self.w_out = nn.Linear(adim, kdim, bias=bias)
+        self.w_out = nn.Linear(adim, odim, bias=bias)
 
         if param_init == 'xavier_uniform':
             self.reset_parameters(bias)
@@ -98,7 +96,7 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
                 key_bwd, value_bwd, query_bwd,
                 tgt_mask, identity_mask,
                 mode='', cache=True, trigger_point=None):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             key_fwd (FloatTensor): `[B, klen, kdim]`
@@ -109,7 +107,7 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
             query_bwd (FloatTensor): `[B, qlen, qdim]`
             tgt_mask (ByteTensor): `[B, qlen, klen]`
             identity_mask (ByteTensor): `[B, qlen, klen]`
-            mode: dummy interface for MoChA
+            mode: dummy interface for MoChA/MMA
             cache (bool): cache key, value, and tgt_mask
             trigger_point (IntTensor): dummy
         Returns:

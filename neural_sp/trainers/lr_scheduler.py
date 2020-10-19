@@ -6,10 +6,6 @@
 
 """Learning rate scheduler."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from glob import glob
 import logging
 import os
@@ -27,28 +23,31 @@ class LRScheduler(object):
         optimizer (torch.optim): optimizer
         base_lr (float): maximum of learning rate
         decay_type (str): always/metric
-            always: decay per epoch regardless of validation metric
-            metric: decay if validation metric is not improved
+            always) decay per epoch regardless of validation metric
+            metric) decay if validation metric is not improved
         decay_start_epoch (int): the epoch to start decay
         decay_rate (float): the rate to decay the current learning rate
         decay_patient_n_epochs (int): decay learning rate if results have not been
             improved for 'decay_patient_n_epochs'
-        early_stop_patient_n_epochs (int): number of epochs to tolerate stopping training
+        early_stop_patient_n_epochs (int): number of epochs to tolerate stopping the training
             when validation perfomance is not improved
-        lower_better (bool): If True, the lower, the better.
-                             If False, the higher, the better.
+        lower_better (bool):
+            True) The lower, the better.
+            False) The higher, the better.
         warmup_start_lr (float): initial learning rate for warmup
         warmup_n_steps (int): steps for learning rate warmup
-        model_size (int): d_model
+        peak_lr (float): peak learning rate. This can be enabled only for Noam optimizer.
+        model_size (int): d_model for Transformer like learning rate scheduling
         factor (float): factor of learning rate for Transformer
-        noam (bool): schedule for Transformer
+        noam (bool): learning rate scheduling for Transformer
         save_checkpoints_topk (int): save top-k checkpoints
 
     """
 
-    def __init__(self, optimizer, base_lr, decay_type, decay_start_epoch, decay_rate,
+    def __init__(self, optimizer, base_lr,
+                 decay_type, decay_start_epoch, decay_rate,
                  decay_patient_n_epochs=0, early_stop_patient_n_epochs=-1, lower_better=True,
-                 warmup_start_lr=0, warmup_n_steps=0,
+                 warmup_start_lr=0, warmup_n_steps=0, peak_lr=1e6,
                  model_size=0, factor=1, noam=False, save_checkpoints_topk=1):
 
         self.optimizer = optimizer
@@ -67,6 +66,7 @@ class LRScheduler(object):
         self.warmup_start_lr = warmup_start_lr
         self.warmup_n_steps = warmup_n_steps
         self.lr = self.base_lr
+        self.peak_lr = peak_lr
 
         # for decay
         self.lower_better = lower_better
@@ -114,6 +114,7 @@ class LRScheduler(object):
         """Warm up and decay learning rate per step based on Transformer."""
         self.lr = self.base_lr * min(self._step ** (-0.5),
                                      self._step * (self.warmup_n_steps ** (-1.5)))
+        self.lr = min(self.lr, self.peak_lr)
         self._update_lr()
 
     def _warmup_lr(self):

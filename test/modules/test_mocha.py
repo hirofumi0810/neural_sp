@@ -29,22 +29,25 @@ def make_args(**kwargs):
         bias=True,
         param_init='',
         decot=False,
-        lookahead=2,
-        share_chunkwise_attention=True
+        lookahead=0,
+        share_chunkwise_attention=True,
     )
     args.update(kwargs)
     return args
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # hard monotonic attention
         ({'n_heads_mono': 1, 'chunk_size': 1}),
         ({'n_heads_mono': 1, 'chunk_size': 1, 'conv1d': True}),
         ({'n_heads_mono': 1, 'chunk_size': 1, 'no_denominator': True}),
         ({'n_heads_mono': 1, 'chunk_size': 1, 'bias': False}),
-        # mocha
+        # MoChA
         ({'n_heads_mono': 1, 'chunk_size': 4}),
+        # Milk
+        ({'n_heads_mono': 1, 'chunk_size': -1}),
         # MMA
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 1, 'atype': 'scaled_dot'}),
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot'}),
@@ -63,6 +66,8 @@ def make_args(**kwargs):
           'dropout_head': 0.5}),
         ({'n_heads_mono': 4, 'n_heads_chunk': 4, 'chunk_size': 4, 'atype': 'scaled_dot',
           'dropout_head': 0.5}),
+        # initialization
+        ({'param_init': 'xavier_uniform'}),
     ]
 )
 def test_forward_soft_parallel(args):
@@ -71,18 +76,38 @@ def test_forward_soft_parallel(args):
     batch_size = 4
     klen = 40
     qlen = 5
-    key = torch.FloatTensor(batch_size, klen, args['kdim'])
-    value = torch.FloatTensor(batch_size, klen, args['kdim'])
-    query = torch.FloatTensor(batch_size, qlen, args['qdim'])
-    src_mask = torch.ones(batch_size, 1, klen).byte()
+    device = "cpu"
+
+    key = torch.randn(batch_size, klen, args['kdim'], device=device)
+    value = torch.randn(batch_size, klen, args['kdim'], device=device)
+    query = torch.randn(batch_size, qlen, args['qdim'], device=device)
+    src_mask = key.new_ones(batch_size, 1, klen).byte()
 
     module = importlib.import_module('neural_sp.models.modules.mocha')
-    attention = module.MoChA(**args)
-    attention.train()
+    mocha = module.MoChA(**args)
+    mocha = mocha.to(device)
+
+    mocha.train()
+    # recursive
     alpha = None
     for i in range(qlen):
-        out = attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
-                        mode='parallel', cache=True)
+        out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
+                    mode='recursive', cache=True)
+        assert len(out) == 4
+        cv, alpha, beta, p_choose = out
+        assert cv.size() == (batch_size, 1, value.size(2))
+        assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
+        assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
+        if args['chunk_size'] > 1:
+            assert beta is not None
+            assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
+
+    # parallel
+    alpha = None
+    mocha.reset()
+    for i in range(qlen):
+        out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
+                    mode='parallel', cache=True)
         assert len(out) == 4
         cv, alpha, beta, p_choose = out
         assert cv.size() == (batch_size, 1, value.size(2))
@@ -100,8 +125,11 @@ def test_forward_soft_parallel(args):
         ({'n_heads_mono': 1, 'chunk_size': 1, 'conv1d': True}),
         ({'n_heads_mono': 1, 'chunk_size': 1, 'no_denominator': True}),
         ({'n_heads_mono': 1, 'chunk_size': 1, 'bias': False}),
-        # mocha
+        # MoChA
         ({'n_heads_mono': 1, 'chunk_size': 4}),
+        ({'n_heads_mono': 1, 'chunk_size': 4, 'decot': True, 'lookahead': 2}),
+        # Milk
+        ({'n_heads_mono': 1, 'chunk_size': -1}),
         # MMA
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 1, 'atype': 'scaled_dot'}),
         ({'n_heads_mono': 4, 'n_heads_chunk': 1, 'chunk_size': 4, 'atype': 'scaled_dot'}),
@@ -119,18 +147,25 @@ def test_forward_hard(args):
     batch_size = 4
     klen = 40
     qlen = 5
-    key = torch.FloatTensor(batch_size, klen, args['kdim'])
-    value = torch.FloatTensor(batch_size, klen, args['kdim'])
-    query = torch.FloatTensor(batch_size, qlen, args['qdim'])
+    device = "cpu"
+
+    key = torch.randn(batch_size, klen, args['kdim'], device=device)
+    value = torch.randn(batch_size, klen, args['kdim'], device=device)
+    query = torch.randn(batch_size, qlen, args['qdim'], device=device)
 
     module = importlib.import_module('neural_sp.models.modules.mocha')
     mocha = module.MoChA(**args)
+    mocha = mocha.to(device)
+
     mocha.eval()
     alpha = None
+    trigger_points = None
+    if args['decot']:
+        trigger_points = torch.arange(qlen).unsqueeze(0).repeat(batch_size, 1)
     for i in range(qlen):
         out = mocha(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
-                    mode='hard', cache=False, eps_wait=-1,
-                    efficient_decoding=False)
+                    mode='hard', cache=False, trigger_points=trigger_points,
+                    eps_wait=-1, efficient_decoding=False)
         assert len(out) == 4
         cv, alpha, beta, p_choose = out
         assert cv.size() == (batch_size, 1, value.size(2))

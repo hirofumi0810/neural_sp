@@ -67,10 +67,8 @@ def register_args_encoder(parser, args):
 
 
 def register_args_decoder(parser, args):
-    if args.dec_type in ['transformer', 'transformer_xl']:
+    if args.dec_type in ['transformer']:
         from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder as module
-    elif args.dec_type == 'transformer_transducer':
-        from neural_sp.models.seq2seq.decoders.transformer_transducer import TrasformerTransducer as module
     elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
         from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer as module
     elif args.dec_type == 'asg':
@@ -107,6 +105,8 @@ def build_parser():
                         help='job name')
     parser.add_argument('--stdout', type=strtobool, default=False,
                         help='print to standard output during training')
+    parser.add_argument('--remove_old_checkpoints', type=strtobool, default=True,
+                        help='remove old checkpoints to save disk (turned off when training Transformer')
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')
@@ -114,12 +114,16 @@ def build_parser():
                         help='tsv file path for the training set for the 1st auxiliary task')
     parser.add_argument('--train_set_sub2', type=str, default=False,
                         help='tsv file path for the training set for the 2nd auxiliary task')
+    parser.add_argument('--train_alignment', type=str,
+                        help='forced alignment directory path for the training set')
     parser.add_argument('--dev_set', type=str,
                         help='tsv file path for the development set')
     parser.add_argument('--dev_set_sub1', type=str, default=False,
                         help='tsv file path for the development set for the 1st auxiliary task')
     parser.add_argument('--dev_set_sub2', type=str, default=False,
                         help='tsv file path for the development set for the 2nd auxiliary task')
+    parser.add_argument('--dev_alignment', type=str,
+                        help='forced alignment directory path for the development set')
     parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
                         help='tsv file paths for the evaluation sets')
     parser.add_argument('--nlsyms', type=str, default=False, nargs='?',
@@ -161,19 +165,19 @@ def build_parser():
                         help='minimum number of input frames')
     parser.add_argument('--dynamic_batching', type=strtobool, default=True,
                         help='')
-    parser.add_argument('--gaussian_noise', type=strtobool, default=False,
-                        help='add Gaussian noise to input features')
-    parser.add_argument('--weight_noise', type=strtobool, default=False,
-                        help='add Gaussian noise to weight parameters')
+    parser.add_argument('--input_noise_std', type=float, default=0,
+                        help='standard deviation of Gaussian noise to input features')
+    parser.add_argument('--weight_noise_std', type=float, default=0,
+                        help='standard deviation of Gaussian noise to weight parameters')
     parser.add_argument('--sequence_summary_network', type=strtobool, default=False,
                         help='use sequence summary network')
     # topology (encoder)
     parser.add_argument('--enc_type', type=str, default='blstm',
                         choices=['blstm', 'lstm', 'bgru', 'gru',
                                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
-                                 'transformer', 'conv_transformer',
-                                 'conformer', 'conv_conformer',
-                                 'conv', 'tds', 'gated_conv'],
+                                 'transformer', 'conv_transformer', 'conv_uni_transformer',
+                                 'conformer', 'conv_conformer', 'conv_uni_conformer',
+                                 'tds', 'gated_conv'],
                         help='type of the encoder')
     parser.add_argument('--enc_n_layers', type=int, default=5,
                         help='number of encoder RNN layers')
@@ -184,12 +188,12 @@ def build_parser():
     parser.add_argument('--subsample', type=str, default="1_1_1_1_1",
                         help='delimited list input')
     parser.add_argument('--subsample_type', type=str, default='drop',
-                        choices=['drop', 'concat', 'max_pool', '1dconv'],
+                        choices=['drop', 'concat', 'max_pool', '1dconv', 'add'],
                         help='type of subsampling in the encoder')
     # topology (decoder)
     parser.add_argument('--dec_type', type=str, default='lstm',
-                        choices=['lstm', 'gru', 'transformer', 'transformer_xl',
-                                 'lstm_transducer', 'gru_transducer', 'transformer_transducer',
+                        choices=['lstm', 'gru', 'transformer',
+                                 'lstm_transducer', 'gru_transducer',
                                  'asg'],
                         help='type of the decoder')
     parser.add_argument('--dec_n_layers', type=int, default=1,
@@ -272,11 +276,6 @@ def build_parser():
                         help='dropout probability for the attention weights')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='weight decay parameter')
-    parser.add_argument('--ss_prob', type=float, default=0.0,
-                        help='probability of scheduled sampling')
-    parser.add_argument('--ss_type', type=str, default='constant',
-                        choices=['constant', 'ramp'],
-                        help='type of scheduled sampling')
     parser.add_argument('--lsm_prob', type=float, default=0.0,
                         help='probability of label smoothing')
     parser.add_argument('--ctc_lsm_prob', type=float, default=0.0,
@@ -286,11 +285,11 @@ def build_parser():
                         help='width of frequency mask for SpecAugment')
     parser.add_argument('--n_freq_masks', type=int, default=0,
                         help='number of frequency masks for SpecAugment')
-    parser.add_argument('--time_width', type=int, default=70,
+    parser.add_argument('--time_width', type=int, default=100,
                         help='width of time mask for SpecAugment')
     parser.add_argument('--n_time_masks', type=int, default=0,
                         help='number of time masks for SpecAugment')
-    parser.add_argument('--time_width_upper', type=float, default=0.2,
+    parser.add_argument('--time_width_upper', type=float, default=1.0,
                         help='')
     parser.add_argument('--adaptive_number_ratio', type=float, default=0.0,
                         help='adaptive multiplicity ratio for time masking')
@@ -439,7 +438,7 @@ def build_parser():
                         help='')
     parser.add_argument('--recog_ctc_vad_spike_threshold', type=float, default=0.1,
                         help='')
-    parser.add_argument('--recog_ctc_vad_n_accum_frames', type=float, default=4000,
+    parser.add_argument('--recog_ctc_vad_n_accum_frames', type=int, default=4000,
                         help='')
     parser.add_argument('--recog_mma_delay_threshold', type=int, default=-1,
                         help='delay threshold for MMA decoder')

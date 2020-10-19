@@ -6,10 +6,6 @@
 
 """Transformer blocks."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 import random
 import torch
@@ -28,31 +24,31 @@ logger = logging.getLogger(__name__)
 class TransformerDecoderBlock(nn.Module):
     """A single layer of the Transformer decoder.
 
-        Args:
-            d_model (int): input dimension of MultiheadAttentionMechanism and PositionwiseFeedForward
-            d_ff (int): hidden dimension of PositionwiseFeedForward
-            atype (str): type of attention mechanism
-            n_heads (int): number of heads for multi-head attention
-            dropout (float): dropout probabilities for linear layers
-            dropout_att (float): dropout probabilities for attention probabilities
-            dropout_layer (float): LayerDrop probability
-            dropout_head (float): HeadDrop probability
-            layer_norm_eps (float): epsilon parameter for layer normalization
-            ffn_activation (str): nonolinear function for PositionwiseFeedForward
-            param_init (str): parameter initialization method
-            src_tgt_attention (bool): if False, ignore source-target attention
-            memory_transformer (bool): TransformerXL decoder
-            mocha_chunk_size (int): chunk size for MoChA. -1 means infinite lookback.
-            mocha_n_heads_mono (int): number of heads for monotonic attention
-            mocha_n_heads_chunk (int): number of heads for chunkwise attention
-            mocha_init_r (int):
-            mocha_eps (float):
-            mocha_std (float):
-            mocha_no_denominator (bool):
-            mocha_1dconv (bool):
-            lm_fusion (bool):
-            ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
-            share_chunkwise_attention (bool):
+    Args:
+        d_model (int): input dimension of MultiheadAttentionMechanism and PositionwiseFeedForward
+        d_ff (int): hidden dimension of PositionwiseFeedForward
+        atype (str): type of attention mechanism
+        n_heads (int): number of heads for multi-head attention
+        dropout (float): dropout probabilities for linear layers
+        dropout_att (float): dropout probabilities for attention probabilities
+        dropout_layer (float): LayerDrop probability
+        dropout_head (float): HeadDrop probability
+        layer_norm_eps (float): epsilon parameter for layer normalization
+        ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        param_init (str): parameter initialization method
+        src_tgt_attention (bool): use source-target attention
+        memory_transformer (bool): TransformerXL decoder
+        mma_chunk_size (int): chunk size for chunkwise attention. -1 means infinite lookback.
+        mma_n_heads_mono (int): number of MMA head
+        mma_n_heads_chunk (int): number of hard chunkwise attention head
+        mma_init_r (int): initial bias value for MMA
+        mma_eps (float): epsilon value for MMA
+        mma_std (float): standard deviation of Gaussian noise for MMA
+        mma_no_denominator (bool): remove demominator in MMA
+        mma_1dconv (bool): 1dconv for MMA
+        share_chunkwise_attention (bool): share chunkwise attention in the same layer of MMA
+        lm_fusion (str): type of LM fusion
+        ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
 
     """
 
@@ -60,12 +56,13 @@ class TransformerDecoderBlock(nn.Module):
                  dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init,
                  src_tgt_attention=True, memory_transformer=False,
-                 mocha_chunk_size=0, mocha_n_heads_mono=1, mocha_n_heads_chunk=1,
-                 mocha_init_r=2, mocha_eps=1e-6, mocha_std=1.0,
-                 mocha_no_denominator=False, mocha_1dconv=False,
-                 dropout_head=0, lm_fusion=False, ffn_bottleneck_dim=0,
-                 share_chunkwise_attention=False):
-        super(TransformerDecoderBlock, self).__init__()
+                 mma_chunk_size=0, mma_n_heads_mono=1, mma_n_heads_chunk=1,
+                 mma_init_r=2, mma_eps=1e-6, mma_std=1.0,
+                 mma_no_denominator=False, mma_1dconv=False,
+                 dropout_head=0, share_chunkwise_attention=False,
+                 lm_fusion='', ffn_bottleneck_dim=0):
+
+        super().__init__()
 
         self.atype = atype
         self.n_heads = n_heads
@@ -81,26 +78,28 @@ class TransformerDecoderBlock(nn.Module):
                              odim=d_model,
                              n_heads=n_heads,
                              dropout=dropout_att,
-                             param_init=param_init)
+                             dropout_head=dropout_head,
+                             param_init=param_init,
+                             xl_like=memory_transformer)
 
         # attention over encoder stacks
         if src_tgt_attention:
             self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
             if 'mocha' in atype:
-                self.n_heads = mocha_n_heads_mono
+                self.n_heads = mma_n_heads_mono
                 self.src_attn = MoChA(kdim=d_model,
                                       qdim=d_model,
                                       adim=d_model,
                                       odim=d_model,
                                       atype='scaled_dot',
-                                      chunk_size=mocha_chunk_size,
-                                      n_heads_mono=mocha_n_heads_mono,
-                                      n_heads_chunk=mocha_n_heads_chunk,
-                                      init_r=mocha_init_r,
-                                      eps=mocha_eps,
-                                      noise_std=mocha_std,
-                                      no_denominator=mocha_no_denominator,
-                                      conv1d=mocha_1dconv,
+                                      chunk_size=mma_chunk_size,
+                                      n_heads_mono=mma_n_heads_mono,
+                                      n_heads_chunk=mma_n_heads_chunk,
+                                      init_r=mma_init_r,
+                                      eps=mma_eps,
+                                      noise_std=mma_std,
+                                      no_denominator=mma_no_denominator,
+                                      conv1d=mma_1dconv,
                                       dropout=dropout_att,
                                       dropout_head=dropout_head,
                                       param_init=param_init,
@@ -154,8 +153,8 @@ class TransformerDecoderBlock(nn.Module):
         return self._xy_aws_beta
 
     @property
-    def xy_p_choose(self):
-        return self._xy_p_choose
+    def xy_aws_p_choose(self):
+        return self._xy_aws_p_choose
 
     @property
     def yy_aws_lm(self):
@@ -164,13 +163,14 @@ class TransformerDecoderBlock(nn.Module):
     def reset_visualization(self):
         self._yy_aws = None
         self._xy_aws = None
-        self._xy_aws_beta, self._xy_p_choose = None, None
+        self._xy_aws_beta = None
+        self._xy_aws_p_choose = None
         self._yy_aws_lm = None
 
     def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
-                xy_aws_prev=None, mode='hard', lmout=None,
-                pos_embs=None, memory=None, u=None, v=None,
-                eps_wait=-1):
+                xy_aws_prev=None,
+                mode='hard', eps_wait=-1, lmout=None,
+                pos_embs=None, memory=None, u_bias=None, v_bias=None):
         """Transformer decoder forward pass.
 
         Args:
@@ -180,13 +180,13 @@ class TransformerDecoderBlock(nn.Module):
             xy_mask (ByteTensor): `[B, L, T]`
             cache (FloatTensor): `[B, L-1, d_model]`
             xy_aws_prev (FloatTensor): `[B, H, L, T]`
-            mode (str):
+            mode (str): decoding mode for MMA
+            eps_wait (int): wait time delay for head-synchronous decoding in MMA
             lmout (FloatTensor): `[B, L, d_model]`
             pos_embs (LongTensor): `[L, 1, d_model]`
             memory (FloatTensor): `[B, L_prev, d_model]`
-            u (FloatTensor): global parameter for TransformerXL
-            v (FloatTensor): global parameter for TransformerXL
-            eps_wait (int): wait time delay for head-synchronous decoding in MMA
+            u_bias (FloatTensor): global parameter for TransformerXL
+            v_bias (FloatTensor): global parameter for TransformerXL
         Returns:
             out (FloatTensor): `[B, L, d_model]`
 
@@ -194,11 +194,21 @@ class TransformerDecoderBlock(nn.Module):
         self.reset_visualization()
 
         # LayerDrop
-        if self.dropout_layer > 0 and self.training and random.random() >= self.dropout_layer:
+        if self.dropout_layer > 0 and self.training and random.random() < self.dropout_layer:
             return ys
 
         residual = ys
-        ys = self.norm1(ys)
+        if self.memory_transformer:
+            if cache is not None:
+                pos_embs = pos_embs[-ys.size(1):]
+            if memory is not None and memory.dim() > 1:
+                cat = self.norm1(torch.cat([memory, ys], dim=1))
+                ys = cat[:, memory.size(1):]
+            else:
+                ys = self.norm1(ys)
+                cat = ys
+        else:
+            ys = self.norm1(ys)  # pre-norm
 
         if cache is not None:
             ys_q = ys[:, -1:]
@@ -209,9 +219,7 @@ class TransformerDecoderBlock(nn.Module):
 
         # self-attention
         if self.memory_transformer:
-            if cache is not None:
-                pos_embs = pos_embs[-ys_q.size(1):]
-            out, self._yy_aws = self.self_attn(ys, ys_q, memory, pos_embs, yy_mask, u, v)
+            out, self._yy_aws = self.self_attn(cat, ys_q, pos_embs, yy_mask, u_bias, v_bias)
         else:
             out, self._yy_aws = self.self_attn(ys, ys, ys_q, mask=yy_mask)[:2]  # k/v/q
         out = self.dropout(out) + residual
@@ -220,7 +228,7 @@ class TransformerDecoderBlock(nn.Module):
         if self.src_tgt_attention:
             residual = out
             out = self.norm2(out)
-            out, self._xy_aws, self._xy_aws_beta, self._xy_p_choose = self.src_attn(
+            out, self._xy_aws, self._xy_aws_beta, self._xy_aws_p_choose = self.src_attn(
                 xs, xs, out, mask=xy_mask,  # k/v/q
                 aw_prev=xy_aws_prev, mode=mode, eps_wait=eps_wait)
             out = self.dropout(out) + residual
@@ -255,23 +263,24 @@ class TransformerDecoderBlock(nn.Module):
 class SyncBidirTransformerDecoderBlock(nn.Module):
     """A single layer of the synchronous bidirectional Transformer decoder.
 
-        Args:
-            d_model (int): input dimension of MultiheadAttentionMechanism and PositionwiseFeedForward
-            d_ff (int): hidden dimension of PositionwiseFeedForward
-            n_heads (int): number of heads for multi-head attention
-            dropout (float): dropout probabilities for linear layers
-            dropout_att (float): dropout probabilities for attention probabilities
-            dropout_layer (float): LayerDrop probability
-            layer_norm_eps (float): epsilon parameter for layer normalization
-            ffn_activation (str): nonolinear function for PositionwiseFeedForward
-            param_init (str): parameter initialization method
+    Args:
+        d_model (int): input dimension of MultiheadAttentionMechanism and PositionwiseFeedForward
+        d_ff (int): hidden dimension of PositionwiseFeedForward
+        n_heads (int): number of heads for multi-head attention
+        dropout (float): dropout probabilities for linear layers
+        dropout_att (float): dropout probabilities for attention probabilities
+        dropout_layer (float): LayerDrop probability
+        layer_norm_eps (float): epsilon parameter for layer normalization
+        ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        param_init (str): parameter initialization method
 
     """
 
     def __init__(self, d_model, d_ff, n_heads,
                  dropout, dropout_att, dropout_layer,
                  layer_norm_eps, ffn_activation, param_init):
-        super(SyncBidirTransformerDecoderBlock, self).__init__()
+
+        super().__init__()
 
         self.n_heads = n_heads
 
@@ -330,7 +339,7 @@ class SyncBidirTransformerDecoderBlock(nn.Module):
 
         residual = ys
         residual_bwd = ys_bwd
-        ys = self.norm1(ys)
+        ys = self.norm1(ys)  # pre-norm
         ys_bwd = self.norm1(ys_bwd)
 
         if cache is not None:

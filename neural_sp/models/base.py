@@ -6,10 +6,6 @@
 
 """Base class for all models."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 import numpy as np
 import torch
@@ -57,6 +53,17 @@ class ModelBase(nn.Module):
     def device_id(self):
         return torch.cuda.device_of(next(self.parameters())).idx
 
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
+    @staticmethod
+    def define_name(dir_name, args):
+        raise NotImplementedError
+
+    def reset_parameters(self, param_init):
+        raise NotImplementedError
+
     def init_forget_gate_bias_with_one(self):
         """Initialize bias in forget gate with 1. See detail in
 
@@ -70,8 +77,8 @@ class ModelBase(nn.Module):
                 p.data[start:end].fill_(1.)
                 logger.info('Initialize %s with 1 (bias in forget gate)' % (n))
 
-    def add_weight_noise(self, std=0.075):
-        """Add variational weight noise to weight parametesr.
+    def add_weight_noise(self, std):
+        """Add variational Gaussian noise to model parameters.
 
         Args:
             std (float): standard deviation

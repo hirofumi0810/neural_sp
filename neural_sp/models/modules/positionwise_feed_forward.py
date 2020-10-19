@@ -6,16 +6,13 @@
 
 """Positionwise fully-connected feed-forward neural network (FFN)."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
 import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.gelu import gelu, gelu_accurate
 from neural_sp.models.modules.glu import LinearGLUBlock
+from neural_sp.models.modules.initialization import init_with_xavier_uniform
 from neural_sp.models.modules.swish import Swish
 
 
@@ -37,7 +34,8 @@ class PositionwiseFeedForward(nn.Module):
 
     def __init__(self, d_model, d_ff, dropout, activation, param_init,
                  bottleneck_dim=0):
-        super(PositionwiseFeedForward, self).__init__()
+
+        super().__init__()
 
         self.bottleneck_dim = bottleneck_dim
         if bottleneck_dim > 0:
@@ -67,20 +65,17 @@ class PositionwiseFeedForward(nn.Module):
 
         if param_init == 'xavier_uniform':
             self.reset_parameters()
+        else:
+            logger.info('Parameter initialization is skipped.')
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
         logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
-            if p.dim() == 1:
-                nn.init.constant_(p, 0.)
-            elif p.dim() == 2:
-                nn.init.xavier_uniform_(p)
-            else:
-                raise ValueError(n)
+            init_with_xavier_uniform(n, p)
 
     def forward(self, xs):
-        """Forward computation.
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, d_model]`

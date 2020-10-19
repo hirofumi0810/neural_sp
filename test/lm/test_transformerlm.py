@@ -9,8 +9,7 @@ import numpy as np
 import pytest
 
 
-ENC_N_UNITS = 64
-VOCAB = 100
+VOCAB = 100  # large for adaptive softmax
 
 
 def make_args(**kwargs):
@@ -19,8 +18,8 @@ def make_args(**kwargs):
         transformer_attn_type='scaled_dot',
         transformer_n_heads=4,
         n_layers=2,
-        transformer_d_model=64,
-        transformer_d_ff=256,
+        transformer_d_model=16,
+        transformer_d_ff=64,
         transformer_layer_norm_eps=1e-12,
         transformer_ffn_activation='relu',
         transformer_pe_type='add',
@@ -70,11 +69,13 @@ def test_forward(args):
 
     ylens = [4, 5, 3, 7] * 200
     ys = [np.random.randint(0, VOCAB, ylen).astype(np.int64) for ylen in ylens]
+    device = "cpu"
 
     module = importlib.import_module('neural_sp.models.lm.transformerlm')
     lm = module.TransformerLM(args)
+    lm = lm.to(device)
     loss, state, observation = lm(ys, state=None, n_caches=0)
-    # assert loss.dim() == 1, loss
-    # assert loss.size(0) == 1, loss
+    # assert loss.dim() == 1
+    # assert loss.size(0) == 1
     assert loss.item() >= 0
     assert isinstance(observation, dict)

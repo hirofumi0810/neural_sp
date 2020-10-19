@@ -7,10 +7,6 @@
 """Swish activation.
    See details in https://arxiv.org/abs/1710.05941."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import torch
 
 

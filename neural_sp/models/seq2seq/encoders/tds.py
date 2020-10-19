@@ -4,53 +4,44 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""TDS encoder."""
+"""Time-depth separable convolution (TDS) encoder."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-from collections import OrderedDict
 import logging
 import math
 import torch
 import torch.nn as nn
 
+from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
+from neural_sp.models.seq2seq.encoders.conv import LayerNorm2D
 from neural_sp.models.seq2seq.encoders.conv import parse_cnn_config
+from neural_sp.models.seq2seq.encoders.conv import update_lens_1d
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 
 logger = logging.getLogger(__name__)
 
 
 class TDSEncoder(EncoderBase):
-    """TDS (tim-depth separable convolutional) encoder.
+    """Time-depth separable convolution (TDS) encoder.
 
     Args:
         input_dim (int) dimension of input features (freq * channel)
         in_channel (int) number of channels of input features
         channels (list) number of channles in TDS layers
         kernel_sizes (list) size of kernels in TDS layers
-        strides (list): strides in TDS layers
-        poolings (list) size of poolings in TDS layers
-        dropout (float) probability to drop nodes in hidden-hidden connection
-        batch_norm (bool): if True, apply batch normalization
-        bottleneck_dim (int): dimension of the bottleneck layer after the last layer
+        dropout (float) dropout probability
+        last_proj_dim (int): dimension of the last projection layer
+        layer_norm_eps (float): epsilon value for layer normalization
 
     """
 
-    def __init__(self,
-                 input_dim,
-                 in_channel,
-                 channels,
-                 kernel_sizes,
-                 dropout,
-                 bottleneck_dim=0):
+    def __init__(self, input_dim, in_channel, channels, kernel_sizes,
+                 dropout, last_proj_dim, layer_norm_eps=1e-12):
 
         super(TDSEncoder, self).__init__()
 
         (channels, kernel_sizes, _, _), _ = parse_cnn_config(channels, kernel_sizes, '', '')
 
-        self.in_channel = in_channel
+        self.C_in = in_channel
         assert input_dim % in_channel == 0
         self.input_freq = input_dim // in_channel
         self.bridge = None
@@ -58,36 +49,49 @@ class TDSEncoder(EncoderBase):
         assert len(channels) > 0
         assert len(channels) == len(kernel_sizes)
 
-        layers = OrderedDict()
         C_i = in_channel
         in_freq = self.input_freq
+        n_subsampling = 0
+        self.layers = nn.ModuleList()
         for lth in range(len(channels)):
             # subsample
             if C_i != channels[lth]:
-                layers['subsample%d' % lth] = SubsampelBlock(in_channel=C_i,
-                                                             out_channel=channels[lth],
-                                                             in_freq=in_freq,
-                                                             dropout=dropout)
+                self.layers += [SubsampelBlock(in_channel=C_i,
+                                               out_channel=channels[lth],
+                                               kernel_size=kernel_sizes[lth][0],
+                                               stride=2 if n_subsampling < 3 else 1,
+                                               in_freq=in_freq,
+                                               dropout=dropout)]
+                n_subsampling += 1
 
             # Conv
-            layers['tds%d_block%d' % (channels[lth], lth)] = TDSBlock(channel=channels[lth],
-                                                                      kernel_size=kernel_sizes[lth][0],
-                                                                      in_freq=in_freq,
-                                                                      dropout=dropout)
+            self.layers += [TDSBlock(channel=channels[lth],
+                                     kernel_size=kernel_sizes[lth][0],
+                                     in_freq=in_freq,
+                                     dropout=dropout,
+                                     layer_norm_eps=layer_norm_eps)]
 
             C_i = channels[lth]
 
         self._odim = int(C_i * in_freq)
 
-        if bottleneck_dim > 0:
-            self.bridge = nn.Linear(self._odim, bottleneck_dim)
-            self._odim = bottleneck_dim
-
-        self.layers = nn.Sequential(layers)
+        if last_proj_dim > 0:
+            self.bridge = nn.Linear(self._odim, last_proj_dim)
+            self._odim = last_proj_dim
 
         self._factor = 8
 
         self.reset_parameters()
+
+    @staticmethod
+    def add_args(parser, args):
+        # group = parser.add_argument_group("TDS encoder")
+        parser = ConvEncoder.add_args(parser, args)
+        return parser
+
+    @staticmethod
+    def define_name(dir_name, args):
+        return dir_name
 
     def reset_parameters(self):
         """Initialize parameters with uniform distribution."""
@@ -100,29 +104,42 @@ class TDSEncoder(EncoderBase):
                 fan_in = p.size(1)
                 nn.init.uniform_(p, a=-math.sqrt(4 / fan_in), b=math.sqrt(4 / fan_in))  # linear weight
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', math.sqrt(4 / fan_in)))
+            elif p.dim() == 3:
+                fan_in = p.size(1) * p[0][0].numel()
+                nn.init.uniform_(p, a=-math.sqrt(4 / fan_in), b=math.sqrt(4 / fan_in))  # 1dconv weight
+                logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', math.sqrt(4 / fan_in)))
             elif p.dim() == 4:
                 fan_in = p.size(1) * p[0][0].numel()
-                nn.init.uniform_(p, a=-math.sqrt(4 / fan_in), b=math.sqrt(4 / fan_in))  # conv weight
+                nn.init.uniform_(p, a=-math.sqrt(4 / fan_in), b=math.sqrt(4 / fan_in))  # 1dconv weight
                 logger.info('Initialize %s with %s / %.3f' % (n, 'uniform', math.sqrt(4 / fan_in)))
             else:
                 raise ValueError(n)
 
-    def forward(self, xs, xlens):
-        """Forward computation.
+    def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
+        """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, T, F]`
-            xlens (list): A list of length `[B]`
+            xlens (IntTensor): `[B]`
+            streaming (bool): streaming encoding
+            lookback (bool): truncate leftmost frames for lookback in CNN context
+            lookahead (bool): truncate rightmost frames for lookahead in CNN context
         Returns:
-            xs (FloatTensor): `[B, T', C_o * F]`
-            xlens (list): A list of length `[B]`
+            eouts (dict):
+                xs (FloatTensor): `[B, T', C_o * F]`
+                xlens (IntTensor): `[B]`
 
         """
+        eouts = {'ys': {'xs': None, 'xlens': None},
+                 'ys_sub1': {'xs': None, 'xlens': None},
+                 'ys_sub2': {'xs': None, 'xlens': None}}
+
         B, T, F = xs.size()
-        xs = xs.contiguous().view(B, T, self.in_channel, F // self.in_channel).transpose(2, 1)
+        xs = xs.contiguous().view(B, T, self.C_in, F // self.C_in).transpose(2, 1)
         # `[B, C_i, T, F // C_i]`
 
-        xs = self.layers(xs)  # `[B, C_o, T, F]`
+        for layer in self.layers:
+            xs, xlens = layer(xs, xlens)
         B, C_o, T, F = xs.size()
         xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T, C_o * F]`
 
@@ -130,116 +147,128 @@ class TDSEncoder(EncoderBase):
         if self.bridge is not None:
             xs = self.bridge(xs)
 
-        # Update xlens
-        xlens //= 8
-
-        return xs, xlens
+        if task in ['all', 'ys']:
+            eouts['ys']['xs'], eouts['ys']['xlens'] = xs, xlens
+        else:
+            raise NotImplementedError
+        return eouts
 
 
 class TDSBlock(nn.Module):
     """TDS block.
 
     Args:
-        channel (int):
-        kernel_size (int):
-        in_freq (int):
-        dropout (float):
+        channel (int): input/output channle size
+        kernel_size (int): kernel size
+        in_freq (int): frequency width
+        dropout (float): dropout probability
 
     """
 
-    def __init__(self, channel, kernel_size, in_freq, dropout):
+    def __init__(self, channel, kernel_size, in_freq, dropout,
+                 layer_norm_eps=1e-12):
         super().__init__()
-
-        self.channel = channel
-        self.in_freq = in_freq
 
         self.dropout = nn.Dropout(p=dropout)
 
-        self.conv2d = nn.Conv2d(in_channels=channel,
-                                out_channels=channel,
-                                kernel_size=(kernel_size, 1),
-                                stride=(1, 1),
-                                padding=(kernel_size // 2, 0),
-                                groups=channel)  # depthwise
-        self.norm1 = nn.LayerNorm(in_freq * channel, eps=1e-12)
+        # 2D conv over time
+        self.conv1d = nn.Conv1d(in_channels=in_freq * channel,
+                                out_channels=in_freq * channel,
+                                kernel_size=kernel_size,
+                                stride=1,
+                                padding=(kernel_size - 1) // 2,  # TODO(hirofumi0810): assymetric
+                                groups=in_freq)  # depthwise
+        self.norm1 = LayerNorm2D(channel, in_freq, eps=layer_norm_eps)
 
-        # second block
-        self.conv1d_1 = nn.Conv2d(in_channels=in_freq * channel,
-                                  out_channels=in_freq * channel,
-                                  kernel_size=1,
-                                  stride=1,
-                                  padding=0)
-        self.conv1d_2 = nn.Conv2d(in_channels=in_freq * channel,
-                                  out_channels=in_freq * channel,
-                                  kernel_size=1,
-                                  stride=1,
-                                  padding=0)
-        self.norm2 = nn.LayerNorm(in_freq * channel, eps=1e-12)
+        # fully connected block
+        self.pointwise_conv1 = nn.Conv1d(in_channels=in_freq * channel,
+                                         out_channels=in_freq * channel,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0)
+        self.pointwise_conv2 = nn.Conv1d(in_channels=in_freq * channel,
+                                         out_channels=in_freq * channel,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0)
+        # self.feed_forward = nn.Linear(in_freq * channel, in_freq * channel)
+        self.norm2 = LayerNorm2D(channel, in_freq, eps=layer_norm_eps)
 
-    def forward(self, xs):
-        """Forward computation.
+    def forward(self, xs, xlens):
+        """Forward pass.
+
         Args:
-            xs (FloatTensor): `[B, C_i, T, F]`
+            xs (FloatTensor): `[B, C, T, F]`
+            xlens (IntTensor): `[B]`
         Returns:
-            out (FloatTensor): `[B, C_o, T, F]`
+            xs (FloatTensor): `[B, C, T, F]`
+            xlens (IntTensor): `[B]`
 
         """
-        B, C_i, T, F = xs.size()
+        B, C, T, F = xs.size()
 
-        # first block
+        # 1d conv
         residual = xs
-        xs = self.dropout(torch.relu(self.conv2d(xs)))
-        raise ValueError(xs.size())
-        xs = xs + residual  # `[B, C_o, T, F]`
+        xs = xs.transpose(3, 2).view(B, C * F, T)
+        xs = self.dropout(torch.relu(self.conv1d(xs)))
+        xs = xs.view(B, -1, F, T).transpose(3, 2)
+        xs = xs + residual  # `[B, C, T, F]`
+        xs = self.norm1(xs)  # not depends on time-axis based on https://arxiv.org/abs/2001.09727
 
-        # layer normalization
-        B, C_o, T, F = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T, C_o * F]`
-        xs = self.norm1(xs)
-        xs = xs.contiguous().transpose(2, 1).unsqueeze(3)  # `[B, C_o * F, T, 1]`
-
-        # second block
+        # fully connected block
+        B, C, T, F = xs.size()
         residual = xs
-        self.dropout(torch.relu(self.conv1d_1(xs)))
-        xs = self.dropout(self.conv1d_2(xs)) + residual  # `[B, C_o * F, T, 1]`
 
-        # layer normalization
-        xs = xs.unsqueeze(3)  # `[B, C_o * F, T]`
-        xs = xs.transpose(2, 1).contiguous().view(B, T, -1)  # `[B, T, C_o * F]`
-        xs = self.norm2(xs)
-        xs = xs.view(B, T, C_o, F).contiguous().transpose(2, 1)
+        # v1
+        xs = xs.transpose(3, 2).view(B, C * F, T)
+        xs = self.dropout(torch.relu(self.pointwise_conv1(xs)))
+        xs = self.dropout(self.pointwise_conv2(xs))
+        xs = xs.view(B, -1, F, T).transpose(3, 2)  # `[B, C, T, F]`
 
-        return xs
+        # v2
+        # xs = xs.transpose(2, 1).view(B, T, -1)
+        # xs = self.dropout(torch.relu(self.feed_forward(xs)))
+        # xs = xs.view(B, T, C, F).transpose(2, 1)
+
+        xs = xs + residual
+        xs = self.norm2(xs)  # not depends on time-axis based on https://arxiv.org/abs/2001.09727
+        return xs, xlens
 
 
 class SubsampelBlock(nn.Module):
-    def __init__(self, in_channel, out_channel, in_freq, dropout):
+    def __init__(self, in_channel, out_channel, kernel_size, stride, in_freq,
+                 dropout, layer_norm_eps=1e-12):
         super().__init__()
 
-        self.conv1d = nn.Conv2d(in_channels=in_channel,
-                                out_channels=out_channel,
-                                kernel_size=(2, 1),
-                                stride=(2, 1),
-                                padding=(0, 0))
-        self.dropout = nn.Dropout(p=dropout)
-        self.norm = nn.LayerNorm(in_freq * out_channel, eps=1e-12)
+        self.C_in = in_channel
+        self.C_out = out_channel
+        self.in_freq = in_freq
 
-    def forward(self, xs):
-        """Forward computation.
+        self.conv1d = nn.Conv1d(in_channels=in_freq * in_channel,
+                                out_channels=in_freq * out_channel,
+                                kernel_size=kernel_size,
+                                stride=stride,
+                                padding=(kernel_size - 1) // 2,
+                                groups=in_freq)  # TODO(hirofumi0810): Is this correct?
+        self.dropout = nn.Dropout(p=dropout)
+        self.norm = LayerNorm2D(out_channel, in_freq, eps=layer_norm_eps)
+
+    def forward(self, xs, xlens):
+        """Forward pass.
+
         Args:
             xs (FloatTensor): `[B, C_i, T, F]`
+            xlens (IntTensor): `[B]`
         Returns:
-            out (FloatTensor): `[B, C_o, T, F]`
+            xs (FloatTensor): `[B, C_o, T, F]`
+            xlens (IntTensor): `[B]`
 
         """
-        bs, _, time, _ = xs.size()
-
+        B, C, T, F = xs.size()
+        xs = xs.transpose(3, 2).view(B, C * F, T)
         xs = self.dropout(torch.relu(self.conv1d(xs)))
-
-        # layer normalization
-        bs, C_o, time, F = xs.size()
-        xs = xs.transpose(2, 1).contiguous().view(bs, time, -1)  # `[B, T, C_o * F]`
+        xs = xs.view(B, self.C_out, F, -1).transpose(3, 2)
         xs = self.norm(xs)
-        xs = xs.view(bs, time, C_o, F).contiguous().transpose(2, 1)
 
-        return xs
+        xlens = update_lens_1d(xlens, self.conv1d)
+        return xs, xlens

@@ -14,21 +14,24 @@ def make_args(**kwargs):
         d_ff=128,
         dropout=0.1,
         activation='relu',
-        param_init='xavier_uniform',
-        bottleneck_dim=0
+        param_init='',
+        bottleneck_dim=0,
     )
     args.update(kwargs)
     return args
 
 
 @pytest.mark.parametrize(
-    "args", [
+    "args",
+    [
         # activation
         ({'activation': 'relu'}),
         ({'activation': 'gelu'}),
         ({'activation': 'gelu_accurate'}),
         ({'activation': 'glu'}),
         ({'activation': 'swish'}),
+        # initialization
+        ({'param_init': 'xavier_uniform'}),
         # bottleneck
         ({'bottleneck_dim': 16}),
     ]
@@ -38,10 +41,13 @@ def test_forward(args):
 
     batch_size = 4
     max_len = 40
-    ffn_in = torch.FloatTensor(batch_size, max_len, args['d_model'])
+    device = "cpu"
+
+    ffn_in = torch.FloatTensor(batch_size, max_len, args['d_model'], device=device)
 
     module = importlib.import_module('neural_sp.models.modules.positionwise_feed_forward')
     ffn = module.PositionwiseFeedForward(**args)
+    ffn = ffn.to(device)
 
     ffn_out = ffn(ffn_in)
     assert ffn_in.size() == ffn_out.size()

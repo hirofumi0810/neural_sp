@@ -1,14 +1,7 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 """Base class for decoders."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import logging
 import numpy as np
@@ -19,7 +12,6 @@ import shutil
 from neural_sp.models.base import ModelBase
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
-from neural_sp.utils import mkdir_join
 
 import matplotlib
 matplotlib.use('Agg')
@@ -36,15 +28,14 @@ class DecoderBase(ModelBase):
 
         logger.info('Overriding DecoderBase class.')
 
-    @property
-    def device_id(self):
-        return torch.cuda.device_of(next(self.parameters()).data).idx
-
-    def reset_parameters(self, param_init):
-        raise NotImplementedError
-
     def reset_session(self):
         self.new_session = True
+
+    def trigger_scheduled_sampling(self):
+        self._ss_prob = getattr(self, 'ss_prob', 0)
+
+    def trigger_quantity_loss(self):
+        self._quantity_loss_weight = getattr(self, 'quantity_loss_weight', 0)
 
     def greedy(self, eouts, elens, max_len_ratio):
         raise NotImplementedError
@@ -52,25 +43,31 @@ class DecoderBase(ModelBase):
     def beam_search(self, eouts, elens, params, idx2token):
         raise NotImplementedError
 
-    def _plot_attention(self, save_path, n_cols=2):
+    def _plot_attention(self, save_path=None, n_cols=2):
         """Plot attention for each head in all decoder layers."""
-        if getattr(self, 'att_weight', 0) == 0:
+        if getattr(self, 'att_weight', 0) == 0 and getattr(self, 'rnnt_weight', 0) == 0:
+            return
+        if not hasattr(self, 'aws_dict'):
             return
         from matplotlib import pyplot as plt
         from matplotlib.ticker import MaxNLocator
 
-        _save_path = mkdir_join(save_path, 'dec_att_weights')
-
         # Clean directory
-        if _save_path is not None and os.path.isdir(_save_path):
-            shutil.rmtree(_save_path)
-            os.mkdir(_save_path)
+        if save_path is not None and os.path.isdir(save_path):
+            shutil.rmtree(save_path)
+            os.mkdir(save_path)
+
+        if len(self.aws_dict.keys()) == 0:
+            return
 
         elens = self.data_dict['elens']
         ylens = self.data_dict['ylens']
         # ys = self.data_dict['ys']
 
         for k, aw in self.aws_dict.items():
+            if aw is None:
+                continue
+
             plt.clf()
             n_heads = aw.shape[1]
             n_cols_tmp = 1 if n_heads == 1 else n_cols * max(1, n_heads // 4)
@@ -93,21 +90,23 @@ class DecoderBase(ModelBase):
                 # ax.set_yticklabels(ys + [''])
 
             fig.tight_layout()
-            fig.savefig(os.path.join(_save_path, '%s.png' % k), dvi=500)
+            if save_path is not None:
+                fig.savefig(os.path.join(save_path, '%s.png' % k))
             plt.close()
 
-    def _plot_ctc(self, save_path, topk=10):
+    def _plot_ctc(self, save_path=None, topk=10):
         """Plot CTC posteriors."""
         if self.ctc_weight == 0:
             return
         from matplotlib import pyplot as plt
 
-        _save_path = mkdir_join(save_path, 'ctc')
-
         # Clean directory
-        if _save_path is not None and os.path.isdir(_save_path):
-            shutil.rmtree(_save_path)
-            os.mkdir(_save_path)
+        if save_path is not None and os.path.isdir(save_path):
+            shutil.rmtree(save_path)
+            os.mkdir(save_path)
+
+        if len(self.ctc.prob_dict.keys()) == 0:
+            return
 
         elen = self.ctc.data_dict['elens'][-1]
         probs = self.ctc.prob_dict['probs'][-1, :elen]  # `[T, vocab]`
@@ -118,6 +117,7 @@ class DecoderBase(ModelBase):
         plt.clf()
         n_frames = probs.shape[0]
         times_probs = np.arange(n_frames)
+        plt.figure(figsize=(20, 8))
 
         # NOTE: index 0 is reserved for blank
         for idx in set(topk_ids.reshape(-1).tolist()):
@@ -131,11 +131,12 @@ class DecoderBase(ModelBase):
         plt.yticks(list(range(0, 2, 1)))
 
         plt.tight_layout()
-        plt.savefig(os.path.join(_save_path, '%s.png' % 'prob'), dvi=500)
+        if save_path is not None:
+            plt.savefig(os.path.join(save_path, 'prob.png'))
         plt.close()
 
     def decode_ctc(self, eouts, elens, params, idx2token,
-                   lm=None, lm_2nd=None, lm_2nd_rev=None,
+                   lm=None, lm_second=None, lm_second_bwd=None,
                    nbest=1, refs_id=None, utt_ids=None, speakers=None):
         """Decoding with CTC scores in the inference stage.
 
@@ -149,8 +150,8 @@ class DecoderBase(ModelBase):
                 recog_lm_second_weight (float): weight of second path LM score
                 recog_lm_rev_weight (float): weight of second path backward LM score
             lm: firsh path LM
-            lm_2nd: second path LM
-            lm_2nd_rev: secoding path backward LM
+            lm_second: second path LM
+            lm_second_bwd: secoding path backward LM
         Returns:
             probs (FloatTensor): `[B, T, vocab]`
             topk_ids (LongTensor): `[B, T, topk]`
@@ -161,7 +162,7 @@ class DecoderBase(ModelBase):
             best_hyps = self.ctc.greedy(eouts, elens)
         else:
             best_hyps = self.ctc.beam_search(eouts, elens, params, idx2token,
-                                             lm, lm_2nd, lm_2nd_rev,
+                                             lm, lm_second, lm_second_bwd,
                                              nbest, refs_id, utt_ids, speakers)
         return best_hyps
 
@@ -205,13 +206,29 @@ class DecoderBase(ModelBase):
         _, topk_ids = torch.topk(probs, k=topk, dim=-1, largest=True, sorted=True)
         return probs, topk_ids
 
+    def ctc_forced_align(self, eouts, elens, ys):
+        """CTC-based forced alignment with references.
+
+        Args:
+            logits (FloatTensor): `[B, T, vocab]`
+            elens (list): length `B`
+            ys (list): length `B`, each of which contains a list of size `[L]`
+        Returns:
+            trigger_points (IntTensor): `[B, L]`
+
+        """
+        logits = self.ctc.output(eouts)
+        ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
+        trigger_points = self.ctc.forced_align(logits, elens, ys, ylens)
+        return trigger_points
+
     def lm_rescoring(self, hyps, lm, lm_weight, reverse=False, tag=''):
         for i in range(len(hyps)):
             ys = hyps[i]['hyp']  # include <sos>
             if reverse:
                 ys = ys[::-1]
 
-            ys = [np2tensor(np.fromiter(ys, dtype=np.int64), self.device_id)]
+            ys = [np2tensor(np.fromiter(ys, dtype=np.int64), self.device)]
             ys_in = pad_list([y[:-1] for y in ys], -1)  # `[1, L-1]`
             ys_out = pad_list([y[1:] for y in ys], -1)  # `[1, L-1]`
 

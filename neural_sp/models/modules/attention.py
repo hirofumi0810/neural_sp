@@ -6,10 +6,6 @@
 
 """Single-head attention layer."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -22,7 +18,7 @@ class AttentionMechanism(nn.Module):
         kdim (int): dimension of key
         qdim (int): dimension of query
         atype (str): type of attention mechanisms
-        adim: (int) dimension of the attention space
+        adim: (int) dimension of attention space
         sharpening_factor (float): sharpening factor in the softmax layer
             for attention weights
         sigmoid_smoothing (bool): replace the softmax layer for attention weights
@@ -41,7 +37,7 @@ class AttentionMechanism(nn.Module):
                  conv_out_channels=10, conv_kernel_size=201, dropout=0.,
                  lookahead=2):
 
-        super(AttentionMechanism, self).__init__()
+        super().__init__()
 
         assert conv_kernel_size % 2 == 1, "Kernel size should be odd for 'same' conv."
         self.atype = atype
@@ -99,7 +95,7 @@ class AttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                cache=False, mode='', trigger_point=None):
+                cache=False, mode='', trigger_points=None):
         """Forward pass.
 
         Args:
@@ -110,13 +106,13 @@ class AttentionMechanism(nn.Module):
             mask (ByteTensor): `[B, qlen, klen]`
             aw_prev (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
             cache (bool): cache key and mask
-            mode: dummy interface for MoChA
-            trigger_point (IntTensor): `[B]`
+            mode: dummy interface for MoChA/MMA
+            trigger_points (IntTensor): `[B]`
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
-            beta: dummy interface for MoChA
-            p_choose_i: dummy interface for MoChA
+            beta: dummy interface for MoChA/MMA
+            p_choose_i: dummy interface for MoChA/MMA
 
         """
         bs, klen = key.size()[:2]
@@ -170,9 +166,9 @@ class AttentionMechanism(nn.Module):
 
         # Mask the right part from the trigger point
         if self.atype == 'triggered_attention':
-            assert trigger_point is not None
+            assert trigger_points is not None
             for b in range(bs):
-                e[b, :, trigger_point[b] + self.lookahead + 1:] = NEG_INF
+                e[b, :, trigger_points[b] + self.lookahead + 1:] = NEG_INF
 
         # Compute attention weights, context vector
         if self.mask is not None:

@@ -6,17 +6,15 @@
 
 """Zoneout regularization."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import torch.nn as nn
 
 
 class ZoneoutCell(nn.Module):
 
     def __init__(self, cell, zoneout_prob_h, zoneout_prob_c):
-        super(ZoneoutCell, self).__init__()
+
+        super().__init__()
+
         self.cell = cell
         self.hidden_size = cell.hidden_size
 
@@ -29,6 +27,15 @@ class ZoneoutCell(nn.Module):
             self.prob = zoneout_prob_h
 
     def forward(self, inputs, state):
+        """Forward pass.
+
+        Args:
+            inputs (FloatTensor): `[B, input_dim]'
+            state (tuple or FloatTensor):
+        Returns:
+            state (tuple or FloatTensor):
+
+        """
         return self.zoneout(state, self.cell(inputs, state), self.prob)
 
     def zoneout(self, state, next_state, prob):

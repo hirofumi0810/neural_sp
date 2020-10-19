@@ -6,10 +6,6 @@
 
 """TransformerXL language model."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 from distutils.util import strtobool
 import logging
@@ -73,9 +69,9 @@ class TransformerXL(LMBase):
 
         # positional embedding
         self.pos_emb = XLPositionalEmbedding(self.d_model, args.dropout_in)
-        self.u = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
-        self.v = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
-        # NOTE: u and v are global parameters
+        self.u_bias = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+        self.v_bias = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
+        # NOTE: u_bias and v_bias are global parameters
 
         self.embed = nn.Embedding(self.vocab, self.d_model, padding_idx=self.pad)
         self.scale = math.sqrt(self.d_model)  # for token embedding
@@ -125,7 +121,7 @@ class TransformerXL(LMBase):
                            help='nonlinear activation for the FFN layer')
         group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                            choices=['xavier_uniform', 'pytorch'],
-                           help='parameter initializatin')
+                           help='parameter initialization')
         group.add_argument('--dropout_att', type=float, default=0.1,
                            help='dropout probability for the attention weights')
         group.add_argument('--dropout_layer', type=float, default=0.0,
@@ -137,6 +133,23 @@ class TransformerXL(LMBase):
                            help='set the offset right after memory to zero (accept negaitve indices)')
         return parser
 
+    @staticmethod
+    def define_name(dir_name, args):
+        dir_name = args.lm_type
+        dir_name += str(args.transformer_d_model) + 'dmodel'
+        dir_name += str(args.transformer_d_ff) + 'dff'
+        dir_name += str(args.n_layers) + 'L'
+        dir_name += str(args.transformer_n_heads) + 'H'
+        if args.tie_embedding:
+            dir_name += '_tie'
+        if args.adaptive_softmax:
+            dir_name += '_adaptiveSM'
+        if args.mem_len > 0:
+            dir_name += '_mem' + str(args.mem_len)
+        if args.zero_center_offset:
+            dir_name += '_zero_center'
+        return dir_name
+
     def reset_parameters(self):
         """Initialize parameters with normal distribution."""
         logging.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
@@ -145,12 +158,8 @@ class TransformerXL(LMBase):
 
     def init_memory(self):
         """Initialize memory."""
-        if self.device_id >= 0:
-            return [torch.empty(0, dtype=torch.float).cuda(self.device_id)
-                    for _ in range(self.n_layers)]
-        else:
-            return [torch.empty(0, dtype=torch.float)
-                    for _ in range(self.n_layers)]
+        return [torch.empty(0, dtype=torch.float).to(self.device)
+                for _ in range(self.n_layers)]
 
     def update_memory(self, memory_prev, hidden_states):
         """Update memory.
@@ -218,12 +227,7 @@ class TransformerXL(LMBase):
         causal_mask = causal_mask.repeat([bs, 1, 1])  # `[B, L, L+mlen]`
 
         out = self.dropout_emb(self.embed(ys.long()) * self.scale)
-        # NOTE: TransformerXL does not use positional encoding in the token embedding
-        if self.zero_center_offset:
-            pos_idxs = torch.arange(mlen - 1, -ylen - 1, -1.0, dtype=torch.float)
-        else:
-            pos_idxs = torch.arange(ylen + mlen - 1, -1, -1.0, dtype=torch.float)
-        pos_embs = self.pos_emb(pos_idxs, self.device_id)
+        pos_embs = self.pos_emb(ys, mlen=mlen, zero_center_offset=self.zero_center_offset)
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
@@ -232,7 +236,7 @@ class TransformerXL(LMBase):
             if incremental and mlen > 0 and mem.size(0) != bs:
                 mem = mem.repeat([bs, 1, 1])
             out = layer(out, causal_mask, cache=cache[lth],
-                        pos_embs=pos_embs, memory=mem, u=self.u, v=self.v)
+                        pos_embs=pos_embs, memory=mem, u_bias=self.u_bias, v_bias=self.v_bias)
             if incremental:
                 new_cache[lth] = out
             elif lth < self.n_layers - 1:

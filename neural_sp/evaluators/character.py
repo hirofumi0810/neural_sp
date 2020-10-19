@@ -6,10 +6,7 @@
 
 """Evaluate the character-level model by WER & CER."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
+import codecs
 import logging
 from tqdm import tqdm
 
@@ -19,13 +16,13 @@ from neural_sp.utils import mkdir_join
 logger = logging.getLogger(__name__)
 
 
-def eval_char(models, dataset, recog_params, epoch,
+def eval_char(models, dataloader, recog_params, epoch,
               recog_dir=None, streaming=False, progressbar=False, task_idx=0):
     """Evaluate the character-level model by WER & CER.
 
     Args:
         models (list): models to evaluate
-        dataset (Dataset): evaluation dataset
+        dataloader (torch.utils.data.DataLoader): evaluation dataloader
         recog_params (dict):
         epoch (int):
         recog_dir (str):
@@ -40,21 +37,18 @@ def eval_char(models, dataset, recog_params, epoch,
         cer (float): Character error rate
 
     """
-    # Reset data counter
-    dataset.reset(recog_params['recog_batch_size'])
-
     if recog_dir is None:
-        recog_dir = 'decode_' + dataset.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
+        recog_dir = 'decode_' + dataloader.set + '_ep' + str(epoch) + '_beam' + str(recog_params['recog_beam_width'])
         recog_dir += '_lp' + str(recog_params['recog_length_penalty'])
         recog_dir += '_cp' + str(recog_params['recog_coverage_penalty'])
         recog_dir += '_' + str(recog_params['recog_min_len_ratio']) + '_' + str(recog_params['recog_max_len_ratio'])
         recog_dir += '_lm' + str(recog_params['recog_lm_weight'])
 
-        ref_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(models[0].save_path, recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(models[0].save_path, recog_dir, 'hyp.trn')
     else:
-        ref_trn_save_path = mkdir_join(recog_dir, 'ref.trn')
-        hyp_trn_save_path = mkdir_join(recog_dir, 'hyp.trn')
+        ref_trn_path = mkdir_join(recog_dir, 'ref.trn')
+        hyp_trn_path = mkdir_join(recog_dir, 'hyp.trn')
 
     wer, cer = 0, 0
     n_sub_w, n_ins_w, n_del_w = 0, 0, 0
@@ -62,8 +56,12 @@ def eval_char(models, dataset, recog_params, epoch,
     n_word, n_char = 0, 0
     n_streamable, quantity_rate, n_utt = 0, 0, 0
     last_success_frame_ratio = 0
+
+    # Reset data counter
+    dataloader.reset(recog_params['recog_batch_size'])
+
     if progressbar:
-        pbar = tqdm(total=len(dataset))
+        pbar = tqdm(total=len(dataloader))
 
     if task_idx == 0:
         task = 'ys'
@@ -74,27 +72,28 @@ def eval_char(models, dataset, recog_params, epoch,
     elif task_idx == 3:
         task = 'ys_sub3'
 
-    with open(hyp_trn_save_path, 'w') as f_hyp, open(ref_trn_save_path, 'w') as f_ref:
+    with codecs.open(hyp_trn_path, 'w', encoding='utf-8') as f_hyp, \
+            codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
         while True:
-            batch, is_new_epoch = dataset.next(recog_params['recog_batch_size'])
+            batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
             if streaming or recog_params['recog_chunk_sync']:
                 best_hyps_id, _ = models[0].decode_streaming(
-                    batch['xs'], recog_params, dataset.idx2token[0],
+                    batch['xs'], recog_params, dataloader.idx2token[0],
                     exclude_eos=True)
             else:
                 best_hyps_id, _ = models[0].decode(
                     batch['xs'], recog_params,
-                    idx2token=dataset.idx2token[task_idx] if progressbar else None,
+                    idx2token=dataloader.idx2token[task_idx] if progressbar else None,
                     exclude_eos=True,
                     refs_id=batch['ys'] if task_idx == 0 else batch['ys_sub' + str(task_idx)],
                     utt_ids=batch['utt_ids'],
-                    speakers=batch['sessions' if dataset.corpus == 'swbd' else 'speakers'],
+                    speakers=batch['sessions' if dataloader.corpus == 'swbd' else 'speakers'],
                     task=task,
                     ensemble_models=models[1:] if len(models) > 1 else [])
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
-                hyp = dataset.idx2token[task_idx](best_hyps_id[b])
+                hyp = dataloader.idx2token[task_idx](best_hyps_id[b])
 
                 # Truncate the first and last spaces for the char_space unit
                 if len(hyp) > 0 and hyp[0] == ' ':
@@ -116,7 +115,7 @@ def eval_char(models, dataset, recog_params, epoch,
                 logger.debug('-' * 150)
 
                 if not streaming:
-                    if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub1 == 'char'):
+                    if ('char' in dataloader.unit and 'nowb' not in dataloader.unit) or (task_idx > 0 and dataloader.unit_sub1 == 'char'):
                         # Compute WER
                         wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
                                                                  hyp=hyp.split(' '),
@@ -129,7 +128,7 @@ def eval_char(models, dataset, recog_params, epoch,
                         # NOTE: sentence error rate for Chinese
 
                     # Compute CER
-                    if dataset.corpus == 'csj':
+                    if dataloader.corpus == 'csj':
                         ref = ref.replace(' ', '')
                         hyp = hyp.replace(' ', '')
                     cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref),
@@ -157,10 +156,10 @@ def eval_char(models, dataset, recog_params, epoch,
         pbar.close()
 
     # Reset data counters
-    dataset.reset()
+    dataloader.reset()
 
     if not streaming:
-        if ('char' in dataset.unit and 'nowb' not in dataset.unit) or (task_idx > 0 and dataset.unit_sub1 == 'char'):
+        if ('char' in dataloader.unit and 'nowb' not in dataloader.unit) or (task_idx > 0 and dataloader.unit_sub1 == 'char'):
             wer /= n_word
             n_sub_w /= n_word
             n_ins_w /= n_word
@@ -178,13 +177,13 @@ def eval_char(models, dataset, recog_params, epoch,
         n_streamable /= n_utt
         quantity_rate /= n_utt
 
-    logger.debug('WER (%s): %.2f %%' % (dataset.set, wer))
+    logger.debug('WER (%s): %.2f %%' % (dataloader.set, wer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
-    logger.debug('CER (%s): %.2f %%' % (dataset.set, cer))
+    logger.debug('CER (%s): %.2f %%' % (dataloader.set, cer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
 
-    logger.info('Streamablility (%s): %.2f %%' % (dataset.set, n_streamable * 100))
-    logger.info('Quantity rate (%s): %.2f %%' % (dataset.set, quantity_rate * 100))
-    logger.info('Last success frame ratio (%s): %.2f %%' % (dataset.set, last_success_frame_ratio))
+    logger.info('Streamability (%s): %.2f %%' % (dataloader.set, n_streamable * 100))
+    logger.info('Quantity rate (%s): %.2f %%' % (dataloader.set, quantity_rate * 100))
+    logger.info('Last success frame ratio (%s): %.2f %%' % (dataloader.set, last_success_frame_ratio))
 
     return wer, cer

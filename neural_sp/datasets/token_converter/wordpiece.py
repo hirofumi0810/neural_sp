@@ -6,10 +6,6 @@
 
 """Wordpiece-level token <-> index converter."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import codecs
 import sentencepiece as spm
 
@@ -64,6 +60,7 @@ class Idx2wp(object):
 
     Args:
         dict_path (str): path to a dictionary file
+        wp_model ():
 
     """
 
@@ -101,3 +98,6 @@ class Idx2wp(object):
         if return_list:
             return wordpieces
         return self.sp.DecodePieces(wordpieces)
+
+    def is_word_boundary(self):
+        raise NotImplementedError

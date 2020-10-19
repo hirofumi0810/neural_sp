@@ -6,12 +6,7 @@
 
 """Reporter during training."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from tensorboardX import SummaryWriter
-import seaborn as sns
 import os
 import numpy as np
 from matplotlib import pyplot as plt
@@ -71,11 +66,7 @@ class Reporter(object):
             if v == float("inf") or v == -float("inf"):
                 logger.warning("WARNING: received an inf %s for %s." % (metric, k))
 
-            if not is_eval:
-                if name not in self.obsv_train_local[metric].keys():
-                    self.obsv_train_local[metric][name] = []
-                self.obsv_train_local[metric][name].append(v)
-            else:
+            if is_eval:
                 # avarage for training
                 if name not in self.obsv_train[metric].keys():
                     self.obsv_train[metric][name] = []
@@ -87,11 +78,12 @@ class Reporter(object):
                     self.obsv_dev[metric][name] = []
                 self.obsv_dev[metric][name].append(v)
                 logger.info('%s (dev): %.3f' % (k, v))
-
-            if is_eval:
-                self.add_tensorboard_scalar('train' + '/' + metric + '/' + name, v)
-            else:
                 self.add_tensorboard_scalar('dev' + '/' + metric + '/' + name, v)
+            else:
+                if name not in self.obsv_train_local[metric].keys():
+                    self.obsv_train_local[metric][name] = []
+                self.obsv_train_local[metric][name].append(v)
+                self.add_tensorboard_scalar('train' + '/' + metric + '/' + name, v)
 
     def add_tensorboard_scalar(self, key, value):
         """Add scalar value to tensorboard."""
@@ -119,22 +111,27 @@ class Reporter(object):
         self.obsv_eval.append(metric)
 
         plt.clf()
+        upper = 0.1
         plt.plot(self.epochs, self.obsv_eval, orange,
                  label='dev', linestyle='-')
         plt.xlabel('epoch', fontsize=12)
         plt.ylabel(name, fontsize=12)
-        plt.ylim([0, min(100, max(self.obsv_eval) + 1)])
+        if max(self.obsv_eval) > 1:
+            upper = min(100, max(self.obsv_eval) + 1)
+        else:
+            upper = min(upper, max(self.obsv_eval))
+        plt.ylim([0, upper])
         plt.legend(loc="upper right", fontsize=12)
         if os.path.isfile(os.path.join(self.save_path, name + ".png")):
             os.remove(os.path.join(self.save_path, name + ".png"))
-        plt.savefig(os.path.join(self.save_path, name + ".png"), dvi=500)
+        plt.savefig(os.path.join(self.save_path, name + ".png"))
 
     def snapshot(self):
         # linestyles = ['solid', 'dashed', 'dotted', 'dashdotdotted']
         linestyles = ['-', '--', '-.', ':', ':', ':', ':', ':', ':', ':', ':', ':']
         for metric in self.obsv_train.keys():
             plt.clf()
-            upper = 0
+            upper = 0.1
             for i, (k, v) in enumerate(sorted(self.obsv_train[metric].items())):
                 # skip non-observed values
                 if np.mean(self.obsv_train[metric][k]) == 0:
@@ -154,7 +151,8 @@ class Reporter(object):
                     (self.steps, self.obsv_train[metric][k], self.obsv_dev[metric][k]))
                 np.savetxt(os.path.join(self.save_path, metric + '-' + k + ".csv"), loss_graph, delimiter=",")
 
-            upper = min(upper + 10, 300)
+            if upper > 1:
+                upper = min(upper + 10, 300)  # for CE, CTC loss
 
             plt.xlabel('step', fontsize=12)
             plt.ylabel(metric, fontsize=12)
@@ -162,4 +160,4 @@ class Reporter(object):
             plt.legend(loc="upper right", fontsize=12)
             if os.path.isfile(os.path.join(self.save_path, metric + ".png")):
                 os.remove(os.path.join(self.save_path, metric + ".png"))
-            plt.savefig(os.path.join(self.save_path, metric + ".png"), dvi=500)
+            plt.savefig(os.path.join(self.save_path, metric + ".png"))

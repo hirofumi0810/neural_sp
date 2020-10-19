@@ -5,10 +5,10 @@ __pycache__
 .dropbox.attr
 .ftpconfig
 .nfs*
+.idea
 *.done
 neural_sp.egg-info
 
 # CI test
-data
 results
 sample

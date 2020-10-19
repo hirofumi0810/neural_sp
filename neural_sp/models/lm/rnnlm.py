@@ -6,10 +6,6 @@
 
 """Recurrent neural network language model (RNNLM)."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from distutils.util import strtobool
 import logging
 import torch
@@ -117,6 +113,25 @@ class RNNLM(LMBase):
         group.add_argument('--use_glu', type=strtobool, default=False,
                            help='use Gated Linear Unit (GLU) for fully-connected layers')
         return parser
+
+    @staticmethod
+    def define_name(dir_name, args):
+        dir_name = args.lm_type
+        dir_name += str(args.n_units) + 'H'
+        dir_name += str(args.n_projs) + 'P'
+        dir_name += str(args.n_layers) + 'L'
+        dir_name += '_emb' + str(args.emb_dim)
+        if args.tie_embedding:
+            dir_name += '_tie'
+        if args.adaptive_softmax:
+            dir_name += '_adaptiveSM'
+        if args.residual:
+            dir_name += '_residual'
+        if args.use_glu:
+            dir_name += '_glu'
+        if args.n_units_null_context > 0:
+            dir_name += '_nullcv' + str(args.n_units_null_context)
+        return dir_name
 
     def reset_parameters(self, param_init):
         """Initialize parameters with uniform distribution."""

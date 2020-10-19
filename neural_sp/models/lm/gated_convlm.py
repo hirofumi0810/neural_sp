@@ -6,10 +6,6 @@
 
 """Gated convolutional neural network language model with Gated Linear Units (GLU)."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from collections import OrderedDict
 import logging
 import torch.nn as nn
@@ -163,6 +159,20 @@ class GatedConvLM(LMBase):
         group.add_argument('--kernel_size', type=int, default=4,
                            help='kernel size for GatedConvLM')
         return parser
+
+    @staticmethod
+    def define_name(dir_name, args):
+        dir_name = args.lm_type
+        if args.lm_type == 'gated_conv_custom':
+            dir_name += str(args.n_units) + 'H'
+            dir_name += str(args.n_projs) + 'P'
+            dir_name += str(args.n_layers) + 'L'
+        dir_name += '_emb' + str(args.emb_dim)
+        if args.tie_embedding:
+            dir_name += '_tie'
+        if args.adaptive_softmax:
+            dir_name += '_adaptiveSM'
+        return dir_name
 
     def reset_parameters(self, param_init):
         """Initialize parameters with kaiming_uniform style."""
