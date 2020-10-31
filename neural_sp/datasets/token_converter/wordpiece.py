@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -22,7 +19,7 @@ class Wp2idx(object):
     def __init__(self, dict_path, wp_model):
         # Load a dictionary file
         self.token2idx = {'<blank>': 0}
-        with codecs.open(dict_path, 'r', 'utf-8') as f:
+        with codecs.open(dict_path, 'r', encoding='utf-8') as f:
             for line in f:
                 wp, idx = line.strip().split(' ')
                 self.token2idx[wp] = int(idx)
@@ -35,7 +32,7 @@ class Wp2idx(object):
         """Convert word-piece sequence into indices.
 
         Args:
-            text (str): word-piece sequence
+            text (str): word sequence
         Returns:
             token_ids (list): word-piece indices
 
@@ -67,7 +64,7 @@ class Idx2wp(object):
     def __init__(self, dict_path, wp_model):
         # Load a dictionary file
         self.idx2token = {0: '<blank>'}
-        with codecs.open(dict_path, 'r', 'utf-8') as f:
+        with codecs.open(dict_path, 'r', encoding='utf-8') as f:
             for line in f:
                 wp, idx = line.strip().split(' ')
                 self.idx2token[int(idx)] = wp
@@ -87,7 +84,7 @@ class Idx2wp(object):
             token_ids (np.ndarray or list): word-piece indices
             return_list (bool): if True, return list of words
         Returns:
-            text (str): word-piece sequence
+            text (str): word sequence
                 or
             wordpieces (list): list of words
 

@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -23,7 +20,7 @@ class Word2idx(object):
 
         # Load a dictionary file
         self.token2idx = {'<blank>': 0}
-        with codecs.open(dict_path, 'r', 'utf-8') as f:
+        with codecs.open(dict_path, 'r', encoding='utf-8') as f:
             for line in f:
                 w, idx = line.strip().split(' ')
                 self.token2idx[w] = int(idx)
@@ -67,7 +64,7 @@ class Idx2word(object):
     def __init__(self, dict_path):
         # Load a dictionary file
         self.idx2token = {0: '<blank>'}
-        with codecs.open(dict_path, 'r', 'utf-8') as f:
+        with codecs.open(dict_path, 'r', encoding='utf-8') as f:
             for line in f:
                 w, idx = line.strip().split(' ')
                 self.idx2token[int(idx)] = w
@@ -107,14 +104,14 @@ class Char2word(object):
     def __init__(self, dict_path_word, dict_path_char):
         # Load a word dictionary file
         self.word2idx = {}
-        with codecs.open(dict_path_word, 'r', 'utf-8') as f:
+        with codecs.open(dict_path_word, 'r', encoding='utf-8') as f:
             for line in f:
                 w, idx = line.strip().split(' ')
                 self.word2idx[w] = int(idx)
 
         # Load a character dictionary file
         self.idx2char = {}
-        with codecs.open(dict_path_char, 'r', 'utf-8') as f:
+        with codecs.open(dict_path_char, 'r', encoding='utf-8') as f:
             for line in f:
                 c, idx = line.strip().split(' ')
                 self.idx2char[int(idx)] = c
@@ -151,7 +148,7 @@ class Word2char(object):
     def __init__(self, dict_path_word, dict_path_char):
         # Load a word dictionary file
         self.idx2word = {}
-        with codecs.open(dict_path_word, 'r', 'utf-8') as f:
+        with codecs.open(dict_path_word, 'r', encoding='utf-8') as f:
             for line in f:
                 w, idx = line.strip().split(' ')
                 self.idx2word[int(idx)] = w

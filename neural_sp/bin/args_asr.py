@@ -12,6 +12,16 @@ import os
 
 from neural_sp.bin.train_utils import load_config
 
+ENCODER_TYPES = ['blstm', 'lstm', 'bgru', 'gru',
+                 'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
+                 'transformer', 'conv_transformer', 'conv_uni_transformer',
+                 'conformer', 'conv_conformer', 'conv_uni_conformer',
+                 'tds', 'gated_conv']
+
+DECODER_TYPES = ['lstm', 'gru', 'transformer',
+                 'lstm_transducer', 'gru_transducer',
+                 'asg']
+
 
 def parse_args_train(input_args):
     parser = build_parser()
@@ -114,16 +124,20 @@ def build_parser():
                         help='tsv file path for the training set for the 1st auxiliary task')
     parser.add_argument('--train_set_sub2', type=str, default=False,
                         help='tsv file path for the training set for the 2nd auxiliary task')
-    parser.add_argument('--train_alignment', type=str,
-                        help='forced alignment directory path for the training set')
+    parser.add_argument('--train_word_alignment', type=str,
+                        help='word alignment directory path for the training set')
+    parser.add_argument('--train_ctc_alignment', type=str,
+                        help='CTC alignment directory path for the training set')
     parser.add_argument('--dev_set', type=str,
                         help='tsv file path for the development set')
     parser.add_argument('--dev_set_sub1', type=str, default=False,
                         help='tsv file path for the development set for the 1st auxiliary task')
     parser.add_argument('--dev_set_sub2', type=str, default=False,
                         help='tsv file path for the development set for the 2nd auxiliary task')
-    parser.add_argument('--dev_alignment', type=str,
-                        help='forced alignment directory path for the development set')
+    parser.add_argument('--dev_word_alignment', type=str,
+                        help='word alignment directory path for the development set')
+    parser.add_argument('--dev_ctc_alignment', type=str,
+                        help='CTC alignment directory path for the development set')
     parser.add_argument('--eval_sets', type=str, default=[], nargs='+',
                         help='tsv file paths for the evaluation sets')
     parser.add_argument('--nlsyms', type=str, default=False, nargs='?',
@@ -173,11 +187,7 @@ def build_parser():
                         help='use sequence summary network')
     # topology (encoder)
     parser.add_argument('--enc_type', type=str, default='blstm',
-                        choices=['blstm', 'lstm', 'bgru', 'gru',
-                                 'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
-                                 'transformer', 'conv_transformer', 'conv_uni_transformer',
-                                 'conformer', 'conv_conformer', 'conv_uni_conformer',
-                                 'tds', 'gated_conv'],
+                        choices=ENCODER_TYPES,
                         help='type of the encoder')
     parser.add_argument('--enc_n_layers', type=int, default=5,
                         help='number of encoder RNN layers')
@@ -192,9 +202,7 @@ def build_parser():
                         help='type of subsampling in the encoder')
     # topology (decoder)
     parser.add_argument('--dec_type', type=str, default='lstm',
-                        choices=['lstm', 'gru', 'transformer',
-                                 'lstm_transducer', 'gru_transducer',
-                                 'asg'],
+                        choices=DECODER_TYPES,
                         help='type of the decoder')
     parser.add_argument('--dec_n_layers', type=int, default=1,
                         help='number of decoder RNN layers')
@@ -357,6 +365,8 @@ def build_parser():
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
                         help='tsv file paths for the evaluation sets')
+    parser.add_argument('--recog_word_alignments', type=str, default=[], nargs='+',
+                        help='word alignment directory paths for the evaluation sets')
     parser.add_argument('--recog_first_n_utt', type=int, default=-1,
                         help='recognize the first N utterances for quick evalaution')
     parser.add_argument('--recog_model', type=str, default=False, nargs='+',

@@ -25,6 +25,7 @@ from neural_sp.datasets.token_converter.word import Word2idx
 from neural_sp.datasets.token_converter.wordpiece import Idx2wp
 from neural_sp.datasets.token_converter.wordpiece import Wp2idx
 
+from neural_sp.datasets.alignment import load_ctc_alignment
 from neural_sp.datasets.alignment import WordAlignmentConverter
 from neural_sp.datasets.utils import count_vocab_size
 from neural_sp.datasets.utils import discourse_bucketing
@@ -39,7 +40,7 @@ def build_dataloader(args, tsv_path, batch_size, n_epochs=1e10, is_test=False,
                      sort_by='utt_id', short2long=False, sort_stop_epoch=1e10,
                      tsv_path_sub1=False, tsv_path_sub2=False,
                      num_workers=1, pin_memory=False,
-                     first_n_utterances=-1, alignment_dir=None):
+                     first_n_utterances=-1, word_alignment_dir=None, ctc_alignment_dir=None):
 
     dataset = CustomDataset(corpus=args.corpus,
                             tsv_path=tsv_path,
@@ -66,12 +67,13 @@ def build_dataloader(args, tsv_path, batch_size, n_epochs=1e10, is_test=False,
                             sort_by=sort_by,
                             short2long=short2long,
                             is_test=is_test,
-                            alignment_dir=alignment_dir)
+                            word_alignment_dir=word_alignment_dir,
+                            ctc_alignment_dir=ctc_alignment_dir)
 
     batch_sampler = CustomBatchSampler(df=dataset.df,  # filtered
                                        df_sub1=dataset.df_sub1,  # filtered
                                        df_sub2=dataset.df_sub2,  # filtered
-                                       batch_size=args.batch_size,
+                                       batch_size=batch_size,
                                        dynamic_batching=args.dynamic_batching,
                                        shuffle_bucket=args.shuffle_bucket and not is_test,
                                        sort_stop_epoch=args.sort_stop_epoch,
@@ -199,7 +201,7 @@ class CustomDataset(Dataset):
                  unit_sub1, unit_sub2,
                  wp_model_sub1, wp_model_sub2,
                  discourse_aware=False, first_n_utterances=-1,
-                 alignment_dir=None):
+                 word_alignment_dir=None, ctc_alignment_dir=None):
         """Custom Dataset class.
 
         Args:
@@ -221,7 +223,8 @@ class CustomDataset(Dataset):
             subsample_factor (int):
             discourse_aware (bool): sort in the discourse order
             first_n_utterances (int): evaluate the first N utterances
-            alignment_dir (str): path to alignment directory
+            word_alignment_dir (str): path to word alignment directory
+            ctc_alignment_dir (str): path to CTC alignment directory
 
         """
         super(Dataset, self).__init__()
@@ -245,9 +248,8 @@ class CustomDataset(Dataset):
             assert not is_test
 
         self.subsample_factor = subsample_factor
-        self.alignment_dir = alignment_dir
-        if alignment_dir is not None:
-            self.alignment2boundary = WordAlignmentConverter(dict_path, wp_model)
+        self.word_alignment_dir = word_alignment_dir
+        self.ctc_alignment_dir = ctc_alignment_dir
 
         self._idx2token = []
         self._token2idx = []
@@ -392,13 +394,21 @@ class CustomDataset(Dataset):
                 df = df.reindex(np.random.permutation(self.df.index))
 
         # Fit word alignment to vocabylary
-        if alignment_dir is not None:
+        if word_alignment_dir is not None:
+            alignment2boundary = WordAlignmentConverter(dict_path, wp_model)
             n_utts = len(df)
-            df['trigger_points'] = df.apply(lambda x: self.alignment2boundary(
-                self.alignment_dir, x['speaker'], x['utt_id'], x['text']), axis=1)
+            df['trigger_points'] = df.apply(lambda x: alignment2boundary(
+                word_alignment_dir, x['speaker'], x['utt_id'], x['text']), axis=1)
             # remove utterances which do not have the alignment
             df = df[df.apply(lambda x: x['trigger_points'] is not None, axis=1)]
-            print('Removed %d utterances (for alignment)' % (n_utts - len(df)))
+            print('Removed %d utterances (for word alignment)' % (n_utts - len(df)))
+        elif ctc_alignment_dir is not None:
+            n_utts = len(df)
+            df['trigger_points'] = df.apply(lambda x: load_ctc_alignment(
+                ctc_alignment_dir, x['speaker'], x['utt_id']), axis=1)
+            # remove utterances which do not have the alignment
+            df = df[df.apply(lambda x: x['trigger_points'] is not None, axis=1)]
+            print('Removed %d utterances (for CTC alignment)' % (n_utts - len(df)))
 
         # Re-indexing
         if discourse_aware:
@@ -440,15 +450,20 @@ class CustomDataset(Dataset):
         """
         # external alignment
         trigger_points = None
-        if self.alignment_dir is not None:
+        if self.word_alignment_dir is not None:
             trigger_points = np.zeros(
                 (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
             for b, i in enumerate(indices):
                 p = self.df['trigger_points'][i]
-                trigger_points[b, :len(p)] = (p - 1)
-                trigger_points[b, len(p)] = self.df['xlen'][i] - 1  # for <eos>
-                # NOTE: 0-indexed
+                trigger_points[b, :len(p)] = p - 1  # 0-indexed
+                # NOTE: <eos> is not treated here
             trigger_points //= self.subsample_factor
+        elif self.ctc_alignment_dir is not None:
+            trigger_points = np.zeros(
+                (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
+            for b, i in enumerate(indices):
+                p = self.df['trigger_points'][i]  # including <eos>
+                trigger_points[b, :len(p)] = p  # already 0-indexed
 
         # inputs
         xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in indices]
@@ -516,6 +531,9 @@ class CustomBatchSampler(BatchSampler):
             df_sub2 (pandas.DataFrame): dataframe for the second sub task
 
         """
+        # super(BatchSampler, self).__init__()
+        # sampler, batch_size, drop_last
+
         self.df = df
         self.df_sub1 = df_sub1
         self.df_sub2 = df_sub2

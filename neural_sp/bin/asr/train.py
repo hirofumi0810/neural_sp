@@ -61,7 +61,7 @@ def main():
     args = compute_susampling_factor(args)
 
     # for multi-GPUs
-    if args.n_gpus >= 1:
+    if args.n_gpus > 1:
         batch_size = args.batch_size * args.n_gpus
         accum_grad_n_steps = max(1, args.accum_grad_n_steps // args.n_gpus)
     else:
@@ -80,7 +80,8 @@ def main():
                                  sort_stop_epoch=args.sort_stop_epoch,
                                  num_workers=args.n_gpus,
                                  pin_memory=True,
-                                 alignment_dir=args.train_alignment)
+                                 word_alignment_dir=args.train_word_alignment,
+                                 ctc_alignment_dir=args.train_ctc_alignment)
     dev_set = build_dataloader(args=args,
                                tsv_path=args.dev_set,
                                tsv_path_sub1=args.dev_set_sub1,
@@ -88,7 +89,8 @@ def main():
                                batch_size=batch_size,
                                num_workers=args.n_gpus,
                                pin_memory=True,
-                               alignment_dir=args.dev_alignment)
+                               word_alignment_dir=args.dev_word_alignment,
+                               ctc_alignment_dir=args.dev_ctc_alignment)
     eval_sets = [build_dataloader(args=args,
                                   tsv_path=s,
                                   batch_size=1,

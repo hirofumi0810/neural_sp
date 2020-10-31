@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -25,7 +22,7 @@ class Char2idx(object):
 
         # Load a dictionary file
         self.token2idx = {'<blank>': 0}
-        with codecs.open(dict_path, 'r', 'utf-8') as f:
+        with codecs.open(dict_path, 'r', encoding='utf-8') as f:
             for line in f:
                 c, idx = line.strip().split(' ')
                 if c in remove_list:
@@ -35,7 +32,7 @@ class Char2idx(object):
 
         self.nlsyms_list = []
         if nlsyms and os.path.isfile(nlsyms):
-            with codecs.open(nlsyms, 'r', 'utf-8') as f:
+            with codecs.open(nlsyms, 'r', encoding='utf-8') as f:
                 for line in f:
                     self.nlsyms_list.append(line.strip())
 
@@ -43,7 +40,7 @@ class Char2idx(object):
         """Convert character sequence into indices.
 
         Args:
-            text (str): character sequence
+            text (str): word sequence
         Returns:
             token_ids (list): character indices
 
@@ -82,7 +79,7 @@ class Idx2char(object):
 
         # Load a dictionary file
         self.idx2token = {0: '<blank>'}
-        with codecs.open(dict_path, 'r', 'utf-8') as f:
+        with codecs.open(dict_path, 'r', encoding='utf-8') as f:
             for line in f:
                 c, idx = line.strip().split(' ')
                 if c in remove_list:
@@ -101,7 +98,7 @@ class Idx2char(object):
             token_ids (np.ndarray or list): character indices
             return_list (bool): if True, return list of characters
         Returns:
-            text (str): character sequence
+            text (str): word sequence
                 or
             characters (list): list of characters
 
