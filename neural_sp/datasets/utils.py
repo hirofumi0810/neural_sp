@@ -27,7 +27,7 @@ def set_batch_size(batch_size, min_xlen, min_ylen, dynamic_batching):
     elif min_xlen <= 1600 or 80 < min_ylen <= 100:
         batch_size //= 2
     else:
-        batch_size //= 4
+        batch_size //= 8
 
     return max(1, batch_size)
 

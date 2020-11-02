@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -21,7 +18,7 @@ class Phone2idx(object):
     def __init__(self, dict_path, remove_list=[]):
         # Load a dictionary file
         self.token2idx = {'<blank>': 0}
-        with codecs.open(dict_path, 'r', 'utf-8') as f:
+        with codecs.open(dict_path, 'r', encoding='utf-8') as f:
             for line in f:
                 p, idx = line.strip().split(' ')
                 if p in remove_list:
@@ -55,7 +52,7 @@ class Idx2phone(object):
     def __init__(self, dict_path, remove_list=[]):
         # Load a dictionary file
         self.idx2token = {0: '<blank>'}
-        with codecs.open(dict_path, 'r', 'utf-8') as f:
+        with codecs.open(dict_path, 'r', encoding='utf-8') as f:
             for line in f:
                 p, idx = line.strip().split(' ')
                 if p in remove_list:
