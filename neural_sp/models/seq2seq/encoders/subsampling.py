@@ -98,7 +98,7 @@ class Conv1dSubsampler(nn.Module):
 
 
 class DropSubsampler(nn.Module):
-    """Subsample by droping input frames."""
+    """Subsample by dropping input frames."""
 
     def __init__(self, subsampling_factor):
         super(DropSubsampler, self).__init__()

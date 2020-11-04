@@ -49,7 +49,7 @@ def resolve_unk(hyp_word, best_hyps_char, aw_word, aw_char, idx2char,
         for t_char in range(len(aw_char)):
             # print(np.sum(aw_word[oov_info[i][0]] * aw_char[t_char]))
             if np.sum(aw_word[oov_info[i][0]] * aw_char[t_char]) > max_attn_overlap:
-                # Check if the correcsponding character is space
+                # Check if the corresponding character is space
                 max_char = idx2char(best_hyps_char[t_char: t_char + 1])
                 if max_char == ' ':
                     continue

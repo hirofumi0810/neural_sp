@@ -46,14 +46,14 @@ class RNNEncoder(EncoderBase):
         n_stacks (int): number of frames to stack
         n_splices (int): number of frames to splice
         conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channles in CNN blocks
+        conv_channels (int): number of channels in CNN blocks
         conv_kernel_sizes (list): size of kernels in CNN blocks
         conv_strides (list): number of strides in CNN blocks
         conv_poolings (list): size of poolings in CNN blocks
         conv_batch_norm (bool): apply batch normalization only in CNN blocks
         conv_layer_norm (bool): apply layer normalization only in CNN blocks
         conv_bottleneck_dim (int): dimension of bottleneck layer between CNN and RNN layers
-        bidir_sum_fwd_bwd (bool): sum up forward and backward outputs for demiension reduction
+        bidir_sum_fwd_bwd (bool): sum up forward and backward outputs for dimension reduction
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (float): model initialization parameter
         chunk_size_left (int): left chunk size for latency-controlled bidirectional encoder
@@ -282,7 +282,7 @@ class RNNEncoder(EncoderBase):
                  'ys_sub1': {'xs': None, 'xlens': None},
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
-        # Sort by lenghts in the descending order for pack_padded_sequence
+        # Sort by lengths in the descending order for pack_padded_sequence
         if not self.lc_bidir:
             xlens, perm_ids = torch.IntTensor(xlens).sort(0, descending=True)
             xs = xs[perm_ids]
@@ -314,7 +314,7 @@ class RNNEncoder(EncoderBase):
             if self.chunk_size_left <= 0:
                 xs, xlens, xs_sub1 = self._forward_full_context(xs, xlens)
             else:
-                xs, xlens, xs_sub1 = self._forward_latency_contolled(xs, xlens, N_l, N_r, streaming)
+                xs, xlens, xs_sub1 = self._forward_latency_controlled(xs, xlens, N_l, N_r, streaming)
             if xs_sub1 is not None:
                 xlens_sub1 = xlens.clone()
             if task == 'ys_sub1':
@@ -401,7 +401,7 @@ class RNNEncoder(EncoderBase):
 
         return xs, xlens, xs_sub1
 
-    def _forward_latency_contolled(self, xs, xlens, N_l, N_r, streaming, task='all'):
+    def _forward_latency_controlled(self, xs, xlens, N_l, N_r, streaming, task='all'):
         """Streaming encoding for the conventional latency-controlled bidirectional encoder.
 
         Args:

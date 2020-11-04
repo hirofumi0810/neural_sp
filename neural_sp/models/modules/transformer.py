@@ -34,7 +34,7 @@ class TransformerDecoderBlock(nn.Module):
         dropout_layer (float): LayerDrop probability
         dropout_head (float): HeadDrop probability
         layer_norm_eps (float): epsilon parameter for layer normalization
-        ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        ffn_activation (str): nonlinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
         src_tgt_attention (bool): use source-target attention
         memory_transformer (bool): TransformerXL decoder
@@ -44,7 +44,7 @@ class TransformerDecoderBlock(nn.Module):
         mma_init_r (int): initial bias value for MMA
         mma_eps (float): epsilon value for MMA
         mma_std (float): standard deviation of Gaussian noise for MMA
-        mma_no_denominator (bool): remove demominator in MMA
+        mma_no_denominator (bool): remove denominator in MMA
         mma_1dconv (bool): 1dconv for MMA
         share_chunkwise_attention (bool): share chunkwise attention in the same layer of MMA
         lm_fusion (str): type of LM fusion

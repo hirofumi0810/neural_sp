@@ -18,7 +18,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
-def compute_susampling_factor(args):
+def compute_subsampling_factor(args):
     """Register subsample factor to args.
 
         Args:
@@ -63,7 +63,7 @@ def measure_time(func):
 
 
 def load_config(config_path):
-    """Load a configration yaml file.
+    """Load a configuration yaml file.
 
     Args:
         config_path (str):
@@ -107,7 +107,7 @@ def set_logger(save_path, stdout=False):
 
 
 def set_save_path(save_path):
-    """Change directory name to avoid name ovarlapping.
+    """Change directory name to avoid name overlapping.
 
     Args:
         save_path (str):

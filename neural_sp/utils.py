@@ -10,10 +10,10 @@ import os
 
 
 def mkdir_join(path, *dir_name):
-    """Concatenate root path and 1 or more paths, and make a new direcory if the direcory does not exist.
+    """Concatenate root path and 1 or more paths, and make a new directory if the directory does not exist.
     Args:
-        path (str): path to a diretcory
-        dir_name (str): a direcory name
+        path (str): path to a directory
+        dir_name (str): a directory name
     Returns:
         path to the new directory
     """

@@ -24,7 +24,7 @@ class GatedConvEncoder(EncoderBase):
     Args:
         input_dim (int) dimension of input features (freq * channel)
         in_channel (int) number of channels of input features
-        channels (list) number of channles in TDS layers
+        channels (list) number of channels in TDS layers
         kernel_sizes (list) size of kernels in TDS layers
         dropout (float) dropout probability
         batch_norm (bool): apply batch normalization

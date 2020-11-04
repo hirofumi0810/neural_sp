@@ -57,7 +57,7 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, factor=4,
         plt.ylabel(u'Output labels (←)', fontsize=12 if n_heads == 1 else 8)
         plt.yticks(rotation=0, fontsize=6)
 
-    # Plot CTC propabilities for joint CTC-attention
+    # Plot CTC probabilities for joint CTC-attention
     if ctc_probs is not None:
         plt.subplot(n_col, 1, n_heads + 1)
         times_probs = np.arange(ctc_probs.shape[0])

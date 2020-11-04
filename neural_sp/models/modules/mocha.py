@@ -4,7 +4,7 @@
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Monotonic (multihead) chunkwise atteniton."""
+"""Monotonic (multihead) chunkwise attention."""
 
 # [reference]
 # https://github.com/j-min/MoChA-pytorch/blob/94b54a7fa13e4ac6dc255b509dd0febc8c0a0ee6/attention.py
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class MonotonicEnergy(nn.Module):
-    """Energy function for the monotonic attenion.
+    """Energy function for the monotonic attention.
 
     Args:
         kdim (int): dimension of key

@@ -21,7 +21,7 @@ class CausalConv1d(nn.Module):
         in_channels (int): input channel size
         out_channels (int): output channel size
         kernel_size (int): kernel size
-        dilation (int): delation rate
+        dilation (int): deletion rate
         param_init (str): parameter initialization method
 
     """

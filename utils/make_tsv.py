@@ -102,7 +102,7 @@ def main():
         lines = codecs.open(args.text, 'r', encoding="utf-8")
 
     for line in lines:
-        # Remove succesive spaces
+        # Remove successive spaces
         line = re.sub(r'[\s]+', ' ', line.strip())
         utt_id = str(line.split(' ')[0])
         words = line.split(' ')[1:]

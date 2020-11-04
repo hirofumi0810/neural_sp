@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class CTC(DecoderBase):
-    """Connectionist temporal classificaiton (CTC).
+    """Connectionist temporal classification (CTC).
 
     Args:
         eos (int): index for <eos> (shared with <sos>)
@@ -244,7 +244,7 @@ class CTC(DecoderBase):
             idx2token (): converter from index to token
             lm: firsh path LM
             lm_second: second path LM
-            lm_second_rev: secoding path backward LM
+            lm_second_rev: second path backward LM
             nbest (int):
             refs_id (list): reference list
             utt_ids (list): utterance id list
@@ -597,7 +597,7 @@ class CTCPrefixScore(object):
 
     which is based on Algorithm 2 in WATANABE et al.
     "HYBRID CTC/ATTENTION ARCHITECTURE FOR END-TO-END SPEECH RECOGNITION,"
-    but extended to efficiently compute the probablities of multiple labels
+    but extended to efficiently compute the probabilities of multiple labels
     simultaneously
 
     [Reference]:
@@ -690,7 +690,7 @@ class CTCPrefixScore(object):
             log_phi = r_sum  # `[T]`
 
         # compute forward probabilities log(r_t^n(h)), log(r_t^b(h)),
-        # and log prefix probabilites log(psi)
+        # and log prefix probabilities log(psi)
         start = max(ylen, 1)
         log_psi = r[start - 1, 0]
         for t in range(start, self.xlen):

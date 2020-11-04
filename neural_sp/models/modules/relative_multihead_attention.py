@@ -27,7 +27,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         adim: (int) dimension of attention space
         odim: (int) dimension of output
         n_heads (int): number of heads
-        dropout (float): dropout probability for attenion weights
+        dropout (float): dropout probability for attention weights
         dropout_head (float): HeadDrop probability
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method

@@ -11,7 +11,7 @@ class Phone2idx(object):
 
     Args:
         dict_path (str): path to a dictionary file
-        remove_list (list): phones to ingore
+        remove_list (list): phones to ignore
 
     """
 
@@ -45,7 +45,7 @@ class Idx2phone(object):
 
     Args:
         dict_path (str): path to a dictionary file
-        remove_list (list): phones to ingore
+        remove_list (list): phones to ignore
 
     """
 

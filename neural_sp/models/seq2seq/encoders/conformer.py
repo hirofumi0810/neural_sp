@@ -33,7 +33,7 @@ class ConformerEncoder(TransformerEncoder):
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
-        ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        ffn_activation (str): nonlinear function for PositionwiseFeedForward
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
         last_proj_dim (int): dimension of the last projection layer
@@ -47,7 +47,7 @@ class ConformerEncoder(TransformerEncoder):
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channles in CNN blocks
+        conv_channels (int): number of channels in CNN blocks
         conv_kernel_sizes (list): size of kernels in CNN blocks
         conv_strides (list): number of strides in CNN blocks
         conv_poolings (list): size of poolings in CNN blocks
@@ -200,7 +200,7 @@ class ConformerEncoderBlock(nn.Module):
         dropout_att (float): dropout probabilities for attention distributions
         dropout_layer (float): LayerDrop probability
         layer_norm_eps (float): epsilon parameter for layer normalization
-        ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        ffn_activation (str): nonlinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
         pe_type (str): type of positional encoding
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
