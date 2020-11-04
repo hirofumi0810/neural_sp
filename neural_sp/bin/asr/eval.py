@@ -15,9 +15,12 @@ import time
 
 from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import (
+    compute_subsampling_factor,
+    load_checkpoint,
+    load_config,
+    set_logger
+)
 from neural_sp.datasets.asr import build_dataloader
 from neural_sp.evaluators.accuracy import eval_accuracy
 from neural_sp.evaluators.character import eval_char
@@ -36,6 +39,7 @@ def main():
 
     # Load configuration
     args, recog_params, dir_name = parse_args_eval(sys.argv[1:])
+    args = compute_subsampling_factor(args)
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):
@@ -172,7 +176,8 @@ def main():
                                           recog_dir=args.recog_dir,
                                           streaming=args.recog_streaming,
                                           progressbar=True,
-                                          fine_grained=True)
+                                          fine_grained=True,
+                                          teacher_force=len(args.recog_word_alignments) > 0)
                 wer_avg += wer
                 cer_avg += cer
             elif 'char' in args.recog_unit:
