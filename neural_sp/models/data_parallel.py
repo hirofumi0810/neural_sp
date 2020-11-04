@@ -1,20 +1,12 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inylensguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 """Custom class for data parallel training."""
 
-import numpy as np
-
-import torch
 import torch.nn as nn
-
 from torch.nn import DataParallel
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.parallel.scatter_gather import gather
-from torch.nn.parallel._functions import Scatter
 
 
 class CustomDataParallel(DataParallel):
