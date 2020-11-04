@@ -74,7 +74,7 @@ def main():
                           n_caches=args.recog_n_caches, progressbar=True)
         ppl_avg += ppl
         print('PPL (%s): %.2f' % (dataset.set, ppl))
-        logger.info('Elasped time: %.2f [sec]:' % (time.time() - start_time))
+        logger.info('Elapsed time: %.2f [sec]:' % (time.time() - start_time))
 
     logger.info('PPL (avg.): %.2f\n' % (ppl_avg / len(args.recog_sets)))
 

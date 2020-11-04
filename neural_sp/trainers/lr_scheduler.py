@@ -30,7 +30,7 @@ class LRScheduler(object):
         decay_patient_n_epochs (int): decay learning rate if results have not been
             improved for 'decay_patient_n_epochs'
         early_stop_patient_n_epochs (int): number of epochs to tolerate stopping the training
-            when validation perfomance is not improved
+            when validation performance is not improved
         lower_better (bool):
             True) The lower, the better.
             False) The higher, the better.
@@ -77,7 +77,7 @@ class LRScheduler(object):
         self.not_improved_n_epochs = 0
         self.early_stop_patient_n_epochs = early_stop_patient_n_epochs
 
-        # for performance monotoring
+        # for performance monitoring
         self._is_topk = False
         self.topk = save_checkpoints_topk
         assert save_checkpoints_topk >= 1
@@ -118,7 +118,7 @@ class LRScheduler(object):
         self._update_lr()
 
     def _warmup_lr(self):
-        """Warm up learning rate per step by incresing linearly."""
+        """Warm up learning rate per step by increasing linearly."""
         if self.warmup_n_steps > 0 and self._step <= self.warmup_n_steps:
             self.lr = (self.base_lr - self.warmup_start_lr) / \
                 self.warmup_n_steps * self._step + self.warmup_start_lr

@@ -62,7 +62,7 @@ class RNNDecoder(DecoderBase):
         vocab (int): number of nodes in softmax layer
         tie_embedding (bool): tie parameters of embedding and output layers
         attn_dim (int): dimension of attention space
-        attn_sharpening_factor (float): sharpining factor in softmax for attention
+        attn_sharpening_factor (float): sharpening factor in softmax for attention
         attn_sigmoid_smoothing (bool): replace softmax with sigmoid for attention calculation
         attn_conv_out_channels (int): channel size of convolution in location-aware attention
         attn_conv_kernel_size (int): kernel size of convolution in location-aware attention
@@ -89,7 +89,7 @@ class RNNDecoder(DecoderBase):
         mocha_init_r (int): initial bias value for MoChA
         mocha_eps (float): epsilon value for MoChA
         mocha_std (float): standard deviation of Gaussian noise for MoChA
-        mocha_no_denominator (bool): remove demominator in MoChA
+        mocha_no_denominator (bool): remove denominator in MoChA
         mocha_1dconv (bool): 1dconv for MoChA
         mocha_decot_lookahead (int): lookahead frames of DeCoT for MoChA
         quantity_loss_weight (float): quantity loss weight for MoChA
@@ -300,7 +300,7 @@ class RNNDecoder(DecoderBase):
                            choices=['no', 'location', 'add', 'dot',
                                     'luong_dot', 'luong_general', 'luong_concat',
                                     'mocha', 'gmm', 'cif', 'triggered_attention'],
-                           help='type of attention mechasnism for RNN decoder')
+                           help='type of attention mechanism for RNN decoder')
         group.add_argument('--attn_dim', type=int, default=128,
                            help='dimension of the attention layer')
         group.add_argument('--attn_n_heads', type=int, default=1,
@@ -1236,7 +1236,7 @@ class RNNDecoder(DecoderBase):
                             # TODO(hirofumi): mask by elens[b]
                             total_scores_topk += cp * cp_weight
                         else:
-                            # Recompute converage penalty at each step
+                            # Recompute coverage penalty at each step
                             if cp_threshold == 0:
                                 cp = aw_mat.sum() / self.score.n_heads
                             else:

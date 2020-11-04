@@ -220,7 +220,7 @@ def main():
                     scaled_loss.backward()
             else:
                 loss.backward()
-            loss.detach()  # Trancate the graph
+            loss.detach()  # Truncate the graph
             if accum_n_steps >= accum_grad_n_steps or is_new_epoch:
                 if args.clip_grad_norm > 0:
                     total_norm = torch.nn.utils.clip_grad_norm_(
@@ -257,7 +257,7 @@ def main():
                              scheduler.lr, ys_train.shape[0], duration_step / 60))
                 start_time_step = time.time()
 
-            # Save fugures of loss and accuracy
+            # Save figures of loss and accuracy
             if n_steps % (args.print_step * 10) == 0:
                 reporter.snapshot()
                 model.module.plot_attention()

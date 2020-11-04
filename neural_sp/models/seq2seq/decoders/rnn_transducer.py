@@ -593,7 +593,7 @@ class RNNTransducer(DecoderBase):
             if lm_second is not None:
                 self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
 
-            # backward secodn path LM rescoring
+            # backward second path LM rescoring
             if lm_second_bwd is not None:
                 self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 

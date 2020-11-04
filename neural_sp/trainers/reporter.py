@@ -67,7 +67,7 @@ class Reporter(object):
                 logger.warning("WARNING: received an inf %s for %s." % (metric, k))
 
             if is_eval:
-                # avarage for training
+                # average for training
                 if name not in self.obsv_train[metric].keys():
                     self.obsv_train[metric][name] = []
                 self.obsv_train[metric][name].append(

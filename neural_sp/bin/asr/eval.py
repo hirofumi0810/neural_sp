@@ -110,7 +110,7 @@ def main():
                     load_checkpoint(args.recog_lm_second, lm_second)
                     model.lm_second = lm_second
 
-                # second path (bakward)
+                # second path (backward)
                 if args.recog_lm_bwd is not None and args.recog_lm_bwd_weight > 0:
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm_bwd), 'conf.yml'))
                     args_lm_bwd = argparse.Namespace()
@@ -208,9 +208,9 @@ def main():
             bleu_avg += bleu
         else:
             raise NotImplementedError(args.recog_metric)
-        elasped_time = time.time() - start_time
-        logger.info('Elasped time: %.3f [sec]' % elasped_time)
-        logger.info('RTF: %.3f' % (elasped_time / (dataloader.n_frames * 0.01)))
+        elapsed_time = time.time() - start_time
+        logger.info('Elapsed time: %.3f [sec]' % elapsed_time)
+        logger.info('RTF: %.3f' % (elapsed_time / (dataloader.n_frames * 0.01)))
 
     if args.recog_metric == 'edit_distance':
         if 'phone' in args.recog_unit:

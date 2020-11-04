@@ -26,7 +26,7 @@ def splice(feat, n_splices=1, n_stacks=1, dtype=np.float32):
 
     """
     assert isinstance(feat, np.ndarray), 'feat should be np.ndarray.'
-    assert len(feat.shape) == 2, 'feat must be 2 demension.'
+    assert len(feat.shape) == 2, 'feat must be 2 dimension.'
     assert feat.shape[-1] % 3 == 0
 
     if n_splices == 1:

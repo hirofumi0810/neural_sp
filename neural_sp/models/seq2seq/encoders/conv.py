@@ -408,7 +408,7 @@ class LayerNorm2D(nn.Module):
 
 
 def update_lens_1d(seq_lens, layer):
-    """Update lenghts (frequency or time).
+    """Update lengths (frequency or time).
 
     Args:
         seq_lens (IntTensor): `[B]`
@@ -437,7 +437,7 @@ def _update_1d(seq_len, layer):
 
 
 def update_lens_2d(seq_lens, layer, dim=0):
-    """Update lenghts (frequency or time).
+    """Update lengths (frequency or time).
 
     Args:
         seq_lens (IntTensor): `[B]`

@@ -223,7 +223,7 @@ def build_parser():
     parser.add_argument('--n_epochs', type=int, default=25,
                         help='number of epochs to train the model')
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=100,
-                        help='epoch to converto to SGD fine-tuning')
+                        help='epoch to convert to SGD fine-tuning')
     parser.add_argument('--print_step', type=int, default=200,
                         help='print log per this value')
     parser.add_argument('--metric', type=str, default='edit_distance',
@@ -243,9 +243,9 @@ def build_parser():
     parser.add_argument('--lr_decay_rate', type=float, default=0.9,
                         help='decay rate of learning rate')
     parser.add_argument('--lr_decay_patient_n_epochs', type=int, default=0,
-                        help='number of epochs to tolerate learning rate decay when validation perfomance is not improved')
+                        help='number of epochs to tolerate learning rate decay when validation performance is not improved')
     parser.add_argument('--early_stop_patient_n_epochs', type=int, default=5,
-                        help='number of epochs to tolerate stopping training when validation perfomance is not improved')
+                        help='number of epochs to tolerate stopping training when validation performance is not improved')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
                         help='epoch to stop soring utterances by length')
     parser.add_argument('--sort_short2long', type=strtobool, default=True,
@@ -253,11 +253,11 @@ def build_parser():
     parser.add_argument('--shuffle_bucket', type=strtobool, default=False,
                         help='gather the similar length of utterances and shuffle them')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
-                        help='first epoch to start evalaution')
+                        help='first epoch to start evaluation')
     parser.add_argument('--warmup_start_lr', type=float, default=0,
                         help='initial learning rate for learning rate warm up')
     parser.add_argument('--warmup_n_steps', type=int, default=0,
-                        help='number of steps to warm up learing rate')
+                        help='number of steps to warm up learning rate')
     parser.add_argument('--accum_grad_n_steps', type=int, default=1,
                         help='total number of steps to accumulate gradients')
     # initialization
@@ -320,9 +320,9 @@ def build_parser():
                         help='change mini-batch per task')
     parser.add_argument('--task_specific_layer', type=strtobool, default=False, nargs='?',
                         help='insert a task-specific encoder layer per task')
-    # foroward-backward
+    # forward-backward
     parser.add_argument('--bwd_weight', type=float, default=0.0,
-                        help='cross etnropy loss weight for the backward decoder in the main task')
+                        help='cross entropy loss weight for the backward decoder in the main task')
     # cold fusion, LM initialization
     parser.add_argument('--external_lm', type=str, default=False, nargs='?',
                         help='LM path')
@@ -368,7 +368,7 @@ def build_parser():
     parser.add_argument('--recog_word_alignments', type=str, default=[], nargs='+',
                         help='word alignment directory paths for the evaluation sets')
     parser.add_argument('--recog_first_n_utt', type=int, default=-1,
-                        help='recognize the first N utterances for quick evalaution')
+                        help='recognize the first N utterances for quick evaluation')
     parser.add_argument('--recog_model', type=str, default=False, nargs='+',
                         help='model path')
     parser.add_argument('--recog_model_bwd', type=str, default=False, nargs='?',
@@ -404,11 +404,11 @@ def build_parser():
     parser.add_argument('--recog_eos_threshold', type=float, default=1.5,
                         help='threshold for emitting a EOS token')
     parser.add_argument('--recog_lm_weight', type=float, default=0.0,
-                        help='weight of fisrt-path LM score')
+                        help='weight of first-path LM score')
     parser.add_argument('--recog_lm_second_weight', type=float, default=0.0,
                         help='weight of second-path LM score')
     parser.add_argument('--recog_lm_bwd_weight', type=float, default=0.0,
-                        help='weight of second-path bakward LM score. \
+                        help='weight of second-path backward LM score. \
                                   First-pass backward LM in case of synchronous bidirectional decoding.')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
                         help='weight of CTC score')

@@ -60,7 +60,7 @@ def pad_list(xs, pad_value=0., pad_left=False):
     """Convert list of Tensors to a single Tensor with padding.
 
     Args:
-        xs (list): A list of length `[B]`, which concains Tensors of size `[T, input_size]`
+        xs (list): A list of length `[B]`, which contains Tensors of size `[T, input_size]`
         pad_value (float):
         pad_left (bool):
     Returns:

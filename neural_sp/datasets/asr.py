@@ -161,7 +161,7 @@ class CustomDataLoader(DataLoader):
                 self.batch_sampler.df = self.batch_sampler.df.reset_index()
 
             self.reset()
-            # caclulate iteration again after shuffling
+            # calculate iteration again after shuffling
             self.batch_sampler.calculate_iteration()
             self.epoch += 1
 
@@ -379,7 +379,7 @@ class CustomDataset(Dataset):
                 lambda x: len([i for i in groups[x['session']]]), axis=1)
             df = df.sort_values(by=['n_utt_in_session'], ascending=short2long)
 
-            # NOTE: this is used only when LM is trained with seliarize: true
+            # NOTE: this is used only when LM is trained with serialize: true
             # if is_test and corpus == 'swbd':
             #     # Sort by onset
             #     df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
@@ -393,7 +393,7 @@ class CustomDataset(Dataset):
             elif sort_by == 'shuffle':
                 df = df.reindex(np.random.permutation(self.df.index))
 
-        # Fit word alignment to vocabylary
+        # Fit word alignment to vocabulary
         if word_alignment_dir is not None:
             alignment2boundary = WordAlignmentConverter(dict_path, wp_model)
             n_utts = len(df)
@@ -608,7 +608,7 @@ class CustomBatchSampler(BatchSampler):
             self._offset += len(indices)
             is_new_epoch = (len(self.indices_buckets) == 0)
 
-            # Shuffle uttrances in mini-batch
+            # Shuffle utterances in mini-batch
             indices = random.sample(indices, len(indices))
 
         else:
@@ -630,7 +630,7 @@ class CustomBatchSampler(BatchSampler):
                 self._offset = len(self.df)
                 is_new_epoch = True
 
-            # Shuffle uttrances in mini-batch
+            # Shuffle utterances in mini-batch
             indices = random.sample(indices, len(indices))
 
             for i in indices:

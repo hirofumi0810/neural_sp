@@ -4,7 +4,7 @@
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Utility funcitons for beam search decoding."""
+"""Utility functions for beam search decoding."""
 
 # import logging
 # import math

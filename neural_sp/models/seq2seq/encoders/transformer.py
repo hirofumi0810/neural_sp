@@ -45,7 +45,7 @@ class TransformerEncoder(EncoderBase):
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
-        ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        ffn_activation (str): nonlinear function for PositionwiseFeedForward
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
         last_proj_dim (int): dimension of the last projection layer
@@ -59,7 +59,7 @@ class TransformerEncoder(EncoderBase):
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channles in CNN blocks
+        conv_channels (int): number of channels in CNN blocks
         conv_kernel_sizes (list): size of kernels in CNN blocks
         conv_strides (list): number of strides in CNN blocks
         conv_poolings (list): size of poolings in CNN blocks
@@ -115,7 +115,7 @@ class TransformerEncoder(EncoderBase):
         self.scale = math.sqrt(d_model)
         self.unidir = 'uni' in enc_type
 
-        # for compatiblity
+        # for compatibility
         chunk_size_left = str(chunk_size_left)
         chunk_size_current = str(chunk_size_current)
         chunk_size_right = str(chunk_size_right)

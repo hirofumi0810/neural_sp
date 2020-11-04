@@ -21,7 +21,7 @@ from tqdm import tqdm
 from neural_sp.bin.args_asr import parse_args_train
 from neural_sp.bin.model_name import set_asr_model_name
 from neural_sp.bin.train_utils import (
-    compute_susampling_factor,
+    compute_subsampling_factor,
     load_checkpoint,
     load_config,
     save_config,
@@ -58,7 +58,7 @@ def main():
                 setattr(args, k, v)
     recog_params = vars(args)
 
-    args = compute_susampling_factor(args)
+    args = compute_subsampling_factor(args)
 
     # for multi-GPUs
     if args.n_gpus > 1:
@@ -327,7 +327,7 @@ def main():
                         scaled_loss.backward()
                 else:
                     loss.backward()
-                loss.detach()  # Trancate the graph
+                loss.detach()  # Truncate the graph
                 if accum_n_steps >= accum_grad_n_steps or is_new_epoch:
                     if args.clip_grad_norm > 0:
                         total_norm = torch.nn.utils.clip_grad_norm_(

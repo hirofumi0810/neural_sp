@@ -20,7 +20,7 @@ def init_like_transformer_xl(n, p, std):
     Args:
         n (str): parameter name
         p (Tensor): parameter
-        str (float): standard devication
+        str (float): standard deviation
 
     """
     if 'norm' in n and 'weight' in n:

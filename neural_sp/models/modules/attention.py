@@ -23,7 +23,7 @@ class AttentionMechanism(nn.Module):
             for attention weights
         sigmoid_smoothing (bool): replace the softmax layer for attention weights
             with the sigmoid function
-        conv_out_channels (int): number of channles of conv outputs.
+        conv_out_channels (int): number of channels of conv outputs.
             This is used for location-based attention.
         conv_kernel_size (int): size of kernel.
             This must be the odd number.
@@ -53,7 +53,7 @@ class AttentionMechanism(nn.Module):
 
         if atype == 'no':
             raise NotImplementedError
-            # NOTE: sequence-to-sequence without attetnion (use the last state as a context vector)
+            # NOTE: sequence-to-sequence without attention (use the last state as a context vector)
 
         elif atype in ['add', 'triggered_attention']:
             self.w_key = nn.Linear(kdim, adim)
@@ -125,7 +125,7 @@ class AttentionMechanism(nn.Module):
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
-            if self.atype in ['add', 'trigerred_attention',
+            if self.atype in ['add', 'triggered_attention',
                               'location', 'dot', 'luong_general']:
                 self.key = self.w_key(key)
             else:

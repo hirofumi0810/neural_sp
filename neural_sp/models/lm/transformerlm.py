@@ -112,7 +112,7 @@ class TransformerLM(LMBase):
                            help='nonlinear activation for the FFN layer')
         group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                            choices=['xavier_uniform', 'pytorch'],
-                           help='parameter initializatin')
+                           help='parameter initialization')
         group.add_argument('--dropout_att', type=float, default=0.1,
                            help='dropout probability for the attention weights')
         group.add_argument('--dropout_layer', type=float, default=0.0,

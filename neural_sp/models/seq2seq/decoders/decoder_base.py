@@ -151,7 +151,7 @@ class DecoderBase(ModelBase):
                 recog_lm_rev_weight (float): weight of second path backward LM score
             lm: firsh path LM
             lm_second: second path LM
-            lm_second_bwd: secoding path backward LM
+            lm_second_bwd: second path backward LM
         Returns:
             probs (FloatTensor): `[B, T, vocab]`
             topk_ids (LongTensor): `[B, T, topk]`

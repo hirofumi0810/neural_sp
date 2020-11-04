@@ -33,7 +33,7 @@ def main():
     with codecs.open(args.text, 'r', encoding="utf-8") as f:
         pbar = tqdm(total=len(codecs.open(args.text, 'r', encoding="utf-8").readlines()))
         for line in f:
-            # Remove succesive spaces
+            # Remove successive spaces
             line = re.sub(r'[\s]+', ' ', line.strip())
             utt_id = line.split(' ')[0]
             words = line.split(' ')[1:]
