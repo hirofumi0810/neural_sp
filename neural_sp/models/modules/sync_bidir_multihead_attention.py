@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -95,7 +92,7 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
     def forward(self, key_fwd, value_fwd, query_fwd,
                 key_bwd, value_bwd, query_bwd,
                 tgt_mask, identity_mask,
-                mode='', cache=True, trigger_point=None):
+                mode='', cache=True, trigger_points=None):
         """Forward pass.
 
         Args:
@@ -109,7 +106,7 @@ class SyncBidirMultiheadAttentionMechanism(nn.Module):
             identity_mask (ByteTensor): `[B, qlen, klen]`
             mode: dummy interface for MoChA/MMA
             cache (bool): cache key, value, and tgt_mask
-            trigger_point (IntTensor): dummy
+            trigger_points (IntTensor): dummy
         Returns:
             cv_fwd (FloatTensor): `[B, qlen, vdim]`
             cv_bwd (FloatTensor): `[B, qlen, vdim]`

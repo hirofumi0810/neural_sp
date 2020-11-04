@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -135,7 +132,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         if self.xl_like:
             _pos_embs = self.w_pos(pos_embs)
         else:
-            _pos_embs = self.w_value(pos_embs)
+            _pos_embs = self.w_value(pos_embs)  # NOTE: this is not w_value
         _pos_embs = _pos_embs.view(-1, self.n_heads, self.d_k)  # `[mlen+qlen, H, d_k]`
 
         # content-based attention term: (a) + (c)
@@ -143,6 +140,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
             assert self.xl_like
             AC = torch.einsum("bihd,bjhd->bijh", ((q + u_bias[None, None]), k))  # `[B, qlen, mlen+qlen, H]`
         else:
+            # A only accutually
             AC = torch.einsum("bihd,bjhd->bijh", (q, k))  # `[B, qlen, mlen+qlen, H]`
 
         # position-based attention term: (b) + (d)
@@ -150,6 +148,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
             assert self.xl_like
             BD = torch.einsum("bihd,jhd->bijh", ((q + v_bias[None, None]), _pos_embs))  # `[B, qlen, mlen+qlen, H]`
         else:
+            # B only accutually
             BD = torch.einsum("bihd,jhd->bijh", (q, _pos_embs))  # `[B, qlen, mlen+qlen, H]`
 
         # Compute positional attention efficiently

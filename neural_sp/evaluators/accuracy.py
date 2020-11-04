@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -39,7 +36,8 @@ def eval_accuracy(models, dataloader, batch_size=1, progressbar=False):
         bs = len(batch['ys'])
         _, observation = models[0](batch, task='all', is_eval=True)
         n_tokens_b = sum([len(y) for y in batch['ys']])
-        total_acc += observation['acc.att'] * n_tokens_b
+        _acc = observation.get('acc.att', observation.get('acc.att-sub1', 0))
+        total_acc += _acc * n_tokens_b
         n_tokens += n_tokens_b
 
         if progressbar:
