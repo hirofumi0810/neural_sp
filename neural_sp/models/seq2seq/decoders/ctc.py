@@ -14,10 +14,12 @@ import torch.nn as nn
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
-from neural_sp.models.torch_utils import make_pad_mask
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import tensor2np
+from neural_sp.models.torch_utils import (
+    make_pad_mask,
+    np2tensor,
+    pad_list,
+    tensor2np
+)
 
 random.seed(1)
 

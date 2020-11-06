@@ -12,17 +12,21 @@ import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
-from neural_sp.models.modules.positional_embedding import PositionalEncoding
-from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
+from neural_sp.models.modules.positional_embedding import (
+    PositionalEncoding,
+    XLPositionalEmbedding
+)
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
-from neural_sp.models.seq2seq.encoders.subsampling import AddSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import MaxpoolSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import (
+    AddSubsampler,
+    ConcatSubsampler,
+    Conv1dSubsampler,
+    DropSubsampler,
+    MaxpoolSubsampler
+)
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np

@@ -15,11 +15,12 @@ from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.ctc import CTC
 from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import repeat
-from neural_sp.models.torch_utils import tensor2np
-from neural_sp.models.torch_utils import tensor2scalar
+from neural_sp.models.torch_utils import (
+    np2tensor,
+    pad_list,
+    repeat,
+    tensor2scalar
+)
 
 random.seed(1)
 
@@ -205,7 +206,7 @@ class RNNTransducer(DecoderBase):
             else:
                 loss += loss_ctc * self.ctc_weight
 
-        # XE loss
+        # RNN-T loss
         if self.rnnt_weight > 0 and (task == 'all' or 'ctc' not in task):
             loss_transducer = self.forward_transducer(eouts, elens, ys)
             observation['loss_transducer'] = tensor2scalar(loss_transducer)
@@ -229,18 +230,18 @@ class RNNTransducer(DecoderBase):
 
         """
         # Append <sos> and <eos>
-        eos = eouts.new_zeros((1,), dtype=torch.int64).fill_(self.eos)
         _ys = [np2tensor(np.fromiter(y, dtype=np.int64), eouts.device) for y in ys]
         ylens = np2tensor(np.fromiter([y.size(0) for y in _ys], dtype=np.int32))
-        ys_in = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)
-        ys_out = pad_list(_ys, self.blank)
+        eos = eouts.new_zeros((1,), dtype=torch.int64).fill_(self.eos)
+        ys_in = pad_list([torch.cat([eos, y], dim=0) for y in _ys], self.pad)  # `[B, L+1]`
+        ys_out = pad_list(_ys, self.blank)  # `[B, L]`
 
         # Update prediction network
         ys_emb = self.dropout_emb(self.embed(ys_in))
         dout, _ = self.recurrency(ys_emb, None)
 
         # Compute output distribution
-        logits = self.joint(eouts, dout)
+        logits = self.joint(eouts, dout)  # `[B, T, L, vocab]`
 
         # Compute Transducer loss
         log_probs = torch.log_softmax(logits, dim=-1)
