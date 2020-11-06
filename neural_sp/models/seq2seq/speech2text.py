@@ -620,7 +620,7 @@ class Speech2Text(ModelBase):
 
     def decode(self, xs, params, idx2token, exclude_eos=False,
                refs_id=None, refs=None, utt_ids=None, speakers=None,
-               task='ys', ensemble_models=[]):
+               task='ys', ensemble_models=[], trigger_points=None, teacher_force=False):
         """Decode in the inference stage.
 
         Args:
@@ -643,6 +643,8 @@ class Speech2Text(ModelBase):
             speakers (list):
             task (str): ys* or ys_sub1* or ys_sub2*
             ensemble_models (list): list of Speech2Text classes
+            trigger_points (np.ndarray): `[B, L]`
+            teacher_force (bool): conduct teacher-forcing
         Returns:
             best_hyps_id (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
