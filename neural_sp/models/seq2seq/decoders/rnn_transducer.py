@@ -19,6 +19,7 @@ from neural_sp.models.torch_utils import (
     np2tensor,
     pad_list,
     repeat,
+    tensor2np,
     tensor2scalar
 )
 
