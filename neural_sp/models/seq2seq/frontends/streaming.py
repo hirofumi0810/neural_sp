@@ -88,8 +88,6 @@ class Streaming(object):
         end = j + (l + r) + self.conv_lookahead_n_frames
         lookback = start >= 0
         lookahead = end <= self.x_whole.shape[0] - 1
-        print(self.x_whole.shape[0])
-        print(j)
 
         return x_chunk, is_last_chunk, lookback, lookahead
 
