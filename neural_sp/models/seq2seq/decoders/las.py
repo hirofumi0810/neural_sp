@@ -12,9 +12,11 @@ import torch
 import torch.nn as nn
 
 from neural_sp.evaluators.edit_distance import compute_wer
-from neural_sp.models.criterion import cross_entropy_lsm
-from neural_sp.models.criterion import distillation
-from neural_sp.models.criterion import MBR
+from neural_sp.models.criterion import (
+    cross_entropy_lsm,
+    distillation,
+    MBR,
+)
 # from neural_sp.models.criterion import minimum_bayes_risk
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.lm.transformerlm import TransformerLM
@@ -25,17 +27,22 @@ from neural_sp.models.modules.initialization import init_with_uniform
 from neural_sp.models.modules.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
-from neural_sp.models.seq2seq.decoders.ctc import CTC
-from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
+from neural_sp.models.seq2seq.decoders.ctc import (
+    CTC,
+    CTCPrefixScore
+)
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
-from neural_sp.models.torch_utils import append_sos_eos
-from neural_sp.models.torch_utils import compute_accuracy
-from neural_sp.models.torch_utils import make_pad_mask
-from neural_sp.models.torch_utils import repeat
-from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import tensor2np
-from neural_sp.models.torch_utils import tensor2scalar
+from neural_sp.models.torch_utils import (
+    append_sos_eos,
+    compute_accuracy,
+    make_pad_mask,
+    repeat,
+    pad_list,
+    np2tensor,
+    tensor2np,
+    tensor2scalar,
+)
+
 
 random.seed(1)
 
@@ -93,7 +100,7 @@ class RNNDecoder(DecoderBase):
         mocha_1dconv (bool): 1dconv for MoChA
         mocha_decot_lookahead (int): lookahead frames of DeCoT for MoChA
         quantity_loss_weight (float): quantity loss weight for MoChA
-        latency_metric (str): latency metric
+        latency_metric (str): latency metric for MoChA
         latency_loss_weight (float): latency loss weight for MoChA
         gmm_attn_n_mixtures (int): number of mixtures for GMM attention
         replace_sos (bool): replace <sos> with special tokens
@@ -159,7 +166,7 @@ class RNNDecoder(DecoderBase):
         # for contextualization
         self.discourse_aware = discourse_aware
         self.dstate_prev = None
-        self.new_session = False
+        self._new_session = False
 
         self.prev_spk = ''
         self.dstates_final = None
@@ -634,10 +641,10 @@ class RNNDecoder(DecoderBase):
         # Initialization
         dstates = self.zero_state(bs)
         if self.training:
-            if self.discourse_aware and not self.new_session:
+            if self.discourse_aware and not self._new_session:
                 dstates = {'dstate': (self.dstate_prev['hxs'], self.dstate_prev['cxs'])}
             self.dstate_prev = {'hxs': [None] * bs, 'cxs': [None] * bs}
-            self.new_session = False
+            self._new_session = False
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         self.score.reset()
         aw, aws = None, []
@@ -891,10 +898,10 @@ class RNNDecoder(DecoderBase):
 
         # Initialization
         dstates = self.zero_state(bs)
-        if self.discourse_aware and not self.new_session:
+        if self.discourse_aware and not self._new_session:
             dstates = {'dstate': (self.dstate_prev['hxs'], self.dstate_prev['cxs'])}
         self.dstate_prev = {'hxs': [None] * bs, 'cxs': [None] * bs}
-        self.new_session = False
+        self._new_session = False
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         self.score.reset()
         aw = None

@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -130,13 +127,13 @@ def set_save_path(save_path):
     return save_path_new
 
 
-def load_checkpoint(checkpoint_path, model=None, optimizer=None, amp=None):
+def load_checkpoint(checkpoint_path, model=None, scheduler=None, amp=None):
     """Load checkpoint.
 
     Args:
         checkpoint_path (str): path to the saved model (model..epoch-*)
         model (torch.nn.Module):
-        optimizer (LRScheduler): optimizer wrapped by LRScheduler class
+        scheduler (LRScheduler): optimizer wrapped by LRScheduler class
         amp ():
     Returns:
         topk_list (list): list of (epoch, metric)
@@ -156,15 +153,15 @@ def load_checkpoint(checkpoint_path, model=None, optimizer=None, amp=None):
     if model is not None:
         model.load_state_dict(checkpoint['model_state_dict'])
 
-    # Restore optimizer
-    if optimizer is not None:
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    # Restore scheduler/optimizer
+    if scheduler is not None:
+        scheduler.load_state_dict(checkpoint['optimizer_state_dict'])
         # NOTE: fix this later
-        optimizer.optimizer.param_groups[0]['params'] = []
+        scheduler.optimizer.param_groups[0]['params'] = []
         for param_group in list(model.parameters()):
-            optimizer.optimizer.param_groups[0]['params'].append(param_group)
+            scheduler.optimizer.param_groups[0]['params'].append(param_group)
     else:
-        logger.warning('Optimizer is not loaded.')
+        logger.warning('Scheduler/Optimizer is not loaded.')
 
     # Restore apex
     if amp is not None:

@@ -16,11 +16,13 @@ from torch.nn.utils.rnn import pad_packed_sequence
 from neural_sp.models.modules.initialization import init_with_uniform
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
-from neural_sp.models.seq2seq.encoders.subsampling import AddSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import MaxpoolSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import (
+    AddSubsampler,
+    ConcatSubsampler,
+    Conv1dSubsampler,
+    DropSubsampler,
+    MaxpoolSubsampler
+)
 
 
 logger = logging.getLogger(__name__)
@@ -430,6 +432,7 @@ class RNNEncoder(EncoderBase):
                     torch.flip(xs_chunk, dims=[1]))[0], dims=[1])  # `[B, _N_l+_N_r, n_units]`
                 # fwd
                 if xs_chunk.size(1) <= _N_l:
+                    # last chunk
                     xs_chunk_fwd, self.hx_fwd[lth] = self.rnn[lth](xs_chunk,
                                                                    hx=self.hx_fwd[lth])
                 else:

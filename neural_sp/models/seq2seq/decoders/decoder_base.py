@@ -10,8 +10,10 @@ import torch
 import shutil
 
 from neural_sp.models.base import ModelBase
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import (
+    np2tensor,
+    pad_list
+)
 
 import matplotlib
 matplotlib.use('Agg')
@@ -29,7 +31,7 @@ class DecoderBase(ModelBase):
         logger.info('Overriding DecoderBase class.')
 
     def reset_session(self):
-        self.new_session = True
+        self._new_session = True
 
     def trigger_scheduled_sampling(self):
         self._ss_prob = getattr(self, 'ss_prob', 0)
@@ -232,9 +234,12 @@ class DecoderBase(ModelBase):
             ys_in = pad_list([y[:-1] for y in ys], -1)  # `[1, L-1]`
             ys_out = pad_list([y[1:] for y in ys], -1)  # `[1, L-1]`
 
-            lmout, lmstate, scores_lm = lm.predict(ys_in, None)
-            score_lm = sum([scores_lm[0, t, ys_out[0, t]] for t in range(ys_out.size(1))])
-            score_lm /= ys_out.size(1)
+            if ys_in.size(1) > 0:
+                _, _, scores_lm = lm.predict(ys_in, None)
+                score_lm = sum([scores_lm[0, t, ys_out[0, t]] for t in range(ys_out.size(1))])
+                score_lm /= ys_out.size(1)  # normalize by length
+            else:
+                score_lm = 0
 
             hyps[i]['score'] += score_lm * lm_weight
             hyps[i]['score_lm_' + tag] = score_lm

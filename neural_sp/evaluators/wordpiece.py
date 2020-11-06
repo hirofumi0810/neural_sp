@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -78,7 +75,8 @@ def eval_wordpiece(models, dataloader, recog_params, epoch,
                     refs_id=batch['ys'],
                     utt_ids=batch['utt_ids'],
                     speakers=batch['sessions' if dataloader.corpus == 'swbd' else 'speakers'],
-                    ensemble_models=models[1:] if len(models) > 1 else [])
+                    ensemble_models=models[1:] if len(models) > 1 else [],
+                    trigger_points=batch['trigger_points'])
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
@@ -173,7 +171,7 @@ def eval_wordpiece(models, dataloader, recog_params, epoch,
     logger.debug('CER (%s): %.2f %%' % (dataloader.set, cer))
     logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
 
-    logger.info('Streamablity (%s): %.2f %%' % (dataloader.set, n_streamable * 100))
+    logger.info('Streamability (%s): %.2f %%' % (dataloader.set, n_streamable * 100))
     logger.info('Quantity rate (%s): %.2f %%' % (dataloader.set, quantity_rate * 100))
     logger.info('Last success frame ratio (%s): %.2f %%' % (dataloader.set, last_success_frame_ratio))
 

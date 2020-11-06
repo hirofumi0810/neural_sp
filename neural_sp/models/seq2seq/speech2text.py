@@ -22,9 +22,11 @@ from neural_sp.models.seq2seq.frontends.input_noise import add_input_noise
 from neural_sp.models.seq2seq.frontends.sequence_summary import SequenceSummaryNetwork
 from neural_sp.models.seq2seq.frontends.spec_augment import SpecAugment
 from neural_sp.models.seq2seq.frontends.splicing import splice
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import tensor2np
-from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import (
+    np2tensor,
+    tensor2np,
+    pad_list
+)
 from neural_sp.utils import mkdir_join
 
 random.seed(1)
@@ -587,7 +589,7 @@ class Speech2Text(ModelBase):
                 if is_last_chunk:
                     break
 
-            # Global decoding over the last chunk
+            # Global decoding for tail chunks
             if not chunk_sync and len(streaming.eout_chunks) > 0:
                 eout = torch.cat(streaming.eout_chunks, dim=1)
                 elens = torch.IntTensor([eout.size(1)])
@@ -618,7 +620,7 @@ class Speech2Text(ModelBase):
 
     def decode(self, xs, params, idx2token, exclude_eos=False,
                refs_id=None, refs=None, utt_ids=None, speakers=None,
-               task='ys', ensemble_models=[]):
+               task='ys', ensemble_models=[], trigger_points=None, teacher_force=False):
         """Decode in the inference stage.
 
         Args:
@@ -641,6 +643,8 @@ class Speech2Text(ModelBase):
             speakers (list):
             task (str): ys* or ys_sub1* or ys_sub2*
             ensemble_models (list): list of Speech2Text classes
+            trigger_points (np.ndarray): `[B, L]`
+            teacher_force (bool): conduct teacher-forcing
         Returns:
             best_hyps_id (list): A list of length `[B]`, which contains arrays of size `[L]`
             aws (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
@@ -663,10 +667,7 @@ class Speech2Text(ModelBase):
         self.eval()
         with torch.no_grad():
             # Encode input features
-            if self.input_type == 'speech' and self.mtl_per_batch and 'bwd' in dir:
-                eout_dict = self.encode(xs, task)
-            else:
-                eout_dict = self.encode(xs, task)
+            eout_dict = self.encode(xs, task)
 
             # CTC
             if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
@@ -721,10 +722,7 @@ class Speech2Text(ModelBase):
                     ensmbl_eouts, ensmbl_elens, ensmbl_decs = [], [], []
                     if len(ensemble_models) > 0:
                         for i_e, model in enumerate(ensemble_models):
-                            if model.input_type == 'speech' and model.mtl_per_batch and 'bwd' in dir:
-                                enc_outs_e = model.encode(xs, task)
-                            else:
-                                enc_outs_e = model.encode(xs, task)
+                            enc_outs_e = model.encode(xs, task)
                             ensmbl_eouts += [enc_outs_e[task]['xs']]
                             ensmbl_elens += [enc_outs_e[task]['xlens']]
                             ensmbl_decs += [getattr(model, 'dec_' + dir)]

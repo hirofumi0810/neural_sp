@@ -16,6 +16,7 @@ from tqdm import tqdm
 from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.train_utils import (
+    compute_subsampling_factor,
     load_checkpoint,
     set_logger
 )
@@ -30,6 +31,7 @@ def main():
 
     # Load configuration
     args, recog_params, dir_name = parse_args_eval(sys.argv[1:])
+    args = compute_subsampling_factor(args)
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'align.log')):
@@ -89,7 +91,7 @@ def main():
                 with codecs.open(save_path_utt, 'w', encoding="utf-8") as f:
                     for i, tok in enumerate(tokens):
                         f.write('%s %d\n' % (tok, trigger_points[b, i]))
-                # TODO: consider down sampling
+                    f.write('%s %d\n' % ('<eos>', trigger_points[b, len(tokens)]))
 
             pbar.update(len(batch['xs']))
 

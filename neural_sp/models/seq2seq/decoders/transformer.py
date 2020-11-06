@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -20,14 +17,18 @@ from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.modules.positional_embedding import PositionalEncoding
 from neural_sp.models.modules.transformer import TransformerDecoderBlock
 from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
-from neural_sp.models.seq2seq.decoders.ctc import CTC
-from neural_sp.models.seq2seq.decoders.ctc import CTCPrefixScore
+from neural_sp.models.seq2seq.decoders.ctc import (
+    CTC,
+    CTCPrefixScore
+)
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
-from neural_sp.models.torch_utils import append_sos_eos
-from neural_sp.models.torch_utils import compute_accuracy
-from neural_sp.models.torch_utils import make_pad_mask
-from neural_sp.models.torch_utils import tensor2np
-from neural_sp.models.torch_utils import tensor2scalar
+from neural_sp.models.torch_utils import (
+    append_sos_eos,
+    compute_accuracy,
+    make_pad_mask,
+    tensor2np,
+    tensor2scalar
+)
 
 random.seed(1)
 

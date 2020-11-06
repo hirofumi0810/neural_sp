@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -10,6 +7,6 @@ import torch
 
 
 def add_input_noise(xs, std):
-    noise = torch.normal(torch.zeros(xs.shape[-1]), std).to(xs.device)
+    noise = torch.normal(xs.new_zeros(xs.shape[-1]), std)
     xs.data += noise
     return xs
