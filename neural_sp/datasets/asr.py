@@ -241,7 +241,6 @@ class CustomDataset(Dataset):
 
         self.is_test = is_test
         self.sort_by = sort_by
-        assert sort_by in ['input', 'output', 'shuffle', 'utt_id']
         # if shuffle_bucket:
         #     assert sort_by in ['input', 'output']
         if discourse_aware:
@@ -448,23 +447,6 @@ class CustomDataset(Dataset):
                 sessions (list): name of each session
 
         """
-        # external alignment
-        trigger_points = None
-        if self.word_alignment_dir is not None:
-            trigger_points = np.zeros(
-                (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
-            for b, i in enumerate(indices):
-                p = self.df['trigger_points'][i]
-                trigger_points[b, :len(p)] = p - 1  # 0-indexed
-                # NOTE: <eos> is not treated here
-            trigger_points //= self.subsample_factor
-        elif self.ctc_alignment_dir is not None:
-            trigger_points = np.zeros(
-                (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
-            for b, i in enumerate(indices):
-                p = self.df['trigger_points'][i]  # including <eos>
-                trigger_points[b, :len(p)] = p  # already 0-indexed
-
         # inputs
         xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in indices]
         xlens = [self.df['xlen'][i] for i in indices]
@@ -473,6 +455,26 @@ class CustomDataset(Dataset):
         sessions = [self.df['session'][i] for i in indices]
         texts = [self.df['text'][i] for i in indices]
         feat_paths = [self.df['feat_path'][i] for i in indices]
+
+        # external alignment
+        trigger_points = None
+        if self.word_alignment_dir is not None:
+            trigger_points = np.zeros(
+                (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
+            for b, i in enumerate(indices):
+                p = self.df['trigger_points'][i]
+                trigger_points[b, :len(p)] = p - 1  # 0-indexed
+                # speacial treatment for the last token
+                trigger_points[b, len(p) - 1] = min(trigger_points[b, len(p) - 1], xlens[b] - 1)
+                # NOTE: <eos> is not treated here
+                assert trigger_points[b].max() <= xlens[b] - 1, (p, xlens[b], utt_ids[b])
+            trigger_points //= self.subsample_factor
+        elif self.ctc_alignment_dir is not None:
+            trigger_points = np.zeros(
+                (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
+            for b, i in enumerate(indices):
+                p = self.df['trigger_points'][i]  # including <eos>
+                trigger_points[b, :len(p)] = p  # already 0-indexed
 
         # main outputs
         if self.is_test:
