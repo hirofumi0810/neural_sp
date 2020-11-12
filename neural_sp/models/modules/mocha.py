@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -12,14 +9,13 @@
 import logging
 import math
 import numpy as np
-import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_sp.models.modules.causal_conv import CausalConv1d
+from neural_sp.models.modules.headdrop import headdrop
 
-random.seed(1)
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +95,8 @@ class MonotonicEnergy(nn.Module):
         self.key = None
         self.mask = None
 
-    def forward(self, key, query, mask, cache=False, boundary_leftmost=0):
+    def forward(self, key, query, mask, cache=False,
+                boundary_leftmost=0):
         """Compute monotonic energy.
 
         Args:
@@ -107,6 +104,7 @@ class MonotonicEnergy(nn.Module):
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
+            boundary_leftmost (int): leftmost boundary position
         Returns:
             e (FloatTensor): `[B, H_ma, qlen, klen]`
 
@@ -216,6 +214,8 @@ class ChunkEnergy(nn.Module):
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
+            boundary_leftmost (int): leftmost boundary position
+            boundary_rightmost (int): rightmost boundary position
         Returns:
             e (FloatTensor): `[B, H_ca, qlen, klen]`
 
@@ -616,30 +616,6 @@ class MoChA(nn.Module):
                 (beta.size(), (bs, self.n_heads_ma * self.n_heads_ca, qlen, klen))
 
         return cv, alpha, beta, p_choose
-
-
-def headdrop(alpha, n_heads_mono, dropout):
-    """HeadDrop regularization.
-
-        Args:
-            alpha (FloatTensor): `[B, H_ma, qlen, klen]`
-            n_heads_mono (int): number of monotonic attention heads
-            dropout (float): HeadDrop probability
-        Returns:
-            alpha (FloatTensor): `[B, H_ma, qlen, klen]`
-
-    """
-    n_effective_heads = n_heads_mono
-    head_mask = alpha.new_ones(alpha.size()).byte()
-    for h in range(n_heads_mono):
-        if random.random() < dropout:
-            head_mask[:, h] = 0
-            n_effective_heads -= 1
-    alpha = alpha.masked_fill_(head_mask == 0, 0)
-    # Normalization
-    if n_effective_heads > 0:
-        alpha = alpha * (n_heads_mono / n_effective_heads)
-    return alpha
 
 
 def add_gaussian_noise(xs, std):
