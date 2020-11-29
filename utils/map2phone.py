@@ -16,6 +16,8 @@ parser.add_argument('--text', type=str,
                     help='text file')
 parser.add_argument('--lexicon', type=str, default='',
                     help='path to lexicon')
+parser.add_argument('--noise', type=str, default='NSN', nargs='?',
+                    help='path to lexicon')
 args = parser.parse_args()
 
 
@@ -42,7 +44,10 @@ def main():
 
             phones = []
             for w in words:
-                phones += word2phone[w].split()
+                if w in word2phone:
+                    phones += word2phone[w].split()
+                else:
+                    phones += [args.noise]
             text_phone = ' '.join(phones)
 
             print('%s %s' % (utt_id, text_phone))
