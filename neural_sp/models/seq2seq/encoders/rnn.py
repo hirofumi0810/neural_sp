@@ -182,18 +182,18 @@ class RNNEncoder(EncoderBase):
 
                 # Task specific layer
                 if lth == n_layers_sub1 - 1 and task_specific_layer:
-                    self.rnn_sub1 = rnn_i(self._odim, n_units, 1,
-                                          batch_first=True,
-                                          bidirectional=self.bidirectional)
+                    self.layer_sub1 = nn.Linear(self._odim, n_units)
+                    self._odim_sub1 = n_units
                     if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                         self.bridge_sub1 = nn.Linear(n_units, last_proj_dim)
+                        self._odim_sub1 = last_proj_dim
                 if lth == n_layers_sub2 - 1 and task_specific_layer:
                     assert not self.lc_bidir
-                    self.rnn_sub2 = rnn_i(self._odim, n_units, 1,
-                                          batch_first=True,
-                                          bidirectional=self.bidirectional)
+                    self.layer_sub2 = nn.Linear(self._odim, n_units)
+                    self._odim_sub2 = n_units
                     if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                         self.bridge_sub2 = nn.Linear(n_units, last_proj_dim)
+                        self._odim_sub2 = last_proj_dim
 
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge = nn.Linear(self._odim, last_proj_dim)
@@ -227,7 +227,7 @@ class RNNEncoder(EncoderBase):
         group.add_argument('--bidirectional_sum_fwd_bwd', type=strtobool, default=False,
                            help='sum forward and backward RNN outputs for dimension reduction')
         # streaming
-        group.add_argument('--lc_chunk_size_left', type=str, default="0",
+        group.add_argument('--lc_chunk_size_left', type=str, default="-1",
                            help='left chunk size for latency-controlled RNN encoder')
         group.add_argument('--lc_chunk_size_right', type=str, default="0",
                            help='right chunk size for latency-controlled RNN encoder')
@@ -285,6 +285,7 @@ class RNNEncoder(EncoderBase):
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
         # Sort by lengths in the descending order for pack_padded_sequence
+        perm_ids_unsort = None
         if not self.lc_bidir:
             xlens, perm_ids = torch.IntTensor(xlens).sort(0, descending=True)
             xs = xs[perm_ids]
@@ -355,7 +356,7 @@ class RNNEncoder(EncoderBase):
             xs = self.bridge(xs)
 
         if task in ['all', 'ys']:
-            if not self.lc_bidir:
+            if perm_ids_unsort is not None:
                 xs = xs[perm_ids_unsort]
                 xlens = xlens[perm_ids_unsort]
             eouts['ys']['xs'], eouts['ys']['xlens'] = xs, xlens
@@ -379,7 +380,7 @@ class RNNEncoder(EncoderBase):
             self.rnn[lth].flatten_parameters()  # for multi-GPUs
             self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
             xs_bwd = torch.flip(self.rnn_bwd[lth](torch.flip(xs, dims=[1]))[0], dims=[1])
-            xs_fwd, _ = self.rnn[lth](xs)
+            xs_fwd, self.hx_fwd[lth] = self.rnn[lth](xs, hx=self.hx_fwd[lth])
             if self.bidir_sum:
                 xs = xs_fwd + xs_bwd
             else:
@@ -388,9 +389,7 @@ class RNNEncoder(EncoderBase):
 
             # Pick up outputs in the sub task before the projection layer
             if lth == self.n_layers_sub1 - 1:
-                xs_sub1 = xs.clone()
-                if self.bridge_sub1 is not None:
-                    xs_sub1 = self.bridge_sub1(xs_sub1)
+                xs_sub1, xlens_sub1 = self.sub_module(xs, xlens, None, 'sub1')
                 if task == 'ys_sub1':
                     return None, xlens, xs_sub1
 
@@ -450,11 +449,7 @@ class RNNEncoder(EncoderBase):
 
                 # Pick up outputs in the sub task before the projection layer
                 if lth == self.n_layers_sub1 - 1:
-                    xs_chunk_sub1 = xs_chunk.clone()
-                    if self.bridge_sub1 is not None:
-                        xs_chunk_sub1 = self.bridge_sub1(xs_chunk_sub1)
-                    if task == 'ys_sub1':
-                        return None, xlens, xs_chunk_sub1
+                    xs_chunks_sub1.append(xs_chunk.clone()[:, :_N_l])
 
                 # Projection layer
                 if self.proj is not None and lth != self.n_layers - 1:
@@ -467,8 +462,6 @@ class RNNEncoder(EncoderBase):
                     _N_l = _N_l // self.subsample[lth].factor
 
             xs_chunks.append(xs_chunk[:, :_N_l])
-            if self.n_layers_sub1 > 0:
-                xs_chunks_sub1.append(xs_chunk_sub1[:, :_N_l])
 
             if streaming:
                 break
@@ -476,23 +469,24 @@ class RNNEncoder(EncoderBase):
         xs = torch.cat(xs_chunks, dim=1)
         if self.n_layers_sub1 > 0:
             xs_sub1 = torch.cat(xs_chunks_sub1, dim=1)
+            xs_sub1, xlens_sub1 = self.sub_module(xs_sub1, xlens, None, 'sub1')
         else:
             xs_sub1 = None
 
         return xs, xlens, xs_sub1
 
     def sub_module(self, xs, xlens, perm_ids_unsort, module='sub1'):
-        assert not self.lc_bidir
         if self.task_specific_layer:
-            getattr(self, 'rnn_' + module).flatten_parameters()  # for multi-GPUs
-            xs_sub, _ = self.padding(xs, xlens, getattr(self, 'rnn_' + module))
-            xs_sub = self.dropout(xs_sub)
+            xs_sub = self.dropout(torch.relu(getattr(self, 'layer_' + module)(xs)))
         else:
             xs_sub = xs.clone()
         if getattr(self, 'bridge_' + module) is not None:
             xs_sub = getattr(self, 'bridge_' + module)(xs_sub)
-        xs_sub = xs_sub[perm_ids_unsort]
-        xlens_sub = xlens[perm_ids_unsort]
+        if perm_ids_unsort is not None:
+            xs_sub = xs_sub[perm_ids_unsort]
+            xlens_sub = xlens[perm_ids_unsort]
+        else:
+            xlens_sub = xlens.clone()
         return xs_sub, xlens_sub
 
 
