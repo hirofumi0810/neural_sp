@@ -30,13 +30,13 @@ conf2=
 asr_init=
 
 ### path to save the model
-model=/n/work1/inaguma/results/swbd
+model=/n/work2/inaguma/results/swbd
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/swbd
+export data=/n/work2/inaguma/corpus/swbd
 
 ### path to original data
 SWBD_AUDIOPATH=/n/rd21/corpora_7/swb
@@ -125,7 +125,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
@@ -138,7 +138,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
         done
 
         # Use the first 4k sentences as dev set.
-        utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/${dev_set} || exit 1;  # 5hr 6min
+        utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/dev || exit 1;  # 5hr 6min
         n=$[$(cat ${data}/train_swbd/segments | wc -l) - 4000]
         utils/subset_data_dir.sh --last ${data}/train_swbd ${n} ${data}/${train_set}.tmp || exit 1;
 
@@ -251,8 +251,9 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
         echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
         echo "<pad> 3" >> ${dict_sub1}
         offset=$(cat ${dict_sub1} | wc -l)
-        map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt
-        map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt
+        map2phone.py --text ${data}/${train_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise nsn > ${data}/${train_set}/text.phone
+        map2phone.py --text ${data}/${dev_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise nsn > ${data}/${dev_set}/text.phone
+        map2phone.py --text ${data}/${test_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise nsn > ${data}/${test_set}/text.phone
         text2dict.py ${data}/${train_set}/text.phone --unit ${unit_sub1} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
     else
@@ -271,12 +272,12 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     fi
     for x in ${dev_set} ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
-        if [ ${unit_sub1} = phone ] && [ ${x} != ${test_set} ]; then
+        if [ ${unit_sub1} = phone ]; then
             make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --text ${data}/${x}/text.phone  \
-                ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
+                ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
         else
             make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --wp_model ${wp_model_sub1} \
-                ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
+                ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
         fi
     done
 

@@ -19,19 +19,16 @@ stdout=false
 unit=wp      # word/wp/char/word_char
 vocab=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
+unit_sub1=char
+wp_type_sub1=bpe  # bpe/unigram (for wordpiece)
+vocab_sub1=
 
 #########################
 # ASR configuration
 #########################
-conf=conf/asr/blstm_las.yaml
+conf=conf/asr/blstm_las_2mtl.yaml
 conf2=
 asr_init=
-external_lm=
-
-#########################
-# LM configuration
-#########################
-lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
 model=/n/work2/inaguma/results/tedlium2
@@ -65,11 +62,19 @@ train_set=train_sp
 dev_set=dev_sp
 test_set="test_sp"
 
+# main
 if [ ${unit} = char ]; then
     vocab=
 fi
 if [ ${unit} != wp ]; then
     wp_type=
+fi
+# sub1
+if [ ${unit_sub1} = char ]; then
+    vocab_sub1=
+fi
+if [ ${unit_sub1} != wp ]; then
+    wp_type_sub1=
 fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0 ]; then
@@ -123,21 +128,17 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1
     touch ${data}/.done_stage_1_sptrue && echo "Finish feature extranction (stage: 1)."
 fi
 
+# main
 dict=${data}/dict/${train_set}_${unit}${wp_type}${vocab}.txt; mkdir -p ${data}/dict
 wp_model=${data}/dict/${train_set}_${wp_type}${vocab}
 if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2_${unit}${wp_type}${vocab}_sptrue ]; then
     echo ============================================================================
-    echo "                      Dataset preparation (stage:2)                        "
+    echo "                      Dataset preparation (stage:2, main)                  "
     echo ============================================================================
 
-    if [ ${unit} = wp ]; then
-        make_vocab.sh --unit ${unit} --speed_perturb true \
-            --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
-            ${data} ${dict} ${data}/${train_set}/text || exit 1;
-    else
-        make_vocab.sh --unit ${unit} --speed_perturb true \
-            ${data} ${dict} ${data}/${train_set}/text || exit 1;
-    fi
+    make_vocab.sh --unit ${unit} --speed_perturb true \
+        --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
+        ${data} ${dict} ${data}/${train_set}/text || exit 1;
 
     # Compute OOV rate
     if [ ${unit} = word ]; then
@@ -164,50 +165,46 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     touch ${data}/.done_stage_2_${unit}${wp_type}${vocab}_sptrue && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
-mkdir -p ${model}
-if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
+# sub1
+dict_sub1=${data}/dict/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.txt
+wp_model_sub1=${data}/dict/${train_set}_${wp_type_sub1}${vocab_sub1}
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2_${unit_sub1}${wp_type_sub1}${vocab_sub1}_sptrue ]; then
     echo ============================================================================
-    echo "                        LM Training stage (stage:3)                       "
+    echo "                      Dataset preparation (stage:2, sub1)                  "
     echo ============================================================================
 
-    # Extend dictionary for the external text data
-    if [ ! -e ${data}/.done_stage_3_${unit}${wp_type}${vocab} ]; then
-        echo "Making dataset tsv files for LM ..."
-        mkdir -p ${data}/dataset_lm
-
-        gunzip -c ${db}/TEDLIUM_release2/LM/*.en.gz | sed 's/ <\/s>//g' | local/join_suffix.py | uniq | awk '{print "unpaired-text-"NR, $0}' > ${data}/dataset_lm/text
-        # NOTE: remove exactly the same lines
-        # gunzip -c ${db}/TEDLIUM_release2/LM/*.en.gz | sed 's/ <\/s>//g' | local/join_suffix.py | awk '{print "unpaired-text-"NR, $0}' > ${data}/dataset_lm/text
-
-        update_dataset.sh --unit ${unit} --wp_model ${wp_model} \
-            ${data}/dataset_lm/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
-            > ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-        cp ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
-            ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-        cp ${data}/dataset/${test_set}_${unit}${wp_type}${vocab}.tsv \
-            ${data}/dataset_lm/${test_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
-
-        touch ${data}/.done_stage_3_${unit}${wp_type}${vocab} && echo "Finish creating dataset for LM (stage: 3)."
+    if [ ${unit_sub1} = phone ]; then
+        echo "Making a dictionary..."
+        echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
+        echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
+        echo "<pad> 3" >> ${dict_sub1}
+        offset=$(cat ${dict_sub1} | wc -l)
+        map2phone.py --text ${data}/${train_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise NSN > ${data}/${train_set}/text.phone
+        map2phone.py --text ${data}/${dev_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise NSN > ${data}/${dev_set}/text.phone
+        map2phone.py --text ${data}/${test_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise NSN > ${data}/${test_set}/text.phone
+        text2dict.py ${data}/${train_set}/text.phone --unit ${unit_sub1} --speed_perturb true | \
+            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
+    else
+        make_vocab.sh --unit ${unit_sub1} --speed_perturb true \
+            ${data} ${dict_sub1} ${data}/${train_set}/text || exit 1;
     fi
 
-    CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/train.py \
-        --corpus tedlium2 \
-        --config ${lm_conf} \
-        --n_gpus ${n_gpus} \
-        --cudnn_benchmark ${benchmark} \
-        --train_set ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv \
-        --dev_set ${data}/dataset_lm/${dev_set}_${unit}${wp_type}${vocab}.tsv \
-        --eval_sets ${data}/dataset_lm/${test_set}_${unit}${wp_type}${vocab}.tsv \
-        --unit ${unit} \
-        --dict ${dict} \
-        --wp_model ${wp_model}.model \
-        --model_save_dir ${model}/lm \
-        --stdout ${stdout} \
-        --resume ${lm_resume} || exit 1;
+    echo "Making dataset tsv files for ASR ..."
+    for x in ${train_set} ${dev_set} ${test_set}; do
+        dump_dir=${data}/dump/${x}
+        if [ ${unit_sub1} = phone ]; then
+            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --text ${data}/${x}/text.phone \
+                ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
+        else
+            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
+                ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
+        fi
+    done
 
-    echo "Finish LM training (stage: 3)."
+    touch ${data}/.done_stage_2_${unit_sub1}${wp_type_sub1}${vocab_sub1}_sptrue && echo "Finish creating dataset for ASR (stage: 2)."
 fi
 
+mkdir -p ${model}
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo ============================================================================
     echo "                       ASR Training stage (stage:4)                        "
@@ -220,14 +217,18 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --n_gpus ${n_gpus} \
         --cudnn_benchmark ${benchmark} \
         --train_set ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
+        --train_set_sub1 ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
         --dev_set ${data}/dataset/${dev_set}_${unit}${wp_type}${vocab}.tsv \
+        --dev_set_sub1 ${data}/dataset/${dev_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv \
         --eval_sets ${data}/dataset/${test_set}_${unit}${wp_type}${vocab}.tsv \
         --unit ${unit} \
+        --unit_sub1 ${unit_sub1} \
         --dict ${dict} \
+        --dict_sub1 ${dict_sub1} \
         --wp_model ${wp_model}.model \
+        --wp_model_sub1 ${wp_model_sub1}.model \
         --model_save_dir ${model}/asr \
         --asr_init ${asr_init} \
-        --external_lm ${external_lm} \
         --stdout ${stdout} \
         --resume ${resume} || exit 1;
 

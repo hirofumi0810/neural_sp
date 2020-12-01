@@ -128,10 +128,12 @@ def make_args(**kwargs):
         ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1", 'bidir_sum_fwd_bwd': True,
           'chunk_size_left': "40", 'chunk_size_right': "40"}),
         # Multi-task
-        ({'enc_type': 'blstm', 'n_layers_sub1': 3}),
-        ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'chunk_size_right': "40"}),
-        ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2}),
-        ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2, 'task_specific_layer': True}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'task_specific_layer': True}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'chunk_size_right': "40"}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'chunk_size_right': "40", 'task_specific_layer': True}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'n_layers_sub2': 1}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'n_layers_sub2': 1, 'task_specific_layer': True}),
     ]
 )
 def test_forward(args):
