@@ -161,6 +161,21 @@ class RNNEncoder(EncoderBase):
                                        bidirectional=self.bidirectional)]
                 self._odim = n_units if bidir_sum_fwd_bwd else n_units * self.n_dirs
 
+                # Task specific layer
+                if lth == n_layers_sub1 - 1 and task_specific_layer:
+                    self.layer_sub1 = nn.Linear(self._odim, n_units)
+                    self._odim_sub1 = n_units
+                    if last_proj_dim > 0 and last_proj_dim != self.output_dim:
+                        self.bridge_sub1 = nn.Linear(n_units, last_proj_dim)
+                        self._odim_sub1 = last_proj_dim
+                if lth == n_layers_sub2 - 1 and task_specific_layer:
+                    assert not self.lc_bidir
+                    self.layer_sub2 = nn.Linear(self._odim, n_units)
+                    self._odim_sub2 = n_units
+                    if last_proj_dim > 0 and last_proj_dim != self.output_dim:
+                        self.bridge_sub2 = nn.Linear(n_units, last_proj_dim)
+                        self._odim_sub2 = last_proj_dim
+
                 # Projection layer
                 if self.proj is not None:
                     if lth != n_layers - 1:
@@ -179,21 +194,6 @@ class RNNEncoder(EncoderBase):
                         self.subsample += [Conv1dSubsampler(subsamples[lth], self._odim)]
                     elif subsample_type == 'add':
                         self.subsample += [AddSubsampler(subsamples[lth])]
-
-                # Task specific layer
-                if lth == n_layers_sub1 - 1 and task_specific_layer:
-                    self.layer_sub1 = nn.Linear(self._odim, n_units)
-                    self._odim_sub1 = n_units
-                    if last_proj_dim > 0 and last_proj_dim != self.output_dim:
-                        self.bridge_sub1 = nn.Linear(n_units, last_proj_dim)
-                        self._odim_sub1 = last_proj_dim
-                if lth == n_layers_sub2 - 1 and task_specific_layer:
-                    assert not self.lc_bidir
-                    self.layer_sub2 = nn.Linear(self._odim, n_units)
-                    self._odim_sub2 = n_units
-                    if last_proj_dim > 0 and last_proj_dim != self.output_dim:
-                        self.bridge_sub2 = nn.Linear(n_units, last_proj_dim)
-                        self._odim_sub2 = last_proj_dim
 
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge = nn.Linear(self._odim, last_proj_dim)

@@ -27,6 +27,7 @@ dec_type: lstm
 dec_n_units: 16
 dec_n_projs: 8
 dec_n_layers: 1
+dec_n_layers_sub1: 1
 dec_bottleneck_dim: 16
 emb_dim: 16
 tie_embedding: false
