@@ -30,7 +30,10 @@ def parse_args_train(input_args):
     # register module specific arguments
     parser = register_args_encoder(parser, user_args)
     user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
-    parser = register_args_decoder(parser, user_args)
+    parser = register_args_decoder(parser, user_args, user_args.dec_type)
+    if user_args.dec_n_layers_sub1 > 0 and user_args.dec_type != user_args.dec_type_sub1:
+        user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
+        parser = register_args_decoder(parser, user_args, user_args.dec_type_sub1)
     user_args = parser.parse_args()
     return user_args
 
@@ -48,7 +51,10 @@ def parse_args_eval(input_args):
     parser = register_args_encoder(parser, user_args)
     user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
     user_args.dec_type = conf_train['dec_type']  # to avoid overlap
-    parser = register_args_decoder(parser, user_args)
+    parser = register_args_decoder(parser, user_args, user_args.dec_type)
+    if user_args.dec_n_layers_sub1 > 0 and user_args.dec_type != user_args.dec_type_sub1:
+        user_args, _ = parser.parse_known_args(input_args)  # to avoid args conflict
+        parser = register_args_decoder(parser, user_args, user_args.dec_type_sub1)
     user_args = parser.parse_args()
     # NOTE: If new args are registered after training the model, the default value will be set
 
@@ -76,12 +82,12 @@ def register_args_encoder(parser, args):
     return parser
 
 
-def register_args_decoder(parser, args):
-    if args.dec_type in ['transformer']:
+def register_args_decoder(parser, args, dec_type):
+    if dec_type in ['transformer']:
         from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder as module
-    elif args.dec_type in ['lstm_transducer', 'gru_transducer']:
+    elif dec_type in ['lstm_transducer', 'gru_transducer']:
         from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer as module
-    elif args.dec_type == 'asg':
+    elif dec_type == 'asg':
         from neural_sp.models.seq2seq.decoders.asg import ASGDecoder as module
     else:
         from neural_sp.models.seq2seq.decoders.las import RNNDecoder as module
@@ -204,8 +210,18 @@ def build_parser():
     parser.add_argument('--dec_type', type=str, default='lstm',
                         choices=DECODER_TYPES,
                         help='type of the decoder')
+    parser.add_argument('--dec_type_sub1', type=str, default='lstm',
+                        choices=DECODER_TYPES,
+                        help='type of the decoder in the 1st auxiliary task')
+    parser.add_argument('--dec_type_sub2', type=str, default='lstm',
+                        choices=DECODER_TYPES,
+                        help='type of the decoder in the 2nd auxiliary task')
     parser.add_argument('--dec_n_layers', type=int, default=1,
                         help='number of decoder RNN layers')
+    parser.add_argument('--dec_n_layers_sub1', type=int, default=0,
+                        help='number of decoder RNN layers in the 1st auxiliary task')
+    parser.add_argument('--dec_n_layers_sub2', type=int, default=0,
+                        help='number of decoder RNN layers in the 2nd auxiliary task')
     parser.add_argument('--tie_embedding', type=strtobool, default=False, nargs='?',
                         help='tie weights between an embedding matrix and a linear layer before the softmax layer')
     parser.add_argument('--ctc_fc_list', type=str, default="", nargs='?',
