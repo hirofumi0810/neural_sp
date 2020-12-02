@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_subsampling_factor(args):
-    """Register subsample factor to args.
+    """Register subsample factors to args.
 
         Args:
             args (Namespace):
@@ -30,21 +30,17 @@ def compute_subsampling_factor(args):
     args.subsample_factor = 1
     args.subsample_factor_sub1 = 1
     args.subsample_factor_sub2 = 1
-    subsample = [int(s) for s in args.subsample.split('_')]
     if 'conv' in args.enc_type and args.conv_poolings:
         for p in args.conv_poolings.split('_'):
             args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
-    args.subsample_factor *= int(np.prod(subsample))
+    subsample = [int(s) for s in args.subsample.split('_')]
     if args.train_set_sub1:
-        if 'conv' in args.enc_type and args.conv_poolings:
-            args.subsample_factor_sub1 = args.subsample_factor * \
-                int(np.prod(subsample[:args.enc_n_layers_sub1 - 1]))
-        args.subsample_factor_sub1 *= int(np.prod(subsample[:args.enc_n_layers_sub1]))
+        args.subsample_factor_sub1 = args.subsample_factor * \
+            int(np.prod(subsample[:args.enc_n_layers_sub1]))
     if args.train_set_sub2:
-        if 'conv' in args.enc_type and args.conv_poolings:
-            args.subsample_factor_sub2 = args.subsample_factor * \
-                int(np.prod(subsample[:args.enc_n_layers_sub2 - 1]))
-        args.subsample_factor_sub2 *= int(np.prod(subsample[:args.enc_n_layers_sub2]))
+        args.subsample_factor_sub2 = args.subsample_factor * \
+            int(np.prod(subsample[:args.enc_n_layers_sub2]))
+    args.subsample_factor *= int(np.prod(subsample))
 
     return args
 
