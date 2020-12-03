@@ -19,7 +19,7 @@ stdout=false
 unit=wp      # word/wp/char/word_char
 vocab=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
-unit_sub1=char
+unit_sub1=phone
 wp_type_sub1=bpe  # bpe/unigram (for wordpiece)
 vocab_sub1=
 
@@ -136,9 +136,15 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     echo "                      Dataset preparation (stage:2, main)                  "
     echo ============================================================================
 
-    make_vocab.sh --unit ${unit} --speed_perturb true \
-        --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
-        ${data} ${dict} ${data}/${train_set}/text || exit 1;
+    if [ ${unit} = wp ]; then
+        make_vocab.sh --unit ${unit} --speed_perturb true \
+            --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
+            ${data} ${dict} ${data}/${train_set}/text || exit 1;
+    else
+        # character
+        make_vocab.sh --unit ${unit} --speed_perturb true \
+            ${data} ${dict} ${data}/${train_set}/text || exit 1;
+    fi
 
     # Compute OOV rate
     if [ ${unit} = word ]; then
@@ -179,14 +185,16 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
         echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
         echo "<pad> 3" >> ${dict_sub1}
         offset=$(cat ${dict_sub1} | wc -l)
-        map2phone.py --text ${data}/${train_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise NSN > ${data}/${train_set}/text.phone
-        map2phone.py --text ${data}/${dev_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise NSN > ${data}/${dev_set}/text.phone
-        map2phone.py --text ${data}/${test_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise NSN > ${data}/${test_set}/text.phone
+        lexicon=${data}/local/dict_nosp/lexicon.txt
+        map2phone.py --text ${data}/${train_set}/text --lexicon ${lexicon} --noise NSN > ${data}/${train_set}/text.phone
+        map2phone.py --text ${data}/${dev_set}/text --lexicon ${lexicon} --noise NSN > ${data}/${dev_set}/text.phone
+        map2phone.py --text ${data}/${test_set}/text --lexicon ${lexicon} --noise NSN > ${data}/${test_set}/text.phone
         text2dict.py ${data}/${train_set}/text.phone --unit ${unit_sub1} --speed_perturb true | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
     else
         make_vocab.sh --unit ${unit_sub1} --speed_perturb true \
             ${data} ${dict_sub1} ${data}/${train_set}/text || exit 1;
+        # NOTE: bpe is not supported here
     fi
 
     echo "Making dataset tsv files for ASR ..."

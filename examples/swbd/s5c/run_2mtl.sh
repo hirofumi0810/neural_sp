@@ -251,9 +251,10 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
         echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
         echo "<pad> 3" >> ${dict_sub1}
         offset=$(cat ${dict_sub1} | wc -l)
-        map2phone.py --text ${data}/${train_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise nsn > ${data}/${train_set}/text.phone
-        map2phone.py --text ${data}/${dev_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise nsn > ${data}/${dev_set}/text.phone
-        map2phone.py --text ${data}/${test_set}/text --lexicon ${data}/local/dict_nosp/lexicon.txt --noise nsn > ${data}/${test_set}/text.phone
+        lexicon=${data}/local/dict_nosp/lexicon.txt
+        map2phone.py --text ${data}/${train_set}/text --lexicon ${lexicon} --noise nsn > ${data}/${train_set}/text.phone
+        map2phone.py --text ${data}/${dev_set}/text --lexicon ${lexicon} --noise nsn > ${data}/${dev_set}/text.phone
+        map2phone.py --text ${data}/${test_set}/text --lexicon ${lexicon} --noise nsn > ${data}/${test_set}/text.phone
         text2dict.py ${data}/${train_set}/text.phone --unit ${unit_sub1} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
             awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
     else

@@ -33,14 +33,14 @@ external_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work1/inaguma/results/librispeech
+model=/n/work2/inaguma/results/librispeech
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/librispeech
+export data=/n/work2/inaguma/corpus/librispeech
 
 ### path to download data
 data_download_path=/n/rd21/corpora_7/librispeech/
@@ -114,6 +114,15 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0
         # use underscore-separated names in data directories.
         local/data_prep.sh ${data_download_path}/LibriSpeech/${part} ${data}/$(echo ${part} | sed s/-/_/g) || exit 1;
     done
+
+    # when the "--stage 3" option is used below we skip the G2P steps, and use the
+    # lexicon we have already downloaded from openslr.org/11/
+    local/prepare_dict.sh --stage 3 --nj 30 --cmd "$train_cmd" \
+        ${data}/local/lm ${data}/local/lm ${data}/local/dict_nosp
+
+    # utils/prepare_lang.sh ${data}/local/dict_nosp \
+    #     "<UNK>" ${data}/local/lang_tmp_nosp ${data}/lang_nosp
+    # local/format_lms.sh --src-dir ${data}/lang_nosp ${data}/local/lm
 
     # lowercasing
     for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
@@ -292,6 +301,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
 
+    # CUDA_VISIBLE_DEVICES=${gpu} python -m torch.distributed.launch --nproc_per_node=${n_gpus} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus librispeech \
         --config ${conf} \

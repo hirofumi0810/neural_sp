@@ -11,7 +11,7 @@ stage=0
 stop_stage=5
 gpu=
 benchmark=true
-speed_perturb=true  # default
+speed_perturb=false
 stdout=false
 
 ### vocabulary
@@ -33,14 +33,14 @@ external_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work1/inaguma/results/csj
+model=/n/work2/inaguma/results/csj
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/csj
+export data=/n/work2/inaguma/corpus/csj
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -180,6 +180,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
             --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
             ${data} ${dict} ${data}/${train_set}/text || exit 1;
     else
+        # character
         make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} --character_coverage 0.9995 \
             ${data} ${dict} ${data}/${train_set}/text || exit 1;
     fi
