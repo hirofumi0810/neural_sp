@@ -135,6 +135,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
             --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
             ${data} ${dict} ${data}/${train_set}/text || exit 1;
     else
+        # character
         make_vocab.sh --unit ${unit} --speed_perturb true \
             ${data} ${dict} ${data}/${train_set}/text || exit 1;
     fi
