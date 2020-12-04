@@ -20,10 +20,12 @@ class ConformerConvBlock(nn.Module):
         d_model (int): input/output dimension
         kernel_size (int): kernel size in depthwise convolution
         param_init (str): parameter initialization method
+        normalization (str): "batch_norm" or "group_norm"
 
     """
 
-    def __init__(self, d_model, kernel_size, param_init, causal=False):
+    def __init__(self, d_model, kernel_size, param_init, causal=False,
+                 normalization='batch_norm'):
 
         super().__init__()
 
@@ -46,7 +48,13 @@ class ConformerConvBlock(nn.Module):
                                         stride=1,
                                         padding=(kernel_size - 1) // 2,
                                         groups=d_model)  # depthwise
-        self.batch_norm = nn.BatchNorm1d(d_model)
+        if normalization == 'batch_norm':
+            self.norm = nn.BatchNorm1d(d_model)
+        elif normalization == 'group_norm':
+            self.norm = nn.GroupNorm(num_groups=max(1, d_model // 16),
+                                     num_channels=d_model)
+        else:
+            raise NotImplementedError
         self.activation = Swish()
         self.pointwise_conv2 = nn.Conv1d(in_channels=d_model,
                                          out_channels=d_model,
@@ -85,7 +93,7 @@ class ConformerConvBlock(nn.Module):
         xs = xs.transpose(2, 1).contiguous()  # `[B, C, T]`
         xs = self.depthwise_conv(xs)  # `[B, C, T]`
 
-        xs = self.batch_norm(xs)
+        xs = self.norm(xs)
         xs = self.activation(xs)
         xs = self.pointwise_conv2(xs)  # `[B, C, T]`
 
