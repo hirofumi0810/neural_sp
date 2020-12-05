@@ -16,8 +16,8 @@ parser.add_argument('--text', type=str,
                     help='text file')
 parser.add_argument('--lexicon', type=str, default='',
                     help='path to lexicon')
-parser.add_argument('--noise', type=str, default='NSN', nargs='?',
-                    help='path to lexicon')
+parser.add_argument('--unk', type=str, default='NSN', nargs='?',
+                    help='phone corresponding to unknown marks <unk> in lexicon')
 args = parser.parse_args()
 
 
@@ -28,6 +28,7 @@ def main():
         for line in f:
             word = line.strip().split(' ')[0]
             word = word.split('+')[0]  # for CSJ
+            word = word.lower()  # for Librispeech
             phone_seq = ' '.join(line.strip().split(' ')[1:])
             word2phone[word] = phone_seq
 
@@ -47,7 +48,7 @@ def main():
                 if w in word2phone:
                     phones += word2phone[w].split()
                 else:
-                    phones += [args.noise]
+                    phones += [args.unk]
             text_phone = ' '.join(phones)
 
             print('%s %s' % (utt_id, text_phone))
