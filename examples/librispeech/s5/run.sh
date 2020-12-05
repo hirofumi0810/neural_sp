@@ -15,7 +15,7 @@ speed_perturb=false
 stdout=false
 
 ### vocabulary
-unit=wp      # word/wp/char/word_char
+unit=wp      # word/wp/char/word_char/phone
 vocab=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
 
@@ -88,7 +88,7 @@ if [ ${speed_perturb} = true ]; then
     test_set="dev_clean_sp dev_other_sp test_clean_sp test_other_sp"
 fi
 
-if [ ${unit} = char ]; then
+if [ ${unit} = char ] || [ ${unit} = phone ]; then
     vocab=
 fi
 if [ ${unit} != wp ]; then
@@ -201,6 +201,14 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
         make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} \
             --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
             ${data} ${dict} ${data}/${train_set}/text || exit 1;
+    elif [ ${unit} = phone ]; then
+        lexicon=${data}/local/dict_nosp/lexicon.txt
+        unk=SPN
+        for x in ${train_set} ${test_set}; do
+            map2phone.py --text ${data}/${x}/text --lexicon ${lexicon} --unk ${unk} > ${data}/${x}/text.phone
+        done
+        make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} \
+            ${data} ${dict} ${data}/${train_set}/text.phone || exit 1;
     else
         make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} \
             ${data} ${dict} ${data}/${train_set}/text || exit 1;
@@ -222,11 +230,16 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
 
     echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
-    make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+    if [ ${unit} = phone ]; then
+        text="text.phone"
+    else
+        text="text"
+    fi
+    make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} --text ${data}/${train_set}/${text} \
         ${data}/${train_set} ${dict} > ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
     for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
-        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} --text ${data}/${x}/${text} \
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
     done
 
@@ -301,7 +314,6 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "                       ASR Training stage (stage:4)                        "
     echo ============================================================================
 
-    # CUDA_VISIBLE_DEVICES=${gpu} python -m torch.distributed.launch --nproc_per_node=${n_gpus} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/train.py \
         --corpus librispeech \
         --config ${conf} \

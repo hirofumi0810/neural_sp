@@ -99,7 +99,7 @@ if [ ${unit} != wp ]; then
     wp_type=
 fi
 # sub1
-if [ ${unit_sub1} = char ]; then
+if [ ${unit_sub1} = char ] || [ ${unit_sub1} = phone ]; then
     vocab_sub1=
 fi
 if [ ${unit_sub1} != wp ]; then
@@ -229,19 +229,12 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     echo ============================================================================
 
     if [ ${unit_sub1} = phone ]; then
-        echo "Making a dictionary..."
-        echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
-        echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
-        echo "<pad> 3" >> ${dict_sub1}
-        offset=$(cat ${dict_sub1} | wc -l)
         lexicon=${data}/local/train_${datasize}/lexicon.txt
-        map2phone.py --text ${data}/${train_set}/text --lexicon ${lexicon} --noise NSN > ${data}/${train_set}/text.phone
-        map2phone.py --text ${data}/${dev_set}/text --lexicon ${lexicon} --noise NSN > ${data}/${dev_set}/text.phone
-        for x in ${test_set}; do
-            map2phone.py --text ${data}/${x}/text --lexicon ${lexicon} --noise NSN > ${data}/${x}/text.phone
+        for x in ${train_set} ${dev_set} ${test_set}; do
+            map2phone.py --text ${data}/${x}/text --lexicon ${lexicon} > ${data}/${x}/text.phone
         done
-        text2dict.py ${data}/${train_set}/text.phone --unit ${unit_sub1} --speed_perturb ${speed_perturb} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
+        make_vocab.sh --unit ${unit_sub1} --speed_perturb ${speed_perturb} \
+            ${data} ${dict_sub1} ${data}/${train_set}/text.phone || exit 1;
     else
         make_vocab.sh --unit ${unit_sub1} --speed_perturb ${speed_perturb} --character_coverage 0.9995 \
             ${data} ${dict_sub1} ${data}/${train_set}/text || exit 1;
@@ -249,24 +242,20 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     fi
 
     echo "Making dataset tsv files for ASR ..."
+    if [ ${unit_sub1} = phone ]; then
+        text="text.phone"
+    else
+        text="text"
+    fi
     for x in ${train_set} ${dev_set}; do
-        if [ ${unit_sub1} = phone ]; then
-            make_dataset.sh --feat ${data}/dump/${x}/feats.scp --unit ${unit_sub1} --text ${data}/${x}/text.phone \
-                ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
-        else
-            make_dataset.sh --feat ${data}/dump/${x}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
-                ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
-        fi
+        dump_dir=${data}/dump/${x}
+        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} --text ${data}/${x}/${text} \
+            ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
     done
     for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
-        if [ ${unit_sub1} = phone ]; then
-            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --text ${data}/${x}/text.phone \
-                    ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
-        else
-            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} \
-                ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
-        fi
+        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} --text ${data}/${x}/${text} \
+            ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
     done
 
     touch ${data}/.done_stage_2_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."
