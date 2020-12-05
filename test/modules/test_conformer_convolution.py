@@ -14,6 +14,7 @@ def make_args(**kwargs):
         kernel_size=3,
         param_init='',
         causal=False,
+        normalization='batch_norm',
     )
     args.update(kwargs)
     return args
@@ -30,6 +31,7 @@ def make_args(**kwargs):
         ({'kernel_size': 65}),
         ({'param_init': 'xavier_uniform'}),
         ({'kernel_size': 7, 'causal': True}),
+        ({'normalization': 'group_norm'}),
     ]
 )
 def test_forward(args):
