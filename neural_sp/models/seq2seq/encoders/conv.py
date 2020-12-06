@@ -143,7 +143,10 @@ class ConvEncoder(EncoderBase):
         context_size_bottom = 0
         first_pooling = False
         for lth in range(len(kernel_sizes)):
-            lookahead = (kernel_sizes[lth][0] - 1) // 2
+            if self.is_1dconv:
+                lookahead = (kernel_sizes[lth] - 1) // 2
+            else:
+                lookahead = (kernel_sizes[lth][0] - 1) // 2
             lookahead *= 2
             # NOTE: each CNN block has 2 CNN layers
 
@@ -151,7 +154,11 @@ class ConvEncoder(EncoderBase):
                 self._context_size += context_size_bottom * lookahead
             else:
                 self._context_size += lookahead
-                if poolings[lth][0] > 1:
+                if self.is_1dconv:
+                    pooling = poolings[lth]
+                else:
+                    pooling = poolings[lth][0]
+                if pooling > 1:
                     context_size_bottom = self._context_size
                     first_pooling = True
 
