@@ -29,7 +29,7 @@ class Streaming(object):
         self.N_l = encoder.chunk_size_left
         self.N_c = getattr(encoder, 'chunk_size_current', 0)  # for Transformer
         self.N_r = encoder.chunk_size_right
-        if self.N_l == 0 and self.N_r == 0:
+        if self.N_l <= 0 and self.N_r <= 0:
             self.N_l = 40  # for unidirectional encoder
             # TODO(hirofumi0810): make this hyper-parameters
 
