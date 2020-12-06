@@ -12,7 +12,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/tedlium2
+data=/n/work2/inaguma/corpus/tedlium2
 
 unit=
 metric=edit_distance
@@ -31,7 +31,6 @@ lm_second=
 lm_bwd=
 lm_weight=0.3
 lm_second_weight=0.3
-wordlm=false
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -40,13 +39,13 @@ reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
 chunk_sync=true  # for MoChA
-n_average=1  # for Transformer
+n_average=10  # for Transformer
 oracle=false
 
 # for streaming
 blank_threshold=40
 spike_threshold=0.1
-n_accum_frames=800
+n_accum_frames=1600
 
 . ./cmd.sh
 . ./path.sh
@@ -75,9 +74,6 @@ for set in dev_streaming test_streaming; do
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
         recog_dir=${recog_dir}_lm${lm_weight}
-        if [ ${wordlm} = true ]; then
-            recog_dir=${recog_dir}_wordlm
-        fi
     fi
     if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
@@ -154,7 +150,6 @@ for set in dev_streaming test_streaming; do
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
-        --recog_wordlm ${wordlm} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
