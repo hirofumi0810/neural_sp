@@ -42,6 +42,7 @@ def make_args(**kwargs):
         param_init=0.1,
         chunk_size_left="0",
         chunk_size_right="0",
+        rsp_prob=0,
     )
     args.update(kwargs)
     return args
