@@ -118,8 +118,7 @@ def test_forward_streaming_chunkwise(args):
         assert N_l > 0
 
     factor = enc.subsampling_factor
-    conv_lookback = enc.conv.n_frames_context if enc.conv is not None else 0
-    conv_lookahead = enc.conv.n_frames_context if enc.conv is not None else 0
+    conv_lookahead = enc.conv.context_size if enc.conv is not None else 0
 
     module_fs = importlib.import_module('neural_sp.models.seq2seq.frontends.frame_stacking')
 
@@ -153,7 +152,7 @@ def test_forward_streaming_chunkwise(args):
             j = 0  # time offset for input
             j_out = 0  # time offset for encoder output
             for chunk_idx in range(n_chunks):
-                start = j - conv_lookback
+                start = j - conv_lookahead
                 end = (j + N_l + N_r) + conv_lookahead
                 xs_pad_stream = pad_list(
                     [np2tensor(x[max(0, start):end], device).float() for x in xs], 0.)
