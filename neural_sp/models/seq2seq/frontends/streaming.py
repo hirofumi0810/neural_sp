@@ -3,6 +3,7 @@
 
 """Streaming encoding interface."""
 
+import numpy as np
 import torch
 
 
@@ -26,8 +27,7 @@ class Streaming(object):
         # latency
         self.factor = encoder.subsampling_factor
         self.N_l = encoder.chunk_size_left
-        # self.N_c = getattr(encoder, 'chunk_size_current', -1)  # for Transformer
-        self.N_c = encoder.chunk_size_left  # for Transformer
+        self.N_c = getattr(encoder, 'chunk_size_current', 0)  # for Transformer
         self.N_r = encoder.chunk_size_right
         if self.N_l == 0 and self.N_r == 0:
             self.N_l = 40  # for unidirectional encoder
@@ -74,10 +74,16 @@ class Streaming(object):
 
         # Encode input features chunk by chunk
         if getattr(self.encoder, 'conv', None) is not None:
-            context = self.encoder.conv.context_size
-            x_chunk = self.x_whole[max(0, j - context):j + (N_l + N_r) + context]
+            cnn_context = self.encoder.conv.context_size
+            x_chunk = self.x_whole[max(0, j - cnn_context):j + (N_l + N_r) + cnn_context]
         else:
+            cnn_context = 0
             x_chunk = self.x_whole[j:j + (N_l + N_r)]
+
+        # zero paddign for the last chunk
+        if j > 0 and x_chunk.shape[0] != (N_l + N_r + cnn_context * 2):
+            zero_pad = np.zeros(((N_l + N_r + cnn_context * 2) - x_chunk.shape[0], x_chunk.shape[1])).astype(np.float32)
+            x_chunk = np.concatenate([x_chunk, zero_pad], axis=0)
 
         is_last_chunk = (j + N_l - 1) >= len(self.x_whole) - 1
         self.bd_offset = -1  # reset
