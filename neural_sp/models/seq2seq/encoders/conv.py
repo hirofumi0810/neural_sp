@@ -54,7 +54,6 @@ class ConvEncoder(EncoderBase):
 
         assert len(channels) > 0
         assert len(channels) == len(kernel_sizes) == len(strides) == len(poolings)
-        self.calculate_context_size(kernel_sizes, strides, poolings)
 
         self.layers = nn.ModuleList()
         C_i = input_dim if is_1dconv else in_channel
@@ -100,6 +99,8 @@ class ConvEncoder(EncoderBase):
             for p in poolings:
                 self._factor *= p if is_1dconv else p[0]
 
+        self.calculate_context_size(kernel_sizes, strides, poolings)
+
         self.reset_parameters(param_init)
 
     @staticmethod
@@ -141,26 +142,22 @@ class ConvEncoder(EncoderBase):
     def calculate_context_size(self, kernel_sizes, strides, poolings):
         self._context_size = 0
         context_size_bottom = 0
-        first_pooling = False
+        factor = 1
         for lth in range(len(kernel_sizes)):
-            if self.is_1dconv:
-                lookahead = (kernel_sizes[lth] - 1) // 2
-            else:
-                lookahead = (kernel_sizes[lth][0] - 1) // 2
+            kernel_size = kernel_sizes[lth] if self.is_1dconv else kernel_sizes[lth][0]
+            pooling = poolings[lth] if self.is_1dconv else poolings[lth][0]
+
+            lookahead = (kernel_size - 1) // 2
             lookahead *= 2
             # NOTE: each CNN block has 2 CNN layers
 
-            if first_pooling:
-                self._context_size += context_size_bottom * lookahead
-            else:
+            if factor == 1:
                 self._context_size += lookahead
-                if self.is_1dconv:
-                    pooling = poolings[lth]
-                else:
-                    pooling = poolings[lth][0]
-                if pooling > 1:
-                    context_size_bottom = self._context_size
-                    first_pooling = True
+                context_size_bottom = self._context_size
+            else:
+                self._context_size += context_size_bottom * lookahead
+                context_size_bottom *= pooling
+            factor *= pooling
 
     @property
     def context_size(self):
