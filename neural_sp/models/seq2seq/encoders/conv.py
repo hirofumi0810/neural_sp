@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -57,6 +54,7 @@ class ConvEncoder(EncoderBase):
 
         assert len(channels) > 0
         assert len(channels) == len(kernel_sizes) == len(strides) == len(poolings)
+        self.calculate_context_size(kernel_sizes, strides, poolings)
 
         self.layers = nn.ModuleList()
         C_i = input_dim if is_1dconv else in_channel
@@ -140,17 +138,26 @@ class ConvEncoder(EncoderBase):
             dir_name += tmp
         return dir_name
 
+    def calculate_context_size(self, kernel_sizes, strides, poolings):
+        self._context_size = 0
+        context_size_bottom = 0
+        first_pooling = False
+        for lth in range(len(kernel_sizes)):
+            lookahead = (kernel_sizes[lth][0] - 1) // 2
+            lookahead *= 2
+            # NOTE: each CNN block has 2 CNN layers
+
+            if first_pooling:
+                self._context_size += context_size_bottom * lookahead
+            else:
+                self._context_size += lookahead
+                if poolings[lth][0] > 1:
+                    context_size_bottom = self._context_size
+                    first_pooling = True
+
     @property
-    def n_frames_context(self):
-        n_frames = 0
-        factor_tmp = self.subsampling_factor
-        if factor_tmp > 1:
-            for _ in range(int(math.log(factor_tmp, 2))):
-                n_frames += factor_tmp
-                factor_tmp //= 2
-                if factor_tmp < 2:
-                    break
-        return n_frames
+    def context_size(self):
+        return self._context_size
 
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""
