@@ -7,6 +7,7 @@ from distutils.util import strtobool
 import logging
 import math
 import numpy as np
+import random
 import torch
 import torch.nn as nn
 
@@ -23,7 +24,7 @@ from neural_sp.models.seq2seq.encoders.subsampling import (
     DropSubsampler,
     MaxpoolSubsampler
 )
-
+random.seed(1)
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +59,9 @@ class RNNEncoder(EncoderBase):
         bidir_sum_fwd_bwd (bool): sum up forward and backward outputs for dimension reduction
         task_specific_layer (bool): add a task specific layer for each sub task
         param_init (float): model initialization parameter
-        chunk_size_left (int): left chunk size for latency-controlled bidirectional encoder
-        chunk_size_right (int): right chunk size for latency-controlled bidirectional encoder
+        chunk_size_left (str): left chunk size for latency-controlled bidirectional encoder
+        chunk_size_right (str): right chunk size for latency-controlled bidirectional encoder
+        rsp_prob (float): probability of Random State Passing (RSP)
 
     """
 
@@ -70,7 +72,8 @@ class RNNEncoder(EncoderBase):
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim,
                  bidir_sum_fwd_bwd, task_specific_layer, param_init,
-                 chunk_size_left, chunk_size_right):
+                 chunk_size_left, chunk_size_right,
+                 rsp_prob):
 
         super(RNNEncoder, self).__init__()
 
@@ -103,6 +106,9 @@ class RNNEncoder(EncoderBase):
         if self.lc_bidir:
             assert enc_type not in ['lstm', 'gru', 'conv_lstm', 'conv_gru']
             assert n_layers_sub2 == 0
+
+        # for streaming
+        self.rsp_prob = rsp_prob
 
         # for hierarchical encoder
         self.n_layers_sub1 = n_layers_sub1
@@ -231,6 +237,8 @@ class RNNEncoder(EncoderBase):
                            help='left chunk size for latency-controlled RNN encoder')
         group.add_argument('--lc_chunk_size_right', type=str, default="0",
                            help='right chunk size for latency-controlled RNN encoder')
+        group.add_argument('--rsp_prob_enc', type=float, default=0.0,
+                           help='probability for Random State Passing (RSP)')
         return parser
 
     @staticmethod
@@ -246,6 +254,8 @@ class RNNEncoder(EncoderBase):
             dir_name += '_sumfwdbwd'
         if int(args.lc_chunk_size_left.split('_')[0]) > 0 or int(args.lc_chunk_size_right.split('_')[0]) > 0:
             dir_name += '_chunkL' + args.lc_chunk_size_left + 'R' + args.lc_chunk_size_right
+        if args.rsp_prob_enc > 0:
+            dir_name += '_RSP' + str(args.rsp_prob_enc)
         return dir_name
 
     def reset_parameters(self, param_init):
@@ -308,7 +318,9 @@ class RNNEncoder(EncoderBase):
                 N_l = N_l // self.conv.subsampling_factor
                 N_r = N_r // self.conv.subsampling_factor
 
-        if not streaming:
+        carry_over = self.rsp_prob > 0 and self.training and random.random() < self.rsp_prob
+        carry_over = carry_over and (bs == (self.hx_fwd[0][0].size(0) if self.hx_fwd[0] is not None else 0))
+        if not streaming and not carry_over:
             self.reset_cache()
             # NOTE: do not reset here for streaming inference
 
