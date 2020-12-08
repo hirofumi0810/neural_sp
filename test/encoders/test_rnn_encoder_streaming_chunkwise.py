@@ -9,8 +9,10 @@ import numpy as np
 import pytest
 import torch
 
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
+from neural_sp.models.torch_utils import (
+    np2tensor,
+    pad_list
+)
 
 
 def make_args(**kwargs):
@@ -54,7 +56,8 @@ def make_args(**kwargs):
         # no CNN
         ({'enc_type': 'blstm', 'chunk_size_left': "20", 'chunk_size_right': "20"}),
         ({'enc_type': 'blstm', 'chunk_size_left': "32", 'chunk_size_right': "16"}),
-        ({'enc_type': 'lstm', 'chunk_size_left': "1"}),
+        ({'enc_type': 'lstm', 'chunk_size_left': "1"}),  # unidirectional
+        ({'enc_type': 'lstm', 'chunk_size_left': "40"}),  # unidirectional
         # no CNN, frame stacking
         ({'enc_type': 'blstm', 'n_stacks': 2,
           'chunk_size_left': "20", 'chunk_size_right': "20"}),
@@ -71,14 +74,15 @@ def make_args(**kwargs):
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
           'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
           'chunk_size_left': "32"}),
-        # subsample: 1/4
+        # # subsample: 1/4
         ({'enc_type': 'conv', 'chunk_size_left': "8"}),
         ({'enc_type': 'conv', 'chunk_size_left': "32"}),
+        ({'enc_type': 'conv_lstm', 'chunk_size_left': "8"}),  # unidirectional
+        ({'enc_type': 'conv_lstm', 'chunk_size_left': "40"}),  # unidirectional
         ({'enc_type': 'conv_blstm',
           'chunk_size_left': "20", 'chunk_size_right': "20"}),
         ({'enc_type': 'conv_blstm',
           'chunk_size_left': "32", 'chunk_size_right': "16"}),
-        # ({'enc_type': 'conv_lstm', 'chunk_size_left': "8"}),  # problem at the last frame
         # subsample: 1/8
         ({'enc_type': 'conv',
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
@@ -132,6 +136,11 @@ def test_forward_streaming_chunkwise(args):
 
             if args['n_stacks'] > 1:
                 xs = [module_fs.stack_frame(x, args['n_stacks'], args['n_stacks']) for x in xs]
+            else:
+                # zero padding for the last chunk
+                if xmax % N_l != 0:
+                    zero_pad = np.zeros((batch_size, N_l - xmax % N_l, args['input_dim'])).astype(np.float32)
+                    xs = np.concatenate([xs, zero_pad], axis=1)
 
             xlens = torch.IntTensor([len(x) for x in xs])
             xmax = xlens.max().item()

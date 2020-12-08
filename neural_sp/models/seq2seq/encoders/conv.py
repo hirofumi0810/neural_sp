@@ -300,6 +300,7 @@ class Conv2dBlock(EncoderBase):
         self.layer_norm = layer_norm
         self.residual = residual
         self.dropout = nn.Dropout(p=dropout)
+        self.time_axis = 0
 
         # 1st layer
         self.conv1 = nn.Conv2d(in_channels=in_channel,
@@ -361,13 +362,14 @@ class Conv2dBlock(EncoderBase):
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv1, dim=0)
-        if lookback and xs.size(2) > self.conv1.stride[0]:
+        stride = self.conv1.stride[self.time_axis]
+        if lookback and xs.size(2) > stride:
             xmax = xs.size(2)
-            xs = xs[:, :, self.conv1.stride[0]:]
+            xs = xs[:, :, stride:]
             xlens = xlens - (xmax - xs.size(2))
-        if lookahead and xs.size(2) > self.conv1.stride[0]:
+        if lookahead and xs.size(2) > stride:
             xmax = xs.size(2)
-            xs = xs[:, :, :xs.size(2) - self.conv1.stride[0]]
+            xs = xs[:, :, :xs.size(2) - stride]
             xlens = xlens - (xmax - xs.size(2))
 
         xs = self.conv2(xs)
@@ -378,13 +380,14 @@ class Conv2dBlock(EncoderBase):
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv2, dim=0)
-        if lookback and xs.size(2) > self.conv2.stride[0]:
+        stride = self.conv2.stride[self.time_axis]
+        if lookback and xs.size(2) > stride:
             xmax = xs.size(2)
-            xs = xs[:, :, self.conv2.stride[0]:]
+            xs = xs[:, :, stride:]
             xlens = xlens - (xmax - xs.size(2))
-        if lookahead and xs.size(2) > self.conv2.stride[0]:
+        if lookahead and xs.size(2) > stride:
             xmax = xs.size(2)
-            xs = xs[:, :, :xs.size(2) - self.conv2.stride[0]]
+            xs = xs[:, :, :xs.size(2) - stride]
             xlens = xlens - (xmax - xs.size(2))
 
         if self.pool is not None:

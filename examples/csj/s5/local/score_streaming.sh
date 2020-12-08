@@ -12,7 +12,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/csj
+data=/n/work2/inaguma/corpus/csj
 
 unit=
 metric=edit_distance
@@ -31,7 +31,6 @@ lm_second=
 lm_bwd=
 lm_weight=0.3
 lm_second_weight=0.3
-wordlm=false
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -40,13 +39,13 @@ reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
 chunk_sync=true  # for MoChA
-n_average=1  # for Transformer
+n_average=10  # for Transformer
 oracle=false
 
 # for streaming
-blank_threshold=40
+blank_threshold=60  # * 10 [ms]
 spike_threshold=0.1
-n_accum_frames=800
+n_accum_frames=800 # * 10 [ms]
 
 . ./cmd.sh
 . ./path.sh
@@ -75,9 +74,6 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
     fi
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
         recog_dir=${recog_dir}_lm${lm_weight}
-        if [ ${wordlm} = true ]; then
-            recog_dir=${recog_dir}_wordlm
-        fi
     fi
     if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
@@ -166,7 +162,6 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
-        --recog_wordlm ${wordlm} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
@@ -184,22 +179,25 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
         --recog_ctc_vad_n_accum_frames ${n_accum_frames} \
         --recog_stdout ${stdout} || exit 1;
 
-    # remove <unk>
-    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
-    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
-
     if [ ${metric} = 'edit_distance' ]; then
+        # remove <unk>
+        cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
+        cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
+
         echo ${set}
         # WER
         echo 'WER' > ${recog_dir}/RESULTS
         sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt >> ${recog_dir}/RESULTS
         # CER
-        # echo 'CER' >> ${recog_dir}/RESULTS
-        # cat ${recog_dir}/ref.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/ref.trn.filt.char
-        # cat ${recog_dir}/hyp.trn.filt | sed 's/ //g' | sed -e 's/\(.\)/ \1/g' > ${recog_dir}/hyp.trn.filt.char
-        # sclite -r ${recog_dir}/ref.trn.filt.char trn -h ${recog_dir}/hyp.trn.filt.char trn -i rm -o all stdout > ${recog_dir}/result.char.txt
-        # grep -e Avg -e SPKR -m 2 ${recog_dir}/result.char.txt >> ${recog_dir}/RESULTS
+        echo 'CER' >> ${recog_dir}/RESULTS
+        # add space
+        paste -d " " <(cat ${recog_dir}/ref.trn.filt | cut -f 1 -d "(" | LC_ALL=en_US.UTF-8 sed -e "s/ //g" | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/ref.trn.filt | sed -e 's/.*\((.*)\)/\1/g') \
+            > ${recog_dir}/ref.trn.filt.char
+        paste -d " " <(cat ${recog_dir}/hyp.trn.filt | cut -f 1 -d "(" | LC_ALL=en_US.UTF-8 sed -e "s/ //g" | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/hyp.trn.filt | sed -e 's/.*\((.*)\)/\1/g') \
+            > ${recog_dir}/hyp.trn.filt.char
+        sclite -r ${recog_dir}/ref.trn.filt.char trn -h ${recog_dir}/hyp.trn.filt.char trn -i rm -o all stdout > ${recog_dir}/result.char.txt
+        grep -e Avg -e SPKR -m 2 ${recog_dir}/result.char.txt >> ${recog_dir}/RESULTS
         cat ${recog_dir}/RESULTS
     fi
 done
