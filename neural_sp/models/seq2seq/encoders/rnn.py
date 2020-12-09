@@ -209,7 +209,7 @@ class RNNEncoder(EncoderBase):
         self._factor = 1
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor
-        elif np.prod(subsamples) > 1:
+        if np.prod(subsamples) > 1:
             self._factor *= np.prod(subsamples)
         # NOTE: subsampling factor for frame stacking should not be included here
         if self.chunk_size_left > 0:
