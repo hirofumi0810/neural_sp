@@ -37,11 +37,11 @@ emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 1  ###
+batch_size: 4  ###
 optimizer: sgd  ###
-n_epochs: 3   ###
+n_epochs: 1   ###
 convert_to_sgd_epoch: 100
-print_step: 800  ### 400->800
+print_step: 200  ###
 metric: edit_distance
 lr: 3e-6  ###
 lr_decay_type: always
@@ -75,5 +75,5 @@ mbr_training: true
 mbr_ce_weight: 0.01
 recog_beam_width: 4
 recog_softmax_smoothing: 0.8
-recog_length_norm: false
+recog_length_norm: false  ###
 # recog_chunk_sync: true
