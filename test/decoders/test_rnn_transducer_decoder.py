@@ -13,7 +13,7 @@ from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
-ENC_N_UNITS = 32
+ENC_N_UNITS = 16
 VOCAB = 10
 
 
@@ -22,17 +22,17 @@ def make_args(**kwargs):
         special_symbols={'blank': 0, 'unk': 1, 'eos': 2, 'pad': 3},
         enc_n_units=ENC_N_UNITS,
         rnn_type='lstm_transducer',
-        n_units=32,
+        n_units=16,
         n_projs=0,
         n_layers=2,
-        bottleneck_dim=16,
-        emb_dim=16,
+        bottleneck_dim=8,
+        emb_dim=8,
         vocab=VOCAB,
         dropout=0.1,
         dropout_emb=0.1,
         ctc_weight=0.1,
         ctc_lsm_prob=0.1,
-        ctc_fc_list='32_32',
+        ctc_fc_list='16_16',
         external_lm=None,
         global_weight=1.0,
         mtl_per_batch=False,
@@ -51,7 +51,7 @@ def make_args(**kwargs):
         ({'rnn_type': 'gru_transducer', 'n_layers': 1}),
         ({'rnn_type': 'gru_transducer', 'n_layers': 2}),
         # projection
-        ({'n_projs': 16}),
+        ({'n_projs': 8}),
         # CTC
         ({'ctc_weight': 0.5}),
         ({'ctc_weight': 1.0}),
@@ -102,14 +102,14 @@ def make_decode_params(**kwargs):
 def make_args_rnnlm(**kwargs):
     args = dict(
         lm_type='lstm',
-        n_units=32,
+        n_units=16,
         n_projs=0,
         n_layers=2,
         residual=False,
         use_glu=False,
         n_units_null_context=0,
-        bottleneck_dim=16,
-        emb_dim=16,
+        bottleneck_dim=8,
+        emb_dim=8,
         vocab=VOCAB,
         dropout_in=0.1,
         dropout_hidden=0.1,
@@ -130,9 +130,10 @@ def make_args_rnnlm(**kwargs):
         ({'recog_beam_width': 1, 'recog_batch_size': 4}),
         # beam search
         ({'recog_beam_width': 4}),
+        ({'recog_beam_width': 4, 'recog_batch_size': 4}),
         ({'recog_beam_width': 4, 'nbest': 2}),
         ({'recog_beam_width': 4, 'nbest': 4}),
-        ({'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
+        # ({'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
         # shallow fusion
         ({'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
         # rescoring
