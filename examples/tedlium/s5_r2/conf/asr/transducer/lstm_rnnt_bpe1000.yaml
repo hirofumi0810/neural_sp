@@ -14,26 +14,16 @@ enc_n_units: 1024
 enc_n_projs: 0
 enc_n_layers: 5
 subsample_type: drop
-attn_type: mocha
-mocha_chunk_size: 4
-mocha_init_r: -4
-mocha_eps: 1e-6
-mocha_std: 1.0
-mocha_1dconv: false
-mocha_quantity_loss_weight: 2.0  ### this is important
-attn_sharpening_factor: 1.0
-attn_dim: 512
-attn_n_heads: 1
-dec_type: lstm
+dec_type: lstm_transducer
 dec_n_units: 1024
 dec_n_projs: 0
-dec_n_layers: 1
-dec_bottleneck_dim: 1024  ### this is effective
+dec_n_layers: 2
+dec_bottleneck_dim: 512
 emb_dim: 512
 tie_embedding: false
 ctc_fc_list: "512"
 ### optimization
-batch_size: 30
+batch_size: 15
 optimizer: adam
 n_epochs: 35  # 20->35
 convert_to_sgd_epoch: 100
@@ -42,7 +32,7 @@ metric: edit_distance
 lr: 1e-3
 lr_decay_type: always
 lr_decay_start_epoch: 10
-lr_decay_rate: 0.85  ###
+lr_decay_rate: 0.85  ### 0.8->0.85
 lr_decay_patient_n_epochs: 0
 early_stop_patient_n_epochs: 5
 sort_stop_epoch: 100
@@ -57,9 +47,7 @@ dropout_in: 0.0
 dropout_enc: 0.4
 dropout_dec: 0.4
 dropout_emb: 0.4
-dropout_att: 0.0
 weight_decay: 1e-6
-lsm_prob: 0.1
 ### MTL
 ctc_weight: 0.3
 ctc_lsm_prob: 0.1

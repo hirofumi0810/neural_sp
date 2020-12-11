@@ -44,17 +44,22 @@ make KALDI=/path/to/kaldi
 ### Encoder
   - RNN encoder
     - (CNN-)BLSTM, (CNN-)LSTM, (CNN-)BLGRU, (CNN-)LGRU
-    - Latency-controlled BLSTM [[link](https://arxiv.org/abs/1510.08983)]
+    - Latency-controlled BRNN [[link](https://arxiv.org/abs/1510.08983)]
+    - Random state passing (RSP) [[link](https://arxiv.org/abs/1910.11455)]
   - Transformer encoder [[link](https://arxiv.org/abs/1706.03762)]
-    - (CNN-)Transformer
     - Chunk hopping mechanism [[link](https://arxiv.org/abs/1902.06450)]
     - Relative positional encoding [[link](https://arxiv.org/abs/1901.02860)]
+    - Causal mask
+  - Conformer encoder [[link](https://arxiv.org/abs/2005.08100)]
   - Time-depth separable (TDS) convolution encoder [[link](https://arxiv.org/abs/1904.02619)] [[line](https://arxiv.org/abs/2001.09727)]
   - Gated CNN encoder (GLU) [[link](https://openreview.net/forum?id=Hyig0zb0Z)]
-  - Conformer encoder [[link](https://arxiv.org/abs/2005.08100)]
 
 ### Connectionist Temporal Classification (CTC) decoder
   - Forced alignment
+  - Beam search
+  - Shallow fusion
+
+### RNN-Transducer (RNN-T)
   - Beam search
   - Shallow fusion
 
@@ -68,6 +73,8 @@ make KALDI=/path/to/kaldi
   - Streaming RNN decoder
     - Hard monotonic attention [[link](https://arxiv.org/abs/1704.00784)]
     - Monotonic chunkwise attention (MoChA) [[link](https://arxiv.org/abs/1712.05382)]
+    - Delay constrained training (DeCoT) [[link](https://arxiv.org/abs/2004.05009)]
+    - Minimum latency training (MinLT) [[link](https://arxiv.org/abs/2004.05009)]
     - CTC-synchronous training (CTC-ST) [[link](https://arxiv.org/abs/2005.04712)]
   - RNN transducer [[link](https://arxiv.org/abs/1211.3711)]
   - Transformer decoder [[link](https://arxiv.org/abs/1706.03762)]
@@ -100,53 +107,58 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 
 ## ASR Performance
 ### AISHELL-1 (CER)
-| model         | dev | test |
+| Model         | dev | test |
 | -----------   | --- | ---- |
 | Transformer   | 5.0 | 5.4  |
 | Conformer     | 4.7 | 5.2  |
 | Streaming MMA | 5.5 | 6.1  |
 
 ### CSJ (WER)
-| model | eval1 | eval2 | eval3 |
-| ----- | ----- | ----- | ----- |
-| LAS   | 6.5   | 5.1   | 5.6   |
+| Model          | eval1 | eval2 | eval3 |
+| -------------- | ----- | ----- | ----- |
+| LAS            | 6.5   | 5.1   | 5.6   |
+| LC-BLSTM MoChA | 7.4   | 5.6   | 6.4   |
 
 ### Switchboard 300h (WER)
-| model | SWB  | CH   |
+| Model | SWB  | CH   |
 | ----- | ---- | ---- |
 | LAS   | 9.1  | 18.8 |
 
 ### Switchboard+Fisher 2000h (WER)
-| model | SWB  | CH   |
+| Model | SWB  | CH   |
 | ----- | ---- | ---- |
 | LAS   | 7.8  | 13.8 |
 
 ### Librispeech (WER)
-| model         | dev-clean | dev-other | test-clean | test-other |
-| -----------   | --------- | --------- | ---------- | ---------- |
-| Transformer   | 2.1       | 5.3       | 2.4        | 5.7        |
-| Streaming MMA | 2.5       | 6.9       | 2.7        | 7.1        |
+| Model          | dev-clean | dev-other | test-clean | test-other |
+| -------------- | --------- | --------- | ---------- | ---------- |
+| LAS            | 2.5       | 7.2       | 2.6        | 7.5        |
+| Transformer    | 2.1       | 5.3       | 2.4        | 5.7        |
+| LC-BLSTM MoChA | 3.3       | 8.8       | 3.5        | 9.1        |
+| Streaming MMA  | 2.5       | 6.9       | 2.7        | 7.1        |
 
 ### TEDLIUM2 (WER)
-| model | dev  | test |
-| ----- | ---- | ---- |
-| LAS   | 10.9 | 11.2 |
+| Model          | dev   | test |
+| -------------- | ----  | ---- |
+| LAS            |  8.6  | 8.1  |
+| LC-BLSTM MoChA | 10.6  | 8.6  |
+| LC-BLSTM RNN-T |  9.3  | 8.7  |
 
 ### WSJ (WER)
-| model | test_dev93 | test_eval92 |
+| Model | test_dev93 | test_eval92 |
 | ----- | ---------- | ----------- |
 | LAS   | 8.8        | 6.2         |
 
 ## LM Performance
 ### Penn Tree Bank (PPL)
-| model       | valid | test  |
-| ------------| ----- | ----- |
+| Model       | valid | test  |
+| ----------- | ----- | ----- |
 | RNNLM       | 87.99 | 86.06 |
 | + cache=100 | 79.58 | 79.12 |
 | + cache=500 | 77.36 | 76.94 |
 
 ### WikiText2 (PPL)
-| model        | valid  | test  |
+| Model        | valid  | test  |
 | ------------ | ------ | ----- |
 | RNNLM        | 104.53 | 98.73 |
 | + cache=100  | 90.86  | 85.87 |
@@ -163,10 +175,3 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 - https://github.com/SeanNaren/warp-ctc
 - https://github.com/HawkAaron/warp-transducer
 - https://github.com/1ytic/warp-rnnt
-
-<!-- ## TODO
-- WFST decoder
-- Minimum WER training
-- Convolutional decoder
-- Speech Translation
-- Tacotron2 -->
