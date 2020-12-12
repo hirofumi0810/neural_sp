@@ -5,6 +5,7 @@
 
 import argparse
 import importlib
+import math
 import numpy as np
 import pytest
 import torch
@@ -67,7 +68,7 @@ def make_args(**kwargs):
         gmm_attn_n_mixtures=1,
         replace_sos=False,
         distillation_weight=0.0,
-        discourse_aware=False
+        discourse_aware=False,
     )
     args.update(kwargs)
     return args
@@ -380,3 +381,58 @@ def test_decoding(backward, lm_fusion, params):
             assert isinstance(scores, list)
             assert len(scores) == batch_size
             assert len(scores[0]) == params['nbest']
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        # beam search
+        ({'recog_beam_width': 4}),
+        # shallow fusion
+        ({'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+    ]
+)
+def test_streaming_decoding(params):
+    args = make_args(attn_type='mocha')
+    params = make_decode_params(**params)
+
+    batch_size = params['recog_batch_size']
+    emax = 400
+    device = "cpu"
+
+    eouts = np.random.randn(batch_size, emax, ENC_N_UNITS).astype(np.float32)
+    eouts = pad_list([np2tensor(x, device).float() for x in eouts], 0.)
+
+    ctc_log_probs = None
+    if params['recog_ctc_weight'] > 0:
+        ctc_logits = torch.FloatTensor(batch_size, emax, VOCAB, device=device)
+        ctc_log_probs = torch.softmax(ctc_logits, dim=-1)
+
+    args_lm = make_args_rnnlm()
+    module_rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
+    lm = None
+    if params['recog_lm_weight'] > 0:
+        lm = module_rnnlm.RNNLM(args_lm).to(device)
+    if args['lm_fusion']:
+        args['external_lm'] = module_rnnlm.RNNLM(args_lm).to(device)
+
+    module = importlib.import_module('neural_sp.models.seq2seq.decoders.las')
+    dec = module.RNNDecoder(**args)
+    dec = dec.to(device)
+
+    N_l = 5
+    n_chunks = math.ceil(emax / N_l)
+    hyps = None
+
+    dec.eval()
+    with torch.no_grad():
+        for chunk_idx in range(n_chunks):
+            eouts_chunk = eouts[:, N_l * chunk_idx:N_l * (chunk_idx + 1)]
+            out = dec.beam_search_chunk_sync(eouts_chunk, params, idx2token=None,
+                                             lm=lm, ctc_log_probs=ctc_log_probs,
+                                             hyps=None,
+                                             ignore_eos=False)
+            assert len(out) == 3
+            end_hyps, hyps, _ = out
+            assert isinstance(end_hyps, list)
+            assert isinstance(hyps, list)
