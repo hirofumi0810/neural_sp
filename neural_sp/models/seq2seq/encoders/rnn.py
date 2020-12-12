@@ -209,7 +209,13 @@ class RNNEncoder(EncoderBase):
         self._factor = 1
         if self.conv is not None:
             self._factor *= self.conv.subsampling_factor
-        elif np.prod(subsamples) > 1:
+        self._factor_sub1 = self._factor
+        if n_layers_sub1 > 0 and np.prod(subsamples[:n_layers_sub1 - 1]) > 1:
+            self._factor_sub1 *= np.prod(subsamples[:n_layers_sub1 - 1])
+        self._factor_sub2 = self._factor
+        if n_layers_sub2 > 0 and np.prod(subsamples[:n_layers_sub2 - 1]) > 1:
+            self._factor_sub1 *= np.prod(subsamples[:n_layers_sub2 - 1])
+        if np.prod(subsamples) > 1:
             self._factor *= np.prod(subsamples)
         # NOTE: subsampling factor for frame stacking should not be included here
         if self.chunk_size_left > 0:
@@ -270,7 +276,8 @@ class RNNEncoder(EncoderBase):
         self.hx_fwd = [None] * self.n_layers
         logger.debug('Reset cache.')
 
-    def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
+    def forward(self, xs, xlens, task, streaming=False,
+                lookback=False, lookahead=False):
         """Forward pass.
 
         Args:
@@ -327,11 +334,11 @@ class RNNEncoder(EncoderBase):
         if self.lc_bidir:
             # Flip the layer and time loop
             if self.chunk_size_left <= 0:
-                xs, xlens, xs_sub1 = self._forward_full_context(xs, xlens)
+                xs, xlens, xs_sub1, xlens_sub1 = self._forward_full_context(
+                    xs, xlens)
             else:
-                xs, xlens, xs_sub1 = self._forward_latency_controlled(xs, xlens, N_l, N_r, streaming)
-            if xs_sub1 is not None:
-                xlens_sub1 = xlens.clone()
+                xs, xlens, xs_sub1, xlens_sub1 = self._forward_latency_controlled(
+                    xs, xlens, N_l, N_r, streaming)
             if task == 'ys_sub1':
                 eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens_sub1
                 return eouts
@@ -379,15 +386,21 @@ class RNNEncoder(EncoderBase):
         return eouts
 
     def _forward_full_context(self, xs, xlens, task='all'):
-        """Full context BPTT encoding. This is used for pre-training latency-controlled bidirectional encoder.
+        """Full context BPTT encoding.
+           This is used for pre-training latency-controlled bidirectional encoder.
 
         Args:
             xs (FloatTensor): `[B, T, n_units]`
+            xlens (IntTensor): `[B]`
+            task (str):
         Returns:
             xs (FloatTensor): `[B, T, n_units]`
+            xlens (IntTensor): `[B]`
+            xs_sub1 (FloatTensor): `[B, T, n_units]`
+            xlens_sub1 (IntTensor): `[B]`
 
         """
-        xs_sub1 = None
+        xs_sub1, xlens_sub1 = None, None
         for lth in range(self.n_layers):
             self.rnn[lth].flatten_parameters()  # for multi-GPUs
             self.rnn_bwd[lth].flatten_parameters()  # for multi-GPUs
@@ -403,7 +416,7 @@ class RNNEncoder(EncoderBase):
             if lth == self.n_layers_sub1 - 1:
                 xs_sub1, xlens_sub1 = self.sub_module(xs, xlens, None, 'sub1')
                 if task == 'ys_sub1':
-                    return None, xlens, xs_sub1
+                    return None, None, xs_sub1, xlens_sub1
 
             # Projection layer
             if self.proj is not None and lth != self.n_layers - 1:
@@ -412,15 +425,24 @@ class RNNEncoder(EncoderBase):
             if self.subsample is not None:
                 xs, xlens = self.subsample[lth](xs, xlens)
 
-        return xs, xlens, xs_sub1
+        return xs, xlens, xs_sub1, xlens_sub1
 
-    def _forward_latency_controlled(self, xs, xlens, N_l, N_r, streaming, task='all'):
-        """Streaming encoding for the conventional latency-controlled bidirectional encoder.
+    def _forward_latency_controlled(self, xs, xlens, N_l, N_r, streaming,
+                                    task='all'):
+        """Streaming encoding for the latency-controlled bidirectional encoder.
 
         Args:
             xs (FloatTensor): `[B, T, n_units]`
+            xlens (IntTensor): `[B]`
+            N_l (int):
+            N_r (int):
+            streaming (bool):
+            task (str):
         Returns:
             xs (FloatTensor): `[B, T, n_units]`
+            xlens (IntTensor): `[B]`
+            xs_sub1 (FloatTensor): `[B, T, n_units]`
+            xlens (IntTensor): `[B]`
 
         """
         bs, xmax, _ = xs.size()
@@ -428,6 +450,7 @@ class RNNEncoder(EncoderBase):
 
         if streaming:
             xlens = torch.IntTensor(bs).fill_(min(xmax, N_l))
+        xlens_sub1 = xlens.clone() if self.n_layers_sub1 > 0 else None
 
         xs_chunks = []
         xs_chunks_sub1 = []
@@ -462,6 +485,8 @@ class RNNEncoder(EncoderBase):
                 # Pick up outputs in the sub task before the projection layer
                 if lth == self.n_layers_sub1 - 1:
                     xs_chunks_sub1.append(xs_chunk.clone()[:, :_N_l])
+                    if chunk_idx == 0:
+                        xlens_sub1 = xlens.clone()
 
                 # Projection layer
                 if self.proj is not None and lth != self.n_layers - 1:
@@ -481,11 +506,11 @@ class RNNEncoder(EncoderBase):
         xs = torch.cat(xs_chunks, dim=1)
         if self.n_layers_sub1 > 0:
             xs_sub1 = torch.cat(xs_chunks_sub1, dim=1)
-            xs_sub1, xlens_sub1 = self.sub_module(xs_sub1, xlens, None, 'sub1')
+            xs_sub1, xlens_sub1 = self.sub_module(xs_sub1, xlens_sub1, None, 'sub1')
         else:
             xs_sub1 = None
 
-        return xs, xlens, xs_sub1
+        return xs, xlens, xs_sub1, xlens_sub1
 
     def sub_module(self, xs, xlens, perm_ids_unsort, module='sub1'):
         if self.task_specific_layer:
