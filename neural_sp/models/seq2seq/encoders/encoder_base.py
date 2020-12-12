@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -32,8 +29,24 @@ class EncoderBase(ModelBase):
         return self._odim
 
     @property
+    def output_dim_sub1(self):
+        return getattr(self, '_odim_sub1', self._odim)
+
+    @property
+    def output_dim_sub2(self):
+        return getattr(self, '_odim_sub2', self._odim)
+
+    @property
     def subsampling_factor(self):
         return self._factor
+
+    @property
+    def subsampling_factor_sub1(self):
+        return self._factor_sub1
+
+    @property
+    def subsampling_factor_sub2(self):
+        return self._factor_sub2
 
     def forward(self, xs, xlens, task):
         raise NotImplementedError
