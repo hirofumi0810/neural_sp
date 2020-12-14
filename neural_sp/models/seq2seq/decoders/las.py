@@ -1521,7 +1521,7 @@ class RNNDecoder(DecoderBase):
 
             # Update LM states for LM fusion
             lmout, lmstate, scores_lm = helper.update_rnnlm_state_batch(
-                self.lm if self.lm is not None else lm, hyps, y, emb_cache=True)
+                self.lm if self.lm is not None else lm, hyps, y, emb_cache=emb_cache)
 
             if self.embed_cache is not None:
                 y_emb = self.embed_cache[y]
