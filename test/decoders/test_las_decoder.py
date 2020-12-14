@@ -430,8 +430,9 @@ def test_streaming_decoding(params):
             eouts_chunk = eouts[:, N_l * chunk_idx:N_l * (chunk_idx + 1)]
             out = dec.beam_search_chunk_sync(eouts_chunk, params, idx2token=None,
                                              lm=lm, ctc_log_probs=ctc_log_probs,
-                                             hyps=None,
-                                             ignore_eos=False)
+                                             hyps=hyps,
+                                             ignore_eos=False,
+                                             emb_cache=True)
             assert len(out) == 3
             end_hyps, hyps, _ = out
             assert isinstance(end_hyps, list)
