@@ -56,13 +56,14 @@ class BeamSearch(object):
     def add_lm_score(self, after_topk=True):
         raise NotImplementedError
 
-    def update_rnnlm_state(self, lm, hyp, y):
+    def update_rnnlm_state(self, lm, hyp, y, emb_cache=False):
         """Update RNNLM state for a single utterance.
 
         Args:
             lm (RNNLM): RNNLM
             hyp (dict): beam candiate
             y (LongTensor): `[1, 1]`
+            emb_cache (bool): precompute token embeddings for fast infernece
         Returns:
             lmout (FloatTensor): `[1, 1, lm_n_units]`
             lmstate (dict):
@@ -71,16 +72,17 @@ class BeamSearch(object):
         """
         lmout, lmstate, scores_lm = None, None, None
         if lm is not None:
-            lmout, lmstate, scores_lm = lm.predict(y, hyp['lmstate'])
+            lmout, lmstate, scores_lm = lm.predict(y, hyp['lmstate'], emb_cache=emb_cache)
         return lmout, lmstate, scores_lm
 
-    def update_rnnlm_state_batch(self, lm, hyps, y):
+    def update_rnnlm_state_batch(self, lm, hyps, y, emb_cache=False):
         """Update RNNLM state in batch-mode.
 
         Args:
             lm (RNNLM): RNNLM
             hyps (List[dict]): beam candidates
             y (LongTensor): `[B, 1]`
+            emb_cache (bool): precompute token embeddings for fast infernece
         Returns:
             lmout (FloatTensor): `[B, 1, lm_n_units]`
             lmstate (dict):
@@ -93,5 +95,5 @@ class BeamSearch(object):
                 lm_hxs = torch.cat([beam['lmstate']['hxs'] for beam in hyps], dim=1)
                 lm_cxs = torch.cat([beam['lmstate']['cxs'] for beam in hyps], dim=1)
                 lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
-            lmout, lmstate, scores_lm = lm.predict(y, lmstate)
+            lmout, lmstate, scores_lm = lm.predict(y, lmstate, emb_cache=emb_cache)
         return lmout, lmstate, scores_lm

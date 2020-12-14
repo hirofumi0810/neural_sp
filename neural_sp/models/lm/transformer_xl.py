@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -66,6 +63,7 @@ class TransformerXL(LMBase):
         self.cache_ids = []
         self.cache_keys = []
         self.cache_attn = []
+        self.embed_cache = None
 
         # positional embedding
         self.pos_emb = XLPositionalEmbedding(self.d_model, args.dropout_in)
@@ -192,7 +190,8 @@ class TransformerXL(LMBase):
 
         return new_mems
 
-    def decode(self, ys, state=None, mems=None, cache=None, incremental=False):
+    def decode(self, ys, state=None, mems=None, cache=None, incremental=False,
+               emb_cache=False):
         """Decode function.
 
         Args:
@@ -201,6 +200,7 @@ class TransformerXL(LMBase):
             mems (list): length `n_layers`, each of which contains a FloatTensor `[B, mlen, d_model]`
             cache (list): length `L`, each of which contains a FloatTensor `[B, L-1, d_model]`
             incremental (bool): ASR decoding mode
+            emb_cache (bool): precompute token embeddings for fast infernece
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]`
@@ -226,7 +226,18 @@ class TransformerXL(LMBase):
         causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
         causal_mask = causal_mask.repeat([bs, 1, 1])  # `[B, L, L+mlen]`
 
-        out = self.dropout_emb(self.embed(ys.long()) * self.scale)
+        # Pre-compute embedding
+        if emb_cache and self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64)
+            if self.use_cuda:
+                indices = indices.cuda()
+            self.embed_cache = self.dropout_emb(self.embed(indices) * self.scale)  # `[1, vocab, emb_dim]`
+
+        if self.embed_cache is not None:
+            out = self.embed_cache[ys]
+        else:
+            out = self.dropout_emb(self.embed(ys.long()) * self.scale)
+
         pos_embs = self.pos_emb(ys, mlen=mlen, zero_center_offset=self.zero_center_offset)
 
         new_mems = [None] * self.n_layers
@@ -291,5 +302,5 @@ class TransformerXL(LMBase):
                 ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
             fig.tight_layout()
-            fig.savefig(os.path.join(save_path, 'layer%d.png' % (lth)), dvi=500)
+            fig.savefig(os.path.join(save_path, 'layer%d.png' % (lth)))
             plt.close()

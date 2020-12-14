@@ -6,6 +6,7 @@
 from collections import OrderedDict
 import logging
 import torch.nn as nn
+import torch
 
 from neural_sp.models.lm.lm_base import LMBase
 from neural_sp.models.modules.glu import ConvGLUBlock
@@ -40,6 +41,7 @@ class GatedConvLM(LMBase):
         self.cache_ids = []
         self.cache_keys = []
         self.cache_attn = []
+        self.embed_cache = None
 
         self.embed = nn.Embedding(self.vocab, args.emb_dim, padding_idx=self.pad)
         self.dropout_embed = nn.Dropout(p=args.dropout_in)
@@ -185,7 +187,7 @@ class GatedConvLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def decode(self, ys, state=None, mems=None, incremental=False):
+    def decode(self, ys, state=None, mems=None, incremental=False, emb_cache=False):
         """Decode function.
 
         Args:
@@ -193,6 +195,7 @@ class GatedConvLM(LMBase):
             state: dummy interfance for RNNLM
             cache: dummy interfance for TransformerLM/TransformerXL
             incremental: dummy interfance for TransformerLM/TransformerXL
+            emb_cache (bool): precompute token embeddings for fast infernece
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]` (for cache)
@@ -200,7 +203,18 @@ class GatedConvLM(LMBase):
             new_mems: dummy interfance for TransformerXL
 
         """
-        out = self.dropout_embed(self.embed(ys.long()))
+        # Pre-compute embedding
+        if emb_cache and self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64)
+            if self.use_cuda:
+                indices = indices.cuda()
+            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
+
+        if self.embed_cache is not None:
+            out = self.embed_cache[ys]
+        else:
+            out = self.dropout_emb(self.embed(ys.long()))
+
         bs, max_ylen = out.size()[:2]
 
         # NOTE: consider embed_dim as in_ch
