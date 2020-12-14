@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -50,9 +47,10 @@ class RNNLM(LMBase):
         self.cache_ids = []
         self.cache_keys = []
         self.cache_attn = []
+        self.embed_cache = None
 
         self.embed = nn.Embedding(self.vocab, args.emb_dim, padding_idx=self.pad)
-        self.dropout_embed = nn.Dropout(p=args.dropout_in)
+        self.dropout_emb = nn.Dropout(p=args.dropout_in)
 
         rnn = nn.LSTM if args.lm_type == 'lstm' else nn.GRU
         self.rnn = nn.ModuleList()
@@ -146,7 +144,8 @@ class RNNLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def decode(self, ys, state, mems=None, cache=None, incremental=False):
+    def decode(self, ys, state, mems=None, cache=None, incremental=False,
+               emb_cache=False):
         """Decode function.
 
         Args:
@@ -156,6 +155,7 @@ class RNNLM(LMBase):
                 cxs (FloatTensor): `[n_layers, B, n_units]`
             cache: dummy interfance for TransformerLM/TransformerXL
             incremental: dummy interfance for TransformerLM/TransformerXL
+            emb_cache (bool): precompute token embeddings for fast infernece
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             ys_emb (FloatTensor): `[B, L, n_units]` (for cache)
@@ -166,7 +166,18 @@ class RNNLM(LMBase):
 
         """
         bs, ymax = ys.size()
-        ys_emb = self.dropout_embed(self.embed(ys.long()))
+
+        # Pre-compute embedding
+        if emb_cache and self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64)
+            if self.use_cuda:
+                indices = indices.cuda()
+            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
+
+        if self.embed_cache is not None:
+            ys_emb = self.embed_cache[ys]
+        else:
+            ys_emb = self.dropout_emb(self.embed(ys.long()))
 
         if state is None:
             state = self.zero_state(bs)
