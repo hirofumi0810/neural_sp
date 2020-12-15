@@ -1015,8 +1015,14 @@ class RNNDecoder(DecoderBase):
         return hyps, aws
 
     def initialize_beam(self, hyp, dstates, cv, lmstate, ctc_state,
-                        ys=None, ensmbl_dstate=None, ensmbl_cv=None):
-        n_models = len(ensmbl_dstate) if ensmbl_dstate is not None else 1
+                        ys=None, ensmbl_decs=[]):
+        # Ensemble initialization
+        ensmbl_dstate, ensmbl_cv = [], []
+        for dec in ensmbl_decs:
+            dec.score.reset()
+            ensmbl_dstate += [dec.zero_state(1)]
+            ensmbl_cv += [cv.new_zeros(1, 1, dec.enc_n_units)]
+
         hyps = [{'hyp': hyp,
                  'score': 0.,
                  'score_att': 0.,
@@ -1029,7 +1035,7 @@ class RNNDecoder(DecoderBase):
                  'ys': ys,  # for TransformerLM
                  'ensmbl_dstate': ensmbl_dstate,
                  'ensmbl_cv': ensmbl_cv,
-                 'ensmbl_aws':[[None]] * (n_models - 1),
+                 'ensmbl_aws':[[None]] * len(ensmbl_dstate),
                  'ctc_state': ctc_state,
                  'no_boundary': False}]
         return hyps
@@ -1038,7 +1044,8 @@ class RNNDecoder(DecoderBase):
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
-                    ensmbl_eouts=[], ensmbl_elens=[], ensmbl_decs=[], cache_states=True):
+                    ensmbl_eouts=[], ensmbl_elens=[], ensmbl_decs=[],
+                    cache_states=True):
         """Beam search decoding.
 
         Args:
@@ -1067,7 +1074,6 @@ class RNNDecoder(DecoderBase):
 
         """
         bs, xmax, _ = eouts.size()
-        n_models = len(ensmbl_decs) + 1
 
         beam_width = params['recog_beam_width']
         assert 1 <= nbest <= beam_width
@@ -1122,14 +1128,6 @@ class RNNDecoder(DecoderBase):
                     ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[b], self.blank, self.eos)
                 ctc_state = ctc_prefix_scorer.initial_state()
 
-            # Ensemble initialization
-            ensmbl_dstate, ensmbl_cv = [], []
-            if n_models > 1:
-                for dec in ensmbl_decs:
-                    ensmbl_dstate += [dec.zero_state(1)]
-                    ensmbl_cv += [eouts.new_zeros(1, 1, dec.enc_n_units)]
-                    dec.score.reset()
-
             if speakers is not None:
                 if speakers[b] == self.prev_spk:
                     if asr_state_CO:
@@ -1157,7 +1155,7 @@ class RNNDecoder(DecoderBase):
 
             end_hyps = []
             hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state, ys,
-                                        ensmbl_dstate=ensmbl_dstate, ensmbl_cv=ensmbl_cv)
+                                        ensmbl_decs=ensmbl_decs)
             ymax = math.ceil(elens[b] * max_len_ratio)
             for i in range(ymax):
                 # batchfy all hypotheses for batch decoding
@@ -1229,10 +1227,9 @@ class RNNDecoder(DecoderBase):
                     ensmbl_cv += [cv_e[j:j + 1]]
                     ensmbl_aws += [beam['ensmbl_aws'][i_e] + [aw_e[j:j + 1]]]
                     probs += torch.softmax(dec.output(attn_v_e).squeeze(1), dim=1)
-                    # NOTE: sum in the probability scale (not log-scale)
 
                 # Ensemble
-                scores_att = torch.log(probs / n_models)
+                scores_att = torch.log(probs / (len(ensmbl_decs) + 1))
 
                 new_hyps = []
                 for j, beam in enumerate(hyps):
