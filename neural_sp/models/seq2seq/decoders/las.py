@@ -1009,10 +1009,30 @@ class RNNDecoder(DecoderBase):
                     logger.debug('Hyp: %s' % idx2token(hyps[b][::-1]))
                 else:
                     logger.debug('Hyp: %s' % idx2token(hyps[b]))
-                logger.info('=' * 200)
+                logger.debug('=' * 200)
                 # NOTE: do not show with logger.info here
 
         return hyps, aws
+
+    def initialize_beam(self, hyp, dstates, cv, lmstate, ctc_state,
+                        ys=None, ensmbl_dstate=None, ensmbl_cv=None):
+        n_models = len(ensmbl_dstate) if ensmbl_dstate is not None else 1
+        hyps = [{'hyp': hyp,
+                 'score': 0.,
+                 'score_att': 0.,
+                 'score_ctc': 0.,
+                 'score_lm': 0.,
+                 'dstates': dstates,
+                 'cv': cv,
+                 'aws': [None],
+                 'lmstate': lmstate,
+                 'ys': ys,  # for TransformerLM
+                 'ensmbl_dstate': ensmbl_dstate,
+                 'ensmbl_cv': ensmbl_cv,
+                 'ensmbl_aws':[[None]] * (n_models - 1),
+                 'ctc_state': ctc_state,
+                 'no_boundary': False}]
+        return hyps
 
     def beam_search(self, eouts, elens, params, idx2token=None,
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
@@ -1087,8 +1107,10 @@ class RNNDecoder(DecoderBase):
         for b in range(bs):
             # Initialization per utterance
             self.score.reset()
+            cv = eouts.new_zeros(1, 1, self.enc_n_units)
             dstates = self.zero_state(1)
             lmstate = None
+            ctc_state = None
             ys = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(self.eos)  # for Transformer(XL) LM
 
             # For joint CTC-Attention decoding
@@ -1098,6 +1120,7 @@ class RNNDecoder(DecoderBase):
                     ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[b][::-1], self.blank, self.eos)
                 else:
                     ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[b], self.blank, self.eos)
+                ctc_state = ctc_prefix_scorer.initial_state()
 
             # Ensemble initialization
             ensmbl_dstate, ensmbl_cv = [], []
@@ -1133,20 +1156,8 @@ class RNNDecoder(DecoderBase):
             helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
 
             end_hyps = []
-            hyps = [{'hyp': [self.eos],
-                     'ys': ys,
-                     'score': 0.,
-                     'score_att': 0.,
-                     'score_ctc': 0.,
-                     'score_lm': 0.,
-                     'dstates': dstates,
-                     'cv': eouts.new_zeros(1, 1, self.enc_n_units),
-                     'aws': [None],
-                     'lmstate': lmstate,
-                     'ensmbl_dstate': ensmbl_dstate,
-                     'ensmbl_cv': ensmbl_cv,
-                     'ensmbl_aws':[[None]] * (n_models - 1),
-                     'ctc_state': ctc_prefix_scorer.initial_state() if ctc_prefix_scorer is not None else None}]
+            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state, ys,
+                                        ensmbl_dstate=ensmbl_dstate, ensmbl_cv=ensmbl_cv)
             ymax = math.ceil(elens[b] * max_len_ratio)
             for i in range(ymax):
                 # batchfy all hypotheses for batch decoding
@@ -1448,6 +1459,7 @@ class RNNDecoder(DecoderBase):
 
             # Initialization per utterance
             self.score.reset()
+            cv = eouts.new_zeros(1, 1, self.enc_n_units)
             dstates = self.zero_state(1)
             lmstate = None
             ctc_state = None
@@ -1472,17 +1484,7 @@ class RNNDecoder(DecoderBase):
 
             self.n_frames = 0
             self.chunk_size = eouts.size(1)
-            hyps = [{'hyp': [self.eos],
-                     'score': 0.,
-                     'score_att': 0.,
-                     'score_ctc': 0.,
-                     'score_lm': 0.,
-                     'dstates': dstates,
-                     'cv': eouts.new_zeros(1, 1, self.enc_n_units),
-                     'aws': [None],
-                     'lmstate': lmstate,
-                     'ctc_state': ctc_state,
-                     'no_boundary': False}]
+            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state)
         else:
             for h in hyps:
                 h['no_boundary'] = False
