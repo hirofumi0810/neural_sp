@@ -174,7 +174,9 @@ class DecoderBase(ModelBase):
             probs (FloatTensor): `[B, T, vocab]`
 
         """
-        return torch.softmax(self.ctc.output(eouts) / temperature, dim=-1)
+        if self.ctc.output is not None:
+            eouts = self.ctc.output(eouts)
+        return torch.softmax(eouts / temperature, dim=-1)
 
     def ctc_log_probs(self, eouts, temperature=1.):
         """Return log-scale CTC probabilities.
@@ -185,7 +187,9 @@ class DecoderBase(ModelBase):
             log_probs (FloatTensor): `[B, T, vocab]`
 
         """
-        return torch.log_softmax(self.ctc.output(eouts) / temperature, dim=-1)
+        if self.ctc.output is not None:
+            eouts = self.ctc.output(eouts)
+        return torch.log_softmax(eouts / temperature, dim=-1)
 
     def ctc_probs_topk(self, eouts, temperature=1., topk=None):
         """Get CTC top-K probabilities.
