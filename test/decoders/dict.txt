@@ -1,0 +1,9 @@
+<unk> 1
+<eos> 2
+<pad> 3
+<space> 4
+' 5
+a 6
+b 7
+c 8
+d 9
