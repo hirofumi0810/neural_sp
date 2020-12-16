@@ -1374,7 +1374,7 @@ class RNNDecoder(DecoderBase):
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
                     if lm_second_bwd is not None:
                         logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_second_rev'] * lm_weight_second_bwd))
+                                    (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     logger.info('-' * 50)
 
             # N-best list
