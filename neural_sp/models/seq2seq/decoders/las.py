@@ -1093,15 +1093,10 @@ class RNNDecoder(DecoderBase):
         lm_state_CO = params['recog_lm_state_carry_over']
         softmax_smoothing = params['recog_softmax_smoothing']
 
-        if lm is not None:
-            assert lm_weight > 0
-            lm.eval()
-        if lm_second is not None:
-            assert lm_weight_second > 0
-            lm_second.eval()
-        if lm_second_bwd is not None:
-            assert lm_weight_second_bwd > 0
-            lm_second_bwd.eval()
+        helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight)
+        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second)
+        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd)
         trfm_lm = isinstance(lm, TransformerLM) or isinstance(lm, TransformerXL)
 
         if ctc_log_probs is not None:
@@ -1150,8 +1145,6 @@ class RNNDecoder(DecoderBase):
                     self.lmstate_final = None  # reset
                     self.lmmemory = None  # reset
                 self.prev_spk = speakers[b]
-
-            helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
 
             end_hyps = []
             hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state, ys,
@@ -1341,12 +1334,10 @@ class RNNDecoder(DecoderBase):
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
             # forward second path LM rescoring
-            if lm_second is not None:
-                self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
+            helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
 
             # backward secodn path LM rescoring
-            if lm_second_bwd is not None:
-                self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
+            helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -1439,6 +1430,7 @@ class RNNDecoder(DecoderBase):
         eos_threshold = params['recog_eos_threshold']
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight)
 
         # pre-compute embeddings
         if emb_cache and self.embed_cache is None:
@@ -1450,10 +1442,6 @@ class RNNDecoder(DecoderBase):
         end_hyps = []
         hyps_nobd = []
         if hyps is None:
-            if lm is not None:
-                assert lm_weight > 0
-                lm.eval()
-
             # Initialization per utterance
             self.score.reset()
             cv = eouts.new_zeros(1, 1, self.enc_n_units)

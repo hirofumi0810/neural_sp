@@ -389,6 +389,7 @@ class RNNTransducer(DecoderBase):
                 if refs_id is not None and self.vocab == idx2token.vocab:
                     logger.debug('Ref: %s' % idx2token(refs_id[b]))
                 logger.debug('Hyp: %s' % idx2token(hyps[b]))
+                logger.debug('=' * 200)
 
         return hyps, None
 
@@ -396,7 +397,7 @@ class RNNTransducer(DecoderBase):
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
                     refs_id=None, utt_ids=None, speakers=None,
-                    ensmbl_eouts=None, ensmbl_elens=None, ensmbl_decs=[]):
+                    ensmbl_eouts=[], ensmbl_elens=[], ensmbl_decs=[]):
         """Beam search decoding.
 
         Args:
@@ -429,22 +430,16 @@ class RNNTransducer(DecoderBase):
         ctc_weight = params['recog_ctc_weight']
         assert ctc_weight == 0
         assert ctc_log_probs is None
-        # length_norm = params['recog_length_norm']
         lm_weight = params['recog_lm_weight']
         lm_weight_second = params['recog_lm_second_weight']
         lm_weight_second_bwd = params['recog_lm_bwd_weight']
         # asr_state_carry_over = params['recog_asr_state_carry_over']
         lm_state_carry_over = params['recog_lm_state_carry_over']
 
-        if lm is not None:
-            assert lm_weight > 0
-            lm.eval()
-        if lm_second is not None:
-            assert lm_weight_second > 0
-            lm_second.eval()
-        if lm_second_bwd is not None:
-            assert lm_weight_second_bwd > 0
-            lm_second_bwd.eval()
+        helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight)
+        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second)
+        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd)
 
         nbest_hyps_idx = []
         eos_flags = []
@@ -460,8 +455,6 @@ class RNNTransducer(DecoderBase):
                     if lm_state_carry_over and isinstance(lm, RNNLM):
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
-
-            helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
@@ -488,8 +481,6 @@ class RNNTransducer(DecoderBase):
 
                     for k in range(beam_width):
                         idx = topk_ids[0, k].item()
-                        # length_norm_factor = len(beam['hyp'][1:]) + 1 if length_norm else 1
-                        # total_score = total_scores_topk[0, k].item() / length_norm_factor
                         total_score = total_scores_topk[0, k].item()
                         total_score_lm = beam['score_lm']
 
@@ -518,7 +509,6 @@ class RNNTransducer(DecoderBase):
                             _, lmstate, scores_lm = helper.update_rnnlm_state(lm, beam, y_prev)
                             if lm is not None:
                                 total_score_lm += scores_lm[0, -1, idx].item()
-                                # total_score_lm /= length_norm_factor
 
                             self.state_cache[hyp_str] = {
                                 'dout': dout,
@@ -568,12 +558,10 @@ class RNNTransducer(DecoderBase):
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
             # forward second path LM rescoring
-            if lm_second is not None:
-                self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
+            helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
 
             # backward second path LM rescoring
-            if lm_second_bwd is not None:
-                self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
+            helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'] / max(len(x['hyp'][1:]), 1), reverse=True)
@@ -600,7 +588,7 @@ class RNNTransducer(DecoderBase):
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
                     if lm_second_bwd is not None:
                         logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_second_rev'] * lm_weight_second_bwd))
+                                    (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     logger.info('-' * 50)
 
             # N-best list
