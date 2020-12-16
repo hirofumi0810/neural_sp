@@ -1334,10 +1334,12 @@ class RNNDecoder(DecoderBase):
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
             # forward second path LM rescoring
-            helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
+            helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
+                                normalize=length_norm, tag='second')
 
             # backward secodn path LM rescoring
-            helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
+            helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd,
+                                normalize=length_norm, tag='second_bwd')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)

@@ -103,7 +103,8 @@ class BeamSearch(object):
             lmout, lmstate, scores_lm = lm.predict(y, lmstate, emb_cache=emb_cache)
         return lmout, lmstate, scores_lm
 
-    def lm_rescoring(self, hyps, lm, lm_weight, reverse=False, tag=''):
+    def lm_rescoring(self, hyps, lm, lm_weight, reverse=False, normalize=False,
+                     tag=''):
         if lm is None:
             return
         for i in range(len(hyps)):
@@ -118,7 +119,8 @@ class BeamSearch(object):
             if ys_in.size(1) > 0:
                 _, _, scores_lm = lm.predict(ys_in, None)
                 score_lm = sum([scores_lm[0, t, ys_out[0, t]] for t in range(ys_out.size(1))])
-                score_lm /= ys_out.size(1)  # normalize by length
+                if normalize:
+                    score_lm /= ys_out.size(1)  # normalize by length
             else:
                 score_lm = 0
 

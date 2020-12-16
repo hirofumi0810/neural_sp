@@ -355,22 +355,11 @@ class CTC(DecoderBase):
                 # Pruning
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
 
-            # Rescoing alignments
-            if lm_second is not None:
-                new_beam = []
-                for i_beam in range(len(beam)):
-                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), eouts.device)]
-                    ys_pad = pad_list(ys, lm_second.pad)
-                    _, _, lm_log_probs = lm_second.predict(ys_pad, None)
-                    score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
-                    score_lm = lm_log_probs.sum() * lm_weight_second
-                    score_lp = len(beam[i_beam]['hyp'][1:]) * lp_weight
-                    new_beam.append({'hyp': beam[i_beam]['hyp'],
-                                     'score': score_ctc + score_lm + score_lp,
-                                     'score_ctc': score_ctc,
-                                     'score_lp': score_lp,
-                                     'score_lm': score_lm})
-                beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
+            # forward second path LM rescoring
+            helper.lm_rescoring(beam, lm_second, lm_weight_second, tag='second')
+
+            # backward secodn path LM rescoring
+            helper.lm_rescoring(beam, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             best_hyps.append(np.array(beam[0]['hyp'][1:]))
 
