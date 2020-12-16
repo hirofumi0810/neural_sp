@@ -9,12 +9,15 @@ import numpy as np
 import pytest
 import torch
 
+from neural_sp.datasets.token_converter.character import Idx2char
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
 
 ENC_N_UNITS = 16
 VOCAB = 10
+
+idx2token = Idx2char('test/decoders/dict.txt')
 
 
 def make_args(**kwargs):
@@ -55,13 +58,12 @@ def make_args(**kwargs):
         mma_1dconv=False,
         mma_quantity_loss_weight=0.0,
         mma_headdiv_loss_weight=0.0,
-        latency_metric=False,
+        latency_metric='',
         latency_loss_weight=0.0,
         mma_first_layer=1,
         share_chunkwise_attention=False,
         external_lm=None,
         lm_fusion='',
-        # lm_init=False,
     )
     args.update(kwargs)
     return args
@@ -275,7 +277,7 @@ def test_decoding(backward, params):
     dec.eval()
     with torch.no_grad():
         if params['recog_beam_width'] == 1:
-            out = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=None,
+            out = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=idx2token,
                              exclude_eos=params['exclude_eos'],
                              refs_id=ys, utt_ids=None, speakers=None,
                              cache_states=params['cache_states'])
@@ -286,7 +288,7 @@ def test_decoding(backward, params):
             assert isinstance(aws, list)
             assert aws[0].shape == (args['n_heads'] * args['n_layers'], len(hyps[0]), emax)
         else:
-            out = dec.beam_search(eouts, elens, params, idx2token=None,
+            out = dec.beam_search(eouts, elens, params, idx2token=idx2token,
                                   lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
                                   ctc_log_probs=ctc_log_probs,
                                   nbest=params['nbest'], exclude_eos=params['exclude_eos'],
@@ -311,7 +313,7 @@ def test_decoding(backward, params):
                 ensmbl_elens += [elens]
                 ensmbl_decs += [dec]
 
-            out = dec.beam_search(eouts, elens, params, idx2token=None,
+            out = dec.beam_search(eouts, elens, params, idx2token=idx2token,
                                   lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
                                   ctc_log_probs=ctc_log_probs,
                                   nbest=params['nbest'], exclude_eos=params['exclude_eos'],
