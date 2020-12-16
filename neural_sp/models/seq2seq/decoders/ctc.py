@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
+from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
 from neural_sp.models.torch_utils import (
     make_pad_mask,
@@ -230,7 +231,7 @@ class CTC(DecoderBase):
         return np.array(hyps)
 
     def beam_search(self, eouts, elens, params, idx2token,
-                    lm=None, lm_second=None, lm_second_rev=None,
+                    lm=None, lm_second=None, lm_second_bwd=None,
                     nbest=1, refs_id=None, utt_ids=None, speakers=None):
         """Beam search decoding.
 
@@ -246,7 +247,7 @@ class CTC(DecoderBase):
             idx2token (): converter from index to token
             lm: firsh path LM
             lm_second: second path LM
-            lm_second_rev: second path backward LM
+            lm_second_bwd: second path backward LM
             nbest (int):
             refs_id (list): reference list
             utt_ids (list): utterance id list
@@ -261,13 +262,12 @@ class CTC(DecoderBase):
         lp_weight = params['recog_length_penalty']
         lm_weight = params['recog_lm_weight']
         lm_weight_second = params['recog_lm_second_weight']
+        lm_weight_second_bwd = params['recog_lm_bwd_weight']
 
-        if lm is not None:
-            assert lm_weight > 0
-            lm.eval()
-        if lm_second is not None:
-            assert lm_weight_second > 0
-            lm_second.eval()
+        helper = BeamSearch(beam_width, self.eos, 1.0, eouts.device)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight)
+        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second)
+        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd)
 
         best_hyps = []
         log_probs = torch.log_softmax(self.output(eouts), dim=-1)
@@ -355,22 +355,11 @@ class CTC(DecoderBase):
                 # Pruning
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
 
-            # Rescoing alignments
-            if lm_second is not None:
-                new_beam = []
-                for i_beam in range(len(beam)):
-                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), eouts.device)]
-                    ys_pad = pad_list(ys, lm_second.pad)
-                    _, _, lm_log_probs = lm_second.predict(ys_pad, None)
-                    score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
-                    score_lm = lm_log_probs.sum() * lm_weight_second
-                    score_lp = len(beam[i_beam]['hyp'][1:]) * lp_weight
-                    new_beam.append({'hyp': beam[i_beam]['hyp'],
-                                     'score': score_ctc + score_lm + score_lp,
-                                     'score_ctc': score_ctc,
-                                     'score_lp': score_lp,
-                                     'score_lm': score_lm})
-                beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
+            # forward second path LM rescoring
+            helper.lm_rescoring(beam, lm_second, lm_weight_second, tag='second')
+
+            # backward secodn path LM rescoring
+            helper.lm_rescoring(beam, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             best_hyps.append(np.array(beam[0]['hyp'][1:]))
 

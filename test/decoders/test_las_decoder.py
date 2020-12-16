@@ -115,7 +115,7 @@ def make_args(**kwargs):
         # CTC
         ({'ctc_weight': 0.5}),
         ({'ctc_weight': 1.0}),
-        ({'ctc_weight': 1.0, 'ctc_lsm_prob': 0.0}),
+        ({'ctc_weight': 1.0, 'ctc_lsm_prob': 0.0}),  # pure-CTC
         # forward-backward decoder
         ({'backward': True}),
         ({'backward': True, 'ctc_weight': 0.5}),
@@ -241,6 +241,13 @@ def make_args_rnnlm(**kwargs):
         (False, '', {'recog_beam_width': 4, 'nbest': 4}),
         (False, '', {'recog_beam_width': 4, 'nbest': 4, 'softmax_smoothing': 2.0}),
         (False, '', {'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
+        # pure CTC decoding
+        (True, '', {'recog_beam_width': 1, 'recog_ctc_weight': 1.0}),
+        (True, '', {'recog_beam_width': 4, 'recog_ctc_weight': 1.0}),
+        (True, '', {'recog_beam_width': 4, 'recog_ctc_weight': 1.0,
+                    'recog_lm_weight': 0.1}),
+        (True, '', {'recog_beam_width': 4, 'recog_ctc_weight': 1.0,
+                    'recog_lm_weight': 0.1, 'recog_lm_second_weight': 0.1}),
         # length penalty
         (False, '', {'recog_length_penalty': 0.1}),
         (False, '', {'recog_length_penalty': 0.1, 'recog_gnmt_decoding': True}),
@@ -305,6 +312,8 @@ def test_decoding(backward, lm_fusion, params):
     if params['recog_ctc_weight'] > 0:
         ctc_logits = torch.FloatTensor(batch_size, emax, VOCAB, device=device)
         ctc_log_probs = torch.softmax(ctc_logits, dim=-1)
+    if params['recog_ctc_weight'] == 1:
+        args['ctc_weight'] = 1
 
     args_lm = make_args_rnnlm()
     module_rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
@@ -330,60 +339,67 @@ def test_decoding(backward, lm_fusion, params):
 
     dec.eval()
     with torch.no_grad():
-        if params['recog_beam_width'] == 1:
-            out = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=idx2token,
-                             exclude_eos=params['exclude_eos'],
-                             refs_id=ys, utt_ids=None, speakers=None)
-            assert len(out) == 2
-            hyps, aws = out
-            assert isinstance(hyps, list)
-            assert len(hyps) == batch_size
-            assert isinstance(aws, list)
-            assert aws[0].shape == (args['attn_n_heads'], len(hyps[0]), emax)
+        if params['recog_ctc_weight'] == 1:
+            # pure-CTC
+            best_hyps_id = dec.decode_ctc(
+                eouts, elens, params, idx2token,
+                lm, lm_second, lm_second_bwd, nbest=1,
+                refs_id=None, utt_ids=None, speakers=None)
+            assert isinstance(best_hyps_id, np.ndarray)
         else:
-            out = dec.beam_search(eouts, elens, params, idx2token=idx2token,
-                                  lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
-                                  ctc_log_probs=ctc_log_probs,
-                                  nbest=params['nbest'], exclude_eos=params['exclude_eos'],
-                                  refs_id=None, utt_ids=None, speakers=None,
-                                  cache_states=True)
-            assert len(out) == 3
-            nbest_hyps, aws, scores = out
-            assert isinstance(nbest_hyps, list)
-            assert len(nbest_hyps) == batch_size
-            assert len(nbest_hyps[0]) == params['nbest']
-            ymax = len(nbest_hyps[0][0])
-            assert isinstance(aws, list)
-            assert aws[0][0].shape == (args['attn_n_heads'], ymax, emax)
-            assert isinstance(scores, list)
-            assert len(scores) == batch_size
-            assert len(scores[0]) == params['nbest']
+            if params['recog_beam_width'] == 1:
+                out = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=idx2token,
+                                 exclude_eos=params['exclude_eos'],
+                                 refs_id=ys, utt_ids=None, speakers=None)
+                assert len(out) == 2
+                hyps, aws = out
+                assert isinstance(hyps, list)
+                assert len(hyps) == batch_size
+                assert isinstance(aws, list)
+                assert aws[0].shape == (args['attn_n_heads'], len(hyps[0]), emax)
+            else:
+                out = dec.beam_search(eouts, elens, params, idx2token,
+                                      lm, lm_second, lm_second_bwd, ctc_log_probs,
+                                      nbest=params['nbest'], exclude_eos=params['exclude_eos'],
+                                      refs_id=None, utt_ids=None, speakers=None,
+                                      cache_states=True)
+                assert len(out) == 3
+                nbest_hyps, aws, scores = out
+                assert isinstance(nbest_hyps, list)
+                assert len(nbest_hyps) == batch_size
+                assert len(nbest_hyps[0]) == params['nbest']
+                ymax = len(nbest_hyps[0][0])
+                assert isinstance(aws, list)
+                assert aws[0][0].shape == (args['attn_n_heads'], ymax, emax)
+                assert isinstance(scores, list)
+                assert len(scores) == batch_size
+                assert len(scores[0]) == params['nbest']
 
-            # ensemble
-            ensmbl_eouts, ensmbl_elens, ensmbl_decs = [], [], []
-            for _ in range(3):
-                ensmbl_eouts += [eouts]
-                ensmbl_elens += [elens]
-                ensmbl_decs += [dec]
+                # ensemble
+                ensmbl_eouts, ensmbl_elens, ensmbl_decs = [], [], []
+                for _ in range(3):
+                    ensmbl_eouts += [eouts]
+                    ensmbl_elens += [elens]
+                    ensmbl_decs += [dec]
 
-            out = dec.beam_search(eouts, elens, params, idx2token=idx2token,
-                                  lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
-                                  ctc_log_probs=ctc_log_probs,
-                                  nbest=params['nbest'], exclude_eos=params['exclude_eos'],
-                                  refs_id=None, utt_ids=None, speakers=None,
-                                  ensmbl_eouts=ensmbl_eouts, ensmbl_elens=ensmbl_elens, ensmbl_decs=ensmbl_decs,
-                                  cache_states=True)
-            assert len(out) == 3
-            nbest_hyps, aws, scores = out
-            assert isinstance(nbest_hyps, list)
-            assert len(nbest_hyps) == batch_size
-            assert len(nbest_hyps[0]) == params['nbest']
-            ymax = len(nbest_hyps[0][0])
-            assert isinstance(aws, list)
-            assert aws[0][0].shape == (args['attn_n_heads'], ymax, emax)
-            assert isinstance(scores, list)
-            assert len(scores) == batch_size
-            assert len(scores[0]) == params['nbest']
+                out = dec.beam_search(eouts, elens, params, idx2token=idx2token,
+                                      lm=lm, lm_second=lm_second, lm_second_bwd=lm_second_bwd,
+                                      ctc_log_probs=ctc_log_probs,
+                                      nbest=params['nbest'], exclude_eos=params['exclude_eos'],
+                                      refs_id=None, utt_ids=None, speakers=None,
+                                      ensmbl_eouts=ensmbl_eouts, ensmbl_elens=ensmbl_elens, ensmbl_decs=ensmbl_decs,
+                                      cache_states=True)
+                assert len(out) == 3
+                nbest_hyps, aws, scores = out
+                assert isinstance(nbest_hyps, list)
+                assert len(nbest_hyps) == batch_size
+                assert len(nbest_hyps[0]) == params['nbest']
+                ymax = len(nbest_hyps[0][0])
+                assert isinstance(aws, list)
+                assert aws[0][0].shape == (args['attn_n_heads'], ymax, emax)
+                assert isinstance(scores, list)
+                assert len(scores) == batch_size
+                assert len(scores[0]) == params['nbest']
 
 
 @pytest.mark.parametrize(

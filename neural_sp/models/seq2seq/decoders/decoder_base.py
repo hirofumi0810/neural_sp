@@ -10,10 +10,7 @@ import torch
 import shutil
 
 from neural_sp.models.base import ModelBase
-from neural_sp.models.torch_utils import (
-    np2tensor,
-    pad_list
-)
+from neural_sp.models.torch_utils import np2tensor
 
 import matplotlib
 matplotlib.use('Agg')
@@ -177,7 +174,9 @@ class DecoderBase(ModelBase):
             probs (FloatTensor): `[B, T, vocab]`
 
         """
-        return torch.softmax(self.ctc.output(eouts) / temperature, dim=-1)
+        if self.ctc.output is not None:
+            eouts = self.ctc.output(eouts)
+        return torch.softmax(eouts / temperature, dim=-1)
 
     def ctc_log_probs(self, eouts, temperature=1.):
         """Return log-scale CTC probabilities.
@@ -188,7 +187,9 @@ class DecoderBase(ModelBase):
             log_probs (FloatTensor): `[B, T, vocab]`
 
         """
-        return torch.log_softmax(self.ctc.output(eouts) / temperature, dim=-1)
+        if self.ctc.output is not None:
+            eouts = self.ctc.output(eouts)
+        return torch.log_softmax(eouts / temperature, dim=-1)
 
     def ctc_probs_topk(self, eouts, temperature=1., topk=None):
         """Get CTC top-K probabilities.
@@ -223,23 +224,3 @@ class DecoderBase(ModelBase):
         ylens = np2tensor(np.fromiter([len(y) for y in ys], dtype=np.int32))
         trigger_points = self.ctc.forced_align(logits, elens, ys, ylens)
         return trigger_points
-
-    def lm_rescoring(self, hyps, lm, lm_weight, reverse=False, tag=''):
-        for i in range(len(hyps)):
-            ys = hyps[i]['hyp']  # include <sos>
-            if reverse:
-                ys = ys[::-1]
-
-            ys = [np2tensor(np.fromiter(ys, dtype=np.int64), self.device)]
-            ys_in = pad_list([y[:-1] for y in ys], -1)  # `[1, L-1]`
-            ys_out = pad_list([y[1:] for y in ys], -1)  # `[1, L-1]`
-
-            if ys_in.size(1) > 0:
-                _, _, scores_lm = lm.predict(ys_in, None)
-                score_lm = sum([scores_lm[0, t, ys_out[0, t]] for t in range(ys_out.size(1))])
-                score_lm /= ys_out.size(1)  # normalize by length
-            else:
-                score_lm = 0
-
-            hyps[i]['score'] += score_lm * lm_weight
-            hyps[i]['score_lm_' + tag] = score_lm

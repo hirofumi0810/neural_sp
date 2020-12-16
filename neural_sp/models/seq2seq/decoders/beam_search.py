@@ -3,9 +3,14 @@
 
 """Utility functions for beam search decoding."""
 
+import numpy as np
 import torch
 
-from neural_sp.models.torch_utils import tensor2np
+from neural_sp.models.torch_utils import (
+    np2tensor,
+    pad_list,
+    tensor2np,
+)
 
 
 class BeamSearch(object):
@@ -97,3 +102,33 @@ class BeamSearch(object):
                 lmstate = {'hxs': lm_hxs, 'cxs': lm_cxs}
             lmout, lmstate, scores_lm = lm.predict(y, lmstate, emb_cache=emb_cache)
         return lmout, lmstate, scores_lm
+
+    def lm_rescoring(self, hyps, lm, lm_weight, reverse=False, normalize=False,
+                     tag=''):
+        if lm is None:
+            return
+        for i in range(len(hyps)):
+            ys = hyps[i]['hyp']  # include <sos>
+            if reverse:
+                ys = ys[::-1]
+
+            ys = [np2tensor(np.fromiter(ys, dtype=np.int64), self.device)]
+            ys_in = pad_list([y[:-1] for y in ys], -1)  # `[1, L-1]`
+            ys_out = pad_list([y[1:] for y in ys], -1)  # `[1, L-1]`
+
+            if ys_in.size(1) > 0:
+                _, _, scores_lm = lm.predict(ys_in, None)
+                score_lm = sum([scores_lm[0, t, ys_out[0, t]] for t in range(ys_out.size(1))])
+                if normalize:
+                    score_lm /= ys_out.size(1)  # normalize by length
+            else:
+                score_lm = 0
+
+            hyps[i]['score'] += score_lm * lm_weight
+            hyps[i]['score_lm_' + tag] = score_lm
+
+    def verify_lm_eval_mode(self, lm, lm_weight):
+        if lm is not None:
+            assert lm_weight > 0
+            lm.eval()
+        return lm

@@ -609,15 +609,10 @@ class TransformerDecoder(DecoderBase):
         softmax_smoothing = params['recog_softmax_smoothing']
         eps_wait = params['recog_mma_delay_threshold']
 
-        if lm is not None:
-            assert lm_weight > 0
-            lm.eval()
-        if lm_second is not None:
-            assert lm_weight_second > 0
-            lm_second.eval()
-        if lm_second_bwd is not None:
-            assert lm_weight_second_bwd > 0
-            lm_second_bwd.eval()
+        helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight)
+        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second)
+        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd)
 
         if ctc_log_probs is not None:
             assert ctc_weight > 0
@@ -643,8 +638,6 @@ class TransformerDecoder(DecoderBase):
                     if lm_state_carry_over and isinstance(lm, RNNLM):
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
-
-            helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device)
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
@@ -704,8 +697,8 @@ class TransformerDecoder(DecoderBase):
                     new_cache[lth] = out
                     if xy_aws is not None:
                         xy_aws_layers.append(xy_aws)
-                logits = self.output(self.norm_out(out))
-                probs = torch.softmax(logits[:, -1] * softmax_smoothing, dim=1)
+                logits = self.output(self.norm_out(out[:, -1]))
+                probs = torch.softmax(logits * softmax_smoothing, dim=1)
                 xy_aws_layers = torch.stack(xy_aws_layers, dim=1)  # `[B, H, n_layers, L, T]`
 
                 # Ensemble initialization
@@ -724,8 +717,8 @@ class TransformerDecoder(DecoderBase):
                         out_e = dec.layers[lth](out_e, causal_mask, eouts_e, None,
                                                 cache=ensmbl_cache[i_e][lth])
                         ensmbl_new_cache[i_e][lth] = out_e
-                    logits_e = dec.output(dec.norm_out(out_e))
-                    probs += torch.softmax(logits_e[:, -1] * softmax_smoothing, dim=1)
+                    logits_e = dec.output(dec.norm_out(out_e[:, -1]))
+                    probs += torch.softmax(logits_e * softmax_smoothing, dim=1)
                     # NOTE: sum in the probability scale (not log-scale)
 
                 # Ensemble
@@ -830,12 +823,12 @@ class TransformerDecoder(DecoderBase):
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
             # forward second path LM rescoring
-            if lm_second is not None:
-                self.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
+            helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
+                                normalize=length_norm, tag='second')
 
             # backward secodn path LM rescoring
-            if lm_second_bwd is not None:
-                self.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
+            helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd,
+                                normalize=length_norm, tag='second_bwd')
 
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
@@ -865,13 +858,14 @@ class TransformerDecoder(DecoderBase):
                     if ctc_prefix_scorer is not None:
                         logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
                     if lm is not None:
-                        logger.info('log prob (hyp, first-path lm): %.7f' % (end_hyps[k]['score_lm'] * lm_weight))
+                        logger.info('log prob (hyp, first-path lm): %.7f' %
+                                    (end_hyps[k]['score_lm'] * lm_weight))
                     if lm_second is not None:
                         logger.info('log prob (hyp, second-path lm): %.7f' %
                                     (end_hyps[k]['score_lm_second'] * lm_weight_second))
                     if lm_second_bwd is not None:
                         logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
-                                    (end_hyps[k]['score_lm_second_rev'] * lm_weight_second_bwd))
+                                    (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     if self.attn_type == 'mocha':
                         logger.info('streamable: %s' % end_hyps[k]['streamable'])
                         logger.info('streaming failed point: %d' % (end_hyps[k]['streaming_failed_point'] + 1))
