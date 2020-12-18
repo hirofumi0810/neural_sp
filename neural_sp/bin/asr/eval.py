@@ -176,8 +176,7 @@ def main():
                                           recog_dir=args.recog_dir,
                                           streaming=args.recog_streaming,
                                           progressbar=True,
-                                          fine_grained=True,
-                                          teacher_force=len(args.recog_word_alignments) > 0)
+                                          fine_grained=True)
                 wer_avg += wer
                 cer_avg += cer
             elif 'char' in args.recog_unit:
