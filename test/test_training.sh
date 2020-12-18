@@ -14,10 +14,12 @@ cd ./examples/ci_test || exit 1;
 ./run.sh --stage 4 --conf conf/asr/blstm_ctc.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/blstm_transducer.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/transformer.yaml || exit 1;
+local/score.sh --model results/asr/train_char/conv2Ltransformer8dmodel32dff1L4Hpenone_max_pool4_transformer8dmodel32dff1L4Hpe1dconv3Lscaled_dot_noam_lr5.0_bs1_ls0.1_warmup2_accum2_ctc0.3/model.epoch-4
 ./run.sh --stage 4 --conf conf/asr/transformer_ctc.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/conformer.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/tds_las.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/transformer_las.yaml || exit 1;
+local/score.sh --model results/asr/train_char/conv2Ltransformer8dmodel32dff1L4Hpenone_drop4_lstm16H8P1L_location_ss0.1_noam_lr5.0_bs1_ls0.1_warmup2_accum2_ctc0.3/model.epoch-4
 ./run.sh --stage 4 --conf conf/asr/blstm_transformer.yaml || exit 1;
 
 # output unit (default: char)
@@ -33,6 +35,6 @@ cd ./examples/ci_test || exit 1;
 
 # multi-task
 ./run_2mtl.sh --stage 0 --conf conf/asr/blstm_las_2mtl.yaml --unit wp --unit_sub1 char || exit 1;
-./run_2mtl.sh --stage 0 --conf conf/asr/transformer_2mtl.yaml --unit wp --unit_sub1 char || exit 1;
 ./run_2mtl.sh --stage 0 --conf conf/asr/blstm_las_2mtl.yaml --speed_perturb true --unit wp --unit_sub1 char || exit 1;
+./run_2mtl.sh --stage 0 --conf conf/asr/transformer_2mtl.yaml --unit wp --unit_sub1 char || exit 1;
 # ./run_2mtl.sh --stage 0 --conf conf/asr/blstm_las_2mtl_per_batch.yaml --unit wp --unit_sub1 char || exit 1;
