@@ -1415,15 +1415,13 @@ class RNNDecoder(DecoderBase):
 
         return nbest_hyps_idx, aws, scores
 
-    def beam_search_chunk_sync(self, eouts, params, idx2token,
+    def beam_search_block_sync(self, eouts, params, idx2token,
                                lm=None, ctc_log_probs=None,
-                               hyps=False, state_carry_over=False,
-                               ignore_eos=False, emb_cache=True):
+                               hyps=False, state_carry_over=False, emb_cache=True):
         assert eouts.size(0) == 1
         assert self.attn_type == 'mocha'
 
         beam_width = params['recog_beam_width']
-        # beam_width_second = params['recog_beam_width']
         ctc_weight = params['recog_ctc_weight']
         max_len_ratio = params['recog_max_len_ratio']
         lp_weight = params['recog_length_penalty']
@@ -1442,7 +1440,6 @@ class RNNDecoder(DecoderBase):
             self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
 
         end_hyps = []
-        hyps_nobd = []
         if hyps is None:
             # Initialization per utterance
             self.score.reset()
@@ -1477,6 +1474,7 @@ class RNNDecoder(DecoderBase):
                 h['no_boundary'] = False
 
         ymax = math.ceil(eouts.size(1) * max_len_ratio)
+        truncate_offset = 0
         for i in range(ymax):
             # finish if no additional decision boundary is found in the current chunk for all candidates
             if len(hyps) == 0:
@@ -1517,9 +1515,14 @@ class RNNDecoder(DecoderBase):
             else:
                 y_emb = self.dropout_emb(self.embed(y))
             dstates, cv, aw, attn_v, _, _ = self.decode_step(
-                eouts[0:1].repeat([cv.size(0), 1, 1]),
+                eouts[0:1, truncate_offset:].repeat([cv.size(0), 1, 1]),
                 dstates, cv, y_emb, None, aw, lmout, cache=False)
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1), dim=1)
+            # NOTE: aw: `[B, H, 1, T_chunk]`
+            boundary_list = np.where(tensor2np(aw.sum(2).sum(1).sum(0)) != 0)[0]
+            if len(boundary_list) > 0:
+                truncate_offset += boundary_list[0]
+                self.score.register_key_prev_tail(eouts[:, :truncate_offset])
 
             for j, beam in enumerate(hyps):
                 # no decision boundary found in the current chunk for j-th utterance
@@ -1559,13 +1562,6 @@ class RNNDecoder(DecoderBase):
                     total_score = total_scores_topk[0, k].item() / length_norm_factor
 
                     if idx == self.eos:
-                        if ignore_eos:
-                            # NOTE: for unidirectional encoder
-                            beam['aws'][-1] = eouts.new_zeros(eouts.size(0), 1, 1, eouts.size(1))
-                            beam['no_boundary'] = True
-                            new_hyps.append(beam.copy())
-                            continue
-
                         # EOS threshold
                         max_score_no_eos = scores_att[j, :idx].max(0)[0].item()
                         max_score_no_eos = max(max_score_no_eos, scores_att[j, idx + 1:].max(0)[0].item())
@@ -1587,18 +1583,13 @@ class RNNDecoder(DecoderBase):
                          'no_boundary': no_boundary})
 
             # Local pruning
-            new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)
-            hyps_nobd += [hyp for hyp in new_hyps_sorted[beam_width:] if hyp['no_boundary']]
+            new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
             # Remove complete hypotheses
-            new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted[:beam_width], end_hyps)
+            new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted, end_hyps)
             hyps = new_hyps[:]
             if is_finish:
                 break
-
-        # Global pruning
-        hyps_nobd_sorted = sorted(hyps_nobd, key=lambda x: x['score'], reverse=True)
-        hyps = (hyps[:] + hyps_nobd_sorted)[:beam_width]
 
         # Sort by score
         if len(end_hyps) > 0:
@@ -1609,6 +1600,8 @@ class RNNDecoder(DecoderBase):
             logger.info('=' * 200)
             for k in range(len(merged_hyps)):
                 logger.info('Hyp: %s' % idx2token(merged_hyps[k]['hyp'][1:]))
+                if len(merged_hyps[k]['hyp']) > 1:
+                    logger.info('num tokens (hyp): %d' % len(merged_hyps[k]['hyp'][1:]))
                 logger.info('no boundary: %s' % merged_hyps[k]['no_boundary'])
                 logger.info('log prob (hyp): %.7f' % merged_hyps[k]['score'])
                 logger.info('log prob (hyp, att): %.7f' % (merged_hyps[k]['score_att'] * (1 - ctc_weight)))
@@ -1626,6 +1619,6 @@ class RNNDecoder(DecoderBase):
             self.lmstate_final = end_hyps[0]['lmstate']
 
         self.n_frames += eouts.size(1)
-        self.score.register_key_prev_tail(eouts)
+        self.score.register_key_prev_tail(eouts[:, truncate_offset:])
 
         return end_hyps, hyps, aws
