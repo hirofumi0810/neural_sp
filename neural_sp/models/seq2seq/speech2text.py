@@ -146,7 +146,7 @@ class Speech2Text(ModelBase):
             # Load the LM for LM fusion and decoder initialization
             if args.external_lm and dir == 'fwd':
                 external_lm = RNNLM(args.lm_conf)
-                load_checkpoint(external_lm, args.external_lm)
+                load_checkpoint(args.external_lm, external_lm)
                 # freeze LM parameters
                 for n, p in external_lm.named_parameters():
                     p.requires_grad = False
