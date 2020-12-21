@@ -15,13 +15,15 @@ from neural_sp.models.base import ModelBase
 from neural_sp.models.lm.rnnlm import RNNLM
 from neural_sp.models.seq2seq.decoders.build import build_decoder
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
-from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer
+from neural_sp.models.seq2seq.decoders.las import RNNDecoder
+from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer as RNNT
 from neural_sp.models.seq2seq.encoders.build import build_encoder
 from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.frontends.input_noise import add_input_noise
 from neural_sp.models.seq2seq.frontends.sequence_summary import SequenceSummaryNetwork
 from neural_sp.models.seq2seq.frontends.spec_augment import SpecAugment
 from neural_sp.models.seq2seq.frontends.splicing import splice
+from neural_sp.models.seq2seq.frontends.streaming import Streaming
 from neural_sp.models.torch_utils import (
     np2tensor,
     tensor2np,
@@ -284,7 +286,7 @@ class Speech2Text(ModelBase):
                                              teacher_logits, self.recog_params, self.idx2token,
                                              batch['trigger_points'])
             loss += loss_fwd
-            if isinstance(self.dec_fwd, RNNTransducer):
+            if isinstance(self.dec_fwd, RNNT):
                 observation['loss.transducer'] = obs_fwd['loss_transducer']
             else:
                 observation['acc.att'] = obs_fwd['acc_att']
@@ -322,7 +324,7 @@ class Speech2Text(ModelBase):
                     eout_dict['ys_' + sub]['xs'], eout_dict['ys_' + sub]['xlens'],
                     batch['ys_' + sub], task)
                 loss += loss_sub
-                if isinstance(getattr(self, 'dec_fwd_' + sub), RNNTransducer):
+                if isinstance(getattr(self, 'dec_fwd_' + sub), RNNT):
                     observation['loss.transducer-' + sub] = obs_fwd_sub['loss_transducer']
                 else:
                     observation['loss.att-' + sub] = obs_fwd_sub['loss_att']
@@ -470,8 +472,6 @@ class Speech2Text(ModelBase):
             self.dec_fwd_sub2._plot_ctc(mkdir_join(self.save_path, 'ctc_sub2'))
 
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
-        from neural_sp.models.seq2seq.frontends.streaming import Streaming
-
         # check configurations
         assert task == 'ys'
         assert self.input_type == 'speech'
@@ -482,8 +482,8 @@ class Speech2Text(ModelBase):
         global_params = copy.deepcopy(params)
         global_params['recog_max_len_ratio'] = 1.0
 
-        streaming = Streaming(xs[0], params, self.enc, idx2token)
-        chunk_sync = params['recog_chunk_sync']
+        streaming = Streaming(xs[0], params, self.enc)
+        block_sync = params['recog_chunk_sync']
 
         hyps = None
         best_hyp_id_stream = []
@@ -501,18 +501,20 @@ class Speech2Text(ModelBase):
                 x_chunk, is_last_chunk, lookback, lookahead = streaming.extract_feature()
                 if is_reset:
                     self.enc.reset_cache()
-                eout_chunk = self.encode([x_chunk], task,
-                                         streaming=True,
-                                         lookback=lookback,
-                                         lookahead=lookahead)[task]['xs']
+                eout_chunk_dict = self.encode([x_chunk], 'all',
+                                              streaming=True,
+                                              lookback=lookback,
+                                              lookahead=lookahead)
+                eout_chunk = eout_chunk_dict[task]['xs']
                 is_reset = False  # detect the first boundary in the same chunk
 
                 # CTC-based VAD
-                ctc_log_probs_chunk = None
                 if streaming.is_ctc_vad:
-                    ctc_probs_chunk = self.dec_fwd.ctc_probs(eout_chunk)
-                    if params['recog_ctc_weight'] > 0:
-                        ctc_log_probs_chunk = torch.log(ctc_probs_chunk)
+                    if self.ctc_weight_sub1 > 0:
+                        ctc_probs_chunk = self.dec_fwd_sub1.ctc_probs(eout_chunk_dict['ys_sub1']['xs'])
+                        # TODO: consider subsampling
+                    else:
+                        ctc_probs_chunk = self.dec_fwd.ctc_probs(eout_chunk)
                     is_reset = streaming.ctc_vad(ctc_probs_chunk, stdout=stdout)
 
                 # Truncate the most right frames
@@ -521,12 +523,11 @@ class Speech2Text(ModelBase):
                 streaming.eout_chunks.append(eout_chunk)
 
                 # Chunk-synchronous attention decoding
-                if chunk_sync:
-                    end_hyps, hyps, aws_seg = self.dec_fwd.beam_search_chunk_sync(
+                if isinstance(self.dec_fwd, RNNDecoder) and block_sync:
+                    end_hyps, hyps, aws_seg = self.dec_fwd.beam_search_block_sync(
                         eout_chunk, params, idx2token, lm,
-                        ctc_log_probs=ctc_log_probs_chunk, hyps=hyps,
-                        state_carry_over=False,
-                        ignore_eos=self.enc.enc_type in ['lstm', 'conv_lstm'])
+                        hyps=hyps,
+                        state_carry_over=False)
                     merged_hyps = sorted(end_hyps + hyps, key=lambda x: x['score'], reverse=True)
                     best_hyp_id_prefix = np.array(merged_hyps[0]['hyp'][1:])
                     if len(best_hyp_id_prefix) > 0 and best_hyp_id_prefix[-1] == self.eos:
@@ -548,7 +549,7 @@ class Speech2Text(ModelBase):
 
                 if is_reset:
                     # Global decoding over the segmented region
-                    if not chunk_sync:
+                    if not block_sync:
                         eout = torch.cat(streaming.eout_chunks, dim=1)
                         elens = torch.IntTensor([eout.size(1)])
                         ctc_log_probs = None
@@ -557,18 +558,18 @@ class Speech2Text(ModelBase):
                         nbest_hyps_id_offline = self.dec_fwd.beam_search(
                             eout, elens, global_params, idx2token, lm, lm_second,
                             ctc_log_probs=ctc_log_probs)[0]
-                        # print('Offline (T:%d [frame]): %s' %
+                        # print('Offline (T:%d [10ms]): %s' %
                         #       (streaming.offset + eout_chunk.size(1) * streaming.factor,
                         #        idx2token(nbest_hyps_id_offline[0][0])))
 
                     # pick up the best hyp from ended and active hypotheses
-                    if not chunk_sync:
+                    if not block_sync:
                         if len(nbest_hyps_id_offline[0][0]) > 0:
                             best_hyp_id_stream.extend(nbest_hyps_id_offline[0][0])
                     else:
                         if len(best_hyp_id_prefix) > 0:
                             best_hyp_id_stream.extend(best_hyp_id_prefix)
-                        # print('Final (T:%d [frame], offset:%d [frame]): %s' %
+                        # print('Final (T:%d [10ms], offset:%d [10ms]): %s' %
                         #       (streaming.offset + eout_chunk.size(1) * streaming.factor,
                         #        self.dec_fwd.n_frames * streaming.factor,
                         #        idx2token(best_hyp_id_prefix)))
@@ -590,7 +591,7 @@ class Speech2Text(ModelBase):
                     break
 
             # Global decoding for tail chunks
-            if not chunk_sync and len(streaming.eout_chunks) > 0:
+            if not block_sync and len(streaming.eout_chunks) > 0:
                 eout = torch.cat(streaming.eout_chunks, dim=1)
                 elens = torch.IntTensor([eout.size(1)])
                 nbest_hyps_id_offline = self.dec_fwd.beam_search(
@@ -601,7 +602,7 @@ class Speech2Text(ModelBase):
                     best_hyp_id_stream.extend(nbest_hyps_id_offline[0][0])
 
             # pick up the best hyp
-            if not is_reset and chunk_sync and len(best_hyp_id_prefix) > 0:
+            if not is_reset and block_sync and len(best_hyp_id_prefix) > 0:
                 best_hyp_id_stream.extend(best_hyp_id_prefix)
 
             if len(best_hyp_id_stream) > 0:
