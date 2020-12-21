@@ -1415,7 +1415,7 @@ class RNNDecoder(DecoderBase):
 
         return nbest_hyps_idx, aws, scores
 
-    def beam_search_chunk_sync(self, eouts, params, idx2token,
+    def beam_search_block_sync(self, eouts, params, idx2token,
                                lm=None, ctc_log_probs=None,
                                hyps=False, state_carry_over=False, emb_cache=True):
         assert eouts.size(0) == 1
