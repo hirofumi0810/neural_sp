@@ -10,10 +10,15 @@ import torch
 class Streaming(object):
     """Streaming encoding interface."""
 
-    def __init__(self, x_whole, params, encoder, idx2token):
+    def __init__(self, x_whole, params, encoder, chunk_size=40,
+                 idx2token=None):
         """
         Args:
             x_whole (FloatTensor): `[T, input_dim]`
+            params ():
+            encoder ():
+            chunk_size (int): chunk size for unidirectional encoder
+            idx2token ():
 
         """
         super(Streaming, self).__init__()
@@ -30,8 +35,7 @@ class Streaming(object):
         self.N_c = getattr(encoder, 'chunk_size_current', 0)  # for Transformer
         self.N_r = encoder.chunk_size_right
         if self.N_l <= 0 and self.N_r <= 0:
-            self.N_l = 40  # for unidirectional encoder
-            # TODO(hirofumi0810): make this hyper-parameters
+            self.N_l = chunk_size  # for unidirectional encoder
 
         # threshold for CTC-VAD
         self.blank = 0
@@ -111,6 +115,8 @@ class Streaming(object):
         if self.n_accum_frames < self.MAX_N_ACCUM_FRAMES:
             return is_reset
 
+        assert ctc_probs_chunk is not None
+
         # Segmentation strategy 1:
         # If any segmentation points are not found in the current chunk,
         # encoder states will be carried over to the next chunk.
@@ -143,7 +149,7 @@ class Streaming(object):
                     self.n_blanks += 1
                 else:
                     self.n_blanks = 0
-                if stdout:
+                if stdout and self.idx2token is not None:
                     print('CTC (T:%d): %s' % (self.offset + (j + 1) * self.factor,
                                               self.idx2token([topk_ids_chunk[j].item()])))
 
