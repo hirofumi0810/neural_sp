@@ -1,11 +1,12 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Test for dilated causal convolution."""
+"""Test for dilated causal convolution module."""
 
 import importlib
 import pytest
 import torch
+import warnings
 
 
 def make_args(**kwargs):
@@ -26,6 +27,9 @@ def make_args(**kwargs):
         ({'kernel_size': 3}),
         ({'kernel_size': 5}),
         ({'kernel_size': 7}),
+        ({'kernel_size': 15}),
+        ({'kernel_size': 31}),
+        ({'param_init': 'lecun'}),
         ({'param_init': 'xavier_uniform'}),
     ]
 )
@@ -44,3 +48,12 @@ def test_forward(args):
 
     out = conv1d(xs)
     assert out.size() == (batch_size, max_len, args['out_channels'])
+
+    # incremental check
+    out_incremental = []
+    for t in range(max_len):
+        out_incremental.append(conv1d(xs[:, :t + 1])[:, -1:])
+    out_incremental = torch.cat(out_incremental, dim=1)
+    assert out.size() == out_incremental.size()
+    if not torch.allclose(out[:, :t + 1], out_incremental, equal_nan=True):
+        warnings.warn("Incremental output did not match.", UserWarning)
