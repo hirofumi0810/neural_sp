@@ -16,6 +16,7 @@ def make_args(**kwargs):
         n_mixtures=5,
         vfloor=1e-6,
         param_init='',
+        nonlinear='exp',
     )
     args.update(kwargs)
     return args
@@ -27,6 +28,7 @@ def make_args(**kwargs):
         ({'n_mixtures': 1}),
         ({'n_mixtures': 4}),
         ({'param_init': 'xavier_uniform'}),
+        ({'nonlinear': 'softplus'}),
     ]
 )
 def test_forward(args):
