@@ -14,9 +14,10 @@ def make_args(**kwargs):
         qdim=32,
         adim=16,
         n_mixtures=5,
-        vfloor=1e-6,
+        dropout=0.1,
         param_init='',
         nonlinear='exp',
+        vfloor=1e-6,
     )
     args.update(kwargs)
     return args
