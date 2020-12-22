@@ -1,4 +1,4 @@
-# Copyright 202 Kyoto University (Hirofumi Inaguma)
+# Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 """Softplus function."""
