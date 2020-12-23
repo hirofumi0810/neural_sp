@@ -341,22 +341,23 @@ def test_decoding(backward, lm_fusion, params):
     with torch.no_grad():
         if params['recog_ctc_weight'] == 1:
             # pure-CTC
-            best_hyps_id = dec.decode_ctc(
+            nbest_hyps = dec.decode_ctc(
                 eouts, elens, params, idx2token,
                 lm, lm_second, lm_second_bwd, nbest=1,
                 refs_id=None, utt_ids=None, speakers=None)
-            assert isinstance(best_hyps_id, np.ndarray)
+            assert isinstance(nbest_hyps, list)
+            assert len(nbest_hyps) == batch_size
         else:
             if params['recog_beam_width'] == 1:
                 out = dec.greedy(eouts, elens, max_len_ratio=1.0, idx2token=idx2token,
                                  exclude_eos=params['exclude_eos'],
                                  refs_id=ys, utt_ids=None, speakers=None)
                 assert len(out) == 2
-                hyps, aws = out
-                assert isinstance(hyps, list)
-                assert len(hyps) == batch_size
+                nbest_hyps, aws = out
+                assert isinstance(nbest_hyps, list)
+                assert len(nbest_hyps) == batch_size
                 assert isinstance(aws, list)
-                assert aws[0].shape == (args['attn_n_heads'], len(hyps[0]), emax)
+                assert aws[0].shape == (args['attn_n_heads'], len(nbest_hyps[0]), emax)
             else:
                 out = dec.beam_search(eouts, elens, params, idx2token,
                                       lm, lm_second, lm_second_bwd, ctc_log_probs,
