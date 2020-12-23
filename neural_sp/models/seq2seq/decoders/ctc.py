@@ -226,9 +226,9 @@ class CTC(DecoderBase):
 
             # Step 2. Remove all blank labels
             best_hyp = [x for x in filter(lambda x: x != self.blank, collapsed_indices)]
-            hyps.append(np.array(best_hyp))
+            hyps.append([best_hyp])
 
-        return np.array(hyps)
+        return hyps
 
     def beam_search(self, eouts, elens, params, idx2token,
                     lm=None, lm_second=None, lm_second_bwd=None,
@@ -253,7 +253,7 @@ class CTC(DecoderBase):
             utt_ids (List): utterance id list
             speakers (List): speaker list
         Returns:
-            nbest_hyps_idx (List): Best path hypothesis. `[B, L]`
+            nbest_hyps_idx (List[List[List]]): Best path hypothesis
 
         """
         bs = eouts.size(0)

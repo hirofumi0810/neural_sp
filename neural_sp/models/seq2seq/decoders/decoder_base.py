@@ -154,7 +154,8 @@ class DecoderBase(ModelBase):
         Returns:
             probs (FloatTensor): `[B, T, vocab]`
             topk_ids (LongTensor): `[B, T, topk]`
-            nbest_hyps (List[np.ndarray]): length `[B]`, which contains arrays of size `[L]`
+            nbest_hyps (List[List[List]]): length `[B]`, which contains a list of length `[n_best]`,
+                which contains a list of length `[L]`
 
         """
         if params['recog_beam_width'] == 1:
