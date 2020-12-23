@@ -1,7 +1,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Evaluate the word-level model by WER."""
+"""Evaluate a word-level model by WER."""
 
 import codecs
 import copy
@@ -17,21 +17,25 @@ logger = logging.getLogger(__name__)
 
 
 def eval_word(models, dataloader, recog_params, epoch,
-              recog_dir=None, streaming=False, progressbar=False):
-    """Evaluate the word-level model by WER.
+              recog_dir=None, streaming=False, progressbar=False,
+              fine_grained=False, oracle=False, teacher_force=False):
+    """Evaluate a word-level model by WER.
 
     Args:
-        models (list): models to evaluate
+        models (List): models to evaluate
         dataloader (torch.utils.data.DataLoader): evaluation dataloader
         recog_params (dict):
         epoch (int):
         recog_dir (str):
-        streaming (bool): streaming decoding for the session-level evaluation
-        progressbar (bool): visualize the progressbar
+        streaming (bool): streaming decoding for session-level evaluation
+        progressbar (bool): visualize progressbar
+        oracle (bool): calculate oracle WER
+        fine_grained (bool): calculate fine-grained WER distributions based on input lengths
+        teacher_force (bool): conduct decoding in teacher-forcing mode
     Returns:
         wer (float): Word error rate
         cer (float): Character error rate
-        n_oov_total (int): totol number of OOV
+        n_oov_total (int): total number of OOV
 
     """
     if recog_dir is None:
@@ -51,7 +55,12 @@ def eval_word(models, dataloader, recog_params, epoch,
     n_sub_w, n_ins_w, n_del_w = 0, 0, 0
     n_sub_c, n_ins_c, n_del_c = 0, 0, 0
     n_word, n_char = 0, 0
+    wer_dist = {}  # calculate WER distribution based on input lengths
     n_oov_total = 0
+
+    wer_oracle = 0
+    n_oracle_hit = 0
+    n_utt = 0
 
     # Reset data counter
     dataloader.reset(recog_params['recog_batch_size'])
@@ -63,12 +72,12 @@ def eval_word(models, dataloader, recog_params, epoch,
             codecs.open(ref_trn_path, 'w', encoding='utf-8') as f_ref:
         while True:
             batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
-            if streaming or recog_params['recog_chunk_sync']:
-                best_hyps_id, _ = models[0].decode_streaming(
+            if streaming or recog_params['recog_block_sync']:
+                nbest_hyps_id = models[0].decode_streaming(
                     batch['xs'], recog_params, dataloader.idx2token[0],
-                    exclude_eos=True)
+                    exclude_eos=True)[0]
             else:
-                best_hyps_id, aws = models[0].decode(
+                nbest_hyps_id, aws = models[0].decode(
                     batch['xs'], recog_params,
                     idx2token=dataloader.idx2token[0] if progressbar else None,
                     exclude_eos=True,
@@ -79,12 +88,11 @@ def eval_word(models, dataloader, recog_params, epoch,
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
-                hyp = dataloader.idx2token[0](best_hyps_id[b])
-
-                n_oov_total += hyp.count('<unk>')
+                nbest_hyps = [dataloader.idx2token[0](hyp_id) for hyp_id in nbest_hyps_id[b]]
+                n_oov_total += nbest_hyps[0].count('<unk>')
 
                 # Resolving UNK
-                if recog_params['recog_resolving_unk'] and '<unk>' in hyp:
+                if recog_params['recog_resolving_unk'] and '<unk>' in nbest_hyps[0]:
                     recog_params_char = copy.deepcopy(recog_params)
                     recog_params_char['recog_lm_weight'] = 0
                     recog_params_char['recog_beam_width'] = 1
@@ -96,27 +104,26 @@ def eval_word(models, dataloader, recog_params, epoch,
                         utt_ids=batch['utt_ids'],
                         speakers=batch['sessions'] if dataloader.corpus == 'swbd' else batch['speakers'],
                         task='ys_sub1')
-                    # TODO(hirofumi): support ys_sub2 and ys_sub3
+                    # TODO(hirofumi): support ys_sub2
 
                     assert not streaming
 
-                    hyp = resolve_unk(
-                        hyp, best_hyps_id_char[0], aws[b], aw_char[0], dataloader.idx2token[1],
+                    nbest_hyps[0] = resolve_unk(
+                        nbest_hyps[0], best_hyps_id_char[0], aws[b], aw_char[0], dataloader.idx2token[1],
                         subsample_factor_word=np.prod(models[0].subsample),
                         subsample_factor_char=np.prod(models[0].subsample[:models[0].enc_n_layers_sub1 - 1]))
-                    logger.debug('Hyp (after OOV resolution): %s' % hyp)
-                    hyp = hyp.replace('*', '')
+                    logger.debug('Hyp (after OOV resolution): %s' % nbest_hyps[0])
+                    nbest_hyps[0] = nbest_hyps[0].replace('*', '')
 
                     # Compute CER
                     ref_char = ref
-                    hyp_char = hyp
+                    hyp_char = nbest_hyps[0]
                     if dataloader.corpus == 'csj':
-                        ref_char = ref.replace(' ', '')
-                        hyp_char = hyp.replace(' ', '')
-                    cer_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref_char),
-                                                             hyp=list(hyp_char),
-                                                             normalize=False)
-                    cer += cer_b
+                        ref_char = ref_char.replace(' ', '')
+                        hyp_char = hyp_char.replace(' ', '')
+                    err_b, sub_b, ins_b, del_b = compute_wer(ref=list(ref_char),
+                                                             hyp=list(hyp_char))
+                    cer += err_b
                     n_sub_c += sub_b
                     n_ins_c += ins_b
                     n_del_c += del_b
@@ -129,23 +136,41 @@ def eval_word(models, dataloader, recog_params, epoch,
                 else:
                     utt_id = str(batch['utt_ids'][b])
                 f_ref.write(ref + ' (' + speaker + '-' + utt_id + ')\n')
-                f_hyp.write(hyp + ' (' + speaker + '-' + utt_id + ')\n')
+                f_hyp.write(nbest_hyps[0] + ' (' + speaker + '-' + utt_id + ')\n')
                 logger.debug('utt-id: %s' % utt_id)
                 logger.debug('Ref: %s' % ref)
-                logger.debug('Hyp: %s' % hyp)
+                logger.debug('Hyp: %s' % nbest_hyps[0])
                 logger.debug('-' * 150)
 
                 if not streaming:
                     # Compute WER
-                    wer_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
-                                                             hyp=hyp.split(' '),
-                                                             normalize=False)
-                    wer += wer_b
+                    err_b, sub_b, ins_b, del_b = compute_wer(ref=ref.split(' '),
+                                                             hyp=nbest_hyps[0].split(' '))
+                    wer += err_b
                     n_sub_w += sub_b
                     n_ins_w += ins_b
                     n_del_w += del_b
                     n_word += len(ref.split(' '))
 
+                    # Compute oracle WER
+                    if oracle and len(nbest_hyps) > 1:
+                        wers_b = [err_b] + [compute_wer(ref=ref.split(' '),
+                                                        hyp=hyp_n.split(' '))[0]
+                                            for hyp_n in nbest_hyps[1:]]
+                        oracle_idx = np.argmin(np.array(wers_b))
+                        if oracle_idx == 0:
+                            n_oracle_hit += 1
+                        wer_oracle += wers_b[oracle_idx]
+                        # NOTE: OOV resolution is not considered
+
+                    if fine_grained:
+                        xlen_bin = (batch['xlens'][b] // 200 + 1) * 200
+                        if xlen_bin in wer_dist.keys():
+                            wer_dist[xlen_bin] += [err_b / 100]
+                        else:
+                            wer_dist[xlen_bin] = [err_b / 100]
+
+                n_utt += 1
                 if progressbar:
                     pbar.update(1)
 
@@ -170,10 +195,21 @@ def eval_word(models, dataloader, recog_params, epoch,
             n_ins_c /= n_char
             n_del_c /= n_char
 
-    logger.debug('WER (%s): %.2f %%' % (dataloader.set, wer))
-    logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
-    logger.debug('CER (%s): %.2f %%' % (dataloader.set, cer))
-    logger.debug('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
-    logger.debug('OOV (total): %d' % (n_oov_total))
+        if recog_params['recog_beam_width'] > 1:
+            logger.info('WER (%s): %.2f %%' % (dataloader.set, wer))
+            logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_w, n_ins_w, n_del_w))
+            logger.info('CER (%s): %.2f %%' % (dataloader.set, cer))
+            logger.info('SUB: %.2f / INS: %.2f / DEL: %.2f' % (n_sub_c, n_ins_c, n_del_c))
+            logger.info('OOV (total): %d' % (n_oov_total))
+
+        if oracle:
+            wer_oracle /= n_word
+            oracle_hit_rate = n_oracle_hit * 100 / n_utt
+            logger.info('Oracle WER (%s): %.2f %%' % (dataloader.set, wer_oracle))
+            logger.info('Oracle hit rate (%s): %.2f %%' % (dataloader.set, oracle_hit_rate))
+
+        if fine_grained:
+            for len_bin, wers in sorted(wer_dist.items(), key=lambda x: x[0]):
+                logger.info('  WER (%s): %.2f %% (%d)' % (dataloader.set, sum(wers) / len(wers), len_bin))
 
     return wer, cer, n_oov_total

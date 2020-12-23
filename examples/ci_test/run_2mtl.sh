@@ -200,6 +200,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --asr_init ${asr_init} \
         --external_lm ${external_lm} \
         --stdout ${stdout} \
+        --remove_old_checkpoints false \
         --resume ${resume} || exit 1;
 
     echo "Finish ASR model training (stage: 4)."

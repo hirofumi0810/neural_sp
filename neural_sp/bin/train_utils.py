@@ -127,12 +127,12 @@ def load_checkpoint(checkpoint_path, model=None, scheduler=None, amp=None):
     """Load checkpoint.
 
     Args:
-        checkpoint_path (str): path to the saved model (model..epoch-*)
+        checkpoint_path (str): path to the saved model (model.epoch-*)
         model (torch.nn.Module):
         scheduler (LRScheduler): optimizer wrapped by LRScheduler class
         amp ():
     Returns:
-        topk_list (list): list of (epoch, metric)
+        topk_list (List): (epoch, metric)
 
     """
     if os.path.isfile(checkpoint_path):
@@ -151,7 +151,7 @@ def load_checkpoint(checkpoint_path, model=None, scheduler=None, amp=None):
 
     # Restore scheduler/optimizer
     if scheduler is not None:
-        scheduler.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['optimizer_state_dict'], model.use_cuda)
         # NOTE: fix this later
         scheduler.optimizer.param_groups[0]['params'] = []
         for param_group in list(model.parameters()):

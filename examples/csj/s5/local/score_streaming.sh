@@ -4,10 +4,6 @@
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 model=
-model1=
-model2=
-model3=
-model_bwd=
 gpu=
 stdout=false
 
@@ -17,7 +13,7 @@ data=/n/work2/inaguma/corpus/csj
 unit=
 metric=edit_distance
 batch_size=1
-beam_width=5
+beam_width=10
 min_len_ratio=0.0
 max_len_ratio=0.4  ###
 length_penalty=0.0
@@ -28,24 +24,21 @@ gnmt_decoding=false
 eos_threshold=1.0
 lm=
 lm_second=
-lm_bwd=
 lm_weight=0.3
 lm_second_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
-fwd_bwd_attention=false
-bwd_attention=false
-reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-chunk_sync=true  # for MoChA
 n_average=10  # for Transformer
 oracle=false
+block_sync=true  # for MoChA
+block_size=40  # for MoChA
 
 # for streaming
-blank_threshold=60  # * 10 [ms]
+blank_threshold=40
 spike_threshold=0.1
-n_accum_frames=800 # * 10 [ms]
+n_accum_frames=1600
 
 . ./cmd.sh
 . ./path.sh
@@ -87,20 +80,11 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
     if [ ${resolving_unk} = true ]; then
         recog_dir=${recog_dir}_resolvingOOV
     fi
-    if [ ${fwd_bwd_attention} = true ]; then
-        recog_dir=${recog_dir}_fwdbwd
-    fi
-    if [ ${bwd_attention} = true ]; then
-        recog_dir=${recog_dir}_bwd
-    fi
-    if [ ${reverse_lm_rescoring} = true ]; then
-        recog_dir=${recog_dir}_revLM
-    fi
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${chunk_sync} = true ]; then
-        recog_dir=${recog_dir}_chunksync
+    if [ ${block_sync} = true ]; then
+        recog_dir=${recog_dir}_blocksync${block_size}
     fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
@@ -110,13 +94,6 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
     fi
     if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
-    fi
-    if [ ! -z ${model3} ]; then
-        recog_dir=${recog_dir}_ensemble4
-    elif [ ! -z ${model2} ]; then
-        recog_dir=${recog_dir}_ensemble3
-    elif [ ! -z ${model1} ]; then
-        recog_dir=${recog_dir}_ensemble2
     fi
     recog_dir=${recog_dir}_blank${blank_threshold}_spike${spike_threshold}_accum${n_accum_frames}
     mkdir -p ${recog_dir}
@@ -145,8 +122,7 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
-        --recog_model ${model} ${model1} ${model2} ${model3} \
-        --recog_model_bwd ${model_bwd} \
+        --recog_model ${model} \
         --recog_batch_size ${batch_size} \
         --recog_beam_width ${beam_width} \
         --recog_max_len_ratio ${max_len_ratio} \
@@ -159,20 +135,17 @@ for set in eval1_streaming eval2_streaming eval3_streaming; do
         --recog_eos_threshold ${eos_threshold} \
         --recog_lm ${lm} \
         --recog_lm_second ${lm_second} \
-        --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
-        --recog_fwd_bwd_attention ${fwd_bwd_attention} \
-        --recog_bwd_attention ${bwd_attention} \
-        --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_streaming true \
-        --recog_chunk_sync ${chunk_sync} \
+        --recog_block_sync ${block_sync} \
+        --recog_block_sync_size ${block_size} \
         --recog_ctc_vad true \
         --recog_ctc_vad_blank_threshold ${blank_threshold} \
         --recog_ctc_vad_spike_threshold ${spike_threshold} \

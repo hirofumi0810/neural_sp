@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Train the LM."""
+"""Train LM."""
 
 import cProfile
 import logging
@@ -276,7 +276,7 @@ def main():
 
             # Save the model
             scheduler.save_checkpoint(
-                model, save_path, remove_old=not is_transformer, amp=amp)
+                model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
         else:
             start_time_eval = time.time()
             # dev
@@ -292,7 +292,7 @@ def main():
             if scheduler.is_topk or is_transformer:
                 # Save the model
                 scheduler.save_checkpoint(
-                    model, save_path, remove_old=not is_transformer, amp=amp)
+                    model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
 
                 # test
                 ppl_test_avg = 0.

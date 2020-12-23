@@ -159,6 +159,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
         --wp_model ${wp_model}.model \
         --model_save_dir ${model}/lm \
         --stdout ${stdout} \
+        --remove_old_checkpoints false \
         --resume ${lm_resume} || exit 1;
 
     echo "Finish LM training (stage: 3)."
@@ -187,6 +188,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --asr_init ${asr_init} \
         --external_lm ${external_lm} \
         --stdout ${stdout} \
+        --remove_old_checkpoints false \
         --resume ${resume} || exit 1;
 
     echo "Finish ASR model training (stage: 4)."

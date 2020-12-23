@@ -12,7 +12,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/wsj
+data=/n/work2/inaguma/corpus/wsj
 
 unit=
 metric=edit_distance
@@ -21,7 +21,7 @@ beam_width=10
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
-length_norm=false
+length_norm=true
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
@@ -38,8 +38,10 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_average=1  # for Transformer
+n_average=10  # for Transformer
 oracle=false
+block_sync=false  # for MoChA
+mma_delay_threshold=-1
 
 . ./cmd.sh
 . ./path.sh
@@ -69,7 +71,7 @@ for set in test_dev93 test_eval92; do
     if [ ! -z ${lm} ] && [ ${lm_weight} != 0 ]; then
         recog_dir=${recog_dir}_lm${lm_weight}
     fi
-    if [ ! -z ${lm_second} ] && [ ${lm_weight} != 0 ]; then
+    if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
@@ -93,6 +95,9 @@ for set in test_dev93 test_eval92; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
+    if [ ${block_sync} = true ]; then
+        recog_dir=${recog_dir}_blocksync
+    fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
     fi
@@ -101,6 +106,9 @@ for set in test_dev93 test_eval92; do
     fi
     if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
+    fi
+    if [ ${mma_delay_threshold} != -1 ]; then
+        recog_dir=${recog_dir}_epswait${mma_delay_threshold}
     fi
     if [ ! -z ${model3} ]; then
         recog_dir=${recog_dir}_ensemble4
@@ -111,16 +119,14 @@ for set in test_dev93 test_eval92; do
     fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep 'train_si284_sp') ]; then
-        recog_set=${data}/dataset/${set}_si284_sp_wpbpe1000.tsv
+    if [ $(echo ${model} | grep 'train_sp_si284') ]; then
+        recog_set=${data}/dataset/${set}_sp_si284_wpbpe1000.tsv
     elif [ $(echo ${model} | grep 'train_si284') ]; then
         recog_set=${data}/dataset/${set}_si284_wpbpe1000.tsv
-    elif [ $(echo ${model} | grep 'train_si84_sp') ]; then
-        recog_set=${data}/dataset/${set}_si84_sp_char.tsv
+    elif [ $(echo ${model} | grep 'train_sp_si84') ]; then
+        recog_set=${data}/dataset/${set}_sp_si84_char.tsv
     elif [ $(echo ${model} | grep 'train_si84') ]; then
         recog_set=${data}/dataset/${set}_si84_char.tsv
-    else
-        exit 1
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
@@ -153,15 +159,17 @@ for set in test_dev93 test_eval92; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_block_sync ${block_sync} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
+        --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_stdout ${stdout} || exit 1;
 
-    # remove <unk>, <noise>
-    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' | sed 's:<noise>::g' > ${recog_dir}/ref.trn.filt
-    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' | sed 's:<noise>::g' > ${recog_dir}/hyp.trn.filt
+       if [ ${metric} = 'edit_distance' ]; then
+         # remove <unk>, <noise>
+        cat ${recog_dir}/ref.trn | sed 's:<unk>::g' | sed 's:<noise>::g' > ${recog_dir}/ref.trn.filt
+        cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' | sed 's:<noise>::g' > ${recog_dir}/hyp.trn.filt
 
-    if [ ${metric} = 'edit_distance' ]; then
         echo ${set}
         sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS

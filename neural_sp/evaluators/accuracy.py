@@ -14,10 +14,10 @@ def eval_accuracy(models, dataloader, batch_size=1, progressbar=False):
     """Evaluate a Seq2seq by teacher-forcing accuracy.
 
     Args:
-        models (list): models to evaluate
+        models (List): models to evaluate
         dataloader (torch.utils.data.DataLoader): evaluation dataloader
         batch_size (int): batch size
-        progressbar (bool): if True, visualize the progressbar
+        progressbar (bool): if True, visualize progressbar
     Returns:
         accuracy (float): Average accuracy
 

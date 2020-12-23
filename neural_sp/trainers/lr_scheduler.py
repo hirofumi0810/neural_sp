@@ -219,7 +219,7 @@ class LRScheduler(object):
         logger.info("=> Saved checkpoint (epoch:%s): %s" % (str(epoch_detail), model_path))
 
     def get_state_dict(self):
-        """Returns the state of the scheduler as a :class:`dict`.
+        """Return state of scheduler as a :class:`dict`.
 
         It contains an entry for every variable in self.__dict__ which
         is not the optimizer.
@@ -229,12 +229,13 @@ class LRScheduler(object):
         dict['optimizer_state_dict'] = self.optimizer.state_dict()
         return dict
 
-    def load_state_dict(self, state_dict):
-        """Loads the schedulers state.
+    def load_state_dict(self, state_dict, use_cuda):
+        """Load scheduler's state.
 
         Arguments:
             state_dict (dict): scheduler state. Should be an object returned
                 from a call to :meth:`state_dict`.
+            use_cuda (bool): GPU mode
 
         """
         self.__dict__.update({k: v for k, v in state_dict.items() if k != 'optimizer_state_dict'})
@@ -242,7 +243,7 @@ class LRScheduler(object):
         # https://discuss.pytorch.org/t/loading-a-saved-model-for-continue-training/17244/4
         for state in self.optimizer.state.values():
             for k, v in state.items():
-                if isinstance(v, torch.Tensor):
+                if use_cuda and isinstance(v, torch.Tensor):
                     state[k] = v.cuda()
 
     def convert_to_sgd(self, model, lr, weight_decay, decay_type, decay_rate):

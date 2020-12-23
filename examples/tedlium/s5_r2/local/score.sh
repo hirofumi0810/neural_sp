@@ -12,12 +12,12 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/tedlium2
+data=/n/work2/inaguma/corpus/tedlium2
 
 unit=
 metric=edit_distance
 batch_size=1
-beam_width=10  ###
+beam_width=10
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
@@ -41,7 +41,8 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
-chunk_sync=false  # for MoChA
+block_sync=false  # for MoChA
+block_size=40  # for MoChA
 mma_delay_threshold=-1
 
 . ./cmd.sh
@@ -58,7 +59,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev test; do
+for set in dev_sp test_sp; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -99,8 +100,8 @@ for set in dev test; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${chunk_sync} = true ]; then
-        recog_dir=${recog_dir}_chunksync
+    if [ ${block_sync} = true ]; then
+        recog_dir=${recog_dir}_blocksync${block_size}
     fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
@@ -123,11 +124,7 @@ for set in dev test; do
     fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep 'train_sp') ]; then
-        recog_set=${data}/dataset/${set}_sp_wpbpe10000.tsv
-    else
-        recog_set=${data}/dataset/${set}_wpbpe10000.tsv
-    fi
+    recog_set=${data}/dataset/${set}_wpbpe10000.tsv
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
         --recog_n_gpus ${n_gpus} \
@@ -160,7 +157,8 @@ for set in dev test; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
-        --recog_chunk_sync ${chunk_sync} \
+        --recog_block_sync ${block_sync} \
+        --recog_block_sync_size ${block_size} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \
