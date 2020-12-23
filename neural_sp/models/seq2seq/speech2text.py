@@ -230,13 +230,13 @@ class Speech2Text(ModelBase):
 
         Args:
             batch (dict):
-                xs (list): input data of size `[T, input_dim]`
-                xlens (list): lengths of each element in xs
-                ys (list): reference labels in the main task of size `[L]`
-                ys_sub1 (list): reference labels in the 1st auxiliary task of size `[L_sub1]`
-                ys_sub2 (list): reference labels in the 2nd auxiliary task of size `[L_sub2]`
-                utt_ids (list): name of utterances
-                speakers (list): name of speakers
+                xs (List): input data of size `[T, input_dim]`
+                xlens (List): lengths of each element in xs
+                ys (List): reference labels in the main task of size `[L]`
+                ys_sub1 (List): reference labels in the 1st auxiliary task of size `[L_sub1]`
+                ys_sub2 (List): reference labels in the 2nd auxiliary task of size `[L_sub2]`
+                utt_ids (List): name of utterances
+                speakers (List): name of speakers
             task (str): all/ys*/ys_sub*
             is_eval (bool): evaluation mode
                 This should be used in inference model for memory efficiency.
@@ -360,7 +360,7 @@ class Speech2Text(ModelBase):
         """Encode acoustic or text features.
 
         Args:
-            xs (list): A list of length `[B]`, which contains Tensor of size `[T, input_dim]`
+            xs (List): length `[B]`, which contains Tensor of size `[T, input_dim]`
             task (str): all/ys*/ys_sub1*/ys_sub2*
             streaming (bool): streaming encoding
             lookback (bool): truncate leftmost frames for lookback in CNN context
@@ -439,7 +439,7 @@ class Speech2Text(ModelBase):
 
         Args:
             xs (FloatTensor): `[B, T, idim]`
-            ys (list): length `B`, each of which contains a list of size `[L]`
+            ys (List): length `B`, each of which contains a list of size `[L]`
         Returns:
             trigger_points (np.ndarray): `[B, L]`
 
@@ -472,7 +472,6 @@ class Speech2Text(ModelBase):
             self.dec_fwd_sub2._plot_ctc(mkdir_join(self.save_path, 'ctc_sub2'))
 
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
-        # check configurations
         assert task == 'ys'
         assert self.input_type == 'speech'
         assert self.ctc_weight > 0
@@ -481,9 +480,9 @@ class Speech2Text(ModelBase):
         # assert params['recog_length_norm']
         global_params = copy.deepcopy(params)
         global_params['recog_max_len_ratio'] = 1.0
+        block_sync = params['recog_block_sync']
 
-        streaming = Streaming(xs[0], params, self.enc)
-        block_sync = params['recog_chunk_sync']
+        streaming = Streaming(xs[0], params, self.enc, params['recog_block_sync_size'])
 
         hyps = None
         best_hyp_id_stream = []
@@ -625,7 +624,7 @@ class Speech2Text(ModelBase):
         """Decode in the inference stage.
 
         Args:
-            xs (list): A list of length `[B]`, which contains arrays of size `[T, input_dim]`
+            xs (List): length `[B]`, which contains arrays of size `[T, input_dim]`
             params (dict): hyper-parameters for decoding
                 beam_width (int): the size of beam
                 min_len_ratio (float):
@@ -638,17 +637,17 @@ class Speech2Text(ModelBase):
                 fwd_bwd_attention (bool):
             idx2token (): converter from index to token
             exclude_eos (bool): exclude <eos> from best_hyps_id
-            refs_id (list): gold token IDs to compute log likelihood
-            refs (list): gold transcriptions
-            utt_ids (list):
-            speakers (list):
+            refs_id (List): gold token IDs to compute log likelihood
+            refs (List): gold transcriptions
+            utt_ids (List):
+            speakers (List):
             task (str): ys* or ys_sub1* or ys_sub2*
-            ensemble_models (list): list of Speech2Text classes
+            ensemble_models (List): Speech2Text classes
             trigger_points (np.ndarray): `[B, L]`
             teacher_force (bool): conduct teacher-forcing
         Returns:
-            best_hyps_id (list): A list of length `[B]`, which contains arrays of size `[L]`
-            aws (list): A list of length `[B]`, which contains arrays of size `[L, T, n_heads]`
+            nbest_hyps_id (List[List[np.ndarray]]): length `[B]`, which contains a list of length `[n_best]` which contains arrays of size `[L]`
+            aws (List[np.ndarray]): length `[B]`, which contains arrays of size `[L, T, n_heads]`
 
         """
         if task.split('.')[0] == 'ys':
@@ -676,10 +675,11 @@ class Speech2Text(ModelBase):
                 lm_second = getattr(self, 'lm_second', None)
                 lm_second_bwd = None  # TODO
 
-                best_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
+                nbest_hyps_id = getattr(self, 'dec_' + dir).decode_ctc(
                     eout_dict[task]['xs'], eout_dict[task]['xlens'], params, idx2token,
-                    lm, lm_second, lm_second_bwd, 1, refs_id, utt_ids, speakers)
-                return best_hyps_id, None
+                    lm, lm_second, lm_second_bwd,
+                    params['recog_beam_width'], refs_id, utt_ids, speakers)
+                return nbest_hyps_id, None
 
             # Attention/RNN-T
             elif params['recog_beam_width'] == 1 and not params['recog_fwd_bwd_attention']:
@@ -687,6 +687,7 @@ class Speech2Text(ModelBase):
                     eout_dict[task]['xs'], eout_dict[task]['xlens'],
                     params['recog_max_len_ratio'], idx2token,
                     exclude_eos, refs_id, utt_ids, speakers)
+                nbest_hyps_id = [[hyp] for hyp in best_hyps_id]
             else:
                 assert params['recog_batch_size'] == 1
 
@@ -696,19 +697,19 @@ class Speech2Text(ModelBase):
 
                 # forward-backward decoding
                 if params['recog_fwd_bwd_attention']:
-                    lm_fwd = getattr(self, 'lm_fwd', None)
+                    lm = getattr(self, 'lm_fwd', None)
                     lm_bwd = getattr(self, 'lm_bwd', None)
 
                     # forward decoder
                     nbest_hyps_id_fwd, aws_fwd, scores_fwd = self.dec_fwd.beam_search(
                         eout_dict[task]['xs'], eout_dict[task]['xlens'],
-                        params, idx2token, lm_fwd, None, lm_bwd, ctc_log_probs,
+                        params, idx2token, lm, None, lm_bwd, ctc_log_probs,
                         params['recog_beam_width'], False, refs_id, utt_ids, speakers)
 
                     # backward decoder
                     nbest_hyps_id_bwd, aws_bwd, scores_bwd, _ = self.dec_bwd.beam_search(
                         eout_dict[task]['xs'], eout_dict[task]['xlens'],
-                        params, idx2token, lm_bwd, None, lm_fwd, ctc_log_probs,
+                        params, idx2token, lm_bwd, None, lm, ctc_log_probs,
                         params['recog_beam_width'], False, refs_id, utt_ids, speakers)
 
                     # forward-backward attention
@@ -717,6 +718,7 @@ class Speech2Text(ModelBase):
                         nbest_hyps_id_bwd, aws_bwd, scores_bwd,
                         self.eos, params['recog_gnmt_decoding'], params['recog_length_penalty'],
                         idx2token, refs_id)
+                    nbest_hyps_id = [[hyp] for hyp in best_hyps_id]
                     aws = None
                 else:
                     # ensemble
@@ -736,8 +738,7 @@ class Speech2Text(ModelBase):
                     nbest_hyps_id, aws, scores = getattr(self, 'dec_' + dir).beam_search(
                         eout_dict[task]['xs'], eout_dict[task]['xlens'],
                         params, idx2token, lm, lm_second, lm_bwd, ctc_log_probs,
-                        1, exclude_eos, refs_id, utt_ids, speakers,
+                        params['recog_beam_width'], exclude_eos, refs_id, utt_ids, speakers,
                         ensmbl_eouts, ensmbl_elens, ensmbl_decs)
-                    best_hyps_id = [hyp[0] for hyp in nbest_hyps_id]
 
-            return best_hyps_id, aws
+            return nbest_hyps_id, aws
