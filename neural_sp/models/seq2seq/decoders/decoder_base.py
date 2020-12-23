@@ -154,16 +154,16 @@ class DecoderBase(ModelBase):
         Returns:
             probs (FloatTensor): `[B, T, vocab]`
             topk_ids (LongTensor): `[B, T, topk]`
-            best_hyps (list): A list of length `[B]`, which contains arrays of size `[L]`
+            nbest_hyps (List[np.ndarray]): length `[B]`, which contains arrays of size `[L]`
 
         """
         if params['recog_beam_width'] == 1:
-            best_hyps = self.ctc.greedy(eouts, elens)
+            nbest_hyps = self.ctc.greedy(eouts, elens)
         else:
-            best_hyps = self.ctc.beam_search(eouts, elens, params, idx2token,
-                                             lm, lm_second, lm_second_bwd,
-                                             nbest, refs_id, utt_ids, speakers)
-        return best_hyps
+            nbest_hyps = self.ctc.beam_search(eouts, elens, params, idx2token,
+                                              lm, lm_second, lm_second_bwd,
+                                              nbest, refs_id, utt_ids, speakers)
+        return nbest_hyps
 
     def ctc_probs(self, eouts, temperature=1.):
         """Return CTC probabilities.
@@ -214,8 +214,8 @@ class DecoderBase(ModelBase):
 
         Args:
             logits (FloatTensor): `[B, T, vocab]`
-            elens (list): length `B`
-            ys (list): length `B`, each of which contains a list of size `[L]`
+            elens (List): length `B`
+            ys (List): length `B`, each of which contains a list of size `[L]`
         Returns:
             trigger_points (IntTensor): `[B, L]`
 
