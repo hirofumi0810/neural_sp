@@ -12,7 +12,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/librispeech
+data=/n/work2/inaguma/corpus/librispeech
 
 unit=
 metric=edit_distance
@@ -40,7 +40,8 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
-chunk_sync=false  # for MoChA
+block_sync=false  # for MoChA
+block_size=40  # for MoChA
 mma_delay_threshold=-1
 
 . ./cmd.sh
@@ -95,8 +96,8 @@ for set in dev_clean dev_other test_clean test_other; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
-    if [ ${chunk_sync} = true ]; then
-        recog_dir=${recog_dir}_chunksync
+    if [ ${block_sync} = true ]; then
+        recog_dir=${recog_dir}_blocksync${block_size}
     fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
@@ -167,7 +168,8 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
-        --recog_chunk_sync ${chunk_sync} \
+        --recog_block_sync ${block_sync} \
+        --recog_block_sync_size ${block_size} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \

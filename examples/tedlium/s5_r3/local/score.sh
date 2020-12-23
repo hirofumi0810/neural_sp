@@ -12,12 +12,12 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/tedlium3
+data=/n/work2/inaguma/corpus/tedlium3
 
 unit=
 metric=edit_distance
 batch_size=1
-beam_width=5
+beam_width=10
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
@@ -38,8 +38,11 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_average=1  # for Transformer
+n_average=10  # for Transformer
 oracle=false
+block_sync=false  # for MoChA
+block_size=40  # for MoChA
+mma_delay_threshold=-1
 
 . ./cmd.sh
 . ./path.sh
@@ -93,6 +96,9 @@ for set in dev test; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
+    if [ ${block_sync} = true ]; then
+        recog_dir=${recog_dir}_blocksync${block_size}
+    fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
     fi
@@ -101,6 +107,9 @@ for set in dev test; do
     fi
     if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
+    fi
+    if [ ${mma_delay_threshold} != -1 ]; then
+        recog_dir=${recog_dir}_epswait${mma_delay_threshold}
     fi
     if [ ! -z ${model3} ]; then
         recog_dir=${recog_dir}_ensemble4
@@ -141,15 +150,18 @@ for set in dev test; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_block_sync ${block_sync} \
+        --recog_block_sync_size ${block_size} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
+        --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_stdout ${stdout} || exit 1;
 
-    # remove <unk>
-    cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
-    cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
-
     if [ ${metric} = 'edit_distance' ]; then
+        # remove <unk>
+        cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
+        cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
+
         echo ${set}
         sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS

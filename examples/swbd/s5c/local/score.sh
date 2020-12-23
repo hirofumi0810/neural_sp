@@ -12,7 +12,7 @@ gpu=
 stdout=false
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/swbd
+data=/n/work2/inaguma/corpus/swbd
 
 unit=
 metric=edit_distance
@@ -41,7 +41,7 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=1  # for Transformer
 oracle=false
-chunk_sync=false  # for MoChA
+block_sync=false  # for MoChA
 
 . ./cmd.sh
 . ./path.sh
@@ -117,11 +117,14 @@ for set in eval2000; do
     fi
     mkdir -p ${recog_dir}
 
-    if [ $(echo ${model} | grep 'train_sp') ]; then
-        recog_set=${data}/dataset/${set}_sp_swbd_wpbpe10000.tsv
+    if [ $(echo ${model} | grep 'train_nodev_sp') ]; then
+        if [ $(echo ${model} | grep 'phone') ]; then
+            recog_set=${data}/dataset/${set}_sp_swbd_phone.tsv
+        else
+            recog_set=${data}/dataset/${set}_sp_swbd_wpbpe10000.tsv
+        fi
     else
         if [ $(echo ${model} | grep 'fisher_swbd') ]; then
-            # recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe34000.tsv
             recog_set=${data}/dataset/${set}_fisher_swbd_wpbpe10000.tsv
         else
             recog_set=${data}/dataset/${set}_swbd_wpbpe10000.tsv

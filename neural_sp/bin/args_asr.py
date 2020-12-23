@@ -454,8 +454,10 @@ def build_parser():
                         help='number of models for the model averaging of Transformer')
     parser.add_argument('--recog_streaming', type=strtobool, default=False,
                         help='streaming decoding')
-    parser.add_argument('--recog_chunk_sync', type=strtobool, default=False,
-                        help='chunk-synchronous beam search decoding for MoChA')
+    parser.add_argument('--recog_block_sync', type=strtobool, default=False,
+                        help='block-synchronous streaming beam search decoding')
+    parser.add_argument('--recog_block_sync_size', type=int, default=40,
+                        help='block size in block-synchronous streaming beam search decoding')
     parser.add_argument('--recog_ctc_spike_forced_decoding', type=strtobool, default=False,
                         help='force MoChA to generate tokens corresponding to CTC spikes')
     parser.add_argument('--recog_ctc_vad', type=strtobool, default=True,
