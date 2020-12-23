@@ -38,7 +38,7 @@ local/score.sh --model results/asr/train_char/conv2Ltransformer8dmodel32dff1L4Hp
 ./run.sh --stage 4 --conf conf/asr/blstm_las.yaml --conf2 conf/data/adaptive_spec_augment.yaml || exit 1;
 
 # streaming ASR
-./run.sh --stage 4 --conf conf/asr/lcblstm_mocha_chunk4040.yaml || exit 1;
+# ./run.sh --stage 4 --conf conf/asr/lcblstm_mocha_chunk4040.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/lc_transformer_mma_ma4H_ca4H_w16_from4L_64_128_64.yaml || exit 1;
 
 # multi-task
