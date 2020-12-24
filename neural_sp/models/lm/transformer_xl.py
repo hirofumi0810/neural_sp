@@ -150,7 +150,7 @@ class TransformerXL(LMBase):
 
     def reset_parameters(self):
         """Initialize parameters with normal distribution."""
-        logging.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with normal distribution =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             init_like_transformer_xl(n, p, std=0.02)
 
@@ -228,9 +228,7 @@ class TransformerXL(LMBase):
 
         # Pre-compute embedding
         if emb_cache and self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64)
-            if self.use_cuda:
-                indices = indices.cuda()
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(ys.device)
             self.embed_cache = self.dropout_emb(self.embed(indices) * self.scale)  # `[1, vocab, emb_dim]`
 
         if self.embed_cache is not None:
