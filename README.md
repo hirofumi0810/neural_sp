@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.org/hirofumi0810/neural_sp.svg?branch=master)](https://travis-ci.org/hirofumi0810/neural_sp)
+[![codecov](https://codecov.io/gh/hirofumi0810/neural_sp/branch/master/graph/badge.svg?token=wy0VD7e3bH)](https://codecov.io/gh/hirofumi0810/neural_sp)
 
 # NeuralSP: Neural network based Speech Processing
 
@@ -55,11 +56,11 @@ make KALDI=/path/to/kaldi
   - Gated CNN encoder (GLU) [[link](https://openreview.net/forum?id=Hyig0zb0Z)]
 
 ### Connectionist Temporal Classification (CTC) decoder
-  - Forced alignment
   - Beam search
   - Shallow fusion
+  - Forced alignment
 
-### RNN-Transducer (RNN-T)
+### RNN-Transducer (RNN-T) decoder [[link](https://arxiv.org/abs/1211.3711)]
   - Beam search
   - Shallow fusion
 
@@ -70,15 +71,19 @@ make KALDI=/path/to/kaldi
     - Deep fusion [[link](https://arxiv.org/abs/1503.03535)]
     - Forward-backward attention decoding [[link](https://www.isca-speech.org/archive/Interspeech_2018/abstracts/1160.html)]
     - Ensemble decoding
-  - Streaming RNN decoder
+  - Attention type
+    - location-based
+    - content-based
+    - dot-product
+    - GMM attention
+  - Streaming RNN decoder specific
     - Hard monotonic attention [[link](https://arxiv.org/abs/1704.00784)]
     - Monotonic chunkwise attention (MoChA) [[link](https://arxiv.org/abs/1712.05382)]
     - Delay constrained training (DeCoT) [[link](https://arxiv.org/abs/2004.05009)]
     - Minimum latency training (MinLT) [[link](https://arxiv.org/abs/2004.05009)]
     - CTC-synchronous training (CTC-ST) [[link](https://arxiv.org/abs/2005.04712)]
-  - RNN transducer [[link](https://arxiv.org/abs/1211.3711)]
   - Transformer decoder [[link](https://arxiv.org/abs/1706.03762)]
-  - Streaming Transformer decoder
+  - Streaming Transformer decoder specific
     - Monotonic Multihead Attention [[link](https://arxiv.org/abs/1909.12406)] [[link](https://arxiv.org/abs/2005.09394)]
 
 ### Language model (LM)
