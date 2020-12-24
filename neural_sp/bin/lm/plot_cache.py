@@ -85,7 +85,7 @@ def main():
 
         hidden = None
         fig_count = 0
-        toknen_count = 0
+        token_count = 0
         n_tokens = args.recog_n_caches
         while True:
             ys, is_new_epoch = dataset.next()
@@ -94,7 +94,7 @@ def main():
                 loss, hidden = model(ys[:, t:t + 2], hidden, is_eval=True, n_caches=args.recog_n_caches)[:2]
 
                 if len(model.cache_attn) > 0:
-                    if toknen_count == n_tokens:
+                    if token_count == n_tokens:
                         tokens_keys = dataset.idx2token[0](model.cache_ids[:args.recog_n_caches], return_list=True)
                         tokens_query = dataset.idx2token[0](model.cache_ids[-n_tokens:], return_list=True)
 
@@ -114,10 +114,10 @@ def main():
                             save_path=mkdir_join(save_path, str(fig_count) + '.png'),
                             figsize=(40, 16),
                             mask=mask)
-                        toknen_count = 0
+                        token_count = 0
                         fig_count += 1
                     else:
-                        toknen_count += 1
+                        token_count += 1
 
             if is_new_epoch:
                 break

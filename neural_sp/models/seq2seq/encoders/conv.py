@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -102,6 +99,8 @@ class ConvEncoder(EncoderBase):
             for p in poolings:
                 self._factor *= p if is_1dconv else p[0]
 
+        self.calculate_context_size(kernel_sizes, strides, poolings)
+
         self.reset_parameters(param_init)
 
     @staticmethod
@@ -140,17 +139,29 @@ class ConvEncoder(EncoderBase):
             dir_name += tmp
         return dir_name
 
+    def calculate_context_size(self, kernel_sizes, strides, poolings):
+        self._context_size = 0
+        context_size_bottom = 0
+        factor = 1
+        for lth in range(len(kernel_sizes)):
+            kernel_size = kernel_sizes[lth] if self.is_1dconv else kernel_sizes[lth][0]
+            pooling = poolings[lth] if self.is_1dconv else poolings[lth][0]
+
+            lookahead = (kernel_size - 1) // 2
+            lookahead *= 2
+            # NOTE: each CNN block has 2 CNN layers
+
+            if factor == 1:
+                self._context_size += lookahead
+                context_size_bottom = self._context_size
+            else:
+                self._context_size += context_size_bottom * lookahead
+                context_size_bottom *= pooling
+            factor *= pooling
+
     @property
-    def n_frames_context(self):
-        n_frames = 0
-        factor_tmp = self.subsampling_factor
-        if factor_tmp > 1:
-            for _ in range(int(math.log(factor_tmp, 2))):
-                n_frames += factor_tmp
-                factor_tmp //= 2
-                if factor_tmp < 2:
-                    break
-        return n_frames
+    def context_size(self):
+        return self._context_size
 
     def reset_parameters(self, param_init):
         """Initialize parameters with lecun style."""
@@ -289,6 +300,7 @@ class Conv2dBlock(EncoderBase):
         self.layer_norm = layer_norm
         self.residual = residual
         self.dropout = nn.Dropout(p=dropout)
+        self.time_axis = 0
 
         # 1st layer
         self.conv1 = nn.Conv2d(in_channels=in_channel,
@@ -350,13 +362,14 @@ class Conv2dBlock(EncoderBase):
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv1, dim=0)
-        if lookback and xs.size(2) > self.conv1.stride[0]:
+        stride = self.conv1.stride[self.time_axis]
+        if lookback and xs.size(2) > stride:
             xmax = xs.size(2)
-            xs = xs[:, :, self.conv1.stride[0]:]
+            xs = xs[:, :, stride:]
             xlens = xlens - (xmax - xs.size(2))
-        if lookahead and xs.size(2) > self.conv1.stride[0]:
+        if lookahead and xs.size(2) > stride:
             xmax = xs.size(2)
-            xs = xs[:, :, :xs.size(2) - self.conv1.stride[0]]
+            xs = xs[:, :, :xs.size(2) - stride]
             xlens = xlens - (xmax - xs.size(2))
 
         xs = self.conv2(xs)
@@ -367,13 +380,14 @@ class Conv2dBlock(EncoderBase):
         xs = torch.relu(xs)
         xs = self.dropout(xs)
         xlens = update_lens_2d(xlens, self.conv2, dim=0)
-        if lookback and xs.size(2) > self.conv2.stride[0]:
+        stride = self.conv2.stride[self.time_axis]
+        if lookback and xs.size(2) > stride:
             xmax = xs.size(2)
-            xs = xs[:, :, self.conv2.stride[0]:]
+            xs = xs[:, :, stride:]
             xlens = xlens - (xmax - xs.size(2))
-        if lookahead and xs.size(2) > self.conv2.stride[0]:
+        if lookahead and xs.size(2) > stride:
             xmax = xs.size(2)
-            xs = xs[:, :, :xs.size(2) - self.conv2.stride[0]]
+            xs = xs[:, :, :xs.size(2) - stride]
             xlens = xlens - (xmax - xs.size(2))
 
         if self.pool is not None:
@@ -408,7 +422,7 @@ class LayerNorm2D(nn.Module):
 
 
 def update_lens_1d(seq_lens, layer):
-    """Update lenghts (frequency or time).
+    """Update lengths (frequency or time).
 
     Args:
         seq_lens (IntTensor): `[B]`
@@ -437,7 +451,7 @@ def _update_1d(seq_len, layer):
 
 
 def update_lens_2d(seq_lens, layer, dim=0):
-    """Update lenghts (frequency or time).
+    """Update lengths (frequency or time).
 
     Args:
         seq_lens (IntTensor): `[B]`

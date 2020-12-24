@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -9,6 +6,7 @@
 import logging
 import torch.nn as nn
 
+from neural_sp.models.modules.initialization import init_with_lecun_normal
 from neural_sp.models.modules.initialization import init_with_xavier_uniform
 
 logger = logging.getLogger(__name__)
@@ -21,7 +19,7 @@ class CausalConv1d(nn.Module):
         in_channels (int): input channel size
         out_channels (int): output channel size
         kernel_size (int): kernel size
-        dilation (int): delation rate
+        dilation (int): deletion rate
         param_init (str): parameter initialization method
 
     """
@@ -36,15 +34,23 @@ class CausalConv1d(nn.Module):
                                 padding=self.padding, dilation=dilation)
 
         if param_init == 'xavier_uniform':
-            self.reset_parameters()
+            self.reset_parameters_xavier_uniform()
+        elif param_init == 'lecun':
+            self.reset_parameters_lecun()
         else:
             logger.info('Parameter initialization is skipped.')
 
-    def reset_parameters(self):
+    def reset_parameters_xavier_uniform(self):
         """Initialize parameters with Xavier uniform distribution."""
         logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         for n, p in self.named_parameters():
             init_with_xavier_uniform(n, p)
+
+    def reset_parameters_lecun(self, param_init=0.1):
+        """Initialize parameters with lecun style.."""
+        logger.info('===== Initialize %s with lecun style =====' % self.__class__.__name__)
+        for n, p in self.named_parameters():
+            init_with_lecun_normal(n, p, param_init)
 
     def forward(self, xs):
         """Forward pass.

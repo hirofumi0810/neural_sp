@@ -1,13 +1,11 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Evaluate the wordpiece-level model by BLEU."""
+"""Evaluate a wordpiece-level model by corpus-level BLEU."""
 
 import codecs
 import logging
+import numpy as np
 from tqdm import tqdm
 from nltk.translate.bleu_score import corpus_bleu, sentence_bleu
 
@@ -18,20 +16,22 @@ logger = logging.getLogger(__name__)
 
 def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
                         recog_dir=None, streaming=False, progressbar=False,
-                        fine_grained=False):
-    """Evaluate the wordpiece-level model by BLEU.
+                        fine_grained=False, oracle=False, teacher_force=False):
+    """Evaluate a wordpiece-level model by corpus-level BLEU.
 
     Args:
-        models (list): models to evaluate
+        models (List): models to evaluate
         dataloader (torch.utils.data.DataLoader): evaluation dataloader
         recog_params (dict):
         epoch (int):
         recog_dir (str):
-        streaming (bool): streaming decoding for the session-level evaluation
-        progressbar (bool): visualize the progressbar
-        fine_grained (bool): calculate fine-grained BLEU distributions based on input lengths
+        streaming (bool): streaming decoding for session-level evaluation
+        progressbar (bool): visualize progressbar
+        oracle (bool): calculate oracle corpsu-level BLEU
+        fine_grained (bool): calculate fine-grained corpus-level BLEU distributions based on input lengths
+        teacher_force (bool): conduct decoding in teacher-forcing mode
     Returns:
-        bleu (float): 4-gram BLEU
+        c_bleu (float): corpus-level 4-gram BLEU
 
     """
     if recog_dir is None:
@@ -47,9 +47,12 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
         ref_trn_path = mkdir_join(recog_dir, 'ref.trn')
         hyp_trn_path = mkdir_join(recog_dir, 'hyp.trn')
 
-    s_bleu = 0
-    n_sentence = 0
-    s_bleu_dist = {}  # calculate sentence-level BLEU distribution based on input lengths
+    list_of_references_dist = {}  # calculate corpus-level BLEU distribution bucketed by input lengths
+    hypotheses_dist = {}
+
+    hypotheses_oracle = []
+    n_oracle_hit = 0
+    n_utt = 0
 
     # Reset data counter
     dataloader.reset(recog_params['recog_batch_size'])
@@ -65,24 +68,24 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
         while True:
             batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
             if streaming or recog_params['recog_chunk_sync']:
-                best_hyps_id, _ = models[0].decode_streaming(
+                nbest_hyps_id = models[0].decode_streaming(
                     batch['xs'], recog_params, dataloader.idx2token[0],
-                    exclude_eos=True)
+                    exclude_eos=True)[0]
             else:
-                best_hyps_id, _ = models[0].decode(
+                nbest_hyps_id = models[0].decode(
                     batch['xs'], recog_params,
                     idx2token=dataloader.idx2token[0] if progressbar else None,
                     exclude_eos=True,
                     refs_id=batch['ys'],
                     utt_ids=batch['utt_ids'],
                     speakers=batch['sessions' if dataloader.corpus == 'swbd' else 'speakers'],
-                    ensemble_models=models[1:] if len(models) > 1 else [])
+                    ensemble_models=models[1:] if len(models) > 1 else [])[0]
 
             for b in range(len(batch['xs'])):
                 ref = batch['text'][b]
                 if ref[0] == '<':
                     ref = ref.split('>')[1]
-                hyp = dataloader.idx2token[0](best_hyps_id[b])
+                nbest_hyps = [dataloader.idx2token[0](hyp_id) for hyp_id in nbest_hyps_id[b]]
 
                 # Write to trn
                 # speaker = str(batch['speakers'][b]).replace('-', '_')
@@ -91,28 +94,35 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
                 else:
                     utt_id = str(batch['utt_ids'][b])
                 f_ref.write(ref + '\n')
-                f_hyp.write(hyp + '\n')
+                f_hyp.write(nbest_hyps[0] + '\n')
                 logger.debug('utt-id: %s' % utt_id)
                 logger.debug('Ref: %s' % ref)
-                logger.debug('Hyp: %s' % hyp)
+                logger.debug('Hyp: %s' % nbest_hyps[0])
                 logger.debug('-' * 150)
 
                 if not streaming:
                     list_of_references += [[ref.split(' ')]]
-                    hypotheses += [hyp.split(' ')]
-                    n_sentence += 1
+                    hypotheses += [nbest_hyps[0].split(' ')]
 
-                    # Compute sentence-level BLEU
                     if fine_grained:
-                        s_bleu_b = sentence_bleu([ref.split(' ')], hyp.split(' '))
-                        s_bleu += s_bleu_b * 100
-
                         xlen_bin = (batch['xlens'][b] // 200 + 1) * 200
-                        if xlen_bin in s_bleu_dist.keys():
-                            s_bleu_dist[xlen_bin] += [s_bleu_b / 100]
+                        if xlen_bin in hypotheses_dist.keys():
+                            list_of_references_dist[xlen_bin] += [[ref.split(' ')]]
+                            hypotheses_dist[xlen_bin] += [hypotheses[-1]]
                         else:
-                            s_bleu_dist[xlen_bin] = [s_bleu_b / 100]
+                            list_of_references_dist[xlen_bin] = [[ref.split(' ')]]
+                            hypotheses_dist[xlen_bin] = [hypotheses[-1]]
 
+                    # Compute oracle corpus-level BLEU (selected by sentence-level BLEU)
+                    if oracle and len(nbest_hyps) > 1:
+                        s_blues_b = [sentence_bleu(ref.split(' '), hyp_n.split(' '))
+                                     for hyp_n in nbest_hyps]
+                        oracle_idx = np.argmax(np.array(s_blues_b))
+                        if oracle_idx == 0:
+                            n_oracle_hit += 1
+                        hypotheses_oracle += [nbest_hyps[oracle_idx].split(' ')]
+
+                n_utt += 1
                 if progressbar:
                     pbar.update(1)
 
@@ -126,11 +136,19 @@ def eval_wordpiece_bleu(models, dataloader, recog_params, epoch,
     dataloader.reset()
 
     c_bleu = corpus_bleu(list_of_references, hypotheses) * 100
-    if not streaming and fine_grained:
-        s_bleu /= n_sentence
-        for len_bin, s_bleus in sorted(s_bleu_dist.items(), key=lambda x: x[0]):
-            logger.info('  sentence-level BLEU (%s): %.2f %% (%d)' %
-                        (dataloader.set, sum(s_bleus) / len(s_bleus), len_bin))
+
+    if not streaming:
+        if oracle:
+            c_bleu_oracle = corpus_bleu(list_of_references, hypotheses_oracle) * 100
+            oracle_hit_rate = n_oracle_hit * 100 / n_utt
+            logger.info('Oracle corpus-level BLEU (%s): %.2f %%' % (dataloader.set, c_bleu_oracle))
+            logger.info('Oracle hit rate (%s): %.2f %%' % (dataloader.set, oracle_hit_rate))
+
+        if fine_grained:
+            for len_bin, hypotheses_bin in sorted(hypotheses_dist.items(), key=lambda x: x[0]):
+                c_bleu_bin = corpus_bleu(list_of_references_dist[len_bin], hypotheses_bin) * 100
+                logger.info('  corpus-level BLEU (%s): %.2f %% (%d)' %
+                            (dataloader.set, c_bleu_bin, len_bin))
 
     logger.debug('Corpus-level BLEU (%s): %.2f %%' % (dataloader.set, c_bleu))
 

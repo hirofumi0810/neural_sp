@@ -1,10 +1,7 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Evaluate a RNNLM by perplexity."""
+"""Evaluate a LM by perplexity."""
 
 import logging
 import numpy as np
@@ -33,15 +30,15 @@ def check_lm(model):
 
 def eval_ppl(models, dataloader, batch_size=1, bptt=None,
              n_caches=0, progressbar=False):
-    """Evaluate a Seq2seq or (RNN/GatedConv)LM by perprexity and loss.
+    """Evaluate a Seq2seq or LM by perprexity and loss.
 
     Args:
-        models (list): models to evaluate
+        models (List): models to evaluate
         dataloader (torch.utils.data.DataLoader): evaluation dataloader
         batch_size (int): batch size
         bptt (int): BPTT length
         n_caches (int):
-        progressbar (bool): if True, visualize the progressbar
+        progressbar (bool): if True, visualize progressbar
     Returns:
         ppl (float): Average perplexity
         loss (float): Average loss

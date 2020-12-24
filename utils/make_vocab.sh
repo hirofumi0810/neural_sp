@@ -57,12 +57,12 @@ if [ ${unit} = wp ]; then
         sort | uniq -c | sort -n -k1 -r | sed -e 's/^[ ]*//g' | cut -d " " -f 2 | grep -v '^\s*$' | awk -v offset=${offset} '{print $1 " " NR+offset}' >> ${dict}
 
 elif [ ${unit} = phone ]; then
-    echo "phone is not implemented yet.";
-    exit 1;
+    text2dict.py ${text} --unit ${unit} --speed_perturb ${speed_perturb} | \
+        awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
 
 else
     # character
-    text2dict.py ${text} --unit ${unit} --vocab_size ${vocab} --nlsyms ${nlsyms} | \
+    text2dict.py ${text} --unit ${unit} --vocab_size ${vocab} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
         awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict} || exit 1;
 fi
 echo "vocab size:" $(cat ${dict} | wc -l)

@@ -13,11 +13,14 @@ import torch
 import torch.nn as nn
 
 from neural_sp.models.criterion import kldiv_lsm_ctc
+from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.decoder_base import DecoderBase
-from neural_sp.models.torch_utils import make_pad_mask
-from neural_sp.models.torch_utils import np2tensor
-from neural_sp.models.torch_utils import pad_list
-from neural_sp.models.torch_utils import tensor2np
+from neural_sp.models.torch_utils import (
+    make_pad_mask,
+    np2tensor,
+    pad_list,
+    tensor2np
+)
 
 random.seed(1)
 
@@ -29,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class CTC(DecoderBase):
-    """Connectionist temporal classificaiton (CTC).
+    """Connectionist temporal classification (CTC).
 
     Args:
         eos (int): index for <eos> (shared with <sos>)
@@ -38,7 +41,7 @@ class CTC(DecoderBase):
         vocab (int): number of nodes in softmax layer
         dropout (float): dropout probability for the RNN layer
         lsm_prob (float): label smoothing probability
-        fc_list (list):
+        fc_list (List):
         param_init (float): parameter initialization method
         backward (bool): flip the output sequence
 
@@ -96,8 +99,8 @@ class CTC(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
-            elens (list): length `B`
-            ys (list): length `B`, each of which contains a list of size `[L]`
+            elens (List): length `B`
+            ys (List): length `B`, each of which contains a list of size `[L]`
         Returns:
             loss (FloatTensor): `[1]`
             trigger_points (IntTensor): `[B, L]`
@@ -143,9 +146,9 @@ class CTC(DecoderBase):
 
         Args:
             logits (FloatTensor): `[B, T, vocab]`
-            elens (list): length `B`
-            ys (list): length `B`, each of which contains a list of size `[L]`
-            ylens (list): length `B`
+            elens (List): length `B`
+            ys (List): length `B`, each of which contains a list of size `[L]`
+            ylens (List): length `B`
         Returns:
             trigger_points (IntTensor): `[B, L]`
 
@@ -223,18 +226,18 @@ class CTC(DecoderBase):
 
             # Step 2. Remove all blank labels
             best_hyp = [x for x in filter(lambda x: x != self.blank, collapsed_indices)]
-            hyps.append(np.array(best_hyp))
+            hyps.append([best_hyp])
 
-        return np.array(hyps)
+        return hyps
 
     def beam_search(self, eouts, elens, params, idx2token,
-                    lm=None, lm_second=None, lm_second_rev=None,
+                    lm=None, lm_second=None, lm_second_bwd=None,
                     nbest=1, refs_id=None, utt_ids=None, speakers=None):
         """Beam search decoding.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
-            elens (list): length `B`
+            elens (List): length `B`
             params (dict):
                 recog_beam_width (int): size of beam
                 recog_length_penalty (float): length penalty
@@ -244,13 +247,13 @@ class CTC(DecoderBase):
             idx2token (): converter from index to token
             lm: firsh path LM
             lm_second: second path LM
-            lm_second_rev: secoding path backward LM
+            lm_second_bwd: second path backward LM
             nbest (int):
-            refs_id (list): reference list
-            utt_ids (list): utterance id list
-            speakers (list): speaker list
+            refs_id (List): reference list
+            utt_ids (List): utterance id list
+            speakers (List): speaker list
         Returns:
-            best_hyps (list): Best path hypothesis. `[B, L]`
+            nbest_hyps_idx (List[List[List]]): Best path hypothesis
 
         """
         bs = eouts.size(0)
@@ -259,15 +262,14 @@ class CTC(DecoderBase):
         lp_weight = params['recog_length_penalty']
         lm_weight = params['recog_lm_weight']
         lm_weight_second = params['recog_lm_second_weight']
+        lm_weight_second_bwd = params['recog_lm_bwd_weight']
 
-        if lm is not None:
-            assert lm_weight > 0
-            lm.eval()
-        if lm_second is not None:
-            assert lm_weight_second > 0
-            lm_second.eval()
+        helper = BeamSearch(beam_width, self.eos, 1.0, eouts.device)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight)
+        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second)
+        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd)
 
-        best_hyps = []
+        nbest_hyps_idx = []
         log_probs = torch.log_softmax(self.output(eouts), dim=-1)
         for b in range(bs):
             # Elements in the beam are (prefix, (p_b, p_no_blank))
@@ -353,24 +355,14 @@ class CTC(DecoderBase):
                 # Pruning
                 beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)[:beam_width]
 
-            # Rescoing alignments
-            if lm_second is not None:
-                new_beam = []
-                for i_beam in range(len(beam)):
-                    ys = [np2tensor(np.fromiter(beam[i_beam]['hyp'], dtype=np.int64), eouts.device)]
-                    ys_pad = pad_list(ys, lm_second.pad)
-                    _, _, lm_log_probs = lm_second.predict(ys_pad, None)
-                    score_ctc = np.logaddexp(beam[i_beam]['p_b'], beam[i_beam]['p_nb'])
-                    score_lm = lm_log_probs.sum() * lm_weight_second
-                    score_lp = len(beam[i_beam]['hyp'][1:]) * lp_weight
-                    new_beam.append({'hyp': beam[i_beam]['hyp'],
-                                     'score': score_ctc + score_lm + score_lp,
-                                     'score_ctc': score_ctc,
-                                     'score_lp': score_lp,
-                                     'score_lm': score_lm})
-                beam = sorted(new_beam, key=lambda x: x['score'], reverse=True)
+            # forward second path LM rescoring
+            helper.lm_rescoring(beam, lm_second, lm_weight_second, tag='second')
 
-            best_hyps.append(np.array(beam[0]['hyp'][1:]))
+            # backward secodn path LM rescoring
+            helper.lm_rescoring(beam, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
+
+            # Exclude <eos>
+            nbest_hyps_idx.append([hyp['hyp'][1:] for hyp in beam])
 
             if idx2token is not None:
                 if utt_ids is not None:
@@ -385,13 +377,14 @@ class CTC(DecoderBase):
                     logger.info('log prob (hyp, ctc): %.7f' % (beam[k]['score_ctc']))
                     logger.info('log prob (hyp, lp): %.7f' % (beam[k]['score_lp'] * lp_weight))
                     if lm is not None:
-                        logger.info('log prob (hyp, first-path lm): %.7f' % (beam[k]['score_lm'] * lm_weight))
+                        logger.info('log prob (hyp, first-path lm): %.7f' %
+                                    (beam[k]['score_lm'] * lm_weight))
                     if lm_second is not None:
                         logger.info('log prob (hyp, second-path lm): %.7f' %
                                     (beam[k]['score_lm_second'] * lm_weight_second))
                     logger.info('-' * 50)
 
-        return np.array(best_hyps)
+        return nbest_hyps_idx
 
 
 def _label_to_path(labels, blank):
@@ -597,7 +590,7 @@ class CTCPrefixScore(object):
 
     which is based on Algorithm 2 in WATANABE et al.
     "HYBRID CTC/ATTENTION ARCHITECTURE FOR END-TO-END SPEECH RECOGNITION,"
-    but extended to efficiently compute the probablities of multiple labels
+    but extended to efficiently compute the probabilities of multiple labels
     simultaneously
 
     [Reference]:
@@ -648,7 +641,7 @@ class CTCPrefixScore(object):
         """Compute CTC prefix scores for next labels.
 
         Args:
-            hyp (list): prefix label sequence
+            hyp (List): prefix label sequence
             cs (np.ndarray): array of next labels. A tensor of size `[beam_width]`
             r_prev (np.ndarray): previous CTC state `[T, 2]`
         Returns:
@@ -690,7 +683,7 @@ class CTCPrefixScore(object):
             log_phi = r_sum  # `[T]`
 
         # compute forward probabilities log(r_t^n(h)), log(r_t^b(h)),
-        # and log prefix probabilites log(psi)
+        # and log prefix probabilities log(psi)
         start = max(ylen, 1)
         log_psi = r[start - 1, 0]
         for t in range(start, self.xlen):

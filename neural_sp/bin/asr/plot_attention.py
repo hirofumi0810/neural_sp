@@ -17,6 +17,7 @@ from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
 from neural_sp.bin.plot_utils import plot_attention_weights
 from neural_sp.bin.train_utils import (
+    compute_subsampling_factor,
     load_checkpoint,
     load_config,
     set_logger
@@ -33,6 +34,7 @@ def main():
 
     # Load configuration
     args, recog_params, dir_name = parse_args_eval(sys.argv[1:])
+    args = compute_subsampling_factor(args)
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'plot.log')):
@@ -138,8 +140,12 @@ def main():
             ctc_probs, topk_ids = None, None
             if args.ctc_weight > 0:
                 ctc_probs, topk_ids, xlens = model.get_ctc_probs(
-                    batch['xs'], temperature=1, topk=min(100, model.vocab))
+                    batch['xs'], task='ys', temperature=1, topk=min(100, model.vocab))
                 # NOTE: ctc_probs: '[B, T, topk]'
+            ctc_probs_sub1, topk_ids_sub1 = None, None
+            if args.ctc_weight_sub1 > 0:
+                ctc_probs_sub1, topk_ids_sub1, xlens_sub1 = model.get_ctc_probs(
+                    batch['xs'], task='ys_sub1', temperature=1, topk=min(100, model.vocab_sub1))
 
             if model.bwd_weight > 0.5:
                 # Reverse the order
@@ -158,7 +164,9 @@ def main():
                     save_path=mkdir_join(save_path, spk, batch['utt_ids'][b] + '.png'),
                     figsize=(20, 8),
                     ctc_probs=ctc_probs[b, :xlens[b]] if ctc_probs is not None else None,
-                    ctc_topk_ids=topk_ids[b] if topk_ids is not None else None)
+                    ctc_topk_ids=topk_ids[b] if topk_ids is not None else None,
+                    ctc_probs_sub1=ctc_probs_sub1[b, :xlens_sub1[b]] if ctc_probs_sub1 is not None else None,
+                    ctc_topk_ids_sub1=topk_ids_sub1[b] if topk_ids_sub1 is not None else None)
 
                 if model.bwd_weight > 0.5:
                     hyp = ' '.join(tokens[::-1])

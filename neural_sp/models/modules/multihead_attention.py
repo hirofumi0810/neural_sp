@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -26,12 +23,12 @@ class MultiheadAttentionMechanism(nn.Module):
         adim: (int) dimension of attention space
         odim: (int) dimension of output
         n_heads (int): number of heads
-        dropout (float): dropout probability for attenion weights
+        dropout (float): dropout probability for attention weights
         dropout_head (float): HeadDrop probability
         atype (str): type of attention mechanism
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
-        xl_like: dummy argument for compabibility with relative MHA
+        xl_like: dummy argument for compatibility with relative MHA
 
     """
 

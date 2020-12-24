@@ -161,7 +161,7 @@ class CustomDataLoader(DataLoader):
                 self.batch_sampler.df = self.batch_sampler.df.reset_index()
 
             self.reset()
-            # caclulate iteration again after shuffling
+            # calculate iteration again after shuffling
             self.batch_sampler.calculate_iteration()
             self.epoch += 1
 
@@ -241,7 +241,6 @@ class CustomDataset(Dataset):
 
         self.is_test = is_test
         self.sort_by = sort_by
-        assert sort_by in ['input', 'output', 'shuffle', 'utt_id']
         # if shuffle_bucket:
         #     assert sort_by in ['input', 'output']
         if discourse_aware:
@@ -379,7 +378,7 @@ class CustomDataset(Dataset):
                 lambda x: len([i for i in groups[x['session']]]), axis=1)
             df = df.sort_values(by=['n_utt_in_session'], ascending=short2long)
 
-            # NOTE: this is used only when LM is trained with seliarize: true
+            # NOTE: this is used only when LM is trained with serialize: true
             # if is_test and corpus == 'swbd':
             #     # Sort by onset
             #     df['onset'] = df['utt_id'].apply(lambda x: int(x.split('_')[-1].split('-')[0]))
@@ -393,7 +392,7 @@ class CustomDataset(Dataset):
             elif sort_by == 'shuffle':
                 df = df.reindex(np.random.permutation(self.df.index))
 
-        # Fit word alignment to vocabylary
+        # Fit word alignment to vocabulary
         if word_alignment_dir is not None:
             alignment2boundary = WordAlignmentConverter(dict_path, wp_model)
             n_utts = len(df)
@@ -448,23 +447,6 @@ class CustomDataset(Dataset):
                 sessions (list): name of each session
 
         """
-        # external alignment
-        trigger_points = None
-        if self.word_alignment_dir is not None:
-            trigger_points = np.zeros(
-                (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
-            for b, i in enumerate(indices):
-                p = self.df['trigger_points'][i]
-                trigger_points[b, :len(p)] = p - 1  # 0-indexed
-                # NOTE: <eos> is not treated here
-            trigger_points //= self.subsample_factor
-        elif self.ctc_alignment_dir is not None:
-            trigger_points = np.zeros(
-                (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
-            for b, i in enumerate(indices):
-                p = self.df['trigger_points'][i]  # including <eos>
-                trigger_points[b, :len(p)] = p  # already 0-indexed
-
         # inputs
         xs = [kaldiio.load_mat(self.df['feat_path'][i]) for i in indices]
         xlens = [self.df['xlen'][i] for i in indices]
@@ -473,6 +455,26 @@ class CustomDataset(Dataset):
         sessions = [self.df['session'][i] for i in indices]
         texts = [self.df['text'][i] for i in indices]
         feat_paths = [self.df['feat_path'][i] for i in indices]
+
+        # external alignment
+        trigger_points = None
+        if self.word_alignment_dir is not None:
+            trigger_points = np.zeros(
+                (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
+            for b, i in enumerate(indices):
+                p = self.df['trigger_points'][i]
+                trigger_points[b, :len(p)] = p - 1  # 0-indexed
+                # speacial treatment for the last token
+                trigger_points[b, len(p) - 1] = min(trigger_points[b, len(p) - 1], xlens[b] - 1)
+                # NOTE: <eos> is not treated here
+                assert trigger_points[b].max() <= xlens[b] - 1, (p, xlens[b], utt_ids[b])
+            trigger_points //= self.subsample_factor
+        elif self.ctc_alignment_dir is not None:
+            trigger_points = np.zeros(
+                (len(indices), max([self.df['ylen'][i] for i in indices]) + 1), dtype=np.int32)
+            for b, i in enumerate(indices):
+                p = self.df['trigger_points'][i]  # including <eos>
+                trigger_points[b, :len(p)] = p  # already 0-indexed
 
         # main outputs
         if self.is_test:
@@ -608,7 +610,7 @@ class CustomBatchSampler(BatchSampler):
             self._offset += len(indices)
             is_new_epoch = (len(self.indices_buckets) == 0)
 
-            # Shuffle uttrances in mini-batch
+            # Shuffle utterances in mini-batch
             indices = random.sample(indices, len(indices))
 
         else:
@@ -630,7 +632,7 @@ class CustomBatchSampler(BatchSampler):
                 self._offset = len(self.df)
                 is_new_epoch = True
 
-            # Shuffle uttrances in mini-batch
+            # Shuffle utterances in mini-batch
             indices = random.sample(indices, len(indices))
 
             for i in indices:

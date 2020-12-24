@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -9,7 +6,7 @@
 import numpy as np
 
 
-def stack_frame(feat, n_stacks, n_skips, dtype=np.float32):
+def stack_frame(x, n_stacks, n_skips, dtype=np.float32):
     """Stack & skip some frames. This implementation is based on
 
        https://arxiv.org/abs/1507.06947.
@@ -18,7 +15,7 @@ def stack_frame(feat, n_stacks, n_skips, dtype=np.float32):
            arXiv preprint arXiv:1507.06947 (2015).
 
     Args:
-        feat (list): `[T, input_dim]`
+        x (np.ndarray): `[T, input_dim]`
         n_stacks (int): the number of frames to stack
         n_skips (int): the number of frames to skip
         dtype ():
@@ -27,19 +24,19 @@ def stack_frame(feat, n_stacks, n_skips, dtype=np.float32):
 
     """
     if n_stacks == 1 and n_skips == 1:
-        return feat
-
+        return x
     if n_stacks < n_skips:
         raise ValueError('n_skips must be less than n_stacks.')
+    assert isinstance(x, np.ndarray), 'x should be np.ndarray.'
 
-    T, input_dim = feat.shape
+    T, input_dim = x.shape
     T_new = T // n_skips if T % n_stacks == 0 else (T // n_skips) + 1
 
     stacked_feat = np.zeros((T_new, input_dim * n_stacks), dtype=dtype)
     stack_count = 0
     stack = []
-    for t, frame_t in enumerate(feat):
-        if t == len(feat) - 1:  # final frame
+    for t, frame_t in enumerate(x):
+        if t == len(x) - 1:  # final frame
             # Stack the final frame
             stack.append(frame_t)
 

@@ -21,8 +21,9 @@ sns.set(font='Noto Sans CJK JP')
 
 
 def plot_attention_weights(aw, tokens=[], spectrogram=None, factor=4,
-                           save_path=None, figsize=(20, 6),
-                           ref=None, ctc_probs=None, ctc_topk_ids=None):
+                           save_path=None, figsize=(20, 6), ref=None,
+                           ctc_probs=None, ctc_topk_ids=None,
+                           ctc_probs_sub1=None, ctc_topk_ids_sub1=None):
     """Plot attention weights.
 
     Args:
@@ -41,6 +42,8 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, factor=4,
         n_col += 1
     if ctc_probs is not None:
         n_col += 1
+    if ctc_probs_sub1 is not None:
+        n_col += 1
     if n_heads > 1:
         figsize = (20, 16)
 
@@ -57,7 +60,7 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, factor=4,
         plt.ylabel(u'Output labels (←)', fontsize=12 if n_heads == 1 else 8)
         plt.yticks(rotation=0, fontsize=6)
 
-    # Plot CTC propabilities for joint CTC-attention
+    # Plot CTC probabilities for joint CTC-attention
     if ctc_probs is not None:
         plt.subplot(n_col, 1, n_heads + 1)
         times_probs = np.arange(ctc_probs.shape[0])
@@ -70,6 +73,20 @@ def plot_attention_weights(aw, tokens=[], spectrogram=None, factor=4,
         plt.tick_params(labelbottom=False)
         plt.yticks(list(range(0, 2, 1)))
         plt.xlim(0, ctc_probs.shape[0])
+
+    # Plot CTC probabilities for joint CTC-attention
+    if ctc_probs_sub1 is not None:
+        plt.subplot(n_col, 1, n_heads + 2)
+        times_probs = np.arange(ctc_probs_sub1.shape[0])
+        for idx in set(ctc_topk_ids_sub1.reshape(-1).tolist()):
+            if idx == 0:
+                plt.plot(times_probs, ctc_probs_sub1[:, 0], ':', label='<blank>', color='grey')
+            else:
+                plt.plot(times_probs, ctc_probs_sub1[:, idx])
+        plt.ylabel('CTC posteriors (sub)', fontsize=12 if n_heads == 1 else 8)
+        plt.tick_params(labelbottom=False)
+        plt.yticks(list(range(0, 2, 1)))
+        plt.xlim(0, ctc_probs_sub1.shape[0])
 
     # Plot spectrogram
     if spectrogram is not None:

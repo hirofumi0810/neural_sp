@@ -37,7 +37,7 @@ class WordAlignmentConverter(object):
         """
         speed_rate = 1.
         if speaker[:5] in ['sp0.9', 'sp1.0', 'sp1.1']:
-            speed_rate = float(speaker[2:5])
+            speed_rate = 1 / float(speaker[2:5])
             speaker = '-'.join(speaker.split('-')[1:])
             utt_id = '-'.join(utt_id.split('-')[1:])
 
@@ -45,7 +45,7 @@ class WordAlignmentConverter(object):
         if not os.path.isfile(alignment_path):
             return None
         with codecs.open(alignment_path, 'r', encoding='utf-8') as f:
-            word_alignments = deque([line.strip().split(' ') for line in f])
+            word_alignments = deque([line.strip().lower().split(' ') for line in f])
 
         # Remove space before the first special symbol
         wps = self.sp.EncodeAsPieces(text)
@@ -54,13 +54,11 @@ class WordAlignmentConverter(object):
 
         boundaries = []
         wps_single_word = []
-        ends = []
         for i, wp in enumerate(wps):
             if wp[0] == '▁':
                 if i > 0:
                     word, start, end = word_alignments.popleft()
-                    ends.append(end)
-                    assert ''.join(wps_single_word) == word
+                    assert ''.join(wps_single_word) == word, (''.join(wps_single_word), word)
                     start = float(start) * 100 * speed_rate
                     end = float(end) * 100 * speed_rate
                     assert start >= 0
@@ -72,8 +70,7 @@ class WordAlignmentConverter(object):
             wps_single_word.append(wp)
         # last word
         word, start, end = word_alignments.popleft()
-        ends.append(end)
-        assert ''.join(wps_single_word) == word
+        assert ''.join(wps_single_word) == word, (''.join(wps_single_word), word)
         start = float(start) * 100 * speed_rate
         end = float(end) * 100 * speed_rate
         assert start >= 0
@@ -82,7 +79,7 @@ class WordAlignmentConverter(object):
                        for j in range(len(wps_single_word))]
         if len(boundaries) > 1:
             diff = np.array(boundaries[1:], dtype=np.int32) - np.array(boundaries[:-1], dtype=np.int32)
-            assert (diff < 0).sum() == 0, (diff, boundaries, utt_id, speed_rate, ends)
+            assert (diff < 0).sum() == 0
 
         return np.ceil(np.array(boundaries)).astype(np.int32)
 

@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -82,8 +79,8 @@ def build_parser():
                         help='job name')
     parser.add_argument('--stdout', type=strtobool, default=False,
                         help='print to standard output')
-    parser.add_argument('--recog_stdout', type=strtobool, default=False,
-                        help='print to standard output during evaluation')
+    parser.add_argument('--remove_old_checkpoints', type=strtobool, default=True,
+                        help='remove old checkpoints to save disk (turned off when training Transformer')
     # dataset
     parser.add_argument('--train_set', type=str,
                         help='tsv file path for the training set')
@@ -131,7 +128,7 @@ def build_parser():
     parser.add_argument('--n_epochs', type=int, default=50,
                         help='number of epochs to train the model')
     parser.add_argument('--convert_to_sgd_epoch', type=int, default=100,
-                        help='epoch to converto to SGD fine-tuning')
+                        help='epoch to convert to SGD fine-tuning')
     parser.add_argument('--print_step', type=int, default=100,
                         help='print log per this value')
     parser.add_argument('--lr', type=float, default=1e-3,
@@ -148,17 +145,17 @@ def build_parser():
     parser.add_argument('--lr_decay_rate', type=float, default=0.9,
                         help='decay rate of learning rate')
     parser.add_argument('--lr_decay_patient_n_epochs', type=int, default=0,
-                        help='number of epochs to tolerate learning rate decay when validation perfomance is not improved')
+                        help='number of epochs to tolerate learning rate decay when validation performance is not improved')
     parser.add_argument('--early_stop_patient_n_epochs', type=int, default=5,
-                        help='number of epochs to tolerate stopping training when validation perfomance is not improved')
+                        help='number of epochs to tolerate stopping training when validation performance is not improved')
     parser.add_argument('--sort_stop_epoch', type=int, default=10000,
                         help='epoch to stop soring utterances by length')
     parser.add_argument('--eval_start_epoch', type=int, default=1,
-                        help='first epoch to start evalaution')
+                        help='first epoch to start evaluation')
     parser.add_argument('--warmup_start_lr', type=float, default=0,
                         help='initial learning rate for learning rate warm up')
     parser.add_argument('--warmup_n_steps', type=int, default=0,
-                        help='number of steps to warm up learing rate')
+                        help='number of steps to warm up learning rate')
     parser.add_argument('--accum_grad_n_steps', type=int, default=1,
                         help='total number of steps to accumulate gradients')
     # initialization
@@ -191,6 +188,8 @@ def build_parser():
     parser.add_argument('--serialize', type=strtobool, default=False, nargs='?',
                         help='serialize text according to onset in dialogue')
     # evaluation parameters
+    parser.add_argument('--recog_stdout', type=strtobool, default=False,
+                        help='print to standard output during evaluation')
     parser.add_argument('--recog_n_gpus', type=int, default=0,
                         help='number of GPUs (0 indicates CPU)')
     parser.add_argument('--recog_sets', type=str, default=[], nargs='+',
@@ -206,9 +205,9 @@ def build_parser():
     parser.add_argument('--recog_n_caches', type=int, default=0,
                         help='number of tokens for cache')
     parser.add_argument('--recog_cache_theta', type=float, default=0.2,
-                        help='theta paramter for cache')
+                        help='theta parameter for cache')
     parser.add_argument('--recog_cache_lambda', type=float, default=0.2,
-                        help='lambda paramter for cache')
+                        help='lambda parameter for cache')
     parser.add_argument('--recog_mem_len', type=int, default=0,
                         help='number of tokens for memory in TransformerXL during evaluation')
     return parser

@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -30,7 +27,7 @@ class LRScheduler(object):
         decay_patient_n_epochs (int): decay learning rate if results have not been
             improved for 'decay_patient_n_epochs'
         early_stop_patient_n_epochs (int): number of epochs to tolerate stopping the training
-            when validation perfomance is not improved
+            when validation performance is not improved
         lower_better (bool):
             True) The lower, the better.
             False) The higher, the better.
@@ -77,7 +74,7 @@ class LRScheduler(object):
         self.not_improved_n_epochs = 0
         self.early_stop_patient_n_epochs = early_stop_patient_n_epochs
 
-        # for performance monotoring
+        # for performance monitoring
         self._is_topk = False
         self.topk = save_checkpoints_topk
         assert save_checkpoints_topk >= 1
@@ -99,9 +96,10 @@ class LRScheduler(object):
     def is_early_stop(self):
         return self.not_improved_n_epochs >= self.early_stop_patient_n_epochs
 
-    def step(self):
+    def step(self, skip_optimizer=False):
         self._step += 1
-        self.optimizer.step()
+        if not skip_optimizer:
+            self.optimizer.step()
         if self.noam:
             self._noam_lr()
         else:
@@ -118,7 +116,7 @@ class LRScheduler(object):
         self._update_lr()
 
     def _warmup_lr(self):
-        """Warm up learning rate per step by incresing linearly."""
+        """Warm up learning rate per step by increasing linearly."""
         if self.warmup_n_steps > 0 and self._step <= self.warmup_n_steps:
             self.lr = (self.base_lr - self.warmup_start_lr) / \
                 self.warmup_n_steps * self._step + self.warmup_start_lr
@@ -145,7 +143,7 @@ class LRScheduler(object):
                 self.topk_list.append((self.n_epochs, metric))
                 self.topk_list = sorted(self.topk_list, key=lambda x: x[1])[:self.topk]
                 self._is_topk = True
-                is_best = topk == 1
+                is_best = (topk == 1)
                 for k, (ep, v) in enumerate(self.topk_list):
                     logger.info('----- Top-%d: epoch%d (%.3f)' % (k + 1, ep, v))
 
@@ -165,6 +163,10 @@ class LRScheduler(object):
                     logger.info('Epoch %d: reducing learning rate to %.7f'
                                 % (self._epoch, self.lr))
             elif self.decay_type == 'always':
+                # if is_best:
+                #     self.not_improved_n_epochs = 0
+                # else:
+                #     self.not_improved_n_epochs += 1
                 self.lr *= self.decay_rate
                 self._update_lr()
                 logger.info('Epoch %d: reducing learning rate to %.7f'
@@ -208,7 +210,7 @@ class LRScheduler(object):
         # Save parameters, optimizer, step index etc.
         checkpoint = {
             "model_state_dict": model.module.state_dict(),
-            "optimizer_state_dict": self.state_dict(),  # LRScheduler class
+            "optimizer_state_dict": self.get_state_dict(),  # LRScheduler class
         }
         if amp is not None:
             checkpoint['amp_state_dict'] = amp.state_dict()
@@ -216,27 +218,33 @@ class LRScheduler(object):
 
         logger.info("=> Saved checkpoint (epoch:%s): %s" % (str(epoch_detail), model_path))
 
-    def state_dict(self):
-        """Returns the state of the scheduler as a :class:`dict`.
+    def get_state_dict(self):
+        """Return state of scheduler as a :class:`dict`.
 
         It contains an entry for every variable in self.__dict__ which
         is not the optimizer.
 
         """
-        dict = {key: value for key, value in self.__dict__.items()}
+        dict = {k: v for k, v in self.__dict__.items() if k not in ['optimizer']}
         dict['optimizer_state_dict'] = self.optimizer.state_dict()
         return dict
 
-    def load_state_dict(self, state_dict):
-        """Loads the schedulers state.
+    def load_state_dict(self, state_dict, use_cuda):
+        """Load scheduler's state.
 
         Arguments:
             state_dict (dict): scheduler state. Should be an object returned
                 from a call to :meth:`state_dict`.
+            use_cuda (bool): GPU mode
 
         """
         self.__dict__.update({k: v for k, v in state_dict.items() if k != 'optimizer_state_dict'})
         self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
+        # https://discuss.pytorch.org/t/loading-a-saved-model-for-continue-training/17244/4
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if use_cuda and isinstance(v, torch.Tensor):
+                    state[k] = v.cuda()
 
     def convert_to_sgd(self, model, lr, weight_decay, decay_type, decay_rate):
         self.lr = lr

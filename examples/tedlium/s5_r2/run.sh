@@ -7,15 +7,16 @@ echo ===========================================================================
 echo "                                TEDLIUM2                                  "
 echo ============================================================================
 
+# NOTE: speed perturbation is adopted by default
+
 stage=0
 stop_stage=5
 gpu=
 benchmark=true
-speed_perturb=true  # default
 stdout=false
 
 ### vocabulary
-unit=wp      # word/wp/char/word_char
+unit=wp      # word/wp/char/word_char/phone
 vocab=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
 
@@ -33,14 +34,14 @@ external_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work1/inaguma/results/tedlium2
+model=/n/work2/inaguma/results/tedlium2
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/tedlium2
+export data=/n/work2/inaguma/corpus/tedlium2
 
 ### path to original data
 export db=/n/rd21/corpora_7/tedlium
@@ -64,7 +65,7 @@ train_set=train_sp
 dev_set=dev_sp
 test_set="test_sp"
 
-if [ ${unit} = char ]; then
+if [ ${unit} = char ] || [ ${unit} = phone ]; then
     vocab=
 fi
 if [ ${unit} != wp ]; then
@@ -133,7 +134,16 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
         make_vocab.sh --unit ${unit} --speed_perturb true \
             --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
             ${data} ${dict} ${data}/${train_set}/text || exit 1;
+    elif [ ${unit} = phone ]; then
+        lexicon=${data}/local/dict_nosp/lexicon.txt
+        unk=NSN
+        for x in ${train_set} ${dev_set} ${test_set}; do
+            map2phone.py --text ${data}/${x}/text --lexicon ${lexicon} --unk ${unk} > ${data}/${x}/text.phone
+        done
+        make_vocab.sh --unit ${unit} --speed_perturb true \
+            ${data} ${dict} ${data}/${train_set}/text.phone || exit 1;
     else
+        # character
         make_vocab.sh --unit ${unit} --speed_perturb true \
             ${data} ${dict} ${data}/${train_set}/text || exit 1;
     fi
@@ -154,9 +164,14 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
 
     echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
+    if [ ${unit} = phone ]; then
+        text="text.phone"
+    else
+        text="text"
+    fi
     for x in ${train_set} ${dev_set} ${test_set}; do
         dump_dir=${data}/dump/${x}
-        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} --text ${data}/${x}/${text} \
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${unit}${wp_type}${vocab}.tsv || exit 1;
     done
 
@@ -176,6 +191,8 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
 
         gunzip -c ${db}/TEDLIUM_release2/LM/*.en.gz | sed 's/ <\/s>//g' | local/join_suffix.py | uniq | awk '{print "unpaired-text-"NR, $0}' > ${data}/dataset_lm/text
         # NOTE: remove exactly the same lines
+        # gunzip -c ${db}/TEDLIUM_release2/LM/*.en.gz | sed 's/ <\/s>//g' | local/join_suffix.py | awk '{print "unpaired-text-"NR, $0}' > ${data}/dataset_lm/text
+
         update_dataset.sh --unit ${unit} --wp_model ${wp_model} \
             ${data}/dataset_lm/text ${dict} ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv \
             > ${data}/dataset_lm/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;

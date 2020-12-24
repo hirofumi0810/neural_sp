@@ -10,8 +10,7 @@ echo ===========================================================================
 stage=0
 stop_stage=5
 gpu=
-speed_perturb=true  # default
-specaug=false
+speed_perturb=false  # default
 stdout=false
 
 ### vocabulary
@@ -20,10 +19,10 @@ vocab=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
 
 ### path to save the model
-model=/n/work1/inaguma/results/csj
+model=/n/work2/inaguma/results/csj
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/csj
+export data=/n/work2/inaguma/corpus/csj
 
 ### path to original data
 CSJDATATOP=/n/rd25/mimura/corpus/CSJ  ## CSJ database top directory.
@@ -55,9 +54,11 @@ set -u
 set -o pipefail
 
 train_set=train_nodev_${datasize}
+dev_set=dev_${datasize}_streaming
 test_set="eval1_streaming eval2_streaming eval3_streaming"
 if [ ${speed_perturb} = true ]; then
     train_set=train_nodev_sp_${datasize}
+    dev_set=dev_sp_${datasize}_streaming
     test_set="eval1_streaming_sp eval2_streaming_sp eval3_streaming_sp"
 fi
 
@@ -73,7 +74,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_streami
     echo "                       Data Preparation (stage:0)                          "
     echo ============================================================================
 
-    for x in eval1 eval2 eval3; do
+    for x in dev_${datasize} eval1 eval2 eval3; do
         mkdir -p ${data}/${x}_streaming
         cp -rf ${data}/${x}/wav.scp ${data}/${x}_streaming
         cp -rf ${data}/${x}/text ${data}/${x}_streaming
@@ -98,21 +99,21 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_streami
     echo ============================================================================
 
     if [ ! -e ${data}/.done_streaming_stage_1_${datasize}_spfalse ]; then
-        for x in eval1_streaming eval2_streaming eval3_streaming; do
+        for x in dev_${datasize}_streaming eval1_streaming eval2_streaming eval3_streaming; do
             steps/make_fbank.sh --nj 4 --cmd "$train_cmd" --write_utt2num_frames true \
                 ${data}/${x} ${data}/log/make_fbank/${x} ${data}/fbank || exit 1;
         done
     fi
 
     if [ ${speed_perturb} = true ]; then
-        cp -rf ${data}/dev_streaming_${datasize} ${data}/${dev_set}
+        cp -rf ${data}/dev_${datasize}_streaming ${data}/${dev_set}
         cp -rf ${data}/eval1_streaming ${data}/eval1_streaming_sp
         cp -rf ${data}/eval2_streaming ${data}/eval2_streaming_sp
         cp -rf ${data}/eval3_streaming ${data}/eval3_streaming_sp
     fi
 
     # Apply global CMVN & dump features
-    for x in ${test_set}; do
+    for x in ${dev_set} ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
         dump_feat.sh --cmd "$train_cmd" --nj 4 \
             ${data}/${x}/feats.scp ${data}/${train_set}/cmvn.ark ${data}/log/dump_feat/${x}_${datasize} ${dump_dir} || exit 1;
@@ -129,7 +130,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_streami
     echo ============================================================================
 
     echo "Making dataset tsv files for ASR ..."
-    for x in ${test_set}; do
+    for x in ${dev_set} ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
         make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;

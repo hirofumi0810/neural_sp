@@ -1,8 +1,8 @@
 # topology
 lm_type: transformer_xl
+n_layers: 12
 transformer_d_model: 512
 transformer_d_ff: 2048
-n_layers: 12
 transformer_n_heads: 8
 tie_embedding: true
 # optimization

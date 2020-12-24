@@ -26,7 +26,7 @@ class TDSEncoder(EncoderBase):
     Args:
         input_dim (int) dimension of input features (freq * channel)
         in_channel (int) number of channels of input features
-        channels (list) number of channles in TDS layers
+        channels (list) number of channels in TDS layers
         kernel_sizes (list) size of kernels in TDS layers
         dropout (float) dropout probability
         last_proj_dim (int): dimension of the last projection layer
@@ -56,7 +56,7 @@ class TDSEncoder(EncoderBase):
         for lth in range(len(channels)):
             # subsample
             if C_i != channels[lth]:
-                self.layers += [SubsampelBlock(in_channel=C_i,
+                self.layers += [SubsampleBlock(in_channel=C_i,
                                                out_channel=channels[lth],
                                                kernel_size=kernel_sizes[lth][0],
                                                stride=2 if n_subsampling < 3 else 1,
@@ -158,7 +158,7 @@ class TDSBlock(nn.Module):
     """TDS block.
 
     Args:
-        channel (int): input/output channle size
+        channel (int): input/output channels size
         kernel_size (int): kernel size
         in_freq (int): frequency width
         dropout (float): dropout probability
@@ -235,7 +235,7 @@ class TDSBlock(nn.Module):
         return xs, xlens
 
 
-class SubsampelBlock(nn.Module):
+class SubsampleBlock(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size, stride, in_freq,
                  dropout, layer_norm_eps=1e-12):
         super().__init__()

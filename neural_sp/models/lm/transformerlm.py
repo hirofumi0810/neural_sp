@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -60,6 +57,7 @@ class TransformerLM(LMBase):
         self.cache_ids = []
         self.cache_keys = []
         self.cache_attn = []
+        self.embed_cache = None
 
         self.embed = nn.Embedding(self.vocab, self.d_model, padding_idx=self.pad)
         self.pos_enc = PositionalEncoding(self.d_model, args.dropout_in, args.transformer_pe_type,
@@ -112,7 +110,7 @@ class TransformerLM(LMBase):
                            help='nonlinear activation for the FFN layer')
         group.add_argument('--transformer_param_init', type=str, default='xavier_uniform',
                            choices=['xavier_uniform', 'pytorch'],
-                           help='parameter initializatin')
+                           help='parameter initialization')
         group.add_argument('--dropout_att', type=float, default=0.1,
                            help='dropout probability for the attention weights')
         group.add_argument('--dropout_layer', type=float, default=0.0,
@@ -184,7 +182,8 @@ class TransformerLM(LMBase):
                 new_mems.append(cat[:, start_idx:end_idx].detach())  # `[B, self.mem_len, d_model]`
         return new_mems
 
-    def decode(self, ys, state=None, mems=None, cache=None, incremental=False):
+    def decode(self, ys, state=None, mems=None, cache=None, incremental=False,
+               emb_cache=False):
         """Decode function.
 
         Args:
@@ -193,6 +192,7 @@ class TransformerLM(LMBase):
             mems (list): length `n_layers`, each of which contains a FloatTensor `[B, mlen, d_model]`
             cache (list): length `L`, each of which contains a FloatTensor `[B, L-1, d_model]`
             incremental (bool): ASR decoding mode
+            emb_cache (bool): precompute token embeddings for fast infernece
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]`
@@ -214,7 +214,19 @@ class TransformerLM(LMBase):
         causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
         causal_mask = causal_mask.repeat([bs, 1, 1])
 
-        out = self.pos_enc(self.embed(ys.long()))
+        # Pre-compute embedding
+        if emb_cache and self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64)
+            if self.use_cuda:
+                indices = indices.cuda()
+            self.embed_cache = self.embed(indices)  # `[1, vocab, emb_dim]`
+
+        if self.embed_cache is not None:
+            out = self.embed_cache[ys]
+        else:
+            out = self.embed(ys.long())
+
+        out = self.pos_enc(out)
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
@@ -277,5 +289,5 @@ class TransformerLM(LMBase):
                 ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
             fig.tight_layout()
-            fig.savefig(os.path.join(save_path, 'layer%d.png' % (lth)), dvi=500)
+            fig.savefig(os.path.join(save_path, 'layer%d.png' % (lth)))
             plt.close()

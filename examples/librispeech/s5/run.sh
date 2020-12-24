@@ -15,7 +15,7 @@ speed_perturb=false
 stdout=false
 
 ### vocabulary
-unit=wp      # word/wp/char/word_char
+unit=wp      # word/wp/char/word_char/phone
 vocab=10000
 wp_type=bpe  # bpe/unigram (for wordpiece)
 
@@ -33,14 +33,14 @@ external_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work1/inaguma/results/librispeech
+model=/n/work2/inaguma/results/librispeech
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/librispeech
+export data=/n/work2/inaguma/corpus/librispeech
 
 ### path to download data
 data_download_path=/n/rd21/corpora_7/librispeech/
@@ -88,7 +88,7 @@ if [ ${speed_perturb} = true ]; then
     test_set="dev_clean_sp dev_other_sp test_clean_sp test_other_sp"
 fi
 
-if [ ${unit} = char ]; then
+if [ ${unit} = char ] || [ ${unit} = phone ]; then
     vocab=
 fi
 if [ ${unit} != wp ]; then
@@ -114,6 +114,15 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0
         # use underscore-separated names in data directories.
         local/data_prep.sh ${data_download_path}/LibriSpeech/${part} ${data}/$(echo ${part} | sed s/-/_/g) || exit 1;
     done
+
+    # when the "--stage 3" option is used below we skip the G2P steps, and use the
+    # lexicon we have already downloaded from openslr.org/11/
+    local/prepare_dict.sh --stage 3 --nj 30 --cmd "$train_cmd" \
+        ${data}/local/lm ${data}/local/lm ${data}/local/dict_nosp
+
+    # utils/prepare_lang.sh ${data}/local/dict_nosp \
+    #     "<UNK>" ${data}/local/lang_tmp_nosp ${data}/lang_nosp
+    # local/format_lms.sh --src-dir ${data}/lang_nosp ${data}/local/lm
 
     # lowercasing
     for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360 train_other_500; do
@@ -192,6 +201,14 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
         make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} \
             --vocab ${vocab} --wp_type ${wp_type} --wp_model ${wp_model} \
             ${data} ${dict} ${data}/${train_set}/text || exit 1;
+    elif [ ${unit} = phone ]; then
+        lexicon=${data}/local/dict_nosp/lexicon.txt
+        unk=SPN
+        for x in ${train_set} ${test_set}; do
+            map2phone.py --text ${data}/${x}/text --lexicon ${lexicon} --unk ${unk} > ${data}/${x}/text.phone
+        done
+        make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} \
+            ${data} ${dict} ${data}/${train_set}/text.phone || exit 1;
     else
         make_vocab.sh --unit ${unit} --speed_perturb ${speed_perturb} \
             ${data} ${dict} ${data}/${train_set}/text || exit 1;
@@ -213,11 +230,16 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
 
     echo "Making dataset tsv files for ASR ..."
     mkdir -p ${data}/dataset
-    make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+    if [ ${unit} = phone ]; then
+        text="text.phone"
+    else
+        text="text"
+    fi
+    make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit} --wp_model ${wp_model} --text ${data}/${train_set}/${text} \
         ${data}/${train_set} ${dict} > ${data}/dataset/${train_set}_${unit}${wp_type}${vocab}.tsv || exit 1;
     for x in ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
-        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} \
+        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit} --wp_model ${wp_model} --text ${data}/${x}/${text} \
             ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit}${wp_type}${vocab}.tsv || exit 1;
     done
 

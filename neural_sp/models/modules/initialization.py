@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -20,12 +17,12 @@ def init_like_transformer_xl(n, p, std):
     Args:
         n (str): parameter name
         p (Tensor): parameter
-        str (float): standard devication
+        str (float): standard deviation
 
     """
     if 'norm' in n and 'weight' in n:
         assert p.dim() == 1
-        nn.init.normal_(p, 1.0, std)  # layer normalization
+        nn.init.normal_(p, mean=1.0, std=std)  # layer normalization
         logger.info('Initialize %s with %s / (1.0, %.3f)' % (n, 'normal', std))
     elif p.dim() == 1:
         nn.init.constant_(p, 0.)  # bias

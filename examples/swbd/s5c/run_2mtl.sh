@@ -18,7 +18,7 @@ stdout=false
 unit=wp           # word/wp/word_char
 vocab=10000
 wp_type=bpe       # bpe/unigram (for wordpiece)
-unit_sub1=char
+unit_sub1=phone
 wp_type_sub1=bpe  # bpe/unigram (for wordpiece)
 vocab_sub1=
 
@@ -30,13 +30,13 @@ conf2=
 asr_init=
 
 ### path to save the model
-model=/n/work1/inaguma/results/swbd
+model=/n/work2/inaguma/results/swbd
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/swbd
+export data=/n/work2/inaguma/corpus/swbd
 
 ### path to original data
 SWBD_AUDIOPATH=/n/rd21/corpora_7/swb
@@ -87,7 +87,7 @@ if [ ${unit} != wp ]; then
     wp_type=
 fi
 # sub1
-if [ ${unit_sub1} = char ]; then
+if [ ${unit_sub1} = char ] || [ ${unit_sub1} = phone ]; then
     vocab_sub1=
 fi
 if [ ${unit_sub1} != wp ]; then
@@ -125,7 +125,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."
 fi
 
-if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_perturb} ]; then
     echo ============================================================================
     echo "                    Feature extranction (stage:1)                          "
     echo ============================================================================
@@ -138,7 +138,7 @@ if [ ${stage} -le 1 ] && [ ! -e ${data}/.done_stage_1_${datasize}_sp${speed_pert
         done
 
         # Use the first 4k sentences as dev set.
-        utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/${dev_set} || exit 1;  # 5hr 6min
+        utils/subset_data_dir.sh --first ${data}/train_swbd 4000 ${data}/dev || exit 1;  # 5hr 6min
         n=$[$(cat ${data}/train_swbd/segments | wc -l) - 4000]
         utils/subset_data_dir.sh --last ${data}/train_swbd ${n} ${data}/${train_set}.tmp || exit 1;
 
@@ -246,38 +246,31 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ] && [ ! -e ${data}/.done_stage_2
     echo ============================================================================
 
     if [ ${unit_sub1} = phone ]; then
-        echo "Making a dictionary..."
-        echo "<unk> 1" > ${dict_sub1}  # <unk> must be 1, 0 will be used for "blank" in CTC
-        echo "<eos> 2" >> ${dict_sub1}  # <sos> and <eos> share the same index
-        echo "<pad> 3" >> ${dict_sub1}
-        offset=$(cat ${dict_sub1} | wc -l)
-        map_lexicon.sh ${data}/${train_set} ${data}/local/dict_nosp/lexicon.txt
-        map_lexicon.sh ${data}/${dev_set} ${data}/local/dict_nosp/lexicon.txt
-        text2dict.py ${data}/${train_set}/text.phone --unit ${unit_sub1} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} | \
-            awk -v offset=${offset} '{print $0 " " NR+offset}' >> ${dict_sub1} || exit 1;
+        lexicon=${data}/local/dict_nosp/lexicon.txt
+        unk=spn
+        for x in ${train_set} ${dev_set} ${test_set}; do
+            map2phone.py --text ${data}/${train_set}/text --lexicon ${lexicon} --unk ${unk} > ${data}/${train_set}/text.phone
+        done
+        make_vocab.sh --unit ${unit_sub1} --speed_perturb ${speed_perturb} \
+            ${data} ${dict_sub1} ${data}/${train_set}/text.phone || exit 1;
     else
         make_vocab.sh --unit ${unit_sub1} --nlsyms ${nlsyms} --speed_perturb ${speed_perturb} \
-            --vocab ${vocab_sub1} --wp_type ${wp_type_sub1} --wp_model ${wp_model_sub1} \
             ${data} ${dict_sub1} ${data}/${train_set}/text || exit 1;
+        # NOTE: bpe is not supported here
     fi
 
     echo "Making dataset tsv files for ASR ..."
     if [ ${unit_sub1} = phone ]; then
-        make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --text ${data}/${train_set}/text.phone \
-            ${data}/${train_set} ${dict_sub1} > ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
+        text="text.phone"
     else
-        make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --wp_model ${wp_model_sub1} \
-            ${data}/${train_set} ${dict_sub1} > ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
+        text="text"
     fi
+    make_dataset.sh --feat ${data}/dump/${train_set}/feats.scp --unit ${unit_sub1} --wp_model ${wp_model_sub1} --text ${data}/${train_set}/${text} \
+        ${data}/${train_set} ${dict_sub1} > ${data}/dataset/${train_set}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
     for x in ${dev_set} ${test_set}; do
         dump_dir=${data}/dump/${x}_${datasize}
-        if [ ${unit_sub1} = phone ] && [ ${x} != ${test_set} ]; then
-            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --text ${data}/${x}/text.phone  \
-                ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
-        else
-            make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --wp_model ${wp_model_sub1} \
-                ${data}/${x} ${dict} > ${data}/dataset/${x}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
-        fi
+        make_dataset.sh --feat ${dump_dir}/feats.scp --unit ${unit_sub1} --nlsyms ${nlsyms} --wp_model ${wp_model_sub1} --text ${data}/${x}/${text}  \
+            ${data}/${x} ${dict_sub1} > ${data}/dataset/${x}_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}.tsv || exit 1;
     done
 
     touch ${data}/.done_stage_2_${datasize}_${unit_sub1}${wp_type_sub1}${vocab_sub1}_sp${speed_perturb} && echo "Finish creating dataset for ASR (stage: 2)."

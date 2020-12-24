@@ -12,17 +12,21 @@ import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
-from neural_sp.models.modules.positional_embedding import PositionalEncoding
-from neural_sp.models.modules.positional_embedding import XLPositionalEmbedding
+from neural_sp.models.modules.positional_embedding import (
+    PositionalEncoding,
+    XLPositionalEmbedding
+)
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
-from neural_sp.models.seq2seq.encoders.subsampling import AddSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import ConcatSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import Conv1dSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import DropSubsampler
-from neural_sp.models.seq2seq.encoders.subsampling import MaxpoolSubsampler
+from neural_sp.models.seq2seq.encoders.subsampling import (
+    AddSubsampler,
+    ConcatSubsampler,
+    Conv1dSubsampler,
+    DropSubsampler,
+    MaxpoolSubsampler
+)
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
 from neural_sp.models.torch_utils import make_pad_mask
 from neural_sp.models.torch_utils import tensor2np
@@ -45,7 +49,7 @@ class TransformerEncoder(EncoderBase):
         d_model (int): dimension of MultiheadAttentionMechanism
         d_ff (int): dimension of PositionwiseFeedForward
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
-        ffn_activation (str): nonolinear function for PositionwiseFeedForward
+        ffn_activation (str): nonlinear function for PositionwiseFeedForward
         pe_type (str): type of positional encoding
         layer_norm_eps (float): epsilon value for layer normalization
         last_proj_dim (int): dimension of the last projection layer
@@ -59,7 +63,7 @@ class TransformerEncoder(EncoderBase):
         n_stacks (int): number of frames to stack
         n_splices (int): frames to splice. Default is 1 frame.
         conv_in_channel (int): number of channels of input features
-        conv_channels (int): number of channles in CNN blocks
+        conv_channels (int): number of channels in CNN blocks
         conv_kernel_sizes (list): size of kernels in CNN blocks
         conv_strides (list): number of strides in CNN blocks
         conv_poolings (list): size of poolings in CNN blocks
@@ -115,7 +119,7 @@ class TransformerEncoder(EncoderBase):
         self.scale = math.sqrt(d_model)
         self.unidir = 'uni' in enc_type
 
-        # for compatiblity
+        # for compatibility
         chunk_size_left = str(chunk_size_left)
         chunk_size_current = str(chunk_size_current)
         chunk_size_right = str(chunk_size_right)

@@ -42,6 +42,7 @@ def make_args(**kwargs):
         param_init=0.1,
         chunk_size_left="0",
         chunk_size_right="0",
+        rsp_prob=0,
     )
     args.update(kwargs)
     return args
@@ -54,7 +55,9 @@ def make_args(**kwargs):
         ({'enc_type': 'blstm'}),
         ({'enc_type': 'bgru'}),
         ({'enc_type': 'lstm'}),
+        ({'enc_type': 'lstm', 'rsp_prob': 0.5}),
         ({'enc_type': 'gru'}),
+        ({'enc_type': 'gru', 'rsp_prob': 0.5}),
         # 2dCNN-RNN
         ({'enc_type': 'conv_blstm'}),
         ({'enc_type': 'conv_blstm', 'input_dim': 240, 'conv_in_channel': 3}),
@@ -84,54 +87,76 @@ def make_args(**kwargs):
         ({'enc_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 5}),
         ({'enc_type': 'blstm', 'bidir_sum_fwd_bwd': True, 'last_proj_dim': 5, 'n_projs': 8}),
         # subsampling
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop'}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat'}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'max_pool'}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv'}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'add'}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop',
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'drop'}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'concat'}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'max_pool'}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': '1dconv'}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'add'}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'drop',
           'bidir_sum_fwd_bwd': True}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat',
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'concat',
           'bidir_sum_fwd_bwd': True}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'max_pool',
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'max_pool',
           'bidir_sum_fwd_bwd': True}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv',
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': '1dconv',
           'bidir_sum_fwd_bwd': True}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'add',
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'add',
           'bidir_sum_fwd_bwd': True}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'drop',
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'drop',
           'n_projs': 8}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'concat',
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'concat',
           'n_projs': 8}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'max_pool',
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'max_pool',
           'n_projs': 8}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': '1dconv',
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': '1dconv',
           'n_projs': 8}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_2_1_1", 'subsample_type': 'add',
+        ({'enc_type': 'blstm', 'subsample': "1_2_2_1", 'subsample_type': 'add',
           'n_projs': 8}),
         # LC-BLSTM
-        ({'enc_type': 'blstm', 'chunk_size_right': "40"}),  # for PT
+        ({'enc_type': 'blstm', 'chunk_size_left': "0", 'chunk_size_right': "40"}),  # BLSTM for PT
         ({'enc_type': 'blstm', 'chunk_size_left': "40", 'chunk_size_right': "40"}),
         ({'enc_type': 'blstm', 'bidir_sum_fwd_bwd': True,
-          'chunk_size_right': "40"}),  # for PT
+          'chunk_size_left': "0", 'chunk_size_right': "40"}),  # BLSTM for PT
         ({'enc_type': 'blstm', 'bidir_sum_fwd_bwd': True,
           'chunk_size_left': "40", 'chunk_size_right': "40"}),
         ({'enc_type': 'conv_blstm', 'bidir_sum_fwd_bwd': True,
           'chunk_size_left': "40", 'chunk_size_right': "40"}),
+        ({'enc_type': 'conv_blstm', 'bidir_sum_fwd_bwd': True,
+          'chunk_size_left': "40", 'chunk_size_right': "40", 'rsp_prob': 0.5}),
         # LC-BLSTM + subsampling
-        ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1",
-          'chunk_size_right': "40"}),  # for PT
-        ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1",
+        ({'enc_type': 'blstm', 'subsample': "1_2_1_1",
+          'chunk_size_right': "40"}),  # BLSTM for PT
+        ({'enc_type': 'blstm', 'subsample': "1_2_1_1",
           'chunk_size_left': "40", 'chunk_size_right': "40"}),
-        ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1", 'bidir_sum_fwd_bwd': True,
-          'chunk_size_right': "40"}),  # for PT
-        ({'enc_type': 'blstm', 'subsample': "1_2_1_1_1", 'bidir_sum_fwd_bwd': True,
+        ({'enc_type': 'blstm', 'subsample': "1_2_1_1", 'bidir_sum_fwd_bwd': True,
+          'chunk_size_right': "40"}),  # BLSTM for PT
+        ({'enc_type': 'blstm', 'subsample': "1_2_1_1", 'bidir_sum_fwd_bwd': True,
           'chunk_size_left': "40", 'chunk_size_right': "40"}),
+        ({'enc_type': 'blstm', 'subsample': "1_2_1_1", 'bidir_sum_fwd_bwd': True,
+          'chunk_size_left': "40", 'chunk_size_right': "40", 'rsp_prob': 0.5}),
         # Multi-task
-        ({'enc_type': 'blstm', 'n_layers_sub1': 3}),
-        ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'chunk_size_right': "40"}),
-        ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2}),
-        ({'enc_type': 'blstm', 'n_layers_sub1': 3, 'n_layers_sub2': 2, 'task_specific_layer': True}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'task_specific_layer': True}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'task_specific_layer': True,
+          'chunk_size_left': "0", 'chunk_size_right': "40"}),  # BLSTM for PT
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'task_specific_layer': True,
+          'chunk_size_left': "40", 'chunk_size_right': "40"}),  # LC-BLSTM
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'task_specific_layer': True,
+          'chunk_size_left': "0", 'chunk_size_right': "40",
+          'rsp_prob': 0.5}),  # BLSTM for PT
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'task_specific_layer': True,
+          'chunk_size_left': "40", 'chunk_size_right': "40",
+          'rsp_prob': 0.5}),  # LC-BLSTM
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'n_layers_sub2': 1}),
+        ({'enc_type': 'blstm', 'n_layers_sub1': 2, 'n_layers_sub2': 1,
+          'task_specific_layer': True}),
+        # Multi-task + subsampling
+        ({'enc_type': 'blstm', 'subsample': "2_1_1_1", 'n_layers_sub1': 2,
+          'chunk_size_left': "0", 'chunk_size_right': "40",
+          'task_specific_layer': True}),  # BLSTM for PT
+        ({'enc_type': 'blstm', 'subsample': "2_1_1_1", 'n_layers_sub1': 2,
+          'chunk_size_left': "40", 'chunk_size_right': "40",
+          'task_specific_layer': True}),  # LC-BLSTM
     ]
 )
 def test_forward(args):
@@ -172,9 +197,9 @@ def test_forward(args):
             for b in range(batch_size):
                 if 'conv' in args['enc_type'] or args['subsample_type'] in ['max_pool', '1dconv', 'drop', 'add']:
                     assert enc_out_dict['ys_sub1']['xlens'][b].item() == math.ceil(
-                        xlens[b].item() / enc.subsampling_factor)
+                        xlens[b].item() / enc.subsampling_factor_sub1)
                 else:
-                    assert enc_out_dict['ys_sub1']['xlens'][b].item() == xlens[b].item() // enc.subsampling_factor
+                    assert enc_out_dict['ys_sub1']['xlens'][b].item() == xlens[b].item() // enc.subsampling_factor_sub1
             # single output
             enc_out_dict_sub1 = enc(xs, xlens, task='ys_sub1')
             assert enc_out_dict_sub1['ys_sub1']['xs'].size(0) == batch_size
@@ -187,10 +212,10 @@ def test_forward(args):
             for b in range(batch_size):
                 if 'conv' in args['enc_type'] or args['subsample_type'] in ['max_pool', '1dconv', 'drop', 'add']:
                     assert enc_out_dict['ys_sub2']['xlens'][b].item() == math.ceil(
-                        xlens[b].item() / enc.subsampling_factor)
+                        xlens[b].item() / enc.subsampling_factor_sub2)
                 else:
-                    assert enc_out_dict['ys_sub2']['xlens'][b].item() == xlens[b].item() // enc.subsampling_factor
+                    assert enc_out_dict['ys_sub2']['xlens'][b].item() == xlens[b].item() // enc.subsampling_factor_sub2
             # single output
-            enc_out_dict_sub12 = enc(xs, xlens, task='ys_sub2')
-            assert enc_out_dict_sub12['ys_sub2']['xs'].size(0) == batch_size
-            assert enc_out_dict_sub12['ys_sub2']['xs'].size(1) == enc_out_dict_sub12['ys_sub2']['xlens'].max()
+            enc_out_dict_sub2 = enc(xs, xlens, task='ys_sub2')
+            assert enc_out_dict_sub2['ys_sub2']['xs'].size(0) == batch_size
+            assert enc_out_dict_sub2['ys_sub2']['xs'].size(1) == enc_out_dict_sub2['ys_sub2']['xlens'].max()

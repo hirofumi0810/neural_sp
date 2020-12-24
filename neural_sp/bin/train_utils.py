@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -18,8 +15,8 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
-def compute_susampling_factor(args):
-    """Register subsample factor to args.
+def compute_subsampling_factor(args):
+    """Register subsample factors to args.
 
         Args:
             args (Namespace):
@@ -33,21 +30,17 @@ def compute_susampling_factor(args):
     args.subsample_factor = 1
     args.subsample_factor_sub1 = 1
     args.subsample_factor_sub2 = 1
-    subsample = [int(s) for s in args.subsample.split('_')]
     if 'conv' in args.enc_type and args.conv_poolings:
         for p in args.conv_poolings.split('_'):
             args.subsample_factor *= int(p.split(',')[0].replace('(', ''))
-    args.subsample_factor *= int(np.prod(subsample))
+    subsample = [int(s) for s in args.subsample.split('_')]
     if args.train_set_sub1:
-        if 'conv' in args.enc_type and args.conv_poolings:
-            args.subsample_factor_sub1 = args.subsample_factor * \
-                int(np.prod(subsample[:args.enc_n_layers_sub1 - 1]))
-        args.subsample_factor_sub1 *= int(np.prod(subsample[:args.enc_n_layers_sub1]))
+        args.subsample_factor_sub1 = args.subsample_factor * \
+            int(np.prod(subsample[:args.enc_n_layers_sub1]))
     if args.train_set_sub2:
-        if 'conv' in args.enc_type and args.conv_poolings:
-            args.subsample_factor_sub2 = args.subsample_factor * \
-                int(np.prod(subsample[:args.enc_n_layers_sub2 - 1]))
-        args.subsample_factor_sub2 *= int(np.prod(subsample[:args.enc_n_layers_sub2]))
+        args.subsample_factor_sub2 = args.subsample_factor * \
+            int(np.prod(subsample[:args.enc_n_layers_sub2]))
+    args.subsample_factor *= int(np.prod(subsample))
 
     return args
 
@@ -63,7 +56,7 @@ def measure_time(func):
 
 
 def load_config(config_path):
-    """Load a configration yaml file.
+    """Load a configuration yaml file.
 
     Args:
         config_path (str):
@@ -107,7 +100,7 @@ def set_logger(save_path, stdout=False):
 
 
 def set_save_path(save_path):
-    """Change directory name to avoid name ovarlapping.
+    """Change directory name to avoid name overlapping.
 
     Args:
         save_path (str):
@@ -130,16 +123,16 @@ def set_save_path(save_path):
     return save_path_new
 
 
-def load_checkpoint(checkpoint_path, model=None, optimizer=None, amp=None):
+def load_checkpoint(checkpoint_path, model=None, scheduler=None, amp=None):
     """Load checkpoint.
 
     Args:
-        checkpoint_path (str): path to the saved model (model..epoch-*)
+        checkpoint_path (str): path to the saved model (model.epoch-*)
         model (torch.nn.Module):
-        optimizer (LRScheduler): optimizer wrapped by LRScheduler class
+        scheduler (LRScheduler): optimizer wrapped by LRScheduler class
         amp ():
     Returns:
-        topk_list (list): list of (epoch, metric)
+        topk_list (List): (epoch, metric)
 
     """
     if os.path.isfile(checkpoint_path):
@@ -156,15 +149,15 @@ def load_checkpoint(checkpoint_path, model=None, optimizer=None, amp=None):
     if model is not None:
         model.load_state_dict(checkpoint['model_state_dict'])
 
-    # Restore optimizer
-    if optimizer is not None:
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    # Restore scheduler/optimizer
+    if scheduler is not None:
+        scheduler.load_state_dict(checkpoint['optimizer_state_dict'], model.use_cuda)
         # NOTE: fix this later
-        optimizer.optimizer.param_groups[0]['params'] = []
+        scheduler.optimizer.param_groups[0]['params'] = []
         for param_group in list(model.parameters()):
-            optimizer.optimizer.param_groups[0]['params'].append(param_group)
+            scheduler.optimizer.param_groups[0]['params'].append(param_group)
     else:
-        logger.warning('Optimizer is not loaded.')
+        logger.warning('Scheduler/Optimizer is not loaded.')
 
     # Restore apex
     if amp is not None:

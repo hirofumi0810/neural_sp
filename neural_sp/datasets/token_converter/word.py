@@ -93,7 +93,7 @@ class Idx2word(object):
 
 
 class Char2word(object):
-    """Class for converting character indices into the signle word index.
+    """Class for converting character indices into the single word index.
 
     Args:
         dict_path_word (str): path to a word dictionary file

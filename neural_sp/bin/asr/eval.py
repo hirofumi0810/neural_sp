@@ -15,9 +15,12 @@ import time
 
 from neural_sp.bin.args_asr import parse_args_eval
 from neural_sp.bin.eval_utils import average_checkpoints
-from neural_sp.bin.train_utils import load_checkpoint
-from neural_sp.bin.train_utils import load_config
-from neural_sp.bin.train_utils import set_logger
+from neural_sp.bin.train_utils import (
+    compute_subsampling_factor,
+    load_checkpoint,
+    load_config,
+    set_logger
+)
 from neural_sp.datasets.asr import build_dataloader
 from neural_sp.evaluators.accuracy import eval_accuracy
 from neural_sp.evaluators.character import eval_char
@@ -36,6 +39,7 @@ def main():
 
     # Load configuration
     args, recog_params, dir_name = parse_args_eval(sys.argv[1:])
+    args = compute_subsampling_factor(args)
 
     # Setting for logging
     if os.path.isfile(os.path.join(args.recog_dir, 'decode.log')):
@@ -110,7 +114,7 @@ def main():
                     load_checkpoint(args.recog_lm_second, lm_second)
                     model.lm_second = lm_second
 
-                # second path (bakward)
+                # second path (backward)
                 if args.recog_lm_bwd is not None and args.recog_lm_bwd_weight > 0:
                     conf_lm = load_config(os.path.join(os.path.dirname(args.recog_lm_bwd), 'conf.yml'))
                     args_lm_bwd = argparse.Namespace()
@@ -163,7 +167,9 @@ def main():
                 wer, cer, _ = eval_word(ensemble_models, dataloader, recog_params,
                                         epoch=epoch - 1,
                                         recog_dir=args.recog_dir,
-                                        progressbar=True)
+                                        progressbar=True,
+                                        fine_grained=True,
+                                        oracle=True)
                 wer_avg += wer
                 cer_avg += cer
             elif args.recog_unit == 'wp':
@@ -172,7 +178,8 @@ def main():
                                           recog_dir=args.recog_dir,
                                           streaming=args.recog_streaming,
                                           progressbar=True,
-                                          fine_grained=True)
+                                          fine_grained=True,
+                                          oracle=True)
                 wer_avg += wer
                 cer_avg += cer
             elif 'char' in args.recog_unit:
@@ -180,7 +187,9 @@ def main():
                                      epoch=epoch - 1,
                                      recog_dir=args.recog_dir,
                                      progressbar=True,
-                                     task_idx=0)
+                                     task_idx=0,
+                                     fine_grained=True,
+                                     oracle=True)
                 #  task_idx=1 if args.recog_unit and 'char' in args.recog_unit else 0)
                 wer_avg += wer
                 cer_avg += cer
@@ -188,7 +197,9 @@ def main():
                 per = eval_phone(ensemble_models, dataloader, recog_params,
                                  epoch=epoch - 1,
                                  recog_dir=args.recog_dir,
-                                 progressbar=True)
+                                 progressbar=True,
+                                 fine_grained=True,
+                                 oracle=True)
                 per_avg += per
             else:
                 raise ValueError(args.recog_unit)
@@ -204,13 +215,14 @@ def main():
                                        recog_dir=args.recog_dir,
                                        streaming=args.recog_streaming,
                                        progressbar=True,
-                                       fine_grained=True)
+                                       fine_grained=True,
+                                       oracle=True)
             bleu_avg += bleu
         else:
             raise NotImplementedError(args.recog_metric)
-        elasped_time = time.time() - start_time
-        logger.info('Elasped time: %.3f [sec]' % elasped_time)
-        logger.info('RTF: %.3f' % (elasped_time / (dataloader.n_frames * 0.01)))
+        elapsed_time = time.time() - start_time
+        logger.info('Elapsed time: %.3f [sec]' % elapsed_time)
+        logger.info('RTF: %.3f' % (elapsed_time / (dataloader.n_frames * 0.01)))
 
     if args.recog_metric == 'edit_distance':
         if 'phone' in args.recog_unit:

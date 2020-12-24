@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -134,7 +131,7 @@ class LMBase(ModelBase):
     def decode(self, ys, state=None, mems=None, incremental=False):
         raise NotImplementedError
 
-    def predict(self, ys, state=None, mems=None, cache=None):
+    def predict(self, ys, state=None, mems=None, cache=None, emb_cache=False):
         """Precict function for ASR.
 
         Args:
@@ -147,6 +144,7 @@ class LMBase(ModelBase):
                 - TransformerXL (list): length `n_layers + 1`, each of which contains a tensor`[B, L, d_model]`
             mems (list):
             cache (list):
+            emb_cache (bool): precompute token embeddings for fast infernece
         Returns:
             lmout (FloatTensor): `[B, L, vocab]`, used for LM integration such as cold fusion
             state:
@@ -159,7 +157,7 @@ class LMBase(ModelBase):
 
         """
         logits, lmout, new_state = self.decode(ys, state, mems=mems, cache=cache,
-                                               incremental=True)
+                                               incremental=True, emb_cache=emb_cache)
         log_probs = torch.log_softmax(logits, dim=-1)
         return lmout, new_state, log_probs
 

@@ -6,6 +6,7 @@
 import importlib
 import pytest
 import torch
+import warnings
 
 
 def make_args(**kwargs):
@@ -14,6 +15,7 @@ def make_args(**kwargs):
         kernel_size=3,
         param_init='',
         causal=False,
+        normalization='batch_norm',
     )
     args.update(kwargs)
     return args
@@ -29,7 +31,9 @@ def make_args(**kwargs):
         ({'kernel_size': 33}),
         ({'kernel_size': 65}),
         ({'param_init': 'xavier_uniform'}),
+        ({'param_init': 'lecun'}),
         ({'kernel_size': 7, 'causal': True}),
+        ({'normalization': 'group_norm'}),
     ]
 )
 def test_forward(args):
@@ -45,6 +49,15 @@ def test_forward(args):
 
     for xmax in xmaxs:
         xs = torch.randn(batch_size, xmax, args['d_model'], device=device)
-        xs = conv(xs)
+        out = conv(xs)
+        assert out.size() == (batch_size, xmax, args['d_model'])
 
-        assert xs.size() == (batch_size, xmax, args['d_model'])
+        # incremental check
+        if args['causal']:
+            out_incremental = []
+            for t in range(xmax):
+                out_incremental.append(conv(xs[:, :t + 1])[:, -1:])
+            out_incremental = torch.cat(out_incremental, dim=1)
+            assert out.size() == out_incremental.size()
+            if not torch.allclose(out, out_incremental, equal_nan=True):
+                warnings.warn("Incremental output did not match.", UserWarning)
