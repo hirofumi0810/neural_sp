@@ -150,8 +150,8 @@ class RNNDecoder(DecoderBase):
         self.mtl_per_batch = mtl_per_batch
         self.replace_sos = replace_sos
         self.distil_weight = distillation_weight
-        logging.info("Attention weight: %.3f" % self.att_weight)
-        logging.info("CTC weight: %.3f" % self.ctc_weight)
+        logger.info("Attention weight: %.3f" % self.att_weight)
+        logger.info("CTC weight: %.3f" % self.ctc_weight)
 
         # for mocha and triggered attention
         self.quantity_loss_weight = quantity_loss_weight
@@ -1037,6 +1037,10 @@ class RNNDecoder(DecoderBase):
                  'ensmbl_cv': ensmbl_cv,
                  'ensmbl_aws':[[None]] * len(ensmbl_dstate),
                  'ctc_state': ctc_state,
+                 'quantity_rate': 1.,
+                 'streamable': True,
+                 'streaming_failed_point': 1000,
+                 'boundary': [],
                  'no_boundary': False}]
         return hyps
 
@@ -1149,6 +1153,7 @@ class RNNDecoder(DecoderBase):
             end_hyps = []
             hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state, ys,
                                         ensmbl_decs=ensmbl_decs)
+            streamable_global = True
             ymax = math.ceil(elens[b] * max_len_ratio)
             for i in range(ymax):
                 # batchfy all hypotheses for batch decoding
@@ -1287,6 +1292,24 @@ class RNNDecoder(DecoderBase):
                             if scores_att[j, idx].item() <= eos_threshold * max_score_no_eos:
                                 continue
 
+                        streaming_failed_point = beam['streaming_failed_point']
+                        quantity_rate = 1.
+                        if self.attn_type == 'mocha':
+                            n_heads_total = 1
+                            n_quantity_k = aw[j:j + 1, :, 0].int().sum().item()
+                            quantity_diff = n_heads_total - n_quantity_k
+
+                            if quantity_diff != 0:
+                                if idx == self.eos:
+                                    quantity_rate = 1
+                                    # NOTE: do not count <eos> for streamability
+                                else:
+                                    streamable_global = False
+                                    quantity_rate = n_quantity_k / n_heads_total
+
+                            if beam['streamable'] and not streamable_global:
+                                streaming_failed_point = i
+
                         new_lmstate = None
                         if lmstate is not None:
                             if isinstance(lm, RNNLM) or isinstance(self.lm, RNNLM):
@@ -1315,7 +1338,10 @@ class RNNDecoder(DecoderBase):
                              'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
                              'ensmbl_dstate': ensmbl_dstate,
                              'ensmbl_cv': ensmbl_cv,
-                             'ensmbl_aws': ensmbl_aws})
+                             'ensmbl_aws': ensmbl_aws,
+                             'streamable': streamable_global,
+                             'streaming_failed_point': streaming_failed_point,
+                             'quantity_rate': quantity_rate})
 
                 # Local pruning
                 new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
@@ -1344,6 +1370,11 @@ class RNNDecoder(DecoderBase):
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
 
+            # metrics for streaming infernece
+            self.streamable = end_hyps[0]['streamable']
+            self.quantity_rate = end_hyps[0]['quantity_rate']
+            self.last_success_frame_ratio = None
+
             if idx2token is not None:
                 if utt_ids is not None:
                     logger.info('Utt-id: %s' % utt_ids[b])
@@ -1368,7 +1399,19 @@ class RNNDecoder(DecoderBase):
                     if lm_second_bwd is not None:
                         logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
                                     (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
+                    if self.attn_type == 'mocha':
+                        logger.info('streamable: %s' % end_hyps[k]['streamable'])
+                        logger.info('streaming failed point: %d' % (end_hyps[k]['streaming_failed_point'] + 1))
+                        logger.info('quantity rate [%%]: %.2f' % (end_hyps[k]['quantity_rate'] * 100))
                     logger.info('-' * 50)
+
+                if self.attn_type == 'mocha' and end_hyps[0]['streaming_failed_point'] < 1000:
+                    assert not self.streamable
+                    aws_last_success = end_hyps[0]['aws'][1:][end_hyps[0]['streaming_failed_point'] - 1]
+                    rightmost_frame = max(0, aws_last_success[0, :, 0].nonzero()[:, -1].max().item()) + 1
+                    frame_ratio = rightmost_frame * 100 / xmax
+                    self.last_success_frame_ratio = frame_ratio
+                    logger.info('streaming last success frame ratio: %.2f' % frame_ratio)
 
             # N-best list
             if self.bwd:
@@ -1404,7 +1447,7 @@ class RNNDecoder(DecoderBase):
         elif trfm_lm:
             if isinstance(lm, TransformerXL):
                 self.lmmemory = lm.update_memory(self.lmmemory, end_hyps[0]['lmstate'])
-                logging.info('Memory: %d' % self.lmmemory[0].size(1))
+                logger.info('Memory: %d' % self.lmmemory[0].size(1))
             else:
                 ys = end_hyps[0]['ys']
                 # Exclude the last state corresponding to <eos>
@@ -1434,9 +1477,7 @@ class RNNDecoder(DecoderBase):
 
         # pre-compute embeddings
         if emb_cache and self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64)
-            if self.use_cuda:
-                indices = indices.cuda()
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(eouts.device)
             self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
 
         end_hyps = []
@@ -1520,9 +1561,6 @@ class RNNDecoder(DecoderBase):
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1), dim=1)
             # NOTE: aw: `[B, H, 1, T_chunk]`
             boundary_list = np.where(tensor2np(aw.sum(2).sum(1).sum(0)) != 0)[0]
-            if len(boundary_list) > 0:
-                truncate_offset += boundary_list[0]
-                self.score.register_key_prev_tail(eouts[:, :truncate_offset])
 
             for j, beam in enumerate(hyps):
                 # no decision boundary found in the current chunk for j-th utterance
@@ -1548,6 +1586,13 @@ class RNNDecoder(DecoderBase):
 
                 # Add length penalty
                 total_scores_topk += (len(beam['hyp'][1:]) + 1) * lp_weight
+
+                cp = self.n_frames
+                if not no_boundary:
+                    boundary_list_j = np.where(tensor2np(aw[j].sum(1).sum(0)) != 0)[0]
+                    cp += int(boundary_list_j[0])
+                    if len(beam['boundary']) > 0:
+                        assert cp >= beam['boundary'][-1], (cp, beam['boundary'])
 
                 # Add CTC score
                 new_ctc_states, total_scores_ctc, total_scores_topk = helper.add_ctc_score(
@@ -1580,7 +1625,15 @@ class RNNDecoder(DecoderBase):
                          'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1],
                                      'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                          'ctc_state': new_ctc_states[k] if self.ctc_prefix_scorer is not None else None,
+                         'boundary': beam['boundary'] + [cp] if not no_boundary else beam['boundary'],
                          'no_boundary': no_boundary})
+
+            # trancate encoder outputs
+            if len(boundary_list) > 0:
+                leftmost = min(boundary_list)
+                truncate_offset += leftmost
+                self.n_frames += leftmost
+                self.score.register_key_prev_tail(eouts[:, :truncate_offset])
 
             # Local pruning
             new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
@@ -1602,6 +1655,8 @@ class RNNDecoder(DecoderBase):
                 logger.info('Hyp: %s' % idx2token(merged_hyps[k]['hyp'][1:]))
                 if len(merged_hyps[k]['hyp']) > 1:
                     logger.info('num tokens (hyp): %d' % len(merged_hyps[k]['hyp'][1:]))
+                if len(merged_hyps[k]['boundary']) > 0:
+                    logger.info('boundary: %s' % ' '.join(list(map(str, merged_hyps[k]['boundary']))))
                 logger.info('no boundary: %s' % merged_hyps[k]['no_boundary'])
                 logger.info('log prob (hyp): %.7f' % merged_hyps[k]['score'])
                 logger.info('log prob (hyp, att): %.7f' % (merged_hyps[k]['score_att'] * (1 - ctc_weight)))
@@ -1618,7 +1673,7 @@ class RNNDecoder(DecoderBase):
             self.dstates_final = end_hyps[0]['dstates']
             self.lmstate_final = end_hyps[0]['lmstate']
 
-        self.n_frames += eouts.size(1)
+        self.n_frames += (eouts.size(1) - (truncate_offset + 1))
         self.score.register_key_prev_tail(eouts[:, truncate_offset:])
 
         return end_hyps, hyps, aws
