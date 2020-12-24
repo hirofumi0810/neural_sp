@@ -1037,6 +1037,10 @@ class RNNDecoder(DecoderBase):
                  'ensmbl_cv': ensmbl_cv,
                  'ensmbl_aws':[[None]] * len(ensmbl_dstate),
                  'ctc_state': ctc_state,
+                 'quantity_rate': 1.,
+                 'streamable': True,
+                 'streaming_failed_point': 1000,
+                 'boundary': [],
                  'no_boundary': False}]
         return hyps
 
@@ -1149,6 +1153,7 @@ class RNNDecoder(DecoderBase):
             end_hyps = []
             hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state, ys,
                                         ensmbl_decs=ensmbl_decs)
+            streamable_global = True
             ymax = math.ceil(elens[b] * max_len_ratio)
             for i in range(ymax):
                 # batchfy all hypotheses for batch decoding
@@ -1287,6 +1292,24 @@ class RNNDecoder(DecoderBase):
                             if scores_att[j, idx].item() <= eos_threshold * max_score_no_eos:
                                 continue
 
+                        streaming_failed_point = beam['streaming_failed_point']
+                        quantity_rate = 1.
+                        if self.attn_type == 'mocha':
+                            n_heads_total = 1
+                            n_quantity_k = aw[j:j + 1, :, 0].int().sum().item()
+                            quantity_diff = n_heads_total - n_quantity_k
+
+                            if quantity_diff != 0:
+                                if idx == self.eos:
+                                    quantity_rate = 1
+                                    # NOTE: do not count <eos> for streamability
+                                else:
+                                    streamable_global = False
+                                    quantity_rate = n_quantity_k / n_heads_total
+
+                            if beam['streamable'] and not streamable_global:
+                                streaming_failed_point = i
+
                         new_lmstate = None
                         if lmstate is not None:
                             if isinstance(lm, RNNLM) or isinstance(self.lm, RNNLM):
@@ -1315,7 +1338,10 @@ class RNNDecoder(DecoderBase):
                              'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
                              'ensmbl_dstate': ensmbl_dstate,
                              'ensmbl_cv': ensmbl_cv,
-                             'ensmbl_aws': ensmbl_aws})
+                             'ensmbl_aws': ensmbl_aws,
+                             'streamable': streamable_global,
+                             'streaming_failed_point': streaming_failed_point,
+                             'quantity_rate': quantity_rate})
 
                 # Local pruning
                 new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
@@ -1344,6 +1370,11 @@ class RNNDecoder(DecoderBase):
             # Sort by score
             end_hyps = sorted(end_hyps, key=lambda x: x['score'], reverse=True)
 
+            # metrics for streaming infernece
+            self.streamable = end_hyps[0]['streamable']
+            self.quantity_rate = end_hyps[0]['quantity_rate']
+            self.last_success_frame_ratio = None
+
             if idx2token is not None:
                 if utt_ids is not None:
                     logger.info('Utt-id: %s' % utt_ids[b])
@@ -1368,7 +1399,19 @@ class RNNDecoder(DecoderBase):
                     if lm_second_bwd is not None:
                         logger.info('log prob (hyp, second-path lm, reverse): %.7f' %
                                     (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
+                    if self.attn_type == 'mocha':
+                        logger.info('streamable: %s' % end_hyps[k]['streamable'])
+                        logger.info('streaming failed point: %d' % (end_hyps[k]['streaming_failed_point'] + 1))
+                        logger.info('quantity rate [%%]: %.2f' % (end_hyps[k]['quantity_rate'] * 100))
                     logger.info('-' * 50)
+
+                if self.attn_type == 'mocha' and end_hyps[0]['streaming_failed_point'] < 1000:
+                    assert not self.streamable
+                    aws_last_success = end_hyps[0]['aws'][1:][end_hyps[0]['streaming_failed_point'] - 1]
+                    rightmost_frame = max(0, aws_last_success[0, :, 0].nonzero()[:, -1].max().item()) + 1
+                    frame_ratio = rightmost_frame * 100 / xmax
+                    self.last_success_frame_ratio = frame_ratio
+                    logger.info('streaming last success frame ratio: %.2f' % frame_ratio)
 
             # N-best list
             if self.bwd:
