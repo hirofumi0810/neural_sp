@@ -49,5 +49,5 @@ local/score.sh --model results/asr/train_char/conv2Ltransformer8dmodel32dff1L4Hp
 ./run_2mtl.sh --stage 0 --conf conf/asr/transformer_2mtl.yaml --unit wp --unit_sub1 char || exit 1;
 # ./run_2mtl.sh --stage 0 --conf conf/asr/blstm_las_2mtl_per_batch.yaml --unit wp --unit_sub1 char || exit 1;
 
-coverage report --include neural_sp
+coverage report --include ${root}/neural_sp
 coverage xml
