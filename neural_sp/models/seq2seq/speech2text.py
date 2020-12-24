@@ -199,19 +199,19 @@ class Speech2Text(ModelBase):
         # main task
         for dir in ['fwd', 'bwd']:
             if hasattr(self, 'dec_' + dir):
-                logging.info('Activate scheduled sampling (main)')
+                logger.info('Activate scheduled sampling (main)')
                 getattr(self, 'dec_' + dir).trigger_scheduled_sampling()
 
         # sub task
         for sub in ['sub1', 'sub2']:
             if hasattr(self, 'dec_fwd_' + sub):
-                logging.info('Activate scheduled sampling (%s)' % sub)
+                logger.info('Activate scheduled sampling (%s)' % sub)
                 getattr(self, 'dec_fwd_' + sub).trigger_scheduled_sampling()
 
     def trigger_quantity_loss(self):
         # main task only now
         if hasattr(self, 'dec_fwd'):
-            logging.info('Activate quantity loss')
+            logger.info('Activate quantity loss')
             getattr(self, 'dec_fwd').trigger_quantity_loss()
 
     def reset_session(self):
@@ -486,7 +486,7 @@ class Speech2Text(ModelBase):
 
         hyps = None
         best_hyp_id_stream = []
-        is_reset = True  # for the first chunk
+        is_reset = True  # for the first block
 
         stdout = False
 
@@ -496,8 +496,8 @@ class Speech2Text(ModelBase):
             lm_second = getattr(self, 'lm_second', None)
 
             while True:
-                # Encode input features chunk by chunk
-                x_chunk, is_last_chunk, lookback, lookahead = streaming.extract_feature()
+                # Encode input features block by block
+                x_chunk, is_last_block, lookback, lookahead = streaming.extract_feature()
                 if is_reset:
                     self.enc.reset_cache()
                 eout_chunk_dict = self.encode([x_chunk], 'all',
@@ -505,7 +505,7 @@ class Speech2Text(ModelBase):
                                               lookback=lookback,
                                               lookahead=lookahead)
                 eout_chunk = eout_chunk_dict[task]['xs']
-                is_reset = False  # detect the first boundary in the same chunk
+                is_reset = False  # detect the first boundary in the same block
 
                 # CTC-based VAD
                 if streaming.is_ctc_vad:
@@ -517,7 +517,7 @@ class Speech2Text(ModelBase):
                     is_reset = streaming.ctc_vad(ctc_probs_chunk, stdout=stdout)
 
                 # Truncate the most right frames
-                if is_reset and not is_last_chunk and streaming.bd_offset >= 0:
+                if is_reset and not is_last_block and streaming.bd_offset >= 0:
                     eout_chunk = eout_chunk[:, :streaming.bd_offset]
                 streaming.eout_chunks.append(eout_chunk)
 
@@ -534,7 +534,7 @@ class Speech2Text(ModelBase):
                         best_hyp_id_prefix = best_hyp_id_prefix[:-1]  # exclude <eos>
                         # Segmentation strategy 2:
                         # If <eos> is emitted from the decoder (not CTC),
-                        # the current chunk is segmented.
+                        # the current block is segmented.
                         if not is_reset:
                             streaming.bd_offset = eout_chunk.size(1) - 1
                             is_reset = True
@@ -583,10 +583,10 @@ class Speech2Text(ModelBase):
                     hyps = None
 
                 streaming.next_chunk()
-                # next chunk will start from the frame next to the boundary
-                if not is_last_chunk:
+                # next block will start from the frame next to the boundary
+                if not is_last_block:
                     streaming.backoff(x_chunk, self.dec_fwd, stdout=stdout)
-                if is_last_chunk:
+                if is_last_block:
                     break
 
             # Global decoding for tail chunks
@@ -605,9 +605,9 @@ class Speech2Text(ModelBase):
                 best_hyp_id_stream.extend(best_hyp_id_prefix)
 
             if len(best_hyp_id_stream) > 0:
-                return [np.stack(best_hyp_id_stream, axis=0)], [None]
+                return [[np.stack(best_hyp_id_stream, axis=0)]], [None]
             else:
-                return [[]], [None]
+                return [[[]]], [None]
 
     def streamable(self):
         return getattr(self.dec_fwd, 'streamable', False)
