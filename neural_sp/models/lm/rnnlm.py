@@ -169,9 +169,7 @@ class RNNLM(LMBase):
 
         # Pre-compute embedding
         if emb_cache and self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64)
-            if self.use_cuda:
-                indices = indices.cuda()
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(ys.device)
             self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
 
         if self.embed_cache is not None:

@@ -136,7 +136,7 @@ class TransformerLM(LMBase):
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
-        logging.info('===== Initialize %s =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s =====' % self.__class__.__name__)
         # see https://github.com/pytorch/fairseq/blob/master/fairseq/models/transformer.py
         # embedding
         nn.init.normal_(self.embed.weight, mean=0., std=self.d_model**-0.5)
@@ -216,9 +216,7 @@ class TransformerLM(LMBase):
 
         # Pre-compute embedding
         if emb_cache and self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64)
-            if self.use_cuda:
-                indices = indices.cuda()
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(ys.device)
             self.embed_cache = self.embed(indices)  # `[1, vocab, emb_dim]`
 
         if self.embed_cache is not None:
