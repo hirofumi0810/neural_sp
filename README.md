@@ -147,7 +147,7 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | -------------- | ----  | ---- |
 | LAS            |  8.6  | 8.1  |
 | LC-BLSTM MoChA | 10.6  | 8.6  |
-| LC-BLSTM RNN-T |  9.3  | 8.7  |
+| LC-BLSTM RNN-T |  9.0  | 8.6  |
 
 ### WSJ (WER)
 | Model | test_dev93 | test_eval92 |
