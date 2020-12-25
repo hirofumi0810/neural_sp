@@ -79,9 +79,9 @@ class MonotonicEnergy(nn.Module):
             self.v.weight_g.data = torch.Tensor([1 / adim]).sqrt()
         elif atype == 'scaled_dot':
             if param_init == 'xavier_uniform':
-                self.reset_parameters(bias)
+                self.reset_parameters_xavier_uniform(bias)
 
-    def reset_parameters(self, bias):
+    def reset_parameters_xavier_uniform(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
         logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/multihead_attention.py
@@ -104,7 +104,7 @@ class MonotonicEnergy(nn.Module):
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
-            boundary_leftmost (int): leftmost boundary position
+            boundary_leftmost (int): leftmost boundary offset
         Returns:
             e (FloatTensor): `[B, H_ma, qlen, klen]`
 
@@ -124,21 +124,21 @@ class MonotonicEnergy(nn.Module):
                 mask_size = (bs, qlen, klen, self.n_heads)
                 assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
-        key = self.key
-        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
+        k = self.key
+        q = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)
         m = self.mask
 
         # Truncate encoder memories for efficient decoding
         if boundary_leftmost > 0:
-            key = key[:, boundary_leftmost:]
-            klen = key.size(1)
+            k = k[:, boundary_leftmost:]
+            klen = k.size(1)
             if m is not None:
                 m = m[:, :, boundary_leftmost:]
 
         if self.atype == 'scaled_dot':
-            e = torch.einsum("bihd,bjhd->bijh", (query, key)) / self.scale
+            e = torch.einsum("bihd,bjhd->bijh", (q, k)) / self.scale
         elif self.atype == 'add':
-            e = self.v(torch.relu(key[:, None] + query[:, :, None]).view(bs, qlen, klen, -1))
+            e = self.v(torch.relu(k[:, None] + q[:, :, None]).view(bs, qlen, klen, -1))
         # e: `[B, qlen, klen, H_ma]`
 
         if self.r is not None:
@@ -187,11 +187,11 @@ class ChunkEnergy(nn.Module):
             self.w_key = nn.Linear(kdim, adim, bias=bias)
             self.w_query = nn.Linear(qdim, adim, bias=bias)
             if param_init == 'xavier_uniform':
-                self.reset_parameters(bias)
+                self.reset_parameters_xavier_uniform(bias)
         else:
             raise NotImplementedError(atype)
 
-    def reset_parameters(self, bias):
+    def reset_parameters_xavier_uniform(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
         logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/multihead_attention.py
@@ -214,8 +214,8 @@ class ChunkEnergy(nn.Module):
             query (FloatTensor): `[B, qlen, qdim]`
             mask (ByteTensor): `[B, qlen, klen]`
             cache (bool): cache key and mask
-            boundary_leftmost (int): leftmost boundary position
-            boundary_rightmost (int): rightmost boundary position
+            boundary_leftmost (int): leftmost boundary offset
+            boundary_rightmost (int): rightmost boundary offset
         Returns:
             e (FloatTensor): `[B, H_ca, qlen, klen]`
 
@@ -232,21 +232,21 @@ class ChunkEnergy(nn.Module):
                 mask_size = (bs, qlen, klen, self.n_heads)
                 assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
 
-        key = self.key
-        query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H_ca, d_k]`
+        k = self.key
+        q = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H_ca, d_k]`
         m = self.mask
 
-        # Truncate encoder memories for efficient decoding
+        # Truncate encoder memories for efficient DECODING
         if boundary_leftmost > 0 or boundary_rightmost < klen:
-            key = key[:, boundary_leftmost:boundary_rightmost]
-            klen = key.size(1)
+            k = k[:, boundary_leftmost:boundary_rightmost]
+            klen = k.size(1)
             if m is not None:
                 m = m[:, :, boundary_leftmost:boundary_rightmost]
 
         if self.atype == 'scaled_dot':
-            e = torch.einsum("bihd,bjhd->bijh", (query, key)) / self.scale
+            e = torch.einsum("bihd,bjhd->bijh", (q, k)) / self.scale
         elif self.atype == 'add':
-            e = self.v(torch.relu(key[:, None] + query[:, :, None]).view(bs, qlen, klen, -1))
+            e = self.v(torch.relu(k[:, None] + q[:, :, None]).view(bs, qlen, klen, -1))
         # e: `[B, qlen, klen, H_ca]`
 
         if m is not None:
@@ -348,7 +348,7 @@ class MoChA(nn.Module):
             self.w_value = nn.Linear(kdim, adim, bias=bias)
             self.w_out = nn.Linear(adim, odim, bias=bias)
             if param_init == 'xavier_uniform':
-                self.reset_parameters(bias)
+                self.reset_parameters_xavier_uniform(bias)
 
         # attention dropout
         self.dropout_attn = nn.Dropout(p=dropout)  # for beta
@@ -357,7 +357,7 @@ class MoChA(nn.Module):
         self.bd_offset = 0
         self.key_prev_tail = None
 
-    def reset_parameters(self, bias):
+    def reset_parameters_xavier_uniform(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
         logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/multihead_attention.py
@@ -575,9 +575,9 @@ class MoChA(nn.Module):
                                                 self.n_heads_ca, self.sharpening_factor,
                                                 self.share_ca)
             else:
-                beta = efficient_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
-                                                     self.n_heads_ca, self.sharpening_factor,
-                                                     self.share_ca)
+                beta = soft_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
+                                                self.n_heads_ca, self.sharpening_factor,
+                                                self.share_ca)
             beta = self.dropout_attn(beta)  # `[B, H_ma * H_ca, qlen, klen]`
 
             if efficient_decoding and mode == 'hard':
@@ -687,8 +687,8 @@ def moving_sum(x, back, forward):
     return x_sum
 
 
-def efficient_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
-                                  sharpening_factor, share_chunkwise_attention):
+def soft_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
+                             sharpening_factor, share_chunkwise_attention):
     """Compute chunkwise attention efficiently by clipping logits at training time.
 
     Args:
