@@ -50,7 +50,7 @@ class RNNTransducer(DecoderBase):
         dropout_emb (float): dropout probability for embedding layer
         ctc_weight (float): CTC loss weight
         ctc_lsm_prob (float): label smoothing probability for CTC
-        ctc_fc_list (list): fully-connected layer configuration before the CTC softmax
+        ctc_fc_list (List): fully-connected layer configuration before the CTC softmax
         external_lm (RNNLM): external RNNLM for prediction network initialization
         global_weight (float): global loss weight for multi-task learning
         mtl_per_batch (bool): change mini-batch per task for multi-task training
@@ -183,7 +183,7 @@ class RNNTransducer(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (IntTensor): `[B]`
-            ys (list): length `B`, each of which contains a list of size `[L]`
+            ys (List): length `[B]`, each of which contains a list of size `[L]`
             task (str): all/ys*/ys_sub*
             teacher_logits (FloatTensor): `[B, L, vocab]`
             recog_params (dict): parameters for MBR training
@@ -224,7 +224,7 @@ class RNNTransducer(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (IntTensor): `[B]`
-            ys (list): length `B`, each of which contains a list of size `[L]`
+            ys (List): length `[B]`, each of which contains a list of size `[L]`
         Returns:
             loss (FloatTensor): `[1]`
 
@@ -310,7 +310,7 @@ class RNNTransducer(DecoderBase):
             new_hxs.append(h)
             ys_emb = self.dropout(ys_emb)
             if self.proj is not None:
-                ys_emb = torch.tanh(self.proj[lth](ys_emb))
+                ys_emb = torch.relu(self.proj[lth](ys_emb))
 
         # Repackage
         new_dstate['hxs'] = torch.cat(new_hxs, dim=0)
@@ -348,13 +348,13 @@ class RNNTransducer(DecoderBase):
             max_len_ratio (int): maximum sequence length of tokens
             idx2token (): converter from index to token
             exclude_eos (bool): exclude <eos> from hypothesis
-            refs_id (list): reference list
-            utt_ids (list): utterance id list
-            speakers (list): speaker list
+            refs_id (List): reference list
+            utt_ids (List): utterance id list
+            speakers (List): speaker list
             trigger_points: dummy
             teacher_force: dummy
         Returns:
-            hyps (list): length `B`, each of which contains arrays of size `[L]`
+            hyps (List): length `[B]`, each of which contains arrays of size `[L]`
             aw: dummy
 
         """
@@ -405,20 +405,20 @@ class RNNTransducer(DecoderBase):
             elens (IntTensor): `[B]`
             params (dict): hyperparameters for decoding
             idx2token (): converter from index to token
-            lm: firsh path LM
-            lm_second: second path LM
-            lm_second_bwd: secoding path backward LM
+            lm (torch.nn.module): firsh path LM
+            lm_second (torch.nn.module): second path LM
+            lm_second_bwd (torch.nn.module): secoding path backward LM
             ctc_log_probs (FloatTensor): `[B, T, vocab]`
             nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
-            refs_id (list): reference list
-            utt_ids (list): utterance id list
-            speakers (list): speaker list
-            ensmbl_eouts (list): list of FloatTensor
-            ensmbl_elens (list) list of list
-            ensmbl_decs (list): list of torch.nn.Module
+            refs_id (List): reference list
+            utt_ids (List): utterance id list
+            speakers (List): speaker list
+            ensmbl_eouts (List[FloatTensor]): encoder outputs for ensemble models
+            ensmbl_elens (List[IntTensor]) encoder outputs for ensemble models
+            ensmbl_decs (List[torch.nn.Module): decoders for ensemble models
         Returns:
-            nbest_hyps_idx (list): length `B`, each of which contains list of N hypotheses
+            nbest_hyps_idx (List): length `[B]`, each of which contains list of N hypotheses
             aws: dummy
             scores: dummy
 
@@ -435,6 +435,7 @@ class RNNTransducer(DecoderBase):
         lm_weight_second_bwd = params['recog_lm_bwd_weight']
         # asr_state_carry_over = params['recog_asr_state_carry_over']
         lm_state_carry_over = params['recog_lm_state_carry_over']
+        merge_prob = True  # TODO: make this parameter
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight)
@@ -458,7 +459,7 @@ class RNNTransducer(DecoderBase):
 
             end_hyps = []
             hyps = [{'hyp': [self.eos],
-                     'hyp_str': '',
+                     'hyp_ids_str': '',
                      'ys': [self.eos],
                      'score': 0.,
                      'score_rnnt': 0.,
@@ -492,13 +493,13 @@ class RNNTransducer(DecoderBase):
 
                         # Update prediction network only when predicting non-blank labels
                         hyp_ids = beam['hyp'] + [idx]
-                        hyp_str = ' '.join(list(map(str, hyp_ids)))
-                        if hyp_str in self.state_cache.keys():
+                        hyp_ids_str = ' '.join(list(map(str, hyp_ids)))
+                        if hyp_ids_str in self.state_cache.keys():
                             # from cache
-                            dout = self.state_cache[hyp_str]['dout']
-                            dstate = self.state_cache[hyp_str]['dstate']
-                            lmstate = self.state_cache[hyp_str]['lmstate']
-                            total_score_lm = self.state_cache[hyp_str]['total_score_lm']
+                            dout = self.state_cache[hyp_ids_str]['dout']
+                            dstate = self.state_cache[hyp_ids_str]['dstate']
+                            lmstate = self.state_cache[hyp_ids_str]['lmstate']
+                            total_score_lm = self.state_cache[hyp_ids_str]['total_score_lm']
                         else:
                             y = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(idx)
                             y_emb = self.dropout_emb(self.embed(y))
@@ -510,7 +511,7 @@ class RNNTransducer(DecoderBase):
                             if lm is not None:
                                 total_score_lm += scores_lm[0, -1, idx].item()
 
-                            self.state_cache[hyp_str] = {
+                            self.state_cache[hyp_ids_str] = {
                                 'dout': dout,
                                 'dstate': dstate,
                                 'lmstate': {'hxs': lmstate['hxs'],
@@ -522,7 +523,7 @@ class RNNTransducer(DecoderBase):
                             total_score += total_score_lm * lm_weight
 
                         new_hyps.append({'hyp': hyp_ids,
-                                         'hyp_str': hyp_str,
+                                         'hyp_ids_str': hyp_ids_str,
                                          'score': total_score,
                                          'score_rnnt': total_scores_rnnt[0, idx].item(),
                                          'score_lm': total_score_lm,
@@ -531,19 +532,9 @@ class RNNTransducer(DecoderBase):
                                          'lmstate': {'hxs': lmstate['hxs'],
                                                      'cxs': lmstate['cxs']} if lmstate is not None else None})
 
-                # Merge hypotheses having the same token sequences
-                new_hyps_merged = {}
-                for beam in new_hyps:
-                    hyp_str = ' '.join(list(map(str, beam['hyp'])))
-                    if hyp_str not in new_hyps_merged.keys():
-                        new_hyps_merged[hyp_str] = beam
-                    elif hyp_str in new_hyps_merged.keys():
-                        if beam['score'] > new_hyps_merged[hyp_str]['score']:
-                            new_hyps_merged[hyp_str] = beam
-                new_hyps = [v for v in new_hyps_merged.values()]
-
                 # Local pruning
-                new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
+                new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)
+                new_hyps_sorted = helper.merge_rnnt_path(new_hyps_sorted, merge_prob)[:beam_width]
 
                 # Remove complete hypotheses
                 new_hyps, end_hyps, is_finish = helper.remove_complete_hyp(new_hyps_sorted, end_hyps)

@@ -3,6 +3,8 @@
 
 """Utility functions for beam search decoding."""
 
+import logging
+import math
 import numpy as np
 import torch
 
@@ -11,6 +13,8 @@ from neural_sp.models.torch_utils import (
     pad_list,
     tensor2np,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class BeamSearch(object):
@@ -132,3 +136,35 @@ class BeamSearch(object):
             assert lm_weight > 0
             lm.eval()
         return lm
+
+    def merge_rnnt_path(self, hyps, merge_prob=False):
+        """Merge multiple alignment paths corresponding to the same token IDs for RNN-T.
+
+        Args:
+            hyps (List): length of `[beam_width]`
+        Returns:
+            hyps (List): length of `[less than beam_width]`
+
+        """
+        # NOTE: assumming hyps is already sorted
+        hyps_merged = {}
+        for beam in hyps:
+            hyp_ids_str = beam['hyp_ids_str']
+            if hyp_ids_str not in hyps_merged.keys():
+                hyps_merged[hyp_ids_str] = beam
+            else:
+                if merge_prob:
+                    for k in ['score', 'score_rnnt']:
+                        hyps_merged[hyp_ids_str][k] = expsumlog(hyps_merged[hyp_ids_str][k], beam[k])
+                    # NOTE: LM scores should not be merged
+
+                elif beam['score'] > hyps_merged[hyp_ids_str]['score']:
+                    # Otherwise, pick up a path having higher log-probability
+                    hyps_merged[hyp_ids_str] = beam
+
+        hyps = [v for v in hyps_merged.values()]
+        return hyps
+
+
+def expsumlog(a, b):
+    return math.log(math.exp(a) + math.exp(b))
