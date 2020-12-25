@@ -226,11 +226,12 @@ class ChunkEnergy(nn.Module):
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
             self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H_ca, d_k]`
-            self.mask = mask
             if mask is not None:
                 self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ca]`
                 mask_size = (bs, qlen, klen, self.n_heads)
                 assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
+            else:
+                self.mask = None
 
         k = self.key
         q = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H_ca, d_k]`
@@ -317,8 +318,8 @@ class MoChA(nn.Module):
         self.w = chunk_size
         self.milk = (chunk_size == -1)
         self.n_heads = n_heads_mono
-        self.n_heads_ma = n_heads_mono
-        self.n_heads_ca = n_heads_chunk
+        self.H_ma = n_heads_mono
+        self.H_ca = n_heads_chunk
         self.eps = eps
         self.noise_std = noise_std
         self.no_denom = no_denominator
@@ -354,8 +355,7 @@ class MoChA(nn.Module):
         self.dropout_attn = nn.Dropout(p=dropout)  # for beta
         self.dropout_head = dropout_head
 
-        self.bd_offset = 0
-        self.key_prev_tail = None
+        self.reset()
 
     def reset_parameters_xavier_uniform(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
@@ -387,12 +387,12 @@ class MoChA(nn.Module):
         alpha = []
         for i in range(qlen):
             # Compute [1, 1 - p_choose[0], 1 - p_choose[1], ..., 1 - p_choose[-2]]
-            shifted_1mp_choose = torch.cat([e_ma.new_ones(bs, self.n_heads_ma, 1, 1),
+            shifted_1mp_choose = torch.cat([e_ma.new_ones(bs, self.H_ma, 1, 1),
                                             1 - p_choose[:, :, i:i + 1, :-1]], dim=-1)
             # Compute attention distribution recursively as
             # q_j = (1 - p_choose_j) * q_(j-1) + aw_prev_j
             # alpha_j = p_choose_j * q_j
-            q = e_ma.new_zeros(bs, self.n_heads_ma, 1, klen + 1)
+            q = e_ma.new_zeros(bs, self.H_ma, 1, klen + 1)
             for j in range(klen):
                 q[:, :, i:i + 1, j + 1] = shifted_1mp_choose[:, :, i:i + 1, j].clone() * q[:, :, i:i + 1, j].clone() + \
                     aw_prev[:, :, :, j].clone()
@@ -430,7 +430,7 @@ class MoChA(nn.Module):
 
         aw_prev = aw_prev[:, :, :, -klen:]
 
-        if self.n_heads_ma == 1:
+        if self.H_ma == 1:
             # assert aw_prev.sum() > 0
             p_choose_i = (torch.sigmoid(e_ma) >= 0.5).float()[:, :, 0:1]
             # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
@@ -465,7 +465,7 @@ class MoChA(nn.Module):
 
                 leftmost = alpha[b, :, -1].nonzero()[:, -1].min().item()
                 rightmost = alpha[b, :, -1].nonzero()[:, -1].max().item()
-                for h in range(self.n_heads_ma):
+                for h in range(self.H_ma):
                     # no bondary at the h-th head
                     if alpha[b, h, -1].sum().item() == 0:
                         alpha[b, h, -1, min(rightmost, leftmost + eps_wait)] = 1
@@ -480,7 +480,7 @@ class MoChA(nn.Module):
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
                 cache=False, mode='hard', trigger_points=None, eps_wait=-1,
-                efficient_decoding=False):
+                linear_decoding=False):
         """Forward pass.
 
         Args:
@@ -505,63 +505,58 @@ class MoChA(nn.Module):
         tail_len = self.key_prev_tail.size(1) if self.key_prev_tail is not None else 0
 
         if aw_prev is None:
-            # aw_prev = [1, 0, 0 ... 0]
-            aw_prev = key.new_zeros(bs, self.n_heads_ma, 1, klen)
-            aw_prev[:, :, :, 0:1] = key.new_ones(bs, self.n_heads_ma, 1, 1)
+            aw_prev = key.new_zeros(bs, self.H_ma, 1, klen)
+            aw_prev[:, :, :, 0:1] = key.new_ones(bs, self.H_ma, 1, 1)  # aw_prev = [1, 0, 0 ... 0]
 
         # Compute monotonic energy
-        e_ma = self.monotonic_energy(key, query, mask, cache=cache,
+        e_ma = self.monotonic_energy(key, query, mask, cache,
                                      boundary_leftmost=self.bd_offset)  # `[B, H_ma, qlen, klen]`
         assert e_ma.size(3) + self.bd_offset == key.size(1)
 
         if mode == 'recursive':  # training
             alpha, p_choose = self.recursive(e_ma, aw_prev)
             alpha_masked = alpha.clone()
-
         elif mode == 'parallel':  # training (efficient)
             alpha, p_choose = self.parallel(e_ma, aw_prev, trigger_points)
-
             # mask out each head independently (HeadDrop)
             if self.dropout_head > 0 and self.training:
-                alpha_masked = headdrop(alpha.clone(), self.n_heads_ma, self.dropout_head)
+                alpha_masked = headdrop(alpha.clone(), self.H_ma, self.dropout_head)
             else:
                 alpha_masked = alpha.clone()
-
         elif mode == 'hard':  # inference
             alpha, p_choose = self.hard(e_ma, aw_prev, eps_wait)
             alpha_masked = alpha.clone()
-
         else:
             raise ValueError("mode must be 'recursive', 'parallel', or 'hard'.")
 
         # Compute chunk energy
         beta = None
         if self.chunk_energy is not None:
-            bd_leftmost = 0
-            bd_rightmost = klen - 1 - self.bd_offset
-            if efficient_decoding and mode == 'hard' and alpha.sum() > 0:
-                bd_leftmost = alpha[:, :, 0].nonzero()[:, -1].min().item()
-                bd_rightmost = alpha[:, :, 0].nonzero()[:, -1].max().item()
-                if bd_leftmost == bd_rightmost:
-                    alpha_masked = alpha_masked[:, :, :, bd_leftmost:bd_leftmost + 1]
+            bd_L = 0
+            bd_R = klen - 1 - self.bd_offset
+            if linear_decoding and mode == 'hard' and alpha.sum() > 0:
+                bd_L = alpha[:, :, 0].nonzero()[:, -1].min().item()
+                bd_R = alpha[:, :, 0].nonzero()[:, -1].max().item()
+                if bd_L == bd_R:
+                    alpha_masked = alpha_masked[:, :, :, bd_L:bd_L + 1]
                 else:
-                    alpha_masked = alpha_masked[:, :, :, bd_leftmost:bd_rightmost]
+                    alpha_masked = alpha_masked[:, :, :, bd_L:bd_R]
 
             if mode == 'hard':
                 if self.key_prev_tail is not None:
                     key_ = torch.cat([self.key_prev_tail[0:1].repeat([bs, 1, 1]), key], dim=1)
                 else:
                     key_ = key
-                e_ca = self.chunk_energy(key_, query, mask, cache=cache,
+                e_ca = self.chunk_energy(key_, query, mask, cache,
                                          boundary_leftmost=0 if self.milk else max(
-                                             0, self.bd_offset + bd_leftmost - self.w + 1),
-                                         boundary_rightmost=self.bd_offset + bd_rightmost + 1 + tail_len)  # `[B, (H_ma*)H_ca, qlen, ken]`
+                                             0, self.bd_offset + bd_L - self.w + 1),
+                                         boundary_rightmost=self.bd_offset + bd_R + 1 + tail_len)  # `[B, (H_ma*)H_ca, qlen, ken]`
             else:
-                e_ca = self.chunk_energy(key, query, mask, cache=cache)  # `[B, (H_ma*)H_ca, qlen, ken]`
+                e_ca = self.chunk_energy(key, query, mask, cache)  # `[B, (H_ma*)H_ca, qlen, ken]`
 
             # padding for chunkwise attention over adjacent input segments
             additional = e_ca.size(3) - alpha_masked.size(3)
-            if efficient_decoding and mode == 'hard':
+            if linear_decoding and mode == 'hard':
                 alpha = torch.cat([alpha.new_zeros(bs, alpha.size(1), 1, klen - alpha.size(3)), alpha], dim=3)
                 if additional > 0:
                     alpha_masked = torch.cat([alpha_masked.new_zeros(bs, alpha_masked.size(1), 1, additional),
@@ -569,31 +564,31 @@ class MoChA(nn.Module):
 
             if mode == 'hard':
                 if self.key_prev_tail is not None:
-                    alpha_masked = torch.cat([alpha_masked.new_zeros(bs, self.n_heads_ma, qlen, tail_len),
+                    alpha_masked = torch.cat([alpha_masked.new_zeros(bs, self.H_ma, qlen, tail_len),
                                               alpha_masked], dim=3)
                 beta = hard_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
-                                                self.n_heads_ca, self.sharpening_factor,
+                                                self.H_ca, self.sharpening_factor,
                                                 self.share_ca)
             else:
                 beta = soft_chunkwise_attention(alpha_masked, e_ca, mask, self.w,
-                                                self.n_heads_ca, self.sharpening_factor,
+                                                self.H_ca, self.sharpening_factor,
                                                 self.share_ca)
             beta = self.dropout_attn(beta)  # `[B, H_ma * H_ca, qlen, klen]`
 
-            if efficient_decoding and mode == 'hard':
-                value = value[:, max(0, self.bd_offset + bd_leftmost - self.w + 1):self.bd_offset + bd_rightmost + 1]
+            if linear_decoding and mode == 'hard':
+                value = value[:, max(0, self.bd_offset + bd_L - self.w + 1):self.bd_offset + bd_R + 1]
 
         # Update after calculating beta
-        bd_offset_prev = self.bd_offset
-        if efficient_decoding and mode == 'hard' and alpha.sum() > 0:
+        bd_L_prev = self.bd_offset
+        if linear_decoding and mode == 'hard' and alpha.sum() > 0:
             self.bd_offset += alpha[:, :, 0, self.bd_offset:].nonzero()[:, -1].min().item()
 
         # Compute context vector
-        if self.n_heads_ma * self.n_heads_ca > 1:
-            value = self.w_value(value).view(bs, -1, self.n_heads_ma * self.n_heads_ca, self.d_k)
+        if self.H_ma * self.H_ca > 1:
+            value = self.w_value(value).view(bs, -1, self.H_ma * self.H_ca, self.d_k)
             value = value.transpose(2, 1).contiguous()  # `[B, H_ma * H_ca, klen, d_k]`
             cv = torch.matmul(alpha if self.w == 1 else beta, value)  # `[B, H_ma * H_ca, qlen, d_k]`
-            cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.n_heads_ma * self.n_heads_ca * self.d_k)
+            cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.H_ma * self.H_ca * self.d_k)
             cv = self.w_out(cv)  # `[B, qlen, adim]`
         else:
             if self.w == 1:
@@ -605,15 +600,15 @@ class MoChA(nn.Module):
                 else:
                     cv = torch.bmm(beta.squeeze(1), value)  # `[B, 1, adim]`
 
-        assert alpha.size() == (bs, self.n_heads_ma, qlen, klen), \
-            (alpha.size(), (bs, self.n_heads_ma, qlen, klen))
+        assert alpha.size() == (bs, self.H_ma, qlen, klen), \
+            (alpha.size(), (bs, self.H_ma, qlen, klen))
         if self.w > 1:
-            _w = max(1, (bd_offset_prev + bd_rightmost + 1) - max(0, bd_offset_prev + bd_leftmost - self.w + 1))
-            assert beta.size() == (bs, self.n_heads_ma * self.n_heads_ca, qlen, _w + tail_len), \
-                (beta.size(), (bs, self.n_heads_ma * self.n_heads_ca, qlen, _w + tail_len))
+            _w = max(1, (bd_L_prev + bd_R + 1) - max(0, bd_L_prev + bd_L - self.w + 1))
+            assert beta.size() == (bs, self.H_ma * self.H_ca, qlen, _w + tail_len), \
+                (beta.size(), (bs, self.H_ma * self.H_ca, qlen, _w + tail_len))
         elif self.milk:
-            assert beta.size() == (bs, self.n_heads_ma * self.n_heads_ca, qlen, klen), \
-                (beta.size(), (bs, self.n_heads_ma * self.n_heads_ca, qlen, klen))
+            assert beta.size() == (bs, self.H_ma * self.H_ca, qlen, klen), \
+                (beta.size(), (bs, self.H_ma * self.H_ca, qlen, klen))
 
         return cv, alpha, beta, p_choose
 
@@ -687,7 +682,7 @@ def moving_sum(x, back, forward):
     return x_sum
 
 
-def soft_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
+def soft_chunkwise_attention(alpha, u, mask, chunk_size, H_ca,
                              sharpening_factor, share_chunkwise_attention):
     """Compute chunkwise attention efficiently by clipping logits at training time.
 
@@ -696,20 +691,20 @@ def soft_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
         u (FloatTensor): `[B, (H_ma*)H_ca, qlen, klen]`
         mask (ByteTensor): `[B, qlen, klen]`
         chunk_size (int): window size for chunkwise attention
-        n_heads_chunk (int): number of chunkwise attention heads
+        H_ca (int): number of chunkwise attention heads
         sharpening_factor (float): sharping factor for beta calculation
         share_chunkwise_attention (int): share CA heads among MA heads
     Returns:
         beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
 
     """
-    bs, n_heads_mono, qlen, klen = alpha.size()
+    bs, H_ma, qlen, klen = alpha.size()
     alpha = alpha.unsqueeze(2)  # `[B, H_ma, 1, qlen, klen]`
     u = u.unsqueeze(1)  # `[B, 1, (H_ma*)H_ca, qlen, klen]`
-    if n_heads_chunk > 1:
-        alpha = alpha.repeat([1, 1, n_heads_chunk, 1, 1])
-    if n_heads_mono > 1 and not share_chunkwise_attention:
-        u = u.view(bs, n_heads_mono, n_heads_chunk, qlen, klen)
+    if H_ca > 1:
+        alpha = alpha.repeat([1, 1, H_ca, 1, 1])
+    if H_ma > 1 and not share_chunkwise_attention:
+        u = u.view(bs, H_ma, H_ca, qlen, klen)
     # Shift logits to avoid overflow
     u -= torch.max(u, dim=-1, keepdim=True)[0]
     # Limit the range for numerical stability
@@ -735,7 +730,7 @@ def soft_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
     return beta.view(bs, -1, qlen, klen)
 
 
-def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
+def hard_chunkwise_attention(alpha, u, mask, chunk_size, H_ca,
                              sharpening_factor, share_chunkwise_attention):
     """Compute chunkwise attention over hard attention at test time.
 
@@ -744,7 +739,7 @@ def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
         u (FloatTensor): `[B, (H_ma*)H_ca, qlen, klen]`
         mask (ByteTensor): `[B, qlen, klen]`
         chunk_size (int): window size for chunkwise attention
-        n_heads_chunk (int): number of chunkwise attention heads
+        H_ca (int): number of chunkwise attention heads
         sharpening_factor (float): sharping factor for beta calculation
         share_chunkwise_attention (int): share CA heads among MA heads
     Returns:
@@ -754,13 +749,13 @@ def hard_chunkwise_attention(alpha, u, mask, chunk_size, n_heads_chunk,
     bs, n_heads_mono, qlen, klen = alpha.size()
     alpha = alpha.unsqueeze(2)   # `[B, H_ma, 1, qlen, klen]`
     u = u.unsqueeze(1)  # `[B, 1, (H_ma*)H_ca, qlen, klen]`
-    if n_heads_chunk > 1:
-        alpha = alpha.repeat([1, 1, n_heads_chunk, 1, 1])
+    if H_ca > 1:
+        alpha = alpha.repeat([1, 1, H_ca, 1, 1])
     if n_heads_mono > 1:
         if share_chunkwise_attention:
             u = u.repeat([1, n_heads_mono, 1, 1, 1])
         else:
-            u = u.view(bs, n_heads_mono, n_heads_chunk, qlen, klen)
+            u = u.view(bs, n_heads_mono, H_ca, qlen, klen)
 
     mask = alpha.clone().byte()  # `[B, H_ma, H_ca, qlen, klen]`
     for b in range(bs):
