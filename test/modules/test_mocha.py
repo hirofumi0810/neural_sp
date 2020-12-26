@@ -92,7 +92,7 @@ def test_forward_soft_parallel(args):
     alpha = None
     for i in range(qlen):
         out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
-                    mode='recursive', cache=True)
+                    mode='recursive', cache=True, linear_decoding=True)
         assert len(out) == 4
         cv, alpha, beta, p_choose = out
         assert cv.size() == (batch_size, 1, value.size(2))
@@ -107,7 +107,7 @@ def test_forward_soft_parallel(args):
     mocha.reset()
     for i in range(qlen):
         out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
-                    mode='parallel', cache=True)
+                    mode='parallel', cache=True, linear_decoding=True)
         assert len(out) == 4
         cv, alpha, beta, p_choose = out
         assert cv.size() == (batch_size, 1, value.size(2))
@@ -165,7 +165,7 @@ def test_forward_hard(args):
     for i in range(qlen):
         out = mocha(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
                     mode='hard', cache=False, trigger_points=trigger_points,
-                    eps_wait=-1, efficient_decoding=False)
+                    eps_wait=-1, linear_decoding=True)
         assert len(out) == 4
         cv, alpha, beta, p_choose = out
         assert cv.size() == (batch_size, 1, value.size(2))
