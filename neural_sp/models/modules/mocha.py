@@ -229,7 +229,7 @@ class ChunkEnergy(nn.Module):
         if self.key is None or not cache:
             self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H_ca, d_k]`
             if mask is not None:
-                self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ca]`
+                self.mask = mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ca]`
                 mask_size = (bs, qlen, klen, self.n_heads)
                 assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
             else:
@@ -590,19 +590,15 @@ class MoChA(nn.Module):
         # Compute context vector
         if self.H_total > 1:
             v = self.w_value(value).view(bs, -1, self.H_total, self.d_k)
+            # TODO: cache at test time
             v = v.transpose(2, 1).contiguous()  # `[B, H_ma * H_ca, klen, d_k]`
-            cv = torch.matmul(alpha if self.w == 1 else beta, v)  # `[B, H_ma * H_ca, qlen, d_k]`
+            cv = torch.matmul(alpha_masked if self.w == 1 else beta, v)  # `[B, H_ma * H_ca, qlen, d_k]`
             cv = cv.transpose(2, 1).contiguous().view(bs, -1, self.H_total * self.d_k)
             cv = self.w_out(cv)  # `[B, qlen, adim]`
         else:
-            if self.w == 1:
-                cv = torch.bmm(alpha.squeeze(1), value)  # `[B, 1, adim]`
-            else:
-                if self.key_prev_tail is not None:
-                    value_ = torch.cat([self.key_prev_tail[0:1].repeat([bs, 1, 1]), value], dim=1)
-                    cv = torch.bmm(beta.squeeze(1), value_)  # `[B, 1, adim]`
-                else:
-                    cv = torch.bmm(beta.squeeze(1), value)  # `[B, 1, adim]`
+            if self.key_prev_tail is not None:
+                value = torch.cat([self.key_prev_tail[0:1].repeat([bs, 1, 1]), value], dim=1)
+            cv = torch.bmm(alpha_masked.squeeze(1) if self.w == 1 else beta.squeeze(1), value)  # `[B, 1, adim]`
 
         assert alpha.size() == (bs, self.H_ma, qlen, klen), \
             (alpha.size(), (bs, self.H_ma, qlen, klen))
