@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Test for monotonic chunkwise atteniton (MoChA)."""
+"""Test for monotonic (multihead) chunkwise atteniton (HMA/MoChA/MMA)."""
 
 import importlib
 import pytest
@@ -70,7 +70,7 @@ def make_args(**kwargs):
         ({'param_init': 'xavier_uniform'}),
     ]
 )
-def test_forward_soft_parallel(args):
+def test_forward_soft(args):
     args = make_args(**args)
 
     batch_size = 4
@@ -89,33 +89,35 @@ def test_forward_soft_parallel(args):
 
     mocha.train()
     # recursive
-    alpha = None
-    for i in range(qlen):
-        out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
-                    mode='recursive', cache=True, linear_decoding=True)
-        assert len(out) == 4
-        cv, alpha, beta, p_choose = out
-        assert cv.size() == (batch_size, 1, value.size(2))
-        assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
-        assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
-        if args['chunk_size'] > 1:
-            assert beta is not None
-            assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
+    for linear_decoding in [True, False]:
+        alpha = None
+        for i in range(qlen):
+            out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
+                        mode='recursive', cache=True, linear_decoding=linear_decoding)
+            assert len(out) == 4
+            cv, alpha, beta, p_choose = out
+            assert cv.size() == (batch_size, 1, value.size(2))
+            assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
+            assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
+            if args['chunk_size'] > 1:
+                assert beta is not None
+                assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
 
     # parallel
-    alpha = None
-    mocha.reset()
-    for i in range(qlen):
-        out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
-                    mode='parallel', cache=True, linear_decoding=True)
-        assert len(out) == 4
-        cv, alpha, beta, p_choose = out
-        assert cv.size() == (batch_size, 1, value.size(2))
-        assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
-        assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
-        if args['chunk_size'] > 1:
-            assert beta is not None
-            assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
+    for linear_decoding in [True, False]:
+        alpha = None
+        mocha.reset()
+        for i in range(qlen):
+            out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
+                        mode='parallel', cache=True, linear_decoding=linear_decoding)
+            assert len(out) == 4
+            cv, alpha, beta, p_choose = out
+            assert cv.size() == (batch_size, 1, value.size(2))
+            assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
+            assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
+            if args['chunk_size'] > 1:
+                assert beta is not None
+                assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
 
 
 @pytest.mark.parametrize(
@@ -162,15 +164,16 @@ def test_forward_hard(args):
     trigger_points = None
     if args['decot']:
         trigger_points = torch.arange(qlen).unsqueeze(0).repeat(batch_size, 1)
-    for i in range(qlen):
-        out = mocha(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
-                    mode='hard', cache=False, trigger_points=trigger_points,
-                    eps_wait=-1, linear_decoding=True)
-        assert len(out) == 4
-        cv, alpha, beta, p_choose = out
-        assert cv.size() == (batch_size, 1, value.size(2))
-        assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
-        assert p_choose is None
-        if args['chunk_size'] > 1:
-            assert beta is not None
-            assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
+    for linear_decoding in [True, False]:
+        for i in range(qlen):
+            out = mocha(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
+                        mode='hard', cache=False, trigger_points=trigger_points,
+                        eps_wait=-1, linear_decoding=linear_decoding)
+            assert len(out) == 4
+            cv, alpha, beta, p_choose = out
+            assert cv.size() == (batch_size, 1, value.size(2))
+            assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
+            assert p_choose is None
+            if args['chunk_size'] > 1:
+                assert beta is not None
+                assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
