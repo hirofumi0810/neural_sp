@@ -1515,7 +1515,6 @@ class RNNDecoder(DecoderBase):
                 h['no_boundary'] = False
 
         ymax = math.ceil(eouts.size(1) * max_len_ratio)
-        truncate_offset = 0
         for i in range(ymax):
             # finish if no additional decision boundary is found in the current chunk for all candidates
             if len(hyps) == 0:
@@ -1556,11 +1555,9 @@ class RNNDecoder(DecoderBase):
             else:
                 y_emb = self.dropout_emb(self.embed(y))
             dstates, cv, aw, attn_v, _, _ = self.decode_step(
-                eouts[0:1, truncate_offset:].repeat([cv.size(0), 1, 1]),
-                dstates, cv, y_emb, None, aw, lmout, cache=False)
+                eouts[0:1], dstates, cv, y_emb, None, aw, lmout, streaming=True)
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1), dim=1)
             # NOTE: aw: `[B, H, 1, T_chunk]`
-            boundary_list = np.where(tensor2np(aw.sum(2).sum(1).sum(0)) != 0)[0]
 
             for j, beam in enumerate(hyps):
                 # no decision boundary found in the current chunk for j-th utterance
@@ -1628,13 +1625,6 @@ class RNNDecoder(DecoderBase):
                          'boundary': beam['boundary'] + [cp] if not no_boundary else beam['boundary'],
                          'no_boundary': no_boundary})
 
-            # trancate encoder outputs
-            if len(boundary_list) > 0:
-                leftmost = min(boundary_list)
-                truncate_offset += leftmost
-                self.n_frames += leftmost
-                self.score.register_key_prev_tail(eouts[:, :truncate_offset])
-
             # Local pruning
             new_hyps_sorted = sorted(new_hyps, key=lambda x: x['score'], reverse=True)[:beam_width]
 
@@ -1673,7 +1663,7 @@ class RNNDecoder(DecoderBase):
             self.dstates_final = end_hyps[0]['dstates']
             self.lmstate_final = end_hyps[0]['lmstate']
 
-        self.n_frames += (eouts.size(1) - (truncate_offset + 1))
-        self.score.register_key_prev_tail(eouts[:, truncate_offset:])
+        self.n_frames += eouts.size(1)
+        self.score.reset_block()
 
         return end_hyps, hyps, aws
