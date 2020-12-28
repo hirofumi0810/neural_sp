@@ -68,7 +68,8 @@ class MultiheadAttentionMechanism(nn.Module):
 
     def reset_parameters(self, bias):
         """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' %
+                    self.__class__.__name__)
         # NOTE: see https://github.com/pytorch/fairseq/blob/master/fairseq/modules/multihead_attention.py
         nn.init.xavier_uniform_(self.w_key.weight, gain=1 / math.sqrt(2))
         nn.init.xavier_uniform_(self.w_value.weight, gain=1 / math.sqrt(2))
@@ -87,8 +88,8 @@ class MultiheadAttentionMechanism(nn.Module):
         self.value = None
         self.mask = None
 
-    def forward(self, key, value, query, mask, aw_prev=None,
-                cache=False, mode='', trigger_points=None, eps_wait=-1):
+    def forward(self, key, value, query, mask, aw_prev=None, aw_lower=None,
+                cache=False, mode='', trigger_points=None, eps_wait=-1, streaming=False):
         """Forward pass.
 
         Args:
@@ -101,6 +102,7 @@ class MultiheadAttentionMechanism(nn.Module):
             mode: dummy interface for MoChA/MMA
             trigger_points: dummy interface for MoChA/MMA
             eps_wait: dummy interface for MMA
+            streaming: dummy interface for streaming attention
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, H, qlen, klen]`
@@ -115,11 +117,12 @@ class MultiheadAttentionMechanism(nn.Module):
         if self.key is None or not cache:
             self.key = self.w_key(key).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
             self.value = self.w_value(value).view(bs, -1, self.n_heads, self.d_k)  # `[B, klen, H, d_k]`
-            self.mask = mask
-            if self.mask is not None:
-                self.mask = self.mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])
+            if mask is not None:
+                self.mask = mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])
                 mask_size = (bs, qlen, klen, self.n_heads)
                 assert self.mask.size() == mask_size, (self.mask.size(), mask_size)
+            else:
+                self.mask = None
 
         key = self.key
         query = self.w_query(query).view(bs, -1, self.n_heads, self.d_k)  # `[B, qlen, H, d_k]`

@@ -92,7 +92,7 @@ class AttentionMechanism(nn.Module):
         self.mask = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                cache=False, mode='', trigger_points=None):
+                cache=False, mode='', trigger_points=None, streaming=False):
         """Forward pass.
 
         Args:
@@ -105,6 +105,7 @@ class AttentionMechanism(nn.Module):
             cache (bool): cache key and mask
             mode: dummy interface for MoChA/MMA
             trigger_points (IntTensor): `[B]`
+            streaming: dummy interface for streaming attention
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
