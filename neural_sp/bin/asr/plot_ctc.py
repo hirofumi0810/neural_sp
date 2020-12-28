@@ -76,7 +76,8 @@ def main():
 
         while True:
             batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
-            best_hyps_id, _ = model.decode(batch['xs'], recog_params, dataloader.idx2token[0])
+            nbest_hyps_id, _ = model.decode(batch['xs'], recog_params, dataloader.idx2token[0])
+            best_hyps_id = [h[0] for h in nbest_hyps_id]
 
             # Get CTC probs
             ctc_probs, topk_ids, xlens = model.get_ctc_probs(

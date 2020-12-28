@@ -129,12 +129,13 @@ def main():
 
         while True:
             batch, is_new_epoch = dataloader.next(recog_params['recog_batch_size'])
-            best_hyps_id, aws = model.decode(
+            nbest_hyps_id, aws = model.decode(
                 batch['xs'], recog_params, dataloader.idx2token[0],
                 exclude_eos=False,
                 refs_id=batch['ys'],
                 ensemble_models=ensemble_models[1:] if len(ensemble_models) > 1 else [],
                 speakers=batch['sessions'] if dataloader.corpus == 'swbd' else batch['speakers'])
+            best_hyps_id = [h[0] for h in nbest_hyps_id]
 
             # Get CTC probs
             ctc_probs, topk_ids = None, None
