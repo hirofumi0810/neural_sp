@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2019 Kyoto University (Hirofumi Inaguma)
+# Copyright 2020 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 model=
@@ -10,12 +10,14 @@ model3=
 model_bwd=
 gpu=
 stdout=false
+n_threads=1
 
 ### path to save preproecssed data
-data=/n/work2/inaguma/corpus/aishell1
+data=/n/work2/inaguma/corpus/ami
 
 unit=
 metric=edit_distance
+first_n=0
 batch_size=1
 beam_width=10
 min_len_ratio=0.0
@@ -31,7 +33,6 @@ lm_second=
 lm_bwd=
 lm_weight=0.3
 lm_second_weight=0.3
-lm_bwd_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -42,6 +43,7 @@ lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
 block_sync=false  # for MoChA
+block_size=40  # for MoChA
 mma_delay_threshold=-1
 
 . ./cmd.sh
@@ -53,13 +55,18 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev test; do
+for set in dev eval; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
+    if [ ${first_n} != 0 ]; then
+        recog_dir=${recog_dir}_first${first_n}
+    fi
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
     fi
@@ -74,9 +81,6 @@ for set in dev test; do
     fi
     if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
-    fi
-    if [ ! -z ${lm_bwd} ] && [ ${lm_bwd_weight} != 0 ]; then
-        recog_dir=${recog_dir}_bwd${lm_bwd_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
@@ -100,7 +104,7 @@ for set in dev test; do
         recog_dir=${recog_dir}_ASRcarryover
     fi
     if [ ${block_sync} = true ]; then
-        recog_dir=${recog_dir}_blocksync
+        recog_dir=${recog_dir}_blocksync${block_size}
     fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
@@ -123,10 +127,33 @@ for set in dev test; do
     fi
     mkdir -p ${recog_dir}
 
+    if [ $(echo ${model} | grep 'train_sp_') ]; then
+        if [ $(echo ${model} | grep 'ihm') ]; then
+            recog_set=${data}/dataset/${set}_sp_ihm_wpbpe500.tsv
+        elif [ $(echo ${model} | grep 'multicond') ]; then
+            recog_set=${data}/dataset/${set}_sp_sdm1_multicond_wpbpe500.tsv
+        elif [ $(echo ${model} | grep 'sdm') ]; then
+            recog_set=${data}/dataset/${set}_sp_sdm1_wpbpe500.tsv
+        elif [ $(echo ${model} | grep 'mdm') ]; then
+            recog_set=${data}/dataset/${set}_sp_mdm8_wpbpe500.tsv
+        fi
+    else
+        if [ $(echo ${model} | grep 'ihm') ]; then
+            recog_set=${data}/dataset/${set}_ihm_wpbpe500.tsv
+        elif [ $(echo ${model} | grep 'multicond') ]; then
+            recog_set=${data}/dataset/${set}_sdm1_multicond_wpbpe500.tsv
+        elif [ $(echo ${model} | grep 'sdm') ]; then
+            recog_set=${data}/dataset/${set}_sdm1_wpbpe500.tsv
+        elif [ $(echo ${model} | grep 'mdm') ]; then
+            recog_set=${data}/dataset/${set}_mdm8_wpbpe500.tsv
+        fi
+    fi
+
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
         --recog_n_gpus ${n_gpus} \
-        --recog_sets ${data}/dataset/${set}_sp.tsv \
+        --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
+        --recog_first_n_utt ${first_n} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
         --recog_model ${model} ${model1} ${model2} ${model3} \
@@ -146,7 +173,6 @@ for set in dev test; do
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
-        --recog_lm_bwd_weight ${lm_bwd_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
@@ -155,6 +181,7 @@ for set in dev test; do
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
         --recog_block_sync ${block_sync} \
+        --recog_block_sync_size ${block_size} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \
@@ -164,14 +191,9 @@ for set in dev test; do
         # remove <unk>
         cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
         cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
-        # add space
-        paste -d " " <(cat ${recog_dir}/ref.trn.filt | cut -f 1 -d "(" | LC_ALL=en_US.UTF-8 sed -e "s/ //g" | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/ref.trn.filt | sed -e 's/.*\((.*)\)/\1/g') \
-            > ${recog_dir}/ref.trn.filt.char
-        paste -d " " <(cat ${recog_dir}/hyp.trn.filt | cut -f 1 -d "(" | LC_ALL=en_US.UTF-8 sed -e "s/ //g" | LC_ALL=en_US.UTF-8 sed -e 's/\(.\)/ \1/g') <(cat ${recog_dir}/hyp.trn.filt | sed -e 's/.*\((.*)\)/\1/g') \
-            > ${recog_dir}/hyp.trn.filt.char
 
         echo ${set}
-        sclite -r ${recog_dir}/ref.trn.filt.char trn -h ${recog_dir}/hyp.trn.filt.char trn -i rm -o all stdout > ${recog_dir}/result.txt
+        sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt
         grep -e Avg -e SPKR -m 2 ${recog_dir}/result.txt > ${recog_dir}/RESULTS
         cat ${recog_dir}/RESULTS
     fi

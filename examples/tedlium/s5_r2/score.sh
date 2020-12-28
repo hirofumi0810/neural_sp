@@ -10,9 +10,10 @@ model3=
 model_bwd=
 gpu=
 stdout=false
+n_threads=1
 
 ### path to save preproecssed data
-data=/n/work2/inaguma/corpus/tedlium3
+data=/n/work2/inaguma/corpus/tedlium2
 
 unit=
 metric=edit_distance
@@ -31,6 +32,7 @@ lm_second=
 lm_bwd=
 lm_weight=0.3
 lm_second_weight=0.3
+lm_bwd_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -53,12 +55,14 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev test; do
+for set in dev_sp test_sp; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -74,6 +78,9 @@ for set in dev test; do
     fi
     if [ ! -z ${lm_second} ] && [ ${lm_second_weight} != 0 ]; then
         recog_dir=${recog_dir}_rescore${lm_second_weight}
+    fi
+    if [ ! -z ${lm_bwd} ] && [ ${lm_bwd_weight} != 0 ]; then
+        recog_dir=${recog_dir}_bwd${lm_bwd_weight}
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
@@ -120,9 +127,11 @@ for set in dev test; do
     fi
     mkdir -p ${recog_dir}
 
+    recog_set=${data}/dataset/${set}_wpbpe10000.tsv
+
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
         --recog_n_gpus ${n_gpus} \
-        --recog_sets ${data}/dataset/${set}_wpbpe10000.tsv \
+        --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
@@ -143,6 +152,7 @@ for set in dev test; do
         --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_lm_second_weight ${lm_second_weight} \
+        --recog_lm_bwd_weight ${lm_bwd_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
