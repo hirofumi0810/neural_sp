@@ -53,7 +53,7 @@ class CIF(nn.Module):
         for n, p in self.named_parameters():
             init_with_xavier_uniform(n, p)
 
-    def forward(self, eouts, elens, ylens=None, mode='parallel'):
+    def forward(self, eouts, elens, ylens=None, mode='parallel', streaming=False):
         """Forward pass.
 
         Args:
@@ -61,6 +61,7 @@ class CIF(nn.Module):
             elens (IntTensor): `[B]`
             ylens (IntTensor): `[B]`
             mode (str): parallel/incremental
+            streaming: dummy interface for streaming attention
         Returns:
             cv (FloatTensor): `[B, L, enc_dim]`
             alpha (FloatTensor): `[B, T]`
