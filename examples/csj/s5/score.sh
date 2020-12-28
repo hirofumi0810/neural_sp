@@ -63,7 +63,7 @@ else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in eval1 eval2 eval3; do
+for set in dev eval1 eval2 eval3; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
