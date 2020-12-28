@@ -120,6 +120,7 @@ class MonotonicEnergy(nn.Module):
             if self.conv1d is not None:
                 key = torch.relu(self.conv1d(key))
             self.key = self.w_key(key)  # `[B, klen, adim]`
+            self.key = self.key.view(-1, klen, self.n_heads, self.d_k)  # `[B, klen, H_ma, d_k]`
             if mask is not None:
                 self.mask = mask.unsqueeze(3).repeat([1, 1, 1, self.n_heads])  # `[B, qlen, klen, H_ca]`
                 mask_size = (bs, qlen, klen, self.n_heads)
