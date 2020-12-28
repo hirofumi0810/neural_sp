@@ -81,7 +81,7 @@ class RNNDecoder(DecoderBase):
         ss_prob (float): scheduled sampling probability
         ctc_weight (float): CTC loss weight
         ctc_lsm_prob (float): label smoothing probability for CTC
-        ctc_fc_list (list): fully-connected layer configuration before the CTC softmax
+        ctc_fc_list (List): fully-connected layer configuration before the CTC softmax
         mbr_training (bool): MBR training
         mbr_ce_weight (float): CE weight for regularization during MBR training
         external_lm (RNNLM): external RNNLM for LM fusion/initialization
@@ -431,7 +431,7 @@ class RNNDecoder(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (IntTensor): `[B]`
-            ys (list): length `B`, each of which contains a list of size `[L]`
+            ys (List): length `B`, each of which contains a list of size `[L]`
             task (str): all/ys*/ys_sub*
             teacher_logits (FloatTensor): `[B, L, vocab]`
             recog_params (dict): parameters for MBR training
@@ -559,7 +559,7 @@ class RNNDecoder(DecoderBase):
         Args:
             eouts (FloatTensor): `[N_best, T, enc_n_units]`
             elens (IntTensor): `[N_best]`
-            ys_hyp (list): length `N_best`, each of which contains a list of size `[L]`
+            ys_hyp (List): length `N_best`, each of which contains a list of size `[L]`
         Returns:
             logits (FloatTensor): `[N_best, L, vocab]`
 
@@ -626,7 +626,7 @@ class RNNDecoder(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (IntTensor): `[B]`
-            ys (list): length `B`, each of which contains a list of size `[L]`
+            ys (List): length `B`, each of which contains a list of size `[L]`
             return_logits (bool): return logits for knowledge distillation
             teacher_logits (FloatTensor): `[B, L, vocab]`
             ctc_trigger_points (IntTensor): `[B, L]`
@@ -783,10 +783,11 @@ class RNNDecoder(DecoderBase):
         return loss, acc, ppl, loss_quantity, loss_latency
 
     def decode_step(self, eouts, dstates, cv, y_emb, mask, aw, lmout,
-                    mode='hard', trigger_points=None, cache=True):
+                    mode='hard', trigger_points=None, cache=True, streaming=False):
         dstates = self.recurrency(torch.cat([y_emb, cv], dim=-1), dstates['dstate'])
         cv, aw, beta, p_choose = self.score(eouts, eouts, dstates['dout_score'], mask, aw,
-                                            cache=cache, mode=mode, trigger_points=trigger_points)
+                                            cache=cache, mode=mode, trigger_points=trigger_points,
+                                            streaming=streaming)
         attn_v = self.generate(cv, dstates['dout_gen'], lmout)
         return dstates, cv, aw, attn_v, beta, p_choose
 
@@ -897,13 +898,13 @@ class RNNDecoder(DecoderBase):
             max_len_ratio (int): maximum sequence length of tokens
             idx2token (): converter from index to token
             exclude_eos (bool): exclude <eos> from hypothesis
-            refs_id (list): reference list
-            utt_ids (list): utterance id list
-            speakers (list): speaker list
+            refs_id (List): reference list
+            utt_ids (List): utterance id list
+            speakers (List): speaker list
             trigger_points (IntTensor): `[B, T]`
         Returns:
-            hyps (list): length `B`, each of which contains arrays of size `[L]`
-            aws (list): length `B`, each of which contains arrays of size `[H, L, T]`
+            hyps (List): length `B`, each of which contains arrays of size `[L]`
+            aws (List): length `B`, each of which contains arrays of size `[H, L, T]`
 
         """
         bs, xmax = eouts.size()[:2]
@@ -1057,24 +1058,24 @@ class RNNDecoder(DecoderBase):
             elens (IntTensor): `[B]`
             params (dict): hyperparameters for decoding
             idx2token (): converter from index to token
-            lm: firsh path LM
-            lm_second: second path LM
-            lm_second_bwd: secoding path backward LM
+            lm (torch.nn.module): firsh path LM
+            lm_second (torch.nn.module): second path LM
+            lm_second_bwd (torch.nn.module): secoding path backward LM
             ctc_log_probs (FloatTensor): `[B, T, vocab]`
             nbest (int): number of N-best list
             exclude_eos (bool): exclude <eos> from hypothesis
-            refs_id (list): reference list
-            utt_ids (list): utterance id list
-            speakers (list): speaker list
-            ensmbl_eouts (list): list of FloatTensor
-            ensmbl_elens (list) list of list
-            ensmbl_decs (list): list of torch.nn.Module
+            refs_id (List): reference list
+            utt_ids (List): utterance id list
+            speakers (List): speaker list
+            ensmbl_eouts (List[FloatTensor]): encoder outputs for ensemble models
+            ensmbl_elens (List[IntTensor]) encoder outputs for ensemble models
+            ensmbl_decs (List[torch.nn.Module): decoders for ensemble models
             cache_states (bool): cache TransformerLM/TransformerXL states for fast decoding
         Returns:
-            nbest_hyps_idx (list): length `B`, each of which contains list of N hypotheses
-            aws (list): length `B`, each of which contains a list of arrays of size `[H, L, T]`
+            nbest_hyps_idx (List): length `B`, each of which contains list of N hypotheses
+            aws (List): length `B`, each of which contains a list of arrays of size `[H, L, T]`
                 for N hypotheses
-            scores (list):
+            scores (List):
 
         """
         bs, xmax, _ = eouts.size()
@@ -1151,8 +1152,8 @@ class RNNDecoder(DecoderBase):
                 self.prev_spk = speakers[b]
 
             end_hyps = []
-            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state, ys,
-                                        ensmbl_decs=ensmbl_decs)
+            hyps = self.initialize_beam([self.eos], dstates, cv, lmstate, ctc_state,
+                                        ys, ensmbl_decs=ensmbl_decs)
             streamable_global = True
             ymax = math.ceil(elens[b] * max_len_ratio)
             for i in range(ymax):
@@ -1165,6 +1166,7 @@ class RNNDecoder(DecoderBase):
                         prev_idx = beam['hyp'][-1]
                     y[j, 0] = prev_idx
                 cv = torch.cat([beam['cv'] for beam in hyps], dim=0)
+                eouts_b_i = eouts[b:b + 1, :elens[b]].repeat([cv.size(0), 1, 1])
                 aw = torch.cat([beam['aws'][-1] for beam in hyps], dim=0) if i > 0 else None
                 hxs = torch.cat([beam['dstates']['dstate'][0] for beam in hyps], dim=1)
                 if self.rnn_type == 'lstm':
@@ -1201,9 +1203,9 @@ class RNNDecoder(DecoderBase):
                                                                cache=lmstate if cache_states else None)
 
                 # for the main model
+                y_emb = self.dropout_emb(self.embed(y))
                 dstates, cv, aw, attn_v, _, _ = self.decode_step(
-                    eouts[b:b + 1, :elens[b]].repeat([cv.size(0), 1, 1]),
-                    dstates, cv, self.dropout_emb(self.embed(y)), None, aw, lmout)
+                    eouts_b_i, dstates, cv, y_emb, None, aw, lmout)
                 probs = torch.softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
 
                 # for the ensemble
@@ -1458,9 +1460,9 @@ class RNNDecoder(DecoderBase):
 
         return nbest_hyps_idx, aws, scores
 
-    def beam_search_block_sync(self, eouts, params, idx2token,
+    def beam_search_block_sync(self, eouts, params, idx2token, hyps,
                                lm=None, ctc_log_probs=None,
-                               hyps=False, state_carry_over=False, emb_cache=True):
+                               state_carry_over=False, emb_cache=True):
         assert eouts.size(0) == 1
         assert self.attn_type == 'mocha'
 
@@ -1495,7 +1497,7 @@ class RNNDecoder(DecoderBase):
                 assert ctc_weight > 0
                 ctc_log_probs = tensor2np(ctc_log_probs)
                 if hyps is None:
-                    # first chunk
+                    # first block
                     self.ctc_prefix_scorer = CTCPrefixScore(ctc_log_probs[0], self.blank, self.eos)
                     ctc_state = self.ctc_prefix_scorer.initial_state()
                 else:
@@ -1516,7 +1518,7 @@ class RNNDecoder(DecoderBase):
 
         ymax = math.ceil(eouts.size(1) * max_len_ratio)
         for i in range(ymax):
-            # finish if no additional decision boundary is found in the current chunk for all candidates
+            # finish if no additional token boundary is found in the current block for all candidates
             if len(hyps) == 0:
                 break
             if i > 0 and sum([cand['no_boundary'] for cand in hyps]) == len(hyps):
@@ -1526,7 +1528,7 @@ class RNNDecoder(DecoderBase):
             new_hyps = []
             hyps_filtered = []
             for j, beam in enumerate(hyps):
-                # no decision boundary found in the current chunk
+                # no token boundary found in the current block
                 if beam['no_boundary']:
                     new_hyps.append(beam.copy())
                 else:
@@ -1557,14 +1559,14 @@ class RNNDecoder(DecoderBase):
             dstates, cv, aw, attn_v, _, _ = self.decode_step(
                 eouts[0:1], dstates, cv, y_emb, None, aw, lmout, streaming=True)
             scores_att = torch.log_softmax(self.output(attn_v).squeeze(1), dim=1)
-            # NOTE: aw: `[B, H, 1, T_chunk]`
+            # NOTE: aw: `[B, H, 1, T_block]`
 
             for j, beam in enumerate(hyps):
-                # no decision boundary found in the current chunk for j-th utterance
+                # no token boundary found in the current block for j-th utterance
                 no_boundary = aw[j].sum().item() == 0
                 if no_boundary:
                     beam['aws'][-1] = eouts.new_zeros(eouts.size(0), 1, 1, eouts.size(1))
-                    # NOTE: the case where the first token in the current chunk is <eos>
+                    # NOTE: the case where the first token in the current block is <eos>
                     beam['no_boundary'] = True
                     new_hyps.append(beam.copy())  # this is important to remove repeated hyps
 
