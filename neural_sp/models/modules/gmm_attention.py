@@ -60,7 +60,8 @@ class GMMAttention(nn.Module):
 
     def reset_parameters_xavier_uniform(self):
         """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' %
+                    self.__class__.__name__)
         for n, p in self.named_parameters():
             init_with_xavier_uniform(n, p)
 
@@ -69,7 +70,7 @@ class GMMAttention(nn.Module):
         self.myu = None
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
-                cache=False, mode='', trigger_points=None):
+                cache=False, mode='', trigger_points=None, streaming=False):
         """Forward pass.
 
         Args:
@@ -81,6 +82,7 @@ class GMMAttention(nn.Module):
             cache (bool): cache key and mask
             mode: dummy interface for MoChA/MMA
             trigger_points: dummy interface for MoChA/MMA
+            streaming: dummy interface for streaming attention
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
