@@ -30,7 +30,7 @@ external_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work1/inaguma/results/aishell1
+model=/n/work2/inaguma/results/aishell1
 
 ### path to the model directory to resume training
 resume=

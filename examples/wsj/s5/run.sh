@@ -35,18 +35,18 @@ teacher_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work1/inaguma/results/wsj
+model=/n/work2/inaguma/results/wsj
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/wsj
+export data=/n/work2/inaguma/corpus/wsj
 
 ### path to original data
-wsj0=/n/rd21/corpora_1/WSJ/wsj0
-wsj1=/n/rd21/corpora_1/WSJ/wsj1
+wsj0=/n/work2/inaguma/corpus/csr_1_senn
+wsj1=/n/work2/inaguma/corpus/csr_senn
 
 # Sometimes, we have seen WSJ distributions that do not have subdirectories
 # like '11-13.1', but instead have 'doc', 'si_et_05', etc. directly under the
@@ -54,11 +54,10 @@ wsj1=/n/rd21/corpora_1/WSJ/wsj1
 CSTR_WSJTATATOP=/n/rd21/corpora_1/WSJ
 # $CSTR_WSJTATATOP must contain a 'wsj0' and a 'wsj1' subdirectory for this to work.
 
-directory_type=cstr # or original
+directory_type=original # original/cstr
 
 ### data size
-datasize=si284
-# datasize=si84
+datasize=si284  # si284 or si84
 
 . ./cmd.sh
 . ./path.sh
@@ -122,11 +121,6 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ] && [ ! -e ${data}/.done_stage_0
         cp ${data}/${x}/text ${data}/${x}/text.org
         paste -d " " <(cut -f 1 -d " " ${data}/${x}/text.org) \
             <(cut -f 2- -d " " ${data}/${x}/text.org | awk '{print tolower($0)}') > ${data}/${x}/text
-    done
-
-    # nomalization
-    for x in train_si84 train_si284 test_dev93; do
-        local/normalize_trans.sh ${data}/${x}
     done
 
     touch ${data}/.done_stage_0 && echo "Finish data preparation (stage: 0)."

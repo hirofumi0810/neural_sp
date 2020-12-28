@@ -22,13 +22,13 @@ vocab_size=33278
 conf=conf/rnnlm.yaml
 
 ### path to save the model
-model=/n/work1/inaguma/results/wikitext2
+model=/n/work2/inaguma/results/wikitext2
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/wikitext2
+data=/n/work2/inaguma/corpus/wikitext2
 
 . ./cmd.sh
 . ./path.sh

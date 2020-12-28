@@ -16,16 +16,16 @@ stdout=false
 #########################
 # ASR configuration
 #########################
-conf=conf/ctc.yaml
+conf=conf/blstm_ctc.yaml
 
 ### path to save the model
-model=/n/work1/inaguma/results/timit
+model=/n/work2/inaguma/results/timit
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/timit
+export data=/n/work2/inaguma/corpus/timit
 
 ### path to original data
 TIMITDATATOP=/n/rd21/corpora_1/TIMIT
