@@ -19,7 +19,9 @@ CUDA_DEPS := cupy.done
 # Path to save tools (default: current directory)
 TOOL :=
 ifeq ($(strip $(TOOL)),)
-	TOOL := $(PWD)
+	TOOL := $(PWD)/neural_sp
+else
+	ln -s $(abspath $(TOOL)) $(TOOL)/neural_sp
 endif
 CONDA=$(TOOL)/miniconda
 
@@ -75,7 +77,7 @@ warp-ctc.done:
 			. $(CONDA)/bin/activate && pip install warpctc-pytorch10-cpu; \
 		fi \
 	else \
-		rm -rf warp-ctc; \
+		if [ -e $(TOOL)/warp-ctc ]; then rm -rf $(TOOL)/warp-ctc; fi
 		git clone https://github.com/espnet/warp-ctc.git; $(TOOL)/warp-ctc \
 		cd $(TOOL)/warp-ctc; git checkout -b pytorch-0.4 remotes/origin/pytorch-0.4; \
 		mkdir build && cd build && cmake .. && $(MAKE) && cd ..; \
@@ -84,7 +86,7 @@ warp-ctc.done:
 	touch warp-ctc.done
 
 warp-transducer.done:
-	rm -rf warp-transducer
+	if [ -e $(TOOL)/warp-transducer ]; then rm -rf $(TOOL)/warp-transducer; fi
 	git clone https://github.com/HawkAaron/warp-transducer.git $(TOOL)/warp-transducer
 	# Note: Requires gcc>=5.0 to build extensions with pytorch>=1.0
 	if . $(CONDA)/bin/activate && python -c 'import torch as t;assert t.__version__[0] == "1"' &> /dev/null; then \
