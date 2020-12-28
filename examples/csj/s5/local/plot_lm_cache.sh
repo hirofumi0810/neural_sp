@@ -5,9 +5,10 @@
 
 model=
 gpu=
+n_threads=1
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/csj
+data=/n/work2/inaguma/corpus/csj
 
 batch_size=1
 n_caches=100
@@ -23,11 +24,12 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: local/plot_lm_cache.sh --gpu 0" 1>&2
-    exit 1
+    # CPU
+    n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
+else
+    n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
-gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in eval1 eval2 eval3; do
     recog_dir=$(dirname ${model})/plot_${set}
@@ -47,6 +49,7 @@ for set in eval1 eval2 eval3; do
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/lm/plot_cache.py \
+        --recog_n_gpus ${n_gpus} \
         --recog_sets ${recog_set} \
         --recog_model ${model} \
         --recog_batch_size ${batch_size} \

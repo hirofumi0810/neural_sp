@@ -6,9 +6,10 @@
 model=
 gpu=
 stdout=false
+n_threads=1
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/timit
+data=/n/work2/inaguma/corpus/timit
 
 batch_size=1
 beam_width=5
@@ -29,7 +30,9 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi

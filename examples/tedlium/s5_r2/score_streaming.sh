@@ -6,6 +6,7 @@
 model=
 gpu=
 stdout=false
+n_threads=2
 
 ### path to save preproecssed data
 data=/n/work2/inaguma/corpus/tedlium2
@@ -49,7 +50,9 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi

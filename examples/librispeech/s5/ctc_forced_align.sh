@@ -9,12 +9,13 @@ model2=
 model3=
 gpu=
 stdout=false
+n_threads=1
 
 ### path to save preproecssed data
-data=/n/work2/inaguma/corpus/tedlium2
+data=/n/work2/inaguma/corpus/librispeech
 
 unit=
-batch_size=128
+batch_size=32
 n_average=10  # for Transformer
 
 . ./cmd.sh
@@ -26,7 +27,9 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
@@ -49,9 +52,21 @@ for set in train; do
     mkdir -p ${recog_dir}
 
     if [ $(echo ${model} | grep 'train_sp_') ]; then
-        recog_set=${data}/dataset/${set}_sp_wpbpe10000.tsv
+        if [ $(echo ${model} | grep '960') ]; then
+            recog_set=${data}/dataset/${set}_sp_960_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '460') ]; then
+            recog_set=${data}/dataset/${set}_sp_460_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '100') ]; then
+            recog_set=${data}/dataset/${set}_sp_100_wpbpe1000.tsv
+        fi
     else
-        recog_set=${data}/dataset/${set}_wpbpe10000.tsv
+        if [ $(echo ${model} | grep '960') ]; then
+            recog_set=${data}/dataset/${set}_960_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '460') ]; then
+            recog_set=${data}/dataset/${set}_460_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '100') ]; then
+            recog_set=${data}/dataset/${set}_100_wpbpe1000.tsv
+        fi
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/ctc_forced_align.py \
