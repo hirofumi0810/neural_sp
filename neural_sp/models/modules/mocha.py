@@ -790,21 +790,21 @@ def hard_chunkwise_attention(alpha, u, mask, chunk_size, H_ca,
         beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
 
     """
-    bs, n_heads_mono, qlen, klen = alpha.size()
+    bs, H_ma, qlen, klen = alpha.size()
     assert (u.size(2) == qlen) and (u.size(3) == klen), (u.size(), alpha.size())
     alpha = alpha.unsqueeze(2)   # `[B, H_ma, 1, qlen, klen]`
     u = u.unsqueeze(1)  # `[B, 1, (H_ma*)H_ca, qlen, klen]`
     if H_ca > 1:
         alpha = alpha.repeat([1, 1, H_ca, 1, 1])
-    if n_heads_mono > 1:
+    if H_ma > 1:
         if share_chunkwise_attention:
-            u = u.repeat([1, n_heads_mono, 1, 1, 1])
+            u = u.repeat([1, H_ma, 1, 1, 1])
         else:
-            u = u.view(bs, n_heads_mono, H_ca, qlen, klen)
+            u = u.view(bs, H_ma, H_ca, qlen, klen)
 
     mask = alpha.clone().byte()  # `[B, H_ma, H_ca, qlen, klen]`
     for b in range(bs):
-        for h in range(n_heads_mono):
+        for h in range(H_ma):
             if alpha[b, h, 0, 0].sum() > 0:
                 boundary = alpha[b, h, 0, 0].nonzero()[:, -1].min().item()
                 if chunk_size == -1:
