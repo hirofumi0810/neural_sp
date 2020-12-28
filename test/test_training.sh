@@ -11,7 +11,8 @@ ln -sf ${root}/coverage.xml .
 
 # ASR
 ./run.sh --stage 4 --conf conf/asr/blstm_las.yaml || exit 1;
-local/score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_lstm16H8P1L_location_ss0.1_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
+./score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_lstm16H8P1L_location_ss0.1_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
+./plot_attention.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_lstm16H8P1L_location_ss0.1_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
 
 # resume
 ./run.sh --stage 4 --conf conf/asr/blstm_las.yaml --resume results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_lstm16H8P1L_location_ss0.1_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
@@ -23,11 +24,12 @@ local/score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunk
 
 # Architecture
 ./run.sh --stage 4 --conf conf/asr/blstm_ctc.yaml || exit 1;
-local/score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1 || exit 1;
+./score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1 || exit 1;
+./plot_ctc.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_adam_lr0.001_bs1_warmup2_ctc1.0/model.epoch-1 || exit 1;
 ./run.sh --stage 4 --conf conf/asr/blstm_transducer.yaml || exit 1;
-local/score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_lstm_transducer16H8P1L_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
+./score.sh --model results/asr/train_char/conv2Lblstm16H8P1L_sumfwdbwd_chunkL-1R40_drop4_lstm_transducer16H8P1L_adam_lr0.001_bs1_ls0.1_warmup2_ctc0.3/model.epoch-1 || exit 1;
 ./run.sh --stage 4 --conf conf/asr/transformer.yaml || exit 1;
-local/score.sh --model results/asr/train_char/conv2Ltransformer8dmodel32dff1L4Hpenone_max_pool4_transformer8dmodel32dff1L4Hpe1dconv3Lscaled_dot_noam_lr5.0_bs1_ls0.1_warmup2_accum2_ctc0.3/model.epoch-2 || exit 1;
+./score.sh --model results/asr/train_char/conv2Ltransformer8dmodel32dff1L4Hpenone_max_pool4_transformer8dmodel32dff1L4Hpe1dconv3Lscaled_dot_noam_lr5.0_bs1_ls0.1_warmup2_accum2_ctc0.3/model.epoch-2 || exit 1;
 ./run.sh --stage 4 --conf conf/asr/transformer_ctc.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/conformer.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/tds_las.yaml || exit 1;
@@ -40,7 +42,6 @@ local/score.sh --model results/asr/train_char/conv2Ltransformer8dmodel32dff1L4Hp
 ./run.sh --stage 4 --conf conf/asr/blstm_las.yaml --conf2 conf/data/adaptive_spec_augment.yaml || exit 1;
 
 # streaming ASR
-# ./run.sh --stage 4 --conf conf/asr/lcblstm_mocha_chunk4040.yaml || exit 1;
 ./run.sh --stage 4 --conf conf/asr/lc_transformer_mma_ma4H_ca4H_w16_from4L_64_128_64.yaml || exit 1;
 
 # multi-task

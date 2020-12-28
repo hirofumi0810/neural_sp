@@ -6,6 +6,7 @@
 model=
 gpu=
 stdout=false
+n_threads=1
 
 ### path to save preproecssed data
 data=./data
@@ -14,20 +15,18 @@ batch_size=1
 beam_width=2
 min_len_ratio=0.0
 max_len_ratio=1.0
-length_penalty=0.1
+length_penalty=0.0
 length_norm=false
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
 eos_threshold=1.0
 lm=
-lm_weight=0.5
+lm_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 lm_state_carry_over=true
 n_average=2  # for Transformer
 oracle=false
-block_sync=false  # for MoChA
-block_size=40  # for MoChA
 mma_delay_threshold=-1
 
 . ./cmd.sh
@@ -39,13 +38,15 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
 for set in train; do
-    recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
+    recog_dir=$(dirname ${model})/plot_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ${length_norm} = true ]; then
         recog_dir=${recog_dir}_norm
     fi
@@ -58,9 +59,6 @@ for set in train; do
     if [ ${gnmt_decoding} = true ]; then
         recog_dir=${recog_dir}_gnmt
     fi
-    if [ ${block_sync} = true ]; then
-        recog_dir=${recog_dir}_blocksync${block_size}
-    fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
     fi
@@ -72,7 +70,7 @@ for set in train; do
     fi
     mkdir -p ${recog_dir}
 
-    CUDA_VISIBLE_DEVICES=${gpu} coverage run --append ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
+    CUDA_VISIBLE_DEVICES=${gpu} coverage run -a ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_attention.py \
         --recog_n_gpus ${n_gpus} \
         --recog_sets ${data}/dataset/${set}_char.tsv \
         --recog_dir ${recog_dir} \
@@ -91,8 +89,6 @@ for set in train; do
         --recog_lm_weight ${lm_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
-        --recog_block_sync ${block_sync} \
-        --recog_block_sync_size ${block_size} \
         --recog_n_average ${n_average} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_stdout ${stdout} || exit 1;
