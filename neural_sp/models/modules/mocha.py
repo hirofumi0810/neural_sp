@@ -715,7 +715,7 @@ def moving_sum(x, back, forward):
 
     """
     bs, n_heads_mono, n_heads_chunk, qlen, klen = x.size()
-    x = x.view(-1, klen)
+    x = x.reshape(-1, klen)
     # Moving sum is computed as a carefully-padded 1D convolution with ones
     x_padded = F.pad(x, pad=[back, forward])  # `[B * H_ma * H_ca * qlen, back + klen + forward]`
     # Add a "channel" dimension

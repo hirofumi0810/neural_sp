@@ -531,7 +531,7 @@ class TransformerDecoder(DecoderBase):
         # Concatenate in L dimension
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
         xy_aws_layers_steps = torch.cat(xy_aws_layers_steps, dim=-2)  # `[B, H, n_layers, L, T]`
-        xy_aws_layers_steps = xy_aws_layers_steps.view(bs, self.n_heads * self.n_layers, ys.size(1), xmax)
+        xy_aws_layers_steps = xy_aws_layers_steps.reshape(bs, self.n_heads * self.n_layers, ys.size(1), xmax)
         xy_aws = tensor2np(xy_aws_layers_steps)
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
