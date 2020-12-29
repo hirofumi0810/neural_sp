@@ -4,6 +4,7 @@
 """Transformer encoder."""
 
 import copy
+from distutils.version import LooseVersion
 import logging
 import math
 import numpy as np
@@ -28,12 +29,16 @@ from neural_sp.models.seq2seq.encoders.subsampling import (
     MaxpoolSubsampler
 )
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
-from neural_sp.models.torch_utils import make_pad_mask
-from neural_sp.models.torch_utils import tensor2np
+from neural_sp.models.torch_utils import (
+    make_pad_mask,
+    tensor2np
+)
 
 random.seed(1)
 
 logger = logging.getLogger(__name__)
+
+torch_12_plus = LooseVersion("1.3") > LooseVersion(torch.__version__) >= LooseVersion("1.2")
 
 
 class TransformerEncoder(EncoderBase):
@@ -407,7 +412,7 @@ class TransformerEncoder(EncoderBase):
 
             pos_embs = None
             if self.pe_type in ['relative', 'relative_xl']:
-                xs = xs * self.scale
+                xs = xs * self.scale  # NOTE: first layer only
                 pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
             else:
                 xs = self.pos_enc(xs, scale=True)
@@ -457,7 +462,7 @@ class TransformerEncoder(EncoderBase):
 
         else:
             if self.pe_type in ['relative', 'relative_xl']:
-                xs = xs * self.scale
+                xs = xs * self.scale  # NOTE: first layer only
                 # Create sinusoidal positional embeddings for relative positional encoding
                 pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
             else:
@@ -644,6 +649,8 @@ def causal(xx_mask, lookahead):
 
     """
     causal_mask = xx_mask.new_ones(xx_mask.size(1), xx_mask.size(1), dtype=xx_mask.dtype)
+    if torch_12_plus:
+        causal_mask = causal_mask.byte()
     causal_mask = torch.tril(causal_mask, diagonal=lookahead, out=causal_mask).unsqueeze(0)
     xx_mask = xx_mask & causal_mask  # `[B, L (query), L (key)]`
     return xx_mask

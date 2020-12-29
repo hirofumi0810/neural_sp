@@ -10,9 +10,10 @@ model3=
 model_bwd=
 gpu=
 stdout=false
+n_threads=1
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/librispeech
+data=/n/work2/inaguma/corpus/librispeech
 
 unit=
 batch_size=1
@@ -26,7 +27,6 @@ coverage_threshold=0.0
 gnmt_decoding=false
 eos_threshold=1.5
 lm=
-lm_bwd=
 lm_weight=0.5
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
@@ -48,7 +48,9 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
@@ -142,7 +144,6 @@ for set in dev_clean dev_other test_clean test_other; do
         --recog_gnmt_decoding ${gnmt_decoding} \
         --recog_eos_threshold ${eos_threshold} \
         --recog_lm ${lm} \
-        --recog_lm_bwd ${lm_bwd} \
         --recog_lm_weight ${lm_weight} \
         --recog_ctc_weight ${ctc_weight} \
         --recog_resolving_unk ${resolving_unk} \

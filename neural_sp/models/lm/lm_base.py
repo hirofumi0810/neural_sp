@@ -102,7 +102,7 @@ class LMBase(ModelBase):
                                               self.lsm_prob, self.pad, self.training,
                                               normalize_length=True)
             else:
-                loss = self.adaptive_softmax(logits.view((-1, logits.size(2))),
+                loss = self.adaptive_softmax(logits.reshape((-1, logits.size(2))),
                                              ys_out.contiguous().view(-1)).loss
                 ppl = np.exp(loss.item())
 
@@ -116,7 +116,7 @@ class LMBase(ModelBase):
             acc = compute_accuracy(logits, ys_out, pad=self.pad)
         else:
             acc = compute_accuracy(self.adaptive_softmax.log_prob(
-                logits.view((-1, logits.size(2)))), ys_out, pad=self.pad)
+                logits.reshape((-1, logits.size(2)))), ys_out, pad=self.pad)
 
         observation = {'loss.lm': loss.item(), 'acc.lm': acc, 'ppl.lm': ppl}
         return loss, new_state, observation

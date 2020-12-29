@@ -22,13 +22,13 @@ vocab_size=10000
 conf=conf/rnnlm.yaml
 
 ### path to save the model
-model=/n/work1/inaguma/results/ptb
+model=/n/work2/inaguma/results/ptb
 
 ### path to the model directory to resume training
 resume=
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/ptb
+data=/n/work2/inaguma/corpus/ptb
 
 . ./cmd.sh
 . ./path.sh

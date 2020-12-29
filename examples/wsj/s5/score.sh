@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2019 Kyoto University (Hirofumi Inaguma)
+# Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 model=
@@ -10,9 +10,10 @@ model3=
 model_bwd=
 gpu=
 stdout=false
+n_threads=1
 
 ### path to save preproecssed data
-data=/n/work2/inaguma/corpus/tedlium3
+data=/n/work2/inaguma/corpus/wsj
 
 unit=
 metric=edit_distance
@@ -21,7 +22,7 @@ beam_width=10
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
-length_norm=false
+length_norm=true  ###
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
@@ -29,8 +30,8 @@ eos_threshold=1.0
 lm=
 lm_second=
 lm_bwd=
-lm_weight=0.3
-lm_second_weight=0.3
+lm_weight=1.0
+lm_second_weight=1.0
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
 fwd_bwd_attention=false
@@ -41,7 +42,6 @@ lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
 block_sync=false  # for MoChA
-block_size=40  # for MoChA
 mma_delay_threshold=-1
 
 . ./cmd.sh
@@ -53,12 +53,14 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev test; do
+for set in test_dev93 test_eval92; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
@@ -97,7 +99,7 @@ for set in dev test; do
         recog_dir=${recog_dir}_ASRcarryover
     fi
     if [ ${block_sync} = true ]; then
-        recog_dir=${recog_dir}_blocksync${block_size}
+        recog_dir=${recog_dir}_blocksync
     fi
     if [ ${n_average} != 1 ]; then
         recog_dir=${recog_dir}_average${n_average}
@@ -120,9 +122,19 @@ for set in dev test; do
     fi
     mkdir -p ${recog_dir}
 
+    if [ $(echo ${model} | grep 'train_sp_si284') ]; then
+        recog_set=${data}/dataset/${set}_sp_si284_wpbpe1000.tsv
+    elif [ $(echo ${model} | grep 'train_si284') ]; then
+        recog_set=${data}/dataset/${set}_si284_wpbpe1000.tsv
+    elif [ $(echo ${model} | grep 'train_sp_si84') ]; then
+        recog_set=${data}/dataset/${set}_sp_si84_char.tsv
+    elif [ $(echo ${model} | grep 'train_si84') ]; then
+        recog_set=${data}/dataset/${set}_si84_char.tsv
+    fi
+
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/eval.py \
         --recog_n_gpus ${n_gpus} \
-        --recog_sets ${data}/dataset/${set}_wpbpe10000.tsv \
+        --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
@@ -151,16 +163,15 @@ for set in dev test; do
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
         --recog_block_sync ${block_sync} \
-        --recog_block_sync_size ${block_size} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
         --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_stdout ${stdout} || exit 1;
 
-    if [ ${metric} = 'edit_distance' ]; then
-        # remove <unk>
-        cat ${recog_dir}/ref.trn | sed 's:<unk>::g' > ${recog_dir}/ref.trn.filt
-        cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' > ${recog_dir}/hyp.trn.filt
+       if [ ${metric} = 'edit_distance' ]; then
+         # remove <unk>, <noise>
+        cat ${recog_dir}/ref.trn | sed 's:<unk>::g' | sed 's:<noise>::g' > ${recog_dir}/ref.trn.filt
+        cat ${recog_dir}/hyp.trn | sed 's:<unk>::g' | sed 's:<noise>::g' > ${recog_dir}/hyp.trn.filt
 
         echo ${set}
         sclite -r ${recog_dir}/ref.trn.filt trn -h ${recog_dir}/hyp.trn.filt trn -i rm -o all stdout > ${recog_dir}/result.txt

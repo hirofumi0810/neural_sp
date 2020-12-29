@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2020 Kyoto University (Hirofumi Inaguma)
+# Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 model=
@@ -10,13 +10,13 @@ model3=
 model_bwd=
 gpu=
 stdout=false
+n_threads=1
 
 ### path to save preproecssed data
-data=/n/work2/inaguma/corpus/ami
+data=/n/work2/inaguma/corpus/librispeech
 
 unit=
 metric=edit_distance
-first_n=0
 batch_size=1
 beam_width=10
 min_len_ratio=0.0
@@ -26,11 +26,11 @@ length_norm=false
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
-eos_threshold=1.0
+eos_threshold=1.5
 lm=
 lm_second=
 lm_bwd=
-lm_weight=0.3
+lm_weight=0.5
 lm_second_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
 resolving_unk=false
@@ -54,16 +54,15 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
 
-for set in dev eval; do
+for set in dev_clean dev_other test_clean test_other; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
-    if [ ${first_n} != 0 ]; then
-        recog_dir=${recog_dir}_first${first_n}
-    fi
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
     fi
@@ -125,24 +124,20 @@ for set in dev eval; do
     mkdir -p ${recog_dir}
 
     if [ $(echo ${model} | grep 'train_sp_') ]; then
-        if [ $(echo ${model} | grep 'ihm') ]; then
-            recog_set=${data}/dataset/${set}_sp_ihm_wpbpe500.tsv
-        elif [ $(echo ${model} | grep 'multicond') ]; then
-            recog_set=${data}/dataset/${set}_sp_sdm1_multicond_wpbpe500.tsv
-        elif [ $(echo ${model} | grep 'sdm') ]; then
-            recog_set=${data}/dataset/${set}_sp_sdm1_wpbpe500.tsv
-        elif [ $(echo ${model} | grep 'mdm') ]; then
-            recog_set=${data}/dataset/${set}_sp_mdm8_wpbpe500.tsv
+        if [ $(echo ${model} | grep '960') ]; then
+            recog_set=${data}/dataset/${set}_sp_960_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '460') ]; then
+            recog_set=${data}/dataset/${set}_sp_460_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '100') ]; then
+            recog_set=${data}/dataset/${set}_sp_100_wpbpe10000.tsv
         fi
     else
-        if [ $(echo ${model} | grep 'ihm') ]; then
-            recog_set=${data}/dataset/${set}_ihm_wpbpe500.tsv
-        elif [ $(echo ${model} | grep 'multicond') ]; then
-            recog_set=${data}/dataset/${set}_sdm1_multicond_wpbpe500.tsv
-        elif [ $(echo ${model} | grep 'sdm') ]; then
-            recog_set=${data}/dataset/${set}_sdm1_wpbpe500.tsv
-        elif [ $(echo ${model} | grep 'mdm') ]; then
-            recog_set=${data}/dataset/${set}_mdm8_wpbpe500.tsv
+        if [ $(echo ${model} | grep '960') ]; then
+            recog_set=${data}/dataset/${set}_960_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '460') ]; then
+            recog_set=${data}/dataset/${set}_460_wpbpe10000.tsv
+        elif [ $(echo ${model} | grep '100') ]; then
+            recog_set=${data}/dataset/${set}_100_wpbpe10000.tsv
         fi
     fi
 
@@ -150,7 +145,6 @@ for set in dev eval; do
         --recog_n_gpus ${n_gpus} \
         --recog_sets ${recog_set} \
         --recog_dir ${recog_dir} \
-        --recog_first_n_utt ${first_n} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
         --recog_model ${model} ${model1} ${model2} ${model3} \

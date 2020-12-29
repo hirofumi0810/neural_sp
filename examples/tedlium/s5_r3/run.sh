@@ -33,14 +33,14 @@ external_lm=
 lm_conf=conf/lm/rnnlm.yaml
 
 ### path to save the model
-model=/n/work1/inaguma/results/tedlium3
+model=/n/work2/inaguma/results/tedlium3
 
 ### path to the model directory to resume training
 resume=
 lm_resume=
 
 ### path to save preproecssed data
-export data=/n/work1/inaguma/corpus/tedlium3
+export data=/n/work2/inaguma/corpus/tedlium3
 
 ### path to original data
 export db=/n/rd21/corpora_7/tedlium

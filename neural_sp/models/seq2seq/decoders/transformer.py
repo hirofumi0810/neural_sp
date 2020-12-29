@@ -5,6 +5,7 @@
 
 import copy
 from distutils.util import strtobool
+from distutils.version import LooseVersion
 import logging
 import math
 import numpy as np
@@ -33,6 +34,8 @@ from neural_sp.models.torch_utils import (
 random.seed(1)
 
 logger = logging.getLogger(__name__)
+
+torch_12_plus = LooseVersion("1.3") > LooseVersion(torch.__version__) >= LooseVersion("1.2")
 
 
 class TransformerDecoder(DecoderBase):
@@ -64,7 +67,7 @@ class TransformerDecoder(DecoderBase):
         lsm_prob (float): label smoothing probability
         ctc_weight (float): CTC loss weight
         ctc_lsm_prob (float): label smoothing probability for CTC
-        ctc_fc_list (list): fully-connected layer configuration before the CTC softmax
+        ctc_fc_list (List): fully-connected layer configuration before the CTC softmax
         backward (bool): decode in the backward order
         global_weight (float): global loss weight for multi-task learning
         mtl_per_batch (bool): change mini-batch per task for multi-task training
@@ -315,7 +318,7 @@ class TransformerDecoder(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
-            ys (list): length `B`, each of which contains a list of size `[L]`
+            ys (List): length `[B]`, each of which contains a list of size `[L]`
             task (str): all/ys*/ys_sub*
             teacher_logits (FloatTensor): `[B, L, vocab]`
             recog_params (dict): parameters for MBR training
@@ -373,7 +376,7 @@ class TransformerDecoder(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
-            ys (list): length `B`, each of which contains a list of size `[L]`
+            ys (List): length `[B]`, each of which contains a list of size `[L]`
             trigger_points (IntTensor): `[B, L]`
         Returns:
             loss (FloatTensor): `[1]`
@@ -394,7 +397,9 @@ class TransformerDecoder(DecoderBase):
         # Create target self-attention mask
         bs, ymax = ys_in.size()[:2]
         tgt_mask = (ys_out != self.pad).unsqueeze(1).repeat([1, ymax, 1])
-        causal_mask = tgt_mask.new_ones(ymax, ymax).byte()
+        causal_mask = tgt_mask.new_ones(ymax, ymax, dtype=tgt_mask.dtype)
+        if torch_12_plus:
+            causal_mask = causal_mask.byte()
         causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0)
         tgt_mask = tgt_mask & causal_mask  # `[B, L (query), L (key)]`
 
@@ -465,13 +470,13 @@ class TransformerDecoder(DecoderBase):
             max_len_ratio (int): maximum sequence length of tokens
             idx2token (): converter from index to token
             exclude_eos (bool): exclude <eos> from hypothesis
-            refs_id (list): reference list
-            utt_ids (list): utterance id list
-            speakers (list): speaker list
+            refs_id (List): reference list
+            utt_ids (List): utterance id list
+            speakers (List): speaker list
             cache_states (bool): cache decoder states for fast decoding
         Returns:
-            hyps (list): length `B`, each of which contains arrays of size `[L]`
-            aws (list): length `B`, each of which contains arrays of size `[H * n_layers, L, T]`
+            hyps (List): length `[B]`, each of which contains arrays of size `[L]`
+            aws (List): length `[B]`, each of which contains arrays of size `[H * n_layers, L, T]`
 
         """
         bs, xmax = eouts.size()[:2]
@@ -485,7 +490,9 @@ class TransformerDecoder(DecoderBase):
         xy_aws_layers_steps = []
         ymax = math.ceil(xmax * max_len_ratio)
         for i in range(ymax):
-            causal_mask = eouts.new_ones(i + 1, i + 1).byte()
+            causal_mask = eouts.new_ones(i + 1, i + 1, dtype=torch.uint8)
+            if torch_12_plus:
+                causal_mask = causal_mask.byte()
             causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0).repeat([bs, 1, 1])
 
             new_cache = [None] * self.n_layers
@@ -524,7 +531,7 @@ class TransformerDecoder(DecoderBase):
         # Concatenate in L dimension
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
         xy_aws_layers_steps = torch.cat(xy_aws_layers_steps, dim=-2)  # `[B, H, n_layers, L, T]`
-        xy_aws_layers_steps = xy_aws_layers_steps.view(bs, self.n_heads * self.n_layers, ys.size(1), xmax)
+        xy_aws_layers_steps = xy_aws_layers_steps.reshape(bs, self.n_heads * self.n_layers, ys.size(1), xmax)
         xy_aws = tensor2np(xy_aws_layers_steps)
 
         # Truncate by the first <eos> (<sos> in case of the backward decoder)
@@ -572,23 +579,23 @@ class TransformerDecoder(DecoderBase):
             elens (IntTensor): `[B]`
             params (dict): hyperparameters for decoding
             idx2token (): converter from index to token
-            lm: firsh path LM
-            lm_second: second path LM
-            lm_second_bwd: secoding path backward LM
+            lm (torch.nn.module): firsh path LM
+            lm_second (torch.nn.module): second path LM
+            lm_second_bwd (torch.nn.module): secoding path backward LM
             ctc_log_probs (FloatTensor):
             nbest (int):
             exclude_eos (bool): exclude <eos> from hypothesis
-            refs_id (list): reference list
-            utt_ids (list): utterance id list
-            speakers (list): speaker list
-            ensmbl_eouts (list): list of FloatTensor
-            ensmbl_elens (list) list of list
-            ensmbl_decs (list): list of torch.nn.Module
+            refs_id (List): reference list
+            utt_ids (List): utterance id list
+            speakers (List): speaker list
+            ensmbl_eouts (List[FloatTensor]): encoder outputs for ensemble models
+            ensmbl_elens (List[IntTensor]) encoder outputs for ensemble models
+            ensmbl_decs (List[torch.nn.Module): decoders for ensemble models
             cache_states (bool): cache decoder states for fast decoding
         Returns:
-            nbest_hyps_idx (list): length `B`, each of which contains list of N hypotheses
-            aws (list): length `B`, each of which contains arrays of size `[H, L, T]`
-            scores (list):
+            nbest_hyps_idx (List): length `[B]`, each of which contains list of N hypotheses
+            aws (List): length `[B]`, each of which contains arrays of size `[H, L, T]`
+            scores (List):
 
         """
         bs, xmax, _ = eouts.size()
@@ -675,7 +682,9 @@ class TransformerDecoder(DecoderBase):
                 _, lmstate, scores_lm = helper.update_rnnlm_state_batch(lm, hyps, y_lm)
 
                 # for the main model
-                causal_mask = eouts.new_ones(i + 1, i + 1).byte()
+                causal_mask = eouts.new_ones(i + 1, i + 1, dtype=torch.uint8)
+                if torch_12_plus:
+                    causal_mask = causal_mask.byte()
                 causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0).repeat([ys.size(0), 1, 1])
 
                 out = self.pos_enc(self.embed(ys))  # scaled + dropout

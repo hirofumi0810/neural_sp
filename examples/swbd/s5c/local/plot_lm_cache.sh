@@ -5,9 +5,10 @@
 
 model=
 gpu=
+n_threads=1
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/inaguma/corpus/swbd
+data=/n/work2/inaguma/inaguma/corpus/swbd
 
 batch_size=1
 n_caches=100
@@ -23,11 +24,12 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
-    echo "Error: set GPU number." 1>&2
-    echo "Usage: local/plot_lm_cache.sh --gpu 0" 1>&2
-    exit 1
+    # CPU
+    n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
+else
+    n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
-gpu=$(echo ${gpu} | cut -d "," -f 1)
 
 for set in eval2000_swbd; do
     recog_dir=$(dirname ${model})/plot_${set}

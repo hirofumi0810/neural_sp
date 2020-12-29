@@ -10,9 +10,10 @@ model3=
 model_bwd=
 gpu=
 stdout=false
+n_threads=1
 
 ### path to save preproecssed data
-data=/n/work1/inaguma/corpus/wsj
+data=/n/work2/inaguma/corpus/wsj
 
 unit=
 batch_size=1
@@ -20,7 +21,7 @@ beam_width=10
 min_len_ratio=0.0
 max_len_ratio=1.0
 length_penalty=0.0
-length_norm=false
+length_norm=true  ###
 coverage_penalty=0.0
 coverage_threshold=0.0
 gnmt_decoding=false
@@ -34,8 +35,9 @@ bwd_attention=false
 reverse_lm_rescoring=false
 asr_state_carry_over=false
 lm_state_carry_over=true
-n_average=1  # for Transformer
+n_average=10  # for Transformer
 oracle=false
+mma_delay_threshold=-1
 
 . ./cmd.sh
 . ./path.sh
@@ -46,7 +48,9 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
@@ -92,6 +96,9 @@ for set in test_dev93 test_eval92; do
     if [ ${oracle} = true ]; then
         recog_dir=${recog_dir}_oracle
     fi
+    if [ ${mma_delay_threshold} != -1 ]; then
+        recog_dir=${recog_dir}_epswait${mma_delay_threshold}
+    fi
     if [ ! -z ${model3} ]; then
         recog_dir=${recog_dir}_ensemble4
     elif [ ! -z ${model2} ]; then
@@ -109,8 +116,6 @@ for set in test_dev93 test_eval92; do
         recog_set=${data}/dataset/${set}_si84_sp_char.tsv
     elif [ $(echo ${model} | grep 'train_si84') ]; then
         recog_set=${data}/dataset/${set}_si84_char.tsv
-    else
-        exit 1
     fi
 
     CUDA_VISIBLE_DEVICES=${gpu} ${NEURALSP_ROOT}/neural_sp/bin/asr/plot_attention.py \
@@ -141,5 +146,6 @@ for set in test_dev93 test_eval92; do
         --recog_lm_state_carry_over ${lm_state_carry_over} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
+        --recog_mma_delay_threshold ${mma_delay_threshold} \
         --recog_stdout ${stdout} || exit 1;
 done

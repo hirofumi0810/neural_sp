@@ -1,8 +1,7 @@
 export NEURALSP_ROOT=$PWD/../../..
-export TOOL=/home/inaguma/tool/neural_sp
+export TOOL=$NEURALSP_ROOT/tools/neural_sp
 export CONDA=$TOOL/miniconda
-# export KALDI_ROOT=$TOOL/kaldi
-export KALDI_ROOT="/n/sd8/inaguma/kaldi"
+export KALDI_ROOT=$TOOL/kaldi
 
 # Kaldi
 [ -f $KALDI_ROOT/tools/env.sh ] && . $KALDI_ROOT/tools/env.sh

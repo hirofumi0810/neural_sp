@@ -10,6 +10,7 @@ model3=
 model_bwd=
 gpu=
 stdout=false
+n_threads=1
 
 ### path to save preproecssed data
 data=/n/work2/inaguma/corpus/swbd
@@ -52,7 +53,9 @@ set -u
 set -o pipefail
 
 if [ -z ${gpu} ]; then
+    # CPU
     n_gpus=0
+    export OMP_NUM_THREADS=${n_threads}
 else
     n_gpus=$(echo ${gpu} | tr "," "\n" | wc -l)
 fi
