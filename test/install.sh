@@ -19,6 +19,8 @@ cd tools
 make PYTORCH_VERSION="${PYTORCH_VERSION}" PYTHON_VERSION="${TRAVIS_PYTHON_VERSION}" TOOL="${TOOL}" KALDI=${TOOL}/kaldi
 cd ${ROOT}
 
+source tools/neural_sp/miniconda/bin/activate
+
 pip install -e ".[test]"  # install test dependencies (setup.py)
 
 # log

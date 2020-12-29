@@ -50,5 +50,6 @@ ln -sf ${root}/coverage.xml .
 ./run_2mtl.sh --stage 0 --conf conf/asr/transformer_2mtl.yaml --unit wp --unit_sub1 char || exit 1;
 # ./run_2mtl.sh --stage 0 --conf conf/asr/blstm_las_2mtl_per_batch.yaml --unit wp --unit_sub1 char || exit 1;
 
+pip install coverage
 coverage report --include ${root}/neural_sp
 coverage xml
