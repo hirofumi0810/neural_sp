@@ -74,7 +74,7 @@ def make_args(**kwargs):
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
           'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
           'chunk_size_left': "32"}),
-        # # subsample: 1/4
+        # subsample: 1/4
         ({'enc_type': 'conv', 'chunk_size_left': "8"}),
         ({'enc_type': 'conv', 'chunk_size_left': "32"}),
         ({'enc_type': 'conv_lstm', 'chunk_size_left': "8"}),  # unidirectional
@@ -109,6 +109,7 @@ def test_forward_streaming_chunkwise(args):
     batch_size = 1
     xmaxs = [t for t in range(160, 192, 1)]
     device = "cpu"
+    atol = 1e-05
 
     N_l = max(0, int(args['chunk_size_left'].split('_')[0])) // args['n_stacks']
     N_r = max(0, int(args['chunk_size_right'].split('_')[0])) // args['n_stacks']
@@ -180,7 +181,7 @@ def test_forward_streaming_chunkwise(args):
                 eout_stream_i = eout_stream_i[:, :eout_all_i.size(1)]
                 elens_stream_i -= diff
                 for t in range(eout_stream_i.size(1)):
-                    print(torch.equal(eout_all_i[:, t], eout_stream_i[:, t]))
+                    print(torch.allclose(eout_all_i[:, t], eout_stream_i[:, t], atol=atol))
 
                 eouts_stream.append(eout_stream_i)
                 elens_stream += elens_stream_i
@@ -194,6 +195,6 @@ def test_forward_streaming_chunkwise(args):
 
             eouts_stream = torch.cat(eouts_stream, dim=1)
             assert enc_out_dict['ys']['xs'].size() == eouts_stream.size()
-            assert torch.equal(enc_out_dict['ys']['xs'], eouts_stream)
+            assert torch.allclose(enc_out_dict['ys']['xs'], eouts_stream, atol=atol)
             assert elens_stream.item() == eouts_stream.size(1)
             assert torch.equal(enc_out_dict['ys']['xlens'], elens_stream)
