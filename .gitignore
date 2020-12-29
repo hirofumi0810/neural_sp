@@ -7,8 +7,11 @@ __pycache__
 .nfs*
 .idea
 *.done
+.coverage
+coverage.xml
 neural_sp.egg-info
 
 # CI test
-results
-sample
+example/ci_test/data
+example/ci_test/results
+example/ci_test/sample
