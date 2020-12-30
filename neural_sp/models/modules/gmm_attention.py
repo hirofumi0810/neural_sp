@@ -66,8 +66,7 @@ class GMMAttention(nn.Module):
             init_with_xavier_uniform(n, p)
 
     def reset(self):
-        self.mask = None
-        self.myu = None
+        pass
 
     def forward(self, key, value, query, mask=None, aw_prev=None,
                 cache=False, mode='', trigger_points=None, streaming=False):
@@ -86,25 +85,26 @@ class GMMAttention(nn.Module):
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
-            beta: dummy interface for MoChA/MMA
-            p_choose_i: dummy interface for MoChA/MMA
+            attn_state (dict):
+                myu (FloatTensor): `[B, 1 (qlen), n_mix]`
 
         """
         bs, klen = key.size()[:2]
+        attn_state = {}
 
-        if self.myu is None:
+        if aw_prev is None:
             myu_prev = query.new_zeros(bs, 1, self.n_mix)
         else:
-            myu_prev = self.myu
+            myu_prev = aw_prev
 
-        self.mask = mask
-        if self.mask is not None:
-            assert self.mask.size() == (bs, 1, klen), (self.mask.size(), (bs, 1, klen))
+        if mask is not None:
+            assert mask.size() == (bs, 1, klen), (mask.size(), (bs, 1, klen))
 
         w_mix = torch.softmax(self.w_mixture(query), dim=-1)  # `[B, 1, n_mix]`
         var = self.nonlinear(self.w_var(query))  # `[B, 1, n_mix]`
-        myu = self.nonlinear(self.w_myu(query)) + myu_prev  # `[B, 1, n_mix]`
-        self.myu = myu  # register for the next step
+        myu = self.nonlinear(self.w_myu(query))
+        myu = myu + myu_prev + myu_prev  # `[B, 1, n_mix]`
+        attn_state['myu'] = myu
 
         # Compute attention weights
         js = torch.arange(klen, dtype=torch.float, device=query.device)
@@ -115,10 +115,10 @@ class GMMAttention(nn.Module):
         aw = aw.sum(2).unsqueeze(1)  # `[B, 1 (qlen), klen]`
 
         # Compute context vector
-        if self.mask is not None:
+        if mask is not None:
             NEG_INF = float(np.finfo(torch.tensor(0, dtype=myu.dtype).numpy().dtype).min)
-            aw = aw.masked_fill_(self.mask == 0, NEG_INF)
+            aw = aw.masked_fill_(mask == 0, NEG_INF)
         aw = self.dropout(aw)
         cv = torch.bmm(aw, value)
 
-        return cv, aw.unsqueeze(1), None, None
+        return cv, aw.unsqueeze(1), attn_state

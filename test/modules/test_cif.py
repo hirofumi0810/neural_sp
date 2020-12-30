@@ -47,10 +47,12 @@ def test_forward_parallel(args):
 
     out = cif(eouts, elens, ylens, mode='parallel')
     assert len(out) == 3
-    cv, alpha, aws = out
+    cv, aws, attn_state = out
     assert cv.size() == (batch_size, ymax, args['enc_dim'])
-    assert alpha.size() == (batch_size, xmax)
     assert aws.size() == (batch_size, ymax, xmax)
+    assert isinstance(attn_state, dict)
+    alpha = attn_state['alpha']
+    assert alpha.size() == (batch_size, xmax)
 
 
 @pytest.mark.parametrize(
@@ -79,7 +81,9 @@ def test_forward_incremental(args):
     for i in range(ymax):
         out = cif(eouts, elens, mode='incremental')
         assert len(out) == 3
-        cv, alpha, aws = out
+        cv, aws, attn_state = out
         assert cv.size() == (batch_size, 1, args['enc_dim'])
-        assert alpha.size() == (batch_size, xmax)
         assert aws.size() == (batch_size, 1, xmax)
+        assert isinstance(attn_state, dict)
+        alpha = attn_state['alpha']
+        assert alpha.size() == (batch_size, xmax)

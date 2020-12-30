@@ -106,12 +106,12 @@ class MultiheadAttentionMechanism(nn.Module):
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             aw (FloatTensor): `[B, H, qlen, klen]`
-            beta: dummy interface for MoChA/MMA
-            p_choose: dummy interface for MoChA/MMA
+            attn_state (dict): dummy interface
 
         """
         bs, klen = key.size()[: 2]
         qlen = query.size(1)
+        attn_state = {}
 
         # Pre-computation of encoder-side features for computing scores
         if self.key is None or not cache:
@@ -152,4 +152,4 @@ class MultiheadAttentionMechanism(nn.Module):
         cv = self.w_out(cv)
         aw = aw.permute(0, 3, 1, 2)  # `[B, H, qlen, klen]`
 
-        return cv, aw, None, None
+        return cv, aw, attn_state
