@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -219,7 +216,7 @@ class TransformerDecoderBlock(nn.Module):
 
         # self-attention
         if self.memory_transformer:
-            out, self._yy_aws = self.self_attn(cat, ys_q, pos_embs, yy_mask, u_bias, v_bias)
+            out, self._yy_aws = self.self_attn(cat, ys_q, pos_embs, yy_mask, u_bias, v_bias)  # k/q/m
         else:
             out, self._yy_aws = self.self_attn(ys, ys, ys_q, mask=yy_mask)[:2]  # k/v/q
         out = self.dropout(out) + residual
@@ -228,10 +225,15 @@ class TransformerDecoderBlock(nn.Module):
         if self.src_tgt_attention:
             residual = out
             out = self.norm2(out)
-            out, self._xy_aws, self._xy_aws_beta, self._xy_aws_p_choose = self.src_attn(
+            out, self._xy_aws, attn_state = self.src_attn(
                 xs, xs, out, mask=xy_mask,  # k/v/q
                 aw_prev=xy_aws_prev, mode=mode, eps_wait=eps_wait)
             out = self.dropout(out) + residual
+
+            if attn_state.get('beta', None) is not None:
+                self._xy_aws_beta = attn_state['beta']
+            if attn_state.get('p_choose', None) is not None:
+                self._xy_aws_p_choose = attn_state['p_choose']
 
         # LM integration
         if self.lm_fusion:

@@ -58,8 +58,9 @@ def test_forward(args):
     aws = None
     for i in range(qlen):
         out = attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=aws,
-                        mode='parallel', cache=True)
-        assert len(out) == 4
-        cv, aws, _, _ = out
+                        cache=True)
+        assert len(out) == 3
+        cv, aws, attn_state = out
         assert cv.size() == (batch_size, 1, value.size(2))
         assert aws.size() == (batch_size, args['n_heads'], 1, klen)
+        assert isinstance(attn_state, dict)

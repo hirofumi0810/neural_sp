@@ -94,10 +94,13 @@ def test_forward_soft(args):
         for i in range(qlen):
             out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
                         mode='recursive', cache=True, linear_decoding=linear_decoding)
-            assert len(out) == 4
-            cv, alpha, beta, p_choose = out
+            assert len(out) == 3
+            cv, alpha, attn_state = out
             assert cv.size() == (batch_size, 1, value.size(2))
             assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
+            assert isinstance(attn_state, dict)
+            beta = attn_state['beta']
+            p_choose = attn_state['p_choose']
             assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
             if args['chunk_size'] > 1:
                 assert beta is not None
@@ -110,10 +113,13 @@ def test_forward_soft(args):
         for i in range(qlen):
             out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
                         mode='parallel', cache=True, linear_decoding=linear_decoding)
-            assert len(out) == 4
-            cv, alpha, beta, p_choose = out
+            assert len(out) == 3
+            cv, alpha, attn_state = out
             assert cv.size() == (batch_size, 1, value.size(2))
             assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
+            assert isinstance(attn_state, dict)
+            beta = attn_state['beta']
+            p_choose = attn_state['p_choose']
             assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
             if args['chunk_size'] > 1:
                 assert beta is not None
@@ -169,10 +175,13 @@ def test_forward_hard(args):
             out = mocha(key, value, query[:, i:i + 1], mask=None, aw_prev=alpha,
                         mode='hard', cache=False, trigger_points=trigger_points,
                         eps_wait=-1, linear_decoding=linear_decoding)
-            assert len(out) == 4
-            cv, alpha, beta, p_choose = out
+            assert len(out) == 3
+            cv, alpha, attn_state = out
             assert cv.size() == (batch_size, 1, value.size(2))
             assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
+            assert isinstance(attn_state, dict)
+            beta = attn_state['beta']
+            p_choose = attn_state['p_choose']
             assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
             if args['chunk_size'] > 1:
                 assert beta is not None

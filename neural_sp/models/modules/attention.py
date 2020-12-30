@@ -109,12 +109,12 @@ class AttentionMechanism(nn.Module):
         Returns:
             cv (FloatTensor): `[B, 1, vdim]`
             aw (FloatTensor): `[B, 1 (H), 1 (qlen), klen]`
-            beta: dummy interface for MoChA/MMA
-            p_choose_i: dummy interface for MoChA/MMA
+            attn_state (dict): dummy interface
 
         """
         bs, klen = key.size()[:2]
         qlen = query.size(1)
+        attn_state = {}
 
         if aw_prev is None:
             aw_prev = key.new_zeros(bs, 1, klen)
@@ -178,4 +178,4 @@ class AttentionMechanism(nn.Module):
         aw = self.dropout(aw)
         cv = torch.bmm(aw, value)
 
-        return cv, aw.unsqueeze(1), None, None
+        return cv, aw.unsqueeze(1), attn_state

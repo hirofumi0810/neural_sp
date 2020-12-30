@@ -49,7 +49,8 @@ class CIF(nn.Module):
 
     def reset_parameters(self):
         """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' %
+                    self.__class__.__name__)
         for n, p in self.named_parameters():
             init_with_xavier_uniform(n, p)
 
@@ -64,11 +65,13 @@ class CIF(nn.Module):
             streaming: dummy interface for streaming attention
         Returns:
             cv (FloatTensor): `[B, L, enc_dim]`
-            alpha (FloatTensor): `[B, T]`
             aws (FloatTensor): `[B, L, T]`
+            attn_state (dict): dummy interface
+                alpha (FloatTensor): `[B, T]`
 
         """
         bs, xmax, enc_dim = eouts.size()
+        attn_state = {}
 
         # 1d conv
         conv_feat = self.conv1d(eouts.transpose(2, 1)).transpose(2, 1)  # `[B, T, enc_dim]`
@@ -153,5 +156,6 @@ class CIF(nn.Module):
         # truncate
         cv = cv[:, :ymax]
         aws = aws[:, :ymax]
+        attn_state['alpha'] = alpha
 
-        return cv, alpha, aws
+        return cv, aws, attn_state

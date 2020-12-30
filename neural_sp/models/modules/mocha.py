@@ -521,8 +521,9 @@ class MoChA(nn.Module):
         Returns:
             cv (FloatTensor): `[B, qlen, vdim]`
             alpha (FloatTensor): `[B, H_ma, qlen, klen]`
-            beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
-            p_choose (FloatTensor): `[B, H_ma, qlen, klen]`
+            attn_state (dict):
+                beta (FloatTensor): `[B, H_ma * H_ca, qlen, klen]`
+                p_choose (FloatTensor): `[B, H_ma, qlen, klen]`
 
         """
         klen = key.size(1)
@@ -530,6 +531,7 @@ class MoChA(nn.Module):
         tail_len = self.key_prev_tail.size(1) if self.key_prev_tail is not None else 0
         bd_L = self.bd_L_prev
         bd_R = klen - 1
+        attn_state = {}
 
         if aw_prev is None:
             aw_prev = key.new_zeros(bs, self.H_ma, 1, klen)
@@ -655,7 +657,10 @@ class MoChA(nn.Module):
                     self.key_cur_tail = torch.cat([self.key_prev_tail[:, -(klen - n_rest):],
                                                    key.detach()], dim=1)[:, -n_rest:]
 
-        return cv, alpha, beta, p_choose
+        attn_state['beta'] = beta
+        attn_state['p_choose'] = p_choose
+
+        return cv, alpha, attn_state
 
 
 def add_gaussian_noise(xs, std):
