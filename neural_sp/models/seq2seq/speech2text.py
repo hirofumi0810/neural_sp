@@ -486,7 +486,8 @@ class Speech2Text(ModelBase):
         block_size = params['recog_block_sync_size']  # before subsampling
 
         streaming = Streaming(xs[0], params, self.enc, block_size)
-        block_size //= self.enc.subsampling_factor
+        factor = self.enc.subsampling_factor
+        block_size //= factor
 
         hyps = None
         best_hyp_id_stream = []
@@ -542,13 +543,14 @@ class Speech2Text(ModelBase):
                             # If <eos> is emitted from the decoder (not CTC),
                             # the current block is segmented.
                             if not is_reset:
-                                streaming.bd_offset = eout_block.size(1) - 1
-                                is_reset = True
+                                streaming._bd_offset = eout_block.size(1) - 1
+                                # TODO: fix later
+                            is_reset = True
                         if len(best_hyp_id_prefix) > 0:
                             # print('\rStreaming (T:%d [frame], offset:%d [frame], blank:%d [frame]): %s' %
-                            #       (streaming.offset + eout_block.size(1) * streaming.factor,
-                            #        self.dec_fwd.n_frames * streaming.factor,
-                            #        streaming.n_blanks * streaming.factor,
+                            #       (streaming.offset + eout_block.size(1) * factor,
+                            #        self.dec_fwd.n_frames * factor,
+                            #        streaming.n_blanks * factor,
                             #        idx2token(best_hyp_id_prefix)))
                             print('\r%s' % (idx2token(best_hyp_id_prefix)))
 
@@ -564,7 +566,7 @@ class Speech2Text(ModelBase):
                             eout, elens, global_params, idx2token, lm, lm_second,
                             ctc_log_probs=ctc_log_probs)[0]
                         # print('Offline (T:%d [10ms]): %s' %
-                        #       (streaming.offset + eout_block.size(1) * streaming.factor,
+                        #       (streaming.offset + eout_block.size(1) * factor,
                         #        idx2token(nbest_hyps_id_offline[0][0])))
 
                     # pick up the best hyp from ended and active hypotheses
@@ -575,8 +577,8 @@ class Speech2Text(ModelBase):
                         if len(best_hyp_id_prefix) > 0:
                             best_hyp_id_stream.extend(best_hyp_id_prefix)
                         # print('Final (T:%d [10ms], offset:%d [10ms]): %s' %
-                        #       (streaming.offset + eout_block.size(1) * streaming.factor,
-                        #        self.dec_fwd.n_frames * streaming.factor,
+                        #       (streaming.offset + eout_block.size(1) * factor,
+                        #        self.dec_fwd.n_frames * factor,
                         #        idx2token(best_hyp_id_prefix)))
                         # print('-' * 50)
                         # for test

@@ -30,13 +30,13 @@ class Streaming(object):
         self.idx2token = idx2token
 
         # latency
-        self.factor = encoder.subsampling_factor
+        self._factor = encoder.subsampling_factor
         self.N_l = encoder.chunk_size_left
         self.N_c = getattr(encoder, 'chunk_size_current', 0)  # for Transformer
         self.N_r = encoder.chunk_size_right
         if self.N_l <= 0 and self.N_r <= 0:
             self.N_l = block_size  # for unidirectional encoder
-            assert block_size % self.factor == 0
+            assert block_size % self._factor == 0
 
         # threshold for CTC-VAD
         self.blank_id = 0
@@ -44,8 +44,8 @@ class Streaming(object):
         self.BLANK_THRESHOLD = params['recog_ctc_vad_blank_threshold']
         self.SPIKE_THRESHOLD = params['recog_ctc_vad_spike_threshold']
         self.MAX_N_ACCUM_FRAMES = params['recog_ctc_vad_n_accum_frames']
-        assert params['recog_ctc_vad_blank_threshold'] % self.factor == 0
-        assert params['recog_ctc_vad_n_accum_frames'] % self.factor == 0
+        assert params['recog_ctc_vad_blank_threshold'] % self._factor == 0
+        assert params['recog_ctc_vad_n_accum_frames'] % self._factor == 0
         # NOTE: these parameters are based on 10ms/frame
 
         self._offset = 0  # global time offset in the session
@@ -59,21 +59,25 @@ class Streaming(object):
         # for test
         self._eout_blocks = []
 
-    @staticmethod
+    @property
     def offset(self):
         return self._offset
 
-    @staticmethod
+    @property
     def n_blanks(self):
         return self._n_blanks
 
-    @staticmethod
+    @property
     def n_accum_frames(self):
         return self._n_accum_frames
 
-    @staticmethod
+    @property
     def bd_offset(self):
         return self._bd_offset
+
+    @property
+    def n_cache_block(self):
+        return len(self._eout_blocks)
 
     def reset(self, stdout=False):
         self._eout_blocks = []
@@ -151,9 +155,9 @@ class Streaming(object):
             self._n_blanks += xmax_block
             if stdout:
                 for j in range(xmax_block):
-                    print('CTC (T:%d): <blank>' % (self._offset + (j + 1) * self.factor))
+                    print('CTC (T:%d): <blank>' % (self._offset + (j + 1) * self._factor))
                 print('All blank segments')
-            if self._n_blanks * self.factor >= self.BLANK_THRESHOLD:
+            if self._n_blanks * self._factor >= self.BLANK_THRESHOLD:
                 is_reset = True
             return is_reset
 
@@ -162,7 +166,7 @@ class Streaming(object):
             if topk_ids_block[j] == self.blank_id:
                 self._n_blanks += 1
                 if stdout:
-                    print('CTC (T:%d): <blank>' % (self._offset + (j + 1) * self.factor))
+                    print('CTC (T:%d): <blank>' % (self._offset + (j + 1) * self._factor))
 
             else:
                 if ctc_probs_block[0, j, topk_ids_block[j]] < self.SPIKE_THRESHOLD:
@@ -170,27 +174,27 @@ class Streaming(object):
                 else:
                     self._n_blanks = 0
                 if stdout and self.idx2token is not None:
-                    print('CTC (T:%d): %s' % (self._offset + (j + 1) * self.factor,
+                    print('CTC (T:%d): %s' % (self._offset + (j + 1) * self._factor,
                                               self.idx2token([topk_ids_block[j].item()])))
 
-            # if not is_reset and (self._n_blanks * self.factor >= self.BLANK_THRESHOLD):# NOTE: select the leftmost blank offset
-            if self._n_blanks * self.factor >= self.BLANK_THRESHOLD:  # NOTE: select the rightmost blank offset
+            # if not is_reset and (self._n_blanks * self._factor >= self.BLANK_THRESHOLD):# NOTE: select the leftmost blank offset
+            if self._n_blanks * self._factor >= self.BLANK_THRESHOLD:  # NOTE: select the rightmost blank offset
                 self._bd_offset = j
                 is_reset = True
                 n_blanks_tmp = self._n_blanks
 
         if stdout and is_reset:
-            print('--- Segment (%d >= %d) ---' % (n_blanks_tmp * self.factor, self.BLANK_THRESHOLD))
+            print('--- Segment (%d >= %d) ---' % (n_blanks_tmp * self._factor, self.BLANK_THRESHOLD))
 
         return is_reset
 
     def backoff(self, x_block, decoder, stdout=False):
-        if 0 <= self._bd_offset * self.factor < self.N_l - 1:
+        if 0 <= self._bd_offset * self._factor < self.N_l - 1:
             # boundary located in the middle of the current block
             decoder.n_frames = 0
             offset_prev = self._offset
-            self._offset = self._offset - x_block[(self._bd_offset + 1) * self.factor:self.N_l].shape[0]
+            self._offset = self._offset - x_block[(self._bd_offset + 1) * self._factor:self.N_l].shape[0]
             if stdout:
                 print('Back %d frames (%d -> %d)' %
-                      (x_block[(self._bd_offset + 1) * self.factor:self.N_l].shape[0],
+                      (x_block[(self._bd_offset + 1) * self._factor:self.N_l].shape[0],
                        offset_prev, self._offset))
