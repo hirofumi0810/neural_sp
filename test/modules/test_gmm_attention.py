@@ -50,9 +50,9 @@ def test_forward(args):
     attention = attention.to(device)
 
     attention.train()
-    aws = None
+    myu = None
     for i in range(qlen):
-        out = attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=aws,
+        out = attention(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=myu,
                         mode='parallel', cache=True)
         assert len(out) == 3
         cv, aws, attn_state = out
