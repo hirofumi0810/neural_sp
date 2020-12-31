@@ -239,9 +239,14 @@ class TransformerEncoder(EncoderBase):
                     dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
                     ffn_bottleneck_dim)
-            self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+            odim_sub1 = d_model
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
+                odim_sub1 = last_proj_dim
+            if n_layers_sub1 == n_layers:
+                self.norm_out_sub1 = None
+            else:
+                self.norm_out_sub1 = nn.LayerNorm(odim_sub1, eps=layer_norm_eps)
 
         if n_layers_sub2 > 0:
             if task_specific_layer:
@@ -250,9 +255,14 @@ class TransformerEncoder(EncoderBase):
                     dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
                     ffn_bottleneck_dim)
-            self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+            odim_sub2 = d_model
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
+                odim_sub2 = last_proj_dim
+            if n_layers_sub2 == n_layers:
+                self.norm_out_sub2 = None
+            else:
+                self.norm_out_sub2 = nn.LayerNorm(odim_sub2, eps=layer_norm_eps)
 
         if last_proj_dim > 0 and last_proj_dim != self.output_dim:
             self.bridge = nn.Linear(self._odim, last_proj_dim)
@@ -521,7 +531,8 @@ class TransformerEncoder(EncoderBase):
             xs_sub = xs.clone()
         if getattr(self, 'bridge_' + module) is not None:
             xs_sub = getattr(self, 'bridge_' + module)(xs_sub)
-        xs_sub = getattr(self, 'norm_out_' + module)(xs_sub)
+        if getattr(self, 'norm_out_' + module) is not None:
+            xs_sub = getattr(self, 'norm_out_' + module)(xs_sub)
         if not self.training:
             self.aws_dict['xx_aws_%s_layer%d' % (module, lth)] = tensor2np(getattr(self, 'layer_' + module).xx_aws)
         return xs_sub
