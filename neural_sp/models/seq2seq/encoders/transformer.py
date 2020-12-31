@@ -12,13 +12,11 @@ import random
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
 from neural_sp.models.modules.positional_embedding import (
     PositionalEncoding,
     XLPositionalEmbedding
 )
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
-from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.seq2seq.encoders.subsampling import (
@@ -28,6 +26,7 @@ from neural_sp.models.seq2seq.encoders.subsampling import (
     DropSubsampler,
     MaxpoolSubsampler
 )
+from neural_sp.models.seq2seq.encoders.transformer_block import TransformerEncoderBlock
 from neural_sp.models.seq2seq.encoders.utils import chunkwise
 from neural_sp.models.torch_utils import (
     make_pad_mask,
@@ -213,9 +212,8 @@ class TransformerEncoder(EncoderBase):
             assert self.chunk_size_right % self._factor == 0
 
         self.clamp_len = clamp_len
+        self.u_bias, self.v_bias = None, None
         self.pos_emb = None
-        self.u_bias = None
-        self.v_bias = None
         if pe_type == 'relative_xl':
             self.pos_emb = XLPositionalEmbedding(d_model, dropout)
             self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
@@ -237,7 +235,8 @@ class TransformerEncoder(EncoderBase):
         if n_layers_sub1 > 0:
             if task_specific_layer:
                 self.layer_sub1 = TransformerEncoderBlock(
-                    d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
+                    d_model, d_ff, n_heads,
+                    dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
                     ffn_bottleneck_dim)
             self.norm_out_sub1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -247,7 +246,8 @@ class TransformerEncoder(EncoderBase):
         if n_layers_sub2 > 0:
             if task_specific_layer:
                 self.layer_sub2 = TransformerEncoderBlock(
-                    d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
+                    d_model, d_ff, n_heads,
+                    dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init, pe_type,
                     ffn_bottleneck_dim)
             self.norm_out_sub2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -324,7 +324,7 @@ class TransformerEncoder(EncoderBase):
         if args.transformer_enc_clamp_len > 0:
             dir_name += '_clamp' + str(args.transformer_enc_clamp_len)
         if args.dropout_enc_layer > 0:
-            dir_name += 'droplayer' + str(args.dropout_enc_layer)
+            dir_name += '_LD' + str(args.dropout_enc_layer)
         if int(args.lc_chunk_size_left.split('_')[-1]) > 0 or int(args.lc_chunk_size_current.split('_')[-1]) > 0 \
                 or int(args.lc_chunk_size_right.split('_')[-1]) > 0:
             dir_name += '_chunkL' + args.lc_chunk_size_left + 'C' + \
@@ -354,7 +354,8 @@ class TransformerEncoder(EncoderBase):
                 nn.init.xavier_uniform_(self.u_bias)
                 nn.init.xavier_uniform_(self.v_bias)
 
-    def forward(self, xs, xlens, task, streaming=False, lookback=False, lookahead=False):
+    def forward(self, xs, xlens, task, streaming=False,
+                lookback=False, lookahead=False):
         """Forward pass.
 
         Args:
@@ -390,7 +391,7 @@ class TransformerEncoder(EncoderBase):
             xs = self.embed(xs)
         else:
             # Path through CNN blocks
-            xs, xlens = self.conv(xs, xlens)
+            xs, xlens = self.conv(xs, xlens, lookback=lookback, lookahead=lookahead)
             clamp_len = clamp_len // self.conv.subsampling_factor
             if lc_bidir:
                 N_l = max(0, N_l // self.conv.subsampling_factor)
@@ -518,105 +519,12 @@ class TransformerEncoder(EncoderBase):
             xs_sub = getattr(self, 'layer_' + module)(xs, xx_mask, pos_embs=pos_embs)
         else:
             xs_sub = xs.clone()
-        xs_sub = getattr(self, 'norm_out_' + module)(xs_sub)
         if getattr(self, 'bridge_' + module) is not None:
             xs_sub = getattr(self, 'bridge_' + module)(xs_sub)
+        xs_sub = getattr(self, 'norm_out_' + module)(xs_sub)
         if not self.training:
             self.aws_dict['xx_aws_%s_layer%d' % (module, lth)] = tensor2np(getattr(self, 'layer_' + module).xx_aws)
         return xs_sub
-
-
-class TransformerEncoderBlock(nn.Module):
-    """A single layer of the Transformer encoder.
-
-    Args:
-        d_model (int): input dimension of MultiheadAttentionMechanism and PositionwiseFeedForward
-        d_ff (int): hidden dimension of PositionwiseFeedForward
-        n_heads (int): number of heads for multi-head attention
-        dropout (float): dropout probabilities for linear layers
-        dropout_att (float): dropout probabilities for attention distributions
-        dropout_layer (float): LayerDrop probability
-        layer_norm_eps (float): epsilon parameter for layer normalization
-        ffn_activation (str): nonolinear function for PositionwiseFeedForward
-        param_init (str): parameter initialization method
-        pe_type (str): type of positional encoding
-        ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
-
-    """
-
-    def __init__(self, d_model, d_ff, n_heads,
-                 dropout, dropout_att, dropout_layer,
-                 layer_norm_eps, ffn_activation, param_init, pe_type,
-                 relative_attention=False, ffn_bottleneck_dim=0):
-        super(TransformerEncoderBlock, self).__init__()
-
-        self.n_heads = n_heads
-        self.relative_attention = pe_type in ['relaive', 'relative_xl']
-
-        # self-attention
-        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        mha = RelMHA if self.relative_attention else MHA
-        self.self_attn = mha(kdim=d_model,
-                             qdim=d_model,
-                             adim=d_model,
-                             odim=d_model,
-                             n_heads=n_heads,
-                             dropout=dropout_att,
-                             param_init=param_init,
-                             xl_like=pe_type == 'relative_xl')
-
-        # position-wise feed-forward
-        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.feed_forward = FFN(d_model, d_ff, dropout, ffn_activation, param_init,
-                                ffn_bottleneck_dim)
-
-        self.dropout = nn.Dropout(dropout)
-        self.dropout_layer = dropout_layer
-
-        self.reset_visualization()
-
-    @property
-    def xx_aws(self):
-        return self._xx_aws
-
-    def reset_visualization(self):
-        self._xx_aws = None
-
-    def forward(self, xs, xx_mask=None, pos_embs=None, u_bias=None, v_bias=None):
-        """Transformer encoder layer definition.
-
-        Args:
-            xs (FloatTensor): `[B, T, d_model]`
-            xx_mask (ByteTensor): `[B, T (query), T (key)]`
-            pos_embs (LongTensor): `[L, 1, d_model]`
-            u_bias (FloatTensor): global parameter for relative positional encoding
-            v_bias (FloatTensor): global parameter for relative positional encoding
-        Returns:
-            xs (FloatTensor): `[B, T, d_model]`
-
-        """
-        self.reset_visualization()
-
-        # LayerDrop
-        if self.dropout_layer > 0 and self.training and random.random() < self.dropout_layer:
-            return xs
-
-        # self-attention
-        residual = xs
-        xs = self.norm1(xs)
-        if self.relative_attention:
-            xs, self._xx_aws = self.self_attn(xs, xs, pos_embs, xx_mask, u_bias, v_bias)  # k/q/m
-        else:
-            xs, self._xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)[:2]  # k/v/q
-        xs = self.dropout(xs) + residual
-
-        # position-wise feed-forward
-        residual = xs
-        xs = self.norm2(xs)
-        xs = self.feed_forward(xs)
-        xs = self.dropout(xs) + residual
-
-        return xs
 
 
 def make_san_mask(xs, xlens, unidirectional=False, lookahead=0):
