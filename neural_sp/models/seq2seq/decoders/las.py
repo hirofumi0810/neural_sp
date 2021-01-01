@@ -484,53 +484,7 @@ class RNNDecoder(DecoderBase):
 
         # MBR loss
         if self.mbr is not None and (task == 'all' or 'mbr' not in task):
-            nbest = recog_params['recog_beam_width']
-            alpha = 1.0
-            assert nbest >= 2
-            loss_mbr = 0.
-            loss_ce = 0.
-            bs = eouts.size(0)
-            for b in range(bs):
-                # 1. beam search
-                self.eval()
-                with torch.no_grad():
-                    nbest_hyps_id, _, log_scores = self.beam_search(
-                        eouts[b:b + 1], elens[b:b + 1], params=recog_params,
-                        nbest=nbest, exclude_eos=True)
-                nbest_hyps_id_b = [np.fromiter(y, dtype=np.int64) for y in nbest_hyps_id[0]]
-                log_scores_b = np2tensor(np.array(log_scores[0], dtype=np.float32), eouts.device)
-                scores_b_norm = torch.softmax(alpha * log_scores_b, dim=-1)  # `[nbest]`
-                # print((scores_b_norm * 100).int())
-
-                # 2. calculate expected WER
-                wers_b = np2tensor(np.array([
-                    compute_wer(ref=idx2token(ys[b]).split(' '),
-                                hyp=idx2token(nbest_hyps_id_b[n]).split(' '))[0] / 100
-                    for n in range(nbest)], dtype=np.float32), eouts.device)
-                exp_wer_b = (scores_b_norm * wers_b).sum()
-                grad_b = (scores_b_norm * (wers_b - exp_wer_b)).sum()
-                # print(wers_b)
-                # print(exp_wer_b)
-                # print(scores_b_norm * (wers_b - exp_wer_b))
-                # print(grad_b)
-
-                # 3. forward pass (teacher-forcing with hypotheses)
-                self.train()
-                logits_b = self.forward_mbr(eouts[b:b + 1].repeat([nbest, 1, 1]),
-                                            elens[b:b + 1].repeat([nbest]),
-                                            nbest_hyps_id_b)
-                log_probs_b = torch.log_softmax(logits_b, dim=-1)  # `[nbest, L, vocab]`
-
-                # 4. backward pass (attach gradient)
-                _eos = eouts.new_zeros((1,), dtype=torch.int64).fill_(self.eos)
-                nbest_hyps_id_b_pad = pad_list([torch.cat([np2tensor(y, eouts.device), _eos], dim=0)
-                                                for y in nbest_hyps_id_b], self.pad)
-                loss_mbr += self.mbr(log_probs_b, nbest_hyps_id_b_pad, exp_wer_b, grad_b)
-
-                # 5. CE loss regularization
-                loss_ce += self.forward_att(eouts[b:b + 1], elens[b:b + 1], ys[b:b + 1])[0]
-
-            # NOTE: MBR loss is accumlated over N-best and mini-batch
+            loss_mbr, loss_ce = self.forward_mbr(eouts, elens, ys, recog_params, idx2token)
             loss = loss_mbr + loss_ce * self.mbr_ce_weight
             observation['loss_mbr'] = tensor2scalar(loss_mbr)
             observation['loss_att'] = tensor2scalar(loss_ce)
@@ -538,53 +492,110 @@ class RNNDecoder(DecoderBase):
         observation['loss'] = tensor2scalar(loss)
         return loss, observation
 
-    def forward_mbr(self, eouts, elens, ys_hyp):
+    def forward_mbr(self, eouts, elens, ys_ref, recog_params, idx2token):
         """Compute XE loss for attention-based decoder.
 
         Args:
-            eouts (FloatTensor): `[nbest, T, enc_n_units]`
-            elens (IntTensor): `[nbest]`
-            ys_hyp (List): length `nbest`, each of which contains a list of size `[L]`
+            eouts (FloatTensor): `[B, T, enc_n_units]`
+            elens (IntTensor): `[B]`
+            ys_ref (List[List]): length `[B]`, each of which contains a list of size `[L]`
+            recog_params (dict): decoding hyperparameters for N-best generation in MBR training
+            idx2token:
         Returns:
-            logits (FloatTensor): `[nbest, L, vocab]`
+            loss_mbr (FloatTensor): `[1]`
+            loss_ce (FloatTensor): `[1]`
 
         """
-        bs, xmax = eouts.size()[:2]
+        bs, xmax, xdim = eouts.size()[:2]
+        nbest = recog_params['recog_beam_width']
+        length_norm = recog_params['recog_length_norm']
+        assert nbest >= 2
+        scaling_factor = 1.0  # less than 1
+
+        ###################################
+        # 1. beam search
+        ###################################
+        self.eval()
+        with torch.no_grad():
+            nbest_hyps_id, _, scores = self.beam_search(
+                eouts, elens, params=recog_params, nbest=nbest, exclude_eos=True)
+        # TODO: block-synchronous decoding
+
+        ###################################
+        # 2. calculate expected WER
+        ###################################
+        exp_wer = 0
+        nbest_hyps_id_batch = []
+        grad_list = []
+        for b in range(bs):
+            nbest_hyps_id_b = [np.fromiter(y, dtype=np.int64) for y in nbest_hyps_id[b]]
+            nbest_hyps_id_batch += nbest_hyps_id_b
+            scores_b = np2tensor(np.array(scores[b], dtype=np.float32), eouts.device)
+            probs_b_norm = torch.softmax(scaling_factor * scores_b, dim=-1)  # `[nbest]`
+            wers_b = np2tensor(np.array([
+                compute_wer(ref=idx2token(ys_ref[b]).split(' '),
+                            hyp=idx2token(nbest_hyps_id_b[n]).split(' '))[0] / 100
+                for n in range(nbest)], dtype=np.float32), eouts.device)
+            exp_wer_b = (probs_b_norm * wers_b).sum()
+            grad_list += [(probs_b_norm * (wers_b - exp_wer_b)).sum()]
+            exp_wer += exp_wer_b
+        exp_wer /= bs
+
+        ######################################################################
+        # 3. decoder forward pass (teacher-forcing with hypotheses)
+        ######################################################################
+        self.train()
+        eouts_expand = eouts.unsqueeze(1).expand(-1, nbest, -1, -1).contiguous().view(bs * nbest, xmax, xdim)
 
         # Append <sos> and <eos>
-        ys_in, ys_out, ylens = append_sos_eos(ys_hyp, self.eos, self.eos, self.pad, eouts.device)
+        ys_in, ys_out, ylens = append_sos_eos(nbest_hyps_id_batch, self.eos, self.eos, self.pad, eouts.device)
 
         # Initialization
-        dstates = self.zero_state(bs)
-        cv = eouts.new_zeros(bs, 1, self.enc_n_units)
+        dstates = self.zero_state(bs * nbest)
+        cv = eouts.new_zeros(bs * nbest, 1, self.enc_n_units)
         self.score.reset()
-        aw, aws = None, []
+        aw = None
         lmout, lmstate = None, None
 
         ys_emb = self.dropout_emb(self.embed(ys_in))
-        src_mask = make_pad_mask(elens.to(eouts.device)).unsqueeze(1)  # `[B, 1, T]`
+        src_mask = make_pad_mask(elens.to(eouts.device)).unsqueeze(1)  # `[B * nbest, 1, T]`
         logits = []
         for i in range(ys_in.size(1)):
-            is_sample = i > 0 and self._ss_prob > 0 and random.random() < self._ss_prob
-
             # Update LM states for LM fusion
             if self.lm is not None:
-                y_lm = self.output(logits[-1]).detach().argmax(-1) if is_sample else ys_in[:, i:i + 1]
-                lmout, lmstate, _ = self.lm.predict(y_lm, lmstate)
+                lmout, lmstate, _ = self.lm.predict(ys_in[:, i:i + 1], lmstate)
 
             # Recurrency -> Score -> Generate
-            y_emb = self.dropout_emb(self.embed(
-                self.output(logits[-1]).detach().argmax(-1))) if is_sample else ys_emb[:, i:i + 1]
             dstates, cv, aw, attn_state, attn_v = self.decode_step(
-                eouts, dstates, cv, y_emb, src_mask, aw, lmout, mode='parallel')
-            aws.append(aw)  # `[B, H, 1, T]`
+                eouts_expand, dstates, cv, ys_emb[:, i:i + 1], src_mask, aw, lmout, mode='parallel')
             logits.append(attn_v)
-            if self.attn_type in ['gmm']:
+            if self.attn_type in ['gmm', 'sagmm']:
                 aw = attn_state['myu']
-        # NOTE: attention is plotted in self.forward_att
+        # NOTE: attention is plotted in self.forward_att()
 
         logits = self.output(torch.cat(logits, dim=1))
-        return logits
+        log_probs = torch.log_softmax(logits, dim=-1)  # `[B * nbest, L, vocab]`
+
+        ###################################
+        # 4. backward pass (attach gradient)
+        ###################################
+        eos = eouts.new_zeros((1,), dtype=torch.int64).fill_(self.eos)
+        nbest_hyps_id_batch_pad = pad_list([torch.cat([np2tensor(y, eouts.device), eos], dim=0)
+                                            for y in nbest_hyps_id_batch], self.pad)
+        grad = eouts.new_zeros(bs * nbest, nbest_hyps_id_batch_pad.size(1), self.vocab)
+        for b in range(bs):
+            onehot = torch.eye(self.vocab).to(eouts.device)[nbest_hyps_id_batch_pad[b * nbest:(b + 1) * nbest]]
+            grad[b * nbest:(b + 1) * nbest] = grad_list[b] * onehot
+        grad = grad.masked_fill_((nbest_hyps_id_batch_pad == self.pad).unsqueeze(2), 0)
+        loss_mbr = self.mbr(log_probs, nbest_hyps_id_batch_pad, exp_wer, grad)
+        # NOTE: loss_mbr is equal to exp_wer
+
+        ###################################
+        # 5. CE loss regularization
+        ###################################
+        loss_ce = self.forward_att(eouts, elens, ys_ref)[0]
+
+        return loss_mbr, loss_ce
 
     def forward_att(self, eouts, elens, ys,
                     return_logits=False, teacher_logits=None,
