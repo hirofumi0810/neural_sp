@@ -81,13 +81,13 @@ class RNNDecoder(DecoderBase):
         ss_prob (float): scheduled sampling probability
         ctc_weight (float): CTC loss weight
         ctc_lsm_prob (float): label smoothing probability for CTC
-        ctc_fc_list (List): fully-connected layer configuration before the CTC softmax
+        ctc_fc_list (List): fully-connected layer configuration before CTC softmax
         mbr_training (bool): MBR training
         mbr_ce_weight (float): CE weight for regularization during MBR training
         external_lm (RNNLM): external RNNLM for LM fusion/initialization
         lm_fusion (str): type of LM fusion
         lm_init (bool): initialize decoder with pre-trained LM
-        backward (bool): decode in the backward order
+        backward (bool): decode in backward order
         global_weight (float): global loss weight for multi-task learning
         mtl_per_batch (bool): change mini-batch per task for multi-task training
         param_init (float): parameter initialization
@@ -261,13 +261,13 @@ class RNNDecoder(DecoderBase):
             self.output = nn.Linear(bottleneck_dim, vocab)
             if tie_embedding:
                 if emb_dim != bottleneck_dim:
-                    raise ValueError('When using the tied flag, n_units must be equal to emb_dim.')
+                    raise ValueError('When using tied flag, n_units must be equal to emb_dim.')
                 self.output.weight = self.embed.weight
 
         self.reset_parameters(param_init)
         # NOTE: LM registration and initialization should be performed after reset_parameters()
 
-        # resister the external RNNLM
+        # resister external RNNLM
         self.lm = external_lm if lm_fusion else None
 
         # decoder initialization with pre-trained RNNLM
@@ -277,7 +277,7 @@ class RNNDecoder(DecoderBase):
             assert external_lm.vocab == vocab, 'vocab'
             assert external_lm.n_units == n_units, 'n_units'
             assert external_lm.emb_dim == emb_dim, 'emb_dim'
-            logger.info('===== Initialize the decoder with pre-trained RNNLM')
+            logger.info('===== Initialize decoder with pre-trained RNNLM')
             assert external_lm.n_projs == 0  # TODO(hirofumi): fix later
             assert external_lm.n_units_cv == enc_n_units, 'enc_n_units'
 
@@ -302,11 +302,11 @@ class RNNDecoder(DecoderBase):
             group.add_argument('--dec_n_units', type=int, default=512,
                                help='number of units in each decoder RNN layer')
             group.add_argument('--dec_n_projs', type=int, default=0,
-                               help='number of units in the projection layer after each decoder RNN layer')
+                               help='number of units in projection layer after each decoder RNN layer')
             group.add_argument('--dec_bottleneck_dim', type=int, default=1024,
-                               help='number of dimensions of the bottleneck layer before the softmax layer')
+                               help='number of dimensions of bottleneck layer before softmax layer')
             group.add_argument('--emb_dim', type=int, default=512,
-                               help='number of dimensions in the embedding layer')
+                               help='number of dimensions in embedding layer')
         # attention
         group.add_argument('--attn_type', type=str, default='location',
                            choices=['no', 'location', 'add', 'dot',
@@ -314,9 +314,9 @@ class RNNDecoder(DecoderBase):
                                     'mocha', 'gmm', 'cif', 'triggered_attention'],
                            help='type of attention mechanism for RNN decoder')
         group.add_argument('--attn_dim', type=int, default=128,
-                           help='dimension of the attention layer')
+                           help='dimension of attention layer')
         group.add_argument('--attn_n_heads', type=int, default=1,
-                           help='number of heads in the attention layer')
+                           help='number of heads in attention layer')
         group.add_argument('--attn_sharpening_factor', type=float, default=1.0,
                            help='sharpening factor')
         group.add_argument('--attn_conv_n_channels', type=int, default=10,
@@ -346,7 +346,7 @@ class RNNDecoder(DecoderBase):
         parser.add_argument('--mocha_std', type=float, default=1.0,
                             help='standard deviation of Gaussian noise for MoChA during training')
         parser.add_argument('--mocha_no_denominator', type=strtobool, default=False,
-                            help='remove denominator (set to 1) in the alpha recurrence in MoChA')
+                            help='remove denominator (set to 1) in alpha recurrence in MoChA')
         parser.add_argument('--mocha_1dconv', type=strtobool, default=False,
                             help='1dconv for MoChA')
         parser.add_argument('--mocha_quantity_loss_weight', type=float, default=0.0,
@@ -398,7 +398,7 @@ class RNNDecoder(DecoderBase):
         if args.attn_n_heads > 1:
             dir_name += '_head' + str(args.attn_n_heads)
         if args.tie_embedding:
-            dir_name += '_tie'
+            dir_name += '_tieemb'
 
         if args.ctc_weight < 1 and args.ss_prob > 0:
             dir_name += '_ss' + str(args.ss_prob)
@@ -431,10 +431,10 @@ class RNNDecoder(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (IntTensor): `[B]`
-            ys (List): length `[B]`, each of which contains a list of size `[L]`
+            ys (List[List]): length `[B]`, each of which contains a list of size `[L]`
             task (str): all/ys*/ys_sub*
             teacher_logits (FloatTensor): `[B, L, vocab]`
-            recog_params (dict): parameters for MBR training
+            recog_params (dict): decoding hyperparameters for N-best generation in MBR training
             idx2token ():
             trigger_points (np.ndarray): `[B, L]`
         Returns:
@@ -527,23 +527,8 @@ class RNNDecoder(DecoderBase):
                                                 for y in nbest_hyps_id_b], self.pad)
                 loss_mbr += self.mbr(log_probs_b, nbest_hyps_id_b_pad, exp_wer_b, grad_b)
 
-                # 4. calculate MBR loss
-                # loss_mbr_b, scores_b = minimum_bayes_risk(log_probs_b, nbest_hyps_id_b, wers_b,
-                #                                           self.eos, self.pad)
-                # loss_mbr += loss_mbr_b
-
                 # 5. CE loss regularization
                 loss_ce += self.forward_att(eouts[b:b + 1], elens[b:b + 1], ys[b:b + 1])[0]
-
-                # ys_out_b = append_sos_eos([ys[b]], self.eos, self.eos, self.pad, eouts.device)[1]
-                # ys_out_b = ys_out_b.repeat([nbest, 1])
-                # # NOTE: truncate to match the lengths
-                # ymax = min(logits_b.size(1), ys_out_b.size(1))
-                # logits_b = logits_b[:, :ymax].contiguous()
-                # ys_out_b = ys_out_b[:, :ymax].contiguous()
-                # for k in range(nbest):
-                #     loss_ce_k = cross_entropy_lsm(logits_b, ys_out_b, 0, self.pad, self.training)[0]
-                #     loss_ce += loss_ce_k * scores_b_norm[k]
 
             # NOTE: MBR loss is accumlated over N-best and mini-batch
             loss = loss_mbr + loss_ce * self.mbr_ce_weight
@@ -554,7 +539,7 @@ class RNNDecoder(DecoderBase):
         return loss, observation
 
     def forward_mbr(self, eouts, elens, ys_hyp):
-        """Compute XE loss for the attention-based decoder.
+        """Compute XE loss for attention-based decoder.
 
         Args:
             eouts (FloatTensor): `[nbest, T, enc_n_units]`
@@ -574,7 +559,6 @@ class RNNDecoder(DecoderBase):
         cv = eouts.new_zeros(bs, 1, self.enc_n_units)
         self.score.reset()
         aw, aws = None, []
-        betas, p_chooses = [], []
         lmout, lmstate = None, None
 
         ys_emb = self.dropout_emb(self.embed(ys_in))
@@ -595,26 +579,9 @@ class RNNDecoder(DecoderBase):
                 eouts, dstates, cv, y_emb, src_mask, aw, lmout, mode='parallel')
             aws.append(aw)  # `[B, H, 1, T]`
             logits.append(attn_v)
-            if attn_state.get('beta', None) is not None:
-                betas.append(attn_state['beta'])  # `[B, H, 1, T]`
-            if attn_state.get('p_choose', None) is not None:
-                p_chooses.append(attn_state['p_choose'])  # `[B, H, 1, T]`
             if self.attn_type in ['gmm']:
                 aw = attn_state['myu']
-
-        # for attention plot
-        with torch.no_grad():
-            aws = torch.cat(aws, dim=2)  # `[B, H, L, T]`
-            self.data_dict['elens'] = tensor2np(elens)
-            self.data_dict['ylens'] = tensor2np(ylens)
-            self.data_dict['ys'] = tensor2np(ys_out)
-            self.aws_dict['xy_aws'] = tensor2np(aws)
-            if len(betas) > 0:
-                betas = torch.cat(betas, dim=2)  # `[B, H, L, T]`
-                self.aws_dict['xy_aws_beta'] = tensor2np(betas)
-            if len(p_chooses) > 0:
-                p_chooses = torch.cat(p_chooses, dim=2)  # `[B, H, L, T]`
-                self.aws_dict['xy_aws_p_choose'] = tensor2np(p_chooses)
+        # NOTE: attention is plotted in self.forward_att
 
         logits = self.output(torch.cat(logits, dim=1))
         return logits
@@ -622,12 +589,12 @@ class RNNDecoder(DecoderBase):
     def forward_att(self, eouts, elens, ys,
                     return_logits=False, teacher_logits=None,
                     ctc_trigger_points=None, forced_trigger_points=None):
-        """Compute XE loss for the attention-based decoder.
+        """Compute XE loss for attention-based decoder.
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (IntTensor): `[B]`
-            ys (List): length `[B]`, each of which contains a list of size `[L]`
+            ys (List[List]): length `[B]`, each of which contains a list of size `[L]`
             return_logits (bool): return logits for knowledge distillation
             teacher_logits (FloatTensor): `[B, L, vocab]`
             ctc_trigger_points (IntTensor): `[B, L]`
@@ -801,7 +768,7 @@ class RNNDecoder(DecoderBase):
         Returns:
             dstates (dict):
                 dout (FloatTensor): `[B, 1, dec_n_units]`
-                dstate (tuple): A tuple of (hxs, cxs)
+                dstate (tuple): (hxs, cxs)
                     hxs (FloatTensor): `[n_layers, B, dec_n_units]`
                     cxs (FloatTensor): `[n_layers, B, dec_n_units]`
 
@@ -818,12 +785,12 @@ class RNNDecoder(DecoderBase):
 
         Args:
             inputs (FloatTensor): `[B, 1, emb_dim + enc_n_units]`
-            dstate (tuple): A tuple of (hxs, cxs)
+            dstate (tuple): (hxs, cxs)
         Returns:
             new_dstates (dict):
                 dout_score (FloatTensor): `[B, 1, dec_n_units]`
                 dout_gen (FloatTensor): `[B, 1, dec_n_units]`
-                dstate (tuple): A tuple of (hxs, cxs)
+                dstate (tuple): (hxs, cxs)
                     hxs (FloatTensor): `[n_layers, B, dec_n_units]`
                     cxs (FloatTensor): `[n_layers, B, dec_n_units]`
 
@@ -905,8 +872,8 @@ class RNNDecoder(DecoderBase):
             speakers (List): speaker list
             trigger_points (IntTensor): `[B, T]`
         Returns:
-            hyps (List): length `[B]`, each of which contains arrays of size `[L]`
-            aws (List): length `[B]`, each of which contains arrays of size `[H, L, T]`
+            hyps (List[np.array]): length `[B]`, each of which contains arrays of size `[L]`
+            aws (List[np.array]): length `[B]`, each of which contains arrays of size `[H, L, T]`
 
         """
         bs, xmax = eouts.size()[:2]
@@ -923,7 +890,7 @@ class RNNDecoder(DecoderBase):
         lmout, lmstate = None, None
         y = eouts.new_zeros((bs, 1), dtype=torch.int64).fill_(refs_id[0][0] if self.replace_sos else self.eos)
 
-        # Create the attention mask
+        # Create attention mask
         src_mask = make_pad_mask(elens.to(eouts.device)).unsqueeze(1)  # `[B, 1, T]`
 
         if self.attn_type == 'triggered_attention':
@@ -986,7 +953,7 @@ class RNNDecoder(DecoderBase):
         hyps_batch = tensor2np(torch.cat(hyps_batch, dim=1))
         aws_batch = tensor2np(torch.cat(aws_batch, dim=2))  # `[B, H, L, T]`
 
-        # Truncate by the first <eos> (<sos> in case of the backward decoder)
+        # Truncate by the first <eos> (<sos> in case of backward decoder)
         if self.bwd:
             # Reverse the order
             hyps = [hyps_batch[b, :ylens[b]][::-1] for b in range(bs)]
@@ -995,7 +962,7 @@ class RNNDecoder(DecoderBase):
             hyps = [hyps_batch[b, :ylens[b]] for b in range(bs)]
             aws = [aws_batch[b, :, :ylens[b]] for b in range(bs)]
 
-        # Exclude <eos> (<sos> in case of the backward decoder)
+        # Exclude <eos> (<sos> in case of backward decoder)
         if exclude_eos:
             if self.bwd:
                 hyps = [hyps[b][1:] if eos_flags[b] else hyps[b] for b in range(bs)]
@@ -1061,7 +1028,7 @@ class RNNDecoder(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (IntTensor): `[B]`
-            params (dict): hyperparameters for decoding
+            params (dict): decoding hyperparameters
             idx2token (): converter from index to token
             lm (torch.nn.module): firsh path LM
             lm_second (torch.nn.module): second path LM
@@ -1077,10 +1044,11 @@ class RNNDecoder(DecoderBase):
             ensmbl_decs (List[torch.nn.Module): decoders for ensemble models
             cache_states (bool): cache TransformerLM/TransformerXL states for fast decoding
         Returns:
-            nbest_hyps_idx (List): length `[B]`, each of which contains list of N hypotheses
-            aws (List): length `[B]`, each of which contains a list of arrays of size `[H, L, T]`
-                for N hypotheses
-            scores (List):
+            nbest_hyps_idx (List[List[np.array]]): length `[B]`, each of which contains a list of hypotheses of size `[nbest]`,
+                each of which containts a list of arrays of size `[L]`
+            aws (List[List[[np.array]]]): length `[B]`, each of which contains a list of attention weights of size `[nbest]`,
+                each of which containts a list of arrays of size `[H, L, T]`
+            scores (List[List[np.array]]): sequence-level scores
 
         """
         bs, xmax, _ = eouts.size()
@@ -1440,7 +1408,7 @@ class RNNDecoder(DecoderBase):
             # Check <eos>
             eos_flags.append([(end_hyps[n]['hyp'][-1] == self.eos) for n in range(nbest)])
 
-        # Exclude <eos> (<sos> in case of the backward decoder)
+        # Exclude <eos> (<sos> in case of backward decoder)
         if exclude_eos:
             if self.bwd:
                 nbest_hyps_idx = [[nbest_hyps_idx[b][n][1:] if eos_flags[b][n]
@@ -1575,7 +1543,7 @@ class RNNDecoder(DecoderBase):
                 no_boundary = aw[j].sum().item() == 0
                 if no_boundary:
                     beam['aws'][-1] = eouts.new_zeros(eouts.size(0), 1, 1, eouts.size(1))
-                    # NOTE: the case where the first token in the current block is <eos>
+                    # NOTE: case where the first token in the current block is <eos>
                     beam['no_boundary'] = True
                     new_hyps.append(beam.copy())  # this is important to remove repeated hyps
 
