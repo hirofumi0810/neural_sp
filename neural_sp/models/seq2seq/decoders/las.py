@@ -143,6 +143,9 @@ class RNNDecoder(DecoderBase):
         self.lsm_prob = lsm_prob
         self.ss_prob = ss_prob
         self._ss_prob = 0  # for curriculum
+        if mbr_training and ss_prob > 0:
+            self.ss_prob = 0
+            logging.warning('scheduled sampling is turned off for MBR training.')
         self.att_weight = global_weight - ctc_weight
         self.ctc_weight = ctc_weight
         self.lm_fusion = lm_fusion
@@ -509,6 +512,7 @@ class RNNDecoder(DecoderBase):
         bs, xmax, xdim = eouts.size()
         nbest = recog_params['recog_beam_width']
         assert nbest >= 2
+        assert idx2token is not None
         scaling_factor = 1.0  # less than 1
 
         ###################################
@@ -576,9 +580,9 @@ class RNNDecoder(DecoderBase):
         logits = self.output(torch.cat(logits, dim=1))
         log_probs = torch.log_softmax(logits, dim=-1)  # `[B * nbest, L, vocab]`
 
-        ###################################
+        ######################################
         # 4. backward pass (attach gradient)
-        ###################################
+        ######################################
         eos = eouts.new_zeros((1,), dtype=torch.int64).fill_(self.eos)
         nbest_hyps_id_batch_pad = pad_list([torch.cat([np2tensor(y, eouts.device), eos], dim=0)
                                             for y in nbest_hyps_id_batch], self.pad)
@@ -593,9 +597,10 @@ class RNNDecoder(DecoderBase):
         ###################################
         # 5. CE loss regularization
         ###################################
-        loss_ce = 0
+        loss_ce = torch.zeros((1,), dtype=torch.float32, device=eouts.device)
         if self.mbr_ce_weight > 0:
             loss_ce = self.forward_att(eouts, elens, ys_ref)[0]
+            loss_ce = loss_ce.unsqueeze(0)
 
         return loss_mbr, loss_ce
 
