@@ -514,6 +514,7 @@ class RNNDecoder(DecoderBase):
         assert nbest >= 2
         assert idx2token is not None
         scaling_factor = 1.0  # less than 1
+        training = self.training  # for dev set
 
         ###################################
         # 1. beam search
@@ -547,7 +548,8 @@ class RNNDecoder(DecoderBase):
         ######################################################################
         # 3. decoder forward pass (teacher-forcing with hypotheses)
         ######################################################################
-        self.train()
+        if training:
+            self.train()
         eouts_expand = eouts.unsqueeze(1).expand(-1, nbest, -1, -1).contiguous().view(bs * nbest, xmax, xdim)
         elens_expand = elens.unsqueeze(1).expand(-1, nbest).contiguous().view(bs * nbest)
 

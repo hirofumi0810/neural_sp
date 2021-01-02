@@ -55,12 +55,15 @@ def main():
         dataloader = build_dataloader(args=args,
                                       tsv_path=s,
                                       batch_size=1,
+                                      train_cmvn=args.recog_train_cmvn,
+                                      word_alignment_dir=args.recog_word_alignments[i] if len(
+                                          args.recog_word_alignments) > 0 else None,
                                       is_test=True)
 
         if i == 0:
             # Load the ASR model
             model = Speech2Text(args, dir_name)
-            epoch = int(args.recog_model[0].split('-')[-1])
+            epoch = int(float(args.recog_model[0].split('-')[-1]) * 10) / 10
             if args.recog_n_average > 1:
                 # Model averaging for Transformer
                 # topk_list = load_checkpoint(args.recog_model[0], model)
@@ -179,7 +182,8 @@ def main():
                                           streaming=args.recog_streaming,
                                           progressbar=True,
                                           fine_grained=True,
-                                          oracle=True)
+                                          oracle=True,
+                                          teacher_force=len(args.recog_word_alignments) > 0)
                 wer_avg += wer
                 cer_avg += cer
             elif 'char' in args.recog_unit:

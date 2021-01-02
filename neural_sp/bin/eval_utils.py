@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 # Copyright 2019 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -17,11 +14,20 @@ def average_checkpoints(model, best_model_path, n_average, topk_list=[]):
     if n_average == 1:
         return model
 
+    if 'avg' in best_model_path:
+        checkpoint_avg = torch.load(best_model_path, map_location=lambda storage, loc: storage)
+        model.load_state_dict(checkpoint_avg['model_state_dict'])
+        return model
+
     n_models = 0
     checkpoint_avg = {'model_state_dict': None}
     if len(topk_list) == 0:
-        epoch = int(best_model_path.split('model.epoch-')[1])
-        topk_list = [(i, 0) for i in range(epoch, epoch - n_average - 1, -1)]
+        epoch = int(float(best_model_path.split('model.epoch-')[1]) * 10) / 10
+        if epoch >= 1:
+            epoch = int(epoch)
+            topk_list = [(i, 0) for i in range(epoch, epoch - n_average - 1, -1)]
+        else:
+            topk_list = [(epoch, 0)]
     for ep, _ in topk_list:
         if n_models == n_average:
             break
