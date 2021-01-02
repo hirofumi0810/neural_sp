@@ -64,7 +64,7 @@ class RNNDecoder(DecoderBase):
         n_units (int): number of units in each RNN layer
         n_projs (int): number of units in each projection layer
         n_layers (int): number of RNN layers
-        bottleneck_dim (int): dimension of bottleneck layer before the softmax layer for label generation
+        bottleneck_dim (int): dimension of bottleneck layer before softmax layer for label generation
         emb_dim (int): dimension of embedding in target spaces.
         vocab (int): number of nodes in softmax layer
         tie_embedding (bool): tie parameters of embedding and output layers
@@ -83,7 +83,7 @@ class RNNDecoder(DecoderBase):
         ctc_lsm_prob (float): label smoothing probability for CTC
         ctc_fc_list (List): fully-connected layer configuration before CTC softmax
         mbr_training (bool): MBR training
-        mbr_ce_weight (float): CE weight for regularization during MBR training
+        mbr_ce_weight (float): CE loss weight for regularization during MBR training
         external_lm (RNNLM): external RNNLM for LM fusion/initialization
         lm_fusion (str): type of LM fusion
         lm_init (bool): initialize decoder with pre-trained LM
@@ -447,7 +447,7 @@ class RNNDecoder(DecoderBase):
         loss = eouts.new_zeros(1)
 
         # CTC loss
-        if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task):
+        if self.ctc_weight > 0 and (task == 'all' or 'ctc' in task) and self.mbr is None:
             ctc_forced_align = (
                 'ctc_sync' in self.latency_metric and self.training) or self.attn_type == 'triggered_attention'
             loss_ctc, ctc_trigger_points = self.ctc(eouts, elens, ys, forced_align=ctc_forced_align)
@@ -483,7 +483,7 @@ class RNNDecoder(DecoderBase):
                 loss += loss_att * self.att_weight
 
         # MBR loss
-        if self.mbr is not None and (task == 'all' or 'mbr' not in task):
+        if self.mbr is not None and (task == 'all' or 'mbr' in task):
             loss_mbr, loss_ce = self.forward_mbr(eouts, elens, ys, recog_params, idx2token)
             loss = loss_mbr + loss_ce * self.mbr_ce_weight
             observation['loss_mbr'] = tensor2scalar(loss_mbr)
@@ -506,9 +506,8 @@ class RNNDecoder(DecoderBase):
             loss_ce (FloatTensor): `[1]`
 
         """
-        bs, xmax, xdim = eouts.size()[:2]
+        bs, xmax, xdim = eouts.size()
         nbest = recog_params['recog_beam_width']
-        length_norm = recog_params['recog_length_norm']
         assert nbest >= 2
         scaling_factor = 1.0  # less than 1
 
@@ -546,6 +545,7 @@ class RNNDecoder(DecoderBase):
         ######################################################################
         self.train()
         eouts_expand = eouts.unsqueeze(1).expand(-1, nbest, -1, -1).contiguous().view(bs * nbest, xmax, xdim)
+        elens_expand = elens.unsqueeze(1).expand(-1, nbest).contiguous().view(bs * nbest)
 
         # Append <sos> and <eos>
         ys_in, ys_out, ylens = append_sos_eos(nbest_hyps_id_batch, self.eos, self.eos, self.pad, eouts.device)
@@ -558,7 +558,7 @@ class RNNDecoder(DecoderBase):
         lmout, lmstate = None, None
 
         ys_emb = self.dropout_emb(self.embed(ys_in))
-        src_mask = make_pad_mask(elens.to(eouts.device)).unsqueeze(1)  # `[B * nbest, 1, T]`
+        src_mask = make_pad_mask(elens_expand.to(eouts.device)).unsqueeze(1)  # `[B * nbest, 1, T]`
         logits = []
         for i in range(ys_in.size(1)):
             # Update LM states for LM fusion
@@ -593,7 +593,9 @@ class RNNDecoder(DecoderBase):
         ###################################
         # 5. CE loss regularization
         ###################################
-        loss_ce = self.forward_att(eouts, elens, ys_ref)[0]
+        loss_ce = 0
+        if self.mbr_ce_weight > 0:
+            loss_ce = self.forward_att(eouts, elens, ys_ref)[0]
 
         return loss_mbr, loss_ce
 
@@ -700,11 +702,9 @@ class RNNDecoder(DecoderBase):
             self.data_dict['ys'] = tensor2np(ys_out)
             self.aws_dict['xy_aws'] = tensor2np(aws)
             if len(betas) > 0:
-                betas = torch.cat(betas, dim=2)  # `[B, H, L, T]`
-                self.aws_dict['xy_aws_beta'] = tensor2np(betas)
+                self.aws_dict['xy_aws_beta'] = tensor2np(torch.cat(betas, dim=2))  # `[B, H, L, T]`
             if len(p_chooses) > 0:
-                p_chooses = torch.cat(p_chooses, dim=2)  # `[B, H, L, T]`
-                self.aws_dict['xy_p_choose'] = tensor2np(p_chooses)
+                self.aws_dict['xy_p_choose'] = tensor2np(torch.cat(p_chooses, dim=2))  # `[B, H, L, T]`
 
         n_heads = aws.size(1)  # mono
 
