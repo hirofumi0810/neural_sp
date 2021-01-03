@@ -55,9 +55,6 @@ def main():
         dataloader = build_dataloader(args=args,
                                       tsv_path=s,
                                       batch_size=1,
-                                      train_cmvn=args.recog_train_cmvn,
-                                      word_alignment_dir=args.recog_word_alignments[i] if len(
-                                          args.recog_word_alignments) > 0 else None,
                                       is_test=True)
 
         if i == 0:
@@ -182,8 +179,7 @@ def main():
                                           streaming=args.recog_streaming,
                                           progressbar=True,
                                           fine_grained=True,
-                                          oracle=True,
-                                          teacher_force=len(args.recog_word_alignments) > 0)
+                                          oracle=True)
                 wer_avg += wer
                 cer_avg += cer
             elif 'char' in args.recog_unit:
