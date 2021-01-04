@@ -96,6 +96,7 @@ def make_decode_params(**kwargs):
         recog_lm_bwd_weight=0.0,
         recog_max_len_ratio=1.0,
         recog_lm_state_carry_over=False,
+        recog_softmax_smoothing=1.0,
         nbest=1,
     )
     args.update(kwargs)
@@ -136,6 +137,7 @@ def make_args_rnnlm(**kwargs):
         ({'recog_beam_width': 4, 'recog_batch_size': 4}),
         ({'recog_beam_width': 4, 'nbest': 2}),
         ({'recog_beam_width': 4, 'nbest': 4}),
+        ({'recog_beam_width': 4, 'recog_softmax_smoothing': 0.8}),
         # ({'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
         # shallow fusion
         ({'recog_beam_width': 4, 'recog_lm_weight': 0.1}),

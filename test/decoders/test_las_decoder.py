@@ -249,6 +249,7 @@ def make_args_rnnlm(**kwargs):
         (False, '', {'recog_beam_width': 4, 'nbest': 4}),
         (False, '', {'recog_beam_width': 4, 'nbest': 4, 'softmax_smoothing': 2.0}),
         (False, '', {'recog_beam_width': 4, 'recog_ctc_weight': 0.1}),
+        (False, '', {'recog_beam_width': 4, 'recog_softmax_smoothing': 0.8}),
         # pure CTC decoding
         (True, '', {'recog_beam_width': 1, 'recog_ctc_weight': 1.0}),
         (True, '', {'recog_beam_width': 4, 'recog_ctc_weight': 1.0}),
@@ -418,6 +419,7 @@ def test_decoding(backward, lm_fusion, params):
         ({'recog_beam_width': 4}),
         # shallow fusion
         ({'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+        ({'recog_beam_width': 4, 'recog_softmax_smoothing': 0.8}),
     ]
 )
 def test_streaming_decoding(params):
