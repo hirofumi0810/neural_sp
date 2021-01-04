@@ -127,7 +127,8 @@ class Streaming(object):
             x_block = np.concatenate([zero_pad, x_block], axis=0)
 
         # zero padding for the last blocks
-        if j > 0 and x_block.shape[0] != (N_l + N_c + N_r + self.conv_context * 2):
+        # if j > 0 and x_block.shape[0] != (N_l + N_c + N_r + self.conv_context * 2):
+        if x_block.shape[0] != (N_l + N_c + N_r + self.conv_context * 2):
             zero_pad = np.zeros(((N_l + N_c + N_r + self.conv_context * 2) - x_block.shape[0],
                                  self.feat_dim)).astype(np.float32)
             x_block = np.concatenate([x_block, zero_pad], axis=0)
