@@ -34,6 +34,7 @@ lm_weight=0.3
 lm_second_weight=0.3
 lm_bwd_weight=0.3
 ctc_weight=0.0  # 1.0 for joint CTC-attention means decoding with CTC
+softmax_smoothing=1.0
 resolving_unk=false
 fwd_bwd_attention=false
 bwd_attention=false
@@ -84,6 +85,9 @@ for set in dev_sp test_sp; do
     fi
     if [ ${ctc_weight} != 0.0 ]; then
         recog_dir=${recog_dir}_ctc${ctc_weight}
+    fi
+    if [ ${softmax_smoothing} != 1.0 ]; then
+        recog_dir=${recog_dir}_smooth${softmax_smoothing}
     fi
     if [ ${gnmt_decoding} = true ]; then
         recog_dir=${recog_dir}_gnmt
@@ -154,6 +158,7 @@ for set in dev_sp test_sp; do
         --recog_lm_second_weight ${lm_second_weight} \
         --recog_lm_bwd_weight ${lm_bwd_weight} \
         --recog_ctc_weight ${ctc_weight} \
+        --recog_softmax_smoothing ${softmax_smoothing} \
         --recog_resolving_unk ${resolving_unk} \
         --recog_fwd_bwd_attention ${fwd_bwd_attention} \
         --recog_bwd_attention ${bwd_attention} \
