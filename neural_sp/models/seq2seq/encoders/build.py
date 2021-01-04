@@ -150,7 +150,7 @@ def build_encoder(args):
             bidir_sum_fwd_bwd=args.bidirectional_sum_fwd_bwd,
             task_specific_layer=args.task_specific_layer,
             param_init=args.param_init,
-            chunk_size_left=args.lc_chunk_size_left,
+            chunk_size_current=args.lc_chunk_size_left,  # for compatibility
             chunk_size_right=args.lc_chunk_size_right,
             rsp_prob=args.rsp_prob_enc)
 
