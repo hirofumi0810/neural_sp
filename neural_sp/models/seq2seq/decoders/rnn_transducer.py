@@ -433,8 +433,9 @@ class RNNTransducer(DecoderBase):
         lm_weight = params['recog_lm_weight']
         lm_weight_second = params['recog_lm_second_weight']
         lm_weight_second_bwd = params['recog_lm_bwd_weight']
-        # asr_state_carry_over = params['recog_asr_state_carry_over']
-        lm_state_carry_over = params['recog_lm_state_carry_over']
+        # asr_state_CO = params['recog_asr_state_carry_over']
+        lm_state_CO = params['recog_lm_state_carry_over']
+        softmax_smoothing = params['recog_softmax_smoothing']
         merge_prob = True  # TODO: make this parameter
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
@@ -443,7 +444,6 @@ class RNNTransducer(DecoderBase):
         lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd)
 
         nbest_hyps_idx = []
-        eos_flags = []
         for b in range(bs):
             # Initialization per utterance
             y = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(self.eos)
@@ -453,7 +453,7 @@ class RNNTransducer(DecoderBase):
 
             if speakers is not None:
                 if speakers[b] == self.prev_spk:
-                    if lm_state_carry_over and isinstance(lm, RNNLM):
+                    if lm_state_CO and isinstance(lm, RNNLM):
                         lmstate = self.lmstate_final
                 self.prev_spk = speakers[b]
 
@@ -471,6 +471,7 @@ class RNNTransducer(DecoderBase):
                 # batchfy all hypotheses for batch decoding
                 douts = torch.cat([beam['dout'] for beam in hyps], dim=0)
                 logits = self.joint(eouts[b:b + 1, t:t + 1].repeat([douts.size(0), 1, 1]), douts)
+                logits = logits * softmax_smoothing
                 scores_rnnt = torch.log_softmax(logits.squeeze(2).squeeze(1), dim=-1)  # `[B, vocab]`
 
                 new_hyps = []
@@ -548,10 +549,8 @@ class RNNTransducer(DecoderBase):
             elif len(end_hyps) < nbest and nbest > 1:
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
-            # forward second path LM rescoring
+            # forward/backward second path LM rescoring
             helper.lm_rescoring(end_hyps, lm_second, lm_weight_second, tag='second')
-
-            # backward second path LM rescoring
             helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd, tag='second_bwd')
 
             # Sort by score
@@ -584,8 +583,5 @@ class RNNTransducer(DecoderBase):
 
             # N-best list
             nbest_hyps_idx += [[np.array(end_hyps[n]['hyp'][1:]) for n in range(nbest)]]
-
-            # Check <eos>
-            eos_flags.append([(end_hyps[n]['hyp'][-1] == self.eos) for n in range(nbest)])
 
         return nbest_hyps_idx, None, None

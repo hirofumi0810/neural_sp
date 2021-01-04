@@ -1356,11 +1356,9 @@ class RNNDecoder(DecoderBase):
             elif len(end_hyps) < nbest and nbest > 1:
                 end_hyps.extend(hyps[:nbest - len(end_hyps)])
 
-            # forward second path LM rescoring
+            # forward/backward second path LM rescoring
             helper.lm_rescoring(end_hyps, lm_second, lm_weight_second,
                                 normalize=length_norm, tag='second')
-
-            # backward secodn path LM rescoring
             helper.lm_rescoring(end_hyps, lm_second_bwd, lm_weight_second_bwd,
                                 normalize=length_norm, tag='second_bwd')
 
@@ -1468,6 +1466,7 @@ class RNNDecoder(DecoderBase):
         length_norm = params['recog_length_norm']
         lm_weight = params['recog_lm_weight']
         eos_threshold = params['recog_eos_threshold']
+        softmax_smoothing = params['recog_softmax_smoothing']
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight)
@@ -1553,7 +1552,7 @@ class RNNDecoder(DecoderBase):
                 y_emb = self.dropout_emb(self.embed(y))
             dstates, cv, aw, _, attn_v = self.decode_step(
                 eouts[0:1], dstates, cv, y_emb, None, aw, lmout, streaming=True)
-            scores_att = torch.log_softmax(self.output(attn_v).squeeze(1), dim=1)
+            scores_att = torch.log_softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
             # NOTE: aw: `[B, H, 1, T_block]`
 
             for j, beam in enumerate(hyps):
