@@ -49,7 +49,7 @@ def make_args(**kwargs):
         ctc_lsm_prob=0.1,
         ctc_fc_list='16_16',
         mbr_training=False,
-        mbr_ce_weight=0.01,
+        mbr_ce_weight=0.0,
         external_lm=None,
         lm_fusion='',
         lm_init=False,
@@ -130,6 +130,9 @@ def make_args(**kwargs):
         ({'lm_fusion': 'cold'}),
         ({'lm_fusion': 'cold_prob'}),
         ({'lm_fusion': 'deep'}),
+        # MBR training
+        ({'mbr_training': True}),
+        ({'mbr_training': True, 'mbr_ce_weight': 0.01}),
     ]
 )
 def test_forward(args):
@@ -154,11 +157,16 @@ def test_forward(args):
         module_rnnlm = importlib.import_module('neural_sp.models.lm.rnnlm')
         args['external_lm'] = module_rnnlm.RNNLM(args_lm).to(device)
 
+    recog_params = {}
+    if args['mbr_training']:
+        recog_params = make_decode_params(recog_beam_width=4)
+
     module = importlib.import_module('neural_sp.models.seq2seq.decoders.las')
     dec = module.RNNDecoder(**args)
     dec = dec.to(device)
 
-    loss, observation = dec(eouts, elens, ys, task='all', trigger_points=trigger_points)
+    loss, observation = dec(eouts, elens, ys, task='all', trigger_points=trigger_points,
+                            recog_params=recog_params, idx2token=idx2token)
     assert loss.dim() == 1
     assert loss.size(0) == 1
     assert loss.item() >= 0

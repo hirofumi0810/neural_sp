@@ -353,7 +353,7 @@ def build_parser():
     # MBR
     parser.add_argument('--mbr_training', type=strtobool, default=False,
                         help='Minimum Bayes Risk (MBR) training')
-    parser.add_argument('--mbr_ce_weight', type=float, default=0.01,
+    parser.add_argument('--mbr_ce_weight', type=float, default=0.0,
                         help='MBR loss weight for the main task')
     parser.add_argument('--mbr_nbest', type=int, default=4,
                         help='N-best for MBR training')

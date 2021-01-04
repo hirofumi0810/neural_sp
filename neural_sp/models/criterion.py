@@ -21,25 +21,21 @@ class MBR(torch.autograd.Function):
         """Forward pass.
 
         Args:
-            log_probs (FloatTensor): `[N_best, L, vocab]`
-            hyps (LongTensor): `[N_best, L]`
+            log_probs (FloatTensor): `[B * nbest, L, vocab]`
+            hyps (LongTensor): `[B * nbest, L]`
             exp_risk (FloatTensor): `[1]` (for forward)
             grad_input (FloatTensor): `[1]` (for backward)
         Returns:
             loss (FloatTensor): `[1]`
 
         """
-        device_id = torch.cuda.device_of(log_probs).idx
-        onehot = torch.eye(log_probs.size(-1)).cuda(device_id)[hyps]
-        grads = grad_input * onehot  # mask out other classes
-        log_probs = log_probs.requires_grad_()
-        ctx.save_for_backward(log_probs, grads)
+        ctx.save_for_backward(grad_input)
         return exp_risk
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, grads, = ctx.saved_tensors
-        grads = torch.mul(grads, grad_output)
+        grads, = ctx.saved_tensors
+        # grads = torch.mul(grads, grad_output)
         return grads, None, None, None
 
 
