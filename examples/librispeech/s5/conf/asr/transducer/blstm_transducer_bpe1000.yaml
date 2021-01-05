@@ -21,7 +21,6 @@ dec_type: lstm_transducer
 dec_n_units: 1024
 dec_n_projs: 0
 dec_n_layers: 2
-glu_joint_net: false
 dec_bottleneck_dim: 512
 emb_dim: 512
 tie_embedding: false
