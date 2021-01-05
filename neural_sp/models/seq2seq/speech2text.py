@@ -18,6 +18,7 @@ from neural_sp.models.seq2seq.decoders.build import build_decoder
 from neural_sp.models.seq2seq.decoders.fwd_bwd_attention import fwd_bwd_attention
 from neural_sp.models.seq2seq.decoders.las import RNNDecoder
 from neural_sp.models.seq2seq.decoders.rnn_transducer import RNNTransducer as RNNT
+from neural_sp.models.seq2seq.decoders.transformer import TransformerDecoder
 from neural_sp.models.seq2seq.encoders.build import build_encoder
 from neural_sp.models.seq2seq.frontends.frame_stacking import stack_frame
 from neural_sp.models.seq2seq.frontends.input_noise import add_input_noise
@@ -502,11 +503,11 @@ class Speech2Text(ModelBase):
 
             while True:
                 # Encode input features block by block
-                x_block, is_last_block, lookback, lookahead = streaming.extract_feature()
+                x_block, is_last_block, cnn_lookback, cnn_lookahead = streaming.extract_feature()
                 if is_reset:
                     self.enc.reset_cache()
                 eout_block_dict = self.encode([x_block], 'all', streaming=True,
-                                              lookback=lookback, lookahead=lookahead)
+                                              lookback=cnn_lookback, lookahead=cnn_lookahead)
                 eout_block = eout_block_dict[task]['xs']
                 is_reset = False  # detect the first boundary in the same block
 
@@ -545,7 +546,7 @@ class Speech2Text(ModelBase):
                             if not is_reset:
                                 streaming._bd_offset = eout_block.size(1) - 1
                                 # TODO: fix later
-                            is_reset = True
+                                is_reset = True
                         if len(best_hyp_id_prefix) > 0:
                             # print('\rStreaming (T:%d [frame], offset:%d [frame], blank:%d [frame]): %s' %
                             #       (streaming.offset + eout_block.size(1) * factor,
@@ -553,6 +554,9 @@ class Speech2Text(ModelBase):
                             #        streaming.n_blanks * factor,
                             #        idx2token(best_hyp_id_prefix)))
                             print('\r%s' % (idx2token(best_hyp_id_prefix)))
+                elif isinstance(self.dec_fwd, TransformerDecoder):
+                    best_hyp_id_prefix = []
+                    raise NotImplementedError
 
                 if is_reset:
                     # Global decoding over the segmented region
@@ -564,7 +568,8 @@ class Speech2Text(ModelBase):
                             ctc_log_probs = torch.log(self.dec_fwd.ctc_probs(eout))
                         nbest_hyps_id_offline = self.dec_fwd.beam_search(
                             eout, elens, global_params, idx2token, lm, lm_second,
-                            ctc_log_probs=ctc_log_probs)[0]
+                            ctc_log_probs=ctc_log_probs,
+                            exclude_eos=exclude_eos)[0]
                         # print('Offline (T:%d [10ms]): %s' %
                         #       (streaming.offset + eout_block.size(1) * factor,
                         #        idx2token(nbest_hyps_id_offline[0][0])))
@@ -591,18 +596,18 @@ class Speech2Text(ModelBase):
                     hyps = None
 
                 streaming.next_block()
-                # next block will start from the frame next to the boundary
-                if not is_last_block:
-                    streaming.backoff(x_block, self.dec_fwd, stdout=stdout)
                 if is_last_block:
                     break
+                # next block will start from the frame next to the boundary
+                streaming.backoff(x_block, self.dec_fwd, stdout=stdout)
 
             # Global decoding for tail blocks
             if not block_sync and streaming.n_cache_block > 0:
-                eout = torch.cat(streaming.eout_blocks, dim=1)
+                eout = streaming.pop_eouts()
                 elens = torch.IntTensor([eout.size(1)])
                 nbest_hyps_id_offline = self.dec_fwd.beam_search(
-                    eout, elens, global_params, idx2token, lm, lm_second)[0]
+                    eout, elens, global_params, idx2token, lm, lm_second,
+                    exclude_eos=exclude_eos)[0]
                 # print('MoChA: ' + idx2token(nbest_hyps_id_offline[0][0]))
                 # print('*' * 50)
                 if len(nbest_hyps_id_offline[0][0]) > 0:
@@ -647,8 +652,8 @@ class Speech2Text(ModelBase):
             exclude_eos (bool): exclude <eos> from best_hyps_id
             refs_id (List): gold token IDs to compute log likelihood
             refs (List): gold transcriptions
-            utt_ids (List):
-            speakers (List):
+            utt_ids (List): utterance id list
+            speakers (List): speaker list
             task (str): ys* or ys_sub1* or ys_sub2*
             ensemble_models (List): Speech2Text classes
             trigger_points (np.ndarray): `[B, L]`
