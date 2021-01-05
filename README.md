@@ -121,38 +121,42 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 ### CSJ (WER)
 | Model          | eval1 | eval2 | eval3 |
 | -------------- | ----- | ----- | ----- |
-| LAS            | 6.5   | 5.1   | 5.6   |
+| BLSTM LAS      | 6.5   | 5.1   | 5.6   |
 | LC-BLSTM MoChA | 7.4   | 5.6   | 6.4   |
 
 ### Switchboard 300h (WER)
-| Model | SWB  | CH   |
-| ----- | ---- | ---- |
-| LAS   | 9.1  | 18.8 |
+| Model     | SWB  | CH   |
+| --------- | ---- | ---- |
+| BLSTM LAS | 9.1  | 18.8 |
 
 ### Switchboard+Fisher 2000h (WER)
-| Model | SWB  | CH   |
-| ----- | ---- | ---- |
-| LAS   | 7.8  | 13.8 |
+| Model     | SWB  | CH   |
+| --------- | ---- | ---- |
+| BLSTM LAS | 7.8  | 13.8 |
 
 ### Librispeech (WER)
 | Model          | dev-clean | dev-other | test-clean | test-other |
 | -------------- | --------- | --------- | ---------- | ---------- |
-| LAS            | 2.5       | 7.2       | 2.6        | 7.5        |
+| BLSTM LAS      | 2.5       | 7.2       | 2.6        | 7.5        |
+| BLSTM RNN-T    | 2.9       | 8.5       | 3.2        | 9.0        |
 | Transformer    | 2.1       | 5.3       | 2.4        | 5.7        |
+| UniLSTM RNN-T  | 3.7       | 11.7      | 4.0        | 11.6       |
+| UniLSTM MoChA  | 4.1       | 11.0      | 4.2        | 11.2       |
+| LC-BLSTM RNN-T | 3.3       | 9.8       | 3.5        | 10.2       |
 | LC-BLSTM MoChA | 3.3       | 8.8       | 3.5        | 9.1        |
 | Streaming MMA  | 2.5       | 6.9       | 2.7        | 7.1        |
 
 ### TEDLIUM2 (WER)
 | Model          | dev   | test |
 | -------------- | ----  | ---- |
-| LAS            |  8.6  | 8.1  |
+| BLSTM LAS      |  8.6  | 8.1  |
 | LC-BLSTM MoChA | 10.6  | 8.6  |
 | LC-BLSTM RNN-T |  9.0  | 8.6  |
 
 ### WSJ (WER)
-| Model | test_dev93 | test_eval92 |
-| ----- | ---------- | ----------- |
-| LAS   | 8.8        | 6.2         |
+| Model     | test_dev93 | test_eval92 |
+| --------- | ---------- | ----------- |
+| BLSTM LAS | 8.8        | 6.2         |
 
 ## LM Performance
 ### Penn Tree Bank (PPL)
