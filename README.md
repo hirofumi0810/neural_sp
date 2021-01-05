@@ -139,6 +139,9 @@ Multi-task learning (MTL) with different units are supported to alleviate data s
 | -------------- | --------- | --------- | ---------- | ---------- |
 | LAS            | 2.5       | 7.2       | 2.6        | 7.5        |
 | Transformer    | 2.1       | 5.3       | 2.4        | 5.7        |
+| UniLSTM RNN-T  | 3.7       | 11.7      | 4.0        | 11.6       |
+| UniLSTM MoChA  | 4.1       | 11.0      | 4.2        | 11.2       |
+| LC-BLSTM RNN-T | 3.3       | 9.8       | 3.5        | 10.2       |
 | LC-BLSTM MoChA | 3.3       | 8.8       | 3.5        | 9.1        |
 | Streaming MMA  | 2.5       | 6.9       | 2.7        | 7.1        |
 
