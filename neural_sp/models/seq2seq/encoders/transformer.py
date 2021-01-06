@@ -502,7 +502,7 @@ class TransformerEncoder(EncoderBase):
             if self.pe_type in ['relative', 'relative_xl']:
                 xs = xs * self.scale  # NOTE: first layer only
                 # Create sinusoidal positional embeddings for relative positional encoding
-                pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
+                pos_embs = self.pos_emb(xs, clamp_len=clamp_len)
             else:
                 xs = self.pos_enc(xs, scale=True)
                 pos_embs = None
@@ -533,7 +533,7 @@ class TransformerEncoder(EncoderBase):
                         if self.pe_type in ['relative', 'relative_xl']:
                             # Create sinusoidal positional embeddings for relative positional encoding
                             clamp_len = clamp_len // self.subsample[lth].factor
-                            pos_embs = self.pos_emb(xs, clamp_len=clamp_len, zero_center_offset=True)
+                            pos_embs = self.pos_emb(xs, clamp_len=clamp_len)
                     elif self.lookaheads[lth] != self.lookaheads[lth + 1]:
                         xx_mask = make_san_mask(xs, xlens, unidir, self.lookaheads[lth + 1])
 
