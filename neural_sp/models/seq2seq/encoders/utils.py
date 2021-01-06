@@ -10,7 +10,7 @@ import torch
 logger = logging.getLogger(__name__)
 
 
-def chunkwise(xs, N_l, N_c, N_r):
+def chunkwise(xs, N_l, N_c, N_r, padding=True):
     """Slice input frames chunk by chunk and regard each chunk (with left and
         right contexts) as a single utterance for efficient training of
         latency-controlled bidirectional encoder.
@@ -26,15 +26,20 @@ def chunkwise(xs, N_l, N_c, N_r):
 
     """
     bs, xmax, idim = xs.size()
+    n_chunks = math.ceil(xmax / N_c) if padding else xmax // (N_l + N_c + N_r)
 
-    n_chunks = math.ceil(xmax / N_c)
     xs_tmp = xs.new_zeros(bs, n_chunks, N_l + N_c + N_r, idim)
-    xs_pad = torch.cat([xs.new_zeros(bs, N_l, idim),
+    if padding:
+        # pad the left side in the first chunk and the right side in the last chunk
+        xs = torch.cat([xs.new_zeros(bs, N_l, idim),
                         xs,
                         xs.new_zeros(bs, N_r, idim)], dim=1)
-    for chunk_idx, t in enumerate(range(N_l, N_l + xmax, N_c)):
-        xs_chunk = xs_pad[:, t - N_l:t + (N_c + N_r)]
+
+    t = N_l
+    for chunk_idx in range(n_chunks):
+        xs_chunk = xs[:, t - N_l:t + (N_c + N_r)]
         xs_tmp[:, chunk_idx, :xs_chunk.size(1), :] = xs_chunk
+        t += N_c
     xs = xs_tmp.view(bs * n_chunks, N_l + N_c + N_r, idim)
 
     return xs

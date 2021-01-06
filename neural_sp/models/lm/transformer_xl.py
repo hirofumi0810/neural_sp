@@ -50,7 +50,6 @@ class TransformerXL(LMBase):
             self.mem_len = args.bptt
         if args.recog_mem_len > 0:
             self.mem_len = args.recog_mem_len
-        self.zero_center_offset = args.zero_center_offset
 
         self.vocab = args.vocab
         self.eos = 2
@@ -66,7 +65,8 @@ class TransformerXL(LMBase):
         self.embed_cache = None
 
         # positional embedding
-        self.pos_emb = XLPositionalEmbedding(self.d_model, args.dropout_in)
+        self.pos_emb = XLPositionalEmbedding(self.d_model, args.dropout_in,
+                                             zero_center_offset=args.zero_center_offset)
         self.u_bias = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
         self.v_bias = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
         # NOTE: u_bias and v_bias are global parameters
@@ -236,7 +236,7 @@ class TransformerXL(LMBase):
         else:
             out = self.dropout_emb(self.embed(ys.long()) * self.scale)
 
-        pos_embs = self.pos_emb(ys, mlen=mlen, zero_center_offset=self.zero_center_offset)
+        pos_embs = self.pos_emb(ys, mlen=mlen)
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers
