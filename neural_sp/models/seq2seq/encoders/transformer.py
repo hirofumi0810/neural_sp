@@ -234,15 +234,15 @@ class TransformerEncoder(EncoderBase):
             assert self.chunk_size_right % self._factor == 0
 
         self.clamp_len = clamp_len
+        self.pos_enc, self.pos_emb = None, None
         self.u_bias, self.v_bias = None, None
-        self.pos_emb = None
-        if pe_type == 'relative_xl':
-            self.pos_emb = XLPositionalEmbedding(d_model, dropout)
-            self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-            self.v_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
-            # NOTE: u_bias and v_bias are global parameters
-        elif pe_type == 'relative':
-            self.pos_emb = XLPositionalEmbedding(d_model, dropout)
+        if pe_type in ['relative', 'relative_xl']:
+            self.pos_emb = XLPositionalEmbedding(d_model, dropout,
+                                                 zero_center_offset=True)
+            if pe_type == 'relative_xl':
+                self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+                self.v_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
+                # NOTE: u_bias and v_bias are global parameters shared in the whole model
         else:
             self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
 
@@ -445,7 +445,7 @@ class TransformerEncoder(EncoderBase):
             pos_embs = None
             if self.pe_type in ['relative', 'relative_xl']:
                 xs = xs * self.scale  # NOTE: first layer only
-                pos_embs = self.pos_emb(xs, zero_center_offset=True)  # NOTE: no clamp_len for streaming
+                pos_embs = self.pos_emb(xs)  # NOTE: no clamp_len for streaming
             else:
                 xs = self.pos_enc(xs, scale=True)
 
@@ -481,8 +481,7 @@ class TransformerEncoder(EncoderBase):
                     N_r = N_r // self.subsample[lth].factor
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
-                        # NOTE: clamp_len is not used for streaming
-                        pos_embs = self.pos_emb(xs, zero_center_offset=True)
+                        pos_embs = self.pos_emb(xs)  # NOTE: clamp_len is not used for streaming
                     if self.streaming_type == 'mask':
                         xx_mask = make_chunkwise_san_mask(xs, xlens, N_l, N_c, n_chunks)
 
