@@ -407,7 +407,7 @@ class TransformerEncoder(EncoderBase):
                  'ys_sub1': {'xs': None, 'xlens': None},
                  'ys_sub2': {'xs': None, 'xlens': None}}
 
-        bs, xmax = xs.size()[:2]s
+        bs, xmax = xs.size()[:2]
         n_chunks = 0
         clamp_len = self.clamp_len
         lc_bidir = self.lc_bidir
