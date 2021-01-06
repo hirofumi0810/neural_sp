@@ -410,35 +410,42 @@ class TransformerEncoder(EncoderBase):
         bs, xmax = xs.size()[:2]
         n_chunks = 0
         clamp_len = self.clamp_len
-        lc_bidir = self.lc_bidir
         unidir = self.unidir
-
-        # latency_controllable
+        lc_bidir = self.lc_bidir
         N_l, N_c, N_r = self.chunk_size_left, self.chunk_size_current, self.chunk_size_right
 
         if lc_bidir:
-            xs = chunkwise(xs, 0, N_c, 0)  # `[B * n_chunks, N_c, idim]`
+            if self.streaming_type == 'mask':
+                xs = chunkwise(xs, 0, N_c, 0, padding=not streaming)  # `[B * n_chunks, N_c, idim]`
+                # NOTE: CNN consumes inputs in the current chunk to avoid extra lookahead latency
+                # That is, CNN outputs are independent on chunk boundary
+            else:
+                xs = chunkwise(xs, N_l, N_c, N_r, padding=not streaming)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
             n_chunks = xs.size(0) // bs
+            assert bs * n_chunks == xs.size(0)
 
         if self.conv is None:
             xs = self.embed(xs)
         else:
             # Path through CNN blocks
-            xs, xlens = self.conv(xs, xlens, lookback=lookback, lookahead=lookahead)
+            xs, xlens = self.conv(xs, xlens,
+                                  lookback=False if lc_bidir else lookback,
+                                  lookahead=False if lc_bidir else lookahead)
+            # NOTE: CNN lookahead surpassing a chunk is not allowed in chunkwise processing
             clamp_len = clamp_len // self.conv.subsampling_factor
-            if lc_bidir:
-                N_l = max(0, N_l // self.conv.subsampling_factor)
-                N_c = N_c // self.conv.subsampling_factor
-                N_r = N_r // self.conv.subsampling_factor
+            N_l = max(0, N_l // self.conv.subsampling_factor)
+            N_c = N_c // self.conv.subsampling_factor
+            N_r = N_r // self.conv.subsampling_factor
 
         if lc_bidir:
             if self.streaming_type == 'mask':
-                # Extract the center region
-                emax = xlens.max().item()
-                xs = xs.contiguous().view(bs, -1, xs.size(2))[:, :emax]  # `[B, emax, d_model]`
-            elif self.streaming_type == 'reshape':
-                xs = chunkwise(xs, N_l, N_c, N_r)  # `[B * n_chunks, N_l+N_c+N_r, idim]`
-                assert n_chunks == (xs.size(0) // bs)
+                # back to the original shape
+                xs = xs.contiguous().view(bs, -1, xs.size(2))[:, :xlens.max()]  # `[B, emax, d_model]`
+
+        if self.enc_type == 'conv':
+            eouts['ys']['xs'] = xs
+            eouts['ys']['xlens'] = xlens
+            return eouts
 
         if lc_bidir:
             # streaming encoder
