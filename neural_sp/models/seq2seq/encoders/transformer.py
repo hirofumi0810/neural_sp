@@ -462,7 +462,7 @@ class TransformerEncoder(EncoderBase):
                 xx_mask = make_chunkwise_san_mask(xs, xlens, N_l, N_c, n_chunks)
 
             for lth, layer in enumerate(self.layers):
-                xs = layer(xs, xx_mask, cache=None,
+                xs = layer(xs, xx_mask,
                            pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
                     if self.streaming_type == 'reshape':
