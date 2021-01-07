@@ -58,7 +58,8 @@ class Streaming(object):
         self.conv_context = encoder.conv.context_size if encoder.conv is not None else 0
         if not getattr(encoder, 'cnn_lookahead', True):
             self.conv_context = 0
-            # NOTE: CNN lookahead surpassing the block is not allowed in Transformer/Conformer
+            # NOTE: CNN lookahead surpassing a block is not allowed in LC-Transformer/Conformer.
+            # Unidirectional Transformer/Conformer can use lookahead in CNN.
 
         # for test
         self._eout_blocks = []
@@ -107,6 +108,7 @@ class Streaming(object):
             is_last_block (bool): the last input block
             cnn_lookback (bool): use lookback frames in CNN
             cnn_lookahead (boo): use lookahead frames in CNN
+            xlen_block (int): input length in a block (for the last block)
 
         """
         j = self._offset
@@ -132,6 +134,7 @@ class Streaming(object):
             zero_pad = np.zeros(((N_l + N_c + N_r + self.conv_context * 2) - x_block.shape[0],
                                  self.feat_dim)).astype(np.float32)
             x_block = np.concatenate([x_block, zero_pad], axis=0)
+        xlen_block = len(self.x_whole) - j if is_last_block else N_c
 
         self._bd_offset = -1  # reset
         self._n_accum_frames += min(self.N_c, self.feat_dim)
@@ -139,9 +142,9 @@ class Streaming(object):
         start = j - (self.conv_context + N_l)
         end = j + (N_c + N_r + self.conv_context)
         cnn_lookback = start >= 0
-        cnn_lookahead = end <= self.x_whole.shape[0] - 1
+        cnn_lookahead = end <= len(self.x_whole) - 1
 
-        return x_block, is_last_block, cnn_lookback, cnn_lookahead
+        return x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block
 
     def ctc_vad(self, ctc_probs_block, stdout=False):
         """Voice activity detection with CTC posterior probabilities.

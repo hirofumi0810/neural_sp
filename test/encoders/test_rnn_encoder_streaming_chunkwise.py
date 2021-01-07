@@ -42,6 +42,7 @@ def make_args(**kwargs):
         bidir_sum_fwd_bwd=False,
         task_specific_layer=False,
         param_init=0.1,
+        chunk_size_current="0",
         chunk_size_right="0",
         rsp_prob=0,
     )
@@ -155,35 +156,35 @@ def test_forward_streaming_chunkwise(args):
             enc.reset_cache()
 
             # chunk by chunk encoding
-            eouts_stream = []
-            elens_stream = 0
+            eouts_cat = []
+            elens_cat = 0
             n_chunks = math.ceil(xmax / N_c)
             j = 0  # time offset for input
             j_out = 0  # time offset for encoder output
             for chunk_idx in range(n_chunks):
                 start = j - conv_lookahead
                 end = (j + N_c + N_r) + conv_lookahead
-                xs_pad_stream = pad_list(
+                xs_pad_chunk = pad_list(
                     [np2tensor(x[max(0, start):end], device).float() for x in xs], 0.)
-                xlens_stream = torch.IntTensor([xs_pad_stream.size(1) for x in xs])
-                enc_out_dict_stream = enc(xs_pad_stream, xlens_stream, task='all',
-                                          streaming=True,
-                                          lookback=start >= 0,
-                                          lookahead=end <= xmax - 1)
+                xlens_chunk = torch.IntTensor([xs_pad_chunk.size(1) for x in xs])
+                enc_out_dict_chunk = enc(xs_pad_chunk, xlens_chunk, task='all',
+                                         streaming=True,
+                                         lookback=start >= 0 and conv_lookahead,
+                                         lookahead=end <= xmax - 1 and conv_lookahead)
 
                 eout_all_i = enc_out_dict['ys']['xs'][:, j_out:j_out + (N_c // factor)]
                 if eout_all_i.size(1) == 0:
                     break
-                eout_stream_i = enc_out_dict_stream['ys']['xs']
-                elens_stream_i = enc_out_dict_stream['ys']['xlens']
-                diff = eout_stream_i.size(1) - eout_all_i.size(1)
-                eout_stream_i = eout_stream_i[:, :eout_all_i.size(1)]
-                elens_stream_i -= diff
-                for t in range(eout_stream_i.size(1)):
-                    print(torch.allclose(eout_all_i[:, t], eout_stream_i[:, t], atol=atol))
+                eout_chunk = enc_out_dict_chunk['ys']['xs']
+                elens_chunk = enc_out_dict_chunk['ys']['xlens']
+                diff = eout_chunk.size(1) - eout_all_i.size(1)
+                eout_chunk = eout_chunk[:, :eout_all_i.size(1)]
+                elens_chunk -= diff
+                for t in range(eout_chunk.size(1)):
+                    print(torch.allclose(eout_all_i[:, t], eout_chunk[:, t], atol=atol))
 
-                eouts_stream.append(eout_stream_i)
-                elens_stream += elens_stream_i
+                eouts_cat.append(eout_chunk)
+                elens_cat += elens_chunk
 
                 j += N_c
                 j_out += (N_c // factor)
@@ -192,8 +193,8 @@ def test_forward_streaming_chunkwise(args):
 
             enc.reset_cache()
 
-            eouts_stream = torch.cat(eouts_stream, dim=1)
-            assert enc_out_dict['ys']['xs'].size() == eouts_stream.size()
-            assert torch.allclose(enc_out_dict['ys']['xs'], eouts_stream, atol=atol)
-            assert elens_stream.item() == eouts_stream.size(1)
-            assert torch.equal(enc_out_dict['ys']['xlens'], elens_stream)
+            eouts_cat = torch.cat(eouts_cat, dim=1)
+            assert enc_out_dict['ys']['xs'].size() == eouts_cat.size()
+            assert torch.allclose(enc_out_dict['ys']['xs'], eouts_cat, atol=atol)
+            assert elens_cat.item() == eouts_cat.size(1)
+            assert torch.equal(enc_out_dict['ys']['xlens'], elens_cat)

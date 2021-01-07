@@ -139,7 +139,7 @@ class TransformerEncoder(EncoderBase):
         self.chunk_size_current = int(chunk_size_current.split('_')[-1]) // n_stacks
         self.chunk_size_right = int(chunk_size_right.split('_')[-1]) // n_stacks
         self.lc_bidir = self.chunk_size_current > 0
-        self.cnn_lookahead = False
+        self.cnn_lookahead = self.unidir
         self.streaming_type = streaming_type
         # -: past context
         # *: current context
