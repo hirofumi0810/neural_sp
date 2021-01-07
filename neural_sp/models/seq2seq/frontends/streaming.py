@@ -58,7 +58,8 @@ class Streaming(object):
         self.conv_context = encoder.conv.context_size if encoder.conv is not None else 0
         if not getattr(encoder, 'cnn_lookahead', True):
             self.conv_context = 0
-            # NOTE: CNN lookahead surpassing the block is not allowed in Transformer/Conformer
+            # NOTE: CNN lookahead surpassing a block is not allowed in LC-Transformer/Conformer.
+            # Unidirectional Transformer/Conformer can use lookahead in CNN.
 
         # for test
         self._eout_blocks = []
