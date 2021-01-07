@@ -358,15 +358,17 @@ class Speech2Text(ModelBase):
         logits = lm.output(lmout)
         return logits
 
-    def encode(self, xs, task='all', streaming=False, lookback=False, lookahead=False):
+    def encode(self, xs, task='all', streaming=False,
+               cnn_lookback=False, cnn_lookahead=False, xlen_block=-1):
         """Encode acoustic or text features.
 
         Args:
             xs (List): length `[B]`, which contains Tensor of size `[T, input_dim]`
             task (str): all/ys*/ys_sub1*/ys_sub2*
             streaming (bool): streaming encoding
-            lookback (bool): truncate leftmost frames for lookback in CNN context
-            lookahead (bool): truncate rightmost frames for lookahead in CNN context
+            cnn_lookback (bool): truncate leftmost frames for lookback in CNN context
+            cnn_lookahead (bool): truncate rightmost frames for lookahead in CNN context
+            xlen_block (int): input length in a block in the streaming mode
         Returns:
             eout_dict (dict):
 
@@ -380,7 +382,10 @@ class Speech2Text(ModelBase):
             if self.n_splices > 1:
                 xs = [splice(x, self.n_splices, self.n_stacks) for x in xs]
 
-            xlens = torch.IntTensor([len(x) for x in xs])
+            if streaming:
+                xlens = torch.IntTensor([xlen_block])
+            else:
+                xlens = torch.IntTensor([len(x) for x in xs])
             xs = pad_list([np2tensor(x, self.device).float() for x in xs], 0.)
 
             # SpecAugment
@@ -408,7 +413,7 @@ class Speech2Text(ModelBase):
 
         # encoder
         eout_dict = self.enc(xs, xlens, task.split('.')[0], streaming,
-                             lookback, lookahead)
+                             cnn_lookback, cnn_lookahead)
 
         if self.main_weight < 1 and self.enc_type in ['conv', 'tds', 'gated_conv']:
             for sub in ['sub1', 'sub2']:
@@ -503,11 +508,14 @@ class Speech2Text(ModelBase):
 
             while True:
                 # Encode input features block by block
-                x_block, is_last_block, cnn_lookback, cnn_lookahead = streaming.extract_feature()
+                x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feature()
                 if is_reset:
                     self.enc.reset_cache()
-                eout_block_dict = self.encode([x_block], 'all', streaming=True,
-                                              lookback=cnn_lookback, lookahead=cnn_lookahead)
+                eout_block_dict = self.encode([x_block], 'all',
+                                              streaming=True,
+                                              cnn_lookback=cnn_lookback,
+                                              cnn_lookahead=cnn_lookahead,
+                                              xlen_block=xlen_block)
                 eout_block = eout_block_dict[task]['xs']
                 is_reset = False  # detect the first boundary in the same block
 
@@ -640,8 +648,8 @@ class Speech2Text(ModelBase):
             xs (List): length `[B]`, which contains arrays of size `[T, input_dim]`
             params (dict): hyper-parameters for decoding
                 beam_width (int): the size of beam
-                min_len_ratio (float):
-                max_len_ratio (float):
+                min_len_ratio (float): minimum output length ratio to input
+                max_len_ratio (float): maximum output length ratio to input
                 len_penalty (float): length penalty
                 cov_penalty (float): coverage penalty
                 cov_threshold (float): threshold for coverage penalty
