@@ -21,22 +21,25 @@ class ConformerConvBlock(nn.Module):
         d_model (int): input/output dimension
         kernel_size (int): kernel size in depthwise convolution
         param_init (str): parameter initialization method
-        normalization (str): "batch_norm" or "group_norm"
+        normalization (str): batch_norm/group_norm/layer_norm
+        causal (bool): causal mode for streaming infernece
 
     """
 
-    def __init__(self, d_model, kernel_size, param_init, causal=False,
-                 normalization='batch_norm'):
+    def __init__(self, d_model, kernel_size, param_init, normalization='batch_norm',
+                 causal=False):
 
         super().__init__()
 
         assert (kernel_size - 1) % 2 == 0, 'kernel_size must be the odd number.'
-
+        assert kernel_size >= 3, 'kernel_size must be larger than 3.'
         self.kernel_size = kernel_size
+        self.causal = causal
+
         if causal:
-            self.causal = nn.ConstantPad1d((kernel_size - 1, 0), 0)
+            self.padding = (kernel_size - 1)
         else:
-            self.causal = None
+            self.padding = (kernel_size - 1) // 2
 
         self.pointwise_conv1 = nn.Conv1d(in_channels=d_model,
                                          out_channels=d_model * 2,  # for GLU
@@ -47,15 +50,20 @@ class ConformerConvBlock(nn.Module):
                                         out_channels=d_model,
                                         kernel_size=kernel_size,
                                         stride=1,
-                                        padding=(kernel_size - 1) // 2,
+                                        padding=self.padding,
                                         groups=d_model)  # depthwise
+
         if normalization == 'batch_norm':
             self.norm = nn.BatchNorm1d(d_model)
         elif normalization == 'group_norm':
-            self.norm = nn.GroupNorm(num_groups=max(1, d_model // 16),
+            num_groups = 2
+            self.norm = nn.GroupNorm(num_groups=max(1, d_model // num_groups),
                                      num_channels=d_model)
+        elif normalization == 'layer_norm':
+            self.norm = nn.LayerNorm(d_model, eps=1e-12)
         else:
-            raise NotImplementedError
+            raise NotImplementedError(normalization)
+        logger.info('normalization: %s' % normalization)
         self.activation = Swish()
         self.pointwise_conv2 = nn.Conv1d(in_channels=d_model,
                                          out_channels=d_model,
@@ -72,14 +80,16 @@ class ConformerConvBlock(nn.Module):
 
     def reset_parameters_xavier_uniform(self):
         """Initialize parameters with Xavier uniform distribution."""
-        logger.info('===== Initialize %s with Xavier uniform distribution =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with Xavier uniform distribution =====' %
+                    self.__class__.__name__)
         for layer in [self.pointwise_conv1, self.pointwise_conv2, self.depthwise_conv]:
             for n, p in layer.named_parameters():
                 init_with_xavier_uniform(n, p)
 
     def reset_parameters_lecun(self, param_init=0.1):
         """Initialize parameters with lecun style.."""
-        logger.info('===== Initialize %s with lecun style =====' % self.__class__.__name__)
+        logger.info('===== Initialize %s with lecun style =====' %
+                    self.__class__.__name__)
         for n, p in self.named_parameters():
             init_with_lecun_normal(n, p, param_init)
 
@@ -92,18 +102,25 @@ class ConformerConvBlock(nn.Module):
             xs (FloatTensor): `[B, T, d_model]`
 
         """
-        xs = xs.transpose(2, 1).contiguous()  # `[B, C, T]`
-        if self.causal is not None:
-            xs = self.causal(xs)
-            xs = xs[:, :, :-(self.kernel_size - 1)]
-        xs = self.pointwise_conv1(xs)  # `[B, 2 * C, T]`
-        xs = xs.transpose(2, 1)  # `[B, T, 2 * C]`
-        xs = F.glu(xs)  # `[B, T, C]`
-        xs = xs.transpose(2, 1).contiguous()  # `[B, C, T]`
-        xs = self.depthwise_conv(xs)  # `[B, C, T]`
+        bs, xmax, dim = xs.size()
 
-        xs = self.norm(xs)
-        xs = self.activation(xs)
+        xs = xs.transpose(2, 1).contiguous()  # `[B, C, T]`
+        xs = self.pointwise_conv1(xs)  # `[B, 2 * C, T]`
+        xs = F.glu(xs, dim=1)  # `[B, C, T]`
+
+        xs = self.depthwise_conv(xs)  # `[B, C, T]`
+        if self.causal:
+            xs = xs[:, :, :-self.padding]
+
+        xs = xs.transpose(2, 1)
+        if isinstance(self.norm, nn.LayerNorm):
+            xs = self.activation(self.norm(xs))  # `[B, T, C]`
+        else:
+            # time-independent normalization
+            xs = xs.contiguous().view(bs * xmax, -1, 1)
+            xs = self.activation(self.norm(xs))  # `[B * T, C, 1]`
+            xs = xs.view(bs, xmax, -1)
+        xs = xs.transpose(2, 1)
         xs = self.pointwise_conv2(xs)  # `[B, C, T]`
 
         xs = xs.transpose(2, 1).contiguous()  # `[B, T, C]`

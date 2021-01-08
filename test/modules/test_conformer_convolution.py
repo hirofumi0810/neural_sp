@@ -8,6 +8,8 @@ import pytest
 import torch
 import warnings
 
+torch.manual_seed(0)
+
 
 def make_args(**kwargs):
     args = dict(
@@ -34,6 +36,7 @@ def make_args(**kwargs):
         ({'param_init': 'lecun'}),
         ({'kernel_size': 7, 'causal': True}),
         ({'normalization': 'group_norm'}),
+        ({'normalization': 'layer_norm'}),
     ]
 )
 def test_forward(args):
