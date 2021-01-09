@@ -329,7 +329,7 @@ def main():
 
             # Change mini-batch depending on task
             if accum_n_steps == 1:
-                loss_train = 0  # average over gradient accumulation
+                loss_train = 0  # moving average over gradient accumulation
             for task in tasks:
                 if use_apex and scaler is not None:
                     with torch.cuda.amp.autocast():
@@ -398,7 +398,7 @@ def main():
                              xlen, ylen, duration_step / 60))
                 start_time_step = time.time()
 
-            # Save fugures of loss and accuracy
+            # Save figures of loss and accuracy
             if n_steps % (args.print_step * 10) == 0:
                 reporter.snapshot()
                 model.module.plot_attention()
