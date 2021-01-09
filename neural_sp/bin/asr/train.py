@@ -85,7 +85,7 @@ def main():
                                  tsv_path_sub2=args.train_set_sub2,
                                  batch_size=batch_size,
                                  n_epochs=args.n_epochs,
-                                 sort_by='input',
+                                 sort_by=args.sort_by,
                                  short2long=args.sort_short2long,
                                  sort_stop_epoch=args.sort_stop_epoch,
                                  num_workers=args.n_gpus,
