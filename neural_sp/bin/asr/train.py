@@ -4,11 +4,12 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Train the ASR model."""
+"""Train ASR model."""
 
 import argparse
 import copy
 import cProfile
+from distutils.version import LooseVersion
 import logging
 import os
 from setproctitle import setproctitle
@@ -28,9 +29,18 @@ from neural_sp.bin.train_utils import (
     set_logger,
     set_save_path
 )
+from neural_sp.evaluators.accuracy import eval_accuracy
+from neural_sp.evaluators.character import eval_char
+from neural_sp.evaluators.phone import eval_phone
+from neural_sp.evaluators.ppl import eval_ppl
+from neural_sp.evaluators.word import eval_word
+from neural_sp.evaluators.wordpiece import eval_wordpiece
+from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
 from neural_sp.datasets.asr import build_dataloader
-from neural_sp.models.data_parallel import CustomDataParallel
-from neural_sp.models.data_parallel import CPUWrapperASR
+from neural_sp.models.data_parallel import (
+    CustomDataParallel,
+    CPUWrapperASR
+)
 from neural_sp.models.lm.build import build_lm
 from neural_sp.models.seq2seq.speech2text import Speech2Text
 from neural_sp.trainers.lr_scheduler import LRScheduler
@@ -68,18 +78,18 @@ def main():
         batch_size = args.batch_size
         accum_grad_n_steps = args.accum_grad_n_steps
 
-    # Load dataloader
+    # Load dataset
     train_set = build_dataloader(args=args,
                                  tsv_path=args.train_set,
                                  tsv_path_sub1=args.train_set_sub1,
                                  tsv_path_sub2=args.train_set_sub2,
                                  batch_size=batch_size,
                                  n_epochs=args.n_epochs,
-                                 sort_by='input',
+                                 sort_by=args.sort_by,
                                  short2long=args.sort_short2long,
                                  sort_stop_epoch=args.sort_stop_epoch,
                                  num_workers=args.n_gpus,
-                                 pin_memory=True,
+                                 pin_memory=False,
                                  word_alignment_dir=args.train_word_alignment,
                                  ctc_alignment_dir=args.train_ctc_alignment)
     dev_set = build_dataloader(args=args,
@@ -88,7 +98,7 @@ def main():
                                tsv_path_sub2=args.dev_set_sub2,
                                batch_size=batch_size,
                                num_workers=args.n_gpus,
-                               pin_memory=True,
+                               pin_memory=False,
                                word_alignment_dir=args.dev_word_alignment,
                                ctc_alignment_dir=args.dev_ctc_alignment)
     eval_sets = [build_dataloader(args=args,
@@ -131,12 +141,12 @@ def main():
     model = Speech2Text(args, save_path, train_set.idx2token[0])
 
     if not args.resume:
-        # Save the conf file as a yaml file
+        # Save conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
         if args.external_lm:
             save_config(args.lm_conf, os.path.join(save_path, 'conf_lm.yml'))
 
-        # Save the nlsyms, dictionary, and wp_model
+        # Save nlsyms, dictionary, and wp_model
         if args.nlsyms:
             shutil.copy(args.nlsyms, os.path.join(save_path, 'nlsyms.txt'))
         for sub in ['', '_sub1', '_sub2']:
@@ -158,7 +168,7 @@ def main():
 
         # Initialize with pre-trained model's parameters
         if args.asr_init:
-            # Load the ASR model (full model)
+            # Load ASR model (full model)
             conf_init = load_config(os.path.join(os.path.dirname(args.asr_init), 'conf.yml'))
             for k, v in conf_init.items():
                 setattr(args_init, k, v)
@@ -211,7 +221,7 @@ def main():
             scheduler.convert_to_sgd(model, args.lr, args.weight_decay,
                                      decay_type='always', decay_rate=0.5)
 
-    # Load the teacher ASR model
+    # Load teacher ASR model
     teacher = None
     if args.teacher:
         assert os.path.isfile(args.teacher), 'There is no checkpoint.'
@@ -224,7 +234,7 @@ def main():
         teacher = Speech2Text(args_teacher)
         load_checkpoint(args.teacher, teacher)
 
-    # Load the teacher LM
+    # Load teacher LM
     teacher_lm = None
     if args.teacher_lm:
         assert os.path.isfile(args.teacher_lm), 'There is no checkpoint.'
@@ -245,15 +255,19 @@ def main():
 
         # Mixed precision training setting
         if use_apex:
-            from apex import amp
-            model, scheduler.optimizer = amp.initialize(model, scheduler.optimizer,
-                                                        opt_level=args.train_dtype)
-            from neural_sp.models.seq2seq.decoders.ctc import CTC
-            amp.register_float_function(CTC, "loss_fn")
-            # NOTE: see https://github.com/espnet/espnet/pull/1779
-            amp.init()
-            if args.resume:
-                load_checkpoint(args.resume, amp=amp)
+            if LooseVersion(torch.__version__) >= LooseVersion("1.6.0"):
+                scaler = torch.cuda.amp.GradScaler()
+            else:
+                scaler = None
+                from apex import amp
+                model, scheduler.optimizer = amp.initialize(model, scheduler.optimizer,
+                                                            opt_level=args.train_dtype)
+                from neural_sp.models.seq2seq.decoders.ctc import CTC
+                amp.register_float_function(CTC, "loss_fn")
+                # NOTE: see https://github.com/espnet/espnet/pull/1779
+                amp.init()
+                if args.resume:
+                    load_checkpoint(args.resume, amp=amp)
         model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
 
         if teacher is not None:
@@ -306,7 +320,6 @@ def main():
     for ep in range(resume_epoch, args.n_epochs):
         pbar_epoch = tqdm(total=len(train_set))
         session_prev = None
-
         for batch_train, is_new_epoch in train_set:
             # Compute loss in the training set
             if args.discourse_aware and batch_train['sessions'][0] != session_prev:
@@ -316,15 +329,23 @@ def main():
 
             # Change mini-batch depending on task
             if accum_n_steps == 1:
-                loss_train = 0  # average over gradient accumulation
+                loss_train = 0  # moving average over gradient accumulation
             for task in tasks:
-                loss, observation = model(batch_train, task=task,
-                                          teacher=teacher, teacher_lm=teacher_lm)
+                if use_apex and scaler is not None:
+                    with torch.cuda.amp.autocast():
+                        loss, observation = model(batch_train, task=task,
+                                                  teacher=teacher, teacher_lm=teacher_lm)
+                else:
+                    loss, observation = model(batch_train, task=task,
+                                              teacher=teacher, teacher_lm=teacher_lm)
                 loss = loss / accum_grad_n_steps
                 reporter.add(observation)
                 if use_apex:
-                    with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
-                        scaled_loss.backward()
+                    if scaler is not None:
+                        scaler.scale(loss).backward()
+                    else:
+                        with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
+                            scaled_loss.backward()
                 else:
                     loss.backward()
                 loss.detach()  # Truncate the graph
@@ -333,7 +354,12 @@ def main():
                         total_norm = torch.nn.utils.clip_grad_norm_(
                             model.module.parameters(), args.clip_grad_norm)
                         reporter.add_tensorboard_scalar('total_norm', total_norm)
-                    scheduler.step()
+                    if use_apex and scaler is not None:
+                        scaler.step(scheduler.optimizer)
+                        scaler.update()
+                        scheduler.step(skip_optimizer=True)  # update lr only
+                    else:
+                        scheduler.step()
                     scheduler.zero_grad()
                     accum_n_steps = 0
                     # NOTE: parameters are forcibly updated at the end of every epoch
@@ -372,7 +398,7 @@ def main():
                              xlen, ylen, duration_step / 60))
                 start_time_step = time.time()
 
-            # Save fugures of loss and accuracy
+            # Save figures of loss and accuracy
             if n_steps % (args.print_step * 10) == 0:
                 reporter.snapshot()
                 model.module.plot_attention()
@@ -381,13 +407,19 @@ def main():
             # Ealuate model every 0.1 epoch during MBR training
             if args.mbr_training:
                 if int(train_set.epoch_detail * 10) != int(epoch_detail_prev * 10):
+                    sub_epoch = int(train_set.epoch_detail * 10) / 10
                     # dev
-                    evaluate([model.module], dev_set, recog_params, args,
-                             int(train_set.epoch_detail * 10) / 10, logger)
-                    # Save the model
+                    metric_dev = evaluate([model.module], dev_set, recog_params, args,
+                                          sub_epoch, logger)
+                    reporter.epoch(metric_dev, name=args.metric)  # plot
+                    # Save model
                     scheduler.save_checkpoint(
                         model, save_path, remove_old=False, amp=amp,
-                        epoch_detail=train_set.epoch_detail)
+                        epoch_detail=sub_epoch)
+                    # test
+                    for eval_set in eval_sets:
+                        evaluate([model.module], eval_set, recog_params, args,
+                                 sub_epoch, logger)
                 epoch_detail_prev = train_set.epoch_detail
 
             if is_new_epoch:
@@ -402,7 +434,7 @@ def main():
             scheduler.epoch()  # lr decay
             reporter.epoch()  # plot
 
-            # Save the model
+            # Save model
             scheduler.save_checkpoint(
                 model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
         else:
@@ -414,7 +446,7 @@ def main():
             reporter.epoch(metric_dev, name=args.metric)  # plot
 
             if scheduler.is_topk or is_transformer:
-                # Save the model
+                # Save model
                 scheduler.save_checkpoint(
                     model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
 
@@ -459,18 +491,15 @@ def evaluate(models, dataloader, recog_params, args, epoch, logger):
 
     if args.metric == 'edit_distance':
         if args.unit in ['word', 'word_char']:
-            from neural_sp.evaluators.word import eval_word
             metric = eval_word(models, dataloader, recog_params, epoch=epoch)[0]
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
 
         elif args.unit == 'wp':
-            from neural_sp.evaluators.wordpiece import eval_wordpiece
             metric, cer = eval_wordpiece(models, dataloader, recog_params, epoch=epoch)
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
 
         elif 'char' in args.unit:
-            from neural_sp.evaluators.character import eval_char
             wer, cer = eval_char(models, dataloader, recog_params, epoch=epoch)
             logger.info('WER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, wer))
             logger.info('CER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, cer))
@@ -480,27 +509,22 @@ def evaluate(models, dataloader, recog_params, args, epoch, logger):
                 metric = wer
 
         elif 'phone' in args.unit:
-            from neural_sp.evaluators.phone import eval_phone
             metric = eval_phone(models, dataloader, recog_params, epoch=epoch)
             logger.info('PER (%s, ep:%d): %.2f %%' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'ppl':
-        from neural_sp.evaluators.ppl import eval_ppl
         metric = eval_ppl(models, dataloader, batch_size=args.batch_size)[0]
         logger.info('PPL (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'loss':
-        from neural_sp.evaluators.ppl import eval_ppl
         metric = eval_ppl(models, dataloader, batch_size=args.batch_size)[1]
         logger.info('Loss (%s, ep:%d): %.5f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'accuracy':
-        from neural_sp.evaluators.accuracy import eval_accuracy
         metric = eval_accuracy(models, dataloader, batch_size=args.batch_size)
         logger.info('Accuracy (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 
     elif args.metric == 'bleu':
-        from neural_sp.evaluators.wordpiece_bleu import eval_wordpiece_bleu
         metric = eval_wordpiece_bleu(models, dataloader, recog_params, epoch=epoch)
         logger.info('BLEU (%s, ep:%d): %.3f' % (dataloader.set, epoch, metric))
 

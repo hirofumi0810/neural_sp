@@ -53,7 +53,7 @@ def main():
                 setattr(args, k, v)
 
     # for multi-GPUs
-    if args.n_gpus >= 1:
+    if args.n_gpus > 1:
         batch_size = args.batch_size * args.n_gpus
         accum_grad_n_steps = max(1, args.accum_grad_n_steps // args.n_gpus)
     else:
@@ -114,10 +114,10 @@ def main():
     model = build_lm(args, save_path)
 
     if not args.resume:
-        # Save the conf file as a yaml file
+        # Save conf file as a yaml file
         save_config(vars(args), os.path.join(save_path, 'conf.yml'))
 
-        # Save the nlsyms, dictionary, and wp_model
+        # Save nlsyms, dictionary, and wp_model
         if args.nlsyms:
             shutil.copy(args.nlsyms, os.path.join(save_path, 'nlsyms.txt'))
         shutil.copy(args.dict, os.path.join(save_path, 'dict.txt'))
@@ -176,14 +176,18 @@ def main():
                             benchmark=not is_transformer and args.cudnn_benchmark)
         model.cuda()
 
-        # Mix precision training setting
+        # Mixed precision training setting
         if use_apex:
-            from apex import amp
-            model, scheduler.optimizer = amp.initialize(model, scheduler.optimizer,
-                                                        opt_level=args.train_dtype)
-            amp.init()
-            if args.resume:
-                load_checkpoint(args.resume, amp=amp)
+            if LooseVersion(torch.__version__) >= LooseVersion("1.6.0"):
+                scaler = torch.cuda.amp.GradScaler()
+            else:
+                scaler = None
+                from apex import amp
+                model, scheduler.optimizer = amp.initialize(model, scheduler.optimizer,
+                                                            opt_level=args.train_dtype)
+                amp.init()
+                if args.resume:
+                    load_checkpoint(args.resume, amp=amp)
         model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
     else:
         model = CPUWrapperLM(model)
@@ -212,12 +216,19 @@ def main():
 
             if accum_n_steps == 1:
                 loss_train = 0  # moving average over gradient accumulation
-            loss, hidden, observation = model(ys_train, state=hidden)
+            if use_apex and scaler is not None:
+                with torch.cuda.amp.autocast():
+                    loss, hidden, observation = model(ys_train, state=hidden)
+            else:
+                loss, hidden, observation = model(ys_train, state=hidden)
             loss = loss / accum_grad_n_steps
             reporter.add(observation)
             if use_apex:
-                with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
-                    scaled_loss.backward()
+                if scaler is not None:
+                    scaler.scale(loss).backward()
+                else:
+                    with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
+                        scaled_loss.backward()
             else:
                 loss.backward()
             loss.detach()  # Truncate the graph
@@ -226,7 +237,12 @@ def main():
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         model.module.parameters(), args.clip_grad_norm)
                     reporter.add_tensorboard_scalar('total_norm', total_norm)
-                scheduler.step()
+                if use_apex and scaler is not None:
+                    scaler.step(scheduler.optimizer)
+                    scaler.update()
+                    scheduler.step(skip_optimizer=True)  # update lr only
+                else:
+                    scheduler.step()
                 scheduler.zero_grad()
                 accum_n_steps = 0
                 # NOTE: parameters are forcibly updated at the end of every epoch
@@ -274,7 +290,7 @@ def main():
             scheduler.epoch()  # lr decay
             reporter.epoch()  # plot
 
-            # Save the model
+            # Save model
             scheduler.save_checkpoint(
                 model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
         else:
@@ -290,7 +306,7 @@ def main():
                         (dev_set.set, scheduler.n_epochs, ppl_dev))
 
             if scheduler.is_topk or is_transformer:
-                # Save the model
+                # Save model
                 scheduler.save_checkpoint(
                     model, save_path, remove_old=not is_transformer and args.remove_old_checkpoints, amp=amp)
 
