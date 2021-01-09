@@ -9,6 +9,7 @@
 import argparse
 import copy
 import cProfile
+from distutils.version import LooseVersion
 import logging
 import os
 from setproctitle import setproctitle
@@ -254,15 +255,19 @@ def main():
 
         # Mixed precision training setting
         if use_apex:
-            from apex import amp
-            model, scheduler.optimizer = amp.initialize(model, scheduler.optimizer,
-                                                        opt_level=args.train_dtype)
-            from neural_sp.models.seq2seq.decoders.ctc import CTC
-            amp.register_float_function(CTC, "loss_fn")
-            # NOTE: see https://github.com/espnet/espnet/pull/1779
-            amp.init()
-            if args.resume:
-                load_checkpoint(args.resume, amp=amp)
+            if LooseVersion(torch.__version__) >= LooseVersion("1.6.0"):
+                scaler = torch.cuda.amp.GradScaler()
+            else:
+                scaler = None
+                from apex import amp
+                model, scheduler.optimizer = amp.initialize(model, scheduler.optimizer,
+                                                            opt_level=args.train_dtype)
+                from neural_sp.models.seq2seq.decoders.ctc import CTC
+                amp.register_float_function(CTC, "loss_fn")
+                # NOTE: see https://github.com/espnet/espnet/pull/1779
+                amp.init()
+                if args.resume:
+                    load_checkpoint(args.resume, amp=amp)
         model = CustomDataParallel(model, device_ids=list(range(0, args.n_gpus)))
 
         if teacher is not None:
@@ -326,13 +331,21 @@ def main():
             if accum_n_steps == 1:
                 loss_train = 0  # average over gradient accumulation
             for task in tasks:
-                loss, observation = model(batch_train, task=task,
-                                          teacher=teacher, teacher_lm=teacher_lm)
+                if use_apex and scaler is not None:
+                    with torch.cuda.amp.autocast():
+                        loss, observation = model(batch_train, task=task,
+                                                  teacher=teacher, teacher_lm=teacher_lm)
+                else:
+                    loss, observation = model(batch_train, task=task,
+                                              teacher=teacher, teacher_lm=teacher_lm)
                 loss = loss / accum_grad_n_steps
                 reporter.add(observation)
                 if use_apex:
-                    with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
-                        scaled_loss.backward()
+                    if scaler is not None:
+                        scaler.scale(loss).backward()
+                    else:
+                        with amp.scale_loss(loss, scheduler.optimizer) as scaled_loss:
+                            scaled_loss.backward()
                 else:
                     loss.backward()
                 loss.detach()  # Truncate the graph
@@ -341,7 +354,12 @@ def main():
                         total_norm = torch.nn.utils.clip_grad_norm_(
                             model.module.parameters(), args.clip_grad_norm)
                         reporter.add_tensorboard_scalar('total_norm', total_norm)
-                    scheduler.step()
+                    if use_apex and scaler is not None:
+                        scaler.step(scheduler.optimizer)
+                        scaler.update()
+                        scheduler.step(skip_optimizer=True)  # update lr only
+                    else:
+                        scheduler.step()
                     scheduler.zero_grad()
                     accum_n_steps = 0
                     # NOTE: parameters are forcibly updated at the end of every epoch
