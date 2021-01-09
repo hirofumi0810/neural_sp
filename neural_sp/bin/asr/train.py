@@ -88,7 +88,7 @@ def main():
                                  short2long=args.sort_short2long,
                                  sort_stop_epoch=args.sort_stop_epoch,
                                  num_workers=args.n_gpus,
-                                 pin_memory=True,
+                                 pin_memory=False,
                                  word_alignment_dir=args.train_word_alignment,
                                  ctc_alignment_dir=args.train_ctc_alignment)
     dev_set = build_dataloader(args=args,
@@ -97,7 +97,7 @@ def main():
                                tsv_path_sub2=args.dev_set_sub2,
                                batch_size=batch_size,
                                num_workers=args.n_gpus,
-                               pin_memory=True,
+                               pin_memory=False,
                                word_alignment_dir=args.dev_word_alignment,
                                ctc_alignment_dir=args.dev_ctc_alignment)
     eval_sets = [build_dataloader(args=args,
