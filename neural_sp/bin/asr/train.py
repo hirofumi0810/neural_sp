@@ -389,13 +389,19 @@ def main():
             # Ealuate model every 0.1 epoch during MBR training
             if args.mbr_training:
                 if int(train_set.epoch_detail * 10) != int(epoch_detail_prev * 10):
+                    sub_epoch = int(train_set.epoch_detail * 10) / 10
                     # dev
-                    evaluate([model.module], dev_set, recog_params, args,
-                             int(train_set.epoch_detail * 10) / 10, logger)
+                    metric_dev = evaluate([model.module], dev_set, recog_params, args,
+                                          sub_epoch, logger)
+                    reporter.epoch(metric_dev, name=args.metric)  # plot
                     # Save model
                     scheduler.save_checkpoint(
                         model, save_path, remove_old=False, amp=amp,
-                        epoch_detail=train_set.epoch_detail)
+                        epoch_detail=sub_epoch)
+                    # test
+                    for eval_set in eval_sets:
+                        evaluate([model.module], eval_set, recog_params, args,
+                                 sub_epoch, logger)
                 epoch_detail_prev = train_set.epoch_detail
 
             if is_new_epoch:
