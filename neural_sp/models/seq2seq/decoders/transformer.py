@@ -294,7 +294,7 @@ class TransformerDecoder(DecoderBase):
         if args.dropout_head > 0:
             dir_name += '_HD' + str(args.dropout_head)
         if args.tie_embedding:
-            dir_name += '_tie'
+            dir_name += '_tieemb'
 
         return dir_name
 
@@ -481,6 +481,8 @@ class TransformerDecoder(DecoderBase):
         """
         bs, xmax = eouts.size()[:2]
         ys = eouts.new_zeros((bs, 1), dtype=torch.int64).fill_(self.eos)
+        for layer in self.layers:
+            layer.reset()
 
         cache = [None] * self.n_layers
 
@@ -631,6 +633,8 @@ class TransformerDecoder(DecoderBase):
             # Initialization per utterance
             lmstate = None
             ys = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(self.eos)
+            for layer in self.layers:
+                layer.reset()
 
             # For joint CTC-Attention decoding
             ctc_prefix_scorer = None
@@ -760,7 +764,6 @@ class TransformerDecoder(DecoderBase):
 
                     new_aws = beam['aws'] + [xy_aws_layers[j:j + 1, :, :, -1:]]
                     aws_j = torch.cat(new_aws[1:], dim=3)  # `[1, H, n_layers, L, T]`
-                    streaming_failed_point = beam['streaming_failed_point']
 
                     # forward direction
                     for k in range(beam_width):
@@ -778,6 +781,7 @@ class TransformerDecoder(DecoderBase):
                             if scores_att[j, idx].item() <= eos_threshold * max_score_no_eos:
                                 continue
 
+                        streaming_failed_point = beam['streaming_failed_point']
                         quantity_rate = 1.
                         if self.attn_type == 'mocha':
                             n_tokens_hyp_k = i + 1

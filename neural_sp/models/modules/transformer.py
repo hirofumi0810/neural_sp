@@ -109,6 +109,8 @@ class TransformerDecoderBlock(nn.Module):
                                     n_heads=n_heads,
                                     dropout=dropout_att,
                                     param_init=param_init)
+        else:
+            self.src_attn = None
 
         # position-wise feed-forward
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -163,6 +165,10 @@ class TransformerDecoderBlock(nn.Module):
         self._xy_aws_beta = None
         self._xy_aws_p_choose = None
         self._yy_aws_lm = None
+
+    def reset(self):
+        if self.src_attn is not None:
+            self.src_attn.reset()
 
     def forward(self, ys, yy_mask, xs=None, xy_mask=None, cache=None,
                 xy_aws_prev=None,
