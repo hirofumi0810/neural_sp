@@ -6,6 +6,9 @@
 import importlib
 import pytest
 import torch
+import warnings
+
+torch.manual_seed(0)
 
 
 def make_args(**kwargs):
@@ -59,7 +62,8 @@ def test_forward(args):
     causal_mask = causal_mask.repeat([batch_size, 1, 1])  # `[B, qlen, mlen+qlen]`
 
     module_embedding = importlib.import_module('neural_sp.models.modules.positional_embedding')
-    pos_emb = module_embedding.XLPositionalEmbedding(args['kdim'], args['dropout'])
+    pos_emb = module_embedding.XLPositionalEmbedding(args['kdim'], args['dropout'],
+                                                     zero_center_offset=True)
 
     if args['xl_like']:
         u_bias = torch.nn.Parameter(torch.Tensor(args['n_heads'], args['adim'] // args['n_heads']))
@@ -75,10 +79,25 @@ def test_forward(args):
 
     attention.train()
     aws = None
-    pos_embs = pos_emb(query, mlen=mlen)
+    pos_embs = pos_emb(query, mlen=mlen, clamp_len=-1)
 
-    out = attention(cat, query, pos_embs, causal_mask, u_bias=u_bias, v_bias=v_bias)
+    out = attention(cat, query, pos_embs, causal_mask,
+                    u_bias=u_bias, v_bias=v_bias)
     assert len(out) == 2
     cv, aws = out
     assert cv.size() == (batch_size, qlen, args['kdim'])
     assert aws.size() == (batch_size, args['n_heads'], qlen, qlen + mlen)
+
+    # incremental check
+    cv_incremental = []
+    for t in range(qlen):
+        pos_embs_t = pos_emb(query[:, t:t + 1], mlen=mlen + t, clamp_len=-1)
+        cv_incremental.append(attention(cat[:, :mlen + t + 1],
+                                        query[:, t:t + 1],
+                                        pos_embs_t,
+                                        causal_mask[:, t:t + 1, :mlen + t + 1],
+                                        u_bias=u_bias, v_bias=v_bias)[0])
+    cv_incremental = torch.cat(cv_incremental, dim=1)
+    assert cv.size() == cv_incremental.size()
+    if not torch.allclose(cv, cv_incremental, equal_nan=True):
+        warnings.warn("Incremental output did not match.", UserWarning)
