@@ -31,14 +31,15 @@ class TransformerEncoderBlock(nn.Module):
         ffn_activation (str): nonolinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
         pe_type (str): type of positional encoding
+        clamp_len (int): maximum relative distance from each position
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
 
     """
 
     def __init__(self, d_model, d_ff, n_heads,
                  dropout, dropout_att, dropout_layer,
-                 layer_norm_eps, ffn_activation, param_init, pe_type,
-                 relative_attention=False, ffn_bottleneck_dim=0):
+                 layer_norm_eps, ffn_activation, param_init,
+                 pe_type, clamp_len, ffn_bottleneck_dim):
         super(TransformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
@@ -54,7 +55,8 @@ class TransformerEncoderBlock(nn.Module):
                              n_heads=n_heads,
                              dropout=dropout_att,
                              param_init=param_init,
-                             xl_like=pe_type == 'relative_xl')
+                             xl_like=pe_type == 'relative_xl',
+                             clamp_len=clamp_len)
 
         # position-wise feed-forward
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -73,17 +75,18 @@ class TransformerEncoderBlock(nn.Module):
     def reset_visualization(self):
         self._xx_aws = None
 
-    def forward(self, xs, xx_mask=None, pos_embs=None, u_bias=None, v_bias=None):
+    def forward(self, xs, xx_mask=None,
+                pos_embs=None, u_bias=None, v_bias=None):
         """Transformer encoder layer definition.
 
         Args:
-            xs (FloatTensor): `[B, T, d_model]`
+            xs (FloatTensor): `[B, T (query), d_model]`
             xx_mask (ByteTensor): `[B, T (query), T (key)]`
-            pos_embs (LongTensor): `[L, 1, d_model]`
+            pos_embs (LongTensor): `[T (query), 1, d_model]`
             u_bias (FloatTensor): global parameter for relative positional encoding
             v_bias (FloatTensor): global parameter for relative positional encoding
         Returns:
-            xs (FloatTensor): `[B, T, d_model]`
+            xs (FloatTensor): `[B, T (query), d_model]`
 
         """
         self.reset_visualization()
@@ -92,18 +95,22 @@ class TransformerEncoderBlock(nn.Module):
         if self.dropout_layer > 0 and self.training and random.random() < self.dropout_layer:
             return xs
 
+        ##################################################
         # self-attention
+        ##################################################
         residual = xs
-        xs = self.norm1(xs)
+        xs = self.norm1(xs)  # pre-norm
         if self.rel_attn:
             xs, self._xx_aws = self.self_attn(xs, xs, pos_embs, xx_mask, u_bias, v_bias)  # k/q/m
         else:
             xs, self._xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)[:2]  # k/v/q
         xs = self.dropout(xs) + residual
 
+        ##################################################
         # position-wise feed-forward
+        ##################################################
         residual = xs
-        xs = self.norm2(xs)
+        xs = self.norm2(xs)  # pre-norm
         xs = self.feed_forward(xs)
         xs = self.dropout(xs) + residual
 

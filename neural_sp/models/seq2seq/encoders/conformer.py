@@ -94,15 +94,17 @@ class ConformerEncoder(TransformerEncoder):
             if task_specific_layer:
                 self.layer_sub1 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
-                    layer_norm_eps, ffn_activation, param_init, pe_type,
-                    ffn_bottleneck_dim, self.unidir)
+                    layer_norm_eps, ffn_activation, param_init,
+                    pe_type, clamp_len, ffn_bottleneck_dim, self.unidir)
 
         if n_layers_sub2 > 0:
             if task_specific_layer:
                 self.layer_sub2 = ConformerEncoderBlock(
                     d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
-                    layer_norm_eps, ffn_activation, param_init, pe_type,
-                    ffn_bottleneck_dim, self.unidir)
+                    layer_norm_eps, ffn_activation, param_init,
+                    pe_type, clamp_len, ffn_bottleneck_dim, self.unidir)
+
+        # NOTE: bridge layers are already defined in Transformer if they exist
 
         self.reset_parameters(param_init)
 

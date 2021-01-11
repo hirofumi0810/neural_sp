@@ -22,6 +22,7 @@ def make_args(**kwargs):
         bias=False,
         param_init='',
         xl_like=False,
+        clamp_len=-1,
     )
     args.update(kwargs)
     return args
@@ -34,11 +35,13 @@ def make_args(**kwargs):
         ({'n_heads': 4}),
         ({'bias': True}),
         ({'param_init': 'xavier_uniform'}),
+        ({'clamp_len': 4}),
         # TransformerXL like
         ({'n_heads': 1, 'xl_like': True}),
         ({'n_heads': 4, 'xl_like': True}),
         ({'bias': True, 'xl_like': True}),
         ({'param_init': 'xavier_uniform', 'xl_like': True}),
+        ({'clamp_len': 4, 'xl_like': True}),
     ]
 )
 def test_forward(args):
@@ -62,8 +65,7 @@ def test_forward(args):
     causal_mask = causal_mask.repeat([batch_size, 1, 1])  # `[B, qlen, mlen+qlen]`
 
     module_embedding = importlib.import_module('neural_sp.models.modules.positional_embedding')
-    pos_emb = module_embedding.XLPositionalEmbedding(args['kdim'], args['dropout'],
-                                                     zero_center_offset=True)
+    pos_emb = module_embedding.XLPositionalEmbedding(args['kdim'], args['dropout'])
 
     if args['xl_like']:
         u_bias = torch.nn.Parameter(torch.Tensor(args['n_heads'], args['adim'] // args['n_heads']))
@@ -79,7 +81,7 @@ def test_forward(args):
 
     attention.train()
     aws = None
-    pos_embs = pos_emb(query, mlen=mlen, clamp_len=-1)
+    pos_embs = pos_emb(query, mlen=mlen)
 
     out = attention(cat, query, pos_embs, causal_mask,
                     u_bias=u_bias, v_bias=v_bias)
@@ -91,7 +93,7 @@ def test_forward(args):
     # incremental check
     cv_incremental = []
     for t in range(qlen):
-        pos_embs_t = pos_emb(query[:, t:t + 1], mlen=mlen + t, clamp_len=-1)
+        pos_embs_t = pos_emb(query[:, t:t + 1], mlen=mlen + t)
         cv_incremental.append(attention(cat[:, :mlen + t + 1],
                                         query[:, t:t + 1],
                                         pos_embs_t,

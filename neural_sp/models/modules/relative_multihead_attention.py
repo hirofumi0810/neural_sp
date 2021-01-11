@@ -30,11 +30,12 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         param_init (str): parameter initialization method
         xl_like (bool): use TransformerXL like relative positional encoding.
             Otherwise, use relative positional encoding like Shaw et al. 2018
+        clamp_len (int): maximum relative distance from each position
 
     """
 
     def __init__(self, kdim, qdim, adim, odim, n_heads, dropout, dropout_head=0.,
-                 bias=False, param_init='', xl_like=False):
+                 bias=False, param_init='', xl_like=False, clamp_len=-1):
 
         super().__init__()
 
@@ -43,6 +44,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         self.n_heads = n_heads
         self.scale = math.sqrt(self.d_k)
         self.xl_like = xl_like
+        self.clamp_len = clamp_len
 
         self.dropout_attn = nn.Dropout(p=dropout)
         self.dropout_head = dropout_head
@@ -129,6 +131,8 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
             rel_pos_idx = klen - qlen - rel_pos_idx
             rel_pos_idx[rel_pos_idx < 0] *= -1
 
+        if self.clamp_len > 0:
+            rel_pos_idx.clamp_(max=self.clamp_len)
         rel_pos_idx = rel_pos_idx.expand_as(xs)
         x_shift = torch.gather(xs, dim=2, index=rel_pos_idx)  # `[B, H, klen, qlen]`
 

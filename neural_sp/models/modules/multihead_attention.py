@@ -29,11 +29,13 @@ class MultiheadAttentionMechanism(nn.Module):
         bias (bool): use bias term in linear layers
         param_init (str): parameter initialization method
         xl_like: dummy argument for compatibility with relative MHA
+        clamp_len: dummy
 
     """
 
     def __init__(self, kdim, qdim, adim, odim, n_heads, dropout, dropout_head=0.,
-                 atype='scaled_dot', bias=True, param_init='', xl_like=False):
+                 atype='scaled_dot', bias=True, param_init='',
+                 xl_like=False, clamp_len=-1):
 
         super().__init__()
 

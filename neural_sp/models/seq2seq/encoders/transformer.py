@@ -124,7 +124,6 @@ class TransformerEncoder(EncoderBase):
         self.pe_type = pe_type
         self.scale = math.sqrt(d_model)
         self.enc_type = enc_type
-        self.unidir = 'uni' in enc_type
 
         # for compatibility
         chunk_size_left = str(chunk_size_left)
@@ -132,6 +131,7 @@ class TransformerEncoder(EncoderBase):
         chunk_size_right = str(chunk_size_right)
 
         # for streaming encoder
+        self.unidir = 'uni' in enc_type
         self.lookaheads = lookaheads
         if sum(lookaheads) > 0:
             assert self.unidir
@@ -145,6 +145,8 @@ class TransformerEncoder(EncoderBase):
         # *: current context
         # +: future context
         # reshape) overlapped windowing. additional redundant computation is introduced.
+        # During inference, caching is not applied. However, considering (N_l+N_c+N_r) is very short
+        # and independent on layer depth, the overhead is negligible.
         # chunk1: |**|++
         # chunk2:  --|**|++
         # chunk3:     --|**|++
@@ -233,12 +235,10 @@ class TransformerEncoder(EncoderBase):
         if self.chunk_size_right > 0:
             assert self.chunk_size_right % self._factor == 0
 
-        self.clamp_len = clamp_len
         self.pos_enc, self.pos_emb = None, None
         self.u_bias, self.v_bias = None, None
         if pe_type in ['relative', 'relative_xl']:
-            self.pos_emb = XLPositionalEmbedding(d_model, dropout,
-                                                 zero_center_offset=True)
+            self.pos_emb = XLPositionalEmbedding(d_model, dropout)
             if pe_type == 'relative_xl':
                 self.u_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
                 self.v_bias = nn.Parameter(torch.Tensor(n_heads, d_model // n_heads))
@@ -247,9 +247,10 @@ class TransformerEncoder(EncoderBase):
             self.pos_enc = PositionalEncoding(d_model, dropout_in, pe_type, param_init)
 
         self.layers = nn.ModuleList([copy.deepcopy(TransformerEncoderBlock(
-            d_model, d_ff, n_heads, dropout, dropout_att, dropout_layer,
-            layer_norm_eps, ffn_activation, param_init, pe_type,
-            ffn_bottleneck_dim))
+            d_model, d_ff, n_heads,
+            dropout, dropout_att, dropout_layer,
+            layer_norm_eps, ffn_activation, param_init,
+            pe_type, clamp_len, ffn_bottleneck_dim))
             for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self._odim = d_model
@@ -259,8 +260,8 @@ class TransformerEncoder(EncoderBase):
                 self.layer_sub1 = TransformerEncoderBlock(
                     d_model, d_ff, n_heads,
                     dropout, dropout_att, dropout_layer,
-                    layer_norm_eps, ffn_activation, param_init, pe_type,
-                    ffn_bottleneck_dim)
+                    layer_norm_eps, ffn_activation, param_init,
+                    pe_type, clamp_len, ffn_bottleneck_dim)
             odim_sub1 = d_model
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub1 = nn.Linear(self._odim, last_proj_dim)
@@ -275,8 +276,8 @@ class TransformerEncoder(EncoderBase):
                 self.layer_sub2 = TransformerEncoderBlock(
                     d_model, d_ff, n_heads,
                     dropout, dropout_att, dropout_layer,
-                    layer_norm_eps, ffn_activation, param_init, pe_type,
-                    ffn_bottleneck_dim)
+                    layer_norm_eps, ffn_activation, param_init,
+                    pe_type, clamp_len, ffn_bottleneck_dim)
             odim_sub2 = d_model
             if last_proj_dim > 0 and last_proj_dim != self.output_dim:
                 self.bridge_sub2 = nn.Linear(self._odim, last_proj_dim)
@@ -409,7 +410,6 @@ class TransformerEncoder(EncoderBase):
 
         bs, xmax = xs.size()[:2]
         n_chunks = 0
-        clamp_len = self.clamp_len
         unidir = self.unidir
         lc_bidir = self.lc_bidir
         N_l, N_c, N_r = self.chunk_size_left, self.chunk_size_current, self.chunk_size_right
@@ -432,7 +432,6 @@ class TransformerEncoder(EncoderBase):
                                   lookback=False if lc_bidir else lookback,
                                   lookahead=False if lc_bidir else lookahead)
             # NOTE: CNN lookahead surpassing a chunk is not allowed in chunkwise processing
-            clamp_len = clamp_len // self.conv.subsampling_factor
             N_l = max(0, N_l // self.conv.subsampling_factor)
             N_c = N_c // self.conv.subsampling_factor
             N_r = N_r // self.conv.subsampling_factor
@@ -452,7 +451,7 @@ class TransformerEncoder(EncoderBase):
             pos_embs = None
             if self.pe_type in ['relative', 'relative_xl']:
                 xs = xs * self.scale  # NOTE: first layer only
-                pos_embs = self.pos_emb(xs)  # NOTE: no clamp_len for streaming
+                pos_embs = self.pos_emb(xs)
             else:
                 xs = self.pos_enc(xs, scale=True)
 
@@ -488,7 +487,7 @@ class TransformerEncoder(EncoderBase):
                     N_r = N_r // self.subsample[lth].factor
                     if self.pe_type in ['relative', 'relative_xl']:
                         # Create sinusoidal positional embeddings for relative positional encoding
-                        pos_embs = self.pos_emb(xs)  # NOTE: clamp_len is not used for streaming
+                        pos_embs = self.pos_emb(xs)
                     if self.streaming_type == 'mask':
                         xx_mask = make_chunkwise_san_mask(xs, xlens, N_l, N_c, n_chunks)
 
@@ -502,14 +501,15 @@ class TransformerEncoder(EncoderBase):
             if self.pe_type in ['relative', 'relative_xl']:
                 xs = xs * self.scale  # NOTE: first layer only
                 # Create sinusoidal positional embeddings for relative positional encoding
-                pos_embs = self.pos_emb(xs, clamp_len=clamp_len)
+                pos_embs = self.pos_emb(xs)
             else:
                 xs = self.pos_enc(xs, scale=True)
                 pos_embs = None
 
             xx_mask = make_san_mask(xs, xlens, unidir, self.lookaheads[0])
             for lth, layer in enumerate(self.layers):
-                xs = layer(xs, xx_mask, pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
+                xs = layer(xs, xx_mask,
+                           pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if not self.training:
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
                     self.data_dict['elens%d' % lth] = tensor2np(xlens)
@@ -532,8 +532,7 @@ class TransformerEncoder(EncoderBase):
                         xx_mask = make_san_mask(xs, xlens, self.unidir, self.lookaheads[lth + 1])
                         if self.pe_type in ['relative', 'relative_xl']:
                             # Create sinusoidal positional embeddings for relative positional encoding
-                            clamp_len = clamp_len // self.subsample[lth].factor
-                            pos_embs = self.pos_emb(xs, clamp_len=clamp_len)
+                            pos_embs = self.pos_emb(xs)
                     elif self.lookaheads[lth] != self.lookaheads[lth + 1]:
                         xx_mask = make_san_mask(xs, xlens, unidir, self.lookaheads[lth + 1])
 
