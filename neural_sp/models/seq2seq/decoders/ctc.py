@@ -99,8 +99,8 @@ class CTC(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
-            elens (List): length `B`
-            ys (List): length `B`, each of which contains a list of size `[L]`
+            elens (List): length `[B]`
+            ys (List): length `[B]`, each of which contains a list of size `[L]`
         Returns:
             loss (FloatTensor): `[1]`
             trigger_points (IntTensor): `[B, L]`
@@ -120,7 +120,7 @@ class CTC(DecoderBase):
         if self.lsm_prob > 0:
             loss = loss * (1 - self.lsm_prob) + kldiv_lsm_ctc(logits, elens) * self.lsm_prob
 
-        trigger_points = self.forced_align(logits, elens, ys, ylens) if forced_align else None
+        trigger_points = self.forced_aligner(logits.clone(), elens, ys, ylens) if forced_align else None
 
         if not self.training:
             self.data_dict['elens'] = tensor2np(elens)
@@ -140,24 +140,6 @@ class CTC(DecoderBase):
                 loss = self.ctc_loss(logits.log_softmax(2),
                                      ys_ctc, elens, ylens) / logits.size(1)
         return loss
-
-    def forced_align(self, logits, elens, ys, ylens):
-        """Forced alignment with references.
-
-        Args:
-            logits (FloatTensor): `[B, T, vocab]`
-            elens (List): length `B`
-            ys (List): length `B`, each of which contains a list of size `[L]`
-            ylens (List): length `B`
-        Returns:
-            trigger_points (IntTensor): `[B, L]`
-
-        """
-        with torch.no_grad():
-            ys = [np2tensor(np.fromiter(y, dtype=np.int64), logits.device) for y in ys]
-            ys_in_pad = pad_list(ys, 0)
-            trigger_points = self.forced_aligner.align(logits.clone(), elens, ys_in_pad, ylens)
-        return trigger_points
 
     def trigger_points(self, eouts, elens):
         """Extract trigger points for inference.
@@ -237,7 +219,7 @@ class CTC(DecoderBase):
 
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
-            elens (List): length `B`
+            elens (List): length `[B]`
             params (dict):
                 recog_beam_width (int): size of beam
                 recog_length_penalty (float): length penalty
@@ -245,9 +227,9 @@ class CTC(DecoderBase):
                 recog_lm_second_weight (float): weight of second path LM score
                 recog_lm_bwd_weight (float): weight of second path backward LM score
             idx2token (): converter from index to token
-            lm: firsh path LM
-            lm_second: second path LM
-            lm_second_bwd: second path backward LM
+            lm (torch.nn.module): firsh path LM
+            lm_second (torch.nn.module): second path LM
+            lm_second_bwd (torch.nn.module): second path backward LM
             nbest (int):
             refs_id (List): reference list
             utt_ids (List): utterance id list
@@ -468,6 +450,31 @@ class CTCForcedAligner(object):
         self.blank = blank
         self.log0 = LOG_0
 
+    def __call__(self, logits, elens, ys, ylens):
+        """Forced alignment with references.
+
+        Args:
+            logits (FloatTensor): `[B, T, vocab]`
+            elens (List): length `[B]`
+            ys (List): length `[B]`, each of which contains a list of size `[L]`
+            ylens (List): length `[B]`
+        Returns:
+            trigger_points (IntTensor): `[B, L]`
+
+        """
+        with torch.no_grad():
+            ys = [np2tensor(np.fromiter(y, dtype=np.int64), logits.device) for y in ys]
+            ys_in_pad = pad_list(ys, 0)
+
+            # zero padding
+            mask = make_pad_mask(elens.to(logits.device))
+            mask = mask.unsqueeze(2).expand_as(logits)
+            logits = logits.masked_fill_(mask == 0, self.log0)
+            log_probs = torch.log_softmax(logits, dim=-1).transpose(0, 1)  # `[T, B, vocab]`
+
+            trigger_points = self.align(log_probs, elens, ys_in_pad, ylens)
+        return trigger_points
+
     def _computes_transition(self, prev_log_prob, path, path_lens, cum_log_prob, y, skip_accum=False):
         bs, max_path_len = path.size()
         mat = prev_log_prob.new_zeros(3, bs, max_path_len).fill_(self.log0)
@@ -487,10 +494,10 @@ class CTCForcedAligner(object):
         log_prob += y[batch_index, path]
         return log_prob
 
-    def align(self, logits, elens, ys, ylens, add_eos=True):
+    def align(self, log_probs, elens, ys, ylens, add_eos=True):
         """Calculte the best CTC alignment with the forward-backward algorithm.
         Args:
-            logits (FloatTensor): `[B, T, vocab]`
+            log_probs (FloatTensor): `[T, B, vocab]`
             elens (FloatTensor): `[B]`
             ys (FloatTensor): `[B, L]`
             ylens (FloatTensor): `[B]`
@@ -499,14 +506,7 @@ class CTCForcedAligner(object):
             trigger_points (IntTensor): `[B, L]`
 
         """
-        bs, xmax, vocab = logits.size()
-        device = logits.device
-
-        # zero padding
-        mask = make_pad_mask(elens.to(device))
-        mask = mask.unsqueeze(2).repeat([1, 1, vocab])
-        logits = logits.masked_fill_(mask == 0, self.log0)
-        log_probs = torch.log_softmax(logits, dim=-1).transpose(0, 1)  # `[T, B, vocab]`
+        xmax, bs, vocab = log_probs.size()
 
         path = _label_to_path(ys, self.blank)
         path_lens = 2 * ylens.long() + 1
