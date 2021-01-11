@@ -6,6 +6,9 @@
 import importlib
 import pytest
 import torch
+import warnings
+
+torch.manual_seed(0)
 
 
 def make_args(**kwargs):
@@ -19,6 +22,7 @@ def make_args(**kwargs):
         bias=False,
         param_init='',
         xl_like=False,
+        clamp_len=-1,
     )
     args.update(kwargs)
     return args
@@ -31,11 +35,13 @@ def make_args(**kwargs):
         ({'n_heads': 4}),
         ({'bias': True}),
         ({'param_init': 'xavier_uniform'}),
+        ({'clamp_len': 4}),
         # TransformerXL like
         ({'n_heads': 1, 'xl_like': True}),
         ({'n_heads': 4, 'xl_like': True}),
         ({'bias': True, 'xl_like': True}),
         ({'param_init': 'xavier_uniform', 'xl_like': True}),
+        ({'clamp_len': 4, 'xl_like': True}),
     ]
 )
 def test_forward(args):
@@ -77,8 +83,23 @@ def test_forward(args):
     aws = None
     pos_embs = pos_emb(query, mlen=mlen)
 
-    out = attention(cat, query, pos_embs, causal_mask, u_bias=u_bias, v_bias=v_bias)
+    out = attention(cat, query, pos_embs, causal_mask,
+                    u_bias=u_bias, v_bias=v_bias)
     assert len(out) == 2
     cv, aws = out
     assert cv.size() == (batch_size, qlen, args['kdim'])
     assert aws.size() == (batch_size, args['n_heads'], qlen, qlen + mlen)
+
+    # incremental check
+    cv_incremental = []
+    for t in range(qlen):
+        pos_embs_t = pos_emb(query[:, t:t + 1], mlen=mlen + t)
+        cv_incremental.append(attention(cat[:, :mlen + t + 1],
+                                        query[:, t:t + 1],
+                                        pos_embs_t,
+                                        causal_mask[:, t:t + 1, :mlen + t + 1],
+                                        u_bias=u_bias, v_bias=v_bias)[0])
+    cv_incremental = torch.cat(cv_incremental, dim=1)
+    assert cv.size() == cv_incremental.size()
+    if not torch.allclose(cv, cv_incremental, equal_nan=True):
+        warnings.warn("Incremental output did not match.", UserWarning)

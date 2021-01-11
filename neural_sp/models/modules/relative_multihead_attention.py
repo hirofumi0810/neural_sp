@@ -30,11 +30,12 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         param_init (str): parameter initialization method
         xl_like (bool): use TransformerXL like relative positional encoding.
             Otherwise, use relative positional encoding like Shaw et al. 2018
+        clamp_len (int): maximum relative distance from each position
 
     """
 
     def __init__(self, kdim, qdim, adim, odim, n_heads, dropout, dropout_head=0.,
-                 bias=False, param_init='', xl_like=False):
+                 bias=False, param_init='', xl_like=False, clamp_len=-1):
 
         super().__init__()
 
@@ -43,6 +44,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         self.n_heads = n_heads
         self.scale = math.sqrt(self.d_k)
         self.xl_like = xl_like
+        self.clamp_len = clamp_len
 
         self.dropout_attn = nn.Dropout(p=dropout)
         self.dropout_head = dropout_head
@@ -55,7 +57,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         self.w_out = nn.Linear(adim, odim, bias=bias)
 
         if xl_like:
-            self.w_pos = nn.Linear(qdim, adim, bias=bias)
+            self.w_pos = nn.Linear(qdim, adim, bias=bias)  # W_{k,R}
 
         if param_init == 'xavier_uniform':
             self.reset_parameters(bias)
@@ -83,8 +85,8 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
             if bias:
                 nn.init.constant_(self.w_pos.bias, 0.)
 
-    def _rel_shift(self, xs):
-        """Calculate relative positional attention efficiently.
+    def _rel_shift_v1(self, xs):
+        """Calculate relative positional attention efficiently (old version).
 
         Args:
             xs (FloatTensor): `[B, qlen, klen, H]`
@@ -99,8 +101,43 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         zero_pad = xs.new_zeros((qlen, 1, bs * n_heads))
         xs_shifted = (torch.cat([zero_pad, xs], dim=1)
                       .view(klen + 1, qlen, bs * n_heads)[1:]
-                      .view_as(xs))
+                      .view_as(xs))  # `[qlen, klen, B * H]`
+
         return xs_shifted.view(qlen, klen, bs, n_heads).permute(2, 0, 1, 3)
+
+    def _rel_shift_v2(self, xs):
+        """Calculate relative positional attention efficiently.
+
+        Args:
+            xs (FloatTensor): `[B, qlen, klen, H]`
+        Returns:
+            xs_shifted (FloatTensor): `[B, qlen, klen, H]`
+
+        """
+        bs, qlen, klen, n_heads = xs.size()
+        xs = xs.permute(0, 3, 2, 1)  # `[B, H, klen, qlen]`
+
+        idx = torch.arange(klen, device=xs.device)
+        k_idx, q_idx = idx.unsqueeze(0), idx.unsqueeze(1)
+        rel_pos_idx = torch.abs(k_idx - q_idx)
+        # original postional encodings are generated with reversed order
+
+        # for streaming inference
+        if klen != qlen:
+            rel_pos_idx = rel_pos_idx[:, :qlen]
+            mask = xs.new_ones(qlen, klen, dtype=torch.uint8)
+            mask = torch.tril(mask, diagonal=0).transpose(1, 0)
+            rel_pos_idx[mask] *= -1
+            rel_pos_idx = klen - qlen - rel_pos_idx
+            rel_pos_idx[rel_pos_idx < 0] *= -1
+
+        if self.clamp_len > 0:
+            rel_pos_idx.clamp_(max=self.clamp_len)
+        rel_pos_idx = rel_pos_idx.expand_as(xs)
+        x_shift = torch.gather(xs, dim=2, index=rel_pos_idx)  # `[B, H, klen, qlen]`
+
+        x_shift = x_shift.permute(0, 3, 2, 1)
+        return x_shift
 
     def forward(self, key, query, pos_embs, mask, u_bias=None, v_bias=None):
         """Forward pass.
@@ -108,7 +145,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         Args:
             cat (FloatTensor): `[B, mlen+qlen, kdim]`
             mask (ByteTensor): `[B, qlen, mlen+qlen]`
-            pos_embs (LongTensor): `[qlen, 1, d_model]`
+            pos_embs (LongTensor): `[mlen+qlen, 1, d_model]`
             u_bias (nn.Parameter): `[H, d_k]`
             v_bias (nn.Parameter): `[H, d_k]`
         Returns:
@@ -138,7 +175,7 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         # content-based attention term: (a) + (c)
         if u_bias is not None:
             assert self.xl_like
-            AC = torch.einsum("bihd,bjhd->bijh", ((q + u_bias[None, None]), k))  # `[B, qlen, mlen+qlen, H]`
+            AC = torch.einsum("bihd,bjhd->bijh", (q + u_bias[None, None], k))  # `[B, qlen, mlen+qlen, H]`
         else:
             # A only accutually
             AC = torch.einsum("bihd,bjhd->bijh", (q, k))  # `[B, qlen, mlen+qlen, H]`
@@ -146,13 +183,14 @@ class RelativeMultiheadAttentionMechanism(nn.Module):
         # position-based attention term: (b) + (d)
         if v_bias is not None:
             assert self.xl_like
-            BD = torch.einsum("bihd,jhd->bijh", ((q + v_bias[None, None]), _pos_embs))  # `[B, qlen, mlen+qlen, H]`
+            BD = torch.einsum("bihd,jhd->bijh", (q + v_bias[None, None], _pos_embs))  # `[B, qlen, mlen+qlen, H]`
         else:
             # B only accutually
             BD = torch.einsum("bihd,jhd->bijh", (q, _pos_embs))  # `[B, qlen, mlen+qlen, H]`
 
         # Compute positional attention efficiently
-        BD = self._rel_shift(BD)
+        # BD = self._rel_shift_v1(BD)
+        BD = self._rel_shift_v2(BD)
 
         # the attention is the sum of content-based and position-based attention
         e = (AC + BD) / self.scale  # `[B, qlen, mlen+qlen, H]`

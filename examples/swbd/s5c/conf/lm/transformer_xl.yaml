@@ -9,7 +9,6 @@ tie_embedding: true
 batch_size: 24
 bptt: 200
 mem_len: 200
-zero_center_offset: true
 optimizer: noam
 n_epochs: 40
 convert_to_sgd_epoch: 100

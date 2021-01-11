@@ -31,15 +31,18 @@ class ConformerEncoderBlock(nn.Module):
         ffn_activation (str): nonlinear function for PositionwiseFeedForward
         param_init (str): parameter initialization method
         pe_type (str): type of positional encoding
+        clamp_len (int): maximum relative distance from each position
         ffn_bottleneck_dim (int): bottleneck dimension for the light-weight FFN layer
         unidirectional (bool): pad right context for unidirectional encoding
+        normalization (str): batch_norm/group_norm/layer_norm
 
     """
 
     def __init__(self, d_model, d_ff, n_heads, kernel_size,
                  dropout, dropout_att, dropout_layer,
-                 layer_norm_eps, ffn_activation, param_init, pe_type,
-                 ffn_bottleneck_dim, unidirectional):
+                 layer_norm_eps, ffn_activation, param_init,
+                 pe_type, clamp_len, ffn_bottleneck_dim, unidirectional,
+                 normalization='batch_norm'):
         super(ConformerEncoderBlock, self).__init__()
 
         self.n_heads = n_heads
@@ -59,11 +62,12 @@ class ConformerEncoderBlock(nn.Module):
                                 n_heads=n_heads,
                                 dropout=dropout_att,
                                 param_init=param_init,
-                                xl_like=pe_type == 'relative_xl')
+                                xl_like=pe_type == 'relative_xl',
+                                clamp_len=clamp_len)
 
         # conv module
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
-        self.conv = ConformerConvBlock(d_model, kernel_size, param_init,
+        self.conv = ConformerConvBlock(d_model, kernel_size, param_init, normalization,
                                        causal=unidirectional)
 
         # second half position-wise feed-forward
@@ -90,13 +94,13 @@ class ConformerEncoderBlock(nn.Module):
         """Conformer encoder layer definition.
 
         Args:
-            xs (FloatTensor): `[B, T, d_model]`
+            xs (FloatTensor): `[B, T (query), d_model]`
             xx_mask (ByteTensor): `[B, T (query), T (key)]`
-            pos_embs (LongTensor): `[L, 1, d_model]`
+            pos_embs (LongTensor): `[T (query), 1, d_model]`
             u_bias (FloatTensor): global parameter for relative positional encoding
             v_bias (FloatTensor): global parameter for relative positional encoding
         Returns:
-            xs (FloatTensor): `[B, T, d_model]`
+            xs (FloatTensor): `[B, T (query), d_model]`
 
         """
         self.reset_visualization()
@@ -105,27 +109,35 @@ class ConformerEncoderBlock(nn.Module):
         if self.dropout_layer > 0 and self.training and random.random() < self.dropout_layer:
             return xs
 
+        ##################################################
         # first half FFN
+        ##################################################
         residual = xs
-        xs = self.norm1(xs)
+        xs = self.norm1(xs)  # pre-norm
         xs = self.feed_forward_macaron(xs)
         xs = self.fc_factor * self.dropout(xs) + residual  # Macaron FFN
 
+        ##################################################
         # self-attention w/ relative positional encoding
+        ##################################################
         residual = xs
-        xs = self.norm2(xs)
+        xs = self.norm2(xs)  # pre-norm
         xs, self._xx_aws = self.self_attn(xs, xs, pos_embs, xx_mask, u_bias, v_bias)  # k/q/m
         xs = self.dropout(xs) + residual
 
+        ##################################################
         # conv
+        ##################################################
         residual = xs
-        xs = self.norm3(xs)
+        xs = self.norm3(xs)  # pre-norm
         xs = self.conv(xs)
         xs = self.dropout(xs) + residual
 
+        ##################################################
         # second half FFN
+        ##################################################
         residual = xs
-        xs = self.norm4(xs)
+        xs = self.norm4(xs)  # pre-norm
         xs = self.feed_forward(xs)
         xs = self.fc_factor * self.dropout(xs) + residual  # Macaron FFN
         xs = self.norm5(xs)  # this is important for performance

@@ -34,7 +34,6 @@ def make_args(**kwargs):
         bptt=200,
         mem_len=100,
         recog_mem_len=1000,
-        zero_center_offset=False,
         adaptive_softmax=False,
         tie_embedding=False,
     )
@@ -64,7 +63,6 @@ def make_args(**kwargs):
         ({'mem_len': 0}),
         ({'recog_mem_len': 0}),
         ({'mem_len': 0, 'recog_mem_len': 0}),
-        ({'zero_center_offset': True}),
     ]
 )
 def test_forward(args):

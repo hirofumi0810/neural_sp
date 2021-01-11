@@ -101,42 +101,31 @@ class XLPositionalEmbedding(nn.Module):
     Args:
         d_model (int): dimension of MultiheadAttentionMechanism
         dropout (float): dropout probability
-        zero_center_offset (bool):
 
     """
 
-    def __init__(self, d_model, dropout, zero_center_offset=False):
+    def __init__(self, d_model, dropout):
 
         super().__init__()
 
         self.d_model = d_model
-        self.zero_center_offset = zero_center_offset
-        # NOTE: this is for streaming encoding
 
         inv_freq = 1 / (10000 ** (torch.arange(0.0, d_model, 2.0) / d_model))
         self.register_buffer("inv_freq", inv_freq)
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, xs, mlen=0, clamp_len=-1):
+    def forward(self, xs, mlen=0):
         """Forward pass.
 
         Args:
             xs (FloatTensor): `[B, L, d_model]`
             mlen (int); length of memory
-            clamp_len (int):
         Returns:
             pos_emb (LongTensor): `[L, 1, d_model]`
 
         """
-        if self.zero_center_offset:
-            pos_idxs = torch.arange(- 1, -xs.size(1) - 1 - mlen, -1.0, dtype=torch.float, device=xs.device)
-        else:
-            pos_idxs = torch.arange(mlen + xs.size(1) - 1, -1, -1.0, dtype=torch.float, device=xs.device)
-
-        # truncate by maximum length
-        if clamp_len > 0:
-            pos_idxs.clamp_(max=clamp_len)
+        pos_idxs = torch.arange(-1, -xs.size(1) - 1 - mlen, -1.0, dtype=torch.float, device=xs.device)
 
         # outer product
         sinusoid_inp = torch.einsum("i,j->ij", pos_idxs, self.inv_freq)
