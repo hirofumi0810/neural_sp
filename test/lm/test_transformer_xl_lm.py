@@ -18,8 +18,8 @@ def make_args(**kwargs):
         transformer_attn_type='scaled_dot',
         transformer_n_heads=4,
         n_layers=2,
-        transformer_d_model=16,
-        transformer_d_ff=64,
+        transformer_d_model=8,
+        transformer_d_ff=16,
         transformer_layer_norm_eps=1e-12,
         transformer_ffn_activation='relu',
         transformer_pe_type='add',
@@ -34,7 +34,6 @@ def make_args(**kwargs):
         bptt=200,
         mem_len=100,
         recog_mem_len=1000,
-        zero_center_offset=False,
         adaptive_softmax=False,
         tie_embedding=False,
     )
@@ -64,7 +63,6 @@ def make_args(**kwargs):
         ({'mem_len': 0}),
         ({'recog_mem_len': 0}),
         ({'mem_len': 0, 'recog_mem_len': 0}),
-        ({'zero_center_offset': True}),
     ]
 )
 def test_forward(args):

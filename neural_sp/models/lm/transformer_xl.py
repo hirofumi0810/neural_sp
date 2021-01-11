@@ -65,8 +65,7 @@ class TransformerXL(LMBase):
         self.embed_cache = None
 
         # positional embedding
-        self.pos_emb = XLPositionalEmbedding(self.d_model, args.dropout_in,
-                                             zero_center_offset=args.zero_center_offset)
+        self.pos_emb = XLPositionalEmbedding(self.d_model, args.dropout_in)
         self.u_bias = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
         self.v_bias = nn.Parameter(torch.Tensor(self.n_heads, self.d_model // self.n_heads))
         # NOTE: u_bias and v_bias are global parameters
@@ -127,8 +126,6 @@ class TransformerXL(LMBase):
         # XL specific
         group.add_argument('--mem_len', type=int, default=0,
                            help='number of tokens for memory in TransformerXL during training')
-        group.add_argument('--zero_center_offset', type=strtobool, default=False,
-                           help='set the offset right after memory to zero (accept negaitve indices)')
         return parser
 
     @staticmethod
@@ -144,8 +141,6 @@ class TransformerXL(LMBase):
             dir_name += '_adaptiveSM'
         if args.mem_len > 0:
             dir_name += '_mem' + str(args.mem_len)
-        if args.zero_center_offset:
-            dir_name += '_zero_center'
         return dir_name
 
     def reset_parameters(self):

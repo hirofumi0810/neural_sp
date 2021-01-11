@@ -1,12 +1,10 @@
 # topology
 lm_type: transformer
-transformer_d_model: 512
-transformer_d_ff: 2048
-transformer_ffn_activation: relu
 n_layers: 6
 transformer_pe_type: add
+transformer_d_model: 512
+transformer_d_ff: 2048
 transformer_n_heads: 8
-transformer_param_init: xavier_uniform
 tie_embedding: true
 # optimization
 batch_size: 32

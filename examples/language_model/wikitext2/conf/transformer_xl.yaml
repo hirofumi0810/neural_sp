@@ -1,17 +1,14 @@
 # topology
 lm_type: transformer_xl
+n_layers: 12
 transformer_d_model: 512
 transformer_d_ff: 2048
-transformer_ffn_activation: relu
-n_layers: 12
 transformer_n_heads: 8
-transformer_param_init: xavier_uniform
 tie_embedding: true
 # optimization
 batch_size: 24
 bptt: 200
 mem_len: 200
-zero_center_offset: false  ###
 optimizer: noam
 n_epochs: 50
 convert_to_sgd_epoch: 100
