@@ -109,10 +109,7 @@ class TransformerEncoderBlock(nn.Module):
         ##################################################
         # self-attention
         ##################################################
-        if self.input_bottleneck_dim > 0:
-            residual = self.linear_in(xs)
-        else:
-            residual = xs  # `[B, qlen, d_model]`
+        residual = xs  # `[B, qlen, d_model]`
         xs = self.norm1(xs)  # pre-norm
 
         # cache
@@ -140,9 +137,6 @@ class TransformerEncoderBlock(nn.Module):
         xs = self.norm2(xs)  # pre-norm
         xs = self.feed_forward(xs)
         xs = self.dropout(xs) + residual
-
-        if self.input_bottleneck_dim > 0:
-            xs = self.linear_out(xs)
 
         new_cache['output'] = xs
 
