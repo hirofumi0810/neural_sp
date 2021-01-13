@@ -14,6 +14,9 @@ from neural_sp.models.torch_utils import (
     pad_list
 )
 
+np.random.seed(0)
+torch.manual_seed(0)
+
 
 def make_args(**kwargs):
     args = dict(
@@ -63,17 +66,12 @@ def make_args(**kwargs):
           'chunk_size_current': "20", 'chunk_size_right': "20"}),
         ({'enc_type': 'blstm', 'n_stacks': 2,
           'chunk_size_current': "32", 'chunk_size_right': "16"}),
-        ({'enc_type': 'lstm', 'n_stacks': 2, 'chunk_size_current': "2"}),
         ({'enc_type': 'lstm', 'n_stacks': 3, 'chunk_size_current': "3"}),
         # subsample: 1/2
         ({'enc_type': 'conv',
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
           'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
-          'chunk_size_current': "4"}),
-        ({'enc_type': 'conv',
-          'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
-          'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
-          'chunk_size_current': "32"}),
+          'chunk_size_current': "2"}),
         # subsample: 1/4
         ({'enc_type': 'conv', 'chunk_size_current': "8"}),
         ({'enc_type': 'conv', 'chunk_size_current': "32"}),
@@ -88,10 +86,6 @@ def make_args(**kwargs):
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
           'chunk_size_current': "16"}),
-        ({'enc_type': 'conv',
-          'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
-          'chunk_size_current': "32"}),
         ({'enc_type': 'conv_blstm',
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
@@ -125,76 +119,77 @@ def test_forward_streaming_chunkwise(args):
     factor = enc.subsampling_factor
     conv_lookahead = enc.conv.context_size if enc.conv is not None else 0
 
-    module_fs = importlib.import_module('neural_sp.models.seq2seq.frontends.frame_stacking')
+    module_stack = importlib.import_module('neural_sp.models.seq2seq.frontends.frame_stacking')
 
     if enc.conv is not None:
         enc.turn_off_ceil_mode(enc)
 
     enc.eval()
-    with torch.no_grad():
-        for xmax in xmaxs:
-            xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
+    for xmax in xmaxs:
+        xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
 
-            if args['n_stacks'] > 1:
-                xs = [module_fs.stack_frame(x, args['n_stacks'], args['n_stacks']) for x in xs]
-            else:
-                # zero padding for the last chunk
-                if xmax % N_c != 0:
-                    zero_pad = np.zeros((batch_size, N_c - xmax % N_c, args['input_dim'])).astype(np.float32)
-                    xs = np.concatenate([xs, zero_pad], axis=1)
+        if args['n_stacks'] > 1:
+            xs = [module_stack.stack_frame(x, args['n_stacks'], args['n_stacks']) for x in xs]
+        else:
+            # zero padding for the last chunk (for LC-BLSTM/CNN)
+            if N_c > 0 and xmax % N_c != 0:
+                zero_pad = np.zeros((batch_size, N_c - xmax % N_c, args['input_dim'])).astype(np.float32)
+                xs = np.concatenate([xs, zero_pad], axis=1)
 
-            xlens = torch.IntTensor([len(x) for x in xs])
-            xmax = xlens.max().item()
+        xlens = torch.IntTensor([len(x) for x in xs])
+        xmax = xlens.max().item()
 
-            # all encoding
-            xs_pad = pad_list([np2tensor(x, device).float() for x in xs], 0.)
+        # all encoding
+        xs_pad = pad_list([np2tensor(x, device).float() for x in xs], 0.)
 
-            enc_out_dict = enc(xs_pad, xlens, task='all')
-            assert enc_out_dict['ys']['xs'].size(0) == batch_size
-            assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
+        enc_out_dict = enc(xs_pad, xlens, task='all')
+        assert enc_out_dict['ys']['xs'].size(0) == batch_size
+        assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
 
-            enc.reset_cache()
+        enc.reset_cache()
 
-            # chunk by chunk encoding
-            eouts_cat = []
-            elens_cat = 0
-            n_chunks = math.ceil(xmax / N_c)
-            j = 0  # time offset for input
-            j_out = 0  # time offset for encoder output
-            for chunk_idx in range(n_chunks):
-                start = j - conv_lookahead
-                end = (j + N_c + N_r) + conv_lookahead
-                xs_pad_chunk = pad_list(
-                    [np2tensor(x[max(0, start):end], device).float() for x in xs], 0.)
-                xlens_chunk = torch.IntTensor([xs_pad_chunk.size(1) for x in xs])
+        # chunk by chunk encoding
+        eouts_cat = []
+        elens_cat = 0
+        n_chunks = math.ceil(xmax / N_c)
+        j = 0  # time offset for input
+        j_out = 0  # time offset for encoder output
+        for chunk_idx in range(n_chunks):
+            start = j - conv_lookahead
+            end = (j + N_c + N_r) + conv_lookahead
+            xs_pad_chunk = pad_list(
+                [np2tensor(x[max(0, start):end], device).float() for x in xs], 0.)
+            xlens_chunk = torch.IntTensor([xs_pad_chunk.size(1) for x in xs])
+
+            with torch.no_grad():
                 enc_out_dict_chunk = enc(xs_pad_chunk, xlens_chunk, task='all',
                                          streaming=True,
                                          lookback=start >= 0 and conv_lookahead,
-                                         lookahead=end <= xmax - 1 and conv_lookahead)
+                                         lookahead=end < xmax and conv_lookahead)
 
-                eout_all_i = enc_out_dict['ys']['xs'][:, j_out:j_out + (N_c // factor)]
-                if eout_all_i.size(1) == 0:
-                    break
-                eout_chunk = enc_out_dict_chunk['ys']['xs']
-                elens_chunk = enc_out_dict_chunk['ys']['xlens']
-                diff = eout_chunk.size(1) - eout_all_i.size(1)
-                eout_chunk = eout_chunk[:, :eout_all_i.size(1)]
-                elens_chunk -= diff
-                for t in range(eout_chunk.size(1)):
-                    print(torch.allclose(eout_all_i[:, t], eout_chunk[:, t], atol=atol))
+            eout_all_i = enc_out_dict['ys']['xs'][:, j_out:j_out + (N_c // factor)]
+            if eout_all_i.size(1) == 0:
+                break
+            eout_chunk = enc_out_dict_chunk['ys']['xs']
+            elens_chunk = enc_out_dict_chunk['ys']['xlens']
+            diff = eout_chunk.size(1) - eout_all_i.size(1)
+            eout_chunk = eout_chunk[:, :eout_all_i.size(1)]
+            elens_chunk -= diff
+            for t in range(eout_chunk.size(1)):
+                print(torch.allclose(eout_all_i[:, t], eout_chunk[:, t], atol=atol))
 
-                eouts_cat.append(eout_chunk)
-                elens_cat += elens_chunk
+            eouts_cat.append(eout_chunk)
+            elens_cat += elens_chunk
 
-                j += N_c
-                j_out += (N_c // factor)
-                if j > xmax:
-                    break
+            j += N_c
+            j_out += (N_c // factor)
+            if j > xmax:
+                break
 
-            enc.reset_cache()
+        enc.reset_cache()
 
-            eouts_cat = torch.cat(eouts_cat, dim=1)
-            assert enc_out_dict['ys']['xs'].size() == eouts_cat.size()
-            assert torch.allclose(enc_out_dict['ys']['xs'], eouts_cat, atol=atol)
-            assert elens_cat.item() == eouts_cat.size(1)
-            assert torch.equal(enc_out_dict['ys']['xlens'], elens_cat)
+        eouts_cat = torch.cat(eouts_cat, dim=1)
+        assert enc_out_dict['ys']['xs'].size() == eouts_cat.size()
+        assert torch.allclose(enc_out_dict['ys']['xs'], eouts_cat, atol=atol)
+        assert elens_cat.item() == eouts_cat.size(1)
+        assert torch.equal(enc_out_dict['ys']['xlens'], elens_cat)
