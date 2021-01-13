@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Test for chunkwise encoding in streaming Transformer encoder."""
+"""Test for chunkwise encoding in streaming Transformer/Conformer encoder."""
 
 import importlib
 import math
@@ -146,6 +146,7 @@ def make_args_conformer(**kwargs):
           'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
         # subsample: 1/4
         ({'enc_type': 'conv', 'chunk_size_current': "8"}),
+        ({'enc_type': 'conv_uni_transformer', 'chunk_size_current': "8"}),
         ({'enc_type': 'conv_uni_conformer', 'chunk_size_current': "8"}),
         ({'enc_type': 'conv_uni_conformer', 'chunk_size_current': "16",
           'subsample': "1_2_1"}),
@@ -181,7 +182,7 @@ def test_forward_streaming_chunkwise(args):
     unidir = 'uni' in args['enc_type']
 
     batch_size = 1
-    xmaxs = [t for t in range(164, 192, 1)]
+    xmaxs = [t for t in range(164, 192, 3)]
     device = "cpu"
     atol = 1e-05
 
@@ -199,8 +200,7 @@ def test_forward_streaming_chunkwise(args):
         module = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
         enc = module.TransformerEncoder(**args)
     enc = enc.to(device)
-    if enc.lc_bidir:
-        assert N_c > 0
+
     if args['streaming_type'] == 'mask':
         N_l = 0
         # NOTE: context in previous chunks are cached inside the encoder
@@ -210,39 +210,38 @@ def test_forward_streaming_chunkwise(args):
 
     module_stack = importlib.import_module('neural_sp.models.seq2seq.frontends.frame_stacking')
 
-    if enc.conv is not None:
-        enc.turn_off_ceil_mode(enc)
+    # if enc.conv is not None:
+    #     enc.turn_off_ceil_mode(enc)
 
     enc.eval()
-    for xmax in xmaxs:
-        xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
-
+    for xmax_orig in xmaxs:
+        xs = np.random.randn(batch_size, xmax_orig, args['input_dim']).astype(np.float32)
         if args['n_stacks'] > 1:
             xs = [module_stack.stack_frame(x, args['n_stacks'], args['n_stacks']) for x in xs]
         else:
             # zero padding for the last chunk (CNN)
-            if 'conv' in args['enc_type'] and (N_c > 0 and xmax % N_c != 0):
-                zero_pad = np.zeros((batch_size, N_c - xmax % N_c, args['input_dim'])).astype(np.float32)
+            if 'conv' in args['enc_type'] and (N_c > 0 and xmax_orig % N_c != 0):
+                zero_pad = np.zeros((batch_size, N_c - xmax_orig % N_c, args['input_dim'])).astype(np.float32)
                 xs = np.concatenate([xs, zero_pad], axis=1)
-
         xlens = torch.IntTensor([len(x) for x in xs])
-        xmax = xlens.max().item()
 
         # all encoding
         xs_pad = pad_list([np2tensor(x, device).float() for x in xs], 0.)
-
-        enc_out_dict = enc(xs_pad, xlens, task='all')
-        assert enc_out_dict['ys']['xs'].size(0) == batch_size
-        assert enc_out_dict['ys']['xs'].size(1) == enc_out_dict['ys']['xlens'][0]
-
         enc.reset_cache()
+        enc_out_dict = enc(xs_pad, xlens, task='all')
+        eout_all = enc_out_dict['ys']['xs']
+        elens_all = enc_out_dict['ys']['xlens']
+        assert eout_all.size(0) == batch_size
+        assert eout_all.size(1) == elens_all.max()
 
         # chunk by chunk encoding
         eouts_cat = []
         elens_cat = 0
+        xmax = xlens.max().item()
         n_chunks = math.ceil(xmax / N_c)
         j = 0  # time offset for input
         j_out = 0  # time offset for encoder output
+        enc.reset_cache()
         for chunk_idx in range(n_chunks):
             start = j - N_l - conv_lookahead
             end = (j + N_c + N_r) + conv_lookahead
@@ -268,11 +267,12 @@ def test_forward_streaming_chunkwise(args):
                                          lookback=start >= 0 and conv_lookahead,
                                          lookahead=end < xmax and conv_lookahead)
 
-            eout_all_i = enc_out_dict['ys']['xs'][:, j_out:j_out + (N_c // factor)]
+            eout_all_i = eout_all[:, j_out:j_out + (N_c // factor)]
             if eout_all_i.size(1) == 0:
                 break
             eout_chunk = enc_out_dict_chunk['ys']['xs']
             elens_chunk = enc_out_dict_chunk['ys']['xlens']
+
             diff = eout_chunk.size(1) - eout_all_i.size(1)
             eout_chunk = eout_chunk[:, :eout_all_i.size(1)]
             # eout_chunk = eout_chunk[:, -eout_all_i.size(1):]
@@ -286,10 +286,8 @@ def test_forward_streaming_chunkwise(args):
             if j > xmax:
                 break
 
-        enc.reset_cache()
-
         eouts_cat = torch.cat(eouts_cat, dim=1)
-        assert enc_out_dict['ys']['xs'].size() == eouts_cat.size()
-        assert torch.allclose(enc_out_dict['ys']['xs'], eouts_cat, atol=atol)
+        assert eout_all.size() == eouts_cat.size()
+        assert torch.allclose(eout_all, eouts_cat, atol=atol)
         assert elens_cat.item() == eouts_cat.size(1)
-        assert torch.equal(enc_out_dict['ys']['xlens'], elens_cat)
+        assert torch.equal(elens_all, elens_cat)
