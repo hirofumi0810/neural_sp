@@ -27,7 +27,6 @@ def build_encoder(args):
 
     elif args.enc_type == 'gated_conv':
         from neural_sp.models.seq2seq.encoders.gated_conv import GatedConvEncoder
-        raise ValueError
         encoder = GatedConvEncoder(
             input_dim=args.input_dim * args.n_stacks,
             in_channel=args.conv_in_channel,
@@ -86,6 +85,7 @@ def build_encoder(args):
             enc_type=args.enc_type,
             n_heads=args.transformer_enc_n_heads,
             kernel_size=args.conformer_kernel_size,
+            normalization=args.conformer_normalization,
             n_layers=args.enc_n_layers,
             n_layers_sub1=args.enc_n_layers_sub1,
             n_layers_sub2=args.enc_n_layers_sub2,

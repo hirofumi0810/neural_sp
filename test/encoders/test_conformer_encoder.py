@@ -18,6 +18,7 @@ def make_args(**kwargs):
         enc_type='conv_conformer',
         n_heads=4,
         kernel_size=3,
+        normalization='batch_norm',
         n_layers=3,
         n_layers_sub1=0,
         n_layers_sub2=0,
@@ -69,9 +70,12 @@ def make_args(**kwargs):
         ({'pe_type': 'relative_xl'}),
         ({'pe_type': 'relative', 'clamp_len': 10}),
         ({'pe_type': 'relative_xl', 'clamp_len': 10}),
-        # normalization
+        # normalization in frontend CNN
         ({'conv_batch_norm': True}),
         ({'conv_layer_norm': True}),
+        # normalization in Conformer convolution module
+        ({'normalization': 'group_norm'}),
+        ({'normalization': 'layer_norm'}),
         # projection
         ({'last_proj_dim': 10}),
         # unidirectional
