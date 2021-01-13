@@ -5,6 +5,7 @@
 
 import logging
 import random
+import torch
 import torch.nn as nn
 
 from neural_sp.models.modules.conformer_convolution import ConformerConvBlock
@@ -69,6 +70,7 @@ class ConformerEncoderBlock(nn.Module):
         self.norm3 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.conv = ConformerConvBlock(d_model, kernel_size, param_init, normalization,
                                        causal=unidirectional)
+        self.conv_context = kernel_size
 
         # second half position-wise feed-forward
         self.norm4 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -89,30 +91,43 @@ class ConformerEncoderBlock(nn.Module):
     def reset_visualization(self):
         self._xx_aws = None
 
-    def forward(self, xs, xx_mask=None,
+    def forward(self, xs, xx_mask=None, cache=None,
                 pos_embs=None, u_bias=None, v_bias=None):
         """Conformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T (query), d_model]`
             xx_mask (ByteTensor): `[B, T (query), T (key)]`
+            cache (dict):
+                input_san: `[B, n_hist, d_model]`
+                input_conv: `[B, n_hist, d_model]`
+                output: `[B, n_hist, d_model]`
             pos_embs (LongTensor): `[T (query), 1, d_model]`
             u_bias (FloatTensor): global parameter for relative positional encoding
             v_bias (FloatTensor): global parameter for relative positional encoding
         Returns:
             xs (FloatTensor): `[B, T (query), d_model]`
+            new_cache (dict):
+                input_san: `[B, n_hist+T, d_model]`
+                input_conv: `[B, n_hist+T, d_model]`
+                output: `[B, T (query), d_model]`
 
         """
         self.reset_visualization()
+        new_cache = {}
+        qlen = xs.size(1)
 
         # LayerDrop
-        if self.dropout_layer > 0 and self.training and random.random() < self.dropout_layer:
-            return xs
+        if self.dropout_layer > 0:
+            if self.training and random.random() < self.dropout_layer:
+                return xs, new_cache
+            else:
+                xs = xs / (1 - self.dropout_layer)
 
         ##################################################
         # first half FFN
         ##################################################
-        residual = xs
+        residual = xs  # `[B, qlen, d_model]`
         xs = self.norm1(xs)  # pre-norm
         xs = self.feed_forward_macaron(xs)
         xs = self.fc_factor * self.dropout(xs) + residual  # Macaron FFN
@@ -120,26 +135,53 @@ class ConformerEncoderBlock(nn.Module):
         ##################################################
         # self-attention w/ relative positional encoding
         ##################################################
-        residual = xs
+        residual = xs  # `[B, qlen, d_model]`
         xs = self.norm2(xs)  # pre-norm
-        xs, self._xx_aws = self.self_attn(xs, xs, pos_embs, xx_mask, u_bias, v_bias)  # k/q/m
+
+        # cache for self-attention
+        if cache is not None:
+            xs = torch.cat([cache['input_san'], xs], dim=1)
+        new_cache['input_san'] = xs
+
+        xs_kv = xs
+        if cache is not None:
+            xs = xs[:, -qlen:]
+            residual = residual[:, -qlen:]  # `[B, qlen, d_model]`
+            xx_mask = xx_mask[:, -qlen:]
+
+        xs, self._xx_aws = self.self_attn(xs_kv, xs, pos_embs, xx_mask, u_bias, v_bias)  # k/q/m
+        # assert xs.size() == residual.size()
         xs = self.dropout(xs) + residual
 
         ##################################################
         # conv
         ##################################################
-        residual = xs
+        residual = xs  # `[B, qlen, d_model]`
         xs = self.norm3(xs)  # pre-norm
+
+        # cache for convolution
+        if cache is not None:
+            xs = torch.cat([cache['input_conv'], xs], dim=1)
+        new_cache['input_conv'] = xs
+        # restrict to kernel size
+        if cache is not None:
+            xs = xs[:, -(self.conv_context + qlen - 1):]
+
         xs = self.conv(xs)
+        if cache is not None:
+            xs = xs[:, -qlen:]
+        # assert xs.size() == residual.size()
         xs = self.dropout(xs) + residual
 
         ##################################################
         # second half FFN
         ##################################################
-        residual = xs
+        residual = xs  # `[B, qlen, d_model]`
         xs = self.norm4(xs)  # pre-norm
         xs = self.feed_forward(xs)
         xs = self.fc_factor * self.dropout(xs) + residual  # Macaron FFN
         xs = self.norm5(xs)  # this is important for performance
 
-        return xs
+        new_cache['output'] = xs
+
+        return xs, new_cache

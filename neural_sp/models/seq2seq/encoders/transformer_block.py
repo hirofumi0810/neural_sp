@@ -75,43 +75,75 @@ class TransformerEncoderBlock(nn.Module):
     def reset_visualization(self):
         self._xx_aws = None
 
-    def forward(self, xs, xx_mask=None,
+    def forward(self, xs, xx_mask=None, cache=None,
                 pos_embs=None, u_bias=None, v_bias=None):
         """Transformer encoder layer definition.
 
         Args:
             xs (FloatTensor): `[B, T (query), d_model]`
             xx_mask (ByteTensor): `[B, T (query), T (key)]`
+            cache (dict):
+                input_san: `[B, n_hist, d_model]`
+                output: `[B, n_hist, d_model]`
             pos_embs (LongTensor): `[T (query), 1, d_model]`
             u_bias (FloatTensor): global parameter for relative positional encoding
             v_bias (FloatTensor): global parameter for relative positional encoding
         Returns:
             xs (FloatTensor): `[B, T (query), d_model]`
+            new_cache (dict):
+                input_san: `[B, n_hist+T, d_model]`
+                output: `[B, T (query), d_model]`
 
         """
         self.reset_visualization()
+        new_cache = {}
+        qlen = xs.size(1)
 
         # LayerDrop
-        if self.dropout_layer > 0 and self.training and random.random() < self.dropout_layer:
-            return xs
+        if self.dropout_layer > 0:
+            if self.training and random.random() < self.dropout_layer:
+                return xs, new_cache
+            else:
+                xs = xs / (1 - self.dropout_layer)
 
         ##################################################
         # self-attention
         ##################################################
-        residual = xs
-        xs = self.norm1(xs)  # pre-norm
-        if self.rel_attn:
-            xs, self._xx_aws = self.self_attn(xs, xs, pos_embs, xx_mask, u_bias, v_bias)  # k/q/m
+        if self.input_bottleneck_dim > 0:
+            residual = self.linear_in(xs)
         else:
-            xs, self._xx_aws = self.self_attn(xs, xs, xs, mask=xx_mask)[:2]  # k/v/q
+            residual = xs  # `[B, qlen, d_model]`
+        xs = self.norm1(xs)  # pre-norm
+
+        # cache
+        if cache is not None:
+            xs = torch.cat([cache['input_san'], xs], dim=1)
+        new_cache['input_san'] = xs
+
+        xs_kv = xs
+        if cache is not None:
+            xs = xs[:, -qlen:]
+            residual = residual[:, -qlen:]  # `[B, qlen, d_model]`
+            xx_mask = xx_mask[:, -qlen:]
+
+        if self.rel_attn:
+            xs, self._xx_aws = self.self_attn(xs_kv, xs, pos_embs, xx_mask, u_bias, v_bias)  # k/q/m
+        else:
+            xs, self._xx_aws = self.self_attn(xs_kv, xs_kv, xs, mask=xx_mask)[:2]  # k/v/q
+        # assert xs.size() == residual.size()
         xs = self.dropout(xs) + residual
 
         ##################################################
         # position-wise feed-forward
         ##################################################
-        residual = xs
+        residual = xs  # `[B, qlen, d_model]`
         xs = self.norm2(xs)  # pre-norm
         xs = self.feed_forward(xs)
         xs = self.dropout(xs) + residual
 
-        return xs
+        if self.input_bottleneck_dim > 0:
+            xs = self.linear_out(xs)
+
+        new_cache['output'] = xs
+
+        return xs, new_cache
