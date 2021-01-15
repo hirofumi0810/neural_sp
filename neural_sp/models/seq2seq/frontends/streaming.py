@@ -26,11 +26,16 @@ class Streaming(object):
         # TODO: implement wav input
         self.input_dim = x_whole.shape[1]
         self.enc_type = encoder.enc_type
-        self.rnn = 'lstm' in self.enc_type or 'gru' in self.enc_type  # Otherwise, Transformer/Conformer
-        self.unidir = (self.enc_type in ['lstm', 'conv_lstm',
-                                         'conv_uni_transformer', 'conv_uni_conformer', 'conv_uni_conformer_v2'])
-        self.streaming_type = getattr(self, 'streaming_type', '')  # for LC-Transformer/Conformer
         self.idx2token = idx2token
+
+        if self.enc_type in ['lstm', 'conv_lstm', 'conv_uni_transformer',
+                             'conv_uni_conformer', 'conv_uni_conformer_v2']:
+            self.streaming_type = 'unidir'
+        elif 'lstm' in self.enc_type or 'gru' in self.enc_type:
+            self.streaming_type = 'lc_bidir'
+        else:
+            assert hasattr(encoder, 'streaming_type')
+            self.streaming_type = getattr(encoder, 'streaming_type', '')  # for LC-Transformer/Conformer
 
         # latency related
         self._factor = encoder.subsampling_factor
@@ -65,7 +70,7 @@ class Streaming(object):
         if not getattr(encoder, 'cnn_lookahead', True):
             self.conv_context = 0
             # NOTE: CNN lookahead surpassing a block is not allowed in LC-Transformer/Conformer.
-            # Unidirectional Transformer/Conformer can use lookahead in CNN.
+            # Unidirectional Transformer/Conformer can use lookahead in frontend CNN.
 
         # for test
         self._eout_blocks = []
@@ -125,29 +130,38 @@ class Streaming(object):
         end = j + (N_c + N_r + self.conv_context)
         x_block = self.x_whole[max(0, start):end]
 
-        cnn_lookback = start >= 0
-        cnn_lookahead = end <= self.xmax_whole - 1
         is_last_block = (j + N_c) >= self.xmax_whole
+        cnn_lookback = self.streaming_type != 'reshape' and start >= 0
+        cnn_lookahead = self.streaming_type != 'reshape' and end < self.xmax_whole
+        N_conv = self.conv_context if j == 0 or is_last_block else self.conv_context * 2
         # TODO: implement frame stacking
 
+        if self.streaming_type in ['reshape', 'mask']:
+            xlen_block = min(self.xmax_whole - j, N_c)
+        else:
+            xlen_block = min(self.xmax_whole - j + N_conv, N_c + N_conv)
+
         # zero padding for the first blocks
-        if start < 0:
+        if self.streaming_type == 'reshape' and start < 0:
             zero_pad = np.zeros((-start, self.input_dim)).astype(np.float32)
             x_block = np.concatenate([zero_pad, x_block], axis=0)
 
-        if self.unidir:
-            max_xlen_block = N_c + self.conv_context * 2
+        if self.streaming_type == 'reshape':
+            padded_xmax = N_l + N_c + N_r
+        elif self.streaming_type == 'mask':
+            padded_xmax = N_c
         else:
-            max_xlen_block = N_l + N_c + N_r + self.conv_context * 2
+            padded_xmax = N_c + N_r + N_conv
 
         # zero padding for the last blocks
-        if len(x_block) != max_xlen_block:
-            zero_pad = np.zeros((max_xlen_block - len(x_block), self.input_dim)).astype(np.float32)
+        if len(x_block) != padded_xmax:
+            zero_pad = np.zeros((padded_xmax - len(x_block), self.input_dim)).astype(np.float32)
             x_block = np.concatenate([x_block, zero_pad], axis=0)
-        xlen_block = self.xmax_whole - (j - self.conv_context) if is_last_block else N_c + self.conv_context * 2
 
         self._bd_offset = -1  # reset
-        self._n_accum_frames += min(self.N_c, self.input_dim)
+        self._n_accum_frames += min(self.N_c, xlen_block)
+
+        xlen_block = max(xlen_block, self._factor)  # to avoid elen=0
 
         return x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block
 
