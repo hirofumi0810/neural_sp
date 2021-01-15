@@ -543,7 +543,7 @@ class TransformerEncoder(EncoderBase):
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
                         return eouts
                 if lth == self.n_layers_sub2 - 1:
-                    xs_sub2 = self.sub_module(xs, xx_mask, lth, pos_embs, 'sub2')
+                    xs_sub2 = self.sub_module(xs, xx_mask, lth, rel_pos_embs, 'sub2')
                     if task == 'ys_sub2':
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens
                         return eouts
@@ -553,13 +553,9 @@ class TransformerEncoder(EncoderBase):
                         xs, xlens = self.subsample[lth](xs, xlens)
                         n_hist = self.cache[lth + 1]['input_san'].size(
                             1) if streaming and self.cache[lth + 1] is not None else 0
-
                         if self.pe_type in ['relative', 'relative_xl']:
-                            # Create sinusoidal positional embeddings for relative positional encoding
-                            pos_embs = self.pos_emb(xs, mlen=n_hist)
-
+                            rel_pos_embs = self.pos_emb(xs, mlen=n_hist)
                         xx_mask = make_san_mask(xs, xlens + n_hist, unidir, self.lookaheads[lth + 1])
-
                     elif self.lookaheads[lth] != self.lookaheads[lth + 1]:
                         xx_mask = make_san_mask(xs, xlens + n_hist, unidir, self.lookaheads[lth + 1])
 
