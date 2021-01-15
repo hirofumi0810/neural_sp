@@ -51,8 +51,8 @@ def make_transformer_args(**kwargs):
         n_layers=3,
         n_layers_sub1=0,
         n_layers_sub2=0,
-        d_model=16,
-        d_ff=64,
+        d_model=8,
+        d_ff=16,
         ffn_bottleneck_dim=0,
         ffn_activation='relu',
         pe_type='none',
@@ -110,7 +110,7 @@ def make_decode_params(**kwargs):
         nbest=1,
         exclude_eos=False,
         recog_block_sync=True,
-        recog_block_sync_size=40,
+        recog_block_sync_size=20,
         recog_ctc_vad=False,
         recog_ctc_vad_blank_threshold=40,
         recog_ctc_vad_spike_threshold=0.1,
@@ -125,14 +125,21 @@ def make_decode_params(**kwargs):
     [
         # no CNN, UniLSTM, LC-BLSTM
         ({'enc_type': 'lstm'}),  # unidirectional
-        ({'enc_type': 'conv_lstm'}),  # unidirectional
         ({'enc_type': 'blstm', 'chunk_size_current': "20", 'chunk_size_right': "20"}),
-        ({'enc_type': 'conv_blstm', 'chunk_size_current': "20", 'chunk_size_right': "20"}),
-        # no CNN, LC-Transformer
+        # no CNN, Transformer
+        ({'enc_type': 'uni_transformer'}),
         ({'enc_type': 'transformer', 'streaming_type': 'reshape',
-          'chunk_size_current': "32", 'chunk_size_current': "32", 'chunk_size_right': "32"}),
+          'chunk_size_left': "16", 'chunk_size_current': "16", 'chunk_size_right': "16"}),
+        ({'enc_type': 'transformer', 'streaming_type': 'mask',
+          'chunk_size_left': "16", 'chunk_size_current': "16"}),
+        # w/ CNN
+        ({'enc_type': 'conv_lstm'}),  # unidirectional
+        ({'enc_type': 'conv_blstm', 'chunk_size_current': "20", 'chunk_size_right': "20"}),
+        ({'enc_type': 'conv_uni_transformer'}),
         ({'enc_type': 'conv_transformer', 'streaming_type': 'reshape',
-          'chunk_size_current': "32", 'chunk_size_current': "32", 'chunk_size_right': "32"}),
+          'chunk_size_left': "16", 'chunk_size_current': "16", 'chunk_size_right': "16"}),
+        ({'enc_type': 'conv_transformer', 'streaming_type': 'mask',
+          'chunk_size_left': "16", 'chunk_size_current': "16"}),
     ]
 )
 def test_feature_extraction(args):
@@ -147,30 +154,39 @@ def test_feature_extraction(args):
     decode_args = make_decode_params()
     if args['enc_type'] in ['lstm', 'conv_lstm', 'uni_transformer', 'conv_uni_transformer']:
         args['chunk_size_current'] = 4
+        # NOTE: do not set before model definition
 
-    xmaxs = [t for t in range(160, 192, 1)]
+    xmaxs = [t for t in range(80, 96, 3)]
     device = "cpu"
     enc = enc.to(device)
 
     streaming_module = importlib.import_module('neural_sp.models.seq2seq.frontends.streaming')
-    block_size = decode_args['recog_block_sync_size']  # before subsampling
 
     for xmax in xmaxs:
         xs = np.arange(xmax)[:, None].astype(np.float32)
-        streaming = streaming_module.Streaming(xs, decode_args, enc, block_size)
+        streaming = streaming_module.Streaming(xs, decode_args, enc)
         N_l = streaming.N_l
-        conv_context = streaming.conv_context
-        if args['enc_type'] in ['conv_lstm', 'conv_uni_transformer']:
-            assert conv_context > 0
+        N_conv = streaming.conv_context
 
+        j = 0
         xs_cat = []
         while True:
             x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feature()
-            xs_cat.append(x_block[conv_context + N_l:conv_context + N_l + xlen_block])
+            if cnn_lookback:
+                xlen_block -= N_conv
+            if cnn_lookahead or (N_conv > 0 and not is_last_block):
+                xlen_block -= N_conv
+
+            if j == 0:
+                xs_cat.append(x_block[N_l:N_l + xlen_block])
+            else:
+                xs_cat.append(x_block[N_conv + N_l:(N_conv + N_l) + xlen_block])
 
             streaming.next_block()
             if is_last_block:
                 break
+            j += 1
 
         xs_cat = np.concatenate(xs_cat, axis=0)
-        assert np.array_equal(xs, xs_cat)
+        # assert len(xs) == len(xs_cat)
+        assert np.array_equal(xs, xs_cat[:len(xs)])

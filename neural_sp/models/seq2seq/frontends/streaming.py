@@ -10,34 +10,45 @@ import torch
 class Streaming(object):
     """Streaming encoding interface."""
 
-    def __init__(self, x_whole, params, encoder, block_size, idx2token=None):
+    def __init__(self, x_whole, params, encoder, idx2token=None):
         """
         Args:
             x_whole (FloatTensor): `[T, input_dim]`
             params (dict): decoding hyperparameters
             encoder (torch.nn.module): encoder module
-            block_size (int): block size for streaming inference
-            idx2token ():
+            idx2token (): converter from index to token
 
         """
         super(Streaming, self).__init__()
 
         self.x_whole = x_whole
+        self.xmax_whole = len(x_whole)
         # TODO: implement wav input
-        self.feat_dim = x_whole.shape[1]
-        self.encoder = encoder
-        if self.encoder.conv is not None:
-            self.encoder.turn_off_ceil_mode(self.encoder)
+        self.input_dim = x_whole.shape[1]
+        self.enc_type = encoder.enc_type
         self.idx2token = idx2token
 
-        # latency
+        if self.enc_type in ['lstm', 'conv_lstm', 'conv_uni_transformer',
+                             'conv_uni_conformer', 'conv_uni_conformer_v2']:
+            self.streaming_type = 'unidir'
+        elif 'lstm' in self.enc_type or 'gru' in self.enc_type:
+            self.streaming_type = 'lc_bidir'
+        else:
+            assert hasattr(encoder, 'streaming_type')
+            self.streaming_type = getattr(encoder, 'streaming_type', '')  # for LC-Transformer/Conformer
+
+        # latency related
         self._factor = encoder.subsampling_factor
-        self.N_l = getattr(encoder, 'chunk_size_left', 0)  # for Transformer/Conformer
+        self.N_l = getattr(encoder, 'chunk_size_left', 0)  # for LC-Transformer/Conformer
         self.N_c = encoder.chunk_size_current
         self.N_r = encoder.chunk_size_right
+        if self.streaming_type == 'mask':
+            self.N_l = 0
+            # NOTE: context in previous chunks are cached inside the encoder
         if self.N_c <= 0 and self.N_r <= 0:
-            self.N_c = block_size  # for unidirectional encoder
-            assert block_size % self._factor == 0
+            self.N_c = params['recog_block_sync_size']  # for unidirectional encoder
+            assert self.N_c % self._factor == 0
+        # NOTE: these lengths are the ones before subsampling
 
         # threshold for CTC-VAD
         self.blank_id = 0
@@ -59,7 +70,7 @@ class Streaming(object):
         if not getattr(encoder, 'cnn_lookahead', True):
             self.conv_context = 0
             # NOTE: CNN lookahead surpassing a block is not allowed in LC-Transformer/Conformer.
-            # Unidirectional Transformer/Conformer can use lookahead in CNN.
+            # Unidirectional Transformer/Conformer can use lookahead in frontend CNN.
 
         # for test
         self._eout_blocks = []
@@ -105,44 +116,52 @@ class Streaming(object):
 
         Returns:
             x_block (np.array): `[T_block, input_dim]`
-            is_last_block (bool): the last input block
+            is_last_block (bool): flag for the last input block
             cnn_lookback (bool): use lookback frames in CNN
-            cnn_lookahead (boo): use lookahead frames in CNN
-            xlen_block (int): input length in a block (for the last block)
+            cnn_lookahead (bool): use lookahead frames in CNN
+            xlen_block (int): input length of the cernter region in a block (for the last block)
 
         """
         j = self._offset
-        N_l = self.N_l
-        N_c = self.N_c
-        N_r = self.N_r
+        N_l, N_c, N_r = self.N_l, self.N_c, self.N_r
 
         # Encode input features block by block
-        j_left = max(0, j - (self.conv_context + N_l))
-        x_block = self.x_whole[j_left:j + (N_c + N_r + self.conv_context)]
-
-        is_last_block = (j + N_c) >= len(self.x_whole)
-        # is_last_block = (j + 1 + N_c) >= len(self.x_whole)
-
-        # zero padding for the first blocks
-        if j_left == 0:
-            zero_pad = np.zeros((self.conv_context + N_l - j, self.feat_dim)).astype(np.float32)
-            x_block = np.concatenate([zero_pad, x_block], axis=0)
-
-        # zero padding for the last blocks
-        # if j > 0 and x_block.shape[0] != (N_l + N_c + N_r + self.conv_context * 2):
-        if x_block.shape[0] != (N_l + N_c + N_r + self.conv_context * 2):
-            zero_pad = np.zeros(((N_l + N_c + N_r + self.conv_context * 2) - x_block.shape[0],
-                                 self.feat_dim)).astype(np.float32)
-            x_block = np.concatenate([x_block, zero_pad], axis=0)
-        xlen_block = len(self.x_whole) - j if is_last_block else N_c
-
-        self._bd_offset = -1  # reset
-        self._n_accum_frames += min(self.N_c, self.feat_dim)
-
         start = j - (self.conv_context + N_l)
         end = j + (N_c + N_r + self.conv_context)
-        cnn_lookback = start >= 0
-        cnn_lookahead = end <= len(self.x_whole) - 1
+        x_block = self.x_whole[max(0, start):end]
+
+        is_last_block = (j + N_c) >= self.xmax_whole
+        cnn_lookback = self.streaming_type != 'reshape' and start >= 0
+        cnn_lookahead = self.streaming_type != 'reshape' and end < self.xmax_whole
+        N_conv = self.conv_context if j == 0 or is_last_block else self.conv_context * 2
+        # TODO: implement frame stacking
+
+        if self.streaming_type in ['reshape', 'mask']:
+            xlen_block = min(self.xmax_whole - j, N_c)
+        else:
+            xlen_block = min(self.xmax_whole - j + N_conv, N_c + N_conv)
+
+        # zero padding for the first blocks
+        if self.streaming_type == 'reshape' and start < 0:
+            zero_pad = np.zeros((-start, self.input_dim)).astype(np.float32)
+            x_block = np.concatenate([zero_pad, x_block], axis=0)
+
+        if self.streaming_type == 'reshape':
+            padded_xmax = N_l + N_c + N_r
+        elif self.streaming_type == 'mask':
+            padded_xmax = N_c
+        else:
+            padded_xmax = N_c + N_r + N_conv
+
+        # zero padding for the last blocks
+        if len(x_block) != padded_xmax:
+            zero_pad = np.zeros((padded_xmax - len(x_block), self.input_dim)).astype(np.float32)
+            x_block = np.concatenate([x_block, zero_pad], axis=0)
+
+        self._bd_offset = -1  # reset
+        self._n_accum_frames += min(self.N_c, xlen_block)
+
+        xlen_block = max(xlen_block, self._factor)  # to avoid elen=0
 
         return x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block
 
