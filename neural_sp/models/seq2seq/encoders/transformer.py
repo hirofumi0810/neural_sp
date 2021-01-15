@@ -139,7 +139,7 @@ class TransformerEncoder(EncoderBase):
         self.chunk_size_current = int(chunk_size_current.split('_')[-1]) // n_stacks
         self.chunk_size_right = int(chunk_size_right.split('_')[-1]) // n_stacks
         self.lc_bidir = self.chunk_size_current > 0 and enc_type != 'conv' and 'uni' not in enc_type
-        self.cnn_lookahead = self.unidir or enc_type != 'conv'
+        self.cnn_lookahead = self.unidir or enc_type == 'conv'
         self.streaming_type = streaming_type if self.lc_bidir else ''
         # -: past context
         # *: current context
@@ -159,7 +159,9 @@ class TransformerEncoder(EncoderBase):
         # chunk3:  -- --|**|
         # chunk4:     -- --|**|
         # chunk5:        -- --|**|
-        if self.lc_bidir and streaming_type == 'mask':
+        if self.unidir:
+            assert self.chunk_size_left == self.chunk_size_current == self.chunk_size_right == 0
+        if self.streaming_type == 'mask':
             assert self.chunk_size_right == 0
             assert self.chunk_size_left == self.chunk_size_current
             # NOTE: this is important to cache CNN output at each chunk
@@ -471,11 +473,10 @@ class TransformerEncoder(EncoderBase):
         # positional encoding
         if self.pe_type in ['relative', 'relative_xl']:
             xs = xs * self.scale  # NOTE: first layer only
-            # Create sinusoidal positional embeddings for relative positional encoding
-            pos_embs = self.pos_emb(xs, mlen=n_hist)
+            rel_pos_embs = self.pos_emb(xs, mlen=n_hist)
         else:
             xs = self.pos_enc(xs, scale=True, offset=max(0, n_hist))
-            pos_embs = None
+            rel_pos_embs = None
 
         new_cache = [None] * self.n_layers
         if lc_bidir:
@@ -489,7 +490,7 @@ class TransformerEncoder(EncoderBase):
 
             for lth, layer in enumerate(self.layers):
                 xs, cache = layer(xs, xx_mask, cache=self.cache[lth],
-                                  pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
+                                  pos_embs=rel_pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 if self.streaming_type == 'mask':
                     new_cache[lth] = cache
                 if not self.training and not streaming:
@@ -515,8 +516,7 @@ class TransformerEncoder(EncoderBase):
                     N_c = N_c // self.subsample[lth].factor
                     N_r = N_r // self.subsample[lth].factor
                     if self.pe_type in ['relative', 'relative_xl']:
-                        # Create sinusoidal positional embeddings for relative positional encoding
-                        pos_embs = self.pos_emb(xs)
+                        rel_pos_embs = self.pos_emb(xs)
                     if self.streaming_type == 'mask':
                         xx_mask = make_chunkwise_san_mask(xs, xlens, N_l, N_c, n_chunks)
 
@@ -530,7 +530,7 @@ class TransformerEncoder(EncoderBase):
             xx_mask = make_san_mask(xs, xlens + n_hist, unidir, self.lookaheads[0])
             for lth, layer in enumerate(self.layers):
                 xs, cache = layer(xs, xx_mask, cache=self.cache[lth],
-                                  pos_embs=pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
+                                  pos_embs=rel_pos_embs, u_bias=self.u_bias, v_bias=self.v_bias)
                 new_cache[lth] = cache
                 if not self.training and not streaming:
                     self.aws_dict['xx_aws_layer%d' % lth] = tensor2np(layer.xx_aws)
@@ -538,7 +538,7 @@ class TransformerEncoder(EncoderBase):
 
                 # Pick up outputs in the sub task before the projection layer
                 if lth == self.n_layers_sub1 - 1:
-                    xs_sub1 = self.sub_module(xs, xx_mask, lth, pos_embs, 'sub1')
+                    xs_sub1 = self.sub_module(xs, xx_mask, lth, rel_pos_embs, 'sub1')
                     if task == 'ys_sub1':
                         eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
                         return eouts
