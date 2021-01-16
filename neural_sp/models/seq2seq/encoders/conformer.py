@@ -9,6 +9,7 @@ import torch.nn as nn
 
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.conformer_block import ConformerEncoderBlock
+from neural_sp.models.seq2seq.encoders.conformer_block_v2 import ConformerEncoderBlock_v2
 from neural_sp.models.seq2seq.encoders.transformer import TransformerEncoder
 
 logger = logging.getLogger(__name__)
@@ -86,24 +87,32 @@ class ConformerEncoder(TransformerEncoder):
             lookahead, chunk_size_left, chunk_size_current, chunk_size_right, streaming_type)
 
         causal = self.unidir or (self.streaming_type == 'mask')
+        if 'conformer_v2' in enc_type:
+            conformer_block = ConformerEncoderBlock_v2
+        else:
+            assert pe_type in ['relative', 'relative_xl']
+            conformer_block = ConformerEncoderBlock
 
-        self.layers = nn.ModuleList([copy.deepcopy(ConformerEncoderBlock(
-            d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
+        self.layers = nn.ModuleList([copy.deepcopy(conformer_block(
+            d_model, d_ff, n_heads, kernel_size,
+            dropout, dropout_att, dropout_layer,
             layer_norm_eps, ffn_activation, param_init,
             pe_type, clamp_len, ffn_bottleneck_dim, causal, normalization))
             for _ in range(n_layers)])
 
         if n_layers_sub1 > 0:
             if task_specific_layer:
-                self.layer_sub1 = ConformerEncoderBlock(
-                    d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
+                self.layer_sub1 = conformer_block(
+                    d_model, d_ff, n_heads, kernel_size,
+                    dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init,
                     pe_type, clamp_len, ffn_bottleneck_dim, causal)
 
         if n_layers_sub2 > 0:
             if task_specific_layer:
-                self.layer_sub2 = ConformerEncoderBlock(
-                    d_model, d_ff, n_heads, kernel_size, dropout, dropout_att, dropout_layer,
+                self.layer_sub2 = conformer_block(
+                    d_model, d_ff, n_heads, kernel_size,
+                    dropout, dropout_att, dropout_layer,
                     layer_norm_eps, ffn_activation, param_init,
                     pe_type, clamp_len, ffn_bottleneck_dim, causal)
 
