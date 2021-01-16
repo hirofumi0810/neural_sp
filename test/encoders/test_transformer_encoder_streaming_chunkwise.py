@@ -119,6 +119,9 @@ def make_args_conformer(**kwargs):
         ({'enc_type': 'uni_conformer', 'chunk_size_current': "1", 'kernel_size': 3}),
         ({'enc_type': 'uni_conformer', 'chunk_size_current': "1", 'kernel_size': 7}),
         ({'enc_type': 'uni_conformer', 'chunk_size_current': "4", 'kernel_size': 7}),
+        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "1", 'kernel_size': 3}),
+        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "1", 'kernel_size': 7}),
+        ({'enc_type': 'uni_conformer_v2', 'chunk_size_current': "4", 'kernel_size': 7}),
         # no CNN, frame stacking
         ({'enc_type': 'uni_transformer', 'n_stacks': 3, 'chunk_size_current': "3"}),
         # LC-Transformer
@@ -129,9 +132,13 @@ def make_args_conformer(**kwargs):
         # LC-Conformer
         ({'enc_type': 'conformer', 'streaming_type': 'reshape',
           'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
+        ({'enc_type': 'conformer_v2', 'streaming_type': 'reshape',
+          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
         ({'enc_type': 'conformer', 'streaming_type': 'mask',
           'chunk_size_left': "16", 'chunk_size_current': "16"}),
-        # subsample: 1/2
+        ({'enc_type': 'conformer_v2', 'streaming_type': 'mask',
+          'chunk_size_left': "16", 'chunk_size_current': "16"}),
+        # subsample: 1 / 2
         ({'enc_type': 'conv',
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
           'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
@@ -148,15 +155,20 @@ def make_args_conformer(**kwargs):
         ({'enc_type': 'conv', 'chunk_size_current': "8"}),
         ({'enc_type': 'conv_uni_transformer', 'chunk_size_current': "8"}),
         ({'enc_type': 'conv_uni_conformer', 'chunk_size_current': "8"}),
-        ({'enc_type': 'conv_uni_conformer', 'chunk_size_current': "16",
+        ({'enc_type': 'conv_uni_conformer_v2', 'chunk_size_current': "8"}),
+        ({'enc_type': 'conv_uni_conformer_v2', 'chunk_size_current': "16",
           'subsample': "1_2_1"}),
         ({'enc_type': 'conv_transformer', 'streaming_type': 'mask',
           'chunk_size_left': "16", 'chunk_size_current': "16"}),
         ({'enc_type': 'conv_conformer', 'streaming_type': 'mask',
           'chunk_size_left': "16", 'chunk_size_current': "16"}),
+        ({'enc_type': 'conv_conformer_v2', 'streaming_type': 'mask',
+          'chunk_size_left': "16", 'chunk_size_current': "16"}),
         ({'enc_type': 'conv_transformer', 'streaming_type': 'reshape',
           'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
         ({'enc_type': 'conv_conformer', 'streaming_type': 'reshape',
+          'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
+        ({'enc_type': 'conv_conformer_v2', 'streaming_type': 'reshape',
           'chunk_size_left': "8", 'chunk_size_current': "16", 'chunk_size_right': "8"}),
         # subsample: 1/8
         ({'enc_type': 'conv',

@@ -22,8 +22,8 @@ def make_args(**kwargs):
         n_layers=3,
         n_layers_sub1=0,
         n_layers_sub2=0,
-        d_model=16,
-        d_ff=64,
+        d_model=8,
+        d_ff=16,
         ffn_bottleneck_dim=0,
         ffn_activation='swish',
         pe_type='relative',
@@ -64,7 +64,9 @@ def make_args(**kwargs):
     [
         # Conformer type
         ({'enc_type': 'conformer'}),
+        ({'enc_type': 'conformer_v2'}),
         ({'enc_type': 'conv_conformer'}),
+        ({'enc_type': 'conv_conformer_v2'}),
         ({'input_dim': 240, 'conv_in_channel': 3}),
         # PE type
         ({'pe_type': 'relative_xl'}),
@@ -80,6 +82,7 @@ def make_args(**kwargs):
         ({'last_proj_dim': 10}),
         # unidirectional
         ({'enc_type': 'conv_uni_conformer'}),
+        ({'enc_type': 'conv_uni_conformer_v2'}),
         ({'enc_type': 'conv_uni_conformer', 'lookahead': "1_1_1"}),
         ({'enc_type': 'conv_uni_conformer', 'lookahead': "1_0_1"}),
         ({'enc_type': 'conv_uni_conformer', 'lookahead': "0_1_0"}),

@@ -11,6 +11,9 @@ import torch
 from neural_sp.models.torch_utils import np2tensor
 from neural_sp.models.torch_utils import pad_list
 
+np.random.seed(0)
+torch.manual_seed(0)
+
 
 def make_args(**kwargs):
     args = dict(
@@ -20,8 +23,8 @@ def make_args(**kwargs):
         n_layers=3,
         n_layers_sub1=0,
         n_layers_sub2=0,
-        d_model=16,
-        d_ff=64,
+        d_model=8,
+        d_ff=16,
         ffn_bottleneck_dim=0,
         ffn_activation='relu',
         pe_type='none',
@@ -130,7 +133,6 @@ def make_args(**kwargs):
         ({'subsample': "2_2_1", 'streaming_type': 'mask',
           'conv_poolings': "(1,1)_(2,2)",
           'chunk_size_left': "64", 'chunk_size_current': "64"}),
-
         ({'subsample': "2_2_1", 'streaming_type': 'reshape',
           'pe_type': "relative",
           'chunk_size_left': "64", 'chunk_size_current': "64", 'chunk_size_right': "32"}),
