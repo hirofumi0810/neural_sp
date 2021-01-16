@@ -13,6 +13,7 @@ ENCODER_TYPES = ['blstm', 'lstm', 'bgru', 'gru',
                  'conv_blstm', 'conv_lstm', 'conv_bgru', 'conv_gru',
                  'transformer', 'conv_transformer', 'conv_uni_transformer',
                  'conformer', 'conv_conformer', 'conv_uni_conformer',
+                 'conformer_v2', 'conv_conformer_v2', 'conv_uni_conformer_v2',
                  'tds', 'gated_conv']
 
 DECODER_TYPES = ['lstm', 'gru', 'transformer',
