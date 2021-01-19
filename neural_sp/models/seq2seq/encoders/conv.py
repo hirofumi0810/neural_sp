@@ -218,7 +218,7 @@ class Conv1dBlock(EncoderBase):
                                kernel_size=kernel_size,
                                stride=stride,
                                padding=1)
-        self._odim = update_lens_1d(torch.IntTensor([in_channel]), self.conv1)[0].item()
+        self._odim = out_channel
         self.batch_norm1 = nn.BatchNorm1d(out_channel) if batch_norm else lambda x: x
         self.layer_norm1 = nn.LayerNorm(out_channel,
                                         eps=layer_norm_eps) if layer_norm else lambda x: x
@@ -229,7 +229,7 @@ class Conv1dBlock(EncoderBase):
                                kernel_size=kernel_size,
                                stride=stride,
                                padding=1)
-        self._odim = update_lens_1d(torch.IntTensor([self._odim]), self.conv2)[0].item()
+        self._odim = out_channel
         self.batch_norm2 = nn.BatchNorm1d(out_channel) if batch_norm else lambda x: x
         self.layer_norm2 = nn.LayerNorm(out_channel,
                                         eps=layer_norm_eps) if layer_norm else lambda x: x
@@ -242,7 +242,7 @@ class Conv1dBlock(EncoderBase):
                                      padding=0,
                                      ceil_mode=True)
             # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
-            self._odim = update_lens_1d(torch.IntTensor([self._odim]), self.pool)[0].item()
+            self._odim = self._odim
             if self._odim % 2 != 0:
                 self._odim = (self._odim // 2) * 2
                 # TODO(hirofumi0810): more efficient way?
