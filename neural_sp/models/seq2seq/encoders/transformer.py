@@ -16,7 +16,6 @@ from neural_sp.models.modules.positional_embedding import (
     PositionalEncoding,
     XLPositionalEmbedding
 )
-from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.seq2seq.encoders.conv import ConvEncoder
 from neural_sp.models.seq2seq.encoders.encoder_base import EncoderBase
 from neural_sp.models.seq2seq.encoders.subsampling import (
@@ -539,13 +538,15 @@ class TransformerEncoder(EncoderBase):
                 # Pick up outputs in the sub task before the projection layer
                 if lth == self.n_layers_sub1 - 1:
                     xs_sub1 = self.sub_module(xs, xx_mask, lth, rel_pos_embs, 'sub1')
+                    xlens_sub1 = xlens.clone()
                     if task == 'ys_sub1':
-                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens
+                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub1, xlens_sub1
                         return eouts
                 if lth == self.n_layers_sub2 - 1:
                     xs_sub2 = self.sub_module(xs, xx_mask, lth, rel_pos_embs, 'sub2')
+                    xlens_sub2 = xlens.clone()
                     if task == 'ys_sub2':
-                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens
+                        eouts[task]['xs'], eouts[task]['xlens'] = xs_sub2, xlens_sub2
                         return eouts
 
                 if lth < len(self.layers) - 1:
@@ -571,9 +572,9 @@ class TransformerEncoder(EncoderBase):
         if task in ['all', 'ys']:
             eouts['ys']['xs'], eouts['ys']['xlens'] = xs, xlens
         if self.n_layers_sub1 >= 1 and task == 'all':
-            eouts['ys_sub1']['xs'], eouts['ys_sub1']['xlens'] = xs_sub1, xlens
+            eouts['ys_sub1']['xs'], eouts['ys_sub1']['xlens'] = xs_sub1, xlens_sub1
         if self.n_layers_sub2 >= 1 and task == 'all':
-            eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens
+            eouts['ys_sub2']['xs'], eouts['ys_sub2']['xlens'] = xs_sub2, xlens_sub2
         return eouts
 
     def sub_module(self, xs, xx_mask, lth, pos_embs=None, module='sub1'):
