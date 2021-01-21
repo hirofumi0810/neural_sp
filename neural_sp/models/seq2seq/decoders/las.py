@@ -415,6 +415,9 @@ class RNNDecoder(DecoderBase):
             if 'score.monotonic_energy.v.weight_g' in n or 'score.monotonic_energy.r' in n:
                 logger.info('Skip initialization of %s' % n)
                 continue
+            if 'score.monotonic_energy.conv1d' in n:
+                logger.info('Skip initialization of %s' % n)
+                continue
             if 'score.chunk_energy.v.weight_g' in n or 'score.chunk_energy.r' in n:
                 logger.info('Skip initialization of %s' % n)
                 continue
