@@ -13,9 +13,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neural_sp.models.modules.causal_conv import CausalConv1d
 from neural_sp.models.modules.headdrop import headdrop
-
+from neural_sp.models.modules.initialization import init_with_lecun_normal
+from neural_sp.models.modules.initialization import init_with_xavier_uniform
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,8 @@ class MonotonicEnergy(nn.Module):
     """
 
     def __init__(self, kdim, qdim, adim, atype, n_heads, init_r,
-                 bias=True, param_init='', conv1d=False, conv_kernel_size=5):
+                 bias=True, param_init='',
+                 conv1d=False, conv_kernel_size=5):
 
         super().__init__()
 
@@ -67,11 +68,11 @@ class MonotonicEnergy(nn.Module):
 
         self.conv1d = None
         if conv1d:
-            self.conv1d = CausalConv1d(in_channels=kdim,
-                                       out_channels=kdim,
-                                       kernel_size=conv_kernel_size,
-                                       param_init=param_init)
-            # padding=(conv_kernel_size - 1) // 2
+            self.conv1d = nn.Conv1d(kdim, kdim, conv_kernel_size,
+                                    padding=(conv_kernel_size - 1) // 2)
+            # NOTE: lookahead is introduced
+            for n, p in self.conv1d.named_parameters():
+                init_with_lecun_normal(n, p, 0.1)
 
         if atype == 'add':
             self.v = nn.utils.weight_norm(self.v, name='weight', dim=0)
@@ -91,6 +92,9 @@ class MonotonicEnergy(nn.Module):
         if bias:
             nn.init.constant_(self.w_key.bias, 0.)
             nn.init.constant_(self.w_query.bias, 0.)
+        if self.conv1d is not None:
+            for n, p in self.conv1d.named_parameters():
+                init_with_xavier_uniform(n, p)
 
     def reset(self):
         self.key = None
@@ -118,7 +122,7 @@ class MonotonicEnergy(nn.Module):
         if self.key is None or not cache:
             # 1d conv
             if self.conv1d is not None:
-                key = torch.relu(self.conv1d(key))
+                key = torch.relu(self.conv1d(key.transpose(2, 1))).transpose(2, 1)
             self.key = self.w_key(key)  # `[B, klen, adim]`
             self.key = self.key.view(-1, klen, self.n_heads, self.d_k)  # `[B, klen, H_ma, d_k]`
             if mask is not None:
