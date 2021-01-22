@@ -166,21 +166,25 @@ def test_feature_extraction(args):
         xs = np.arange(xmax)[:, None].astype(np.float32)
         streaming = streaming_module.Streaming(xs, decode_args, enc)
         N_l = streaming.N_l
+        N_c = streaming.N_c
         N_conv = streaming.conv_context
 
         j = 0
         xs_cat = []
         while True:
             x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feature()
+
             if cnn_lookback:
                 xlen_block -= N_conv
-            if cnn_lookahead or (N_conv > 0 and not is_last_block):
-                xlen_block -= N_conv
+
+            xlen_block = min(xlen_block, N_c)
+            # if cnn_lookahead or not is_last_block:
+            #     xlen_block -= N_conv
 
             if j == 0:
                 xs_cat.append(x_block[N_l:N_l + xlen_block])
             else:
-                xs_cat.append(x_block[N_conv + N_l:(N_conv + N_l) + xlen_block])
+                xs_cat.append(x_block[(N_conv + N_l):(N_conv + N_l) + xlen_block])
 
             streaming.next_block()
             if is_last_block:
@@ -189,4 +193,4 @@ def test_feature_extraction(args):
 
         xs_cat = np.concatenate(xs_cat, axis=0)
         # assert len(xs) == len(xs_cat)
-        assert np.array_equal(xs, xs_cat[:len(xs)])
+        assert np.array_equal(xs, xs_cat[:len(xs)]), (xs - xs_cat)
