@@ -133,35 +133,27 @@ class Streaming(object):
         is_last_block = (j + N_c) >= self.xmax_whole
         cnn_lookback = self.streaming_type != 'reshape' and start >= 0
         cnn_lookahead = self.streaming_type != 'reshape' and end < self.xmax_whole
-        N_conv = self.conv_context if j == 0 or is_last_block else self.conv_context * 2
         # TODO: implement frame stacking
 
-        if self.streaming_type in ['reshape', 'mask']:
+        if self.streaming_type == 'reshape':
             xlen_block = min(self.xmax_whole - j, N_c)
         else:
-            xlen_block = min(self.xmax_whole - j + N_conv, N_c + N_conv)
-
-        # zero padding for the first blocks
-        if self.streaming_type == 'reshape' and start < 0:
-            zero_pad = np.zeros((-start, self.input_dim)).astype(np.float32)
-            x_block = np.concatenate([zero_pad, x_block], axis=0)
+            xlen_block = len(x_block)
 
         if self.streaming_type == 'reshape':
-            padded_xmax = N_l + N_c + N_r
-        elif self.streaming_type == 'mask':
-            padded_xmax = N_c
-        else:
-            padded_xmax = N_c + N_r + N_conv
-
-        # zero padding for the last blocks
-        if len(x_block) != padded_xmax:
-            zero_pad = np.zeros((padded_xmax - len(x_block), self.input_dim)).astype(np.float32)
-            x_block = np.concatenate([x_block, zero_pad], axis=0)
+            # zero padding for the first blocks
+            if start < 0:
+                zero_pad = np.zeros((-start, self.input_dim)).astype(np.float32)
+                x_block = np.concatenate([zero_pad, x_block], axis=0)
+            # zero padding for the last blocks
+            if len(x_block) < (N_l + N_c + N_r):
+                zero_pad = np.zeros(((N_l + N_c + N_r) - len(x_block), self.input_dim)).astype(np.float32)
+                x_block = np.concatenate([x_block, zero_pad], axis=0)
 
         self._bd_offset = -1  # reset
         self._n_accum_frames += min(self.N_c, xlen_block)
 
-        xlen_block = max(xlen_block, self._factor)  # to avoid elen=0
+        xlen_block = max(xlen_block, self._factor)  # to avoid elen=0 after subsampling
 
         return x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block
 

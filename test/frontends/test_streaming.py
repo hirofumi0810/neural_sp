@@ -143,22 +143,22 @@ def make_decode_params(**kwargs):
     ]
 )
 def test_feature_extraction(args):
+
+    xmaxs = [t for t in range(80, 96, 3)]
+    device = "cpu"
+
     if 'lstm' in args['enc_type']:
         args = make_rnn_args(**args)
         enc_module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
-        enc = enc_module.RNNEncoder(**args)
+        enc = enc_module.RNNEncoder(**args).to(device)
     else:
         args = make_transformer_args(**args)
         enc_module = importlib.import_module('neural_sp.models.seq2seq.encoders.transformer')
-        enc = enc_module.TransformerEncoder(**args)
+        enc = enc_module.TransformerEncoder(**args).to(device)
     decode_args = make_decode_params()
     if args['enc_type'] in ['lstm', 'conv_lstm', 'uni_transformer', 'conv_uni_transformer']:
         args['chunk_size_current'] = 4
         # NOTE: do not set before model definition
-
-    xmaxs = [t for t in range(80, 96, 3)]
-    device = "cpu"
-    enc = enc.to(device)
 
     streaming_module = importlib.import_module('neural_sp.models.seq2seq.frontends.streaming')
 
