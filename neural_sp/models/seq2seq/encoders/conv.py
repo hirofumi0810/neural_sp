@@ -175,6 +175,8 @@ class ConvEncoder(EncoderBase):
         Args:
             xs (FloatTensor): `[B, T, F]`
             xlens (IntTenfor): `[B]` (on CPU)
+            lookback (bool): truncate leftmost frames for lookback in CNN context
+            lookahead (bool): truncate rightmost frames for lookahead in CNN context
         Returns:
             xs (FloatTensor): `[B, T', F']`
             xlens (IntTenfor): `[B]` (on CPU)
@@ -241,7 +243,7 @@ class Conv1dBlock(EncoderBase):
                                      stride=pooling,
                                      padding=0,
                                      ceil_mode=True)
-            # NOTE: If ceil_mode is False, remove last feature when the dimension of features are odd.
+            # NOTE: If ceil_mode is True, keep last feature when the dimension of features are odd.
             self._odim = update_lens_1d(torch.IntTensor([self._odim]), self.pool)[0].item()
             if self._odim % 2 != 0:
                 self._odim = (self._odim // 2) * 2
@@ -253,10 +255,8 @@ class Conv1dBlock(EncoderBase):
         Args:
             xs (FloatTensor): `[B, T, F]`
             xlens (IntTensor): `[B]` (on CPU)
-            lookback (bool): truncate the leftmost frames
-                because of lookback frames for context
-            lookahead (bool): truncate the rightmost frames
-                because of lookahead frames for context
+            lookback (bool): truncate leftmost frames for lookback in CNN context
+            lookahead (bool): truncate rightmost frames for lookahead in CNN context
         Returns:
             xs (FloatTensor): `[B, T', F']`
             xlens (IntTensor): `[B]` (on CPU)
@@ -364,13 +364,11 @@ class Conv2dBlock(EncoderBase):
         xlens = update_lens_2d(xlens, self.conv1, dim=0)
         stride = self.conv1.stride[self.time_axis]
         if lookback and xs.size(2) > stride:
-            xmax = xs.size(2)
             xs = xs[:, :, stride:]
-            xlens = xlens - (xmax - xs.size(2))
+            xlens -= stride
         if lookahead and xs.size(2) > stride:
-            xmax = xs.size(2)
             xs = xs[:, :, :xs.size(2) - stride]
-            xlens = xlens - (xmax - xs.size(2))
+            xlens -= stride
 
         xs = self.conv2(xs)
         xs = self.batch_norm2(xs)
@@ -382,13 +380,11 @@ class Conv2dBlock(EncoderBase):
         xlens = update_lens_2d(xlens, self.conv2, dim=0)
         stride = self.conv2.stride[self.time_axis]
         if lookback and xs.size(2) > stride:
-            xmax = xs.size(2)
             xs = xs[:, :, stride:]
-            xlens = xlens - (xmax - xs.size(2))
+            xlens -= stride
         if lookahead and xs.size(2) > stride:
-            xmax = xs.size(2)
             xs = xs[:, :, :xs.size(2) - stride]
-            xlens = xlens - (xmax - xs.size(2))
+            xlens -= stride
 
         if self.pool is not None:
             xs = self.pool(xs)
@@ -435,7 +431,6 @@ def update_lens_1d(seq_lens, layer):
         return seq_lens
     assert isinstance(seq_lens, torch.IntTensor)
     assert type(layer) in [nn.Conv1d, nn.MaxPool1d]
-    # seq_lens = [_update_1d(seq_len.item(), layer) for seq_len in seq_lens]
     seq_lens = [_update_1d(seq_len, layer) for seq_len in seq_lens]
     seq_lens = torch.IntTensor(seq_lens)
     return seq_lens
@@ -465,7 +460,6 @@ def update_lens_2d(seq_lens, layer, dim=0):
         return seq_lens
     assert isinstance(seq_lens, torch.IntTensor)
     assert type(layer) in [nn.Conv2d, nn.MaxPool2d]
-    # seq_lens = [_update_2d(seq_len.item(), layer, dim) for seq_len in seq_lens]
     seq_lens = [_update_2d(seq_len, layer, dim) for seq_len in seq_lens]
     seq_lens = torch.IntTensor(seq_lens)
     return seq_lens

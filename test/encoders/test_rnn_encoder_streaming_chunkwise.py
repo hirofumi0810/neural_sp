@@ -111,27 +111,19 @@ def test_forward_streaming_chunkwise(args):
         args['chunk_size_current'] = "0"
         args['chunk_size_right'] = "0"
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
-    enc = module.RNNEncoder(**args)
-    enc = enc.to(device)
+    enc = module.RNNEncoder(**args).to(device)
 
     factor = enc.subsampling_factor
-    conv_lookahead = enc.conv.context_size if enc.conv is not None else 0
+    conv_context = enc.conv.context_size if enc.conv is not None else 0
+    assert N_c % factor == 0
 
     module_stack = importlib.import_module('neural_sp.models.seq2seq.frontends.frame_stacking')
-
-    # if enc.conv is not None:
-    #     enc.turn_off_ceil_mode(enc)
 
     enc.eval()
     for xmax_orig in xmaxs:
         xs = np.random.randn(batch_size, xmax_orig, args['input_dim']).astype(np.float32)
         if args['n_stacks'] > 1:
             xs = [module_stack.stack_frame(x, args['n_stacks'], args['n_stacks']) for x in xs]
-        else:
-            # zero padding for the last chunk (for LC-BLSTM/CNN)
-            if 'conv' in args['enc_type'] and (N_c > 0 and xmax_orig % N_c != 0):
-                zero_pad = np.zeros((batch_size, N_c - xmax_orig % N_c, args['input_dim'])).astype(np.float32)
-                xs = np.concatenate([xs, zero_pad], axis=1)
         xlens = torch.IntTensor([len(x) for x in xs])
 
         # all encoding
@@ -144,29 +136,35 @@ def test_forward_streaming_chunkwise(args):
         assert eout_all.size(1) == elens_all.max()
 
         # chunk by chunk encoding
-        eouts_cat = []
-        elens_cat = 0
+        eouts_chunk_cat = []
+        elens_chunk_cat = 0
         xmax = xlens.max().item()
         n_chunks = math.ceil(xmax / N_c)
         j = 0  # time offset for input
         j_out = 0  # time offset for encoder output
         enc.reset_cache()
         for chunk_idx in range(n_chunks):
-            start = j - conv_lookahead
-            end = (j + N_c + N_r) + conv_lookahead
+            start = j - conv_context
+            end = (j + N_c + N_r) + conv_context
             xs_pad_chunk = pad_list(
                 [np2tensor(x[max(0, start):end], device).float() for x in xs], 0.)
-            xlens_chunk = torch.IntTensor([xs_pad_chunk.size(1) for x in xs])
+            xlens_chunk = torch.IntTensor([max(factor, xs_pad_chunk.size(1)) for x in xs])
+            lookback = start >= 0 and conv_context > 0
+            lookahead = end < xmax and conv_context > 0
 
             with torch.no_grad():
                 enc_out_dict_chunk = enc(xs_pad_chunk, xlens_chunk, task='all',
                                          streaming=True,
-                                         lookback=start >= 0 and conv_lookahead,
-                                         lookahead=end < xmax and conv_lookahead)
+                                         lookback=lookback,
+                                         lookahead=lookahead)
 
-            eout_all_i = eout_all[:, j_out:j_out + (N_c // factor)]
+            eout_all_i = eout_all[:, j_out:]
+            if lookahead or conv_context == 0 or not unidir:
+                eout_all_i = eout_all_i[:, :(N_c // factor)]
+            # NOTE: in the last chunk, the rest frames are fed at once
             if eout_all_i.size(1) == 0:
                 break
+
             eout_chunk = enc_out_dict_chunk['ys']['xs']
             elens_chunk = enc_out_dict_chunk['ys']['xlens']
 
@@ -174,16 +172,17 @@ def test_forward_streaming_chunkwise(args):
             eout_chunk = eout_chunk[:, :eout_all_i.size(1)]
             elens_chunk -= diff
 
-            eouts_cat.append(eout_chunk)
-            elens_cat += elens_chunk
+            eouts_chunk_cat.append(eout_chunk)
+            elens_chunk_cat += elens_chunk
 
             j += N_c
             j_out += (N_c // factor)
             if j > xmax:
                 break
+            if not lookahead and conv_context > 0 and unidir:
+                break
 
-        eouts_cat = torch.cat(eouts_cat, dim=1)
-        assert eout_all.size() == eouts_cat.size()
-        assert torch.allclose(eout_all, eouts_cat, atol=atol)
-        assert elens_cat.item() == eouts_cat.size(1)
-        assert torch.equal(elens_all, elens_cat)
+        eouts_chunk_cat = torch.cat(eouts_chunk_cat, dim=1)
+        assert eout_all.size() == eouts_chunk_cat.size()
+        assert torch.allclose(eout_all, eouts_chunk_cat, atol=atol)
+        assert torch.equal(elens_all, elens_chunk_cat), (elens_all, elens_chunk_cat)
