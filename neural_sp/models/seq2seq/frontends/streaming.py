@@ -133,10 +133,13 @@ class Streaming(object):
         is_last_block = (j + N_c) >= self.xmax_whole
         cnn_lookback = self.streaming_type != 'reshape' and start >= 0
         cnn_lookahead = self.streaming_type != 'reshape' and end < self.xmax_whole
+        N_conv = self.conv_context if j == 0 or is_last_block else self.conv_context * 2
         # TODO: implement frame stacking
 
-        if self.streaming_type == 'reshape':
+        if self.streaming_type in ['reshape', 'mask']:
             xlen_block = min(self.xmax_whole - j, N_c)
+        elif self.streaming_type == 'lc_bidir':
+            xlen_block = min(self.xmax_whole - j + N_conv, N_c + N_conv)
         else:
             xlen_block = len(x_block)
 
