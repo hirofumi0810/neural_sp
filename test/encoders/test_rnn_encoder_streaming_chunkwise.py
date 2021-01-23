@@ -73,14 +73,23 @@ def make_args(**kwargs):
           'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
           'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
           'chunk_size_current': "2"}),
+        ({'enc_type': 'conv_blstm',
+          'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
+          'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
+          'chunk_size_current': "32", 'chunk_size_right': "16"}),
+        ({'enc_type': 'conv_blstm',
+          'n_layers': 3, 'subsample': '1_2_1',
+          'conv_channels': "32", 'conv_kernel_sizes': "(3,3)",
+          'conv_strides': "(1,1)", 'conv_poolings': "(2,2)",
+          'chunk_size_current': "32", 'chunk_size_right': "16"}),  # hierarchical
         # subsample: 1/4
         ({'enc_type': 'conv', 'chunk_size_current': "8"}),
         ({'enc_type': 'conv', 'chunk_size_current': "32"}),
         ({'enc_type': 'conv_lstm', 'chunk_size_current': "8"}),  # unidirectional
         ({'enc_type': 'conv_lstm', 'chunk_size_current': "40"}),  # unidirectional
         ({'enc_type': 'conv_blstm',
-          'chunk_size_current': "20", 'chunk_size_right': "20"}),
-        ({'enc_type': 'conv_blstm',
+          'chunk_size_current': "32", 'chunk_size_right': "16"}),
+        ({'enc_type': 'conv_blstm', 'cnn_lookahead': False,
           'chunk_size_current': "32", 'chunk_size_right': "16"}),
         # subsample: 1/8
         ({'enc_type': 'conv',
@@ -91,10 +100,6 @@ def make_args(**kwargs):
           'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
           'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
           'chunk_size_current': "32", 'chunk_size_right': "16"}),
-        ({'enc_type': 'conv_blstm',
-          'conv_channels': "32_32_32", 'conv_kernel_sizes': "(3,3)_(3,3)_(3,3)",
-          'conv_strides': "(1,1)_(1,1)_(1,1)", 'conv_poolings': "(2,2)_(2,2)_(2,2)",
-          'chunk_size_current': "64", 'chunk_size_right': "32"}),
     ]
 )
 def test_forward_streaming_chunkwise(args):
