@@ -47,6 +47,7 @@ def make_args(**kwargs):
         param_init=0.1,
         chunk_size_current="0",
         chunk_size_right="0",
+        cnn_lookahead=True,
         rsp_prob=0,
     )
     args.update(kwargs)
@@ -169,6 +170,7 @@ def test_forward_streaming_chunkwise(args):
             elens_chunk = enc_out_dict_chunk['ys']['xlens']
 
             diff = eout_chunk.size(1) - eout_all_i.size(1)
+
             eout_chunk = eout_chunk[:, :eout_all_i.size(1)]
             elens_chunk -= diff
 

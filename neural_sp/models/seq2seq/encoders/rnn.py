@@ -24,6 +24,8 @@ from neural_sp.models.seq2seq.encoders.subsampling import (
     DropSubsampler,
     MaxpoolSubsampler
 )
+from neural_sp.models.seq2seq.encoders.utils import chunkwise
+
 random.seed(1)
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,7 @@ class RNNEncoder(EncoderBase):
         param_init (float): model initialization parameter
         chunk_size_current (str): current chunk size for latency-controlled bidirectional encoder
         chunk_size_right (str): right chunk size for latency-controlled bidirectional encoder
+        cnn_lookahead (bool): enable lookahead for frontend CNN layers for LC-BLSTM
         rsp_prob (float): probability of Random State Passing (RSP)
 
     """
@@ -72,7 +75,7 @@ class RNNEncoder(EncoderBase):
                  conv_in_channel, conv_channels, conv_kernel_sizes, conv_strides, conv_poolings,
                  conv_batch_norm, conv_layer_norm, conv_bottleneck_dim,
                  bidir_sum_fwd_bwd, task_specific_layer, param_init,
-                 chunk_size_current, chunk_size_right,
+                 chunk_size_current, chunk_size_right, cnn_lookahead,
                  rsp_prob):
 
         super(RNNEncoder, self).__init__()
@@ -145,6 +148,10 @@ class RNNEncoder(EncoderBase):
         else:
             self.conv = None
             self._odim = input_dim * n_splices * n_stacks
+        self.cnn_lookahead = cnn_lookahead
+        if not cnn_lookahead:
+            assert self.chunk_size_current > 0
+            assert self.lc_bidir
 
         if enc_type != 'conv':
             self.rnn = nn.ModuleList()
@@ -247,6 +254,8 @@ class RNNEncoder(EncoderBase):
                            help='current chunk size for latency-controlled RNN encoder')
         group.add_argument('--lc_chunk_size_right', type=str, default="0",
                            help='right chunk size for latency-controlled RNN encoder')
+        group.add_argument('--cnn_lookahead', type=strtobool, default=True,
+                           help='disable lookahead frames in CNN layers')
         group.add_argument('--rsp_prob_enc', type=float, default=0.0,
                            help='probability for Random State Passing (RSP)')
         return parser
@@ -264,6 +273,8 @@ class RNNEncoder(EncoderBase):
             dir_name += '_sumfwdbwd'
         if int(args.lc_chunk_size_left.split('_')[0]) > 0 or int(args.lc_chunk_size_right.split('_')[0]) > 0:
             dir_name += '_chunkL' + args.lc_chunk_size_left + 'R' + args.lc_chunk_size_right
+            if not args.cnn_lookahead:
+                dir_name += '_blockwise'
         if args.rsp_prob_enc > 0:
             dir_name += '_RSP' + str(args.rsp_prob_enc)
         return dir_name
@@ -317,6 +328,12 @@ class RNNEncoder(EncoderBase):
 
         bs, xmax, idim = xs.size()
         N_c, N_r = self.chunk_size_current, self.chunk_size_right
+
+        if self.lc_bidir and not self.cnn_lookahead:
+            xs = chunkwise(xs, 0, N_c, 0)  # `[B * n_chunks, N_c, idim]`
+            # Extract the center region
+            xs = xs.contiguous().view(bs, -1, xs.size(2))
+            xs = xs[:, :xlens.max()]  # `[B, emax, d_model]`
 
         # Path through CNN blocks before RNN layers
         if self.conv is not None:
@@ -377,6 +394,8 @@ class RNNEncoder(EncoderBase):
         # Bridge layer
         if self.bridge is not None:
             xs = self.bridge(xs)
+
+        xs = xs[:, :xlens.max()]
 
         if task in ['all', 'ys']:
             if perm_ids_unsort is not None:

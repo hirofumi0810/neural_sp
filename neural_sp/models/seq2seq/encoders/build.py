@@ -152,6 +152,7 @@ def build_encoder(args):
             param_init=args.param_init,
             chunk_size_current=args.lc_chunk_size_left,  # for compatibility
             chunk_size_right=args.lc_chunk_size_right,
+            cnn_lookahead=args.cnn_lookahead,
             rsp_prob=args.rsp_prob_enc)
 
     return encoder

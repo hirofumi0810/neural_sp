@@ -42,6 +42,7 @@ def make_args(**kwargs):
         param_init=0.1,
         chunk_size_current="0",
         chunk_size_right="0",
+        cnn_lookahead=True,
         rsp_prob=0,
     )
     args.update(kwargs)
@@ -167,8 +168,7 @@ def test_forward(args):
     device = "cpu"
 
     module = importlib.import_module('neural_sp.models.seq2seq.encoders.rnn')
-    enc = module.RNNEncoder(**args)
-    enc = enc.to(device)
+    enc = module.RNNEncoder(**args).to(device)
 
     for xmax in xmaxs:
         xs = np.random.randn(batch_size, xmax, args['input_dim']).astype(np.float32)
