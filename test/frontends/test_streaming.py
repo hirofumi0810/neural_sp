@@ -37,6 +37,7 @@ def make_rnn_args(**kwargs):
         param_init=0.1,
         chunk_size_current="0",
         chunk_size_right="0",
+        cnn_lookahead=True,
         rsp_prob=0,
     )
     args.update(kwargs)
