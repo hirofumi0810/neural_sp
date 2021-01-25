@@ -4,7 +4,7 @@
 # Copyright 2018 Kyoto University (Hirofumi Inaguma)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Plot attention weights of the attention model."""
+"""Plot attention weights of attention model."""
 
 import argparse
 import copy
@@ -46,10 +46,11 @@ def main():
         dataloader = build_dataloader(args=args,
                                       tsv_path=s,
                                       batch_size=1,
-                                      is_test=True)
+                                      is_test=True,
+                                      first_n_utterances=args.recog_first_n_utt)
 
         if i == 0:
-            # Load the ASR model
+            # Load ASR model
             model = Speech2Text(args, dir_name)
             epoch = int(float(args.recog_model[0].split('-')[-1]) * 10) / 10
             if args.recog_n_average > 1:
@@ -74,7 +75,7 @@ def main():
                         model_e.cuda()
                     ensemble_models += [model_e]
 
-            # Load the LM for shallow fusion
+            # Load LM for shallow fusion
             if not args.lm_fusion:
                 # first path
                 if args.recog_lm is not None and args.recog_lm_weight > 0:

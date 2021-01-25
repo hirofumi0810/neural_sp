@@ -67,6 +67,7 @@ def build_dataloader(args, tsv_path, batch_size, n_epochs=1e10, is_test=False,
                             sort_by=sort_by,
                             short2long=short2long,
                             is_test=is_test,
+                            first_n_utterances=first_n_utterances,
                             word_alignment_dir=word_alignment_dir,
                             ctc_alignment_dir=ctc_alignment_dir)
 
