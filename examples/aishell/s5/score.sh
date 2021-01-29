@@ -17,6 +17,7 @@ data=/n/work2/inaguma/corpus/aishell1
 
 unit=
 metric=edit_distance
+first_n=0
 batch_size=1
 beam_width=10
 min_len_ratio=0.0
@@ -42,6 +43,7 @@ asr_state_carry_over=false
 lm_state_carry_over=true
 n_average=10  # for Transformer
 oracle=false
+streaming_encoding=false
 block_sync=false  # for MoChA
 mma_delay_threshold=-1
 
@@ -63,6 +65,9 @@ fi
 
 for set in dev test; do
     recog_dir=$(dirname ${model})/decode_${set}_beam${beam_width}_lp${length_penalty}_cp${coverage_penalty}_${min_len_ratio}_${max_len_ratio}
+    if [ ${first_n} != 0 ]; then
+        recog_dir=${recog_dir}_first${first_n}
+    fi
     if [ ! -z ${unit} ]; then
         recog_dir=${recog_dir}_${unit}
     fi
@@ -102,6 +107,9 @@ for set in dev test; do
     if [ ${asr_state_carry_over} = true ]; then
         recog_dir=${recog_dir}_ASRcarryover
     fi
+    if [ ${streaming_encoding} = true ]; then
+        recog_dir=${recog_dir}_streaming_encoding
+    fi
     if [ ${block_sync} = true ]; then
         recog_dir=${recog_dir}_blocksync
     fi
@@ -130,6 +138,7 @@ for set in dev test; do
         --recog_n_gpus ${n_gpus} \
         --recog_sets ${data}/dataset/${set}_sp.tsv \
         --recog_dir ${recog_dir} \
+        --recog_first_n_utt ${first_n} \
         --recog_unit ${unit} \
         --recog_metric ${metric} \
         --recog_model ${model} ${model1} ${model2} ${model3} \
@@ -157,6 +166,7 @@ for set in dev test; do
         --recog_reverse_lm_rescoring ${reverse_lm_rescoring} \
         --recog_asr_state_carry_over ${asr_state_carry_over} \
         --recog_lm_state_carry_over ${lm_state_carry_over} \
+        --recog_streaming_encoding ${streaming_encoding} \
         --recog_block_sync ${block_sync} \
         --recog_n_average ${n_average} \
         --recog_oracle ${oracle} \
