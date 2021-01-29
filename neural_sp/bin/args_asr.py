@@ -454,7 +454,9 @@ def build_parser():
     parser.add_argument('--recog_n_average', type=int, default=1,
                         help='number of models for the model averaging of Transformer')
     parser.add_argument('--recog_streaming', type=strtobool, default=False,
-                        help='streaming decoding')
+                        help='streaming decoding (both encoding and decoding are streaming)')
+    parser.add_argument('--recog_streaming_encoding', type=strtobool, default=False,
+                        help='streaming encoding (decoding is offline)')
     parser.add_argument('--recog_block_sync', type=strtobool, default=False,
                         help='block-synchronous streaming beam search decoding')
     parser.add_argument('--recog_block_sync_size', type=int, default=40,
