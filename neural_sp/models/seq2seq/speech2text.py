@@ -479,6 +479,43 @@ class Speech2Text(ModelBase):
         if getattr(self, 'dec_fwd_sub2', None) is not None:
             self.dec_fwd_sub2._plot_ctc(mkdir_join(self.save_path, 'ctc_sub2'))
 
+    def encode_streaming(self, xs, params, task='ys'):
+        """Simulate streaming encoding. Decoding is performed in the offline mode.
+        Args:
+            xs (FloatTensor): `[B, T, idim]`
+            params (dict): hyper-parameters for decoding
+            task (str): task to evaluate
+        Returns:
+            eout (FloatTensor): `[B, T, idim]`
+            elens (IntTensor): `[B]`
+
+        """
+        assert task == 'ys'
+        assert self.input_type == 'speech'
+        assert self.fwd_weight > 0
+        assert len(xs) == 1  # batch size
+        streaming = Streaming(xs[0], params, self.enc)
+
+        self.enc.reset_cache()
+        while True:
+            # Encode input features block by block
+            x_block, is_last_block, cnn_lookback, cnn_lookahead, xlen_block = streaming.extract_feature()
+            eout_block_dict = self.encode([x_block], 'all',
+                                          streaming=True,
+                                          cnn_lookback=cnn_lookback,
+                                          cnn_lookahead=cnn_lookahead,
+                                          xlen_block=xlen_block)
+            eout_block = eout_block_dict[task]['xs']
+            streaming.cache_eout(eout_block)
+            streaming.next_block()
+            if is_last_block:
+                break
+
+        eout = streaming.pop_eouts()
+        elens = torch.IntTensor([eout.size(1)])
+
+        return eout, elens
+
     def decode_streaming(self, xs, params, idx2token, exclude_eos=False, task='ys'):
         """Simulate streaming decoding. Both encoding and decoding are performed in the online mode."""
         assert task == 'ys'
@@ -537,8 +574,8 @@ class Speech2Text(ModelBase):
             if isinstance(self.dec_fwd, RNNT):
                 raise NotImplementedError
             elif isinstance(self.dec_fwd, RNNDecoder) and block_sync:
-                for i_block in range(math.ceil(eout_block.size(1) / block_size)):
-                    eout_block_i = eout_block[:, i_block * block_size:(i_block + 1) * block_size]
+                for i in range(math.ceil(eout_block.size(1) / block_size)):
+                    eout_block_i = eout_block[:, i * block_size:(i + 1) * block_size]
                     end_hyps, hyps, _ = self.dec_fwd.beam_search_block_sync(
                         eout_block_i, params, idx2token, hyps, lm,
                         state_carry_over=False)
@@ -673,9 +710,12 @@ class Speech2Text(ModelBase):
         self.eval()
         with torch.no_grad():
             # Encode input features
-            eout_dict = self.encode(xs, task)
-            eout = eout_dict[task]['xs']
-            elens = eout_dict[task]['xlens']
+            if params['recog_streaming_encoding']:
+                eout, elens = self.encode_streaming(xs, params, task)
+            else:
+                eout_dict = self.encode(xs, task)
+                eout = eout_dict[task]['xs']
+                elens = eout_dict[task]['xlens']
 
             # CTC
             if (self.fwd_weight == 0 and self.bwd_weight == 0) or (self.ctc_weight > 0 and params['recog_ctc_weight'] == 1):
