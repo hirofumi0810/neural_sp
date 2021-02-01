@@ -220,12 +220,7 @@ class CTC(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, enc_n_units]`
             elens (List): length `[B]`
-            params (dict):
-                recog_beam_width (int): size of beam
-                recog_length_penalty (float): length penalty
-                recog_lm_weight (float): weight of first path LM score
-                recog_lm_second_weight (float): weight of second path LM score
-                recog_lm_bwd_weight (float): weight of second path backward LM score
+            params (dict): decoding hyperparameters
             idx2token (): converter from index to token
             lm (torch.nn.module): firsh path LM
             lm_second (torch.nn.module): second path LM
@@ -240,11 +235,11 @@ class CTC(DecoderBase):
         """
         bs = eouts.size(0)
 
-        beam_width = params['recog_beam_width']
-        lp_weight = params['recog_length_penalty']
-        lm_weight = params['recog_lm_weight']
-        lm_weight_second = params['recog_lm_second_weight']
-        lm_weight_second_bwd = params['recog_lm_bwd_weight']
+        beam_width = params.get('recog_beam_width')
+        lp_weight = params.get('recog_length_penalty')
+        lm_weight = params.get('recog_lm_weight')
+        lm_weight_second = params.get('recog_lm_second_weight')
+        lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
 
         helper = BeamSearch(beam_width, self.eos, 1.0, eouts.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight)
