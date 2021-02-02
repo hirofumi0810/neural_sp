@@ -140,12 +140,7 @@ class DecoderBase(ModelBase):
         Args:
             eouts (FloatTensor): `[B, T, enc_units]`
             elens (IntTensor): `[B]`
-            params (dict):
-                recog_beam_width (int): size of beam
-                recog_length_penalty (float): length penalty
-                recog_lm_weight (float): weight of first path LM score
-                recog_lm_second_weight (float): weight of second path LM score
-                recog_lm_rev_weight (float): weight of second path backward LM score
+            params (dict): decoding hyperparameters
             lm: firsh path LM
             lm_second: second path LM
             lm_second_bwd: second path backward LM
@@ -156,7 +151,7 @@ class DecoderBase(ModelBase):
                 which contains a list of length `[L]`
 
         """
-        if params['recog_beam_width'] == 1:
+        if params.get('recog_beam_width') == 1:
             nbest_hyps = self.ctc.greedy(eouts, elens)
         else:
             nbest_hyps = self.ctc.beam_search(eouts, elens, params, idx2token,

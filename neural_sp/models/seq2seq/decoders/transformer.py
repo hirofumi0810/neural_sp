@@ -579,7 +579,7 @@ class TransformerDecoder(DecoderBase):
         Args:
             eouts (FloatTensor): `[B, T, d_model]`
             elens (IntTensor): `[B]`
-            params (dict): hyperparameters for decoding
+            params (dict): decoding hyperparameters
             idx2token (): converter from index to token
             lm (torch.nn.module): firsh path LM
             lm_second (torch.nn.module): second path LM
@@ -603,20 +603,20 @@ class TransformerDecoder(DecoderBase):
         bs, xmax, _ = eouts.size()
         n_models = len(ensmbl_decs) + 1
 
-        beam_width = params['recog_beam_width']
+        beam_width = params.get('recog_beam_width')
         assert 1 <= nbest <= beam_width
-        ctc_weight = params['recog_ctc_weight']
-        max_len_ratio = params['recog_max_len_ratio']
-        min_len_ratio = params['recog_min_len_ratio']
-        lp_weight = params['recog_length_penalty']
-        length_norm = params['recog_length_norm']
-        lm_weight = params['recog_lm_weight']
-        lm_weight_second = params['recog_lm_second_weight']
-        lm_weight_second_bwd = params['recog_lm_bwd_weight']
-        eos_threshold = params['recog_eos_threshold']
-        lm_state_carry_over = params['recog_lm_state_carry_over']
-        softmax_smoothing = params['recog_softmax_smoothing']
-        eps_wait = params['recog_mma_delay_threshold']
+        ctc_weight = params.get('recog_ctc_weight')
+        max_len_ratio = params.get('recog_max_len_ratio')
+        min_len_ratio = params.get('recog_min_len_ratio')
+        lp_weight = params.get('recog_length_penalty')
+        length_norm = params.get('recog_length_norm')
+        lm_weight = params.get('recog_lm_weight')
+        lm_weight_second = params.get('recog_lm_second_weight')
+        lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
+        eos_threshold = params.get('recog_eos_threshold')
+        lm_state_carry_over = params.get('recog_lm_state_carry_over')
+        softmax_smoothing = params.get('recog_softmax_smoothing')
+        eps_wait = params.get('recog_mma_delay_threshold')
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight)

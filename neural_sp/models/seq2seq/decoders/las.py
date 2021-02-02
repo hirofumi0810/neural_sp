@@ -631,6 +631,7 @@ class RNNDecoder(DecoderBase):
 
         """
         bs, xmax = eouts.size()[:2]
+        device = eouts.device
 
         # Append <sos> and <eos>
         ys_in, ys_out, ylens = append_sos_eos(ys, self.eos, self.eos, self.pad, eouts.device, self.bwd)
@@ -654,7 +655,7 @@ class RNNDecoder(DecoderBase):
         lmout, lmstate = None, None
 
         ys_emb = self.dropout_emb(self.embed(ys_in))
-        src_mask = make_pad_mask(elens.to(eouts.device)).unsqueeze(1)  # `[B, 1, T]`
+        src_mask = make_pad_mask(elens.to(device)).unsqueeze(1)  # `[B, 1, T]`
         tgt_mask = (ys_out != self.pad).unsqueeze(2)  # `[B, L, 1]`
         logits = []
         for i in range(ymax):
@@ -755,7 +756,7 @@ class RNNDecoder(DecoderBase):
                 trigger_points = forced_trigger_points
 
             # CTC-synchronous training/Minimum latency training/Delay constrained training
-            js = torch.arange(xmax, dtype=torch.float, device=eouts.device).expand_as(aws)
+            js = torch.arange(xmax, dtype=torch.float, device=device).expand_as(aws)
             exp_trigger_points = (js * aws).sum(3)  # `[B, H, L]`
             trigger_points = trigger_points.float().unsqueeze(1)  # `[B, 1, L]`
             loss_latency = torch.abs(exp_trigger_points - trigger_points)  # `[B, H, L]`
@@ -1074,23 +1075,23 @@ class RNNDecoder(DecoderBase):
         """
         bs, xmax, _ = eouts.size()
 
-        beam_width = params['recog_beam_width']
+        beam_width = params.get('recog_beam_width')
         assert 1 <= nbest <= beam_width
-        ctc_weight = params['recog_ctc_weight']
-        max_len_ratio = params['recog_max_len_ratio']
-        min_len_ratio = params['recog_min_len_ratio']
-        lp_weight = params['recog_length_penalty']
-        cp_weight = params['recog_coverage_penalty']
-        cp_threshold = params['recog_coverage_threshold']
-        length_norm = params['recog_length_norm']
-        lm_weight = params['recog_lm_weight']
-        lm_weight_second = params['recog_lm_second_weight']
-        lm_weight_second_bwd = params['recog_lm_bwd_weight']
-        gnmt_decoding = params['recog_gnmt_decoding']
-        eos_threshold = params['recog_eos_threshold']
-        asr_state_CO = params['recog_asr_state_carry_over']
-        lm_state_CO = params['recog_lm_state_carry_over']
-        softmax_smoothing = params['recog_softmax_smoothing']
+        ctc_weight = params.get('recog_ctc_weight')
+        max_len_ratio = params.get('recog_max_len_ratio')
+        min_len_ratio = params.get('recog_min_len_ratio')
+        lp_weight = params.get('recog_length_penalty')
+        cp_weight = params.get('recog_coverage_penalty')
+        cp_threshold = params.get('recog_coverage_threshold')
+        length_norm = params.get('recog_length_norm')
+        lm_weight = params.get('recog_lm_weight')
+        lm_weight_second = params.get('recog_lm_second_weight')
+        lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
+        gnmt_decoding = params.get('recog_gnmt_decoding')
+        eos_threshold = params.get('recog_eos_threshold')
+        asr_state_CO = params.get('recog_asr_state_carry_over')
+        lm_state_CO = params.get('recog_lm_state_carry_over')
+        softmax_smoothing = params.get('recog_softmax_smoothing')
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight)
@@ -1384,10 +1385,13 @@ class RNNDecoder(DecoderBase):
                     logger.info('Hyp: %s' % idx2token(
                         end_hyps[k]['hyp'][1:][::-1] if self.bwd else end_hyps[k]['hyp'][1:]))
                     logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
-                    logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_att'] * (1 - ctc_weight)))
-                    logger.info('log prob (hyp, cp): %.7f' % (end_hyps[k]['score_cp'] * cp_weight))
+                    logger.info('log prob (hyp, att): %.7f' %
+                                (end_hyps[k]['score_att'] * (1 - ctc_weight)))
+                    logger.info('log prob (hyp, cp): %.7f' %
+                                (end_hyps[k]['score_cp'] * cp_weight))
                     if ctc_prefix_scorer is not None:
-                        logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
+                        logger.info('log prob (hyp, ctc): %.7f' %
+                                    (end_hyps[k]['score_ctc'] * ctc_weight))
                     if lm is not None:
                         logger.info('log prob (hyp, first-path lm): %.7f' %
                                     (end_hyps[k]['score_lm'] * lm_weight))
@@ -1399,8 +1403,10 @@ class RNNDecoder(DecoderBase):
                                     (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     if self.attn_type == 'mocha':
                         logger.info('streamable: %s' % end_hyps[k]['streamable'])
-                        logger.info('streaming failed point: %d' % (end_hyps[k]['streaming_failed_point'] + 1))
-                        logger.info('quantity rate [%%]: %.2f' % (end_hyps[k]['quantity_rate'] * 100))
+                        logger.info('streaming failed point: %d' %
+                                    (end_hyps[k]['streaming_failed_point'] + 1))
+                        logger.info('quantity rate [%%]: %.2f' %
+                                    (end_hyps[k]['quantity_rate'] * 100))
                     logger.info('-' * 50)
 
                 if self.attn_type == 'mocha' and end_hyps[0]['streaming_failed_point'] < 1000:
@@ -1462,14 +1468,14 @@ class RNNDecoder(DecoderBase):
         assert eouts.size(0) == 1
         assert self.attn_type == 'mocha'
 
-        beam_width = params['recog_beam_width']
-        ctc_weight = params['recog_ctc_weight']
-        max_len_ratio = params['recog_max_len_ratio']
-        lp_weight = params['recog_length_penalty']
-        length_norm = params['recog_length_norm']
-        lm_weight = params['recog_lm_weight']
-        eos_threshold = params['recog_eos_threshold']
-        softmax_smoothing = params['recog_softmax_smoothing']
+        beam_width = params.get('recog_beam_width')
+        ctc_weight = params.get('recog_ctc_weight')
+        max_len_ratio = params.get('recog_max_len_ratio')
+        lp_weight = params.get('recog_length_penalty')
+        length_norm = params.get('recog_length_norm')
+        lm_weight = params.get('recog_lm_weight')
+        eos_threshold = params.get('recog_eos_threshold')
+        softmax_smoothing = params.get('recog_softmax_smoothing')
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
         lm = helper.verify_lm_eval_mode(lm, lm_weight)
@@ -1647,12 +1653,16 @@ class RNNDecoder(DecoderBase):
                 if len(merged_hyps[k]['boundary']) > 0:
                     logger.info('boundary: %s' % ' '.join(list(map(str, merged_hyps[k]['boundary']))))
                 logger.info('no boundary: %s' % merged_hyps[k]['no_boundary'])
-                logger.info('log prob (hyp): %.7f' % merged_hyps[k]['score'])
-                logger.info('log prob (hyp, att): %.7f' % (merged_hyps[k]['score_att'] * (1 - ctc_weight)))
+                logger.info('log prob (hyp): %.7f' %
+                            merged_hyps[k]['score'])
+                logger.info('log prob (hyp, att): %.7f' %
+                            (merged_hyps[k]['score_att'] * (1 - ctc_weight)))
                 if self.ctc_prefix_scorer is not None:
-                    logger.info('log prob (hyp, ctc): %.7f' % (merged_hyps[k]['score_ctc'] * ctc_weight))
+                    logger.info('log prob (hyp, ctc): %.7f' %
+                                (merged_hyps[k]['score_ctc'] * ctc_weight))
                 if lm is not None:
-                    logger.info('log prob (hyp, first-path lm): %.7f' % (merged_hyps[k]['score_lm'] * lm_weight))
+                    logger.info('log prob (hyp, first-path lm): %.7f' %
+                                (merged_hyps[k]['score_lm'] * lm_weight))
                 logger.info('-' * 50)
 
         aws = None
