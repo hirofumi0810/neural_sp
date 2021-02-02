@@ -571,6 +571,12 @@ class TransformerDecoder(DecoderBase):
 
         return hyps, aws
 
+    def cache_embedding(self, device):
+        """Cache token emebdding."""
+        if self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
+            self.embed_cache = self.embed(indices)  # `[1, vocab, emb_dim]`
+
     def beam_search(self, eouts, elens, params, idx2token=None,
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
@@ -698,7 +704,11 @@ class TransformerDecoder(DecoderBase):
                     causal_mask = causal_mask.byte()
                 causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0).repeat([ys.size(0), 1, 1])
 
-                out = self.pos_enc(self.embed(ys))  # scaled + dropout
+                if self.embed_cache is not None:
+                    ys_emb = self.embed_cache[ys]
+                else:
+                    ys_emb = self.embed(ys)
+                out = self.pos_enc(ys_emb, scale=True)  # scaled + dropout
 
                 n_heads_total = 0
                 eouts_b = eouts[b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
