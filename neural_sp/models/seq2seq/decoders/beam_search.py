@@ -134,7 +134,7 @@ class BeamSearch(object):
             assert lm_weight > 0
             lm.eval()
             if cache_emb:
-                lm.cache_embedding()
+                lm.cache_embedding(lm.device)
         return lm
 
     def merge_rnnt_path(self, hyps, merge_prob=False):
