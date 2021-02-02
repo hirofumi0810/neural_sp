@@ -192,6 +192,7 @@ def make_decode_params(**kwargs):
         recog_lm_weight=0.0,
         recog_lm_second_weight=0.0,
         recog_lm_bwd_weight=0.0,
+        recog_cache_embedding=True,
         recog_max_len_ratio=1.0,
         recog_min_len_ratio=0.2,
         recog_length_penalty=0.0,
@@ -266,6 +267,7 @@ def make_args_rnnlm(**kwargs):
         (False, '', {'recog_coverage_penalty': 0.1, 'recog_gnmt_decoding': True}),
         # shallow fusion
         (False, '', {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
+        (False, '', {'recog_beam_width': 4, 'recog_lm_weight': 0.1, 'recog_cache_embedding': False}),
         # cold fusion
         (False, 'cold', {'recog_beam_width': 4}),
         (False, 'cold', {'recog_beam_width': 4, 'recog_lm_weight': 0.1}),
@@ -460,7 +462,7 @@ def test_streaming_decoding(params):
             eouts_chunk = eouts[:, N_l * chunk_idx:N_l * (chunk_idx + 1)]
             out = dec.beam_search_block_sync(eouts_chunk, params, idx2token=idx2token,
                                              lm=lm, ctc_log_probs=ctc_log_probs,
-                                             hyps=hyps, emb_cache=True)
+                                             hyps=hyps)
             assert len(out) == 3
             end_hyps, hyps, _ = out
             assert isinstance(end_hyps, list)
