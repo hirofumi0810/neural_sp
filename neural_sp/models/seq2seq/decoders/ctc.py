@@ -237,14 +237,15 @@ class CTC(DecoderBase):
 
         beam_width = params.get('recog_beam_width')
         lp_weight = params.get('recog_length_penalty')
+        cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
         lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
 
         helper = BeamSearch(beam_width, self.eos, 1.0, eouts.device)
-        lm = helper.verify_lm_eval_mode(lm, lm_weight)
-        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second)
-        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
+        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second, cache_emb)
+        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd, cache_emb)
 
         nbest_hyps_idx = []
         log_probs = torch.log_softmax(self.output(eouts), dim=-1)
