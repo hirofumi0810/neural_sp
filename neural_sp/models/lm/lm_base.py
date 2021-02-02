@@ -33,16 +33,16 @@ class LMBase(ModelBase):
         """Forward pass.
 
         Args:
-            ys (list): length `B`, each of which contains arrays of size `[L]`
-            state (tuple or list):
+            ys (List): length `B`, each of which contains arrays of size `[L]`
+            state (tuple or List):
             is_eval (bool): if True, the history will not be saved.
                 This should be used in inference model for memory efficiency.
             n_caches (int): number of cached states
-            ylens (list): not used
+            ylens (List): not used
             predict_last (bool): used for TransformerLM and GatedConvLM
         Returns:
             loss (FloatTensor): `[1]`
-            new_state (tuple or list):
+            new_state (tuple or List):
             observation (dict):
 
         """
@@ -131,33 +131,35 @@ class LMBase(ModelBase):
     def decode(self, ys, state=None, mems=None, incremental=False):
         raise NotImplementedError
 
-    def predict(self, ys, state=None, mems=None, cache=None, emb_cache=False):
+    def cache_embedding(self, device):
+        raise NotImplementedError
+
+    def predict(self, ys, state=None, mems=None, cache=None):
         """Precict function for ASR.
 
         Args:
             ys (LongTensor): `[B, L]`
             state:
-                - RNNLM: dict
+                - RNNLM => (dict):
                     hxs (FloatTensor): `[n_layers, B, n_units]`
                     cxs (FloatTensor): `[n_layers, B, n_units]`
-                - TransformerLM (LongTensor): `[B, L]`
-                - TransformerXL (list): length `n_layers + 1`, each of which contains a tensor`[B, L, d_model]`
-            mems (list):
-            cache (list):
-            emb_cache (bool): precompute token embeddings for fast infernece
+                - TransformerLM => (LongTensor): `[B, L]`
+                - TransformerXL => (List): length `n_layers + 1`, each of which contains a tensor`[B, L, d_model]`
+            mems (List):
+            cache (List):
         Returns:
             lmout (FloatTensor): `[B, L, vocab]`, used for LM integration such as cold fusion
             state:
-                - RNNLM: dict
+                - RNNLM (dict):
                     hxs (FloatTensor): `[n_layers, B, n_units]`
                     cxs (FloatTensor): `[n_layers, B, n_units]`
-                - TransformerLM (LongTensor): `[B, L]`
-                - TransformerXL (list): length `n_layers + 1`, each of which contains a tensor`[B, L, d_model]`
+                - TransformerLM => (LongTensor): `[B, L]`
+                - TransformerXL => (List): length `n_layers + 1`, each of which contains a tensor`[B, L, d_model]`
             log_probs (FloatTensor): `[B, L, vocab]`
 
         """
         logits, lmout, new_state = self.decode(ys, state, mems=mems, cache=cache,
-                                               incremental=True, emb_cache=emb_cache)
+                                               incremental=True)
         log_probs = torch.log_softmax(logits, dim=-1)
         return lmout, new_state, log_probs
 

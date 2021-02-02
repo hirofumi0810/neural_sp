@@ -4,7 +4,6 @@
 """TransformerXL language model."""
 
 import copy
-from distutils.util import strtobool
 import logging
 import math
 import os
@@ -158,10 +157,10 @@ class TransformerXL(LMBase):
         """Update memory.
 
         Args:
-            memory_prev (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
-            hidden_states (list): length `n_layers`, each of which contains `[B, L, d_model]`
+            memory_prev (List): length `n_layers`, each of which contains `[B, mlen, d_model]`
+            hidden_states (List): length `n_layers`, each of which contains `[B, L, d_model]`
         Returns:
-            new_mems (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
+            new_mems (List): length `n_layers`, each of which contains `[B, mlen, d_model]`
 
         """
         if memory_prev is None:
@@ -185,21 +184,24 @@ class TransformerXL(LMBase):
 
         return new_mems
 
-    def decode(self, ys, state=None, mems=None, cache=None, incremental=False,
-               emb_cache=False):
+    def cache_embedding(self, device):
+        if self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
+            self.embed_cache = self.dropout_emb(self.embed(indices) * self.scale)  # `[1, vocab, emb_dim]`
+
+    def decode(self, ys, state=None, mems=None, cache=None, incremental=False):
         """Decode function.
 
         Args:
             ys (LongTensor): `[B, L]`
-            state (list): dummy interfance for RNNLM
-            mems (list): length `n_layers`, each of which contains a FloatTensor `[B, mlen, d_model]`
-            cache (list): length `L`, each of which contains a FloatTensor `[B, L-1, d_model]`
+            state (List): dummy interfance for RNNLM
+            mems (List): length `n_layers`, each of which contains a FloatTensor `[B, mlen, d_model]`
+            cache (List): length `L`, each of which contains a FloatTensor `[B, L-1, d_model]`
             incremental (bool): ASR decoding mode
-            emb_cache (bool): precompute token embeddings for fast infernece
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]`
-            new_cache (list): length `n_layers`, each of which contains a FloatTensor `[B, L, d_model]`
+            new_cache (List): length `n_layers`, each of which contains a FloatTensor `[B, L, d_model]`
 
         """
         # for ASR decoding
@@ -220,11 +222,6 @@ class TransformerXL(LMBase):
         causal_mask = ys.new_ones(ylen, ylen + mlen).byte()
         causal_mask = torch.tril(causal_mask, diagonal=0 + mlen, out=causal_mask).unsqueeze(0)
         causal_mask = causal_mask.repeat([bs, 1, 1])  # `[B, L, L+mlen]`
-
-        # Pre-compute embedding
-        if emb_cache and self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(ys.device)
-            self.embed_cache = self.dropout_emb(self.embed(indices) * self.scale)  # `[1, vocab, emb_dim]`
 
         if self.embed_cache is not None:
             out = self.embed_cache[ys]

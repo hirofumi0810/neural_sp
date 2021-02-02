@@ -156,10 +156,10 @@ class TransformerLM(LMBase):
         """Update memory.
 
         Args:
-            memory_prev (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
-            hidden_states (list): length `n_layers`, each of which contains `[B, L, d_model]`
+            memory_prev (List): length `n_layers`, each of which contains `[B, mlen, d_model]`
+            hidden_states (List): length `n_layers`, each of which contains `[B, L, d_model]`
         Returns:
-            new_mems (list): length `n_layers`, each of which contains `[B, mlen, d_model]`
+            new_mems (List): length `n_layers`, each of which contains `[B, mlen, d_model]`
 
         """
         if memory_prev is None:
@@ -182,21 +182,24 @@ class TransformerLM(LMBase):
                 new_mems.append(cat[:, start_idx:end_idx].detach())  # `[B, self.mem_len, d_model]`
         return new_mems
 
-    def decode(self, ys, state=None, mems=None, cache=None, incremental=False,
-               emb_cache=False):
+    def cache_embedding(self, device):
+        if self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
+            self.embed_cache = self.embed(indices)  # `[1, vocab, emb_dim]`
+
+    def decode(self, ys, state=None, mems=None, cache=None, incremental=False):
         """Decode function.
 
         Args:
             ys (LongTensor): `[B, L]`
-            state (list): dummy interfance for RNNLM
-            mems (list): length `n_layers`, each of which contains a FloatTensor `[B, mlen, d_model]`
-            cache (list): length `L`, each of which contains a FloatTensor `[B, L-1, d_model]`
+            state (List): dummy interfance for RNNLM
+            mems (List): length `n_layers`, each of which contains a FloatTensor `[B, mlen, d_model]`
+            cache (List): length `L`, each of which contains a FloatTensor `[B, L-1, d_model]`
             incremental (bool): ASR decoding mode
-            emb_cache (bool): precompute token embeddings for fast infernece
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]`
-            new_cache (list): length `n_layers`, each of which contains a FloatTensor `[B, L, d_model]`
+            new_cache (List): length `n_layers`, each of which contains a FloatTensor `[B, L, d_model]`
 
         """
         # for ASR decoding
@@ -214,17 +217,11 @@ class TransformerLM(LMBase):
         causal_mask = torch.tril(causal_mask, diagonal=0, out=causal_mask).unsqueeze(0)
         causal_mask = causal_mask.repeat([bs, 1, 1])
 
-        # Pre-compute embedding
-        if emb_cache and self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(ys.device)
-            self.embed_cache = self.embed(indices)  # `[1, vocab, emb_dim]`
-
         if self.embed_cache is not None:
             out = self.embed_cache[ys]
         else:
             out = self.embed(ys.long())
-
-        out = self.pos_enc(out)
+        out = self.pos_enc(out, scale=True)  # scaled + dropout
 
         new_mems = [None] * self.n_layers
         new_cache = [None] * self.n_layers

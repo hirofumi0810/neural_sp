@@ -144,8 +144,12 @@ class RNNLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def decode(self, ys, state, mems=None, cache=None, incremental=False,
-               emb_cache=False):
+    def cache_embedding(self, device):
+        if self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
+            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
+
+    def decode(self, ys, state, mems=None, cache=None, incremental=False):
         """Decode function.
 
         Args:
@@ -155,7 +159,7 @@ class RNNLM(LMBase):
                 cxs (FloatTensor): `[n_layers, B, n_units]`
             cache: dummy interfance for TransformerLM/TransformerXL
             incremental: dummy interfance for TransformerLM/TransformerXL
-            emb_cache (bool): precompute token embeddings for fast infernece
+            cache_emb (bool): precompute token embeddings
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             ys_emb (FloatTensor): `[B, L, n_units]` (for cache)
@@ -166,11 +170,6 @@ class RNNLM(LMBase):
 
         """
         bs, ymax = ys.size()
-
-        # Pre-compute embedding
-        if emb_cache and self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(ys.device)
-            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
 
         if self.embed_cache is not None:
             ys_emb = self.embed_cache[ys]
