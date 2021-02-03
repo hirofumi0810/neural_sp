@@ -293,7 +293,8 @@ class CTC(DecoderBase):
                     # Update LM states for shallow fusion
                     if lm is not None:
                         _, lmstate, lm_log_probs = lm.predict(
-                            eouts.new_zeros(1, 1).fill_(hyp[-1]), beam[i_beam]['lmstate'])
+                            eouts.new_zeros(1, 1, dtype=torch.int64).fill_(hyp[-1]),
+                            beam[i_beam]['lmstate'])
                     else:
                         lmstate = None
 

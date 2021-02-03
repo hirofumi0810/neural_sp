@@ -153,7 +153,7 @@ class RNNLM(LMBase):
         """Decode function.
 
         Args:
-            ys (FloatTensor): `[B, L]`
+            ys (LongTensor): `[B, L]`
             state (dict):
                 hxs (FloatTensor): `[n_layers, B, n_units]`
                 cxs (FloatTensor): `[n_layers, B, n_units]`
@@ -174,7 +174,7 @@ class RNNLM(LMBase):
         if self.embed_cache is not None:
             ys_emb = self.embed_cache[ys]
         else:
-            ys_emb = self.dropout_emb(self.embed(ys.long()))
+            ys_emb = self.dropout_emb(self.embed(ys))
 
         if state is None:
             state = self.zero_state(bs)
