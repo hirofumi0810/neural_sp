@@ -125,8 +125,10 @@ class TransformerDecoder(DecoderBase):
         self.bwd = backward
         self.mtl_per_batch = mtl_per_batch
 
+        # for cache
         self.prev_spk = ''
         self.lmstate_final = None
+        self.embed_cache = None
 
         # for attention plot
         self.aws_dict = {}
@@ -569,6 +571,12 @@ class TransformerDecoder(DecoderBase):
 
         return hyps, aws
 
+    def cache_embedding(self, device):
+        """Cache token emebdding."""
+        if self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
+            self.embed_cache = self.embed(indices)  # `[1, vocab, emb_dim]`
+
     def beam_search(self, eouts, elens, params, idx2token=None,
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
@@ -610,6 +618,7 @@ class TransformerDecoder(DecoderBase):
         min_len_ratio = params.get('recog_min_len_ratio')
         lp_weight = params.get('recog_length_penalty')
         length_norm = params.get('recog_length_norm')
+        cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
         lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
@@ -619,9 +628,13 @@ class TransformerDecoder(DecoderBase):
         eps_wait = params.get('recog_mma_delay_threshold')
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, self.device)
-        lm = helper.verify_lm_eval_mode(lm, lm_weight)
-        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second)
-        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
+        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second, cache_emb)
+        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd, cache_emb)
+
+        # cache token embeddings
+        if cache_emb:
+            self.cache_embedding(eouts.device)
 
         if ctc_log_probs is not None:
             assert ctc_weight > 0
@@ -691,7 +704,11 @@ class TransformerDecoder(DecoderBase):
                     causal_mask = causal_mask.byte()
                 causal_mask = torch.tril(causal_mask, out=causal_mask).unsqueeze(0).repeat([ys.size(0), 1, 1])
 
-                out = self.pos_enc(self.embed(ys))  # scaled + dropout
+                if self.embed_cache is not None:
+                    ys_emb = self.embed_cache[ys]
+                else:
+                    ys_emb = self.embed(ys)
+                out = self.pos_enc(ys_emb, scale=True)  # scaled + dropout
 
                 n_heads_total = 0
                 eouts_b = eouts[b:b + 1, :elens[b]].repeat([ys.size(0), 1, 1])
@@ -719,7 +736,8 @@ class TransformerDecoder(DecoderBase):
                 if n_models > 1 and cache_states and i > 0:
                     for i_e, dec in enumerate(ensmbl_decs):
                         for lth in range(dec.n_layers):
-                            ensmbl_cache[i_e][lth] = torch.cat([beam['ensmbl_cache'][i_e][lth] for beam in hyps], dim=0)
+                            ensmbl_cache[i_e][lth] = torch.cat([beam['ensmbl_cache'][i_e][lth]
+                                                                for beam in hyps], dim=0)
 
                 # for the ensemble
                 ensmbl_new_cache = [[None] * dec.n_layers for dec in ensmbl_decs]
@@ -814,7 +832,8 @@ class TransformerDecoder(DecoderBase):
                              'lmstate': {'hxs': lmstate['hxs'][:, j:j + 1],
                                          'cxs': lmstate['cxs'][:, j:j + 1]} if lmstate is not None else None,
                              'ctc_state': new_ctc_states[k] if ctc_prefix_scorer is not None else None,
-                             'ensmbl_cache': [[new_cache_e_l[j:j + 1] for new_cache_e_l in new_cache_e] for new_cache_e in ensmbl_new_cache] if cache_states else None,
+                             'ensmbl_cache': [[new_cache_e_l[j:j + 1] for new_cache_e_l in new_cache_e]
+                                              for new_cache_e in ensmbl_new_cache] if cache_states else None,
                              'streamable': streamable_global,
                              'streaming_failed_point': streaming_failed_point,
                              'quantity_rate': quantity_rate})
@@ -867,9 +886,11 @@ class TransformerDecoder(DecoderBase):
                         end_hyps[k]['hyp'][1:][::-1] if self.bwd else end_hyps[k]['hyp'][1:]))
                     logger.info('num tokens (hyp): %d' % len(end_hyps[k]['hyp'][1:]))
                     logger.info('log prob (hyp): %.7f' % end_hyps[k]['score'])
-                    logger.info('log prob (hyp, att): %.7f' % (end_hyps[k]['score_att'] * (1 - ctc_weight)))
+                    logger.info('log prob (hyp, att): %.7f' %
+                                (end_hyps[k]['score_att'] * (1 - ctc_weight)))
                     if ctc_prefix_scorer is not None:
-                        logger.info('log prob (hyp, ctc): %.7f' % (end_hyps[k]['score_ctc'] * ctc_weight))
+                        logger.info('log prob (hyp, ctc): %.7f' %
+                                    (end_hyps[k]['score_ctc'] * ctc_weight))
                     if lm is not None:
                         logger.info('log prob (hyp, first-path lm): %.7f' %
                                     (end_hyps[k]['score_lm'] * lm_weight))
@@ -881,8 +902,10 @@ class TransformerDecoder(DecoderBase):
                                     (end_hyps[k]['score_lm_second_bwd'] * lm_weight_second_bwd))
                     if self.attn_type == 'mocha':
                         logger.info('streamable: %s' % end_hyps[k]['streamable'])
-                        logger.info('streaming failed point: %d' % (end_hyps[k]['streaming_failed_point'] + 1))
-                        logger.info('quantity rate [%%]: %.2f' % (end_hyps[k]['quantity_rate'] * 100))
+                        logger.info('streaming failed point: %d' %
+                                    (end_hyps[k]['streaming_failed_point'] + 1))
+                        logger.info('quantity rate [%%]: %.2f' %
+                                    (end_hyps[k]['quantity_rate'] * 100))
                     logger.info('-' * 50)
 
                 if self.attn_type == 'mocha' and end_hyps[0]['streaming_failed_point'] < 1000:

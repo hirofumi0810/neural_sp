@@ -173,17 +173,16 @@ class RNNDecoder(DecoderBase):
         self.dstate_prev = None
         self._new_session = False
 
+        # for cache
         self.prev_spk = ''
         self.dstates_final = None
         self.lmstate_final = None
         self.lmmemory = None
+        self.embed_cache = None
 
         # for attention plot
         self.aws_dict = {}
         self.data_dict = {}
-
-        # for CPU decoding
-        self.embed_cache = None
 
         if ctc_weight > 0:
             self.ctc = CTC(eos=self.eos,
@@ -513,7 +512,7 @@ class RNNDecoder(DecoderBase):
 
         """
         bs, xmax, xdim = eouts.size()
-        nbest = recog_params['recog_beam_width']
+        nbest = recog_params.get('recog_beam_width')
         assert nbest >= 2
         assert idx2token is not None
         scaling_factor = 1.0  # less than 1
@@ -1008,6 +1007,12 @@ class RNNDecoder(DecoderBase):
 
         return hyps, aws
 
+    def cache_embedding(self, device):
+        """Cache token emebdding."""
+        if self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
+            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
+
     def initialize_beam(self, hyp, dstates, cv, lmstate, ctc_state,
                         ys=None, ensmbl_decs=[]):
         # Ensemble initialization
@@ -1064,7 +1069,7 @@ class RNNDecoder(DecoderBase):
             ensmbl_eouts (List[FloatTensor]): encoder outputs for ensemble models
             ensmbl_elens (List[IntTensor]) encoder outputs for ensemble models
             ensmbl_decs (List[torch.nn.Module): decoders for ensemble models
-            cache_states (bool): cache TransformerLM/TransformerXL states for fast decoding
+            cache_states (bool): cache TransformerLM/TransformerXL states
         Returns:
             nbest_hyps_idx (List[List[np.array]]): length `[B]`, each of which contains a list of hypotheses of size `[nbest]`,
                 each of which containts a list of arrays of size `[L]`
@@ -1084,6 +1089,7 @@ class RNNDecoder(DecoderBase):
         cp_weight = params.get('recog_coverage_penalty')
         cp_threshold = params.get('recog_coverage_threshold')
         length_norm = params.get('recog_length_norm')
+        cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
         lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
@@ -1094,10 +1100,14 @@ class RNNDecoder(DecoderBase):
         softmax_smoothing = params.get('recog_softmax_smoothing')
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
-        lm = helper.verify_lm_eval_mode(lm, lm_weight)
-        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second)
-        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
+        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second, cache_emb)
+        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd, cache_emb)
         trfm_lm = isinstance(lm, TransformerLM) or isinstance(lm, TransformerXL)
+
+        # cache token embeddings
+        if cache_emb:
+            self.cache_embedding(eouts.device)
 
         if ctc_log_probs is not None:
             assert ctc_weight > 0
@@ -1201,7 +1211,10 @@ class RNNDecoder(DecoderBase):
                                                                cache=lmstate if cache_states else None)
 
                 # for the main model
-                y_emb = self.dropout_emb(self.embed(y))
+                if self.embed_cache is not None:
+                    y_emb = self.embed_cache[y]
+                else:
+                    y_emb = self.dropout_emb(self.embed(y))
                 dstates, cv, aw, attn_state, attn_v = self.decode_step(
                     eouts_b_i, dstates, cv, y_emb, None, aw, lmout)
                 probs = torch.softmax(self.output(attn_v).squeeze(1) * softmax_smoothing, dim=1)
@@ -1463,8 +1476,7 @@ class RNNDecoder(DecoderBase):
         return nbest_hyps_idx, aws, scores
 
     def beam_search_block_sync(self, eouts, params, idx2token, hyps,
-                               lm=None, ctc_log_probs=None,
-                               state_carry_over=False, emb_cache=True):
+                               lm=None, ctc_log_probs=None, state_carry_over=False):
         assert eouts.size(0) == 1
         assert self.attn_type == 'mocha'
 
@@ -1473,17 +1485,17 @@ class RNNDecoder(DecoderBase):
         max_len_ratio = params.get('recog_max_len_ratio')
         lp_weight = params.get('recog_length_penalty')
         length_norm = params.get('recog_length_norm')
+        cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         eos_threshold = params.get('recog_eos_threshold')
         softmax_smoothing = params.get('recog_softmax_smoothing')
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
-        lm = helper.verify_lm_eval_mode(lm, lm_weight)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
 
-        # pre-compute embeddings
-        if emb_cache and self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(eouts.device)
-            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
+        # cache token embeddings
+        if cache_emb:
+            self.cache_embedding(eouts.device)
 
         end_hyps = []
         if hyps is None:
@@ -1553,7 +1565,7 @@ class RNNDecoder(DecoderBase):
 
             # Update LM states for LM fusion
             lmout, lmstate, scores_lm = helper.update_rnnlm_state_batch(
-                self.lm if self.lm is not None else lm, hyps, y, emb_cache=emb_cache)
+                self.lm if self.lm is not None else lm, hyps, y)
 
             if self.embed_cache is not None:
                 y_emb = self.embed_cache[y]

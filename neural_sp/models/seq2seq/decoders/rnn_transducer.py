@@ -86,6 +86,7 @@ class RNNTransducer(DecoderBase):
         self.prev_spk = ''
         self.lmstate_final = None
         self.state_cache = OrderedDict()
+        self.embed_cache = None
 
         if ctc_weight > 0:
             self.ctc = CTC(eos=self.eos,
@@ -393,6 +394,12 @@ class RNNTransducer(DecoderBase):
 
         return hyps, None
 
+    def cache_embedding(self, device):
+        """Cache token emebdding."""
+        if self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
+            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
+
     def beam_search(self, eouts, elens, params, idx2token=None,
                     lm=None, lm_second=None, lm_second_bwd=None, ctc_log_probs=None,
                     nbest=1, exclude_eos=False,
@@ -430,6 +437,7 @@ class RNNTransducer(DecoderBase):
         ctc_weight = params.get('recog_ctc_weight')
         assert ctc_weight == 0
         assert ctc_log_probs is None
+        cache_emb = params.get('recog_cache_embedding')
         lm_weight = params.get('recog_lm_weight')
         lm_weight_second = params.get('recog_lm_second_weight')
         lm_weight_second_bwd = params.get('recog_lm_bwd_weight')
@@ -439,9 +447,13 @@ class RNNTransducer(DecoderBase):
         merge_prob = True  # TODO: make this parameter
 
         helper = BeamSearch(beam_width, self.eos, ctc_weight, eouts.device)
-        lm = helper.verify_lm_eval_mode(lm, lm_weight)
-        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second)
-        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd)
+        lm = helper.verify_lm_eval_mode(lm, lm_weight, cache_emb)
+        lm_second = helper.verify_lm_eval_mode(lm_second, lm_weight_second, cache_emb)
+        lm_second_bwd = helper.verify_lm_eval_mode(lm_second_bwd, lm_weight_second_bwd, cache_emb)
+
+        # cache token embeddings
+        if cache_emb:
+            self.cache_embedding(eouts.device)
 
         nbest_hyps_idx = []
         for b in range(bs):
@@ -503,7 +515,10 @@ class RNNTransducer(DecoderBase):
                             total_score_lm = self.state_cache[hyp_ids_str]['total_score_lm']
                         else:
                             y = eouts.new_zeros((1, 1), dtype=torch.int64).fill_(idx)
-                            y_emb = self.dropout_emb(self.embed(y))
+                            if self.embed_cache is not None:
+                                y_emb = self.embed_cache[y]
+                            else:
+                                y_emb = self.dropout_emb(self.embed(y))
                             dout, dstate = self.recurrency(y_emb, beam['dstate'])
 
                             # Update LM states for shallow fusion

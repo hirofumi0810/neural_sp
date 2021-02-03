@@ -187,7 +187,12 @@ class GatedConvLM(LMBase):
             else:
                 raise ValueError(n)
 
-    def decode(self, ys, state=None, mems=None, incremental=False, emb_cache=False):
+    def cache_embedding(self, device):
+        if self.embed_cache is None:
+            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(device)
+            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
+
+    def decode(self, ys, state=None, mems=None, incremental=False):
         """Decode function.
 
         Args:
@@ -195,7 +200,6 @@ class GatedConvLM(LMBase):
             state: dummy interfance for RNNLM
             cache: dummy interfance for TransformerLM/TransformerXL
             incremental: dummy interfance for TransformerLM/TransformerXL
-            emb_cache (bool): precompute token embeddings for fast infernece
         Returns:
             logits (FloatTensor): `[B, L, vocab]`
             out (FloatTensor): `[B, L, d_model]` (for cache)
@@ -203,11 +207,6 @@ class GatedConvLM(LMBase):
             new_mems: dummy interfance for TransformerXL
 
         """
-        # Pre-compute embedding
-        if emb_cache and self.embed_cache is None:
-            indices = torch.arange(0, self.vocab, 1, dtype=torch.int64).to(ys.device)
-            self.embed_cache = self.dropout_emb(self.embed(indices))  # `[1, vocab, emb_dim]`
-
         if self.embed_cache is not None:
             out = self.embed_cache[ys]
         else:

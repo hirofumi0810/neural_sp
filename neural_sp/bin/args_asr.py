@@ -427,6 +427,8 @@ def build_parser():
     parser.add_argument('--recog_lm_bwd_weight', type=float, default=0.0,
                         help='weight of second-path backward LM score. \
                                   First-pass backward LM in case of synchronous bidirectional decoding.')
+    parser.add_argument('--recog_cache_embedding', type=strtobool, default=True,
+                        help='cache token emebdding')
     parser.add_argument('--recog_ctc_weight', type=float, default=0.0,
                         help='weight of CTC score')
     parser.add_argument('--recog_lm', type=str, default=False, nargs='?',
