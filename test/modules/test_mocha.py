@@ -83,30 +83,11 @@ def test_forward_soft(args):
     query = torch.randn(batch_size, qlen, args['qdim'], device=device)
     src_mask = key.new_ones(batch_size, 1, klen).byte()
 
-    module = importlib.import_module('neural_sp.models.modules.mocha')
+    module = importlib.import_module('neural_sp.models.modules.mocha.mocha')
     mocha = module.MoChA(**args)
     mocha = mocha.to(device)
 
     mocha.train()
-    # recursive
-    for linear_decoding in [True, False]:
-        alpha = None
-        for i in range(qlen):
-            out = mocha(key, value, query[:, i:i + 1], mask=src_mask, aw_prev=alpha,
-                        mode='recursive', cache=True, linear_decoding=linear_decoding)
-            assert len(out) == 3
-            cv, alpha, attn_state = out
-            assert cv.size() == (batch_size, 1, value.size(2))
-            assert alpha.size() == (batch_size, args['n_heads_mono'], 1, klen)
-            assert isinstance(attn_state, dict)
-            beta = attn_state['beta']
-            p_choose = attn_state['p_choose']
-            assert p_choose.size() == (batch_size, args['n_heads_mono'], 1, klen)
-            if args['chunk_size'] > 1:
-                assert beta is not None
-                assert beta.size() == (batch_size, args['n_heads_mono'] * args['n_heads_chunk'], 1, klen)
-
-    # parallel
     for linear_decoding in [True, False]:
         alpha = None
         mocha.reset()
@@ -161,7 +142,7 @@ def test_forward_hard(args):
     value = torch.randn(batch_size, klen, args['kdim'], device=device)
     query = torch.randn(batch_size, qlen, args['qdim'], device=device)
 
-    module = importlib.import_module('neural_sp.models.modules.mocha')
+    module = importlib.import_module('neural_sp.models.modules.mocha.mocha')
     mocha = module.MoChA(**args)
     mocha = mocha.to(device)
 

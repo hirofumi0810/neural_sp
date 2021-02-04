@@ -8,7 +8,7 @@ import random
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.mocha import MoChA
+from neural_sp.models.modules.mocha.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism as MHA
 from neural_sp.models.modules.positionwise_feed_forward import PositionwiseFeedForward as FFN
 from neural_sp.models.modules.relative_multihead_attention import RelativeMultiheadAttentionMechanism as RelMHA
