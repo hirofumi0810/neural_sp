@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from neural_sp.models.modules.mocha import headdrop
+from neural_sp.models.modules.headdrop import headdrop
 
 logger = logging.getLogger(__name__)
 

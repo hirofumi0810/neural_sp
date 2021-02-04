@@ -161,7 +161,7 @@ def test_forward_hard(args):
     value = torch.randn(batch_size, klen, args['kdim'], device=device)
     query = torch.randn(batch_size, qlen, args['qdim'], device=device)
 
-    module = importlib.import_module('neural_sp.models.modules.mocha')
+    module = importlib.import_module('neural_sp.models.modules.mocha.mocha')
     mocha = module.MoChA(**args)
     mocha = mocha.to(device)
 
