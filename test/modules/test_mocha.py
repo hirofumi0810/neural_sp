@@ -83,7 +83,7 @@ def test_forward_soft(args):
     query = torch.randn(batch_size, qlen, args['qdim'], device=device)
     src_mask = key.new_ones(batch_size, 1, klen).byte()
 
-    module = importlib.import_module('neural_sp.models.modules.mocha')
+    module = importlib.import_module('neural_sp.models.modules.mocha.mocha')
     mocha = module.MoChA(**args)
     mocha = mocha.to(device)
 

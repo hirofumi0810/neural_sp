@@ -24,7 +24,7 @@ from neural_sp.models.lm.transformer_xl import TransformerXL
 from neural_sp.models.modules.attention import AttentionMechanism
 from neural_sp.models.modules.gmm_attention import GMMAttention
 from neural_sp.models.modules.initialization import init_with_uniform
-from neural_sp.models.modules.mocha import MoChA
+from neural_sp.models.modules.mocha.mocha import MoChA
 from neural_sp.models.modules.multihead_attention import MultiheadAttentionMechanism
 from neural_sp.models.seq2seq.decoders.beam_search import BeamSearch
 from neural_sp.models.seq2seq.decoders.ctc import (
